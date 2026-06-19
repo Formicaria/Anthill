@@ -1,0 +1,507 @@
+# ============================================================
+#  ANTHILL CORE v0.2.1 - Single File Python Version
+#  Run with: python anthill.py
+#  Requirements: pip install pydantic rich requests
+#  Optional local AI: ollama pull llama3.1:8b
+# ============================================================
+
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import List, Optional, Dict
+from uuid import uuid4
+import sqlite3
+import requests
+
+from pydantic import BaseModel, Field
+from rich import print
+
+
+# ============================================================
+#  CONFIG
+# ============================================================
+
+OLLAMA_MODEL = "llama3.1:8b"
+OLLAMA_HOST = "http://localhost:11434"
+USE_OLLAMA = True
+
+MAX_GOAL_LENGTH = 2000  # Prevent oversized prompts
+
+
+# ============================================================
+#  MODELS
+# ============================================================
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class MissionStatus(str, Enum):
+    CREATED = "created"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class Task(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    description: str
+    assigned_ant: str
+    status: TaskStatus = TaskStatus.PENDING
+    result: Optional[str] = None
+
+
+class Mission(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    goal: str
+    tasks: List[Task] = Field(default_factory=list)
+    status: MissionStatus = MissionStatus.CREATED
+    final_result: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ============================================================
+#  OLLAMA CLIENT
+# ============================================================
+
+class OllamaClient:
+    def __init__(self, model: str = OLLAMA_MODEL, host: str = OLLAMA_HOST):
+        self.model = model
+        self.host = host.rstrip("/")
+
+    def generate(self, prompt: str, retries: int = 2) -> str:
+        url = f"{self.host}/api/generate"
+
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+        }
+
+        last_error = ""
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(url, json=payload, timeout=180)
+                response.raise_for_status()
+                data = response.json()
+
+                output = data.get("response", "").strip()
+
+                if not output:
+                    return "Ollama returned an empty response."
+
+                return output
+
+            except requests.exceptions.ConnectionError:
+                return (
+                    "ERROR: Could not connect to Ollama. "
+                    "Make sure Ollama is installed and running at http://localhost:11434."
+                )
+
+            except requests.exceptions.Timeout:
+                last_error = f"ERROR: Ollama request timed out (attempt {attempt}/{retries})."
+
+            except Exception as error:
+                return f"ERROR: Ollama request failed: {error}"
+
+        return last_error
+
+
+# ============================================================
+#  MEMORY
+# ============================================================
+
+class SQLiteMemory:
+    def __init__(self, db_path: str = "data/anthill_memory.db"):
+        self.db_path = db_path
+        Path("data").mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self):
+        with self._connect() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS missions (
+                    id TEXT PRIMARY KEY,
+                    goal TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    final_result TEXT,
+                    created_at TEXT NOT NULL,
+                    saved_at TEXT NOT NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    assigned_ant TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    result TEXT,
+                    FOREIGN KEY (mission_id) REFERENCES missions(id)
+                )
+            """)
+
+            conn.commit()
+
+    def save_mission(self, mission: Mission):
+        with self._connect() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO missions (
+                    id, goal, status, final_result, created_at, saved_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                mission.id,
+                mission.goal,
+                mission.status.value,
+                mission.final_result,
+                mission.created_at.isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ))
+
+            for task in mission.tasks:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO tasks (
+                        id, mission_id, title, description, assigned_ant, status, result
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    task.id,
+                    mission.id,
+                    task.title,
+                    task.description,
+                    task.assigned_ant,
+                    task.status.value,
+                    task.result,
+                ))
+
+            conn.commit()
+
+    def get_recent_missions(self, limit: int = 5) -> List[Dict[str, str]]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, goal, status, final_result, created_at, saved_at
+                FROM missions
+                ORDER BY saved_at DESC
+                LIMIT ?
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def format_recent_memory(self, limit: int = 3) -> str:
+        recent_missions = self.get_recent_missions(limit=limit)
+
+        if not recent_missions:
+            return "No previous mission memory found."
+
+        memory_blocks = []
+
+        for mission in recent_missions:
+            memory_blocks.append(
+                f"Previous Goal: {mission.get('goal')}\n"
+                f"Previous Status: {mission.get('status')}\n"
+                f"Previous Result Summary:\n{mission.get('final_result')}\n"
+            )
+
+        return "\n---\n".join(memory_blocks)
+
+
+# ============================================================
+#  PLANNER
+# ============================================================
+
+class Planner:
+    def create_tasks(self, goal: str) -> List[Task]:
+        return [
+            Task(
+                title="Research mission",
+                description=f"Understand the goal and gather useful context: {goal}",
+                assigned_ant="researcher",
+            ),
+            Task(
+                title="Build response",
+                description=f"Create a practical answer or action plan for: {goal}",
+                assigned_ant="builder",
+            ),
+            Task(
+                title="Verify result",
+                description=f"Check the result for accuracy, usefulness, and missing steps: {goal}",
+                assigned_ant="verifier",
+            ),
+        ]
+
+
+# ============================================================
+#  ANTS
+# ============================================================
+
+class BaseAnt(ABC):
+    def __init__(self, name: str):
+        self.name = name
+
+    @abstractmethod
+    def run(self, task: Task, mission: Mission) -> str:
+        pass
+
+
+class ResearcherAnt(BaseAnt):
+    def __init__(self, memory: SQLiteMemory):
+        super().__init__(name="researcher")
+        self.memory = memory
+
+    def run(self, task: Task, mission: Mission) -> str:
+        recent_memory = self.memory.format_recent_memory(limit=3)
+
+        return (
+            f"Researcher Ant reviewed the current mission and recent memory.\n\n"
+            f"Current Mission:\n{mission.goal}\n\n"
+            f"Recent Memory:\n{recent_memory}\n\n"
+            f"Research Finding:\n"
+            f"The mission should be broken into clear steps, executed by specialized ants, "
+            f"verified, and saved into memory so future missions can improve."
+        )
+
+
+class BuilderAnt(BaseAnt):
+    def __init__(self, use_ollama: bool = USE_OLLAMA):
+        super().__init__(name="builder")
+        self.use_ollama = use_ollama
+        self.llm = OllamaClient() if use_ollama else None
+
+    def run(self, task: Task, mission: Mission) -> str:
+        research_results = [
+            t.result for t in mission.tasks
+            if t.assigned_ant == "researcher" and t.result
+        ]
+
+        research_context = (
+            "\n".join(research_results)
+            if research_results
+            else "No research context available."
+        )
+
+        if not self.use_ollama:
+            return self._fallback_response(mission, research_context)
+
+        prompt = f"""
+You are Builder Ant inside ANTHILL, a local swarm-intelligence AI harness.
+
+ANTHILL concept:
+A Queen agent receives a user mission, breaks it into tasks, assigns specialized ant agents,
+collects the results, verifies the output, and stores memory for future missions.
+
+Mission goal:
+{mission.goal}
+
+Research context:
+{research_context}
+
+Your job:
+Create a practical, useful response for this mission.
+
+Rules:
+- Be direct.
+- Be structured.
+- Do not pretend to do things you cannot actually do.
+- If commands, code, or steps are needed, include them.
+- Keep the answer useful for someone building a local AI harness.
+"""
+
+        response = self.llm.generate(prompt)
+
+        if response.startswith("ERROR:"):
+            fallback = self._fallback_response(mission, research_context)
+            return (
+                f"{response}\n\n"
+                f"Fallback Builder Response:\n{fallback}"
+            )
+
+        return response
+
+    def _fallback_response(self, mission: Mission, research_context: str) -> str:
+        return (
+            f"Builder Ant created a basic non-LLM response.\n\n"
+            f"Mission Goal:\n{mission.goal}\n\n"
+            f"Research Context:\n{research_context}\n\n"
+            f"Proposed Output:\n"
+            f"1. Understand the user's mission.\n"
+            f"2. Break it into smaller tasks.\n"
+            f"3. Assign each task to a specialized ant.\n"
+            f"4. Collect results from each ant.\n"
+            f"5. Verify the final answer.\n"
+            f"6. Save the mission and result into memory.\n"
+            f"7. Use previous mission memory to improve future responses."
+        )
+
+
+class VerifierAnt(BaseAnt):
+    def __init__(self):
+        super().__init__(name="verifier")
+
+    def run(self, task: Task, mission: Mission) -> str:
+        prior_tasks = [t for t in mission.tasks if t.assigned_ant != "verifier"]
+        completed_tasks = [t for t in prior_tasks if t.status == TaskStatus.COMPLETE]
+        failed_tasks = [t for t in prior_tasks if t.status == TaskStatus.FAILED]
+
+        if failed_tasks:
+            return (
+                "Verifier Ant found one or more failed tasks. "
+                "The mission should be marked as failed or partially complete."
+            )
+
+        if len(completed_tasks) >= 2:
+            return (
+                "Verifier Ant checked the mission. "
+                "The mission has enough completed task output to return a final response."
+            )
+
+        return (
+            "Verifier Ant found that the mission may be incomplete. "
+            "More task output is needed before finalizing."
+        )
+
+
+# ============================================================
+#  QUEEN
+# ============================================================
+
+class Queen:
+    def __init__(self):
+        self.memory = SQLiteMemory()
+        self.planner = Planner()
+
+        self.ants = {
+            "researcher": ResearcherAnt(memory=self.memory),
+            "builder": BuilderAnt(use_ollama=USE_OLLAMA),
+            "verifier": VerifierAnt(),
+        }
+
+    def run_mission(self, goal: str) -> str:
+        print(f"[bold cyan]Queen received mission:[/bold cyan] {goal}")
+
+        mission = Mission(goal=goal)
+        mission.status = MissionStatus.RUNNING
+        mission.tasks = self.planner.create_tasks(goal)
+
+        print(f"[dim]Mission ID: {mission.id}[/dim]")
+        print(f"[dim]Created {len(mission.tasks)} tasks.[/dim]\n")
+
+        for task in mission.tasks:
+            print(f"[yellow]Assigning task to {task.assigned_ant} ant:[/yellow] {task.title}")
+
+            ant = self.ants.get(task.assigned_ant)
+
+            if not ant:
+                task.status = TaskStatus.FAILED
+                task.result = f"No ant found for role: {task.assigned_ant}"
+                print(f"[red]{task.result}[/red]")
+                continue
+
+            try:
+                task.status = TaskStatus.RUNNING
+                task.result = ant.run(task, mission)
+                task.status = TaskStatus.COMPLETE
+
+                print(f"[green]Task complete:[/green] {task.title}")
+
+            except Exception as error:
+                task.status = TaskStatus.FAILED
+                task.result = f"Task failed with error: {error}"
+                print(f"[red]{task.result}[/red]")
+
+        if any(task.status == TaskStatus.FAILED for task in mission.tasks):
+            mission.status = MissionStatus.FAILED
+        else:
+            mission.status = MissionStatus.COMPLETE
+
+        mission.final_result = self._compose_final_result(mission)
+
+        self.memory.save_mission(mission)
+
+        print("[bold magenta]Mission saved to ANTHILL memory.[/bold magenta]")
+
+        return mission.final_result
+
+    def _compose_final_result(self, mission: Mission) -> str:
+        task_outputs = []
+
+        for task in mission.tasks:
+            task_outputs.append(
+                f"Task: {task.title}\n"
+                f"Ant: {task.assigned_ant}\n"
+                f"Status: {task.status.value}\n"
+                f"Result:\n{task.result}\n"
+            )
+
+        mission_header = (
+            "Mission Complete"
+            if mission.status == MissionStatus.COMPLETE
+            else "Mission Failed"
+        )
+
+        return (
+            f"{mission_header}\n\n"
+            f"Goal:\n{mission.goal}\n\n"
+            f"Mission Status:\n{mission.status.value}\n\n"
+            f"Task Results:\n\n"
+            + "\n".join(task_outputs)
+        )
+
+
+# ============================================================
+#  MAIN ENTRY POINT
+# ============================================================
+
+def main():
+    print("[bold yellow]ANTHILL Core v0.2.1 online.[/bold yellow]")
+    print("[dim]Type a mission for the Queen. Type 'exit' to quit.[/dim]")
+
+    if USE_OLLAMA:
+        print(f"[dim]Ollama mode: ON | Model: {OLLAMA_MODEL}[/dim]\n")
+    else:
+        print("[dim]Ollama mode: OFF | Using fallback static builder.[/dim]\n")
+
+    queen = Queen()
+
+    while True:
+        user_goal = input("Mission > ").strip()
+
+        if user_goal.lower() in ["exit", "quit"]:
+            print("[bold red]ANTHILL shutting down.[/bold red]")
+            break
+
+        if not user_goal:
+            continue
+
+        if len(user_goal) > MAX_GOAL_LENGTH:
+            print(f"[red]Mission too long. Please keep it under {MAX_GOAL_LENGTH} characters.[/red]")
+            continue
+
+        result = queen.run_mission(user_goal)
+
+        print("\n[bold green]Final Result:[/bold green]")
+        print(result)
+        print("\n" + "-" * 60 + "\n")
+
+
+if __name__ == "__main__":
+    main()
