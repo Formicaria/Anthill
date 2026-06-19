@@ -1,0 +1,1693 @@
+# ============================================================
+#  ANTHILL CORE v0.6.1 - Single File Python Version
+#  Run with: python anthill.py
+#  Requirements: pip install pydantic rich requests
+#  Optional local AI: ollama pull llama3.1:8b
+# ============================================================
+
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
+import json
+import os
+import platform
+import re
+import shlex
+import sqlite3
+import subprocess
+import sys
+import requests
+
+from pydantic import BaseModel, Field
+from rich import print
+
+
+# ============================================================
+#  CONFIG
+# ============================================================
+
+SCRIPT_DIR = Path(__file__).parent.resolve()
+
+OLLAMA_MODEL = "llama3.1:8b"
+OLLAMA_HOST = "http://localhost:11434"
+USE_OLLAMA = True
+
+MAX_GOAL_LENGTH = 2000
+MIN_DYNAMIC_TASKS = 3
+MAX_DYNAMIC_TASKS = 7
+
+ENABLE_FILE_TOOLS = True
+ENABLE_SHELL_TOOL = False
+
+MAX_FILE_READ_CHARS = 5000
+MAX_DIRECTORY_ITEMS = 100
+MAX_PREVIOUS_CONTEXT_CHARS = 4000
+MAX_VERIFIER_CONTEXT_CHARS = 5000
+MAX_CODER_CONTEXT_CHARS = 6000
+MAX_FILEANT_FILES_TO_READ = 3
+MAX_MISSION_SECONDS = 600
+
+ALLOWED_WORKSPACE_ROOT = "."
+
+BLOCKED_FILE_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+BLOCKED_PATH_PARTS = {
+    "data",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".mypy_cache",
+    ".pytest_cache",
+}
+
+
+def resolve_workspace_root() -> Path:
+    root_path = Path(ALLOWED_WORKSPACE_ROOT)
+
+    if root_path.is_absolute():
+        return root_path.resolve()
+
+    return (SCRIPT_DIR / root_path).resolve()
+
+
+def truncate_text(text: str, max_chars: int, suffix: str = "...[truncated]") -> str:
+    if len(text) <= max_chars:
+        return text
+
+    return text[:max_chars].rstrip() + f"\n{suffix}"
+
+
+def extract_verdict(text: str) -> str:
+    lowered = text.lower()
+
+    for line in lowered.splitlines():
+        clean = line.strip().replace("*", "").replace("-", "").strip()
+
+        if clean.startswith("verdict:"):
+            verdict = clean.replace("verdict:", "", 1).strip()
+
+            if "verification failed" in verdict or "failed" in verdict:
+                return "failed"
+
+            if "needs improvement" in verdict or "improvement" in verdict:
+                return "needs_improvement"
+
+            if "verification passed" in verdict or "passed" in verdict:
+                return "passed"
+
+    if "verification failed" in lowered or "failed verification" in lowered:
+        return "failed"
+
+    if "needs improvement" in lowered:
+        return "needs_improvement"
+
+    if "verification passed" in lowered or "passed verification" in lowered:
+        return "passed"
+
+    return "unknown"
+
+
+# ============================================================
+#  MODELS
+# ============================================================
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class MissionStatus(str, Enum):
+    CREATED = "created"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class Task(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    description: str
+    assigned_ant: str
+    status: TaskStatus = TaskStatus.PENDING
+    result: Optional[str] = None
+
+
+class Mission(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    goal: str
+    tasks: List[Task] = Field(default_factory=list)
+    status: MissionStatus = MissionStatus.CREATED
+    final_result: Optional[str] = None
+    success_score: Optional[float] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ToolResult(BaseModel):
+    tool_name: str
+    success: bool
+    output: str
+    error: Optional[str] = None
+
+
+# ============================================================
+#  OLLAMA CLIENT
+# ============================================================
+
+class OllamaClient:
+    def __init__(self, model: str = OLLAMA_MODEL, host: str = OLLAMA_HOST):
+        self.model = model
+        self.host = host.rstrip("/")
+
+    def generate(self, prompt: str, retries: int = 2) -> str:
+        url = f"{self.host}/api/generate"
+
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+        }
+
+        last_error = ""
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(url, json=payload, timeout=180)
+                response.raise_for_status()
+                data = response.json()
+
+                output = data.get("response", "").strip()
+
+                if not output:
+                    return "Ollama returned an empty response."
+
+                return output
+
+            except requests.exceptions.ConnectionError:
+                return (
+                    "ERROR: Could not connect to Ollama. "
+                    "Make sure Ollama is installed and running at http://localhost:11434."
+                )
+
+            except requests.exceptions.Timeout:
+                last_error = f"ERROR: Ollama request timed out (attempt {attempt}/{retries})."
+
+            except Exception as error:
+                last_error = f"ERROR: Ollama request failed: {error} (attempt {attempt}/{retries})."
+
+        return last_error
+
+
+# ============================================================
+#  MEMORY
+# ============================================================
+
+class SQLiteMemory:
+    def __init__(self, db_path: str = "data/anthill_memory.db"):
+        self.db_path = str((SCRIPT_DIR / db_path).resolve())
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self):
+        with self._connect() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS missions (
+                    id TEXT PRIMARY KEY,
+                    goal TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    final_result TEXT,
+                    success_score REAL,
+                    created_at TEXT NOT NULL,
+                    saved_at TEXT NOT NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    assigned_ant TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    result TEXT,
+                    FOREIGN KEY (mission_id) REFERENCES missions(id)
+                )
+            """)
+
+            conn.commit()
+
+    def save_mission(self, mission: Mission):
+        with self._connect() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO missions (
+                    id, goal, status, final_result, success_score, created_at, saved_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                mission.id,
+                mission.goal,
+                mission.status.value,
+                mission.final_result,
+                mission.success_score,
+                mission.created_at.isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ))
+
+            for task in mission.tasks:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO tasks (
+                        id, mission_id, title, description, assigned_ant, status, result
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    task.id,
+                    mission.id,
+                    task.title,
+                    task.description,
+                    task.assigned_ant,
+                    task.status.value,
+                    task.result,
+                ))
+
+            conn.commit()
+
+    def get_recent_missions(self, limit: int = 5) -> List[Dict[str, str]]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, goal, status, final_result, success_score, created_at, saved_at
+                FROM missions
+                ORDER BY saved_at DESC
+                LIMIT ?
+            """, (limit,))
+
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def format_recent_memory(self, limit: int = 3, max_result_chars: int = 300) -> str:
+        recent_missions = self.get_recent_missions(limit=limit)
+
+        if not recent_missions:
+            return "No previous mission memory found."
+
+        memory_blocks = []
+
+        for mission in recent_missions:
+            score = mission.get("success_score")
+            score_line = f"Previous Pheromone Score: {score}" if score is not None else ""
+
+            result_summary = mission.get("final_result") or ""
+            result_summary = truncate_text(
+                result_summary,
+                max_result_chars,
+                suffix="...[memory result truncated]",
+            )
+
+            block = (
+                f"Previous Goal: {mission.get('goal')}\n"
+                f"Previous Status: {mission.get('status')}\n"
+            )
+
+            if score_line:
+                block += f"{score_line}\n"
+
+            block += f"Previous Result Summary:\n{result_summary}\n"
+            memory_blocks.append(block)
+
+        return "\n---\n".join(memory_blocks)
+
+
+# ============================================================
+#  TOOL SYSTEM
+# ============================================================
+
+class BaseTool(ABC):
+    name: str = "base_tool"
+    description: str = "Base tool"
+
+    @abstractmethod
+    def run(self, **kwargs) -> ToolResult:
+        pass
+
+
+class ToolRegistry:
+    def __init__(self):
+        self.tools: Dict[str, BaseTool] = {}
+
+    def register(self, tool: BaseTool):
+        self.tools[tool.name] = tool
+
+    def run_tool(self, name: str, **kwargs) -> ToolResult:
+        tool = self.tools.get(name)
+
+        if not tool:
+            return ToolResult(
+                tool_name=name,
+                success=False,
+                output="",
+                error=f"Tool not found or not registered: {name}",
+            )
+
+        try:
+            return tool.run(**kwargs)
+        except Exception as error:
+            return ToolResult(
+                tool_name=name,
+                success=False,
+                output="",
+                error=f"Tool execution failed: {error}",
+            )
+
+    def describe_tools(self) -> str:
+        if not self.tools:
+            return "No tools registered."
+
+        lines = []
+
+        for name, tool in self.tools.items():
+            lines.append(f"- {name}: {tool.description}")
+
+        return "\n".join(lines)
+
+
+class WorkspacePathGuard:
+    def __init__(self, root: str = ALLOWED_WORKSPACE_ROOT):
+        root_path = Path(root)
+
+        if root_path.is_absolute():
+            self.root = root_path.resolve()
+        else:
+            self.root = (SCRIPT_DIR / root_path).resolve()
+
+    def resolve_safe_path(self, requested_path: str) -> Path:
+        requested = Path(requested_path)
+
+        if not requested.is_absolute():
+            requested = self.root / requested
+
+        resolved = requested.resolve()
+
+        try:
+            resolved.relative_to(self.root)
+        except ValueError:
+            raise ValueError(
+                f"Access denied. Path is outside allowed workspace root: {self.root}"
+            )
+
+        return resolved
+
+    def is_blocked_path(self, path: Path) -> bool:
+        parts = {part.lower() for part in path.parts}
+        return bool(parts.intersection(BLOCKED_PATH_PARTS))
+
+
+class SystemInfoTool(BaseTool):
+    name = "system_info"
+    description = "Read-only tool that returns basic OS, Python, and workspace information."
+
+    def run(self, **kwargs) -> ToolResult:
+        info = {
+            "os": platform.system(),
+            "os_release": platform.release(),
+            "os_version": platform.version(),
+            "machine": platform.machine(),
+            "python_version": sys.version,
+            "current_working_directory": os.getcwd(),
+            "script_directory": str(SCRIPT_DIR),
+            "allowed_workspace_root": str(resolve_workspace_root()),
+            "file_tools_enabled": ENABLE_FILE_TOOLS,
+            "shell_tool_enabled": ENABLE_SHELL_TOOL,
+            "max_mission_seconds": MAX_MISSION_SECONDS,
+        }
+
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            output=json.dumps(info, indent=2),
+        )
+
+
+class DirectoryListTool(BaseTool):
+    name = "list_directory"
+    description = "Read-only tool that lists files and folders inside the allowed workspace."
+
+    def __init__(self, path_guard: WorkspacePathGuard):
+        self.path_guard = path_guard
+
+    def run(self, **kwargs) -> ToolResult:
+        if not ENABLE_FILE_TOOLS:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="File tools are disabled by config.",
+            )
+
+        requested_path = kwargs.get("path", ".")
+        safe_path = self.path_guard.resolve_safe_path(str(requested_path))
+
+        if self.path_guard.is_blocked_path(safe_path):
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Refusing to list blocked internal/system path.",
+            )
+
+        if not safe_path.exists():
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Directory does not exist: {safe_path}",
+            )
+
+        if not safe_path.is_dir():
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Path is not a directory: {safe_path}",
+            )
+
+        items = []
+
+        for index, child in enumerate(sorted(safe_path.iterdir(), key=lambda p: p.name.lower())):
+            if index >= MAX_DIRECTORY_ITEMS:
+                items.append(f"...[truncated after {MAX_DIRECTORY_ITEMS} items]")
+                break
+
+            if self.path_guard.is_blocked_path(child):
+                continue
+
+            item_type = "DIR " if child.is_dir() else "FILE"
+            items.append(f"{item_type}  {child.name}")
+
+        output = "\n".join(items) if items else "(directory is empty or all items are blocked)"
+
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            output=output,
+        )
+
+
+class ReadTextFileTool(BaseTool):
+    name = "read_text_file"
+    description = "Read-only tool that reads text files inside the allowed workspace with a character limit."
+
+    TEXT_SUFFIXES = {
+        ".txt", ".md", ".py", ".json", ".yaml", ".yml", ".toml",
+        ".ini", ".cfg", ".log", ".csv", ".html", ".css", ".js",
+        ".ts", ".tsx", ".jsx", ".xml",
+    }
+
+    def __init__(self, path_guard: WorkspacePathGuard):
+        self.path_guard = path_guard
+
+    def run(self, **kwargs) -> ToolResult:
+        if not ENABLE_FILE_TOOLS:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="File tools are disabled by config.",
+            )
+
+        requested_path = kwargs.get("path")
+
+        if not requested_path:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Missing required argument: path",
+            )
+
+        safe_path = self.path_guard.resolve_safe_path(str(requested_path))
+
+        if self.path_guard.is_blocked_path(safe_path):
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Refusing to read from blocked internal/system path.",
+            )
+
+        if safe_path.suffix.lower() in BLOCKED_FILE_SUFFIXES:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Refusing to read blocked file type: {safe_path.suffix}",
+            )
+
+        if not safe_path.exists():
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"File does not exist: {safe_path}",
+            )
+
+        if not safe_path.is_file():
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Path is not a file: {safe_path}",
+            )
+
+        if safe_path.suffix.lower() not in self.TEXT_SUFFIXES:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Refusing to read unsupported file type: {safe_path.suffix}",
+            )
+
+        try:
+            content = safe_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as error:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Could not read file: {error}",
+            )
+
+        content = truncate_text(
+            content,
+            MAX_FILE_READ_CHARS,
+            suffix=f"...[file truncated after {MAX_FILE_READ_CHARS} characters]",
+        )
+
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            output=content,
+        )
+
+
+class ShellCommandTool(BaseTool):
+    name = "shell_command"
+    description = "Optional minimal shell command tool. Disabled by default. High risk."
+
+    SAFE_COMMANDS = {
+        "dir",
+        "ls",
+        "pwd",
+        "echo",
+    }
+
+    def run(self, **kwargs) -> ToolResult:
+        if not ENABLE_SHELL_TOOL:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Shell tool is disabled by config.",
+            )
+
+        command = str(kwargs.get("command", "")).strip()
+
+        if not command:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Missing required argument: command",
+            )
+
+        try:
+            args = shlex.split(command)
+        except ValueError as error:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Could not parse command safely: {error}",
+            )
+
+        if not args:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error="Empty command after parsing.",
+            )
+
+        base_command = args[0].lower()
+
+        if base_command not in self.SAFE_COMMANDS:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Command is not allowlisted: {base_command}",
+            )
+
+        try:
+            completed = subprocess.run(
+                args,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(resolve_workspace_root()),
+            )
+
+            output = completed.stdout.strip()
+            error = completed.stderr.strip()
+
+            return ToolResult(
+                tool_name=self.name,
+                success=completed.returncode == 0,
+                output=output,
+                error=error if error else None,
+            )
+
+        except Exception as error:
+            return ToolResult(
+                tool_name=self.name,
+                success=False,
+                output="",
+                error=f"Shell command failed: {error}",
+            )
+
+
+# ============================================================
+#  PLANNER
+# ============================================================
+
+class Planner:
+    ALLOWED_ANTS = {"researcher", "file", "coder", "builder", "verifier"}
+
+    def __init__(self, use_ollama: bool = USE_OLLAMA, llm: Optional[OllamaClient] = None):
+        self.use_ollama = use_ollama
+        self.llm = llm
+
+    def create_tasks(self, goal: str, memory_context: str = "", tool_context: str = "") -> List[Task]:
+        if not self.use_ollama or self.llm is None:
+            return self._fallback_tasks(goal)
+
+        prompt = f"""
+You are the Planner inside ANTHILL, a local swarm-intelligence AI harness.
+
+ANTHILL has these available ants only:
+- researcher: gathers context, reviews memory, frames the mission, and can use safe read-only tools through the Queen.
+- file: inspects safe workspace files, lists project structure, and reads allowed text files. Read-only only.
+- coder: reviews code context, identifies bugs, proposes improvements, and drafts patch suggestions as text only. It does not write files.
+- builder: creates the main answer, code plan, commands, or solution from previous ant output.
+- verifier: checks output quality, missing steps, and failure risks.
+
+Available tools:
+{tool_context}
+
+Mission goal:
+{goal}
+
+Recent memory context:
+{memory_context}
+
+Your job:
+Create a mission-specific task plan.
+
+Rules:
+- Return ONLY valid JSON.
+- Do not include markdown.
+- Do not include explanations outside the JSON.
+- Create between {MIN_DYNAMIC_TASKS} and {MAX_DYNAMIC_TASKS} tasks.
+- Every task must use one of these assigned_ant values only: researcher, file, coder, builder, verifier.
+- The final task should usually be assigned to verifier.
+- Use the file ant for missions involving files, folders, project structure, scripts, codebases, or repo inspection.
+- Use the coder ant for missions involving code review, bugs, architecture, refactors, patches, or Python scripts.
+- Do not assign shell execution unless shell tools are explicitly enabled.
+- Do not ask any ant to write files yet.
+
+Required JSON format:
+{{
+  "tasks": [
+    {{
+      "title": "Short task title",
+      "description": "Clear task description",
+      "assigned_ant": "researcher"
+    }},
+    {{
+      "title": "Short task title",
+      "description": "Clear task description",
+      "assigned_ant": "file"
+    }},
+    {{
+      "title": "Short task title",
+      "description": "Clear task description",
+      "assigned_ant": "coder"
+    }},
+    {{
+      "title": "Short task title",
+      "description": "Clear task description",
+      "assigned_ant": "builder"
+    }},
+    {{
+      "title": "Short task title",
+      "description": "Clear task description",
+      "assigned_ant": "verifier"
+    }}
+  ]
+}}
+"""
+
+        response = self.llm.generate(prompt)
+
+        if response.startswith("ERROR:"):
+            print(f"[red]Planner failed to use Ollama:[/red] {response}")
+            print("[yellow]Using fallback static task plan.[/yellow]")
+            return self._fallback_tasks(goal)
+
+        try:
+            parsed = self._parse_json_response(response)
+            tasks = self._tasks_from_json(parsed, goal)
+
+            if not tasks:
+                print("[yellow]Dynamic planner returned no valid task plan. Using fallback plan.[/yellow]")
+                return self._fallback_tasks(goal)
+
+            print("[bold blue]Dynamic planner created mission-specific tasks.[/bold blue]")
+            return tasks
+
+        except Exception as error:
+            print(f"[yellow]Dynamic planner parse failed:[/yellow] {error}")
+            print("[yellow]Using fallback static task plan.[/yellow]")
+            return self._fallback_tasks(goal)
+
+    def _parse_json_response(self, response: str) -> Dict[str, Any]:
+        cleaned = response.strip()
+
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r"```$", "", cleaned).strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+
+            if not match:
+                raise ValueError("No JSON object found in planner response.")
+
+            return json.loads(match.group(0))
+
+    def _tasks_from_json(self, parsed: Dict[str, Any], goal: str) -> List[Task]:
+        raw_tasks = parsed.get("tasks")
+
+        if raw_tasks is None:
+            print("[yellow]Planner JSON missing 'tasks' key.[/yellow]")
+            return []
+
+        if not isinstance(raw_tasks, list):
+            print("[yellow]Planner JSON 'tasks' value is not a list.[/yellow]")
+            return []
+
+        tasks = []
+        dropped_tasks = 0
+
+        for item in raw_tasks[:MAX_DYNAMIC_TASKS]:
+            if not isinstance(item, dict):
+                dropped_tasks += 1
+                continue
+
+            title = str(item.get("title", "")).strip()
+            description = str(item.get("description", "")).strip()
+            assigned_ant = str(item.get("assigned_ant", "")).strip().lower()
+
+            if assigned_ant not in self.ALLOWED_ANTS:
+                dropped_tasks += 1
+                print(
+                    f"[yellow]Dropped planner task with invalid ant:[/yellow] "
+                    f"{assigned_ant or 'missing'}"
+                )
+                continue
+
+            if not title:
+                title = f"{assigned_ant.title()} task"
+
+            if not description:
+                description = f"Handle part of the mission: {goal}"
+
+            tasks.append(
+                Task(
+                    title=title,
+                    description=description,
+                    assigned_ant=assigned_ant,
+                )
+            )
+
+        if dropped_tasks:
+            print(f"[yellow]Planner dropped {dropped_tasks} invalid task(s).[/yellow]")
+
+        if len(tasks) < MIN_DYNAMIC_TASKS:
+            print(
+                f"[yellow]Planner produced only {len(tasks)} valid task(s); "
+                f"minimum is {MIN_DYNAMIC_TASKS}.[/yellow]"
+            )
+            return []
+
+        if not any(task.assigned_ant == "verifier" for task in tasks):
+            print("[yellow]Planner did not include verifier task. Adding one.[/yellow]")
+            tasks.append(
+                Task(
+                    title="Verify mission output",
+                    description=f"Check the final result for accuracy, completeness, and usefulness: {goal}",
+                    assigned_ant="verifier",
+                )
+            )
+
+        return tasks[:MAX_DYNAMIC_TASKS]
+
+    def _fallback_tasks(self, goal: str) -> List[Task]:
+        lowered = goal.lower()
+
+        code_keywords = [
+            "code", "script", "python", "bug", "debug", "review", "refactor",
+            "function", "class", "repo", "repository", "file", "folder", "directory",
+        ]
+
+        if any(keyword in lowered for keyword in code_keywords):
+            return [
+                Task(
+                    title="Research mission",
+                    description=f"Understand the goal and frame the code/project inspection need: {goal}",
+                    assigned_ant="researcher",
+                ),
+                Task(
+                    title="Inspect workspace files",
+                    description=f"List relevant workspace files and read safe text files if useful: {goal}",
+                    assigned_ant="file",
+                ),
+                Task(
+                    title="Review code context",
+                    description=f"Analyze available code/file context and propose improvements as text only: {goal}",
+                    assigned_ant="coder",
+                ),
+                Task(
+                    title="Build final response",
+                    description=f"Create a practical answer or implementation plan from the prior findings: {goal}",
+                    assigned_ant="builder",
+                ),
+                Task(
+                    title="Verify result",
+                    description=f"Check the result for accuracy, usefulness, missing steps, and risk: {goal}",
+                    assigned_ant="verifier",
+                ),
+            ]
+
+        return [
+            Task(
+                title="Research mission",
+                description=f"Understand the goal and gather useful context: {goal}",
+                assigned_ant="researcher",
+            ),
+            Task(
+                title="Build response",
+                description=f"Create a practical answer or action plan for: {goal}",
+                assigned_ant="builder",
+            ),
+            Task(
+                title="Verify result",
+                description=f"Check the result for accuracy, usefulness, and missing steps: {goal}",
+                assigned_ant="verifier",
+            ),
+        ]
+
+
+# ============================================================
+#  PHEROMONE ENGINE
+# ============================================================
+
+class PheromoneEngine:
+    QUALITY_BONUS_THRESHOLD = 1500
+
+    def score_mission(self, mission: Mission) -> float:
+        total_tasks = len(mission.tasks)
+
+        if total_tasks == 0:
+            return 0.0
+
+        completed_tasks = [
+            task for task in mission.tasks
+            if task.status == TaskStatus.COMPLETE
+        ]
+
+        failed_tasks = [
+            task for task in mission.tasks
+            if task.status == TaskStatus.FAILED
+        ]
+
+        builder_results = [
+            task.result for task in mission.tasks
+            if task.assigned_ant in {"builder", "coder"} and task.result
+        ]
+
+        verifier_results = [
+            task.result for task in mission.tasks
+            if task.assigned_ant == "verifier" and task.result
+        ]
+
+        builder_output = "\n".join(builder_results)
+        verifier_output = "\n".join(verifier_results)
+
+        completion_score = len(completed_tasks) / total_tasks
+        failure_penalty = len(failed_tasks) * 0.25
+
+        score = completion_score - failure_penalty
+
+        if len(builder_output) > self.QUALITY_BONUS_THRESHOLD:
+            score += 0.10
+
+        verdict = extract_verdict(verifier_output)
+
+        if verdict == "failed":
+            score -= 0.25
+        elif verdict == "needs_improvement":
+            score -= 0.10
+        elif verdict == "passed":
+            score += 0.05
+
+        return max(0.0, min(1.0, round(score, 2)))
+
+
+# ============================================================
+#  ANTS
+# ============================================================
+
+class BaseAnt(ABC):
+    def __init__(self, name: str):
+        self.name = name
+
+    @abstractmethod
+    def run(self, task: Task, mission: Mission) -> str:
+        pass
+
+
+class ResearcherAnt(BaseAnt):
+    def __init__(self, memory: SQLiteMemory, tools: ToolRegistry):
+        super().__init__(name="researcher")
+        self.memory = memory
+        self.tools = tools
+
+    def run(self, task: Task, mission: Mission) -> str:
+        recent_memory = self.memory.format_recent_memory(limit=3, max_result_chars=500)
+
+        tool_results = [self.tools.run_tool("system_info")]
+
+        if self._should_inspect_workspace(task, mission):
+            tool_results.append(self.tools.run_tool("list_directory", path="."))
+
+        tool_report = self._format_tool_report(tool_results)
+
+        return (
+            f"Researcher Ant reviewed the current mission, recent memory, and relevant safe context.\n\n"
+            f"Current Mission:\n{mission.goal}\n\n"
+            f"Assigned Task:\n{task.description}\n\n"
+            f"Recent Memory:\n{recent_memory}\n\n"
+            f"Tool Context:\n{tool_report}\n\n"
+            f"Research Finding:\n"
+            f"The mission should be handled through specialized task execution, verified, "
+            f"scored with pheromone strength, and saved into memory so future missions can improve. "
+            f"Only safe read-only tools are currently available unless shell execution is explicitly enabled."
+        )
+
+    def _should_inspect_workspace(self, task: Task, mission: Mission) -> bool:
+        text = f"{mission.goal} {task.title} {task.description}".lower()
+
+        keywords = [
+            "file", "files", "folder", "folders", "directory", "directories",
+            "workspace", "project", "code", "script", "python", "repo", "repository",
+            "debug", "error", "log", "logs", "config", "read", "inspect", "list",
+            "show", "what's here", "whats here", "what is here", "what's in",
+            "whats in", "look at", "open", "tree", "structure",
+        ]
+
+        return any(keyword in text for keyword in keywords)
+
+    def _format_tool_report(self, results: List[ToolResult]) -> str:
+        blocks = []
+
+        for result in results:
+            if result.success:
+                blocks.append(
+                    f"Tool: {result.tool_name}\n"
+                    f"Success: {result.success}\n"
+                    f"Output:\n{result.output}"
+                )
+            else:
+                blocks.append(
+                    f"Tool: {result.tool_name}\n"
+                    f"Success: {result.success}\n"
+                    f"Error:\n{result.error}"
+                )
+
+        return "\n\n---\n\n".join(blocks)
+
+
+class FileAnt(BaseAnt):
+    def __init__(self, tools: ToolRegistry):
+        super().__init__(name="file")
+        self.tools = tools
+
+    def run(self, task: Task, mission: Mission) -> str:
+        directory_result = self.tools.run_tool("list_directory", path=".")
+
+        candidate_paths = []
+
+        if self._should_attempt_file_reads(task, mission):
+            candidate_paths = self._extract_candidate_paths(task, mission)
+
+        file_reports = []
+
+        for path in candidate_paths[:MAX_FILEANT_FILES_TO_READ]:
+            read_result = self.tools.run_tool("read_text_file", path=path)
+
+            if read_result.success:
+                file_reports.append(
+                    f"File: {path}\n"
+                    f"Read Success: True\n"
+                    f"Content:\n{read_result.output}"
+                )
+            else:
+                file_reports.append(
+                    f"File: {path}\n"
+                    f"Read Success: False\n"
+                    f"Error:\n{read_result.error}"
+                )
+
+        if not file_reports:
+            if self._should_attempt_file_reads(task, mission):
+                file_reports.append(
+                    "FileAnt detected file/code inspection intent but did not identify specific readable file paths. "
+                    "It only listed the workspace structure."
+                )
+            else:
+                file_reports.append(
+                    "FileAnt did not attempt specific file reads because the task did not clearly request reading a file. "
+                    "It only listed the workspace structure."
+                )
+
+        return (
+            f"FileAnt performed safe read-only workspace inspection.\n\n"
+            f"Mission:\n{mission.goal}\n\n"
+            f"Assigned Task:\n{task.description}\n\n"
+            f"Workspace Listing:\n"
+            f"Success: {directory_result.success}\n"
+            f"{directory_result.output if directory_result.success else directory_result.error}\n\n"
+            f"File Read Reports:\n"
+            + "\n\n---\n\n".join(file_reports)
+            + "\n\nFileAnt did not write, modify, delete, execute, or patch any files."
+        )
+
+    def _should_attempt_file_reads(self, task: Task, mission: Mission) -> bool:
+        text = f"{mission.goal} {task.title} {task.description}".lower()
+
+        intent_keywords = [
+            "read",
+            "open",
+            "inspect",
+            "review",
+            "check",
+            "debug",
+            "analyze",
+            "look at",
+            "show me",
+            "this file",
+            "my file",
+            "script",
+            "code",
+            "repo",
+            "repository",
+            "project",
+        ]
+
+        return any(keyword in text for keyword in intent_keywords)
+
+    def _extract_candidate_paths(self, task: Task, mission: Mission) -> List[str]:
+        text = f"{mission.goal}\n{task.title}\n{task.description}"
+
+        candidates = []
+
+        quoted = re.findall(r"['\"]([^'\"]+\.[A-Za-z0-9]+)['\"]", text)
+        candidates.extend(quoted)
+
+        suffix_pattern = r"\b[\w\-/\\.]+\.(?:py|txt|md|json|yaml|yml|toml|ini|cfg|log|csv|html|css|js|ts|tsx|jsx|xml)\b"
+        candidates.extend(re.findall(suffix_pattern, text))
+
+        lowered = text.lower()
+
+        if any(keyword in lowered for keyword in ["anthill", "this script", "main script", "python script"]):
+            candidates.append("anthill.py")
+
+        cleaned = []
+        seen = set()
+
+        for candidate in candidates:
+            candidate = candidate.strip().strip(".,;:()[]{}")
+
+            if not candidate:
+                continue
+
+            if candidate not in seen:
+                cleaned.append(candidate)
+                seen.add(candidate)
+
+        return cleaned
+
+
+class CoderAnt(BaseAnt):
+    def __init__(self, use_ollama: bool = USE_OLLAMA, llm: Optional[OllamaClient] = None):
+        super().__init__(name="coder")
+        self.use_ollama = use_ollama
+        self.llm = llm
+
+    def run(self, task: Task, mission: Mission) -> str:
+        code_context = self._build_code_context(mission)
+
+        if not self.use_ollama or self.llm is None:
+            return self._fallback_code_review(task, mission, code_context)
+
+        prompt = f"""
+You are Coder Ant inside ANTHILL, a local swarm-intelligence AI harness.
+
+Your role:
+Review code/file context, identify issues, propose improvements, and draft patch suggestions as text only.
+
+Important limits:
+- You do not write files.
+- You do not run shell commands.
+- You do not execute tests.
+- You only produce review notes, suggested code, or patch plans.
+
+Mission goal:
+{mission.goal}
+
+Assigned coding task:
+{task.title}
+{task.description}
+
+Available prior context:
+{code_context}
+
+Your job:
+Provide a practical code review or implementation plan.
+
+Output format:
+1. Summary
+2. Issues Found
+3. Recommended Changes
+4. Suggested Patch or Code Blocks
+5. Risks / Follow-up Checks
+
+Rules:
+- Be specific.
+- Do not claim you changed files.
+- If context is incomplete, say what file/context is missing.
+- Keep the output useful for the next Builder Ant or final response.
+"""
+
+        response = self.llm.generate(prompt)
+
+        if response.startswith("ERROR:"):
+            return (
+                f"{response}\n\n"
+                f"Fallback Coder Response:\n"
+                f"{self._fallback_code_review(task, mission, code_context)}"
+            )
+
+        return response
+
+    def _build_code_context(self, mission: Mission) -> str:
+        blocks = []
+
+        for item in mission.tasks:
+            if item.result:
+                cleaned_result = self._clean_context_block(item.assigned_ant, item.result)
+
+                blocks.append(
+                    f"Task: {item.title}\n"
+                    f"Ant: {item.assigned_ant}\n"
+                    f"Status: {item.status.value}\n"
+                    f"Result:\n{cleaned_result}"
+                )
+
+        context = "\n\n---\n\n".join(blocks) if blocks else "No prior code/file context available."
+
+        return truncate_text(
+            context,
+            MAX_CODER_CONTEXT_CHARS,
+            suffix="...[coder context truncated]",
+        )
+
+    def _clean_context_block(self, ant_name: str, result: str) -> str:
+        if ant_name != "file":
+            return result
+
+        markers = [
+            "File Read Reports:",
+        ]
+
+        for marker in markers:
+            if marker in result:
+                return result.split(marker, 1)[1].strip()
+
+        return result
+
+    def _fallback_code_review(self, task: Task, mission: Mission, code_context: str) -> str:
+        return (
+            f"Coder Ant created a basic non-LLM code review scaffold.\n\n"
+            f"Mission Goal:\n{mission.goal}\n\n"
+            f"Assigned Task:\n{task.title}\n{task.description}\n\n"
+            f"Available Context:\n{code_context}\n\n"
+            f"Suggested Review Process:\n"
+            f"1. Confirm which files are relevant.\n"
+            f"2. Inspect the code structure.\n"
+            f"3. Identify syntax, logic, safety, and architecture issues.\n"
+            f"4. Propose changes as text only.\n"
+            f"5. Do not write or execute files yet."
+        )
+
+
+class BuilderAnt(BaseAnt):
+    def __init__(self, use_ollama: bool = USE_OLLAMA, llm: Optional[OllamaClient] = None):
+        super().__init__(name="builder")
+        self.use_ollama = use_ollama
+        self.llm = llm
+
+    def run(self, task: Task, mission: Mission) -> str:
+        previous_results = [
+            f"{t.assigned_ant.upper()} - {t.title}:\n{t.result}"
+            for t in mission.tasks
+            if t.result
+        ]
+
+        previous_context = (
+            "\n\n".join(previous_results)
+            if previous_results
+            else "No previous task context available."
+        )
+
+        previous_context = truncate_text(
+            previous_context,
+            MAX_PREVIOUS_CONTEXT_CHARS,
+            suffix="...[previous context truncated]",
+        )
+
+        if not self.use_ollama or self.llm is None:
+            return self._fallback_response(task, mission, previous_context)
+
+        prompt = f"""
+You are Builder Ant inside ANTHILL, a local swarm-intelligence AI harness.
+
+ANTHILL concept:
+A Queen agent receives a user mission, creates tasks, assigns specialized ant agents,
+collects the results, verifies the output, assigns a pheromone success score, and stores memory for future missions.
+
+Mission goal:
+{mission.goal}
+
+Your assigned task:
+{task.title}
+{task.description}
+
+Previous task context:
+{previous_context}
+
+Your job:
+Complete only your assigned builder task while supporting the overall mission.
+
+Rules:
+- Be direct.
+- Be structured.
+- Do not pretend to do things you cannot actually do.
+- If commands, code, or steps are needed, include them.
+- Keep the answer useful for someone building or using a local AI harness.
+- If tools are needed, describe the tool request rather than assuming direct access.
+- Do not claim files were written or changed.
+"""
+
+        response = self.llm.generate(prompt)
+
+        if response.startswith("ERROR:"):
+            fallback = self._fallback_response(task, mission, previous_context)
+            return (
+                f"{response}\n\n"
+                f"Fallback Builder Response:\n{fallback}"
+            )
+
+        return response
+
+    def _fallback_response(self, task: Task, mission: Mission, previous_context: str) -> str:
+        return (
+            f"Builder Ant created a basic non-LLM response.\n\n"
+            f"Mission Goal:\n{mission.goal}\n\n"
+            f"Assigned Task:\n{task.title}\n{task.description}\n\n"
+            f"Previous Context:\n{previous_context}\n\n"
+            f"Proposed Output:\n"
+            f"1. Understand the mission.\n"
+            f"2. Execute the assigned builder task.\n"
+            f"3. Use previous task context when useful.\n"
+            f"4. Produce a practical result.\n"
+            f"5. Leave enough detail for the verifier to check."
+        )
+
+
+class VerifierAnt(BaseAnt):
+    def __init__(self, use_ollama: bool = USE_OLLAMA, llm: Optional[OllamaClient] = None):
+        super().__init__(name="verifier")
+        self.use_ollama = use_ollama
+        self.llm = llm
+
+    def run(self, task: Task, mission: Mission) -> str:
+        prior_tasks = [t for t in mission.tasks if t.id != task.id]
+
+        completed_tasks = [t for t in prior_tasks if t.status == TaskStatus.COMPLETE]
+        failed_tasks = [t for t in prior_tasks if t.status == TaskStatus.FAILED]
+        output_tasks = [
+            t for t in prior_tasks
+            if t.assigned_ant in {"builder", "coder"} and t.result
+        ]
+
+        static_check = self._static_verify(completed_tasks, failed_tasks, output_tasks)
+
+        if not self.use_ollama or self.llm is None:
+            return static_check
+
+        verification_context = self._build_verification_context(mission, prior_tasks)
+
+        prompt = f"""
+You are Verifier Ant inside ANTHILL, a local swarm-intelligence AI harness.
+
+Your job:
+Evaluate whether the mission output is useful, complete, and aligned with the original mission.
+
+Mission goal:
+{mission.goal}
+
+Assigned verification task:
+{task.title}
+{task.description}
+
+Static system check:
+{static_check}
+
+Task outputs to verify:
+{verification_context}
+
+Return a concise verification report.
+
+Required format:
+- Verdict: Verification Passed / Needs Improvement / Verification Failed
+- Reasoning: brief explanation
+- Missing Steps: list any missing items, or "None"
+- Risk Notes: list risks, hallucinations, unsafe assumptions, or "None"
+
+Rules:
+- Be strict but fair.
+- Do not invent facts.
+- Judge the output against the mission goal.
+- If the builder/coder did not actually answer the mission, say so.
+- If the mission involved code, check that the answer does not claim files were modified.
+"""
+
+        response = self.llm.generate(prompt)
+
+        if response.startswith("ERROR:"):
+            return (
+                f"{static_check}\n\n"
+                f"LLM verifier unavailable:\n{response}"
+            )
+
+        return response
+
+    def _static_verify(
+        self,
+        completed_tasks: List[Task],
+        failed_tasks: List[Task],
+        output_tasks: List[Task],
+    ) -> str:
+        if failed_tasks:
+            return (
+                "Verification Failed\n"
+                "Reasoning: One or more tasks failed before verification.\n"
+                "Missing Steps: Resolve failed task output before finalizing.\n"
+                "Risk Notes: Mission may be incomplete or partially invalid."
+            )
+
+        if not output_tasks:
+            return (
+                "Verification Failed\n"
+                "Reasoning: No builder or coder output was found to verify.\n"
+                "Missing Steps: Builder or coder output is required.\n"
+                "Risk Notes: Mission result may be empty or incomplete."
+            )
+
+        # At this point, output_tasks exists.
+        # The >= 2 threshold means we have at least one output task plus supporting context.
+        if len(completed_tasks) >= 2:
+            return (
+                "Verification Passed\n"
+                "Reasoning: Mission has completed task output and at least one builder/coder result.\n"
+                "Missing Steps: None identified by static verification.\n"
+                "Risk Notes: Static verification does not evaluate factual content."
+            )
+
+        return (
+            "Needs Improvement\n"
+            "Reasoning: Mission may not have enough completed task output.\n"
+            "Missing Steps: More task output may be needed before finalizing.\n"
+            "Risk Notes: Output may be incomplete."
+        )
+
+    def _build_verification_context(self, mission: Mission, prior_tasks: List[Task]) -> str:
+        blocks = []
+
+        for item in prior_tasks:
+            blocks.append(
+                f"Task: {item.title}\n"
+                f"Ant: {item.assigned_ant}\n"
+                f"Status: {item.status.value}\n"
+                f"Result:\n{item.result}\n"
+            )
+
+        context = "\n---\n".join(blocks)
+
+        return truncate_text(
+            context,
+            MAX_VERIFIER_CONTEXT_CHARS,
+            suffix="...[verification context truncated]",
+        )
+
+
+# ============================================================
+#  QUEEN
+# ============================================================
+
+class Queen:
+    def __init__(self):
+        self.memory = SQLiteMemory()
+        self.llm = OllamaClient() if USE_OLLAMA else None
+        self.tools = self._build_tool_registry()
+        self.planner = Planner(use_ollama=USE_OLLAMA, llm=self.llm)
+        self.pheromones = PheromoneEngine()
+
+        self.ants = {
+            "researcher": ResearcherAnt(memory=self.memory, tools=self.tools),
+            "file": FileAnt(tools=self.tools),
+            "coder": CoderAnt(use_ollama=USE_OLLAMA, llm=self.llm),
+            "builder": BuilderAnt(use_ollama=USE_OLLAMA, llm=self.llm),
+            "verifier": VerifierAnt(use_ollama=USE_OLLAMA, llm=self.llm),
+        }
+
+    def _build_tool_registry(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        path_guard = WorkspacePathGuard(ALLOWED_WORKSPACE_ROOT)
+
+        registry.register(SystemInfoTool())
+
+        if ENABLE_FILE_TOOLS:
+            registry.register(DirectoryListTool(path_guard=path_guard))
+            registry.register(ReadTextFileTool(path_guard=path_guard))
+
+        registry.register(ShellCommandTool())
+
+        return registry
+
+    def run_mission(self, goal: str) -> str:
+        print(f"[bold cyan]Queen received mission:[/bold cyan] {goal}")
+
+        mission_started_at = datetime.now(timezone.utc)
+        timed_out = False
+
+        mission = Mission(goal=goal)
+        mission.status = MissionStatus.RUNNING
+
+        memory_context = self.memory.format_recent_memory(limit=3, max_result_chars=300)
+        tool_context = self.tools.describe_tools()
+        mission.tasks = self.planner.create_tasks(
+            goal,
+            memory_context=memory_context,
+            tool_context=tool_context,
+        )
+
+        print(f"[dim]Mission ID: {mission.id}[/dim]")
+        print(f"[dim]Created {len(mission.tasks)} tasks.[/dim]\n")
+
+        for index, task in enumerate(mission.tasks, start=1):
+            elapsed = (datetime.now(timezone.utc) - mission_started_at).total_seconds()
+
+            if elapsed > MAX_MISSION_SECONDS:
+                task.status = TaskStatus.FAILED
+                task.result = f"Mission exceeded max runtime of {MAX_MISSION_SECONDS} seconds."
+                timed_out = True
+                print(f"[red]{task.result}[/red]")
+                break
+
+            print(
+                f"[yellow]Task {index}/{len(mission.tasks)} → "
+                f"{task.assigned_ant} ant:[/yellow] {task.title}"
+            )
+
+            ant = self.ants.get(task.assigned_ant)
+
+            if not ant:
+                task.status = TaskStatus.FAILED
+                task.result = f"No ant found for role: {task.assigned_ant}"
+                print(f"[red]{task.result}[/red]")
+                continue
+
+            try:
+                task.status = TaskStatus.RUNNING
+                task.result = ant.run(task, mission)
+                task.status = TaskStatus.COMPLETE
+
+                print(f"[green]Task complete:[/green] {task.title}")
+
+            except Exception as error:
+                task.status = TaskStatus.FAILED
+                task.result = f"Task failed with error: {error}"
+                print(f"[red]{task.result}[/red]")
+
+        if timed_out:
+            for remaining_task in mission.tasks:
+                if remaining_task.status == TaskStatus.PENDING:
+                    remaining_task.status = TaskStatus.FAILED
+                    remaining_task.result = "Task skipped because mission timed out."
+
+        if any(task.status == TaskStatus.FAILED for task in mission.tasks):
+            mission.status = MissionStatus.FAILED
+        else:
+            mission.status = MissionStatus.COMPLETE
+
+        mission.success_score = self.pheromones.score_mission(mission)
+        mission.final_result = self._compose_final_result(mission)
+
+        print(f"[bold blue]Pheromone score:[/bold blue] {mission.success_score}")
+
+        self.memory.save_mission(mission)
+
+        print("[bold magenta]Mission saved to ANTHILL memory.[/bold magenta]")
+
+        return mission.final_result
+
+    def _compose_final_result(self, mission: Mission) -> str:
+        task_outputs = []
+
+        for task in mission.tasks:
+            task_outputs.append(
+                f"Task: {task.title}\n"
+                f"Ant: {task.assigned_ant}\n"
+                f"Status: {task.status.value}\n"
+                f"Result:\n{task.result}\n"
+            )
+
+        mission_header = (
+            "Mission Complete"
+            if mission.status == MissionStatus.COMPLETE
+            else "Mission Failed"
+        )
+
+        score_display = (
+            mission.success_score
+            if mission.success_score is not None
+            else "Not scored yet"
+        )
+
+        return (
+            f"{mission_header}\n\n"
+            f"Goal:\n{mission.goal}\n\n"
+            f"Mission Status:\n{mission.status.value}\n\n"
+            f"Pheromone Score:\n{score_display}\n\n"
+            f"Task Results:\n\n"
+            + "\n".join(task_outputs)
+        )
+
+
+# ============================================================
+#  MAIN ENTRY POINT
+# ============================================================
+
+def main():
+    print("[bold yellow]ANTHILL Core v0.6.1 online.[/bold yellow]")
+    print("[dim]Type a mission for the Queen. Type 'exit' to quit.[/dim]")
+
+    if USE_OLLAMA:
+        print(f"[dim]Ollama mode: ON | Model: {OLLAMA_MODEL}[/dim]")
+        print("[dim]Dynamic planning: ON[/dim]")
+        print("[dim]LLM verifier: ON[/dim]")
+    else:
+        print("[dim]Ollama mode: OFF | Using fallback static builder, planner, coder, and verifier.[/dim]")
+        print("[dim]Dynamic planning: OFF[/dim]")
+        print("[dim]LLM verifier: OFF[/dim]")
+
+    print(f"[dim]File tools: {'ON' if ENABLE_FILE_TOOLS else 'OFF'}[/dim]")
+    print(f"[dim]Shell tool: {'ON' if ENABLE_SHELL_TOOL else 'OFF'}[/dim]")
+    print(f"[dim]Allowed workspace root: {resolve_workspace_root()}[/dim]")
+    print(f"[dim]Max mission seconds: {MAX_MISSION_SECONDS}[/dim]\n")
+
+    queen = Queen()
+
+    while True:
+        user_goal = input("Mission > ").strip()
+
+        if user_goal.lower() in ["exit", "quit"]:
+            print("[bold red]ANTHILL shutting down.[/bold red]")
+            break
+
+        if not user_goal:
+            continue
+
+        if len(user_goal) > MAX_GOAL_LENGTH:
+            print(f"[red]Mission too long. Please keep it under {MAX_GOAL_LENGTH} characters.[/red]")
+            continue
+
+        result = queen.run_mission(user_goal)
+
+        print("\n[bold green]Final Result:[/bold green]")
+        print(result)
+        print("\n" + "-" * 60 + "\n")
+
+
+if __name__ == "__main__":
+    main()
