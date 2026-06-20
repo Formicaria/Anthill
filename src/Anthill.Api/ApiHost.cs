@@ -1,0 +1,237 @@
+using System.Reflection;
+using Anthill.Core.Configuration;
+using Anthill.Core.Diagnostics;
+using Anthill.Core.Orchestration;
+using Anthill.Core.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace Anthill.Api;
+
+/// <summary>
+/// Builds and runs the secured ANTHILL API host. Mirrors the FastAPI surface of the Python
+/// build: constant-time token auth, failed-auth + mission rate limiting, hardened response
+/// headers, no public docs endpoints, permission-gated reads, and the embedded colony UI.
+/// </summary>
+public static class ApiHost
+{
+    public static Queen Queen { get; private set; } = null!;
+    public static ApiJobRegistry Jobs { get; private set; } = null!;
+    private static RateLimiter MissionLimiter = null!;
+    private static RateLimiter AuthLimiter = null!;
+    private static string UiHtml = "";
+
+    public static int Run(string[] args)
+    {
+        AnthillRuntime.Initialize();
+
+        // Fail loudly at boot if the security posture is unsafe.
+        try { TokenSecurity.ValidateApiRuntimeSecurity(); }
+        catch (AnthillSecurityException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+
+        var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.UseUrls($"http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
+        Queen = new Queen();
+        Jobs = new ApiJobRegistry(Queen, AnthillRuntime.ApiJobWorkers);
+        MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
+        AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
+        UiHtml = LoadUi();
+
+        var app = builder.Build();
+
+        // Security headers on every response.
+        app.Use(async (ctx, next) =>
+        {
+            var h = ctx.Response.Headers;
+            h["X-Frame-Options"] = "DENY";
+            h["X-Content-Type-Options"] = "nosniff";
+            h["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:";
+            h["Referrer-Policy"] = "no-referrer";
+            await next();
+        });
+
+        MapEndpoints(app);
+
+        Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
+        Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
+        app.Run();
+        return 0;
+    }
+
+    private static void MapEndpoints(WebApplication app)
+    {
+        app.MapGet("/", () => ApiJson.Ok(new Dictionary<string, object?>
+        {
+            ["name"] = "ANTHILL Core", ["version"] = AnthillRuntime.Version, ["ui"] = "/ui",
+        }, "ANTHILL local API. Authenticate with X-Anthill-Token for colony endpoints."));
+
+        app.MapGet("/ui", () => Results.Content(UiHtml, "text/html"));
+
+        app.MapGet("/health", () => ApiJson.Ok(new Dictionary<string, object?>
+        {
+            ["status"] = "ok", ["version"] = AnthillRuntime.Version,
+            ["native_kernel"] = Anthill.Core.Native.NativeKernel.UsingNative ? "active" : "managed-fallback",
+        }));
+
+        ProtectedJson(app, "/status", "read_status", _ =>
+        {
+            var events = Queen.Memory.SummarizeEvents();
+            var tasks = Queen.Memory.SummarizeTaskMetrics();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["version"] = AnthillRuntime.Version, ["safety_profile"] = AnthillRuntime.Config.SafetyProfile,
+                ["native_kernel"] = Anthill.Core.Native.NativeKernel.UsingNative ? "active" : "managed-fallback",
+                ["events"] = events.GetValueOrDefault("event_count"), ["failures"] = events.GetValueOrDefault("failure_event_count"),
+                ["tasks"] = tasks.GetValueOrDefault("task_count"), ["pending_approvals"] = Queen.Memory.CountPendingApprovals(),
+                ["model_calls"] = Queen.Router?.CallCount ?? 0,
+            });
+        });
+
+        ProtectedJson(app, "/selftest", "read_selftest", _ =>
+        {
+            var report = SelfTest.Run(Queen);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ok"] = report.Ok, ["checks_passed"] = report.ChecksPassed, ["checks_failed"] = report.ChecksFailed,
+                ["checks_warning"] = report.ChecksWarning, ["report"] = SelfTest.FormatReport(report),
+            });
+        });
+
+        ProtectedText(app, "/diagnostics", "read_diagnostics", () => Queen.FormatRuntimeDiagnostics());
+        ProtectedText(app, "/config", "read_config", () => Queen.FormatConfigStatus());
+        ProtectedText(app, "/schema", "read_schema", () => Queen.FormatSchemaStatus());
+        ProtectedText(app, "/memory", "read_memory", () => Queen.FormatMemoryView());
+        ProtectedText(app, "/events", "read_events", () => Queen.FormatEventLog());
+        ProtectedText(app, "/tasks", "read_tasks", () => Queen.FormatTaskMetrics());
+        ProtectedText(app, "/messages", "read_messages", () => Queen.FormatMessageMetrics());
+        ProtectedText(app, "/communication", "read_communication", () => Queen.FormatAgentCommunication());
+        ProtectedText(app, "/pheromones", "read_pheromones", () => Queen.FormatPheromoneView());
+        ProtectedText(app, "/models", "read_models", () => Queen.FormatModelStatus());
+        ProtectedText(app, "/routes", "read_models", () => Queen.FormatModelRoutes());
+        ProtectedText(app, "/sources", "read_sources", () => Queen.FormatSources());
+        ProtectedText(app, "/source-quality", "read_sources", () => Queen.FormatSourceQuality());
+        ProtectedText(app, "/patches", "read_patches", () => Queen.FormatPatchList());
+        ProtectedText(app, "/approvals", "read_approvals", () => Queen.FormatApprovals());
+        ProtectedText(app, "/missions", "read_status", () => Queen.FormatMissionHistory());
+
+        ProtectedJson(app, "/graph", "read_graph", ctx =>
+        {
+            var includeResults = ctx.Request.Query["include_results"] == "true";
+            if (includeResults && !ApiPermissionAllowed("read_graph_results"))
+                return ApiJson.Error("Permission denied: read_graph_results is disabled.", "permission_denied");
+            return ApiJson.Ok(Queen.BuildTaskGraphData(includeResults: includeResults));
+        });
+
+        app.MapGet("/missions/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_status") ?? Results.Text(Queen.FormatMissionDetail(id), "text/plain"));
+        app.MapGet("/missions/{id}/graph", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.BuildTaskGraphData(id)));
+        app.MapGet("/sources/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_sources") ?? Results.Text(Queen.FormatSourceDetail(id), "text/plain"));
+        app.MapGet("/patches/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_patches") ?? Results.Text(Queen.FormatPatchDetail(id), "text/plain"));
+        app.MapGet("/approvals/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_approvals") ?? Results.Text(Queen.FormatApprovalDetail(id), "text/plain"));
+
+        app.MapGet("/jobs", (HttpContext ctx) => RequireAuth(ctx, "read_status") ?? ApiJson.Ok(Jobs.ListJobs()));
+        app.MapGet("/jobs/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var job = Jobs.GetJob(id);
+            return job is null ? ApiJson.Error($"No job found with id: {id}", "not_found") : ApiJson.Ok(job.ToDict());
+        });
+
+        app.MapPost("/missions", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (!MissionLimiter.IsAllowed(ClientIp(ctx)))
+                return ApiJson.Error("Mission rate limit exceeded. Try again shortly.", "rate_limited");
+            MissionRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<MissionRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var goal = (body?.Goal ?? "").Trim();
+            if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
+            if (goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
+            return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+        });
+
+        app.MapPost("/approve/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "approve") ?? Results.Text(Queen.ApproveRequest(id), "text/plain"));
+        app.MapPost("/reject/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "reject"); if (auth is not null) return auth;
+            RejectBody? body = null;
+            try { body = await ctx.Request.ReadFromJsonAsync<RejectBody>(); } catch { /* optional */ }
+            return Results.Text(Queen.RejectRequest(id, body?.Reason), "text/plain");
+        });
+        app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
+    }
+
+    private static void ProtectedJson(WebApplication app, string path, string permission, Func<HttpContext, IResult> handler) =>
+        app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? handler(ctx));
+
+    private static void ProtectedText(WebApplication app, string path, string permission, Func<string> handler) =>
+        app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? Results.Text(handler(), "text/plain"));
+
+    private static IResult? RequireAuth(HttpContext ctx, string permission)
+    {
+        var ip = ClientIp(ctx);
+        if (AnthillRuntime.EnableApiAuth)
+        {
+            if (AuthLimiter.IsLimited(ip))
+                return ApiJson.Error("Too many failed authentication attempts. Try again later.", "rate_limited");
+            var token = ExtractToken(ctx);
+            if (token is null || !TokenSecurity.ConstantTimeEquals(token, AnthillRuntime.ApiAuthToken))
+            {
+                AuthLimiter.RecordAttempt(ip);
+                return ApiJson.Error("Unauthorized.", "unauthorized");
+            }
+            AuthLimiter.Clear(ip); // successful auth must not consume the failed-auth budget
+        }
+        if (!ApiPermissionAllowed(permission))
+            return ApiJson.Error($"Permission denied: {permission} is disabled.", "permission_denied");
+        return null;
+    }
+
+    private static bool ApiPermissionAllowed(string permission) => AnthillRuntime.ApiPermissions.GetValueOrDefault(permission, false);
+
+    private static string? ExtractToken(HttpContext ctx)
+    {
+        var direct = ctx.Request.Headers["X-Anthill-Token"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(direct)) return direct;
+        var authz = ctx.Request.Headers.Authorization.FirstOrDefault();
+        if (!string.IsNullOrEmpty(authz) && authz.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            return authz["Bearer ".Length..].Trim();
+        return null;
+    }
+
+    private static string ClientIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    private static string LoadUi()
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var name = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("index.html", StringComparison.OrdinalIgnoreCase));
+        if (name is null) return "<h1>ANTHILL</h1><p>UI resource missing.</p>";
+        using var stream = asm.GetManifestResourceStream(name)!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+}
+
+public sealed class MissionRequest { public string Goal { get; set; } = ""; }
+public sealed class RejectBody { public string? Reason { get; set; } }
+
+/// <summary>Standard JSON response envelopes — {success,message,data} / {success,message,error,data}.</summary>
+public static class ApiJson
+{
+    public static IResult Ok(object? data = null, string message = "ok") =>
+        Results.Json(new Dictionary<string, object?> { ["success"] = true, ["message"] = message, ["data"] = data });
+
+    public static IResult Error(string message, string? error = null, object? data = null) =>
+        Results.Json(new Dictionary<string, object?> { ["success"] = false, ["message"] = message, ["error"] = error, ["data"] = data },
+            statusCode: error switch { "unauthorized" => 401, "permission_denied" => 403, "rate_limited" => 429, "not_found" => 404, _ => 400 });
+}

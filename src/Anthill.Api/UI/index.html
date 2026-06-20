@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ANTHILL Colony Console</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #14181d; --panel2: #1b2127; --ink: #e7eef5; --muted: #8a98a6;
+    --queen: #ffcc4d; --trail: #6fe3b0; --trail-weak: #2c4a3e; --edge: #36424d; --accent: #5cb3ff;
+    --fail: #ff6b6b; --skip: #c7a86b; --blocked: #8a7bd8; --running: #5cb3ff; --complete: #6fe3b0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 800px at 50% -10%, #131922, var(--bg)); color: var(--ink);
+    font: 14px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #222b33; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--queen); box-shadow: 0 0 12px var(--queen); }
+  header .spacer { flex: 1; }
+  header input { background: var(--panel); border: 1px solid #2a333c; color: var(--ink); padding: 8px 10px; border-radius: 8px; width: 320px; }
+  header button { background: var(--accent); color: #06121f; border: 0; padding: 8px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .layout { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; padding: 14px 20px; }
+  .panel { background: linear-gradient(180deg, var(--panel), var(--panel2)); border: 1px solid #222b33; border-radius: 14px; padding: 14px; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); }
+  #colony { width: 100%; height: 460px; border-radius: 12px; background: #0a0e12; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat { background: var(--panel2); border: 1px solid #232c34; border-radius: 10px; padding: 10px; }
+  .stat .v { font-size: 22px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .feed { max-height: 280px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .feed div { padding: 4px 0; border-bottom: 1px dashed #1f2730; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; margin-right: 6px; }
+  .runbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .runbar input { flex: 1; background: var(--panel); border: 1px solid #2a333c; color: var(--ink); padding: 9px 11px; border-radius: 9px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; color: var(--muted); font-size: 11px; }
+  .legend span::before { content: "●"; margin-right: 5px; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>ANTHILL — Colony Console <span class="muted" id="ver"></span></h1>
+  <span class="spacer"></span>
+  <input id="token" type="password" placeholder="ANTHILL_API_TOKEN" />
+  <button onclick="connect()">Connect</button>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <h2>Living Colony — Queen core &amp; task tunnels</h2>
+    <div class="runbar">
+      <input id="goal" placeholder="Give the Queen a mission…" />
+      <button onclick="runMission()">Dispatch</button>
+    </div>
+    <svg id="colony" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="legend">
+      <span style="color:var(--complete)">complete</span>
+      <span style="color:var(--running)">running</span>
+      <span style="color:var(--blocked)">blocked</span>
+      <span style="color:var(--skip)">skipped</span>
+      <span style="color:var(--fail)">failed</span>
+      <span style="color:var(--trail)">strong pheromone trail</span>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:14px;">
+      <h2>Colony vitals</h2>
+      <div class="stat-grid" id="vitals"></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px;">
+      <h2>Pheromone trails</h2>
+      <div class="feed" id="pheromones"><span class="muted">Connect to view trails…</span></div>
+    </div>
+    <div class="panel">
+      <h2>Live event stream</h2>
+      <div class="feed" id="events"><span class="muted">Connect to view the colony's activity…</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_COLORS = { complete: "var(--complete)", running: "var(--running)", blocked: "var(--blocked)",
+  skipped: "var(--skip)", failed: "var(--fail)", ready: "var(--accent)", pending: "var(--muted)" };
+let token = "";
+
+function headers() { return { "X-Anthill-Token": token, "Content-Type": "application/json" }; }
+async function api(path, opts) {
+  const res = await fetch(path, Object.assign({ headers: headers() }, opts || {}));
+  if (!res.ok) throw new Error(path + " -> " + res.status);
+  return res.json();
+}
+
+function connect() {
+  token = document.getElementById("token").value.trim();
+  if (!token) { alert("Enter your ANTHILL_API_TOKEN first."); return; }
+  refresh();
+  if (!window._timer) window._timer = setInterval(refresh, 2500);
+}
+
+async function runMission() {
+  const goal = document.getElementById("goal").value.trim();
+  if (!goal) return;
+  try { await api("/missions", { method: "POST", body: JSON.stringify({ goal }) }); document.getElementById("goal").value = ""; }
+  catch (e) { alert("Dispatch failed: " + e.message); }
+  setTimeout(refresh, 600);
+}
+
+async function refresh() {
+  try {
+    const status = await api("/status");
+    document.getElementById("ver").textContent = "v" + (status.data && status.data.version || "");
+    renderVitals(status.data || {});
+    const graph = await api("/graph");
+    renderColony(graph.data || graph);
+    const pher = await api("/pheromones");
+    renderPheromones(pher.data || pher);
+    const ev = await api("/events?limit=25");
+    renderEvents(ev.data || ev);
+  } catch (e) { /* keep polling */ }
+}
+
+function renderVitals(s) {
+  const cells = [
+    ["Native kernel", s.native_kernel || "—"], ["Events", s.events || 0], ["Failures", s.failures || 0],
+    ["Tasks", s.tasks || 0], ["Pending approvals", s.pending_approvals || 0], ["Model calls", s.model_calls || 0],
+  ];
+  document.getElementById("vitals").innerHTML = cells.map(([k, v]) =>
+    `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+}
+
+function renderColony(graph) {
+  const svg = document.getElementById("colony");
+  const nodes = (graph.nodes || []);
+  const W = 900, H = 460, cx = W / 2, cyTop = 60;
+  let out = "";
+  // Queen core glow at top centre.
+  out += `<defs><radialGradient id="q"><stop offset="0%" stop-color="var(--queen)"/><stop offset="100%" stop-color="#3a2f10"/></radialGradient></defs>`;
+  out += `<circle cx="${cx}" cy="${cyTop}" r="26" fill="url(#q)"><animate attributeName="r" values="24;28;24" dur="3s" repeatCount="indefinite"/></circle>`;
+  out += `<text x="${cx}" y="${cyTop+4}" text-anchor="middle" fill="#06121f" font-weight="700" font-size="11">QUEEN</text>`;
+
+  const cols = Math.max(1, nodes.length);
+  const pos = {};
+  nodes.forEach((n, i) => {
+    const x = 80 + (i + 0.5) * ((W - 160) / cols);
+    const y = 180 + ((i % 3) * 90);
+    pos[n.task_id] = { x, y, n };
+  });
+
+  // Tunnels from Queen down to each task, plus dependency edges.
+  (graph.edges || []).forEach(e => {
+    const a = pos[e.from], b = pos[e.to];
+    if (a && b) out += `<path d="M${a.x},${a.y} C${a.x},${(a.y+b.y)/2} ${b.x},${(a.y+b.y)/2} ${b.x},${b.y}" fill="none" stroke="var(--edge)" stroke-width="1.5"/>`;
+  });
+  nodes.forEach(n => {
+    const p = pos[n.task_id];
+    out += `<path d="M${cx},${cyTop+24} C${cx},120 ${p.x},120 ${p.x},${p.y}" fill="none" stroke="var(--trail-weak)" stroke-width="2"/>`;
+  });
+
+  nodes.forEach(n => {
+    const p = pos[n.task_id];
+    const color = STATUS_COLORS[n.status] || "var(--muted)";
+    const pulse = n.status === "running" ? `<animate attributeName="opacity" values="1;.4;1" dur="1.2s" repeatCount="indefinite"/>` : "";
+    out += `<circle cx="${p.x}" cy="${p.y}" r="16" fill="${color}">${pulse}</circle>`;
+    out += `<text x="${p.x}" y="${p.y+30}" text-anchor="middle" fill="var(--ink)" font-size="10">${(n.assigned_ant||"").slice(0,9)}</text>`;
+    out += `<text x="${p.x}" y="${p.y+4}" text-anchor="middle" fill="#06121f" font-size="9" font-weight="700">${(n.task_type||"").slice(0,3)}</text>`;
+  });
+
+  if (nodes.length === 0)
+    out += `<text x="${cx}" y="240" text-anchor="middle" fill="var(--muted)" font-size="13">No active mission. Dispatch one above to wake the colony.</text>`;
+  svg.innerHTML = out;
+}
+
+function renderPheromones(text) {
+  const lines = (typeof text === "string" ? text : (text.text || "")).split("\n").filter(Boolean);
+  document.getElementById("pheromones").innerHTML = lines.length
+    ? lines.map(l => {
+        const m = l.match(/strength=([0-9.]+)/); const s = m ? parseFloat(m[1]) : 0;
+        const col = s > 0.6 ? "var(--trail)" : s > 0.4 ? "#9fcf7a" : "var(--trail-weak)";
+        return `<div><span style="color:${col}">●</span> ${l}</div>`;
+      }).join("")
+    : '<span class="muted">No trails yet.</span>';
+}
+
+function renderEvents(text) {
+  const raw = typeof text === "string" ? text : (text.text || "");
+  const lines = raw.split("\n").filter(Boolean).slice(0, 60);
+  document.getElementById("events").innerHTML = lines.map(l => {
+    let col = "var(--muted)";
+    if (/fail|error/i.test(l)) col = "var(--fail)";
+    else if (/complet|saved|applied/i.test(l)) col = "var(--complete)";
+    else if (/start|ready|dispatch|created/i.test(l)) col = "var(--accent)";
+    return `<div style="color:${col}">${l.replace(/</g,"&lt;")}</div>`;
+  }).join("");
+}
+</script>
+</body>
+</html>

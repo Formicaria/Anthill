@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Api</RootNamespace>
+    <AssemblyName>Anthill.Api</AssemblyName>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anthill.Core\Anthill.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The single-page colony UI is embedded so the API stays self-contained. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Ui\index.html" />
+  </ItemGroup>
+
+</Project>
