@@ -1,0 +1,23 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+
+# Native kernel build output / artifacts
+native/anthill_kernel/build/
+native/anthill_kernel/*.so
+native/anthill_kernel/*.dll
+native/anthill_kernel/*.dylib
+
+# ANTHILL local runtime state — never commit mission history, the DB, or secrets
+.anthill/
+*.db
+*.db-wal
+*.db-shm
+field.key
+
+# IDE
+.vs/
+.idea/
+*.DotSettings.user

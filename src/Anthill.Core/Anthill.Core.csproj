@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Core</RootNamespace>
+    <AssemblyName>Anthill.Core</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ADO.NET SQLite provider — the managed replacement for Python's sqlite3 module. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.6" />
+    <!-- In-memory cache for the speed layer over memory reads. -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+  </ItemGroup>
+
+  <!--
+    The native kernel is copied next to the managed output so DllImport can find it.
+    Build the kernel first (see native/anthill_kernel/CMakeLists.txt); the wildcard
+    below picks up whichever platform artifact CMake produced.
+  -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\native\anthill_kernel\**\*anthill_kernel*.dll;$(MSBuildThisFileDirectory)..\..\native\anthill_kernel\**\*anthill_kernel*.so;$(MSBuildThisFileDirectory)..\..\native\anthill_kernel\**\*anthill_kernel*.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\anthill_kernel')"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
+</Project>
