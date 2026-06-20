@@ -1,5 +1,7 @@
-// The domain entity is named Task (faithful to the Python model). Under implicit usings
-// that clashes with System.Threading.Tasks.Task, so we bind the bare identifier `Task` to
-// the domain type across Anthill.Core. The handful of places that need the threading type
-// (the parallel mission executor) reference System.Threading.Tasks.Task fully qualified.
+// Match Anthill.Core: bind the bare `Task` identifier to the domain entity so test code
+// reads naturally (new Task { ... }) without colliding with System.Threading.Tasks.Task.
 global using Task = Anthill.Core.Domain.Task;
+// .NET 9 implicit usings expose System.Threading.Tasks.TaskScheduler and TaskStatus — pin
+// the Anthill types globally so all test files resolve to the correct symbols.
+global using TaskScheduler = Anthill.Core.Scheduling.TaskScheduler;
+global using TaskStatus = Anthill.Core.Domain.TaskStatus;

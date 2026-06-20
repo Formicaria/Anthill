@@ -88,7 +88,7 @@ public sealed partial class SqliteMemory
                     ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
                     ("@status", task.Status.Value()), ("@result", task.Result), ("@summary", task.ResultSummary),
                     ("@rc", task.ResultChars), ("@et", task.EstimatedTokens),
-                    ("@created", task.CreatedAt.ToIsoOrNull()), ("@started", task.StartedAt.ToIsoOrNull()),
+                    ("@created", ((DateTime?)task.CreatedAt).ToIsoOrNull()), ("@started", task.StartedAt.ToIsoOrNull()),
                     ("@finished", task.FinishedAt.ToIsoOrNull()), ("@completed", task.CompletedAt.ToIsoOrNull()),
                     ("@failed", task.FailedAt.ToIsoOrNull()), ("@skipped", task.SkippedAt.ToIsoOrNull()),
                     ("@elapsed", task.ElapsedSeconds), ("@attempts", task.AttemptCount),

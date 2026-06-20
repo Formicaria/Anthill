@@ -6,7 +6,7 @@
     <AssemblyName>anthill</AssemblyName>
   </PropertyGroup>
 
-  <!-- The CLI can launch the API host (anthill --api), so it needs the ASP.NET shared framework. -->
+  <!-- The CLI can launch the API host via the -api flag, so it needs the ASP.NET shared framework. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
