@@ -1,0 +1,77 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Anthill.Core.Configuration;
+
+/// <summary>
+/// Runtime configuration envelope for ANTHILL's .NET build.
+///
+/// This is the direct successor to the Pydantic <c>AnthillConfig</c> from the
+/// Python harness. It is a plain serialisable record-style class so it round-trips
+/// through System.Text.Json the same way the original round-tripped through Pydantic.
+/// Future versions can move implementation around it without changing callers.
+/// </summary>
+public sealed class AnthillConfig
+{
+    [JsonPropertyName("config_version")] public string ConfigVersion { get; set; } = "config-v1";
+    [JsonPropertyName("safety_profile")] public string SafetyProfile { get; set; } = "SAFE_LOCAL";
+
+    [JsonPropertyName("workspace_root")] public string WorkspaceRoot { get; set; } = AnthillRuntime.DefaultWorkspace;
+    [JsonPropertyName("db_path")] public string DbPath { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/anthill.db";
+    [JsonPropertyName("backup_dir")] public string BackupDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/backups";
+    [JsonPropertyName("logs_dir")] public string LogsDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/logs";
+    [JsonPropertyName("exports_dir")] public string ExportsDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/exports";
+    [JsonPropertyName("agent_workspace_dir")] public string AgentWorkspaceDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/workspace";
+
+    [JsonPropertyName("api_host")] public string ApiHost { get; set; } = "127.0.0.1";
+    [JsonPropertyName("api_port")] public int ApiPort { get; set; } = 8713;
+    [JsonPropertyName("api_auth_enabled")] public bool ApiAuthEnabled { get; set; } = true;
+    [JsonPropertyName("api_token_env")] public string ApiTokenEnv { get; set; } = "ANTHILL_API_TOKEN";
+    [JsonPropertyName("cors_enabled")] public bool CorsEnabled { get; set; } = false;
+    [JsonPropertyName("api_job_workers")] public int ApiJobWorkers { get; set; } = 1;
+
+    [JsonPropertyName("use_ollama")] public bool UseOllama { get; set; } = true;
+    [JsonPropertyName("ollama_model")] public string OllamaModel { get; set; } = "llama3.1:8b";
+    [JsonPropertyName("ollama_host")] public string OllamaHost { get; set; } = "http://localhost:11434";
+    [JsonPropertyName("model_routes")] public Dictionary<string, Dictionary<string, string>> ModelRoutes { get; set; } = new();
+
+    [JsonPropertyName("web_search_enabled")] public bool WebSearchEnabled { get; set; } = false;
+    [JsonPropertyName("patch_application_enabled")] public bool PatchApplicationEnabled { get; set; } = false;
+    [JsonPropertyName("file_writing_enabled")] public bool FileWritingEnabled { get; set; } = false;
+    [JsonPropertyName("shell_tool_enabled")] public bool ShellToolEnabled { get; set; } = false;
+    [JsonPropertyName("file_tools_enabled")] public bool FileToolsEnabled { get; set; } = true;
+
+    [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
+    [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;
+    [JsonPropertyName("max_web_searches_per_mission")] public int MaxWebSearchesPerMission { get; set; } = 3;
+    [JsonPropertyName("max_sources_per_mission")] public int MaxSourcesPerMission { get; set; } = 15;
+    [JsonPropertyName("max_context_packet_chars")] public int MaxContextPacketChars { get; set; } = 7000;
+    [JsonPropertyName("max_agent_message_content_chars")] public int MaxAgentMessageContentChars { get; set; } = 2200;
+
+    /// <summary>
+    /// Safety-profile overrides applied before the user's on-disk config is merged on top.
+    /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
+    /// keeps the system fail-closed (no shell, no writes, auth on, loopback host).
+    /// </summary>
+    public static void ApplySafetyProfile(AnthillConfig config, string profile)
+    {
+        var normalized = (profile ?? "SAFE_LOCAL").Trim().ToUpperInvariant();
+        // All four shipped profiles are conservative; RESEARCH_LOCAL / POWER_USER merely
+        // permit read-only web search. Writes and shell stay off everywhere by default.
+        var webSearch = normalized is "RESEARCH_LOCAL" or "POWER_USER";
+        config.WebSearchEnabled = webSearch;
+        config.PatchApplicationEnabled = false;
+        config.FileWritingEnabled = false;
+        config.ShellToolEnabled = false;
+        config.ApiAuthEnabled = true;
+        config.ApiHost = "127.0.0.1";
+        config.ApiJobWorkers = 1;
+    }
+
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        PropertyNameCaseInsensitive = true,
+    };
+}
