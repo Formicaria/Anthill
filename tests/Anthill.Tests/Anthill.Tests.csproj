@@ -12,8 +12,14 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <!-- The Colony Director lives in the API host project; testing it needs the ASP.NET shared framework. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Anthill.Core\Anthill.Core.csproj" />
+    <ProjectReference Include="..\..\src\Anthill.Api\Anthill.Api.csproj" />
   </ItemGroup>
 
 </Project>

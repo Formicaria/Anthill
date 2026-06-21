@@ -1,9 +1,28 @@
 # ANTHILL — 24/7 Autonomy Design
 
-> Status: **Phase 0 (Rails) IMPLEMENTED. Loop NOT yet implemented.** The colony is still
-> one-shot; the Director loop arrives in Phase 1. Phase 0 shipped the durable foundations:
-> objective backlog, audit trail, budgets, kill switch, config knobs, schema v8.
-> Target: ANTHILL v1.9.x.
+> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) IMPLEMENTED.** The colony can now
+> run autonomously: the Director works the objective backlog one mission at a time, under
+> budgets and the kill switch, with writes queued for human review. Mission generation is still
+> charter-as-goal (the LLM Strategist is Phase 2). Target: ANTHILL v1.9.x.
+
+## Phase 1 — what landed
+
+- **`ColonyDirector`** (`Anthill.Api/ColonyDirector.cs`): the supervisor loop — budget +
+  kill-switch check → `NextReadyObjective` → submit a mission through the shared job worker →
+  wait → record the outcome (`AutonomyRun` + `RecordObjectiveRunOutcome`) → idle backoff. One
+  mission at a time (concurrency is Phase 3). Charter is used directly as the goal.
+- **Queue-for-review writes**: the Director only launches missions; it never approves or applies
+  patches. Proposals accumulate in the normal `/approvals` queue.
+- **`--autonomous` flag**: starts the Director at boot (still gated by `autonomy_enabled`).
+- **Control plane endpoints**:
+  - `GET /autonomy/status`, `POST /autonomy/start`, `POST /autonomy/stop`, `GET /autonomy/runs`
+  - `GET/POST /objectives`, `GET/PATCH/DELETE /objectives/{id}`
+- **Events**: `autonomy_started/stopped/idle/mission_started/mission_finished/error` on the
+  `system_api` channel, so the loop is fully visible in the existing event log/UI.
+- **Tests**: 3 Director integration tests (offline loop runs an objective end-to-end, start
+  refusal when disabled, halt on kill switch) + the Phase 0 suite. Verified live over HTTP.
+
+Still simple by design: **no LLM-driven goal synthesis and no mission de-dup yet** — that's Phase 2.
 
 ## Phase 0 — what landed
 
@@ -142,7 +161,7 @@ All default to the safe/off values. Auto-apply gets **no** config key until Phas
 | Phase | Deliverable | Key files |
 |-------|-------------|-----------|
 | **0 — Rails** ✅ | **DONE.** Kill switch, budgets, `objectives` + `autonomy_runs` tables, config knobs, schema v8. No loop yet. | `AnthillConfig`, `AnthillRuntime`, `SqliteMemory.Schema`, `SqliteMemory.Autonomy`, `Autonomy/` namespace |
-| **1 — Loop (MVP)** | Director runs one objective at a time, queue-for-review writes only, `--autonomous` flag, `/autonomy/{start,stop,status}`. **This is the milestone that must be stable before anything else.** | new `Autonomy/ColonyDirector.cs`, `Program.cs`, `ApiHost.cs` |
+| **1 — Loop (MVP)** ✅ | **DONE.** Director runs one objective at a time, queue-for-review writes only, `--autonomous` flag, `/autonomy/{start,stop,status,runs}` + `/objectives` CRUD. **This is the milestone that must be stable before anything else.** | `Anthill.Api/ColonyDirector.cs`, `ApiHost.cs`, `Program.cs` |
 | **2 — Self-generated missions** | Strategist role + dedup + follow-up enqueue. | new `Autonomy/Strategist.cs`, `ModelRouter` route |
 | **3 — Concurrency** | `ResourceGovernor`, unlock `ApiJobWorkers`/`autonomy_concurrency`, VRAM-aware scaling. | `ApiHost`, governor |
 | **4 — Learning loop** | Outcomes bias objective priority; retire stale/looping objectives. | `PheromoneEngine`, ObjectiveStore |

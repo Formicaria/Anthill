@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+> Versioning convention: each autonomy phase ships as a patch bump. Phase 1 = **v1.8.1**;
+> subsequent phases continue v1.8.2, v1.8.3, …
+
+## v1.8.1 — spec-ingestion + autonomy Phases 0–1
+
+Schema bumped to **v8**. Autonomy is fail-closed and off by default.
+
+Added:
+
+- **Long-input / specification-ingestion handling**: mission goals over `long_input_threshold`
+  are split into bounded, non-critical section-analysis tasks (run in parallel), a synthesis
+  task, then verification. A failed section degrades the mission to Partial instead of aborting
+  it. New `Task.Critical` flag generalises fault-tolerant fan-in. Config: `spec_ingestion_enabled`,
+  `long_input_threshold`, `max_section_chars`, `max_section_tasks`.
+- **Autonomy Phase 0 (rails)**: `objectives` backlog + `autonomy_runs` audit-trail tables,
+  domain models, durable kill switch (`.anthill/STOP` + in-process flag), rate `BudgetGuard`,
+  and the run-outcome circuit breaker. Config: `autonomy_enabled`, `autonomy_poll_seconds`,
+  `autonomy_max_missions_per_hour`, `autonomy_max_missions_per_day`, `autonomy_max_consecutive_failures`.
+- **Autonomy Phase 1 (Director loop, MVP)**: `ColonyDirector` works the backlog one mission at
+  a time (charter-as-goal; the LLM Strategist is Phase 2), queue-for-review writes only.
+  `--autonomous` boot flag and a control plane: `GET /autonomy/status`, `POST /autonomy/{start,stop}`,
+  `GET /autonomy/runs`, and `/objectives` CRUD.
+
+Fixed:
+
+- Self-test now passes 15/15 on a **fresh** database: system/sentinel missions are seeded so
+  event/message probes satisfy the `events → missions` foreign key on a clean install.
+
 ## v1.8.0 — .NET / native C++ hybrid migration
 
 Language and platform migration of the v1.7.1 scheduler-hardening checkpoint from Python to

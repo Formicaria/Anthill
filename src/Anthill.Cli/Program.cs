@@ -4,7 +4,7 @@ using Anthill.Core.Diagnostics;
 using Anthill.Core.Orchestration;
 
 // ----------------------------------------------------------------------------
-// ANTHILL command-line entry point (v1.8.0).
+// ANTHILL command-line entry point (v1.8.1).
 // Successor to `python -m anthill`: runs missions, the self-test harness, status
 // views, or launches the secured API/UI host — all over the same Anthill.Core engine.
 // ----------------------------------------------------------------------------
@@ -101,8 +101,10 @@ Usage:
   anthill ""<goal>""              Shorthand for --mission.
   anthill --api [--host <ip>] [--port <n>]          Launch the secured API + colony UI.
             [--ollama-host <url>] [--ollama-model <m>]  Default: http://127.0.0.1:8713/ui
-                                                        Use --host 0.0.0.0 to bind all interfaces.
+            [--autonomous]                              Use --host 0.0.0.0 to bind all interfaces.
                                                         Use --ollama-host http://10.10.10.43:11434 for remote Ollama.
+                                                        --autonomous starts the 24/7 Colony Director
+                                                        at boot (requires autonomy_enabled=true in config).
   anthill --selftest             Run the framework self-test harness.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.

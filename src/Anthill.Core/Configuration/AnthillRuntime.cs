@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.0";
+    public const string Version = "1.8.1";
     public const int SchemaVersion = 8;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -52,6 +52,8 @@ public static class AnthillRuntime
         ["read_graph_results"] = false, ["read_selftest"] = true, ["read_config"] = true, ["read_schema"] = true,
         ["read_pheromones"] = true, ["read_models"] = true, ["read_sources"] = true, ["read_patches"] = true,
         ["read_approvals"] = true,
+        // Autonomy (Phase 1). Control + management are gated again by autonomy_enabled at runtime.
+        ["read_autonomy"] = true, ["read_objectives"] = true, ["manage_objectives"] = true, ["autonomy_control"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------

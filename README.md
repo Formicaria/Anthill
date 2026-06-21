@@ -1,6 +1,6 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.0** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
+> **v1.8.1** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware, uses [Ollama](https://ollama.com) as the LLM backend (no cloud API keys required), and exposes a real-time colony console at `http://localhost:8713/ui`.
 
@@ -856,6 +856,39 @@ Authorization: Bearer YOUR_TOKEN
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/ollama/models` | List available Ollama models (proxied from Ollama host) |
+
+### Autonomy (24/7 Director)
+
+The Director works a backlog of objectives unattended, under budgets and a kill switch, with all
+file changes queued for human review. **Off by default**: requires `autonomy_enabled: true` in
+config, and must be started explicitly (`--autonomous` at boot or `POST /autonomy/start`). See
+[docs/AUTONOMY.md](docs/AUTONOMY.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/autonomy/status` | Director state, budgets, counts, next objective |
+| `POST` | `/autonomy/start` | Start the Director (clears the kill switch) |
+| `POST` | `/autonomy/stop` | Stop the Director and engage the durable kill switch |
+| `GET` | `/autonomy/runs` | Autonomous mission audit trail (`?objective_id=` to filter) |
+| `GET` | `/objectives` | List backlog objectives (`?status=` to filter) |
+| `POST` | `/objectives` | Add an objective `{"title","charter","priority"?,"max_runs"?}` |
+| `GET` | `/objectives/{id}` | Objective detail |
+| `PATCH` | `/objectives/{id}` | Update `{"status"?,"priority"?}` (pause/resume/reprioritize) |
+| `DELETE` | `/objectives/{id}` | Remove an objective |
+
+```bash
+# Enable autonomy_enabled in config, then:
+curl -X POST http://localhost:8713/objectives -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"daily-deps-audit","charter":"Audit project dependencies and propose updates.","max_runs":3}'
+curl -X POST http://localhost:8713/autonomy/start -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8713/autonomy/status -H "Authorization: Bearer $TOKEN"
+# Halt anytime (also: create a .anthill/STOP file):
+curl -X POST http://localhost:8713/autonomy/stop -H "Authorization: Bearer $TOKEN"
+```
+
+The kill switch is durable: `POST /autonomy/stop` writes `.anthill/STOP`, and the Director
+refuses to run while that file exists. `POST /autonomy/start` clears it.
 
 ---
 

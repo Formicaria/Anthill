@@ -1,6 +1,8 @@
 using System.Reflection;
+using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Diagnostics;
+using Anthill.Core.Domain;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Security;
 using Microsoft.AspNetCore.Builder;
@@ -18,6 +20,7 @@ public static class ApiHost
 {
     public static Queen Queen { get; private set; } = null!;
     public static ApiJobRegistry Jobs { get; private set; } = null!;
+    public static ColonyDirector Director { get; private set; } = null!;
     private static RateLimiter MissionLimiter = null!;
     private static RateLimiter AuthLimiter = null!;
     private static string UiHtml = "";
@@ -30,12 +33,17 @@ public static class ApiHost
         try { TokenSecurity.ValidateApiRuntimeSecurity(); }
         catch (AnthillSecurityException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
-        var builder = WebApplication.CreateBuilder(args);
+        // --autonomous starts the Director immediately at boot (still gated by autonomy_enabled).
+        var autostart = args.Contains("--autonomous");
+        var hostArgs = args.Where(a => a != "--autonomous").ToArray();
+
+        var builder = WebApplication.CreateBuilder(hostArgs);
         builder.WebHost.UseUrls($"http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
         Queen = new Queen();
         Jobs = new ApiJobRegistry(Queen, AnthillRuntime.ApiJobWorkers);
+        Director = new ColonyDirector(Queen, Jobs);
         MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
         UiHtml = LoadUi();
@@ -57,6 +65,13 @@ public static class ApiHost
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
         Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
+
+        if (autostart)
+        {
+            if (Director.Start()) Console.WriteLine("Autonomous Colony Director started (--autonomous).");
+            else Console.Error.WriteLine("--autonomous ignored: set autonomy_enabled=true in config to start the Director.");
+        }
+
         app.Run();
         return 0;
     }
@@ -184,7 +199,105 @@ public static class ApiHost
         });
         app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
+
+        MapAutonomyEndpoints(app);
     }
+
+    // ---- Autonomy (Phase 1): objective backlog + Director control plane ----
+    private static void MapAutonomyEndpoints(WebApplication app)
+    {
+        // Director control
+        app.MapGet("/autonomy/status", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_autonomy") ?? ApiJson.Ok(Director.StatusSnapshot()));
+
+        app.MapPost("/autonomy/start", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "autonomy_control"); if (auth is not null) return auth;
+            if (!AnthillRuntime.EnableAutonomy)
+                return ApiJson.Error("Autonomy is disabled in config (autonomy_enabled=false).", "autonomy_disabled");
+            Director.Start();
+            return ApiJson.Ok(Director.StatusSnapshot(), "Colony Director started.");
+        });
+
+        app.MapPost("/autonomy/stop", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "autonomy_control"); if (auth is not null) return auth;
+            Director.Stop("api stop");
+            return ApiJson.Ok(Director.StatusSnapshot(), "Colony Director stopped; kill switch engaged.");
+        });
+
+        app.MapGet("/autonomy/runs", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_autonomy"); if (auth is not null) return auth;
+            var objectiveId = ctx.Request.Query["objective_id"].FirstOrDefault();
+            return ApiJson.Ok(Queen.Memory.ListAutonomyRuns(string.IsNullOrEmpty(objectiveId) ? null : objectiveId));
+        });
+
+        // Objective backlog CRUD
+        app.MapGet("/objectives", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_objectives"); if (auth is not null) return auth;
+            ObjectiveStatus? filter = null;
+            var statusQ = ctx.Request.Query["status"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(statusQ)) filter = EnumExtensions.ParseObjectiveStatus(statusQ);
+            return ApiJson.Ok(Queen.Memory.ListObjectives(filter).Select(ObjectiveDict).ToList());
+        });
+
+        app.MapGet("/objectives/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_objectives"); if (auth is not null) return auth;
+            var o = Queen.Memory.GetObjective(id);
+            return o is null ? ApiJson.Error($"No objective found with id: {id}", "not_found") : ApiJson.Ok(ObjectiveDict(o));
+        });
+
+        app.MapPost("/objectives", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
+            ObjectiveRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ObjectiveRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var title = (body?.Title ?? "").Trim();
+            var charter = (body?.Charter ?? "").Trim();
+            if (title.Length == 0 || charter.Length == 0)
+                return ApiJson.Error("Both 'title' and 'charter' are required.", "bad_request");
+            var o = new Objective
+            {
+                Title = title, Charter = charter,
+                Priority = body!.Priority ?? 0, MaxRuns = Math.Max(0, body.MaxRuns ?? 0),
+            };
+            Queen.Memory.SaveObjective(o);
+            return ApiJson.Ok(ObjectiveDict(o), "Objective added to the backlog.");
+        });
+
+        app.MapPatch("/objectives/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
+            if (Queen.Memory.GetObjective(id) is null) return ApiJson.Error($"No objective found with id: {id}", "not_found");
+            ObjectivePatch? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ObjectivePatch>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body?.Priority is int p) Queen.Memory.SetObjectivePriority(id, p);
+            if (!string.IsNullOrEmpty(body?.Status))
+                Queen.Memory.UpdateObjectiveStatus(id, EnumExtensions.ParseObjectiveStatus(body.Status));
+            return ApiJson.Ok(ObjectiveDict(Queen.Memory.GetObjective(id)!), "Objective updated.");
+        });
+
+        app.MapDelete("/objectives/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
+            if (Queen.Memory.GetObjective(id) is null) return ApiJson.Error($"No objective found with id: {id}", "not_found");
+            Queen.Memory.DeleteObjective(id);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id }, "Objective removed.");
+        });
+    }
+
+    private static Dictionary<string, object?> ObjectiveDict(Objective o) => new()
+    {
+        ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter, ["priority"] = o.Priority,
+        ["status"] = o.Status.Value(), ["max_runs"] = o.MaxRuns, ["run_count"] = o.RunCount,
+        ["consecutive_failures"] = o.ConsecutiveFailures, ["parent_objective_id"] = o.ParentObjectiveId,
+        ["created_at"] = o.CreatedAt.ToIso(), ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
+    };
 
     private static void ProtectedJson(WebApplication app, string path, string permission, Func<HttpContext, IResult> handler) =>
         app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? handler(ctx));
@@ -239,6 +352,18 @@ public static class ApiHost
 
 public sealed class MissionRequest { public string Goal { get; set; } = ""; }
 public sealed class RejectBody { public string? Reason { get; set; } }
+public sealed class ObjectiveRequest
+{
+    public string? Title { get; set; }
+    public string? Charter { get; set; }
+    public int? Priority { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("max_runs")] public int? MaxRuns { get; set; }
+}
+public sealed class ObjectivePatch
+{
+    public string? Status { get; set; }
+    public int? Priority { get; set; }
+}
 
 /// <summary>Standard JSON response envelopes — {success,message,data} / {success,message,error,data}.</summary>
 public static class ApiJson

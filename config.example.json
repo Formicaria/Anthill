@@ -54,5 +54,12 @@
   "spec_ingestion_enabled": true,
   "long_input_threshold":   6000,
   "max_section_chars":      3500,
-  "max_section_tasks":         6
+  "max_section_tasks":         6,
+
+  "_comment_autonomy": "24/7 autonomy rails (Phase 0). Off by default and fail-closed: the Director only runs when autonomy_enabled is true AND it is started explicitly. Budgets are hard caps; a .anthill/STOP file (or the API) is the kill switch. See docs/AUTONOMY.md.",
+  "autonomy_enabled":                  false,
+  "autonomy_poll_seconds":                30,
+  "autonomy_max_missions_per_hour":        6,
+  "autonomy_max_missions_per_day":        60,
+  "autonomy_max_consecutive_failures":     3
 }

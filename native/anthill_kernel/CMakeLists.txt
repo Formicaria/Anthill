@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(anthill_kernel LANGUAGES CXX VERSION 1.8.0)
+project(anthill_kernel LANGUAGES CXX VERSION 1.8.1)
 
 # -----------------------------------------------------------------------------
 # ANTHILL native compute kernel.
