@@ -24,4 +24,15 @@ dotnet build "$ROOT/Anthill.sln" -c Release
 echo "==> Running tests"
 dotnet test "$ROOT/Anthill.sln" -c Release --no-build
 
-echo "==> Done. Try:  dotnet run --project src/Anthill.Cli -- --selftest"
+echo "==> Publishing self-contained Linux x64 binary to dist/linux-x64/"
+dotnet publish "$ROOT/src/Anthill.Cli/Anthill.Cli.csproj" \
+  -c Release -r linux-x64 --self-contained true \
+  -p:PublishSingleFile=true -p:DebugType=none \
+  -o "$ROOT/dist/linux-x64"
+echo "    Binary: $ROOT/dist/linux-x64/anthill"
+
+echo "==> Done."
+echo "    To start:   export ANTHILL_API_TOKEN=<your-token>"
+echo "                ./dist/linux-x64/anthill --api"
+echo "    Or dev run: dotnet run --project src/Anthill.Cli -- --api"
+echo "    Self-test:  dotnet run --project src/Anthill.Cli -- --selftest"

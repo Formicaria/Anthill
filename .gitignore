@@ -17,7 +17,16 @@ native/anthill_kernel/*.dylib
 *.db-shm
 field.key
 
+# Published / release output — build locally with build.ps1 or build.sh
+dist/
+publish/
+
 # IDE
 .vs/
 .idea/
 *.DotSettings.user
+
+# Secrets and env files
+*.env
+.env*
+secrets.json

@@ -1,0 +1,52 @@
+{
+  "config_version": "config-v1",
+  "safety_profile": "SAFE_LOCAL",
+
+  "workspace_root":   ".anthill",
+  "db_path":          ".anthill/anthill.db",
+  "backup_dir":       ".anthill/backups",
+  "logs_dir":         ".anthill/logs",
+  "exports_dir":      ".anthill/exports",
+
+  "_comment_workspace": "Path the file ant is allowed to READ from. Set to your project source root.",
+  "agent_workspace_dir": "/path/to/your/project",
+
+  "_comment_api": "api_host: 0.0.0.0 = accept from all interfaces, 127.0.0.1 = localhost only.",
+  "api_host":             "127.0.0.1",
+  "api_port":             8713,
+  "api_auth_enabled":     true,
+  "api_token_env":        "ANTHILL_API_TOKEN",
+  "cors_enabled":         false,
+
+  "api_job_workers":           1,
+  "parallel_execution_enabled": true,
+  "max_parallel_workers":      3,
+
+  "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine, use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1).",
+  "use_ollama":    true,
+  "ollama_host":   "http://YOUR_OLLAMA_HOST_IP:11434",
+  "ollama_model":  "llama3.1:8b",
+
+  "_comment_routes": "Each ant can use a different model. All models must be pulled on the Ollama machine (ollama pull <model>). Smaller models are fine for web/fallback.",
+  "model_routes": {
+    "planner":    { "provider": "ollama", "model": "llama3.3:70b" },
+    "researcher": { "provider": "ollama", "model": "llama3.3:70b" },
+    "coder":      { "provider": "ollama", "model": "qwen2.5-coder:32b" },
+    "builder":    { "provider": "ollama", "model": "qwen2.5-coder:32b" },
+    "verifier":   { "provider": "ollama", "model": "llama3.3:70b" },
+    "web":        { "provider": "ollama", "model": "llama3.1:8b" },
+    "fallback":   { "provider": "ollama", "model": "llama3.1:8b" }
+  },
+
+  "_comment_features": "All feature gates default safe. Enable what you need.",
+  "web_search_enabled":        true,
+  "patch_application_enabled": true,
+  "file_writing_enabled":      true,
+  "shell_tool_enabled":        true,
+  "file_tools_enabled":        true,
+
+  "max_web_searches_per_mission":    3,
+  "max_sources_per_mission":        15,
+  "max_context_packet_chars":     7000,
+  "max_agent_message_content_chars": 2200
+}

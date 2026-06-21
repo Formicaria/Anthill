@@ -1,492 +1,549 @@
-using System.Text.Json;
+using System.Diagnostics;
+using Anthill.Core.Agents;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Memory;
+using Anthill.Core.Models;
+using Anthill.Core.Pheromones;
+using Anthill.Core.Planning;
+using Anthill.Core.Scheduling;
+using Anthill.Core.Security;
+using Anthill.Core.Tools;
 
 namespace Anthill.Core.Orchestration;
 
 /// <summary>
-/// Queen approval/patch-application flow plus the formatter surface that the CLI and the
-/// secured API render. These read from <see cref="SqliteMemory"/> and stay metadata-first
-/// by default; full result summaries are only included where a permission explicitly allows.
+/// The Queen is the central coordinator: plan, dispatch, verify, remember, and score.
+/// She stays thin enough to orchestrate while the ants and tools carry specialised
+/// behaviour and <see cref="TaskScheduler"/> owns all dependency/lifecycle decisions.
+/// This partial holds construction and the mission-execution engine; approvals, patch
+/// application, and the formatter/view surface live in <c>Queen.Views.cs</c>.
 /// </summary>
-public sealed partial class Queen
+public sealed partial class Queen : IDisposable
 {
-    private const string Divider = "\n--------------------------------------------------\n";
+    public void Dispose() => Memory.Dispose();
 
-    private static string Str(Dictionary<string, object?> row, string key, string fallback = "") =>
-        row.TryGetValue(key, out var v) && v is not null ? v.ToString() ?? fallback : fallback;
+    public SqliteMemory Memory { get; }
+    public ModelRouter? Router { get; }
+    public ToolRegistry Tools { get; }
+    private readonly Planner _planner;
+    private readonly PheromoneEngine _pheromones = new();
+    private readonly PatchProposalParser _patchParser = new();
+    private readonly object _executionLock = new();
+    private readonly Dictionary<string, BaseAnt> _ants;
+    public string? LastMissionId { get; private set; }
 
-    // ---- approvals --------------------------------------------------------
-
-    public string ApproveRequest(string approvalId)
+    public Queen(SqliteMemory? memory = null)
     {
-        try { approvalId = Validation.ValidateApprovalId(approvalId); }
-        catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
-        if (approval is null) return $"No approval request found with id: {approvalId}";
-        if (Str(approval, "status") != ApprovalStatus.Pending.Value())
-            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
-        var updated = Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Approved,
-            "Approved by user. Patch can only be applied through /apply if write gates are enabled.");
-        if (updated is not null)
-            Memory.LogEvent(Str(updated, "mission_id"), "approval_request_approved", $"Approval request approved: {approvalId}",
-                Str(updated, "task_id"), "queen",
-                new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting });
-        return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {Str(updated!, "target_id")}.\n" +
-               $"To apply later: /apply {approvalId}\n\nPatch application requires both write gates enabled.";
-    }
-
-    public string RejectRequest(string approvalId, string? reason = null)
-    {
-        try { approvalId = Validation.ValidateApprovalId(approvalId); }
-        catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
-        if (approval is null) return $"No approval request found with id: {approvalId}";
-        if (Str(approval, "status") != ApprovalStatus.Pending.Value())
-            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
-        var note = reason ?? "Rejected by user.";
-        var updated = Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Rejected, note);
-        if (updated is not null)
+        AnthillRuntime.Initialize();
+        Memory = memory ?? new SqliteMemory();
+        Router = AnthillRuntime.EnableModelRouting ? new ModelRouter(Memory) : null;
+        Tools = BuildToolRegistry();
+        _planner = new Planner(AnthillRuntime.UseOllama, Router);
+        _ants = new Dictionary<string, BaseAnt>
         {
-            if (Str(updated, "action_type") == ApprovalActionType.PatchProposal.Value())
-                Memory.UpdatePatchStatus(Str(updated, "target_id"), PatchStatus.Rejected, lastError: note);
-            Memory.LogEvent(Str(updated, "mission_id"), "approval_request_rejected", $"Approval request rejected: {approvalId}",
-                Str(updated, "task_id"), "queen",
-                new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["reason"] = note });
-        }
-        return $"Approval request rejected.\nID: {approvalId}\nStatus: rejected\nReason: {note}";
-    }
-
-    public string ApplyApprovedPatch(string approvalId)
-    {
-        try { approvalId = Validation.ValidateApprovalId(approvalId); }
-        catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
-        if (approval is null) return $"No approval request found with id: {approvalId}";
-        if (Str(approval, "status") != ApprovalStatus.Approved.Value())
-            return $"Cannot apply patch. Approval request is not approved.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
-        if (Str(approval, "action_type") != ApprovalActionType.PatchProposal.Value())
-            return $"Cannot apply approval type: {Str(approval, "action_type")}\nOnly patch_proposal approvals can be applied.";
-        var patchId = Str(approval, "target_id");
-        var patch = Memory.GetPatchProposal(patchId);
-        if (patch is null) return $"No patch proposal found for approval target id: {patchId}";
-        if (Str(patch, "status") == PatchStatus.Applied.Value()) return $"Patch is already applied.\nPatch ID: {patchId}";
-        if (Str(patch, "status") is var ps && (ps == PatchStatus.Rejected.Value() || ps == PatchStatus.Failed.Value()))
-            return $"Patch cannot be applied because status is {ps}.\nPatch ID: {patchId}";
-
-        var result = Tools.RunTool("apply_patch", Str(approval, "mission_id"), Str(approval, "task_id"), "queen",
-            new() { ["patch"] = patch });
-        if (!result.Success)
-        {
-            Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
-            Memory.LogEvent(Str(approval, "mission_id"), "patch_apply_failed", $"Patch application failed: {patchId}",
-                Str(approval, "task_id"), "queen", new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["error"] = result.Error });
-            return $"Patch application failed.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nError: {result.Error}";
-        }
-        string? backupPath = null;
-        try { backupPath = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement.TryGetProperty("backup_path", out var bp) ? bp.GetString() : null; }
-        catch { /* tolerate */ }
-        Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
-        Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Consumed, "Approval consumed by successful patch application.");
-        Memory.LogEvent(Str(approval, "mission_id"), "patch_applied", $"Patch applied successfully: {patchId}",
-            Str(approval, "task_id"), "queen",
-            new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path"), ["change_type"] = Str(patch, "change_type"), ["backup_path"] = backupPath });
-        Memory.UpdatePheromoneTrail("capability:controlled_file_writing", "capability", true, 0.03,
-            new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path") });
-        return $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied";
-    }
-
-    public string FormatPendingApprovals(int limit = 20) => FormatApprovals(limit, ApprovalStatus.Pending);
-
-    public string FormatApprovals(int limit = 20, ApprovalStatus? status = ApprovalStatus.Pending)
-    {
-        var rows = Memory.ListApprovalRequests(status, limit);
-        var label = status?.Value() ?? "all";
-        if (rows.Count == 0) return $"No approval requests found for status: {label}.";
-        var blocks = rows.Select(a =>
-            $"Approval ID: {Str(a, "id")}\nStatus: {Str(a, "status")}\nAction: {Str(a, "action_type")}\nTarget ID: {Str(a, "target_id")}\n" +
-            $"Mission ID: {Str(a, "mission_id")}\nTask ID: {Str(a, "task_id", "n/a")}\nTitle: {Str(a, "title")}\nRequested By: {Str(a, "requested_by")}\n" +
-            $"Created At: {Str(a, "created_at", "n/a")}\nDecided At: {Str(a, "decided_at", "n/a")}\nDecision Note: {Str(a, "decision_note", "n/a")}\n" +
-            $"Description:\n{TextUtil.Truncate(Str(a, "description"), 260, "...[description truncated]")}");
-        return $"Approval Requests | status={label} | count={rows.Count}\n\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatApprovalDetail(string approvalId)
-    {
-        try { approvalId = Validation.ValidateApprovalId(approvalId); }
-        catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
-        if (approval is null) return $"No approval request found with id: {approvalId}";
-        var metadata = ParseMetadata(approval);
-        var targetId = Str(approval, "target_id");
-        var relatedPatch = "";
-        var applyLine = "";
-        if (Str(approval, "action_type") == ApprovalActionType.PatchProposal.Value())
-        {
-            relatedPatch = $"\nInspect Related Patch: /patch {targetId}";
-            applyLine = $"\nApply If Approved: /apply {approvalId}";
-        }
-        return $"Approval ID: {Str(approval, "id")}\nStatus: {Str(approval, "status")}\nAction Type: {Str(approval, "action_type")}\nTarget ID: {targetId}\n" +
-               $"Mission ID: {Str(approval, "mission_id")}\nTask ID: {Str(approval, "task_id")}\nRequested By: {Str(approval, "requested_by")}\nTitle: {Str(approval, "title")}\n\n" +
-               $"Description:\n{Str(approval, "description")}\n\nDecision Note:\n{Str(approval, "decision_note", "n/a")}\n\n" +
-               $"Created At: {Str(approval, "created_at")}\nDecided At: {Str(approval, "decided_at", "n/a")}\n\n" +
-               $"Metadata:\n{Json.Dumps(metadata, indented: true)}{relatedPatch}{applyLine}\n\n" +
-               "Safety Note: /apply only works when approval is approved and both write gates are enabled.";
-    }
-
-    // ---- missions / patches / sources views -------------------------------
-
-    public string FormatMissionDetail(string missionId)
-    {
-        var mission = Memory.GetMission(missionId);
-        if (mission is null) return $"No mission found with id: {missionId}";
-        var tasks = Memory.GetTasksForMission(missionId);
-        var goal = TextUtil.Truncate(Str(mission, "goal"), 600, "...[goal truncated]");
-        var userResult = TextUtil.Truncate(Str(mission, "user_result", Str(mission, "final_result")), 1200, "...[result truncated]");
-        var taskLines = tasks.Select(t =>
-            $"- {Str(t, "id")} | {Str(t, "assigned_ant")} | {Str(t, "task_type")} | {Str(t, "status")} | {Str(t, "elapsed_seconds", "0")}s | {Str(t, "title")}\n" +
-            $"  Summary: {TextUtil.Truncate(Str(t, "result_summary", Str(t, "result")), 260, "...[summary truncated]")}");
-        var tasksBlock = tasks.Count > 0 ? string.Join("\n", taskLines) : "No tasks saved for this mission.";
-        return $"Mission ID: {Str(mission, "id")}\nStatus: {Str(mission, "status")}\nPheromone Score: {Str(mission, "success_score")}\n" +
-               $"Best Output Task ID: {Str(mission, "best_output_task_id", "n/a")}\nCreated At: {Str(mission, "created_at")}\nSaved At: {Str(mission, "saved_at")}\n\n" +
-               $"Goal:\n{goal}\n\nUser Result Preview:\n{userResult}\n\nTasks:\n{tasksBlock}";
-    }
-
-    public string FormatMissionHistory(int limit = 10)
-    {
-        var rows = Memory.GetRecentMissions(limit);
-        if (rows.Count == 0) return "No missions in ANTHILL memory yet.";
-        var blocks = rows.Select(m =>
-            $"Mission ID: {Str(m, "id")} | Status: {Str(m, "status")} | Score: {Str(m, "success_score")}\n" +
-            $"Goal: {TextUtil.Truncate(Str(m, "goal"), 200, "...[goal truncated]")}\nSaved At: {Str(m, "saved_at")}");
-        return $"ANTHILL Mission History | count={rows.Count}\n\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatPatchList(int limit = 20)
-    {
-        var patches = Memory.ListPatchProposals(limit: limit);
-        if (patches.Count == 0) return "No patch proposals recorded.";
-        var blocks = patches.Select(p =>
-            $"Patch ID: {Str(p, "id")} | Status: {Str(p, "status")} | Change: {Str(p, "change_type")}\n" +
-            $"File: {Str(p, "file_path")}\nReason: {TextUtil.Truncate(Str(p, "reason"), 200, "...[reason truncated]")}\nMission ID: {Str(p, "mission_id")}");
-        return $"Patch Proposals | count={patches.Count}\n\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatPatchDetail(string patchId)
-    {
-        try { patchId = Validation.ValidatePatchId(patchId); }
-        catch (Exception e) { return $"Invalid patch id: {e.Message}"; }
-        var patch = Memory.GetPatchProposal(patchId);
-        if (patch is null) return $"No patch proposal found with id: {patchId}";
-        return $"Patch ID: {Str(patch, "id")}\nStatus: {Str(patch, "status")}\nChange Type: {Str(patch, "change_type")}\nFile: {Str(patch, "file_path")}\n" +
-               $"Mission ID: {Str(patch, "mission_id")}\nTask ID: {Str(patch, "task_id")}\n\nReason:\n{Str(patch, "reason")}\n\nRisk:\n{Str(patch, "risk")}\n\n" +
-               $"Old Content:\n{TextUtil.Truncate(Str(patch, "old_content"), AnthillRuntime.MaxPatchContentChars, "...[old_content truncated]")}\n\n" +
-               $"New Content:\n{TextUtil.Truncate(Str(patch, "new_content"), AnthillRuntime.MaxPatchContentChars, "...[new_content truncated]")}\n\n" +
-               $"Applied At: {Str(patch, "applied_at", "n/a")}\nBackup Path: {Str(patch, "backup_path", "n/a")}\nLast Error: {Str(patch, "last_error", "n/a")}";
-    }
-
-    public string FormatSources(int limit = 20)
-    {
-        var rows = Memory.GetRecentSources(limit);
-        if (rows.Count == 0) return "No source records saved.";
-        var blocks = rows.Select(s =>
-            $"Source ID: {Str(s, "id")} | Confidence: {Str(s, "confidence_label")} ({Str(s, "confidence_score")})\n" +
-            $"Title: {Str(s, "title")}\nDomain: {Str(s, "domain")}\nURL: {Str(s, "url")}\nSummary: {TextUtil.Truncate(Str(s, "summary"), 240, "...[summary truncated]")}");
-        return $"Saved Sources | count={rows.Count}\n\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatSourceDetail(string sourceId)
-    {
-        try { sourceId = Validation.ValidateSourceId(sourceId); }
-        catch (Exception e) { return $"Invalid source id: {e.Message}"; }
-        var s = Memory.GetSourceRecord(sourceId);
-        if (s is null) return $"No source record found with id: {sourceId}";
-        return $"Source ID: {Str(s, "id")}\nMission ID: {Str(s, "mission_id")}\nTask ID: {Str(s, "task_id", "n/a")}\nTitle: {Str(s, "title")}\n" +
-               $"Domain: {Str(s, "domain")}\nURL: {Str(s, "url")}\nProvider: {Str(s, "provider")}\n" +
-               $"Scores: relevance={Str(s, "relevance_score")} freshness={Str(s, "freshness_score")} authority={Str(s, "authority_score")} confidence={Str(s, "confidence_score")} ({Str(s, "confidence_label")})\n" +
-               $"Quality Notes: {Str(s, "quality_notes")}\n\nSnippet:\n{Str(s, "snippet")}\n\nSummary:\n{Str(s, "summary")}";
-    }
-
-    public string FormatSourceQuality(int limit = 20)
-    {
-        var rows = Memory.GetSourceQualitySummary(limit);
-        if (rows.Count == 0) return "No source quality data yet.";
-        var blocks = rows.Select(r =>
-            $"{Str(r, "domain")} | sources={Str(r, "source_count")} | avg_confidence={Str(r, "avg_confidence")} | " +
-            $"avg_relevance={Str(r, "avg_relevance")} | avg_authority={Str(r, "avg_authority")} | last_seen={Str(r, "last_seen")}");
-        return $"Source Quality by Domain | count={rows.Count}\n\n" + string.Join("\n", blocks);
-    }
-
-    // ---- diagnostics / status views --------------------------------------
-
-    public string FormatMemoryView(int limit = 10) =>
-        $"ANTHILL Recent Memory (limit={limit})\n\n{Memory.FormatRecentMemory(limit, AnthillRuntime.MemoryResultChars)}";
-
-    public string FormatPheromoneView(int limit = 15) =>
-        $"ANTHILL Pheromone Trails (top {limit})\n\n{Memory.FormatPheromoneContext(limit)}";
-
-    public string FormatConfigStatus()
-    {
-        var c = AnthillRuntime.Config;
-        return $"ANTHILL v{AnthillRuntime.Version} Configuration\nSafety Profile: {c.SafetyProfile}\nConfig Path: {AnthillRuntime.ConfigPath}\n" +
-               $"Workspace Root: {AnthillRuntime.WorkspaceRootPath}\nDB Path: {AnthillRuntime.DbPath}\n" +
-               $"API Auth Enabled: {AnthillRuntime.EnableApiAuth}\nAPI Host: {AnthillRuntime.ApiHost}\nAPI Port: {AnthillRuntime.ApiPort}\n" +
-               $"Web Search: {AnthillRuntime.EnableWebSearch}\nFile Tools: {AnthillRuntime.EnableFileTools}\nShell Tool: {AnthillRuntime.EnableShellTool}\n" +
-               $"Patch Application: {AnthillRuntime.EnablePatchApplication}\nFile Writing: {AnthillRuntime.EnableFileWriting}\n" +
-               $"Parallel Execution: {AnthillRuntime.EnableParallelExecution} (workers={AnthillRuntime.MaxParallelWorkers})\n" +
-               $"Native Kernel: {(Native.NativeKernel.UsingNative ? "active" : "managed-fallback")}";
-    }
-
-    public string FormatSchemaStatus()
-    {
-        var status = Memory.GetSchemaStatus();
-        return $"ANTHILL Schema Status\nAnthill Version: {status.GetValueOrDefault("anthill_version")}\n" +
-               $"Expected Schema Version: {status.GetValueOrDefault("expected_schema_version")}\n" +
-               $"Recorded Schema Version: {status.GetValueOrDefault("schema_version")}\n" +
-               $"Migration Count: {status.GetValueOrDefault("migration_count")}";
-    }
-
-    public string FormatSystemStatus()
-    {
-        var events = Memory.SummarizeEvents();
-        var tasks = Memory.SummarizeTaskMetrics();
-        var pendingApprovals = Memory.CountPendingApprovals();
-        return $"ANTHILL v{AnthillRuntime.Version} System Status\nSafety Profile: {AnthillRuntime.Config.SafetyProfile}\n" +
-               $"Native Kernel: {(Native.NativeKernel.UsingNative ? "active" : "managed-fallback")}\n" +
-               $"Events Logged: {events.GetValueOrDefault("event_count")}\nFailure Events: {events.GetValueOrDefault("failure_event_count")}\n" +
-               $"Tasks Recorded: {tasks.GetValueOrDefault("task_count")}\nFailed Tasks: {tasks.GetValueOrDefault("failed_count")}\nSkipped Tasks: {tasks.GetValueOrDefault("skipped_count")}\n" +
-               $"Pending Approvals: {pendingApprovals}\nModel Calls This Session: {Router?.CallCount ?? 0}";
-    }
-
-    public string FormatRuntimeDiagnostics()
-    {
-        var failures = Memory.GetRecentFailureEvents(AnthillRuntime.DiagnosticEventLimit);
-        var header = $"ANTHILL v{AnthillRuntime.Version} Runtime Diagnostics\nRecent Failure Events: {failures.Count}\n";
-        if (failures.Count == 0) return header + "\nNo recent failure events. The colony is healthy.";
-        var blocks = failures.Select(f =>
-            $"[{Str(f, "event_type")}] {Str(f, "created_at")}\nMission: {Str(f, "mission_id")} | Task: {Str(f, "task_id", "n/a")} | Ant: {Str(f, "ant_name", "n/a")}\n" +
-            $"Message: {TextUtil.Truncate(Str(f, "message"), 300, "...[message truncated]")}");
-        return header + "\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatEventLog(int limit = 30, string? eventType = null, string? missionId = null)
-    {
-        var rows = Memory.GetRecentEvents(limit, eventType, missionId);
-        if (rows.Count == 0) return "No events recorded.";
-        var blocks = rows.Select(e =>
-            $"[{Str(e, "event_type")}] {Str(e, "created_at")}\nMission: {Str(e, "mission_id")} | Task: {Str(e, "task_id", "n/a")} | Ant: {Str(e, "ant_name", "n/a")}\n" +
-            $"{TextUtil.Truncate(Str(e, "message"), 300, "...[message truncated]")}");
-        return $"ANTHILL Event Log | count={rows.Count}\n\n" + string.Join("\n\n", blocks);
-    }
-
-    public string FormatTaskMetrics()
-    {
-        var m = Memory.SummarizeTaskMetrics();
-        return $"ANTHILL Task Metrics\nTasks: {m.GetValueOrDefault("task_count")}\nAvg Elapsed: {m.GetValueOrDefault("avg_elapsed_seconds")}s\n" +
-               $"Max Elapsed: {m.GetValueOrDefault("max_elapsed_seconds")}s\nFailed: {m.GetValueOrDefault("failed_count")}\nSkipped: {m.GetValueOrDefault("skipped_count")}";
-    }
-
-    public string FormatMessageMetrics()
-    {
-        var m = Memory.SummarizeMessageMetrics();
-        return $"ANTHILL Message Metrics\nMetrics: {m.GetValueOrDefault("metric_count")}\nInput Chars: {m.GetValueOrDefault("input_chars")}\n" +
-               $"Output Chars: {m.GetValueOrDefault("output_chars")}\nInput Tokens (est): {m.GetValueOrDefault("input_tokens_est")}\nOutput Tokens (est): {m.GetValueOrDefault("output_tokens_est")}";
-    }
-
-    public string FormatAgentCommunication(int limit = 30, string? missionId = null)
-    {
-        var summary = Memory.SummarizeAgentMessages();
-        var rows = Memory.GetRecentAgentMessages(limit, missionId);
-        var header = $"ANTHILL v{AnthillRuntime.Version} Agent Communication Ledger\nSchema: {AnthillRuntime.AgentMessageVersion}\n" +
-                     $"Enabled: {(AnthillRuntime.EnableAgentCommunicationLedger ? "ON" : "OFF")}\nLimit: {limit}\n" +
-                     $"Message Count: {summary.GetValueOrDefault("message_count")}\n";
-        if (rows.Count == 0) return header + "\nNo agent messages recorded yet.";
-        var blocks = rows.Select(r =>
-            $"Message ID: {Str(r, "id")}\nCreated At: {Str(r, "created_at")}\nMission ID: {Str(r, "mission_id")}\nTask ID: {Str(r, "task_id", "n/a")}\n" +
-            $"Route: {Str(r, "sender")} -> {Str(r, "recipient")}\nType: {Str(r, "message_type")} | Schema: {Str(r, "schema_version")}\n" +
-            $"Chars/Tokens: {Str(r, "content_chars")} / {Str(r, "estimated_tokens")}\nContent:\n{TextUtil.Truncate(Str(r, "content"), 700, "...[content truncated]")}");
-        return header + "\n" + string.Join(Divider, blocks);
-    }
-
-    public string FormatModelRoutes() => Router is null ? "Model routing is disabled." : Router.FormatRoutes();
-    public string FormatModelStatus() => Router is null ? "Model routing is disabled." : Router.FormatModels();
-
-    // ---- task graph -------------------------------------------------------
-
-    public Dictionary<string, object?> BuildTaskGraphData(string? missionId = null, bool includeResults = false, bool includeResultPreview = true)
-    {
-        if (!AnthillRuntime.EnableTaskGraphExport)
-            return new() { ["schema_version"] = AnthillRuntime.TaskGraphVersion, ["enabled"] = false, ["nodes"] = new List<object>(), ["edges"] = new List<object>() };
-        missionId ??= LatestMissionId();
-        if (missionId is null)
-            return new() { ["schema_version"] = AnthillRuntime.TaskGraphVersion, ["enabled"] = true, ["mission_id"] = null, ["nodes"] = new List<object>(), ["edges"] = new List<object>() };
-        var mission = Memory.GetMission(missionId);
-        if (mission is null)
-            return new() { ["schema_version"] = AnthillRuntime.TaskGraphVersion, ["enabled"] = true, ["mission_id"] = missionId, ["nodes"] = new List<object>(), ["edges"] = new List<object>(), ["error"] = "mission_not_found" };
-
-        var tasks = Memory.GetTasksForMission(missionId, 300);
-        var edges = new List<Dictionary<string, string>>();
-        var childIds = new Dictionary<string, List<string>>();
-        var parsed = new List<(Dictionary<string, object?> Row, List<string> Deps, List<string> Parents)>();
-
-        foreach (var row in tasks)
-        {
-            var deps = ParseJsonStringList(Str(row, "depends_on_json", "[]"));
-            var parents = ParseJsonStringList(Str(row, "parent_task_ids_json", "[]"));
-            var pid = Str(row, "parent_task_id");
-            if (!string.IsNullOrEmpty(pid) && !parents.Contains(pid)) parents.Add(pid);
-            var id = Str(row, "id");
-            childIds.TryAdd(id, new());
-            foreach (var dep in deps) { childIds.TryAdd(dep, new()); childIds[dep].Add(id); edges.Add(new() { ["from"] = dep, ["to"] = id, ["type"] = "depends_on" }); }
-            foreach (var parent in parents) { childIds.TryAdd(parent, new()); childIds[parent].Add(id); edges.Add(new() { ["from"] = parent, ["to"] = id, ["type"] = "parent_task" }); }
-            parsed.Add((row, deps, parents));
-        }
-
-        var nodes = new List<Dictionary<string, object?>>();
-        foreach (var (row, deps, parents) in parsed)
-        {
-            var status = Str(row, "status", "unknown");
-            string? statusMessage = status switch
-            {
-                "failed" => Str(row, "failure_reason"),
-                "skipped" => Str(row, "skipped_reason"),
-                "blocked" => Str(row, "blocked_reason"),
-                "ready" => "Dependencies satisfied; task is ready to run.",
-                _ => null,
-            };
-            var id = Str(row, "id");
-            var node = new Dictionary<string, object?>
-            {
-                ["task_id"] = id, ["mission_id"] = missionId, ["title"] = Str(row, "title"), ["name"] = Str(row, "title"),
-                ["assigned_ant"] = Str(row, "assigned_ant", "unknown"), ["assigned_agent"] = Str(row, "assigned_ant", "unknown"),
-                ["role"] = Str(row, "assigned_ant", "unknown"), ["task_type"] = Str(row, "task_type", "general"), ["status"] = status,
-                ["dependency_ids"] = deps, ["depends_on"] = deps, ["parent_task_id"] = row.GetValueOrDefault("parent_task_id"),
-                ["parent_task_ids"] = parents, ["child_task_ids"] = childIds.GetValueOrDefault(id, new()).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList(),
-                ["attempt_count"] = row.GetValueOrDefault("attempt_count"), ["max_attempts"] = row.GetValueOrDefault("max_attempts"),
-                ["created_at"] = row.GetValueOrDefault("created_at"), ["started_at"] = row.GetValueOrDefault("started_at"),
-                ["completed_at"] = row.GetValueOrDefault("completed_at"), ["failed_at"] = row.GetValueOrDefault("failed_at"),
-                ["skipped_at"] = row.GetValueOrDefault("skipped_at"), ["failure_type"] = row.GetValueOrDefault("failure_type"),
-                ["status_message"] = statusMessage, ["elapsed_seconds"] = row.GetValueOrDefault("elapsed_seconds"),
-            };
-            if (includeResultPreview && !string.IsNullOrEmpty(Str(row, "result_summary")))
-            {
-                var redacted = System.Text.RegularExpressions.Regex.Replace(Str(row, "result_summary"),
-                    @"(?i)\b(token|api[_-]?key|password|passwd|secret|authorization)\b\s*[:=]\s*[^,\s;]+", "$1=[redacted]");
-                node["result_summary_preview"] = TextUtil.Truncate(redacted, 240, "...[preview truncated]");
-            }
-            if (includeResults) node["result_summary"] = row.GetValueOrDefault("result_summary");
-            nodes.Add(node);
-        }
-
-        var statusCounts = nodes.GroupBy(n => n.GetValueOrDefault("status")?.ToString() ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var antCounts = nodes.GroupBy(n => n.GetValueOrDefault("assigned_ant")?.ToString() ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var safeMission = includeResults ? mission : new Dictionary<string, object?>
-        {
-            ["id"] = mission.GetValueOrDefault("id"), ["goal"] = mission.GetValueOrDefault("goal"), ["status"] = mission.GetValueOrDefault("status"),
-            ["best_output_task_id"] = mission.GetValueOrDefault("best_output_task_id"), ["success_score"] = mission.GetValueOrDefault("success_score"),
-            ["created_at"] = mission.GetValueOrDefault("created_at"), ["saved_at"] = mission.GetValueOrDefault("saved_at"),
-        };
-        return new()
-        {
-            ["schema_version"] = AnthillRuntime.TaskGraphVersion, ["enabled"] = true, ["mission"] = safeMission, ["mission_id"] = missionId,
-            ["nodes"] = nodes, ["edges"] = edges, ["status_counts"] = statusCounts, ["ant_counts"] = antCounts,
+            ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
+            ["web"] = new WebResearchAnt(Memory, Tools, Router),
+            ["file"] = new FileAnt(Tools),
+            ["coder"] = new CoderAnt(AnthillRuntime.UseOllama, Router),
+            ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
+            ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
         };
     }
 
-    public string FormatTaskGraph(string? missionId = null)
+    private ToolRegistry BuildToolRegistry()
     {
-        var graph = BuildTaskGraphData(missionId);
-        if (graph.TryGetValue("error", out var err) && err is not null)
-            return $"Task graph error: {err} for mission {graph.GetValueOrDefault("mission_id")}";
-        var mission = graph.GetValueOrDefault("mission") as Dictionary<string, object?> ?? new();
-        var nodes = graph.GetValueOrDefault("nodes") as List<Dictionary<string, object?>> ?? new();
-        var edges = graph.GetValueOrDefault("edges") as List<Dictionary<string, string>> ?? new();
-        var header = $"ANTHILL v{AnthillRuntime.Version} Task Graph\nSchema: {AnthillRuntime.TaskGraphVersion}\n" +
-                     $"Mission ID: {graph.GetValueOrDefault("mission_id") ?? "n/a"}\nMission Status: {mission.GetValueOrDefault("status") ?? "n/a"}\n" +
-                     $"Goal: {TextUtil.Truncate(mission.GetValueOrDefault("goal")?.ToString() ?? "", 250, "...[goal truncated]")}\n" +
-                     $"Nodes: {nodes.Count} | Edges: {edges.Count}\n";
-        if (nodes.Count == 0) return header + "\nNo task graph nodes found.";
-        var lines = nodes.Select(n =>
+        var registry = new ToolRegistry(Memory);
+        var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+        registry.Register(new SystemInfoTool());
+        if (AnthillRuntime.EnableFileTools)
         {
-            var deps = string.Join(", ", (n.GetValueOrDefault("dependency_ids") as List<string>) ?? new());
-            if (deps.Length == 0) deps = "none";
-            var preview = n.GetValueOrDefault("result_summary_preview")?.ToString() ?? n.GetValueOrDefault("status_message")?.ToString() ?? "";
-            return $"[{n.GetValueOrDefault("status")}] {n.GetValueOrDefault("assigned_agent")}::{n.GetValueOrDefault("task_type")}\n" +
-                   $"Task ID: {n.GetValueOrDefault("task_id")}\nTitle: {n.GetValueOrDefault("title")}\nDepends On: {deps}\n" +
-                   $"Attempts: {n.GetValueOrDefault("attempt_count")}/{n.GetValueOrDefault("max_attempts")}\nElapsed: {n.GetValueOrDefault("elapsed_seconds") ?? "n/a"}\n" +
-                   $"Status Message: {TextUtil.Truncate(preview, 240, "...[message truncated]")}";
+            registry.Register(new DirectoryListTool(guard));
+            registry.Register(new ReadTextFileTool(guard));
+        }
+        if (AnthillRuntime.EnableFileWriting)
+            registry.Register(new WriteTextFileTool(guard));
+        registry.Register(new WebSearchTool());
+        registry.Register(new ShellCommandTool());
+        registry.Register(new ApplyPatchTool(guard));
+        return registry;
+    }
+
+    public string RunMission(string goal)
+    {
+        Console.WriteLine($"Queen received mission: {goal}");
+        var missionStartedAt = AnthillTime.NowUtc();
+        var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
+        LastMissionId = mission.Id;
+
+        // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
+        Memory.SaveMission(mission);
+
+        var backupPath = FileSecurity.BackupDb(AnthillRuntime.DbPath, AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
+        Memory.LogEvent(mission.Id, backupPath is not null ? "db_backup_created" : "db_backup_skipped",
+            backupPath is not null ? "Pre-mission DB backup created." : "Pre-mission DB backup skipped because no database file exists yet.",
+            metadata: new() { ["backup_file"] = backupPath is not null ? Path.GetFileName(backupPath) : null });
+        Memory.LogEvent(mission.Id, "mission_created", "Mission created.", metadata: new() { ["goal"] = goal });
+
+        var memoryContext =
+            $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
+            $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
+        mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
+
+        foreach (var task in mission.Tasks)
+            if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
+        if (AnthillRuntime.EnableAutoDependencyWiring) AutoWireDependencies(mission);
+
+        foreach (var task in mission.Tasks)
+            Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
+                new() { ["task_type"] = task.TaskType, ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds });
+
+        Memory.LogEvent(mission.Id, "mission_started", "Mission execution started.", metadata: new()
+        {
+            ["task_count"] = mission.Tasks.Count,
+            ["planner_pattern"] = mission.Tasks.Select(t => t.AssignedAnt).ToList(),
+            ["task_type_pattern"] = mission.Tasks.Select(t => t.TaskType).ToList(),
+            ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
+            ["max_parallel_workers"] = AnthillRuntime.MaxParallelWorkers,
+            ["auto_dependency_wiring"] = AnthillRuntime.EnableAutoDependencyWiring,
         });
-        return header + "\n\n" + string.Join(Divider, lines);
+        Console.WriteLine($"Mission ID: {mission.Id}");
+        Console.WriteLine($"Created {mission.Tasks.Count} tasks. Parallel execution: {(AnthillRuntime.EnableParallelExecution ? "ON" : "OFF")}\n");
+
+        if (AnthillRuntime.EnableParallelExecution) ExecuteTasksParallel(mission, missionStartedAt);
+        else ExecuteTasksSequential(mission, missionStartedAt);
+
+        FinalizeMission(mission);
+        Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
+        Memory.SaveMission(mission);
+        Memory.LogEvent(mission.Id, "mission_saved", "Mission saved to ANTHILL memory.", metadata: new() { ["db_path"] = Memory.DbPath });
+        Console.WriteLine("Mission saved to ANTHILL memory.");
+        return ComposeCliResult(mission);
     }
 
-    // ---- result composition -----------------------------------------------
-
-    public string? SelectBestOutputTaskId(Mission mission)
+    private static void AutoWireDependencies(Mission mission)
     {
-        var builder = mission.Tasks.LastOrDefault(t => t.AssignedAnt == "builder" && t.Status == TaskStatus.Complete && !string.IsNullOrEmpty(t.Result));
-        if (builder is not null) return builder.Id;
-        var coder = mission.Tasks.LastOrDefault(t => t.AssignedAnt == "coder" && t.Status == TaskStatus.Complete && !string.IsNullOrEmpty(t.Result));
-        if (coder is not null) return coder.Id;
-        var completed = mission.Tasks.LastOrDefault(t => t.Status == TaskStatus.Complete && !string.IsNullOrEmpty(t.Result));
-        return completed?.Id;
-    }
-
-    public string ComposeUserResult(Mission mission)
-    {
-        if (mission.BestOutputTaskId is not null)
+        var researcherFileIds = new List<string>();
+        var preBuilderIds = new List<string>();
+        var builderIds = new List<string>();
+        foreach (var task in mission.Tasks)
         {
-            var best = mission.Tasks.FirstOrDefault(t => t.Id == mission.BestOutputTaskId && !string.IsNullOrEmpty(t.Result));
-            if (best is not null) return best.Result!;
+            if (task.DependsOn.Count > 0) { /* respect explicit deps */ }
+            else if (task.AssignedAnt is "researcher" or "web" or "file") { /* sources have no upstream deps */ }
+            else if (task.AssignedAnt == "coder") task.DependsOn = new List<string>(researcherFileIds);
+            else if (task.AssignedAnt == "builder") task.DependsOn = new List<string>(preBuilderIds);
+            else if (task.AssignedAnt == "verifier") task.DependsOn = preBuilderIds.Concat(builderIds).ToList();
+
+            if (task.AssignedAnt is "researcher" or "web" or "file") { researcherFileIds.Add(task.Id); preBuilderIds.Add(task.Id); }
+            else if (task.AssignedAnt == "coder") preBuilderIds.Add(task.Id);
+            else if (task.AssignedAnt == "builder") builderIds.Add(task.Id);
         }
-        var fallbackId = SelectBestOutputTaskId(mission);
-        if (fallbackId is not null)
+    }
+
+    private void ExecuteTasksSequential(Mission mission, DateTime missionStartedAt)
+    {
+        var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
+        LogSchedulerIssues(mission, scheduler.Prepare());
+        LogSchedulerTransitions(mission, scheduler);
+        var taskIndex = mission.Tasks.Select((t, i) => (t.Id, Index: i + 1)).ToDictionary(x => x.Id, x => x.Index);
+
+        while (!scheduler.IsFinished())
         {
-            var task = mission.Tasks.FirstOrDefault(t => t.Id == fallbackId && !string.IsNullOrEmpty(t.Result));
-            if (task is not null) return task.Result!;
+            if (MissionTimedOut(missionStartedAt))
+            {
+                scheduler.SkipRemaining("Task skipped because mission timed out.", "mission_timeout");
+                LogSchedulerTransitions(mission, scheduler);
+                return;
+            }
+            var task = scheduler.NextReadyTask();
+            LogSchedulerTransitions(mission, scheduler);
+            if (task is not null)
+            {
+                RunSingleTask(task, mission, taskIndex.GetValueOrDefault(task.Id), mission.Tasks.Count, scheduler);
+                LogSchedulerTransitions(mission, scheduler);
+                continue;
+            }
+            var blocked = mission.Tasks.Where(t => t.Status == TaskStatus.Blocked).ToList();
+            if (blocked.Count > 0)
+            {
+                foreach (var b in blocked)
+                    scheduler.MarkSkipped(b.Id, b.BlockedReason ?? "Task skipped because scheduler could not make progress.", "dead_dependency");
+                LogSchedulerTransitions(mission, scheduler);
+                return;
+            }
+            break;
         }
-        return "Mission produced no completed user-facing output.";
     }
 
-    public string ComposeDebugResult(Mission mission) => string.Join("\n", mission.Tasks.Select(t =>
-        $"Task: {t.Title}\nTask ID: {t.Id}\nAnt: {t.AssignedAnt}\nTask Type: {t.TaskType}\nDepends On: [{string.Join(", ", t.DependsOn)}]\n" +
-        $"Parent Task IDs: [{string.Join(", ", t.ParentTaskIds)}]\nStatus: {t.Status.Value()}\nResult Chars: {t.ResultChars}\n" +
-        $"Estimated Tokens: {t.EstimatedTokens}\nResult Summary:\n{t.ResultSummary}\n\nFull Result:\n{t.Result}\n"));
-
-    public string ComposeCliResult(Mission mission)
+    private void ExecuteTasksParallel(Mission mission, DateTime missionStartedAt)
     {
-        var header = mission.Status == MissionStatus.Complete ? "Mission Complete"
-            : mission.Status == MissionStatus.Partial ? "Mission Partial" : "Mission Failed";
-        var score = mission.SuccessScore?.ToString() ?? "Not scored yet";
-        var debugTrace = TextUtil.Truncate(mission.DebugResult ?? "", 5000, "...[debug trace truncated for CLI; full trace saved in debug_result]");
-        var pending = Memory.CountPendingApprovals();
-        var approvalNote = pending > 0
-            ? $"\n\nPending Approval Requests: {pending}\nUse /approvals to list them."
-            : "\n\nPending Approval Requests: 0";
-        return $"{header}\n\nGoal:\n{mission.Goal}\n\nMission Status:\n{mission.Status.Value()}\n\nPheromone Score:\n{score}\n\n" +
-               $"Best Output Task ID:\n{mission.BestOutputTaskId ?? "n/a"}\n\nUser Result:\n{mission.UserResult}{approvalNote}\n\nDebug Trace:\n\n{debugTrace}";
+        var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
+        LogSchedulerIssues(mission, scheduler.Prepare());
+        LogSchedulerTransitions(mission, scheduler);
+        var running = new Dictionary<System.Threading.Tasks.Task, Task>();
+        var taskIndex = mission.Tasks.Select((t, i) => (t.Id, Index: i + 1)).ToDictionary(x => x.Id, x => x.Index);
+        var lastSweep = Stopwatch.StartNew();
+
+        while (true)
+        {
+            if (MissionTimedOut(missionStartedAt))
+            {
+                lock (_executionLock)
+                {
+                    scheduler.SkipRemaining("Task skipped because mission timed out.", "mission_timeout");
+                    LogSchedulerTransitions(mission, scheduler);
+                }
+                return;
+            }
+
+            if (lastSweep.Elapsed.TotalSeconds >= AnthillRuntime.TaskTimeoutSweepSeconds)
+            {
+                lastSweep.Restart();
+                lock (_executionLock)
+                    foreach (var runningTask in running.Values.ToList())
+                        if (runningTask.Status == TaskStatus.Running && runningTask.StartedAt is { } startedAt &&
+                            (AnthillTime.NowUtc() - startedAt).TotalSeconds > AnthillRuntime.MaxTaskSeconds)
+                            MarkTaskTimeout(runningTask, mission, scheduler);
+            }
+
+            List<Task> toSubmit;
+            lock (_executionLock)
+            {
+                scheduler.Evaluate();
+                LogSchedulerTransitions(mission, scheduler);
+                if (scheduler.IsFinished() && running.Count == 0) return;
+                var runningIds = running.Values.Select(t => t.Id).ToHashSet();
+                var eligible = scheduler.ReadyTasks().Where(t => !runningIds.Contains(t.Id)).ToList();
+                LogSchedulerTransitions(mission, scheduler);
+                var openSlots = Math.Max(0, AnthillRuntime.MaxParallelWorkers - running.Count);
+                toSubmit = eligible.Take(openSlots).ToList();
+            }
+
+            foreach (var task in toSubmit)
+            {
+                var captured = task;
+                var future = System.Threading.Tasks.Task.Run(() =>
+                    RunSingleTask(captured, mission, taskIndex.GetValueOrDefault(captured.Id), mission.Tasks.Count, scheduler));
+                running[future] = task;
+            }
+
+            if (running.Count == 0)
+            {
+                lock (_executionLock)
+                {
+                    var blocked = mission.Tasks.Where(t => t.Status == TaskStatus.Blocked).ToList();
+                    if (blocked.Count > 0 && scheduler.ReadyTasks().Count == 0)
+                    {
+                        foreach (var b in blocked)
+                            scheduler.MarkSkipped(b.Id, b.BlockedReason ?? "Task skipped because scheduler could not make progress.", "dead_dependency");
+                        LogSchedulerTransitions(mission, scheduler);
+                        return;
+                    }
+                }
+                Thread.Sleep(50);
+                continue;
+            }
+
+            var done = running.Keys.Where(f => f.IsCompleted).ToList();
+            if (done.Count == 0) { Thread.Sleep(50); continue; }
+
+            foreach (var future in done)
+            {
+                var task = running[future];
+                running.Remove(future);
+                if (future.IsFaulted)
+                {
+                    var error = future.Exception?.GetBaseException();
+                    lock (_executionLock)
+                    {
+                        if (task.Status == TaskStatus.Running)
+                        {
+                            task.Result = $"Task failed with unhandled parallel error: {error?.Message}";
+                            task.FinishedAt = AnthillTime.NowUtc();
+                            if (task.StartedAt is { } st) task.ElapsedSeconds = Math.Round((task.FinishedAt.Value - st).TotalSeconds, 3);
+                            scheduler.MarkFailed(task.Id, task.Result, "parallel_worker_error", false, task.FinishedAt, task.ElapsedSeconds);
+                            FinalizeTaskResult(mission, task);
+                            Memory.LogEvent(mission.Id, "task_failed", task.Result, task.Id, task.AssignedAnt,
+                                new() { ["task_type"] = task.TaskType, ["error"] = error?.Message, ["elapsed_seconds"] = task.ElapsedSeconds });
+                        }
+                    }
+                }
+            }
+            scheduler.Evaluate();
+            LogSchedulerTransitions(mission, scheduler);
+        }
     }
 
-    public string? LatestMissionId()
+    private void LogSchedulerIssues(Mission mission, List<TaskGraphIssue> issues)
     {
-        if (LastMissionId is not null) return LastMissionId;
-        var recent = Memory.GetRecentMissions(1);
-        return recent.Count > 0 ? Str(recent[0], "id") : null;
+        foreach (var issue in issues)
+            Memory.LogEvent(mission.Id, "task_graph_validation_issue", issue.Message, issue.TaskId, "scheduler",
+                new() { ["code"] = issue.Code, ["dependency_id"] = issue.DependencyId });
     }
 
-    private static Dictionary<string, object?> ParseMetadata(Dictionary<string, object?> row)
+    private void LogSchedulerTransitions(Mission mission, TaskScheduler scheduler)
     {
+        foreach (var transition in scheduler.ConsumeTransitions())
+        {
+            var task = mission.Tasks.FirstOrDefault(t => t.Id == transition.TaskId);
+            if (task is null) continue;
+            var metadata = new Dictionary<string, object?>
+            {
+                ["from_status"] = transition.FromStatus, ["to_status"] = transition.ToStatus, ["reason_type"] = transition.ReasonType,
+                ["task_type"] = task.TaskType, ["attempt_count"] = task.AttemptCount, ["max_attempts"] = task.MaxAttempts,
+            };
+            if (transition.ToStatus == TaskStatus.Ready.Value())
+                Memory.LogEvent(mission.Id, "task_ready", $"Task ready: {task.Title}", task.Id, "scheduler", metadata);
+            else if (transition.ToStatus == TaskStatus.Blocked.Value())
+                Memory.LogEvent(mission.Id, "task_blocked", transition.Reason ?? $"Task blocked: {task.Title}", task.Id, "scheduler", metadata);
+            else if (transition.ToStatus == TaskStatus.Skipped.Value())
+            {
+                task.Result ??= transition.Reason ?? "Task skipped by scheduler.";
+                task.SkippedReason ??= transition.Reason;
+                FinalizeTaskResult(mission, task);
+                var depSkip = transition.ReasonType is "failed_dependency" or "missing_dependency" or "dead_dependency";
+                Memory.LogEvent(mission.Id, depSkip ? "task_skipped_dependency" : "task_skipped", task.Result, task.Id, task.AssignedAnt, metadata);
+                Console.WriteLine(task.Result);
+            }
+        }
+    }
+
+    private static bool MissionTimedOut(DateTime missionStartedAt) =>
+        (AnthillTime.NowUtc() - missionStartedAt).TotalSeconds > AnthillRuntime.MaxMissionSeconds;
+
+    private void RunSingleTask(Task task, Mission mission, int index, int total, TaskScheduler? scheduler)
+    {
+        var taskStartedAt = AnthillTime.NowUtc();
+        Task taskSnapshot;
+        Mission missionSnapshot;
+        lock (_executionLock)
+        {
+            if (scheduler is not null)
+            {
+                if (!scheduler.MarkRunning(task.Id)) return;
+                taskStartedAt = task.StartedAt ?? taskStartedAt;
+            }
+            else
+            {
+                if (task.Status is not (TaskStatus.Pending or TaskStatus.Ready)) return;
+                task.Status = TaskStatus.Running;
+                task.AttemptCount += 1;
+                task.StartedAt = taskStartedAt;
+                task.FinishedAt = null;
+                task.ElapsedSeconds = null;
+            }
+            Console.WriteLine($"Task {index}/{total} -> {task.AssignedAnt} ant: {task.Title}");
+            Memory.LogEvent(mission.Id, "task_started", $"Task started: {task.Title}", task.Id, task.AssignedAnt, new()
+            {
+                ["task_type"] = task.TaskType, ["index"] = index, ["parallel"] = AnthillRuntime.EnableParallelExecution,
+                ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds, ["attempt_count"] = task.AttemptCount,
+                ["max_attempts"] = task.MaxAttempts, ["snapshot_context"] = true,
+            });
+            taskSnapshot = task.DeepCopy();
+            missionSnapshot = mission.DeepCopy();
+        }
+
+        RecordAgentMessage(mission.Id, task.Id, "queen", task.AssignedAnt, "task_dispatch",
+            $"Dispatch task: {task.Title}\nType: {task.TaskType}\nDescription: {TextUtil.Truncate(task.Description, 900, "...[description truncated]")}",
+            new()
+            {
+                ["schema"] = AnthillRuntime.AgentMessageVersion, ["context_strategy"] = "locked_mission_snapshot+compact_context_packets",
+                ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds, ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
+            });
+
+        if (!_ants.TryGetValue(task.AssignedAnt, out var ant))
+        {
+            lock (_executionLock)
+            {
+                task.Result = $"No ant found for role: {task.AssignedAnt}";
+                task.FinishedAt = AnthillTime.NowUtc();
+                task.ElapsedSeconds = Math.Round((task.FinishedAt.Value - taskStartedAt).TotalSeconds, 3);
+                if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "missing_ant", false, task.FinishedAt, task.ElapsedSeconds);
+                else { task.Status = TaskStatus.Failed; task.FailedAt = task.FinishedAt; task.FailureReason = task.Result; task.FailureType = "missing_ant"; }
+                FinalizeTaskResult(mission, task);
+                Memory.LogEvent(mission.Id, "task_failed", task.Result, task.Id, task.AssignedAnt,
+                    new() { ["reason"] = "missing_ant", ["elapsed_seconds"] = task.ElapsedSeconds });
+                Console.WriteLine(task.Result);
+            }
+            return;
+        }
+
         try
         {
-            var json = row.GetValueOrDefault("metadata_json")?.ToString() ?? "{}";
-            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json) ?? new();
+            var result = ant.Run(taskSnapshot, missionSnapshot);
+            var finishedAt = AnthillTime.NowUtc();
+            var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
+            lock (_executionLock)
+            {
+                if (task.Status != TaskStatus.Running)
+                {
+                    Memory.LogEvent(mission.Id, "task_late_result_ignored",
+                        $"Late result ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, task.AssignedAnt,
+                        new() { ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(result ?? "", 500) });
+                    return;
+                }
+                task.Result = result;
+                task.FinishedAt = finishedAt;
+                task.ElapsedSeconds = elapsed;
+                if (elapsed > AnthillRuntime.MaxTaskSeconds)
+                {
+                    task.Result = $"Task exceeded max runtime of {AnthillRuntime.MaxTaskSeconds} seconds. Elapsed: {elapsed} seconds.";
+                    if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "timeout", false, finishedAt, elapsed);
+                    else { task.Status = TaskStatus.Failed; task.FailedAt = finishedAt; task.FailureReason = task.Result; task.FailureType = "timeout"; }
+                    FinalizeTaskResult(mission, task);
+                    Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, task.AssignedAnt,
+                        new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds });
+                    Console.WriteLine(task.Result);
+                    return;
+                }
+                if (scheduler is not null) scheduler.MarkComplete(task.Id, result, finishedAt, elapsed);
+                else { task.Status = TaskStatus.Complete; task.CompletedAt = finishedAt; }
+                FinalizeTaskResult(mission, task);
+                Memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, task.AssignedAnt,
+                    new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) });
+                if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
+                RecordAgentMessage(mission.Id, task.Id, task.AssignedAnt, "queen", "task_result",
+                    task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
+                    new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds });
+                Console.WriteLine($"Task complete: {task.Title} ({elapsed}s)");
+            }
         }
-        catch { return new(); }
+        catch (Exception error)
+        {
+            var finishedAt = AnthillTime.NowUtc();
+            var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
+            lock (_executionLock)
+            {
+                if (task.Status != TaskStatus.Running)
+                {
+                    Memory.LogEvent(mission.Id, "task_late_error_ignored",
+                        $"Late error ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, task.AssignedAnt,
+                        new() { ["elapsed_seconds"] = elapsed, ["error"] = error.Message });
+                    return;
+                }
+                task.Result = $"Task failed with error: {error.Message}";
+                task.FinishedAt = finishedAt;
+                task.ElapsedSeconds = elapsed;
+                var terminalFailure = true;
+                if (scheduler is not null)
+                    terminalFailure = scheduler.MarkFailed(task.Id, task.Result, "execution_error", true, finishedAt, elapsed);
+                else { task.Status = TaskStatus.Failed; task.FailedAt = finishedAt; task.FailureReason = task.Result; task.FailureType = "execution_error"; }
+                FinalizeTaskResult(mission, task);
+                Memory.LogEvent(mission.Id, terminalFailure ? "task_failed" : "task_retry_scheduled", task.Result, task.Id, task.AssignedAnt,
+                    new() { ["task_type"] = task.TaskType, ["error"] = error.Message, ["elapsed_seconds"] = elapsed, ["attempt_count"] = task.AttemptCount, ["max_attempts"] = task.MaxAttempts });
+                RecordAgentMessage(mission.Id, task.Id, task.AssignedAnt, "queen", terminalFailure ? "task_error" : "task_retry",
+                    task.Result, new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["error"] = error.Message, ["elapsed_seconds"] = elapsed });
+                Console.WriteLine(task.Result);
+            }
+        }
     }
 
-    private static List<string> ParseJsonStringList(string json)
+    private void MarkTaskTimeout(Task task, Mission mission, TaskScheduler? scheduler)
     {
-        try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); }
-        catch { return new(); }
+        var now = AnthillTime.NowUtc();
+        task.FinishedAt = now;
+        if (task.StartedAt is { } st) task.ElapsedSeconds = Math.Round((now - st).TotalSeconds, 3);
+        task.Result = $"Task exceeded max runtime of {AnthillRuntime.MaxTaskSeconds} seconds.";
+        if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "timeout", false, now, task.ElapsedSeconds);
+        else { task.Status = TaskStatus.Failed; task.FailedAt = now; task.FailureReason = task.Result; task.FailureType = "timeout"; }
+        FinalizeTaskResult(mission, task);
+        Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, task.AssignedAnt,
+            new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = task.ElapsedSeconds, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds });
+        Console.WriteLine(task.Result);
+    }
+
+    private void FinalizeTaskResult(Mission mission, Task task)
+    {
+        task.ResultChars = (task.Result ?? "").Length;
+        task.EstimatedTokens = TextUtil.EstimateTokenCount(task.Result);
+        task.ResultSummary = TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars);
+        Memory.SaveTaskResultSummary(mission.Id, task);
+        Memory.LogMessageMetric(mission.Id, task.Id, task.AssignedAnt, "task_result",
+            (task.Description ?? "").Length, task.ResultChars,
+            new() { ["task_type"] = task.TaskType, ["status"] = task.Status.Value(), ["summary_chars"] = (task.ResultSummary ?? "").Length, ["context_packets_enabled"] = AnthillRuntime.EnableContextPackets });
+        Memory.LogEvent(mission.Id, "task_result_summarized", $"Task result summarized for compact downstream context: {task.Title}", task.Id, task.AssignedAnt,
+            new() { ["result_chars"] = task.ResultChars, ["summary_chars"] = (task.ResultSummary ?? "").Length, ["estimated_tokens"] = task.EstimatedTokens });
+    }
+
+    private void ProcessPatchProposals(Mission mission, Task task)
+    {
+        if (string.IsNullOrEmpty(task.Result)) return;
+        try
+        {
+            var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id);
+            Memory.SavePatchSet(patchSet);
+            Memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
+                new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
+            if (patchSet.Proposals.Count == 0)
+            {
+                Memory.LogEvent(mission.Id, "patch_set_empty", "CoderAnt returned a valid patch set with no proposals.", task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["summary"] = patchSet.Summary });
+                Memory.UpdatePheromoneTrail("capability:structured_patch_proposals", "capability", true, 0.005,
+                    new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["proposal_count"] = 0, ["reason"] = "valid_empty_patch_set" });
+                return;
+            }
+            foreach (var proposal in patchSet.Proposals)
+            {
+                Memory.LogEvent(mission.Id, "patch_proposal_created", $"Patch proposal created for {proposal.FilePath}", task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value(), ["requires_approval"] = proposal.RequiresApproval, ["status"] = proposal.Status.Value() });
+                var approval = CreatePatchApprovalRequest(mission, task, patchSet, proposal);
+                Memory.SaveApprovalRequest(approval);
+                Memory.LogEvent(mission.Id, "approval_request_created", $"Approval request created for patch proposal: {proposal.FilePath}", task.Id, "queen",
+                    new() { ["approval_request_id"] = approval.Id, ["target_id"] = approval.TargetId, ["action_type"] = approval.ActionType.Value(), ["approval_status"] = approval.Status.Value() });
+            }
+            Memory.UpdatePheromoneTrail("capability:structured_patch_proposals", "capability", true, 0.03,
+                new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["proposal_count"] = patchSet.Proposals.Count, ["approval_requests_created"] = patchSet.Proposals.Count });
+            Memory.UpdatePheromoneTrail("capability:approval_gate", "capability", true, 0.02,
+                new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["approval_requests_created"] = patchSet.Proposals.Count });
+        }
+        catch (Exception error)
+        {
+            Memory.LogEvent(mission.Id, "patch_proposal_parse_failed", $"Patch proposal parsing failed: {error.Message}", task.Id, task.AssignedAnt,
+                new() { ["error"] = error.Message, ["raw_preview"] = TextUtil.Truncate(task.Result, 1000) });
+            Memory.UpdatePheromoneTrail("capability:structured_patch_proposals", "capability", false, -0.03,
+                new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["error"] = error.Message });
+        }
+    }
+
+    private static ApprovalRequest CreatePatchApprovalRequest(Mission mission, Task task, PatchSet patchSet, PatchProposal proposal) => new()
+    {
+        MissionId = mission.Id, TaskId = task.Id, ActionType = ApprovalActionType.PatchProposal, TargetId = proposal.Id,
+        Title = $"Approve patch proposal for {proposal.FilePath}",
+        Description = $"Patch proposal requires approval before application.\nFile: {proposal.FilePath}\nChange Type: {proposal.ChangeType.Value()}\n" +
+                      $"Reason: {proposal.Reason}\nRisk: {proposal.Risk}\n\nApproval alone does not apply the patch. Use /apply <approval_id> after approval and after enabling write gates.",
+        Metadata = new() { ["patch_set_id"] = patchSet.Id, ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value(), ["requires_approval"] = proposal.RequiresApproval, ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting },
+    };
+
+    private void FinalizeMission(Mission mission)
+    {
+        var hasFailed = mission.Tasks.Any(t => t.Status == TaskStatus.Failed);
+        var hasSkipped = mission.Tasks.Any(t => t.Status == TaskStatus.Skipped);
+        mission.Status = hasFailed ? MissionStatus.Failed : hasSkipped ? MissionStatus.Partial : MissionStatus.Complete;
+        mission.SuccessScore = _pheromones.ScoreMission(mission);
+        Memory.LogEvent(mission.Id, "pheromone_scored", $"Mission pheromone score calculated: {mission.SuccessScore}",
+            metadata: new() { ["success_score"] = mission.SuccessScore, ["mission_status"] = mission.Status.Value() });
+        Memory.UpdateMissionPheromones(mission);
+        mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
+        mission.UserResult = ComposeUserResult(mission);
+        mission.DebugResult = ComposeDebugResult(mission);
+        mission.FinalResult = mission.UserResult;
+        Memory.LogEvent(mission.Id, "best_output_selected", $"Best output task selected: {mission.BestOutputTaskId}",
+            metadata: new() { ["best_output_task_id"] = mission.BestOutputTaskId });
+        var eventType = mission.Status == MissionStatus.Complete ? "mission_completed" : mission.Status == MissionStatus.Partial ? "mission_partial" : "mission_failed";
+        Memory.LogEvent(mission.Id, eventType, $"Mission finished with status: {mission.Status.Value()}", metadata: new()
+        {
+            ["success_score"] = mission.SuccessScore, ["task_count"] = mission.Tasks.Count,
+            ["failed_tasks"] = mission.Tasks.Where(t => t.Status == TaskStatus.Failed).Select(t => t.Id).ToList(),
+            ["skipped_tasks"] = mission.Tasks.Where(t => t.Status == TaskStatus.Skipped).Select(t => t.Id).ToList(),
+            ["best_output_task_id"] = mission.BestOutputTaskId,
+        });
+    }
+
+    private void RecordAgentMessage(string missionId, string? taskId, string sender, string recipient, string messageType,
+        string content, Dictionary<string, object?> metadata)
+    {
+        if (!AnthillRuntime.EnableAgentCommunicationLedger) return;
+        Memory.LogAgentMessage(missionId, sender, recipient, messageType, content, taskId, metadata);
     }
 }

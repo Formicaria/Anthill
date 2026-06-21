@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Anthill.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:62338;http://localhost:62339"
+    }
+  }
+}

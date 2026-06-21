@@ -154,8 +154,23 @@ public static class ApiHost
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
             var goal = (body?.Goal ?? "").Trim();
             if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
-            if (goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
+            if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
             return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+        });
+
+        // Proxy Ollama /api/tags so the UI can list available models without a direct connection
+        app.MapGet("/ollama/models", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_models"); if (auth is not null) return auth;
+            try
+            {
+                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+                var host = AnthillRuntime.OllamaHost.TrimEnd('/');
+                var resp = await http.GetAsync($"{host}/api/tags");
+                var body = await resp.Content.ReadAsStringAsync();
+                return Results.Content(body, "application/json");
+            }
+            catch (Exception ex) { return ApiJson.Error($"Cannot reach Ollama: {ex.Message}", "ollama_unreachable"); }
         });
 
         app.MapPost("/approve/{id}", (HttpContext ctx, string id) =>

@@ -126,6 +126,34 @@ Required JSON:
             var dependsOn = (obj["depends_on"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? new();
             tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, TaskType = taskType, DependsOn = dependsOn });
         }
+
+        // LLMs often emit non-ID dependency references: integer indices ([0],[1]) or task titles.
+        // Build lookup maps and resolve everything to real task IDs.
+        var idByIndex = tasks.Select((t, i) => (t, i)).ToDictionary(x => x.i, x => x.t.Id);
+        var idByTitle = tasks.ToDictionary(t => t.Title.Trim(), t => t.Id, StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < tasks.Count; i++)
+        {
+            tasks[i].DependsOn = tasks[i].DependsOn
+                .Select(dep =>
+                {
+                    // Integer index
+                    if (int.TryParse(dep, out var idx) && idx >= 0 && idx < tasks.Count && idx != i)
+                        return idByIndex[idx];
+                    // Exact task title
+                    if (idByTitle.TryGetValue(dep.Trim(), out var titleId) && titleId != tasks[i].Id)
+                        return titleId;
+                    // Already a valid task ID
+                    if (tasks.Any(t => t.Id == dep))
+                        return dep;
+                    // Unknown reference — drop it so the scheduler doesn't deadlock
+                    return "";
+                })
+                .Where(dep => dep.Length > 0)
+                .Distinct()
+                .ToList();
+        }
+
         if (dropped > 0) Console.Error.WriteLine($"Planner dropped {dropped} invalid task(s).");
         if (tasks.Count < AnthillRuntime.MinDynamicTasks) return new();
         if (!tasks.Any(t => t.AssignedAnt == "verifier"))

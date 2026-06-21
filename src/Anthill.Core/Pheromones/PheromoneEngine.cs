@@ -63,8 +63,9 @@ public sealed class PatchProposalParser
             var changeType = (obj["change_type"]?.GetValue<string>() ?? "modify").Trim().ToLowerInvariant();
             var reason = (obj["reason"]?.GetValue<string>() ?? "").Trim();
             var risk = (obj["risk"]?.GetValue<string>() ?? "").Trim();
-            var oldContent = obj["old_content"]?.GetValue<string>();
-            var newContent = obj["new_content"]?.GetValue<string>();
+            // GetValue<string>() throws on JSON null nodes — must check ValueKind first
+            var oldContent = JsonStrOrNull(obj["old_content"]);
+            var newContent = JsonStrOrNull(obj["new_content"]);
             if (oldContent is not null) oldContent = TextUtil.Truncate(oldContent, AnthillRuntime.MaxPatchContentChars, "...[old_content truncated]");
             if (newContent is not null) newContent = TextUtil.Truncate(newContent, AnthillRuntime.MaxPatchContentChars, "...[new_content truncated]");
             if (reason.Length == 0) throw new ArgumentException("Patch proposal missing reason.");
@@ -77,5 +78,14 @@ public sealed class PatchProposalParser
             });
         }
         return new PatchSet { MissionId = missionId, TaskId = taskId, Summary = summary, Proposals = proposals };
+    }
+
+    // Returns string value or null for both missing keys and explicit JSON null values.
+    private static string? JsonStrOrNull(System.Text.Json.Nodes.JsonNode? node)
+    {
+        if (node is null) return null;
+        if (node is System.Text.Json.Nodes.JsonValue v &&
+            v.GetValueKind() == System.Text.Json.JsonValueKind.Null) return null;
+        try { return node.GetValue<string>(); } catch { return null; }
     }
 }

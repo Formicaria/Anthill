@@ -177,11 +177,41 @@ public sealed class ReadTextFileTool : ITool
     }
 }
 
+public sealed class WriteTextFileTool : ITool
+{
+    public string Name => "write_text_file";
+    public string Description => "Writes or creates a text file inside the allowed workspace. Requires file_writing_enabled.";
+    private readonly WorkspacePathGuard _guard;
+    public WriteTextFileTool(WorkspacePathGuard guard) => _guard = guard;
+
+    public ToolResult Run(IReadOnlyDictionary<string, object?> args)
+    {
+        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.");
+        var requested = args.GetValueOrDefault("path")?.ToString();
+        var content   = args.GetValueOrDefault("content")?.ToString();
+        if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path");
+        if (content is null)                 return new ToolResult(Name, false, "", "Missing required argument: content");
+        string safePath;
+        try { safePath = _guard.ResolveSafePath(requested); }
+        catch (Exception e) { return new ToolResult(Name, false, "", e.Message); }
+        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to write to blocked internal/system path.");
+        var suffix = Path.GetExtension(safePath).ToLowerInvariant();
+        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to write blocked file type: {suffix}");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
+            File.WriteAllText(safePath, content);
+            return new ToolResult(Name, true, $"Written {content.Length} chars to {safePath}");
+        }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Could not write file: {e.Message}"); }
+    }
+}
+
 public sealed class ShellCommandTool : ITool
 {
     public string Name => "shell_command";
     public string Description => "Optional minimal shell command tool. Disabled by default. High risk.";
-    private static readonly HashSet<string> SafeCommands = new() { "dir", "ls", "pwd", "echo" };
+    private static readonly HashSet<string> SafeCommands = new() { "dir", "ls", "pwd", "echo", "dotnet", "type", "cat", "find", "grep" };
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {

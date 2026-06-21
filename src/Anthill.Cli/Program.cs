@@ -31,8 +31,18 @@ switch (command)
         return 0;
 
     case "--api":
-        // Hand off to the shared API host so CLI and standalone API are identical.
-        return ApiHost.Run(rest);
+    {
+        // Parse optional flags before handing off to the web host.
+        var apiArgs = rest.ToList();
+        for (int i = 0; i < apiArgs.Count - 1; i++)
+        {
+            if (apiArgs[i] == "--host") { AnthillRuntime.ApiHost = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--port" && int.TryParse(apiArgs[i + 1], out var p)) { AnthillRuntime.ApiPort = p; apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--ollama-host") { AnthillRuntime.OllamaHost = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--ollama-model") { AnthillRuntime.OllamaModel = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
+        }
+        return ApiHost.Run(apiArgs.ToArray());
+    }
 
     case "--selftest":
     {
@@ -89,7 +99,10 @@ static void PrintHelp()
 Usage:
   anthill --mission ""<goal>""    Run a mission through the colony and print the result.
   anthill ""<goal>""              Shorthand for --mission.
-  anthill --api                  Launch the secured local API + colony UI (http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui).
+  anthill --api [--host <ip>] [--port <n>]          Launch the secured API + colony UI.
+            [--ollama-host <url>] [--ollama-model <m>]  Default: http://127.0.0.1:8713/ui
+                                                        Use --host 0.0.0.0 to bind all interfaces.
+                                                        Use --ollama-host http://10.10.10.43:11434 for remote Ollama.
   anthill --selftest             Run the framework self-test harness.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.

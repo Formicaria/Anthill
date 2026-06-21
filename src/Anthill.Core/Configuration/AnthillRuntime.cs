@@ -77,7 +77,7 @@ public static class AnthillRuntime
     public static Dictionary<string, Dictionary<string, string>> ModelRouting { get; private set; } = new();
 
     // ---- Limits -----------------------------------------------------------
-    public const int MaxGoalLength = 2000;
+    public const int MaxGoalLength = 0;  // 0 = unlimited
     public const int MinDynamicTasks = 3;
     public const int MaxDynamicTasks = 7;
     public const int MaxMissionSeconds = 600;
@@ -180,6 +180,12 @@ public static class AnthillRuntime
     {
         ".txt", ".md", ".py", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log",
         ".csv", ".html", ".css", ".js", ".ts", ".tsx", ".jsx", ".xml",
+        // .NET / C# source files — required for self-modification missions
+        ".cs", ".csproj", ".sln", ".props", ".targets",
+        // Shell / scripting
+        ".sh", ".bat", ".ps1", ".cmd",
+        // Other common code types
+        ".go", ".rs", ".java", ".kt", ".rb", ".php", ".tf", ".hcl", ".sql",
     };
 
     private static readonly object InitLock = new();
