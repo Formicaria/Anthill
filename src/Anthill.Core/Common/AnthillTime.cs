@@ -17,4 +17,17 @@ public static class AnthillTime
     }
 
     public static string? ToIsoOrNull(this DateTime? value) => value?.ToIso();
+
+    /// <summary>Parses an ISO-8601 timestamp back to UTC, or null if absent/unparseable.</summary>
+    public static DateTime? ParseIsoOrNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return DateTime.TryParse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
+            ? DateTime.SpecifyKind(parsed, DateTimeKind.Utc)
+            : null;
+    }
+
+    /// <summary>Like <see cref="ParseIsoOrNull"/> but falls back to the current UTC time.</summary>
+    public static DateTime ParseIsoOrNow(string? value) => ParseIsoOrNull(value) ?? NowUtc();
 }

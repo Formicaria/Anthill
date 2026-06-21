@@ -111,6 +111,12 @@ public sealed partial class SqliteMemory : IDisposable
             tx.Commit();
             EnsureColumns(conn);
             RunSchemaMigrations(conn);
+            // Seed the system_api sentinel mission so system-level events satisfy the
+            // events→missions foreign key on a fresh database.
+            Exec(conn, null,
+                "INSERT OR IGNORE INTO missions (id, goal, status, created_at, saved_at) " +
+                $"VALUES ('{AnthillRuntime.SystemApiMissionId}', 'System API events', 'complete', " +
+                $"'{AnthillTime.NowUtc().ToIso()}', '{AnthillTime.NowUtc().ToIso()}')");
         }
     }
 
@@ -193,11 +199,27 @@ public sealed partial class SqliteMemory : IDisposable
             authority_score REAL DEFAULT 0, confidence_score REAL DEFAULT 0,
             confidence_label TEXT DEFAULT 'unknown', quality_notes TEXT, created_at TEXT NOT NULL,
             FOREIGN KEY (mission_id) REFERENCES missions(id))",
+        // 24/7 autonomy (Phase 0): backlog of standing objectives + per-mission audit trail.
+        @"CREATE TABLE IF NOT EXISTS objectives (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, charter TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL,
+            max_runs INTEGER NOT NULL DEFAULT 0, run_count INTEGER NOT NULL DEFAULT 0,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0, parent_objective_id TEXT,
+            metadata_json TEXT, created_at TEXT NOT NULL, last_run_at TEXT)",
+        @"CREATE TABLE IF NOT EXISTS autonomy_runs (
+            id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, mission_id TEXT,
+            generated_goal TEXT NOT NULL, mission_status TEXT NOT NULL, success_score REAL,
+            follow_ups_created INTEGER NOT NULL DEFAULT 0, notes TEXT,
+            started_at TEXT NOT NULL, finished_at TEXT,
+            FOREIGN KEY (objective_id) REFERENCES objectives(id))",
         // Helpful indexes for the hot lookups the colony performs constantly.
         "CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_mission ON events(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)",
         "CREATE INDEX IF NOT EXISTS idx_sources_mission ON source_records(mission_id)",
+        "CREATE INDEX IF NOT EXISTS idx_objectives_status ON objectives(status)",
+        "CREATE INDEX IF NOT EXISTS idx_autonomy_runs_objective ON autonomy_runs(objective_id)",
+        "CREATE INDEX IF NOT EXISTS idx_autonomy_runs_started ON autonomy_runs(started_at)",
     };
 
     private void EnsureColumns(SqliteConnection conn)
@@ -249,6 +271,7 @@ public sealed partial class SqliteMemory : IDisposable
             (5, "selftest_schema", "Self-test framework expectations verified."),
             (6, "config_and_migration_framework", "Configuration, workspace, schema metadata, and migration ledger enabled."),
             (7, "scheduler_task_lifecycle", "Task scheduler lifecycle, retry, failure, skip, and graph metadata columns verified."),
+            (8, "autonomy_rails", "Autonomy backlog (objectives) and per-mission audit trail (autonomy_runs) tables verified."),
         };
         foreach (var (id, name, description) in migrations)
         {

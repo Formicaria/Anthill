@@ -18,6 +18,11 @@ public static class SelfTest
     {
         var checks = new List<SelfTestCheck>();
 
+        // Seed sentinel missions so the event/message probes satisfy the events→missions
+        // foreign key on a fresh database (the system_api row is also seeded at DB init).
+        queen.Memory.EnsureSystemMission(AnthillRuntime.SystemApiMissionId, "System API events");
+        queen.Memory.EnsureSystemMission("__selftest__", "Self-test probe mission");
+
         Step(checks, "database_tables", () =>
         {
             var present = queen.Memory.TableNames().ToHashSet();

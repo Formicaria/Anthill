@@ -47,8 +47,8 @@ public class PlannerTests
         var tasks = Planner.CreateSpecIngestionTasks(doc);
 
         var sectionTasks = tasks.Where(t => t.TaskType == "section_analysis").ToList();
-        var synthesis = Assert.Single(tasks.Where(t => t.TaskType == "synthesis"));
-        var verify = Assert.Single(tasks.Where(t => t.TaskType == "verification"));
+        var synthesis = Assert.Single(tasks, t => t.TaskType == "synthesis");
+        var verify = Assert.Single(tasks, t => t.TaskType == "verification");
 
         Assert.NotEmpty(sectionTasks);
         Assert.All(sectionTasks, t =>

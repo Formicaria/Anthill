@@ -57,6 +57,15 @@ public sealed class AnthillConfig
     [JsonPropertyName("max_section_chars")] public int MaxSectionChars { get; set; } = 3500;
     [JsonPropertyName("max_section_tasks")] public int MaxSectionTasks { get; set; } = 6;
 
+    // ---- 24/7 autonomy (Phase 0 rails) ----
+    // The Director only runs when BOTH autonomy_enabled is true AND it is started explicitly
+    // (CLI --autonomous / API). All values default to safe/off. See docs/AUTONOMY.md.
+    [JsonPropertyName("autonomy_enabled")] public bool AutonomyEnabled { get; set; } = false;
+    [JsonPropertyName("autonomy_poll_seconds")] public int AutonomyPollSeconds { get; set; } = 30;
+    [JsonPropertyName("autonomy_max_missions_per_hour")] public int AutonomyMaxMissionsPerHour { get; set; } = 6;
+    [JsonPropertyName("autonomy_max_missions_per_day")] public int AutonomyMaxMissionsPerDay { get; set; } = 60;
+    [JsonPropertyName("autonomy_max_consecutive_failures")] public int AutonomyMaxConsecutiveFailures { get; set; } = 3;
+
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
@@ -75,6 +84,8 @@ public sealed class AnthillConfig
         config.ApiAuthEnabled = true;
         config.ApiHost = "127.0.0.1";
         config.ApiJobWorkers = 1;
+        // Autonomy is fail-closed across every shipped profile; the user must opt in explicitly.
+        config.AutonomyEnabled = false;
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new()

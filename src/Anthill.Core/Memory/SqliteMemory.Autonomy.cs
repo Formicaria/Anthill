@@ -1,0 +1,165 @@
+using Anthill.Core.Common;
+using Anthill.Core.Configuration;
+using Anthill.Core.Domain;
+
+namespace Anthill.Core.Memory;
+
+/// <summary>
+/// Persistence for the 24/7 autonomy rails (Phase 0): the objective backlog and the
+/// per-mission audit trail. No execution loop lives here — these are the durable stores the
+/// Director will consume in Phase 1. Every query is parameterised, consistent with the rest
+/// of <see cref="SqliteMemory"/>.
+/// </summary>
+public sealed partial class SqliteMemory
+{
+    // ---- objectives -------------------------------------------------------
+
+    public void SaveObjective(Objective o)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT OR REPLACE INTO objectives (id, title, charter, priority, status, max_runs, run_count,
+                    consecutive_failures, parent_objective_id, metadata_json, created_at, last_run_at)
+                  VALUES (@id, @title, @charter, @prio, @status, @max, @rc, @cf, @parent, @meta, @created, @last)",
+                ("@id", o.Id), ("@title", o.Title), ("@charter", o.Charter), ("@prio", o.Priority),
+                ("@status", o.Status.Value()), ("@max", o.MaxRuns), ("@rc", o.RunCount), ("@cf", o.ConsecutiveFailures),
+                ("@parent", o.ParentObjectiveId), ("@meta", Json.SafeDumps(o.Metadata)),
+                ("@created", o.CreatedAt.ToIso()), ("@last", o.LastRunAt.ToIsoOrNull()));
+        }
+        InvalidateCache();
+    }
+
+    public Objective? GetObjective(string objectiveId)
+    {
+        var row = Query("SELECT * FROM objectives WHERE id = @id", ("@id", objectiveId)).FirstOrDefault();
+        return row is null ? null : ObjectiveFromRow(row);
+    }
+
+    public List<Objective> ListObjectives(ObjectiveStatus? status = null, int limit = 100)
+    {
+        var rows = status is null
+            ? Query("SELECT * FROM objectives ORDER BY priority DESC, created_at ASC LIMIT @lim", ("@lim", limit))
+            : Query("SELECT * FROM objectives WHERE status = @s ORDER BY priority DESC, created_at ASC LIMIT @lim",
+                ("@s", status.Value.Value()), ("@lim", limit));
+        return rows.Select(ObjectiveFromRow).ToList();
+    }
+
+    /// <summary>
+    /// The next objective the Director should work: pending or active, not paused/done/failed,
+    /// still within its run budget. Highest priority first, oldest first on ties.
+    /// </summary>
+    public Objective? NextReadyObjective()
+    {
+        var row = Query(
+            @"SELECT * FROM objectives
+              WHERE status IN ('pending','active') AND (max_runs = 0 OR run_count < max_runs)
+              ORDER BY priority DESC, created_at ASC LIMIT 1").FirstOrDefault();
+        return row is null ? null : ObjectiveFromRow(row);
+    }
+
+    public Objective? UpdateObjectiveStatus(string objectiveId, ObjectiveStatus status)
+    {
+        if (GetObjective(objectiveId) is null) return null;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null, "UPDATE objectives SET status = @s WHERE id = @id",
+                ("@s", status.Value()), ("@id", objectiveId));
+        }
+        InvalidateCache();
+        return GetObjective(objectiveId);
+    }
+
+    public Objective? SetObjectivePriority(string objectiveId, int priority)
+    {
+        if (GetObjective(objectiveId) is null) return null;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null, "UPDATE objectives SET priority = @p WHERE id = @id",
+                ("@p", priority), ("@id", objectiveId));
+        }
+        InvalidateCache();
+        return GetObjective(objectiveId);
+    }
+
+    public bool DeleteObjective(string objectiveId)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null, "DELETE FROM objectives WHERE id = @id", ("@id", objectiveId));
+        }
+        InvalidateCache();
+        return true;
+    }
+
+    /// <summary>
+    /// Applies a completed run's outcome to an objective: increments the run count, stamps
+    /// last_run_at, resets/raises the consecutive-failure breaker, and transitions status
+    /// (Done when the run budget is exhausted, Paused when the breaker trips, otherwise Active).
+    /// Returns the updated objective, or null if it no longer exists.
+    /// </summary>
+    public Objective? RecordObjectiveRunOutcome(string objectiveId, bool success)
+    {
+        var o = GetObjective(objectiveId);
+        if (o is null) return null;
+
+        o.RunCount += 1;
+        o.LastRunAt = AnthillTime.NowUtc();
+        o.ConsecutiveFailures = success ? 0 : o.ConsecutiveFailures + 1;
+
+        if (o.MaxRuns > 0 && o.RunCount >= o.MaxRuns) o.Status = ObjectiveStatus.Done;
+        else if (o.ConsecutiveFailures >= AnthillRuntime.AutonomyMaxConsecutiveFailures) o.Status = ObjectiveStatus.Paused;
+        else o.Status = ObjectiveStatus.Active;
+
+        SaveObjective(o);
+        return o;
+    }
+
+    private static Objective ObjectiveFromRow(Dictionary<string, object?> row) => new()
+    {
+        Id = row.GetValueOrDefault("id")?.ToString() ?? "",
+        Title = row.GetValueOrDefault("title")?.ToString() ?? "",
+        Charter = row.GetValueOrDefault("charter")?.ToString() ?? "",
+        Priority = (int)AsLong(row.GetValueOrDefault("priority")),
+        Status = EnumExtensions.ParseObjectiveStatus(row.GetValueOrDefault("status")?.ToString() ?? "pending"),
+        MaxRuns = (int)AsLong(row.GetValueOrDefault("max_runs")),
+        RunCount = (int)AsLong(row.GetValueOrDefault("run_count")),
+        ConsecutiveFailures = (int)AsLong(row.GetValueOrDefault("consecutive_failures")),
+        ParentObjectiveId = row.GetValueOrDefault("parent_objective_id")?.ToString(),
+        Metadata = Json.TryParseObject(row.GetValueOrDefault("metadata_json") as string),
+        CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
+        LastRunAt = AnthillTime.ParseIsoOrNull(row.GetValueOrDefault("last_run_at")?.ToString()),
+    };
+
+    // ---- autonomy run audit trail -----------------------------------------
+
+    public void SaveAutonomyRun(AutonomyRun r)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT OR REPLACE INTO autonomy_runs (id, objective_id, mission_id, generated_goal, mission_status,
+                    success_score, follow_ups_created, notes, started_at, finished_at)
+                  VALUES (@id, @oid, @mid, @goal, @status, @score, @fu, @notes, @started, @finished)",
+                ("@id", r.Id), ("@oid", r.ObjectiveId), ("@mid", r.MissionId), ("@goal", r.GeneratedGoal),
+                ("@status", r.MissionStatus), ("@score", r.SuccessScore), ("@fu", r.FollowUpsCreated),
+                ("@notes", r.Notes), ("@started", r.StartedAt.ToIso()), ("@finished", r.FinishedAt.ToIsoOrNull()));
+        }
+        InvalidateCache();
+    }
+
+    public List<Dictionary<string, object?>> ListAutonomyRuns(string? objectiveId = null, int limit = 50) =>
+        objectiveId is null
+            ? Query("SELECT * FROM autonomy_runs ORDER BY started_at DESC LIMIT @lim", ("@lim", limit))
+            : Query("SELECT * FROM autonomy_runs WHERE objective_id = @oid ORDER BY started_at DESC LIMIT @lim",
+                ("@oid", objectiveId), ("@lim", limit));
+
+    /// <summary>Count of autonomous runs started at or after <paramref name="sinceUtc"/> — the basis for rate budgets.</summary>
+    public int CountAutonomyRunsSince(DateTime sinceUtc) =>
+        (int)AsLong(Scalar("SELECT COUNT(*) FROM autonomy_runs WHERE started_at >= @since", ("@since", sinceUtc.ToIso())));
+}

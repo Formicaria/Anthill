@@ -28,6 +28,9 @@ public enum ApprovalStatus { Pending, Approved, Rejected, Expired, Consumed }
 
 public enum ApprovalActionType { PatchProposal, FileWrite, ShellCommand, ToolUse }
 
+/// <summary>Lifecycle of an autonomous objective in the Director backlog (Phase 0+).</summary>
+public enum ObjectiveStatus { Pending, Active, Paused, Done, Failed }
+
 public static class EnumExtensions
 {
     public static string Value(this TaskStatus s) => s switch
@@ -65,6 +68,18 @@ public static class EnumExtensions
     {
         ApprovalActionType.PatchProposal => "patch_proposal", ApprovalActionType.FileWrite => "file_write",
         ApprovalActionType.ShellCommand => "shell_command", ApprovalActionType.ToolUse => "tool_use", _ => "tool_use",
+    };
+
+    public static string Value(this ObjectiveStatus s) => s switch
+    {
+        ObjectiveStatus.Pending => "pending", ObjectiveStatus.Active => "active", ObjectiveStatus.Paused => "paused",
+        ObjectiveStatus.Done => "done", ObjectiveStatus.Failed => "failed", _ => "pending",
+    };
+
+    public static ObjectiveStatus ParseObjectiveStatus(string value) => value switch
+    {
+        "pending" => ObjectiveStatus.Pending, "active" => ObjectiveStatus.Active, "paused" => ObjectiveStatus.Paused,
+        "done" => ObjectiveStatus.Done, "failed" => ObjectiveStatus.Failed, _ => ObjectiveStatus.Pending,
     };
 
     public static TaskStatus ParseTaskStatus(string value) => value switch

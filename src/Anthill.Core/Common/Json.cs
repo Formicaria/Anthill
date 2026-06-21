@@ -60,6 +60,18 @@ public static class Json
                ?? throw new FormatException("No JSON object found.");
     }
 
+    /// <summary>Tolerantly parses a stored JSON object string into a dictionary; empty on null/invalid input.</summary>
+    public static Dictionary<string, object?> TryParseObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ToDictionary(doc.RootElement);
+        }
+        catch { return new(); }
+    }
+
     public static Dictionary<string, object?> ToDictionary(JsonElement element)
     {
         var result = new Dictionary<string, object?>();

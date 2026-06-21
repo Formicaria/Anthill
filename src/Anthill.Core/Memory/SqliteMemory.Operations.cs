@@ -58,6 +58,25 @@ public sealed partial class SqliteMemory
 
     // ---- missions + tasks -------------------------------------------------
 
+    /// <summary>
+    /// Idempotently seeds a sentinel mission row so system-level events/messages (e.g. the
+    /// <c>system_api</c> channel and self-test probes) satisfy the events→missions foreign key
+    /// on a fresh database. Safe to call repeatedly; never overwrites an existing mission.
+    /// </summary>
+    public void EnsureSystemMission(string id, string goal = "System mission")
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            var now = AnthillTime.NowUtc().ToIso();
+            NonQuery(conn, null,
+                @"INSERT OR IGNORE INTO missions (id, goal, status, created_at, saved_at)
+                  VALUES (@id, @goal, @status, @created, @saved)",
+                ("@id", id), ("@goal", goal), ("@status", MissionStatus.Complete.Value()),
+                ("@created", now), ("@saved", now));
+        }
+    }
+
     public void SaveMission(Mission mission)
     {
         lock (_writeLock)

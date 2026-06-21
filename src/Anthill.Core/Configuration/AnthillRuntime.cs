@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 public static class AnthillRuntime
 {
     public const string Version = "1.8.0";
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 8;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -90,6 +90,15 @@ public static class AnthillRuntime
     public static int MaxSectionChars = 3500;
     public static int MaxSectionTasks = 6;
 
+    // ---- 24/7 autonomy (Phase 0 rails) -----------------------------------
+    public static bool EnableAutonomy = false;
+    public static int AutonomyPollSeconds = 30;
+    public static int AutonomyMaxMissionsPerHour = 6;
+    public static int AutonomyMaxMissionsPerDay = 60;
+    public static int AutonomyMaxConsecutiveFailures = 3;
+    /// <summary>Sentinel file whose presence halts the autonomous Director. Lives under the workspace root.</summary>
+    public static string AutonomyStopFileName = "STOP";
+
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
     public static bool EnableShellTool = false;
@@ -152,7 +161,7 @@ public static class AnthillRuntime
     {
         "anthill_meta", "schema_migrations", "missions", "tasks", "events", "pheromone_trails",
         "patch_sets", "patch_proposals", "approval_requests", "task_result_summaries",
-        "message_metrics", "agent_messages", "source_records",
+        "message_metrics", "agent_messages", "source_records", "objectives", "autonomy_runs",
     };
 
     // ---- Observability ----------------------------------------------------
@@ -318,6 +327,11 @@ public static class AnthillRuntime
         LongInputThreshold = Math.Max(1000, config.LongInputThreshold);
         MaxSectionChars = Math.Max(500, config.MaxSectionChars);
         MaxSectionTasks = Math.Clamp(config.MaxSectionTasks, 2, 12);
+        EnableAutonomy = config.AutonomyEnabled;
+        AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
+        AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
+        AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
+        AutonomyMaxConsecutiveFailures = Math.Max(1, config.AutonomyMaxConsecutiveFailures);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
