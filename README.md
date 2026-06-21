@@ -746,6 +746,48 @@ Include exact old_content for all modifications.
 
 ---
 
+## Long-Input / Specification-Ingestion Handling
+
+When you paste a large specification, architecture document, framework dump, or instruction set, the Queen must **not** funnel the whole thing into a single "Analyze Mission Goal" task — that overflows context and produces shallow results. ANTHILL detects this automatically.
+
+### How it works
+
+```
+Mission goal larger than long_input_threshold?
+   └─► Queen classifies mission_type = "spec_ingestion"  (logged as mission_classified)
+         └─► Planner splits the document into bounded sections
+               (markdown headings → ALL-CAPS labels → numbered headings → blank-line paragraphs,
+                then greedily packed to max_section_chars, capped at max_section_tasks)
+                 └─► One researcher "section_analysis" task per section
+                       - non-critical (a failed/timed-out section never aborts the mission)
+                       - run in parallel up to max_parallel_workers
+                       - bounded retry (MaxAttempts = 2) → a timeout retries with the same small scope
+                         └─► One builder "synthesis" task depends on ALL sections
+                               - critical; proceeds even if some sections failed, noting the gap
+                                 └─► verifier task checks the synthesized plan
+```
+
+### Failure semantics
+
+- A **non-critical** task (a section) that fails or times out does **not** skip its dependents. The synthesis still waits for every section to reach a terminal state, then runs against whatever succeeded.
+- Only a **critical** task failure fails the whole mission. Non-critical failures degrade the mission to `Partial`, never `Failed`.
+- The verifier reports `Degraded Sections: N` when sections were lost, so partial output is preserved and visible.
+
+This is implemented generically via a `critical` flag on every task (default `true`), so the same fault-tolerant fan-in mechanism is available to any future plan.
+
+### Configuration
+
+| Setting | Meaning | Default |
+|---------|---------|---------|
+| `spec_ingestion_enabled` | Master switch for long-input handling | `true` |
+| `long_input_threshold` | Goal length (chars) above which a mission becomes spec ingestion | `6000` |
+| `max_section_chars` | Maximum characters per section task | `3500` |
+| `max_section_tasks` | Maximum number of section tasks (overflow merged into the last) | `6` (clamped 2–12) |
+
+Set `spec_ingestion_enabled: false` to always use the normal single-plan path.
+
+---
+
 ## API Reference
 
 All endpoints (except `/`, `/health`, `/ui`) require:

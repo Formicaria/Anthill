@@ -18,6 +18,15 @@ public sealed class Task
     public string? ParentTaskId { get; set; }
     public List<string> ParentTaskIds { get; set; } = new();
     public List<string> DependsOn { get; set; } = new();
+
+    /// <summary>
+    /// When false, a Failed/Skipped result on THIS task does not propagate a skip to tasks
+    /// that depend on it — dependents still wait for it to reach a terminal state, then proceed.
+    /// Used by spec-ingestion missions so one failed section never aborts synthesis. Critical
+    /// (the default) keeps the original fail-fast dependency semantics.
+    /// </summary>
+    public bool Critical { get; set; } = true;
+
     public TaskStatus Status { get; set; } = TaskStatus.Pending;
     public string? Result { get; set; }
     public string? ResultSummary { get; set; }
@@ -45,7 +54,7 @@ public sealed class Task
     {
         Id = Id, Title = Title, Description = Description, AssignedAnt = AssignedAnt, TaskType = TaskType,
         ParentTaskId = ParentTaskId, ParentTaskIds = new List<string>(ParentTaskIds), DependsOn = new List<string>(DependsOn),
-        Status = Status, Result = Result, ResultSummary = ResultSummary, ResultChars = ResultChars,
+        Critical = Critical, Status = Status, Result = Result, ResultSummary = ResultSummary, ResultChars = ResultChars,
         EstimatedTokens = EstimatedTokens, CreatedAt = CreatedAt, StartedAt = StartedAt, FinishedAt = FinishedAt,
         CompletedAt = CompletedAt, FailedAt = FailedAt, SkippedAt = SkippedAt, ElapsedSeconds = ElapsedSeconds,
         AttemptCount = AttemptCount, MaxAttempts = MaxAttempts, FailureReason = FailureReason, FailureType = FailureType,

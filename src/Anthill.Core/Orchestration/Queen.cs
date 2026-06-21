@@ -86,6 +86,17 @@ public sealed partial class Queen : IDisposable
             metadata: new() { ["backup_file"] = backupPath is not null ? Path.GetFileName(backupPath) : null });
         Memory.LogEvent(mission.Id, "mission_created", "Mission created.", metadata: new() { ["goal"] = goal });
 
+        // Classify the request. Oversized specification/architecture documents are ingested
+        // section-by-section instead of through a single broad analysis task.
+        var isSpecIngestion = Planner.IsLongInput(goal);
+        var missionType = isSpecIngestion ? "spec_ingestion" : "standard";
+        Memory.LogEvent(mission.Id, "mission_classified", $"Mission classified as {missionType}.", metadata: new()
+        {
+            ["mission_type"] = missionType, ["goal_chars"] = goal.Length,
+            ["long_input_threshold"] = AnthillRuntime.LongInputThreshold,
+            ["spec_ingestion_enabled"] = AnthillRuntime.EnableSpecIngestion,
+        });
+
         var memoryContext =
             $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
@@ -93,7 +104,9 @@ public sealed partial class Queen : IDisposable
 
         foreach (var task in mission.Tasks)
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
-        if (AnthillRuntime.EnableAutoDependencyWiring) AutoWireDependencies(mission);
+        // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
+        // non-critical section flags; auto-wiring would only re-derive the same edges.
+        if (AnthillRuntime.EnableAutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
 
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
@@ -101,6 +114,7 @@ public sealed partial class Queen : IDisposable
 
         Memory.LogEvent(mission.Id, "mission_started", "Mission execution started.", metadata: new()
         {
+            ["mission_type"] = missionType,
             ["task_count"] = mission.Tasks.Count,
             ["planner_pattern"] = mission.Tasks.Select(t => t.AssignedAnt).ToList(),
             ["task_type_pattern"] = mission.Tasks.Select(t => t.TaskType).ToList(),
@@ -517,9 +531,12 @@ public sealed partial class Queen : IDisposable
 
     private void FinalizeMission(Mission mission)
     {
-        var hasFailed = mission.Tasks.Any(t => t.Status == TaskStatus.Failed);
-        var hasSkipped = mission.Tasks.Any(t => t.Status == TaskStatus.Skipped);
-        mission.Status = hasFailed ? MissionStatus.Failed : hasSkipped ? MissionStatus.Partial : MissionStatus.Complete;
+        // Only a CRITICAL task failure fails the whole mission. A non-critical failure/skip
+        // (e.g. one spec-ingestion section) degrades the mission to Partial but never aborts it.
+        var criticalFailed = mission.Tasks.Any(t => t.Status == TaskStatus.Failed && t.Critical);
+        var degraded = mission.Tasks.Any(t => t.Status == TaskStatus.Skipped
+                                              || (t.Status == TaskStatus.Failed && !t.Critical));
+        mission.Status = criticalFailed ? MissionStatus.Failed : degraded ? MissionStatus.Partial : MissionStatus.Complete;
         mission.SuccessScore = _pheromones.ScoreMission(mission);
         Memory.LogEvent(mission.Id, "pheromone_scored", $"Mission pheromone score calculated: {mission.SuccessScore}",
             metadata: new() { ["success_score"] = mission.SuccessScore, ["mission_status"] = mission.Status.Value() });

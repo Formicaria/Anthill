@@ -139,7 +139,12 @@ public sealed partial class TaskScheduler
                 }
 
                 var depStatuses = depIds.ToDictionary(d => d, d => TaskById[d].Status);
-                var terminallyUnmet = depStatuses.Where(kv => PermanentlyUnmetDependencyStatuses.Contains(kv.Value)).Select(kv => kv.Key).ToList();
+                // Only CRITICAL dependencies that end Failed/Skipped/Cancelled propagate a skip.
+                // A non-critical dependency (e.g. a spec-ingestion section) that fails is tolerated:
+                // the dependent still waits for it to finish, then proceeds with partial input.
+                var terminallyUnmet = depStatuses
+                    .Where(kv => PermanentlyUnmetDependencyStatuses.Contains(kv.Value) && IsCriticalDependency(kv.Key))
+                    .Select(kv => kv.Key).ToList();
                 if (terminallyUnmet.Count > 0)
                 {
                     changed = SetStatus(task, TaskStatus.Skipped,
@@ -274,7 +279,7 @@ public sealed partial class TaskScheduler
             {
                 ["mission_id"] = MissionId, ["task_id"] = task.Id, ["title"] = task.Title, ["name"] = task.Title,
                 ["assigned_ant"] = task.AssignedAnt, ["assigned_agent"] = task.AssignedAnt, ["role"] = task.AssignedAnt,
-                ["task_type"] = task.TaskType, ["status"] = task.Status.Value(),
+                ["task_type"] = task.TaskType, ["status"] = task.Status.Value(), ["critical"] = task.Critical,
                 ["dependency_ids"] = DependencyIds(task), ["depends_on"] = DependencyIds(task),
                 ["parent_task_id"] = task.ParentTaskId, ["parent_task_ids"] = ParentIds(task),
                 ["child_task_ids"] = childIds.GetValueOrDefault(task.Id, new()).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList(),
@@ -308,6 +313,9 @@ public sealed partial class TaskScheduler
         TaskStatus.Ready => "Dependencies satisfied; task is ready to run.",
         _ => null,
     };
+
+    /// <summary>A dependency counts as critical unless the dependency task is explicitly marked non-critical.</summary>
+    private bool IsCriticalDependency(string depId) => !TaskById.TryGetValue(depId, out var dep) || dep.Critical;
 
     public List<string> DependencyIds(Task task) =>
         (task.DependsOn ?? new List<string>()).Select(d => d?.ToString() ?? "").Where(d => d.Length > 0).ToList();

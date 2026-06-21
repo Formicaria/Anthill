@@ -84,6 +84,12 @@ public static class AnthillRuntime
     public const int MaxTaskSeconds = 240;
     public const double TaskTimeoutSweepSeconds = 0.25;
 
+    // ---- Long-input / specification-ingestion handling -------------------
+    public static bool EnableSpecIngestion = true;
+    public static int LongInputThreshold = 6000;
+    public static int MaxSectionChars = 3500;
+    public static int MaxSectionTasks = 6;
+
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
     public static bool EnableShellTool = false;
@@ -128,7 +134,8 @@ public static class AnthillRuntime
     public static readonly Dictionary<string, HashSet<string>> RawContextRoles = new()
     {
         ["coder"] = new() { "file", "researcher" },
-        ["builder"] = new() { "coder", "file" },
+        // builder includes researcher so a synthesis task can read full section analyses, not just summaries.
+        ["builder"] = new() { "coder", "file", "researcher" },
         ["verifier"] = new() { "builder", "coder" },
     };
     public const int TokenEstimateCharsPerToken = 4;
@@ -307,6 +314,10 @@ public static class AnthillRuntime
         MaxSourcesPerMission = Math.Max(1, config.MaxSourcesPerMission);
         MaxContextPacketChars = Math.Max(1000, config.MaxContextPacketChars);
         MaxAgentMessageContentChars = Math.Max(500, config.MaxAgentMessageContentChars);
+        EnableSpecIngestion = config.SpecIngestionEnabled;
+        LongInputThreshold = Math.Max(1000, config.LongInputThreshold);
+        MaxSectionChars = Math.Max(500, config.MaxSectionChars);
+        MaxSectionTasks = Math.Clamp(config.MaxSectionTasks, 2, 12);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 

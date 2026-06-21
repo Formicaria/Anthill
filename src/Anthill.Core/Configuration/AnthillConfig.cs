@@ -48,6 +48,15 @@ public sealed class AnthillConfig
     [JsonPropertyName("max_context_packet_chars")] public int MaxContextPacketChars { get; set; } = 7000;
     [JsonPropertyName("max_agent_message_content_chars")] public int MaxAgentMessageContentChars { get; set; } = 2200;
 
+    // ---- Long-input / specification-ingestion handling ----
+    // When a mission goal is larger than long_input_threshold characters, the Queen stops
+    // dumping the whole document into one task and instead splits it into bounded section
+    // analysis tasks (run in parallel), then a synthesis task, then verification.
+    [JsonPropertyName("spec_ingestion_enabled")] public bool SpecIngestionEnabled { get; set; } = true;
+    [JsonPropertyName("long_input_threshold")] public int LongInputThreshold { get; set; } = 6000;
+    [JsonPropertyName("max_section_chars")] public int MaxSectionChars { get; set; } = 3500;
+    [JsonPropertyName("max_section_tasks")] public int MaxSectionTasks { get; set; } = 6;
+
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile

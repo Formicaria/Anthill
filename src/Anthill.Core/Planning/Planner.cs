@@ -25,8 +25,21 @@ public sealed class Planner
         _router = router;
     }
 
+    /// <summary>
+    /// True when the request is large enough that planning it as a single broad task would
+    /// overflow context. Such missions are handled as specification ingestion: split, analyze
+    /// per section, then synthesize. Measured on the raw goal length in characters.
+    /// </summary>
+    public static bool IsLongInput(string goal) =>
+        AnthillRuntime.EnableSpecIngestion && (goal ?? "").Length > AnthillRuntime.LongInputThreshold;
+
     public List<Task> CreateTasks(string goal, string memoryContext = "", string toolContext = "", string pheromoneContext = "")
     {
+        // Long specification / architecture / framework documents are never sent into a single
+        // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
+        // followed by a synthesis pass. This runs regardless of model availability.
+        if (IsLongInput(goal)) return CreateSpecIngestionTasks(goal);
+
         if (!_useOllama || _router is null) return FallbackTasks(goal);
 
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
@@ -164,6 +177,147 @@ Required JSON:
                 AssignedAnt = "verifier", TaskType = "verification",
             });
         return tasks.Take(AnthillRuntime.MaxDynamicTasks).ToList();
+    }
+
+    /// <summary>
+    /// Specification-ingestion plan: one bounded analysis task per document section (non-critical,
+    /// runnable in parallel), then a synthesis task that depends on all of them, then verification.
+    /// Section tasks are non-critical so a single failed/timed-out section never skips synthesis —
+    /// the synthesis still runs against whatever sections completed. Faithful to the long-input rule.
+    /// </summary>
+    public static List<Task> CreateSpecIngestionTasks(string goal)
+    {
+        var sections = SplitIntoSections(goal, AnthillRuntime.MaxSectionChars, AnthillRuntime.MaxSectionTasks);
+        if (sections.Count == 0) sections.Add(TextUtil.Truncate(goal, AnthillRuntime.MaxSectionChars, "...[section truncated]"));
+
+        var tasks = new List<Task>();
+        var sectionIds = new List<string>();
+        for (var i = 0; i < sections.Count; i++)
+        {
+            var section = sections[i];
+            var task = new Task
+            {
+                Title = $"Analyze section {i + 1} of {sections.Count}",
+                Description =
+                    $"You are reviewing ONE section of a larger specification/architecture document. " +
+                    $"Analyze ONLY this section. Extract: (1) concrete requirements and rules, (2) any " +
+                    $"named components, tasks, or roles, (3) constraints, limits, and edge cases, " +
+                    $"(4) open questions. Be concise and structured. Do not attempt to cover the whole document.\n\n" +
+                    $"--- SECTION {i + 1}/{sections.Count} START ---\n{section}\n--- SECTION {i + 1}/{sections.Count} END ---",
+                AssignedAnt = "researcher",
+                TaskType = "section_analysis",
+                Critical = false, // a failed section must not abort the mission
+                MaxAttempts = 2,  // route timeouts back for one bounded retry with the same (already small) scope
+            };
+            tasks.Add(task);
+            sectionIds.Add(task.Id);
+        }
+
+        var synthesis = new Task
+        {
+            Title = "Synthesize condensed implementation plan",
+            Description =
+                "Combine the per-section analyses above into ONE condensed implementation plan. " +
+                "Produce: (1) a short overview of what the document asks for, (2) a deduplicated, ordered " +
+                "list of concrete requirements/rules, (3) a proposed task breakdown (which work items, in what " +
+                "order, with dependencies), and (4) risks and open questions. If some sections are missing " +
+                "because their analysis failed, proceed with the sections that succeeded and note the gap.",
+            AssignedAnt = "builder",
+            TaskType = "synthesis",
+            DependsOn = new List<string>(sectionIds),
+            Critical = true,
+            MaxAttempts = 1,
+        };
+        tasks.Add(synthesis);
+
+        tasks.Add(new Task
+        {
+            Title = "Verify synthesized plan",
+            Description = "Check the synthesized implementation plan for accuracy, completeness against the " +
+                          "section analyses, internal consistency, and missing steps. Note any section gaps.",
+            AssignedAnt = "verifier",
+            TaskType = "verification",
+            DependsOn = new List<string> { synthesis.Id },
+            Critical = true,
+        });
+
+        return tasks;
+    }
+
+    /// <summary>
+    /// Splits a document into ordered chunks, each at most <paramref name="maxSectionChars"/> characters,
+    /// preferring natural boundaries (markdown headings, ALL-CAPS label lines, then blank-line paragraphs).
+    /// The number of chunks is capped at <paramref name="maxSections"/>; overflow is merged into the last chunk.
+    /// </summary>
+    public static List<string> SplitIntoSections(string text, int maxSectionChars, int maxSections)
+    {
+        var normalized = (text ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
+        if (normalized.Trim().Length == 0) return new List<string>();
+
+        // 1) Prefer structural blocks: a heading/label line starts a new block.
+        var lines = normalized.Split('\n');
+        var blocks = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool IsBoundary(string line)
+        {
+            var t = line.Trim();
+            if (t.Length == 0) return false;
+            if (t.StartsWith("#")) return true;                                    // markdown heading
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^[A-Z][A-Z0-9 _\-]{3,}:?$")) return true; // ALL_CAPS label
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^\d+[\.\)]\s+\S")) return true;           // numbered heading
+            return false;
+        }
+        foreach (var line in lines)
+        {
+            if (IsBoundary(line) && current.Length > 0)
+            {
+                blocks.Add(current.ToString());
+                current.Clear();
+            }
+            current.Append(line).Append('\n');
+        }
+        if (current.Length > 0) blocks.Add(current.ToString());
+
+        // 2) If structure was too coarse, fall back to blank-line paragraph blocks.
+        if (blocks.Count < 2)
+            blocks = System.Text.RegularExpressions.Regex.Split(normalized, @"\n\s*\n")
+                .Where(b => b.Trim().Length > 0).ToList();
+        if (blocks.Count == 0) blocks.Add(normalized);
+
+        // 3) Hard-split any single block that on its own exceeds the cap.
+        var sized = new List<string>();
+        foreach (var block in blocks)
+        {
+            if (block.Length <= maxSectionChars) { sized.Add(block); continue; }
+            for (var i = 0; i < block.Length; i += maxSectionChars)
+                sized.Add(block.Substring(i, Math.Min(maxSectionChars, block.Length - i)));
+        }
+
+        // 4) Greedily pack consecutive blocks up to the cap.
+        var chunks = new List<string>();
+        var buffer = new System.Text.StringBuilder();
+        foreach (var block in sized)
+        {
+            if (buffer.Length > 0 && buffer.Length + block.Length > maxSectionChars)
+            {
+                chunks.Add(buffer.ToString().Trim());
+                buffer.Clear();
+            }
+            buffer.Append(block);
+        }
+        if (buffer.Length > 0) chunks.Add(buffer.ToString().Trim());
+
+        // 5) Enforce the section-count cap by merging the overflow into the final chunk.
+        if (chunks.Count > maxSections)
+        {
+            var head = chunks.Take(maxSections - 1).ToList();
+            var tail = string.Join("\n\n", chunks.Skip(maxSections - 1));
+            if (tail.Length > maxSectionChars) tail = tail.Substring(0, maxSectionChars);
+            head.Add(tail);
+            chunks = head;
+        }
+
+        return chunks.Where(c => c.Trim().Length > 0).ToList();
     }
 
     private static List<Task> FallbackTasks(string goal)

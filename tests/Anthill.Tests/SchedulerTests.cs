@@ -163,4 +163,55 @@ public class SchedulerTests
         Assert.Contains(TaskStatus.Cancelled, TaskScheduler.TerminalStatuses);
         Assert.Equal("cancelled", TaskStatus.Cancelled.Value());
     }
+
+    [Fact]
+    public void NonCriticalFailedDependency_DoesNotSkipDownstream()
+    {
+        // Spec-ingestion contract: a failed non-critical section must not abort synthesis.
+        var section = T("S");
+        section.Critical = false;
+        var synthesis = T("J", "builder", "S"); // critical by default
+        var s = new TaskScheduler(new[] { section, synthesis }, "m");
+        s.Prepare();
+
+        s.MarkRunning("S");
+        s.MarkFailed("S", "section timed out", retryable: false);
+
+        Assert.Equal(TaskStatus.Failed, section.Status);
+        Assert.Equal(TaskStatus.Ready, synthesis.Status); // proceeds despite the failed section
+    }
+
+    [Fact]
+    public void NonCriticalDependency_StillGatesOrderingUntilTerminal()
+    {
+        var section = T("S");
+        section.Critical = false;
+        var synthesis = T("J", "builder", "S");
+        var s = new TaskScheduler(new[] { section, synthesis }, "m");
+        s.Prepare();
+
+        s.MarkRunning("S");
+        Assert.Equal(TaskStatus.Blocked, synthesis.Status); // waits while the section is still running
+        s.MarkComplete("S", "done");
+        Assert.Equal(TaskStatus.Ready, synthesis.Status);
+    }
+
+    [Fact]
+    public void MixedCriticalAndNonCritical_OnlyCriticalFailurePropagates()
+    {
+        var goodSection = T("G");
+        goodSection.Critical = false;
+        var badSection = T("B");
+        badSection.Critical = false;
+        var criticalDep = T("C");           // critical by default
+        var synthesis = T("J", "builder", "G", "B", "C");
+        var s = new TaskScheduler(new[] { goodSection, badSection, criticalDep, synthesis }, "m");
+        s.Prepare();
+
+        s.MarkRunning("G"); s.MarkComplete("G");
+        s.MarkRunning("B"); s.MarkFailed("B", "boom", retryable: false);
+        s.MarkRunning("C"); s.MarkFailed("C", "critical boom", retryable: false);
+
+        Assert.Equal(TaskStatus.Skipped, synthesis.Status); // the CRITICAL failure still aborts synthesis
+    }
 }

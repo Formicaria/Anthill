@@ -48,5 +48,11 @@
   "max_web_searches_per_mission":    3,
   "max_sources_per_mission":        15,
   "max_context_packet_chars":     7000,
-  "max_agent_message_content_chars": 2200
+  "max_agent_message_content_chars": 2200,
+
+  "_comment_spec_ingestion": "Long-input handling. When a mission goal exceeds long_input_threshold characters, the Queen classifies it as spec_ingestion and splits it into bounded section-analysis tasks (run in parallel, non-critical) feeding a single synthesis task, then verification. A failed section degrades the mission to Partial but never aborts it.",
+  "spec_ingestion_enabled": true,
+  "long_input_threshold":   6000,
+  "max_section_chars":      3500,
+  "max_section_tasks":         6
 }

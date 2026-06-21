@@ -466,9 +466,13 @@ public sealed class VerifierAnt : BaseAnt
     {
         var priorTasks = mission.Tasks.Where(t => t.Id != task.Id).ToList();
         var completed = priorTasks.Where(t => t.Status == TaskStatus.Complete).ToList();
-        var failed = priorTasks.Where(t => t.Status == TaskStatus.Failed).ToList();
+        // Only critical failures fail verification; non-critical section failures are reported as gaps.
+        var failed = priorTasks.Where(t => t.Status == TaskStatus.Failed && t.Critical).ToList();
+        var degraded = priorTasks.Where(t => !t.Critical && t.Status is TaskStatus.Failed or TaskStatus.Skipped).ToList();
         var outputs = priorTasks.Where(t => (t.AssignedAnt is "builder" or "coder") && !string.IsNullOrEmpty(t.Result)).ToList();
         var staticCheck = StaticVerify(completed, failed, outputs);
+        if (degraded.Count > 0)
+            staticCheck += $"\nDegraded Sections: {degraded.Count} non-critical task(s) failed or were skipped; synthesis proceeded with partial input.";
         if (!_useOllama || _router is null) return staticCheck;
 
         var context = DomainHelpers.BuildContextPacketText(mission, "verifier", Math.Min(AnthillRuntime.MaxVerifierContextChars, AnthillRuntime.MaxContextPacketChars));
