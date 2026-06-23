@@ -3,6 +3,7 @@ using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Diagnostics;
 using Anthill.Core.Domain;
+using Anthill.Core.Memory;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Security;
 using Microsoft.AspNetCore.Builder;
@@ -200,7 +201,225 @@ public static class ApiHost
         app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
 
+        MapAuthEndpoints(app);
         MapAutonomyEndpoints(app);
+        MapDashboardEndpoints(app);
+    }
+
+    // ---- Authentication + operator accounts ----
+    private static void MapAuthEndpoints(WebApplication app)
+    {
+        // Public: tells the UI whether to show first-run setup or the login screen.
+        app.MapGet("/auth/status", () => ApiJson.Ok(new Dictionary<string, object?>
+        {
+            ["setup_required"] = Queen.Memory.CountUsers() == 0,
+            ["auth_enabled"] = AnthillRuntime.EnableApiAuth,
+            ["user_count"] = Queen.Memory.CountUsers(),
+        }));
+
+        // Public, first-run only: create the initial administrator and log them straight in.
+        app.MapPost("/auth/setup", async (HttpContext ctx) =>
+        {
+            if (Queen.Memory.CountUsers() > 0)
+                return ApiJson.Error("Setup already complete. An administrator already exists.", "bad_request");
+            if (!AuthLimiter_TryConsume(ctx)) return ApiJson.Error("Too many attempts. Try again later.", "rate_limited");
+            LoginRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<LoginRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var username = string.IsNullOrWhiteSpace(body?.Username) ? "admin" : body!.Username!.Trim();
+            var err = Queen.Memory.CreateUser(username, body?.Password ?? "", UserRoles.Admin);
+            if (err.Length > 0) return ApiJson.Error(err, "bad_request");
+            var token = AuthSessions.Issue(SqliteMemory.NormalizeUsername(username), UserRoles.Admin);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["token"] = token, ["username"] = SqliteMemory.NormalizeUsername(username), ["role"] = UserRoles.Admin,
+            }, "Administrator created. You are now signed in.");
+        });
+
+        // Public, rate-limited: username + password -> session token.
+        app.MapPost("/auth/login", async (HttpContext ctx) =>
+        {
+            var ip = ClientIp(ctx);
+            if (AuthLimiter.IsLimited(ip)) return ApiJson.Error("Too many failed logins. Try again later.", "rate_limited");
+            LoginRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<LoginRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var ok = Queen.Memory.VerifyLogin(body?.Username ?? "", body?.Password ?? "");
+            if (ok is null)
+            {
+                AuthLimiter.RecordAttempt(ip);
+                return ApiJson.Error("Invalid username or password.", "unauthorized");
+            }
+            AuthLimiter.Clear(ip);
+            var role = ok.GetValueOrDefault("role") as string ?? UserRoles.Coordinator;
+            var username = ok.GetValueOrDefault("username") as string ?? "";
+            var token = AuthSessions.Issue(username, role);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["token"] = token, ["username"] = username, ["role"] = role }, "Signed in.");
+        });
+
+        app.MapPost("/auth/logout", (HttpContext ctx) =>
+        {
+            AuthSessions.Revoke(ExtractToken(ctx));
+            return ApiJson.Ok(new Dictionary<string, object?> { ["ok"] = true }, "Signed out.");
+        });
+
+        app.MapGet("/auth/me", (HttpContext ctx) =>
+        {
+            var id = ResolveIdentity(ctx);
+            return id is null
+                ? ApiJson.Error("Unauthorized.", "unauthorized")
+                : ApiJson.Ok(new Dictionary<string, object?> { ["username"] = id.Username, ["role"] = id.Role });
+        });
+
+        // ---- User management (admin-only via the role layer) ----
+        app.MapGet("/users", (HttpContext ctx) =>
+            RequireAuth(ctx, "manage_users") ?? ApiJson.Ok(Queen.Memory.ListUsers().Select(UserDict).ToList()));
+
+        app.MapPost("/users", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_users"); if (auth is not null) return auth;
+            UserRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<UserRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var err = Queen.Memory.CreateUser(body?.Username ?? "", body?.Password ?? "", body?.Role ?? UserRoles.Coordinator);
+            if (err.Length > 0) return ApiJson.Error(err, "bad_request");
+            return ApiJson.Ok(UserDict(Queen.Memory.GetUser(body!.Username!)!), "User created.");
+        });
+
+        app.MapPatch("/users/{username}", async (HttpContext ctx, string username) =>
+        {
+            var auth = RequireAuth(ctx, "manage_users"); if (auth is not null) return auth;
+            if (Queen.Memory.GetUser(username) is null) return ApiJson.Error($"No user found: {username}", "not_found");
+            UserPatch? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<UserPatch>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var norm = SqliteMemory.NormalizeUsername(username);
+            if (!string.IsNullOrEmpty(body?.Password))
+            {
+                var e = Queen.Memory.SetUserPassword(norm, body.Password); if (e.Length > 0) return ApiJson.Error(e, "bad_request");
+                AuthSessions.RevokeUser(norm); // force re-login with the new password
+            }
+            if (!string.IsNullOrEmpty(body?.Role))
+            {
+                var e = Queen.Memory.SetUserRole(norm, body.Role); if (e.Length > 0) return ApiJson.Error(e, "bad_request");
+                AuthSessions.RevokeUser(norm); // new permissions take effect on next login
+            }
+            if (body?.Active is bool active)
+            {
+                var e = Queen.Memory.SetUserActive(norm, active); if (e.Length > 0) return ApiJson.Error(e, "bad_request");
+                if (!active) AuthSessions.RevokeUser(norm);
+            }
+            return ApiJson.Ok(UserDict(Queen.Memory.GetUser(norm)!), "User updated.");
+        });
+
+        app.MapDelete("/users/{username}", (HttpContext ctx, string username) =>
+        {
+            var auth = RequireAuth(ctx, "manage_users"); if (auth is not null) return auth;
+            var norm = SqliteMemory.NormalizeUsername(username);
+            var me = ResolveIdentity(ctx);
+            if (me is not null && string.Equals(me.Username, norm, StringComparison.OrdinalIgnoreCase))
+                return ApiJson.Error("You cannot delete your own account while signed in.", "bad_request");
+            var err = Queen.Memory.DeleteUser(norm);
+            if (err.Length > 0) return ApiJson.Error(err, "bad_request");
+            AuthSessions.RevokeUser(norm);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["username"] = norm }, "User removed.");
+        });
+    }
+
+    private static Dictionary<string, object?> UserDict(Dictionary<string, object?> row) => new()
+    {
+        ["username"] = row.GetValueOrDefault("username"),
+        ["role"] = row.GetValueOrDefault("role"),
+        ["active"] = Convert.ToInt64(row.GetValueOrDefault("active") ?? 0L) == 1,
+        ["created_at"] = row.GetValueOrDefault("created_at"),
+        ["last_login_at"] = row.GetValueOrDefault("last_login_at"),
+    };
+
+    /// <summary>Consumes one auth-limiter slot for an unauthenticated, abuse-prone endpoint.</summary>
+    private static bool AuthLimiter_TryConsume(HttpContext ctx)
+    {
+        var ip = ClientIp(ctx);
+        if (AuthLimiter.IsLimited(ip)) return false;
+        AuthLimiter.RecordAttempt(ip);
+        return true;
+    }
+
+    // ---- Live dashboard: settings, ant profiles, filtered events, pheromone memory ----
+    private static void MapDashboardEndpoints(WebApplication app)
+    {
+        // Effective settings (secret-free) for the settings panel to render.
+        app.MapGet("/settings", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_config") ?? ApiJson.Ok(AnthillRuntime.SettingsSnapshot()));
+
+        // Apply a partial settings update (Ollama host/model/routes, feature knobs). Whitelisted
+        // keys only; persisted to config.json and re-projected into the live runtime.
+        app.MapPost("/settings", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            Dictionary<string, System.Text.Json.JsonElement>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body is null || body.Count == 0) return ApiJson.Error("No settings provided.", "bad_request");
+            var applied = AnthillRuntime.ApplySettingsUpdate(body);
+            if (applied.Count == 0) return ApiJson.Error("No editable settings in request.", "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["applied"] = applied, ["settings"] = AnthillRuntime.SettingsSnapshot(),
+            }, $"Updated {applied.Count} setting(s).");
+        });
+
+        // Console display state: custom ant names, accent colours, node positions, layout prefs.
+        app.MapGet("/ui/state", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_ui_state") ?? ApiJson.Ok(UiStateStore.Load()));
+
+        app.MapPut("/ui/state", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_ui_state"); if (auth is not null) return auth;
+            System.Text.Json.JsonElement body;
+            try { body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            return ApiJson.Ok(UiStateStore.Save(body), "Console layout saved.");
+        });
+
+        // Filterable event feed (ant / type / level / since / mission).
+        app.MapGet("/events/json", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_events"); if (auth is not null) return auth;
+            var q = ctx.Request.Query;
+            int.TryParse(q["limit"].FirstOrDefault(), out var limit);
+            var rows = Queen.Memory.QueryEventsRich(
+                ant: q["ant"].FirstOrDefault(),
+                typeContains: q["type"].FirstOrDefault(),
+                sinceIso: q["since"].FirstOrDefault(),
+                level: q["level"].FirstOrDefault(),
+                missionId: q["mission_id"].FirstOrDefault(),
+                limit: limit <= 0 ? 200 : limit);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["events"] = rows,
+                ["ants"] = Queen.Memory.DistinctEventAnts(),
+                ["types"] = Queen.Memory.DistinctEventTypes(),
+            });
+        });
+
+        // Pheromone memory: list (with net scores) and prune the unusable/errored trails.
+        app.MapGet("/pheromones/json", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
+            int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var limit);
+            return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(limit <= 0 ? 300 : limit));
+        });
+
+        app.MapPost("/pheromones/prune", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "prune_pheromones"); if (auth is not null) return auth;
+            double.TryParse(ctx.Request.Query["min_strength"].FirstOrDefault(), out var minS);
+            var removed = Queen.Memory.PrunePheromones(minS <= 0 ? 0.15 : minS);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["removed"] = removed, ["trails"] = Queen.Memory.ListPheromoneTrails(300),
+            }, $"Pruned {removed} unusable pheromone trail(s).");
+        });
     }
 
     // ---- Autonomy (Phase 1): objective backlog + Director control plane ----
@@ -312,20 +531,45 @@ public static class ApiHost
         {
             if (AuthLimiter.IsLimited(ip))
                 return ApiJson.Error("Too many failed authentication attempts. Try again later.", "rate_limited");
-            var token = ExtractToken(ctx);
-            if (token is null || !TokenSecurity.ConstantTimeEquals(token, AnthillRuntime.ApiAuthToken))
+            var identity = ResolveIdentity(ctx);
+            if (identity is null)
             {
                 AuthLimiter.RecordAttempt(ip);
-                return ApiJson.Error("Unauthorized.", "unauthorized");
+                return ApiJson.Error("Unauthorized. Log in to the colony.", "unauthorized");
             }
-            AuthLimiter.Clear(ip); // successful auth must not consume the failed-auth budget
+            AuthLimiter.Clear(ip); // a valid session must not consume the failed-auth budget
+            if (!UserRoles.RoleAllows(identity.Role, permission))
+                return ApiJson.Error($"Permission denied: your role ({identity.Role}) is not allowed to {permission}.", "permission_denied");
         }
+        // Capability gate: the feature must also be enabled at all (independent of who you are).
         if (!ApiPermissionAllowed(permission))
             return ApiJson.Error($"Permission denied: {permission} is disabled.", "permission_denied");
         return null;
     }
 
     private static bool ApiPermissionAllowed(string permission) => AnthillRuntime.ApiPermissions.GetValueOrDefault(permission, false);
+
+    /// <summary>
+    /// Resolves the caller's identity from their bearer token: first as a login session, then —
+    /// for back-compat with scripts/CI — as the optional static ANTHILL_API_TOKEN, which acts as a
+    /// programmatic admin when configured. Returns null when neither matches.
+    /// </summary>
+    private static AuthSession? ResolveIdentity(HttpContext ctx)
+    {
+        var token = ExtractToken(ctx);
+        if (token is null) return null;
+        var session = AuthSessions.Resolve(token);
+        if (session is not null) return session;
+        if (HasStaticToken() && TokenSecurity.ConstantTimeEquals(token, AnthillRuntime.ApiAuthToken))
+            return new AuthSession("api-token", UserRoles.Admin, DateTime.UtcNow.AddHours(1));
+        return null;
+    }
+
+    /// <summary>True when a strong, non-placeholder static API token is configured for programmatic use.</summary>
+    private static bool HasStaticToken() =>
+        !string.IsNullOrEmpty(AnthillRuntime.ApiAuthToken)
+        && AnthillRuntime.ApiAuthToken != AnthillRuntime.ApiTokenDefaultPlaceholder
+        && AnthillRuntime.ApiAuthToken.Length >= AnthillRuntime.ApiTokenMinLength;
 
     private static string? ExtractToken(HttpContext ctx)
     {
@@ -351,6 +595,9 @@ public static class ApiHost
 }
 
 public sealed class MissionRequest { public string Goal { get; set; } = ""; }
+public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
+public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
+public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
 public sealed class RejectBody { public string? Reason { get; set; } }
 public sealed class ObjectiveRequest
 {

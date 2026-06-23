@@ -21,9 +21,10 @@ ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrate
 11. [The Approval Workflow](#the-approval-workflow)
 12. [Self-Modification Missions](#self-modification-missions)
 13. [API Reference](#api-reference)
-14. [Security Model](#security-model)
-15. [Building from Source](#building-from-source)
-16. [Troubleshooting](#troubleshooting)
+14. [Authentication & Operator Accounts](#authentication--operator-accounts)
+15. [Security Model](#security-model)
+16. [Building from Source](#building-from-source)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -207,39 +208,32 @@ cp config.example.json .anthill/config.json
 - `ollama_host` → the IP/hostname of the machine running Ollama
 - `api_host` → `0.0.0.0` to listen on all interfaces, or `127.0.0.1` for localhost-only
 
-### 4. Set your API token
-
-```bash
-# Linux / macOS
-export ANTHILL_API_TOKEN="$(openssl rand -hex 24)"    # generates a 48-char token
-echo $ANTHILL_API_TOKEN                               # save this — you need it for the UI
-
-# Windows PowerShell
-$env:ANTHILL_API_TOKEN = -join ((65..90)+(97..122)+(48..57) | Get-Random -Count 40 | % {[char]$_})
-$env:ANTHILL_API_TOKEN
-```
-
-### 5. Build and run
+### 4. Build and run
 
 ```bash
 # Linux / macOS (builds kernel + .NET, runs tests, starts API)
 ./build.sh
-export ANTHILL_API_TOKEN="your-token-here"
 dotnet run --project src/Anthill.Cli -- --api
 
 # Windows (PowerShell)
 .\build.ps1
-$env:ANTHILL_API_TOKEN = "your-token-here"
 dotnet run --project src\Anthill.Cli -- --api
 ```
 
-### 6. Open the UI
+> No API token is required to start. The web console is secured by **operator accounts**
+> (username + password), not a shared key. See [Authentication & Operator Accounts](#authentication--operator-accounts).
+> A static `ANTHILL_API_TOKEN` remains **optional** — set one only if you want a programmatic
+> admin credential for scripts/CI (it must be ≥ 32 chars if set).
+
+### 5. Open the UI and create your administrator
 
 ```
 http://localhost:8713/ui
 ```
 
-Paste your `ANTHILL_API_TOKEN` when prompted. The colony canvas will appear.
+On first run the console shows a **one-time setup screen**: choose a username (default `admin`)
+and a password. That account has full administrative rights. From then on, everyone signs in with
+a username and password — there is no token to paste.
 
 ---
 
@@ -892,11 +886,54 @@ refuses to run while that file exists. `POST /autonomy/start` clears it.
 
 ---
 
+## Authentication & Operator Accounts
+
+The web console is secured by **password-based operator accounts**, not a shared API key.
+
+- **First run** — the UI shows a one-time setup screen to create the initial **administrator**
+  (username + password). No accounts can be created any other way until one exists.
+- **Login** — every subsequent visit requires a username and password. A successful login mints an
+  in-memory **session token** (12-hour sliding expiry) used as the bearer credential. Sessions live
+  only in process memory, so a restart logs everyone out and no session secret is ever written to disk.
+- **Passwords** are stored only as salted **PBKDF2-SHA256** hashes (120k iterations), verified in
+  constant time. Plaintext is never persisted.
+
+### Roles
+
+| Role | Can do |
+|------|--------|
+| **Administrator** | Everything: dispatch missions, approvals, settings, ant config, pheromone memory, autonomy control, and **user management**. |
+| **Mission Coordinator** | Only **send missions to the Queen** and **read the event logs** (plus live status to watch them run). Settings, approvals, patches, autonomy, pheromones, ant config, and user management are all denied. |
+
+Admins manage accounts from the **👥 Users** page in the console: create users, assign roles, reset
+passwords, enable/disable, or delete. Changing a user's password, role, or status immediately revokes
+their active sessions. The last remaining administrator cannot be demoted, disabled, or deleted, so you
+can never lock yourself out of admin.
+
+### Lock-out recovery (CLI)
+
+If you forget the admin password, reset it from the host shell (operates directly on the database):
+
+```bash
+dotnet run --project src/Anthill.Cli -- --set-password admin <new-password>
+dotnet run --project src/Anthill.Cli -- --add-user <username> <password> admin    # or: coordinator
+```
+
+### Optional static token (programmatic access)
+
+`ANTHILL_API_TOKEN` is **no longer required** and is not the web credential. If you set one (≥ 32
+chars), it acts as a programmatic **admin** bearer for scripts/CI — convenient for automation, but
+unnecessary for normal use. Leave it unset to rely purely on operator accounts.
+
+---
+
 ## Security Model
 
 | Control | Implementation |
 |---------|---------------|
-| Token enforcement | API refuses to start unless `ANTHILL_API_TOKEN` is ≥ 32 chars and not the default placeholder |
+| Operator accounts | Password login (PBKDF2-SHA256, salted, 120k iters); role-based authorization (admin / coordinator) |
+| Sessions | In-memory bearer sessions with sliding 12h expiry; revoked on password/role/status change and restart |
+| Optional static token | `ANTHILL_API_TOKEN` is optional; if set it must be ≥ 32 chars and acts as a programmatic admin credential |
 | Constant-time auth | `CryptographicOperations.FixedTimeEquals` — immune to timing attacks |
 | Rate limiting | `/missions`: 10/min/IP · auth failures: 20/min/IP (success clears the failure budget) |
 | Security headers | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, CSP, `Referrer-Policy: no-referrer` |

@@ -94,6 +94,7 @@ public sealed partial class Queen
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path"), ["change_type"] = Str(patch, "change_type"), ["backup_path"] = backupPath });
         Memory.UpdatePheromoneTrail("capability:controlled_file_writing", "capability", true, 0.03,
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path") });
+
         return $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied";
     }
 

@@ -212,6 +212,11 @@ public sealed partial class SqliteMemory : IDisposable
             follow_ups_created INTEGER NOT NULL DEFAULT 0, notes TEXT,
             started_at TEXT NOT NULL, finished_at TEXT,
             FOREIGN KEY (objective_id) REFERENCES objectives(id))",
+        // Operator accounts: password-based login with roles (admin / coordinator).
+        // The static API token is no longer the web credential; these accounts are.
+        @"CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_login_at TEXT)",
         // Helpful indexes for the hot lookups the colony performs constantly.
         "CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_mission ON events(mission_id)",
@@ -272,6 +277,7 @@ public sealed partial class SqliteMemory : IDisposable
             (6, "config_and_migration_framework", "Configuration, workspace, schema metadata, and migration ledger enabled."),
             (7, "scheduler_task_lifecycle", "Task scheduler lifecycle, retry, failure, skip, and graph metadata columns verified."),
             (8, "autonomy_rails", "Autonomy backlog (objectives) and per-mission audit trail (autonomy_runs) tables verified."),
+            (9, "user_accounts", "Operator accounts (users) with password login and roles verified."),
         };
         foreach (var (id, name, description) in migrations)
         {

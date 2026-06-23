@@ -314,19 +314,91 @@ canvas{display:block;width:100%;height:100%;}
 
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.7);}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+
+/* Colony settings: toggles + numeric grids */
+.toggle-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border:1px solid var(--border);border-radius:5px;background:rgba(255,255,255,.02);}
+.toggle-row span{font-size:10px;color:var(--muted);}
+.toggle-sw{position:relative;width:34px;height:18px;flex-shrink:0;border-radius:10px;background:rgba(255,255,255,.1);cursor:pointer;transition:background .2s;}
+.toggle-sw.on{background:var(--queen);}
+.toggle-sw::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s;}
+.toggle-sw.on::after{left:18px;}
+.num-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.num-row{display:flex;flex-direction:column;gap:3px;}
+.num-row label{font-size:9px;color:var(--dim);letter-spacing:.3px;}
+.num-row input{padding:6px 8px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;width:100%;}
+.num-row input:focus{border-color:var(--queen);}
+
+/* Generic full-screen page overlay (Ant Config, Pheromones) */
+.page-modal{position:fixed;inset:0;background:rgba(8,14,22,.98);z-index:700;display:none;flex-direction:column;}
+.page-modal.show{display:flex;}
+.page-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.page-head h3{font-size:13px;font-weight:700;color:var(--text);flex:1;letter-spacing:.5px;}
+.page-head .sub{font-size:10px;color:var(--dim);}
+.page-body{flex:1;overflow-y:auto;padding:16px 20px;}
+.page-foot{padding:8px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+
+/* Ant config cards */
+.antcfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;max-width:980px;}
+.antcfg-card{border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:14px;display:flex;flex-direction:column;gap:9px;}
+.antcfg-top{display:flex;align-items:center;gap:9px;}
+.antcfg-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
+.antcfg-role{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);}
+.antcfg-field{display:flex;flex-direction:column;gap:3px;}
+.antcfg-field label{font-size:9px;color:var(--dim);letter-spacing:.3px;text-transform:uppercase;}
+.antcfg-field input,.antcfg-field select{padding:7px 9px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:11px;font-family:var(--mono);outline:none;width:100%;}
+.antcfg-field input[type=color]{padding:2px;height:30px;cursor:pointer;}
+.antcfg-field input:focus,.antcfg-field select:focus{border-color:var(--queen);}
+
+/* Pheromone table */
+.phero-table{width:100%;border-collapse:collapse;font-size:11px;max-width:1100px;}
+.phero-table th{text-align:left;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);padding:6px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);}
+.phero-table td{padding:6px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);color:var(--muted);}
+.phero-key{color:var(--text);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.phero-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;min-width:70px;}
+.phero-bar-fill{height:100%;border-radius:3px;}
+.phero-net.pos{color:var(--green);}
+.phero-net.neg{color:var(--red);}
+
+/* Rename popover */
+#rename-pop{position:fixed;z-index:850;background:rgba(8,14,22,.98);border:1px solid var(--border-hi);border-radius:7px;padding:10px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.6);}
+#rename-pop.show{display:block;}
+#rename-pop label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px;}
+#rename-pop input{padding:7px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:12px;outline:none;width:180px;}
+#rename-pop input:focus{border-color:var(--queen);}
+#rename-pop .rp-btns{display:flex;gap:6px;margin-top:8px;}
+#rename-pop button{flex:1;padding:6px;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;}
+#rename-pop .rp-save{background:var(--queen);color:#000;}
+#rename-pop .rp-cancel{background:rgba(255,255,255,.06);color:var(--muted);}
 </style>
 </head>
 <body>
 
-<!-- Token setup -->
+<!-- Login / first-run setup -->
 <div id="setup-overlay">
   <div class="setup-card">
     <h2>ANTHILL</h2>
-    <p>Connect to the colony. Enter your API token and optionally a remote API base URL (leave blank if opening from the API server).</p>
-    <div class="setup-field"><label>API Token</label><input id="token-input" type="password" placeholder="Paste ANTHILL_API_TOKEN here..." autocomplete="off" /></div>
-    <div class="setup-field"><label>API Base URL <span style="color:var(--dim)">(optional — default: relative)</span></label><input id="apibase-input" type="text" placeholder="http://10.10.10.20:8713" autocomplete="off" /></div>
-    <button id="token-btn">Connect to Colony</button>
-    <div class="setup-err" id="token-err"></div>
+
+    <!-- LOGIN mode -->
+    <div id="auth-login">
+      <p>Sign in to the colony.</p>
+      <div class="setup-field"><label>Username</label><input id="login-user" type="text" placeholder="admin" autocomplete="username" /></div>
+      <div class="setup-field"><label>Password</label><input id="login-pass" type="password" placeholder="Your password" autocomplete="current-password" /></div>
+      <div class="setup-field"><label>API Base URL <span style="color:var(--dim)">(optional — blank = this server)</span></label><input id="apibase-input" type="text" placeholder="http://10.10.10.20:8713" autocomplete="off" /></div>
+      <button id="login-btn">Sign In</button>
+      <div class="setup-err" id="auth-err"></div>
+    </div>
+
+    <!-- SETUP mode (first run only) -->
+    <div id="auth-setup" style="display:none;">
+      <p>Welcome. No accounts exist yet — create the <b style="color:var(--queen)">administrator</b> who will own this colony.</p>
+      <div class="setup-field"><label>Admin Username</label><input id="setup-user" type="text" value="admin" autocomplete="username" /></div>
+      <div class="setup-field"><label>Password <span style="color:var(--dim)">(min 8 chars)</span></label><input id="setup-pass" type="password" placeholder="Choose a strong password" autocomplete="new-password" /></div>
+      <div class="setup-field"><label>Confirm Password</label><input id="setup-pass2" type="password" placeholder="Re-enter password" autocomplete="new-password" /></div>
+      <div class="setup-field"><label>API Base URL <span style="color:var(--dim)">(optional)</span></label><input id="setup-apibase" type="text" placeholder="http://10.10.10.20:8713" autocomplete="off" /></div>
+      <button id="setup-btn">Create Administrator</button>
+      <div class="setup-err" id="setup-err-msg"></div>
+    </div>
   </div>
 </div>
 
@@ -339,14 +411,15 @@ canvas{display:block;width:100%;height:100%;}
     </div>
     <div class="settings-tabs">
       <div class="settings-tab active" data-tab="connection">Connection</div>
+      <div class="settings-tab" data-tab="colony">Colony</div>
       <div class="settings-tab" data-tab="models">Models</div>
       <div class="settings-tab" data-tab="info">System</div>
     </div>
     <!-- Connection tab -->
     <div class="settings-pane active" id="tab-connection" style="overflow-y:auto;">
-      <div class="settings-field">
-        <div class="settings-label">API Token</div>
-        <input class="settings-input" id="settings-token" type="password" placeholder="ANTHILL_API_TOKEN" />
+      <div class="settings-info">
+        <div class="settings-info-row"><span class="settings-info-key">Signed in as</span><span class="settings-info-val" id="si-username">—</span></div>
+        <div class="settings-info-row"><span class="settings-info-key">Role</span><span class="settings-info-val" id="si-role">—</span></div>
       </div>
       <div class="settings-field">
         <div class="settings-label">API Base URL <span style="color:var(--dim)">(blank = relative to page)</span></div>
@@ -362,6 +435,29 @@ canvas{display:block;width:100%;height:100%;}
         <button class="settings-btn save" id="settings-save">Save &amp; Reconnect</button>
         <button class="settings-btn secondary" id="settings-cancel">Cancel</button>
       </div>
+    </div>
+    <!-- Colony tab — live, persisted settings -->
+    <div class="settings-pane" id="tab-colony" style="overflow-y:auto;">
+      <div class="section-label">Ollama Backend</div>
+      <div class="settings-field">
+        <div class="settings-label">Ollama Host</div>
+        <input class="settings-input" id="set-ollama-host" type="text" placeholder="http://10.10.10.20:11434" />
+      </div>
+      <div class="settings-field">
+        <div class="settings-label">Default Model</div>
+        <input class="settings-input" id="set-ollama-model" type="text" placeholder="llama3.1:8b" />
+      </div>
+      <div class="section-label" style="margin-top:8px;">Capabilities</div>
+      <div class="toggle-grid" id="set-toggles"></div>
+      <div class="section-label" style="margin-top:8px;">Limits &amp; Long-Input</div>
+      <div class="num-grid" id="set-nums"></div>
+      <div class="section-label" style="margin-top:8px;">Autonomy</div>
+      <div class="num-grid" id="set-autonomy"></div>
+      <div class="settings-row" style="margin-top:6px;">
+        <button class="settings-btn save" id="colony-save">Save Colony Settings</button>
+        <button class="settings-btn secondary" id="colony-reload">↻ Reload</button>
+      </div>
+      <div id="colony-save-msg" style="font-size:10px;color:var(--green);min-height:14px;"></div>
     </div>
     <!-- Models tab -->
     <div class="settings-pane" id="tab-models" style="overflow-y:auto;">
@@ -408,11 +504,17 @@ canvas{display:block;width:100%;height:100%;}
     </select>
     <select id="log-filter-type" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
       <option value="">All Types</option>
-      <option value="task">task</option>
-      <option value="mission">mission</option>
-      <option value="patch">patch</option>
-      <option value="approval">approval</option>
-      <option value="error">error/fail</option>
+    </select>
+    <select id="log-filter-level" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
+      <option value="">All Severity</option>
+      <option value="error">Errors / Alarms</option>
+    </select>
+    <select id="log-filter-since" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
+      <option value="">All Time</option>
+      <option value="15m">Last 15 min</option>
+      <option value="1h">Last hour</option>
+      <option value="6h">Last 6 hours</option>
+      <option value="24h">Last 24 hours</option>
     </select>
     <button class="result-close" id="log-modal-close" style="font-size:20px;padding:0 8px;">✕</button>
   </div>
@@ -423,9 +525,84 @@ canvas{display:block;width:100%;height:100%;}
   </div>
 </div>
 
+<!-- Ant configuration page -->
+<div id="antcfg-modal" class="page-modal">
+  <div class="page-head">
+    <h3>🐜 Ant Configuration</h3>
+    <span class="sub">Rename your ants, recolor them, and assign each caste its model. Drag ants on the colony map to arrange your anthill.</span>
+    <button class="result-close" onclick="document.getElementById('antcfg-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
+  </div>
+  <div class="page-body"><div class="antcfg-grid" id="antcfg-grid"></div></div>
+  <div class="page-foot">
+    <button class="settings-btn save" id="antcfg-save" style="padding:6px 16px;flex:none;">Save Ant Profiles</button>
+    <button class="settings-btn secondary" id="antcfg-reset" style="padding:6px 16px;flex:none;">Reset to Defaults</button>
+    <span id="antcfg-msg" style="color:var(--green);"></span>
+  </div>
+</div>
+
+<!-- Pheromone memory page -->
+<div id="phero-modal" class="page-modal">
+  <div class="page-head">
+    <h3>🧬 Pheromone Memory</h3>
+    <span class="sub">Reinforcement trails the colony has learned. Pruning removes weak and failure-dominant trails, keeping only what's useful.</span>
+    <button class="result-close" onclick="document.getElementById('phero-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
+  </div>
+  <div class="page-body" id="phero-body"><div style="color:var(--dim)">Loading…</div></div>
+  <div class="page-foot">
+    <span id="phero-count">0 trails</span>
+    <button class="settings-btn secondary" id="phero-reload" style="padding:6px 14px;flex:none;">↻ Reload</button>
+    <button class="settings-btn save" id="phero-prune" style="padding:6px 14px;flex:none;background:var(--orange);">🧹 Prune Unusable</button>
+    <span id="phero-msg" style="color:var(--green);"></span>
+  </div>
+</div>
+
+<!-- User management page (admin only) -->
+<div id="users-modal" class="page-modal">
+  <div class="page-head">
+    <h3>👥 Operator Accounts</h3>
+    <span class="sub">Admins have full control. Mission Coordinators can only send missions to the Queen and read the event logs.</span>
+    <button class="result-close" onclick="document.getElementById('users-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
+  </div>
+  <div class="page-body">
+    <div style="max-width:760px;">
+      <div class="section-label">Add Account</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
+        <div class="num-row" style="flex:1;min-width:140px;"><label>Username</label><input id="nu-user" type="text" placeholder="coordinator1" autocomplete="off" /></div>
+        <div class="num-row" style="flex:1;min-width:140px;"><label>Password (min 8)</label><input id="nu-pass" type="password" placeholder="••••••••" autocomplete="new-password" /></div>
+        <div class="num-row" style="min-width:150px;"><label>Role</label>
+          <select id="nu-role" style="padding:6px 8px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:11px;">
+            <option value="coordinator">Mission Coordinator</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+        <button class="settings-btn save" id="nu-add" style="flex:none;padding:7px 16px;">Create</button>
+      </div>
+      <div id="nu-msg" style="font-size:10px;min-height:14px;margin-bottom:10px;"></div>
+      <div class="section-label">Accounts</div>
+      <table class="phero-table" style="max-width:760px;"><thead><tr>
+        <th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody id="users-tbody"><tr><td colspan="5" style="color:var(--dim)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="page-foot"><span id="users-count">0 accounts</span>
+    <button class="settings-btn secondary" id="users-reload" style="padding:6px 14px;flex:none;">↻ Reload</button>
+  </div>
+</div>
+
+<!-- Rename popover (double-click an ant on the map) -->
+<div id="rename-pop">
+  <label>Rename Ant</label>
+  <input id="rename-input" type="text" maxlength="28" autocomplete="off" />
+  <div class="rp-btns">
+    <button class="rp-save" id="rename-save">Save</button>
+    <button class="rp-cancel" id="rename-cancel">Cancel</button>
+  </div>
+</div>
+
 <!-- Top bar -->
 <div id="topbar">
-  <div class="logo">ANTHILL <span>v1.8.0</span></div>
+  <div class="logo">ANTHILL <span>v1.8.1</span></div>
   <div class="topbar-mission">
     <div class="dot" id="mission-dot"></div>
     <div class="goal" id="mission-goal">Idle — no active mission</div>
@@ -433,8 +610,14 @@ canvas{display:block;width:100%;height:100%;}
   <div class="topbar-right">
     <div id="model-badge">connecting...</div>
     <div id="conn-badge" class="err">● Offline</div>
+    <div id="user-chip" title="Signed-in operator" style="display:none;font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:4px;border:1px solid var(--border);color:var(--muted);"></div>
+    <button class="icon-btn" id="antconfig-btn" title="Ant Configuration" onclick="openAntConfig()">🐜</button>
+    <button class="icon-btn" id="pheromone-btn" title="Pheromone Memory" onclick="openPheromones()">🧬</button>
+    <button class="icon-btn" id="log-btn" title="Event Log (Ctrl+L)" onclick="openLogModal()">📋</button>
     <button class="icon-btn" id="approval-bell" title="Pending Approvals">🔔<span id="bell-count"></span></button>
+    <button class="icon-btn" id="users-btn" title="Manage Users" onclick="openUsers()">👥</button>
     <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
+    <button class="icon-btn" id="logout-btn" title="Sign Out">⎋</button>
   </div>
 </div>
 
@@ -517,10 +700,12 @@ canvas{display:block;width:100%;height:100%;}
   <div class="result-status-bar" id="result-status-bar"></div>
 </div>
 
-<div id="zoom-hint">Scroll to zoom · Drag to pan · Click/hover nodes</div>
+<div id="zoom-hint">Scroll zoom · Drag canvas to pan · Drag an ant to move it · Double-click to rename</div>
 
 <script>
 'use strict';
+
+var uiReady = false;  // hoisted gate: applyUiState() is a no-op until console state is initialised
 
 // ── Config & API ─────────────────────────────────────────────────────────────
 let TOKEN   = localStorage.getItem('anthill_token') || '';
@@ -535,48 +720,129 @@ async function api(path, method='GET', body=null) {
   const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url(path), opts);
-  if (r.status === 401) throw new Error('unauthorized');
+  if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
   return r.json();
 }
 async function apiText(path) {
   const r = await fetch(url(path), { headers: { 'Authorization': 'Bearer '+TOKEN } });
-  if (r.status === 401) throw new Error('unauthorized');
+  if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
   return r.text();
 }
 
-// ── Token setup ──────────────────────────────────────────────────────────────
+// ── Authentication: user + password sessions ──────────────────────────────────
 const setupEl = document.getElementById('setup-overlay');
+let ROLE = localStorage.getItem('anthill_role') || '';
+let USERNAME = localStorage.getItem('anthill_user') || '';
+let pollingStarted = false;
 
-document.getElementById('token-btn').addEventListener('click', tryConnect);
-document.getElementById('token-input').addEventListener('keydown', e => { if(e.key==='Enter') tryConnect(); });
+function setSession(token, role, username){
+  setToken(token); ROLE=role; USERNAME=username;
+  localStorage.setItem('anthill_role', role||''); localStorage.setItem('anthill_user', username||'');
+}
+function clearSession(){
+  TOKEN=''; ROLE=''; USERNAME='';
+  ['anthill_token','anthill_role','anthill_user'].forEach(k=>localStorage.removeItem(k));
+}
 
-async function tryConnect() {
-  const tok = document.getElementById('token-input').value.trim();
-  const base= document.getElementById('apibase-input').value.trim();
-  const err = document.getElementById('token-err');
-  if (!tok) { err.textContent='Token cannot be empty.'; return; }
-  setToken(tok);
-  if (base) setApiBase(base);
-  try {
-    const r = await api('/status');
-    if (!r.success) throw new Error(r.message);
-    setupEl.style.display = 'none';
-    enableInput(true);
-    startPolling();
-  } catch(e) {
-    if (e.message==='unauthorized') err.textContent='Invalid token.';
-    else err.textContent = 'Cannot reach API: '+e.message;
+async function rawPost(path, body){
+  const r = await fetch(url(path), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  return r.json();
+}
+
+function showAuth(mode, err){
+  setupEl.style.display='flex';
+  document.getElementById('auth-login').style.display = mode==='login'?'block':'none';
+  document.getElementById('auth-setup').style.display = mode==='setup'?'block':'none';
+  const el = document.getElementById(mode==='setup'?'setup-err-msg':'auth-err');
+  if(el) el.textContent = err||'';
+}
+
+// Called from api()/apiText() when the server rejects our session.
+let authLost=false;
+function onUnauthorized(){
+  if(authLost) return; authLost=true;
+  clearSession();
+  showAuth('login','Session expired — please sign in again.');
+}
+
+async function bootAuth(){
+  let status;
+  try { status = await (await fetch(url('/auth/status'))).json(); }
+  catch(e){ showAuth('login','Cannot reach API. Check the API Base URL and try again.'); return; }
+  if(status?.data?.setup_required){ showAuth('setup'); return; }
+  if(TOKEN){
+    try{ const me=await api('/auth/me'); if(me.success){ setSession(TOKEN, me.data.role, me.data.username); enterApp(); return; } }
+    catch{ /* fall through to login */ }
   }
+  showAuth('login');
 }
 
-async function autoConnect() {
-  if (!TOKEN) return;
-  try {
-    const r = await api('/status');
-    if (r.success) { setupEl.style.display='none'; enableInput(true); startPolling(); }
-  } catch { /* show setup */ }
+function enterApp(){
+  authLost=false;
+  setupEl.style.display='none';
+  applyRoleVisibility();
+  enableInput(true);
+  if(!pollingStarted){ pollingStarted=true; startPolling(); }
 }
-autoConnect();
+
+// Login
+document.getElementById('login-btn').addEventListener('click', doLogin);
+document.getElementById('login-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('login-user').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('login-pass').focus(); });
+async function doLogin(){
+  const u=document.getElementById('login-user').value.trim();
+  const p=document.getElementById('login-pass').value;
+  const base=document.getElementById('apibase-input').value.trim();
+  const err=document.getElementById('auth-err'); err.textContent='';
+  if(!u||!p){ err.textContent='Enter your username and password.'; return; }
+  setApiBase(base||'');
+  try{
+    const r=await rawPost('/auth/login',{username:u,password:p});
+    if(r.success){ document.getElementById('login-pass').value=''; setSession(r.data.token,r.data.role,r.data.username); enterApp(); }
+    else err.textContent=r.message||'Login failed.';
+  }catch(e){ err.textContent='Cannot reach API: '+e.message; }
+}
+
+// First-run admin setup
+document.getElementById('setup-btn').addEventListener('click', doSetup);
+document.getElementById('setup-pass2').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
+async function doSetup(){
+  const u=document.getElementById('setup-user').value.trim()||'admin';
+  const p=document.getElementById('setup-pass').value;
+  const p2=document.getElementById('setup-pass2').value;
+  const base=document.getElementById('setup-apibase').value.trim();
+  const err=document.getElementById('setup-err-msg'); err.textContent='';
+  if(p.length<8){ err.textContent='Password must be at least 8 characters.'; return; }
+  if(p!==p2){ err.textContent='Passwords do not match.'; return; }
+  setApiBase(base||'');
+  try{
+    const r=await rawPost('/auth/setup',{username:u,password:p});
+    if(r.success){ setSession(r.data.token,r.data.role,r.data.username); enterApp(); }
+    else err.textContent=r.message||'Setup failed.';
+  }catch(e){ err.textContent='Cannot reach API: '+e.message; }
+}
+
+document.getElementById('logout-btn').addEventListener('click', async ()=>{
+  try{ await api('/auth/logout','POST'); }catch{}
+  clearSession(); location.reload();
+});
+
+// Show/hide controls by role. Admins see everything; coordinators only get the
+// mission bar, event log, and live status.
+function applyRoleVisibility(){
+  const admin = ROLE==='admin';
+  ['antconfig-btn','pheromone-btn','users-btn','settings-btn','approval-bell'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display = admin?'':'none';
+  });
+  const chip=document.getElementById('user-chip');
+  chip.style.display='block';
+  chip.textContent=`${USERNAME||'?'} · ${admin?'ADMIN':'COORDINATOR'}`;
+  chip.style.color = admin?'var(--queen)':'var(--blue)';
+  chip.style.borderColor = admin?'rgba(251,191,36,.3)':'rgba(56,189,248,.3)';
+  if(!admin){ const ac=document.getElementById('approvals-card'); if(ac) ac.style.display='none'; }
+}
+
+bootAuth();
 
 function enableInput(on) {
   document.getElementById('mission-input').disabled = !on;
@@ -593,7 +859,8 @@ document.getElementById('settings-cancel').addEventListener('click', () => setti
 document.getElementById('settings-save').addEventListener('click', saveSettings);
 
 function openSettings() {
-  document.getElementById('settings-token').value = TOKEN ? '••••••••' : '';
+  document.getElementById('si-username').textContent = USERNAME || '—';
+  document.getElementById('si-role').textContent = ROLE==='admin' ? 'Administrator' : (ROLE||'—');
   document.getElementById('settings-apibase').value = API_BASE;
   settingsOverlay.classList.add('show');
   loadSettingsInfo();
@@ -624,9 +891,7 @@ async function loadSettingsInfo() {
 }
 
 async function saveSettings() {
-  const tok  = document.getElementById('settings-token').value.trim();
   const base = document.getElementById('settings-apibase').value.trim();
-  if (tok && !tok.startsWith('•')) setToken(tok);
   setApiBase(base);
   settingsOverlay.classList.remove('show');
   try {
@@ -686,6 +951,7 @@ function buildNodes() {
       edges.push({from:b.ant,to:sid});
     }
   });
+  applyUiState();
 }
 buildNodes();
 
@@ -822,11 +1088,23 @@ function drawNode(n,ts){
 let dragging=false,dragStart={x:0,y:0},dragCam={x:0,y:0};
 const tooltip=document.getElementById('tooltip');
 
-canvas.addEventListener('mousedown',e=>{dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};});
+let draggingNode=null, nodeDragOff={x:0,y:0}, nodeMoved=false;
+canvas.addEventListener('mousedown',e=>{
+  const wp=s2w(e.clientX,e.clientY-50);
+  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
+  if(hit){ draggingNode=hit; nodeDragOff={x:wp.x-hit.x,y:wp.y-hit.y}; nodeMoved=false; dragStart={x:e.clientX,y:e.clientY}; canvas.style.cursor='grabbing'; return; }
+  dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};
+});
 canvas.addEventListener('mousemove',e=>{
+  if(draggingNode){
+    const wp=s2w(e.clientX,e.clientY-50);
+    draggingNode.x=wp.x-nodeDragOff.x; draggingNode.y=wp.y-nodeDragOff.y;
+    nodeMoved=true; hoveredNode=null; tooltip.style.display='none'; return;
+  }
   if(dragging){camX=dragCam.x+(e.clientX-dragStart.x);camY=dragCam.y+(e.clientY-dragStart.y);tX=camX;tY=camY;hoveredNode=null;tooltip.style.display='none';return;}
   const wp=s2w(e.clientX,e.clientY-50);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
+  canvas.style.cursor=hit?'grab':'default';
   if(hit){
     hoveredNode=hit;
     const tasks=lastGraphData?.ant_counts?.[hit.ant]??0;
@@ -846,6 +1124,11 @@ canvas.addEventListener('mousemove',e=>{
 });
 canvas.addEventListener('mouseleave',()=>{hoveredNode=null;tooltip.style.display='none';});
 canvas.addEventListener('mouseup',e=>{
+  if(draggingNode){
+    const n=draggingNode; draggingNode=null; canvas.style.cursor='grab';
+    if(nodeMoved){ persistNodePosition(n); } else { showInspector(n); }
+    return;
+  }
   const moved=Math.abs(e.clientX-dragStart.x)+Math.abs(e.clientY-dragStart.y);
   dragging=false;
   if(moved<5){
@@ -854,6 +1137,12 @@ canvas.addEventListener('mouseup',e=>{
     if(hit) showInspector(hit);
     else{selectedNode=null;document.getElementById('agent-detail').innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
   }
+});
+// Double-click an ant to rename it inline.
+canvas.addEventListener('dblclick',e=>{
+  const wp=s2w(e.clientX,e.clientY-50);
+  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
+  if(hit) openRename(hit,e.clientX,e.clientY);
 });
 canvas.addEventListener('wheel',e=>{
   e.preventDefault();
@@ -1235,6 +1524,10 @@ document.addEventListener('keydown',e=>{
     document.getElementById('result-overlay').classList.remove('show');
     settingsOverlay.classList.remove('show');
     document.getElementById('log-modal').classList.remove('show');
+    document.getElementById('antcfg-modal').classList.remove('show');
+    document.getElementById('phero-modal').classList.remove('show');
+    document.getElementById('users-modal').classList.remove('show');
+    renamePop.classList.remove('show');
   }
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();document.getElementById('mission-input').focus();}
   if((e.ctrlKey||e.metaKey)&&e.key==='l'){e.preventDefault();openLogModal();}
@@ -1242,6 +1535,7 @@ document.addEventListener('keydown',e=>{
 
 // ── Polling loop ──────────────────────────────────────────────────────────────
 function startPolling(){
+  loadUiState();
   pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
@@ -1294,6 +1588,7 @@ document.querySelectorAll('.settings-tab').forEach(tab=>{
     document.getElementById('tab-'+tab.dataset.tab)?.classList.add('active');
     if(tab.dataset.tab==='models') loadModelsTab();
     if(tab.dataset.tab==='info') loadInfoTab();
+    if(tab.dataset.tab==='colony') loadColonyTab();
   });
 });
 document.getElementById('models-refresh').addEventListener('click', loadModelsTab);
@@ -1395,55 +1690,351 @@ document.getElementById('log-modal-close').addEventListener('click',()=>{
 });
 document.getElementById('log-reload').addEventListener('click', reloadLogModal);
 
+function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+const SINCE_MS={'15m':9e5,'1h':36e5,'6h':216e5,'24h':864e5};
+
 async function reloadLogModal(){
   try {
-    const text=await apiText('/events');
-    allLogEvents=text.split('\n\n').slice(1).filter(b=>b.trim()&&b.includes('['));
+    const ant  =document.getElementById('log-filter-ant').value;
+    const type =document.getElementById('log-filter-type').value;
+    const level=document.getElementById('log-filter-level').value;
+    const since=document.getElementById('log-filter-since').value;
+    const p=new URLSearchParams();
+    if(ant)   p.set('ant',ant);
+    if(type)  p.set('type',type);
+    if(level) p.set('level',level);
+    if(since && SINCE_MS[since]) p.set('since', new Date(Date.now()-SINCE_MS[since]).toISOString());
+    p.set('limit','500');
+    const r=await api('/events/json?'+p.toString());
+    if(!r.success) throw new Error(r.message);
+    allLogEvents=r.data.events||[];
+    populateLogFilters(r.data.ants||[], r.data.types||[]);
     renderLogModal();
   } catch(e){ document.getElementById('log-modal-body').innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`; }
 }
 
+// Populate the ant + type filter menus from what the colony has actually logged,
+// preserving the human's current selection.
+function populateLogFilters(ants, types){
+  const antSel=document.getElementById('log-filter-ant');
+  const want=ants.length?ants:Object.keys(ANT_DEFAULTS);
+  const cur=antSel.value;
+  antSel.innerHTML='<option value="">All Ants</option>'+want.map(a=>{
+    const label=ANT_DEFAULTS[a]?casteName(a):a;
+    return `<option value="${escapeHtml(a)}"${a===cur?' selected':''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  const typeSel=document.getElementById('log-filter-type');
+  const tcur=typeSel.value;
+  typeSel.innerHTML='<option value="">All Types</option>'+types.map(t=>`<option value="${escapeHtml(t)}"${t===tcur?' selected':''}>${escapeHtml(t)}</option>`).join('');
+}
+
 function renderLogModal(){
   const search=(document.getElementById('log-search').value||'').toLowerCase();
-  const antFilter=document.getElementById('log-filter-ant').value;
-  const typeFilter=document.getElementById('log-filter-type').value;
   const body=document.getElementById('log-modal-body');
-  const filtered=allLogEvents.filter(block=>{
-    if(antFilter){const m=block.match(/Ant:\s*([^\s|]+)/);if(!m||m[1].trim()!==antFilter) return false;}
-    if(typeFilter){const m=block.match(/^\[([^\]]+)\]/);if(!m||!m[1].includes(typeFilter)) return false;}
-    if(search&&!block.toLowerCase().includes(search)) return false;
-    return true;
+  const filtered=allLogEvents.filter(ev=>{
+    if(!search) return true;
+    return `${ev.event_type} ${ev.ant_name} ${ev.message} ${ev.mission_id}`.toLowerCase().includes(search);
   });
   document.getElementById('log-modal-count').textContent=`${filtered.length} / ${allLogEvents.length} events`;
-  body.innerHTML=filtered.map(block=>{
-    const lines=block.trim().split('\n');
-    const l0=lines[0]||'';
-    const typeMatch=l0.match(/^\[([^\]]+)\]/);
-    const evType=typeMatch?typeMatch[1]:'event';
-    const isoTs=l0.replace(/^\[[^\]]+\]\s*/,'').substring(0,19).replace('T',' ');
-    const l1=lines[1]||'';
-    const antMatch=l1.match(/Ant:\s*([^\s|]+)/);
-    const ant=antMatch?antMatch[1].trim():'—';
-    const missionMatch=l1.match(/Mission:\s*([^\s|]+)/);
-    const taskMatch=l1.match(/Task:\s*([^\s|]+)/);
-    const msg=lines.slice(2).join('\n').replace(/\.\.\.\[.+?\]/g,'').trim();
+  body.innerHTML=filtered.map(ev=>{
+    const evType=ev.event_type||'event';
+    const ant=ev.ant_name||'—';
+    const ts=(ev.created_at||'').substring(0,19).replace('T',' ');
     const col=ANT_MAP[ant]?.color||'var(--dim)';
     const tc=evTypeClass(evType);
     return `<div class="log-ev">
       <div class="log-ev-head">
-        <span class="log-ev-type ${tc}">${evType}</span>
-        <span class="log-ev-ant" style="color:${col}">${ant}</span>
-        <span class="log-ev-ts">${isoTs}</span>
+        <span class="log-ev-type ${tc}">${escapeHtml(evType)}</span>
+        <span class="log-ev-ant" style="color:${col}">${escapeHtml(ant)}</span>
+        <span class="log-ev-ts">${ts}</span>
       </div>
-      <div class="log-ev-meta">mission:${(missionMatch?.[1]||'—').substring(0,14)} · task:${(taskMatch?.[1]||'—').substring(0,12)}</div>
-      <div class="log-ev-msg">${msg||'—'}</div>
+      <div class="log-ev-meta">mission:${escapeHtml((ev.mission_id||'—').substring(0,14))} · task:${escapeHtml((ev.task_id||'—').toString().substring(0,12))}</div>
+      <div class="log-ev-msg">${escapeHtml((ev.message||'—').replace(/\.\.\.\[.+?\]/g,'').trim())}</div>
     </div>`;
   }).join('');
 }
 
 document.getElementById('log-search').addEventListener('input', renderLogModal);
-document.getElementById('log-filter-ant').addEventListener('change', renderLogModal);
-document.getElementById('log-filter-type').addEventListener('change', renderLogModal);
+document.getElementById('log-filter-ant').addEventListener('change', reloadLogModal);
+document.getElementById('log-filter-type').addEventListener('change', reloadLogModal);
+document.getElementById('log-filter-level').addEventListener('change', reloadLogModal);
+document.getElementById('log-filter-since').addEventListener('change', reloadLogModal);
+
+// ══ Console display state: custom ant names, colours, positions ════════════════
+// uiState.castes[ant] = {name,color,model}; uiState.positions[nodeId] = {x,y}
+let uiState = { version:1, castes:{}, positions:{} };
+const ANT_CASTES = ['researcher','web','file','coder','builder','verifier'];
+const ANT_DEFAULTS = Object.assign({ queen:{label:'Queen', color:'#fbbf24', role:'QUEEN'} },
+  Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
+uiReady = true;  // from here on applyUiState() may safely touch the state above
+
+async function loadUiState(){
+  try{
+    const r = await api('/ui/state');
+    if(r.success && r.data){
+      uiState.castes    = r.data.castes    || {};
+      uiState.positions = r.data.positions || {};
+    }
+  }catch{}
+  applyUiState();
+}
+
+let uiSaveTimer=null;
+function saveUiState(){
+  clearTimeout(uiSaveTimer);
+  uiSaveTimer=setTimeout(async()=>{
+    try{ await api('/ui/state','PUT',{ version:1, castes:uiState.castes, positions:uiState.positions }); }
+    catch(e){ console.error('saveUiState',e); }
+  },350);
+}
+
+function casteName(caste){ return uiState.castes[caste]?.name || ANT_DEFAULTS[caste]?.label || caste; }
+function casteColor(caste){ return uiState.castes[caste]?.color || ANT_DEFAULTS[caste]?.color || '#7fa0bc'; }
+
+// Apply custom names / colours / positions onto the live canvas nodes.
+function applyUiState(){
+  if(!uiReady) return;  // guards the initial buildNodes() call during script parse
+  // Keep the events-feed colour map in sync with custom caste colours.
+  ANT_CASTES.forEach(c=>{ if(ANT_MAP[c]) ANT_MAP[c].color = casteColor(c); });
+  nodes.forEach(n=>{
+    const caste = n.ant || 'queen';
+    const base  = casteName(caste);
+    if(n.id===caste || n.id==='queen') n.label = base;
+    else if(n.id.startsWith(caste+'_')){ const idx=parseInt(n.id.split('_').pop(),10)||0; n.label = base+'-'+(idx+1); }
+    n.color = casteColor(caste);
+    const pos = uiState.positions[n.id];
+    if(pos && typeof pos.x==='number' && typeof pos.y==='number'){ n.x=pos.x; n.y=pos.y; }
+  });
+}
+
+function persistNodePosition(n){ uiState.positions[n.id] = { x:Math.round(n.x), y:Math.round(n.y) }; saveUiState(); }
+
+// ── Inline rename popover ──────────────────────────────────────────────────────
+let renameCaste=null;
+const renamePop=document.getElementById('rename-pop');
+function openRename(node,sx,sy){
+  renameCaste = node.ant || 'queen';
+  const inp=document.getElementById('rename-input');
+  inp.value = casteName(renameCaste);
+  renamePop.style.left = Math.min(sx, window.innerWidth-220)+'px';
+  renamePop.style.top  = Math.min(sy, window.innerHeight-120)+'px';
+  renamePop.classList.add('show');
+  inp.focus(); inp.select();
+}
+function commitRename(){
+  const v=document.getElementById('rename-input').value.trim();
+  if(renameCaste && v){
+    uiState.castes[renameCaste] = Object.assign({}, uiState.castes[renameCaste], { name:v });
+    applyUiState(); saveUiState();
+  }
+  renamePop.classList.remove('show'); renameCaste=null;
+}
+document.getElementById('rename-save').addEventListener('click', commitRename);
+document.getElementById('rename-cancel').addEventListener('click', ()=>{ renamePop.classList.remove('show'); renameCaste=null; });
+document.getElementById('rename-input').addEventListener('keydown', e=>{ if(e.key==='Enter') commitRename(); if(e.key==='Escape'){renamePop.classList.remove('show');renameCaste=null;} });
+
+// ══ Ant Configuration page ═════════════════════════════════════════════════════
+let availableModels=[];
+async function fetchModelNames(){
+  try{
+    const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
+    const d=await r.json();
+    availableModels=(d.models||[]).map(m=>m.name||m.model).filter(Boolean);
+  }catch{ availableModels=[]; }
+}
+async function openAntConfig(){
+  document.getElementById('antcfg-modal').classList.add('show');
+  await fetchModelNames();
+  // Pull current routes from live settings so the dropdowns reflect reality.
+  let routes={};
+  try{ const s=await api('/settings'); if(s.success) routes=s.data.model_routes||{}; }catch{}
+  const grid=document.getElementById('antcfg-grid');
+  const castes=['queen',...ANT_CASTES];
+  grid.innerHTML=castes.map(c=>{
+    const d=ANT_DEFAULTS[c], name=casteName(c), color=casteColor(c);
+    const curModel=uiState.castes[c]?.model || routes[c]?.model || '';
+    const modelField = c==='queen' ? '' : `
+      <div class="antcfg-field">
+        <label>Model (route)</label>
+        <select data-caste="${c}" class="antcfg-model">
+          <option value="">— default —</option>
+          ${availableModels.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('')}
+          ${curModel && !availableModels.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:''}
+        </select>
+      </div>`;
+    return `<div class="antcfg-card">
+      <div class="antcfg-top">
+        <span class="antcfg-dot" style="background:${color};color:${color}"></span>
+        <div><div style="font-size:13px;font-weight:700">${name}</div><div class="antcfg-role">${d.role} · ${c}</div></div>
+      </div>
+      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28" /></div>
+      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" data-caste="${c}" type="color" value="${color}" /></div>
+      ${modelField}
+    </div>`;
+  }).join('');
+}
+document.getElementById('antcfg-save').addEventListener('click', async ()=>{
+  const msg=document.getElementById('antcfg-msg'); msg.textContent='';
+  document.querySelectorAll('.antcfg-name').forEach(i=>{ const c=i.dataset.caste, v=i.value.trim(); if(v) uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v}); });
+  document.querySelectorAll('.antcfg-color').forEach(i=>{ const c=i.dataset.caste; uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value}); });
+  const routeUpdate={};
+  document.querySelectorAll('.antcfg-model').forEach(s=>{ const c=s.dataset.caste, v=s.value;
+    uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined});
+    if(v) routeUpdate[c]={ provider:'ollama', model:v };
+  });
+  applyUiState(); saveUiState();
+  if(Object.keys(routeUpdate).length){
+    try{ await api('/settings','POST',{ model_routes: routeUpdate }); }catch(e){ msg.style.color='var(--red)'; msg.textContent='Routes failed: '+e.message; return; }
+  }
+  msg.style.color='var(--green)'; msg.textContent='Saved ✓'; setTimeout(()=>msg.textContent='',2500);
+});
+document.getElementById('antcfg-reset').addEventListener('click', ()=>{
+  if(!confirm('Reset all ant names, colours and positions to defaults?')) return;
+  uiState.castes={}; uiState.positions={}; applyUiState(); buildNodes(); saveUiState(); openAntConfig();
+});
+
+// ══ Pheromone memory page ══════════════════════════════════════════════════════
+async function openPheromones(){
+  document.getElementById('phero-modal').classList.add('show');
+  await reloadPheromones();
+}
+async function reloadPheromones(){
+  const body=document.getElementById('phero-body');
+  try{
+    const r=await api('/pheromones/json'); if(!r.success) throw new Error(r.message);
+    const trails=r.data||[];
+    document.getElementById('phero-count').textContent=`${trails.length} trails`;
+    if(!trails.length){ body.innerHTML='<div style="color:var(--dim)">No pheromone trails recorded yet. Run a few missions to build colony memory.</div>'; return; }
+    body.innerHTML=`<table class="phero-table"><thead><tr>
+      <th>Trail</th><th>Type</th><th>Strength</th><th>✓</th><th>✕</th><th>Net</th><th>Updated</th></tr></thead><tbody>${
+      trails.map(t=>{
+        const s=+t.strength||0, pct=Math.round(s*100), net=t.net_count||0;
+        const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
+        return `<tr>
+          <td class="phero-key" title="${(t.trail_key||'').replace(/"/g,'&quot;')}">${t.trail_key||'—'}</td>
+          <td>${t.trail_type||'—'}</td>
+          <td><div style="display:flex;align-items:center;gap:7px"><div class="phero-bar"><div class="phero-bar-fill" style="width:${pct}%;background:${col}"></div></div><span style="color:${col}">${s.toFixed(3)}</span></div></td>
+          <td style="color:var(--green)">${t.success_count||0}</td>
+          <td style="color:var(--red)">${t.failure_count||0}</td>
+          <td class="phero-net ${net>=0?'pos':'neg'}">${net>=0?'+':''}${net}</td>
+          <td>${fmtTime(t.last_updated)||'—'}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }catch(e){ body.innerHTML=`<div style="color:var(--red)">Error: ${e.message}</div>`; }
+}
+document.getElementById('phero-reload').addEventListener('click', reloadPheromones);
+document.getElementById('phero-prune').addEventListener('click', async ()=>{
+  if(!confirm('Prune weak and failure-dominant pheromone trails? This keeps only useful colony memory.')) return;
+  const msg=document.getElementById('phero-msg');
+  try{ const r=await api('/pheromones/prune','POST'); msg.style.color='var(--green)'; msg.textContent=r.message||'Pruned'; await reloadPheromones(); }
+  catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+  setTimeout(()=>msg.textContent='',3000);
+});
+
+// ══ Colony settings tab (editable, persisted) ══════════════════════════════════
+const TOGGLE_KEYS=[
+  ['web_search_enabled','Web Search'],['file_tools_enabled','File Tools'],
+  ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
+  ['shell_tool_enabled','Shell Tool'],['parallel_execution_enabled','Parallel Exec'],
+  ['spec_ingestion_enabled','Spec Ingestion'],['autonomy_enabled','Autonomy'],
+];
+const NUM_KEYS=[
+  ['max_parallel_workers','Parallel Workers'],['max_web_searches_per_mission','Web Searches/Mission'],
+  ['max_sources_per_mission','Sources/Mission'],['max_context_packet_chars','Context Chars'],
+  ['long_input_threshold','Long-Input Threshold'],['max_section_chars','Section Chars'],
+];
+const AUTO_KEYS=[
+  ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
+  ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
+];
+let colonySettings={};
+async function loadColonyTab(){
+  try{ const r=await api('/settings'); if(!r.success) return; colonySettings=r.data; }catch{ return; }
+  document.getElementById('set-ollama-host').value=colonySettings.ollama_host||'';
+  document.getElementById('set-ollama-model').value=colonySettings.ollama_model||'';
+  document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
+    `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" onclick="this.classList.toggle('on')"></div></div>`).join('');
+  document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}" /></div>`).join('');
+  document.getElementById('set-autonomy').innerHTML=AUTO_KEYS.map(([k,label])=>
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}" /></div>`).join('');
+}
+async function saveColonyTab(){
+  const msg=document.getElementById('colony-save-msg'); msg.textContent='';
+  const payload={
+    ollama_host: document.getElementById('set-ollama-host').value.trim(),
+    ollama_model: document.getElementById('set-ollama-model').value.trim(),
+  };
+  document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
+  document.querySelectorAll('#set-nums input, #set-autonomy input').forEach(i=>{ const v=parseInt(i.value,10); if(!isNaN(v)) payload[i.dataset.key]=v; });
+  try{
+    const r=await api('/settings','POST',payload);
+    if(r.success){ msg.style.color='var(--green)'; msg.textContent=r.message||'Saved'; colonySettings=r.data.settings||colonySettings; pollModelInfo(); }
+    else { msg.style.color='var(--red)'; msg.textContent=r.message||'Failed'; }
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+  setTimeout(()=>msg.textContent='',3000);
+}
+document.getElementById('colony-save').addEventListener('click', saveColonyTab);
+document.getElementById('colony-reload').addEventListener('click', loadColonyTab);
+
+// ══ User management (admin only) ═══════════════════════════════════════════════
+async function openUsers(){
+  if(ROLE!=='admin') return;
+  document.getElementById('users-modal').classList.add('show');
+  await reloadUsers();
+}
+async function reloadUsers(){
+  const tb=document.getElementById('users-tbody');
+  try{
+    const r=await api('/users'); if(!r.success) throw new Error(r.message);
+    const users=r.data||[];
+    document.getElementById('users-count').textContent=`${users.length} account${users.length===1?'':'s'}`;
+    tb.innerHTML=users.map(u=>{
+      const isAdmin=(u.role||'coordinator')==='admin';
+      const status=u.active?'<span style="color:var(--green)">active</span>':'<span style="color:var(--red)">disabled</span>';
+      const last=u.last_login_at?fmtTime(u.last_login_at):'never';
+      const self=u.username===USERNAME;
+      return `<tr>
+        <td class="phero-key" style="color:var(--text)">${escapeHtml(u.username)}${self?' <span style="color:var(--dim)">(you)</span>':''}</td>
+        <td><span style="color:${isAdmin?'var(--queen)':'var(--blue)'}">${isAdmin?'Administrator':'Coordinator'}</span></td>
+        <td>${status}</td>
+        <td>${last}</td>
+        <td style="white-space:nowrap">
+          <button class="job-btn view" onclick="userResetPw('${escapeHtml(u.username)}')">Reset PW</button>
+          <button class="job-btn view" onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coordinator':'→ Admin'}</button>
+          <button class="job-btn ${u.active?'cancel':'view'}" onclick="userToggleActive('${escapeHtml(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
+          ${self?'':`<button class="job-btn cancel" onclick="userDelete('${escapeHtml(u.username)}')">Delete</button>`}
+        </td></tr>`;
+    }).join('') || '<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
+function usersMsg(t,ok){ const m=document.getElementById('nu-msg'); m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },3500); }
+document.getElementById('nu-add').addEventListener('click', async ()=>{
+  const u=document.getElementById('nu-user').value.trim();
+  const p=document.getElementById('nu-pass').value;
+  const role=document.getElementById('nu-role').value;
+  if(!u||!p){ usersMsg('Username and password are required.',false); return; }
+  try{ const r=await api('/users','POST',{username:u,password:p,role});
+    if(r.success){ usersMsg('Created '+u,true); document.getElementById('nu-user').value=''; document.getElementById('nu-pass').value=''; reloadUsers(); }
+    else usersMsg(r.message||'Failed',false);
+  }catch(e){ usersMsg('Failed: '+e.message,false); }
+});
+document.getElementById('users-reload').addEventListener('click', reloadUsers);
+async function userPatch(username, body, okMsg){
+  try{ const r=await api('/users/'+encodeURIComponent(username),'PATCH',body);
+    if(r.success){ usersMsg(okMsg,true); reloadUsers(); } else usersMsg(r.message||'Failed',false);
+  }catch(e){ usersMsg('Failed: '+e.message,false); }
+}
+function userResetPw(u){ const p=prompt(`New password for ${u} (min 8 characters):`); if(p) userPatch(u,{password:p},'Password reset for '+u); }
+function userToggleRole(u,role){ if(confirm(`Change role of ${u} to ${role}?`)) userPatch(u,{role},'Role changed for '+u); }
+function userToggleActive(u,active){ userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u); }
+async function userDelete(u){
+  if(!confirm(`Delete account ${u}? This cannot be undone.`)) return;
+  try{ const r=await api('/users/'+encodeURIComponent(u),'DELETE');
+    if(r.success){ usersMsg('Deleted '+u,true); reloadUsers(); } else usersMsg(r.message||'Failed',false);
+  }catch(e){ usersMsg('Failed: '+e.message,false); }
+}
 
 // ── Render loop ───────────────────────────────────────────────────────────────
 function loop(ts){

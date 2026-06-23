@@ -44,6 +44,29 @@ switch (command)
         return ApiHost.Run(apiArgs.ToArray());
     }
 
+    case "--add-user":
+    {
+        // anthill --add-user <username> <password> [admin|coordinator]
+        if (rest.Length < 2) { Console.Error.WriteLine("Usage: anthill --add-user <username> <password> [admin|coordinator]"); return 2; }
+        var role = rest.Length >= 3 ? rest[2] : "coordinator";
+        using var queen = NewQueen();
+        var err = queen.Memory.CreateUser(rest[0], rest[1], role);
+        if (err.Length > 0) { Console.Error.WriteLine($"Could not create user: {err}"); return 1; }
+        Console.WriteLine($"Created user '{rest[0].ToLowerInvariant()}' with role '{role.ToLowerInvariant()}'.");
+        return 0;
+    }
+
+    case "--set-password":
+    {
+        // anthill --set-password <username> <newpassword>  (recovery escape hatch)
+        if (rest.Length < 2) { Console.Error.WriteLine("Usage: anthill --set-password <username> <newpassword>"); return 2; }
+        using var queen = NewQueen();
+        var err = queen.Memory.SetUserPassword(rest[0], rest[1]);
+        if (err.Length > 0) { Console.Error.WriteLine($"Could not set password: {err}"); return 1; }
+        Console.WriteLine($"Password updated for '{rest[0].ToLowerInvariant()}'. Active sessions for this user are unaffected until restart.");
+        return 0;
+    }
+
     case "--selftest":
     {
         using var queen = NewQueen();
@@ -105,6 +128,8 @@ Usage:
                                                         Use --ollama-host http://10.10.10.43:11434 for remote Ollama.
                                                         --autonomous starts the 24/7 Colony Director
                                                         at boot (requires autonomy_enabled=true in config).
+  anthill --add-user <u> <p> [role]   Create an operator account (role: admin|coordinator).
+  anthill --set-password <u> <p>      Reset an operator's password (lock-out recovery).
   anthill --selftest             Run the framework self-test harness.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.

@@ -53,8 +53,13 @@ public static class TokenSecurity
     /// <summary>Validate API bind/auth choices before the server accepts requests.</summary>
     public static void ValidateApiRuntimeSecurity()
     {
-        if (AnthillRuntime.EnableApiAuth)
-            ValidateApiTokenStrength(AnthillRuntime.ApiAuthToken);
+        // The web credential is now a user account + password (see UserRoles / the users table),
+        // so the static ANTHILL_API_TOKEN is OPTIONAL and used only for programmatic/CI access.
+        // If an operator configured one anyway, it must still be strong; the unset/default
+        // placeholder is ignored rather than blocking startup.
+        var token = AnthillRuntime.ApiAuthToken;
+        if (!string.IsNullOrEmpty(token) && token != AnthillRuntime.ApiTokenDefaultPlaceholder)
+            ValidateApiTokenStrength(token);
 
         if (!AnthillRuntime.EnableApiAuth && !UrlSafety.IsLoopbackBindHost(AnthillRuntime.ApiHost))
             throw new AnthillSecurityException(

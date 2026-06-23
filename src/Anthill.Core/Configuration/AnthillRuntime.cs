@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 public static class AnthillRuntime
 {
     public const string Version = "1.8.1";
-    public const int SchemaVersion = 8;
+    public const int SchemaVersion = 9;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -54,6 +54,10 @@ public static class AnthillRuntime
         ["read_approvals"] = true,
         // Autonomy (Phase 1). Control + management are gated again by autonomy_enabled at runtime.
         ["read_autonomy"] = true, ["read_objectives"] = true, ["manage_objectives"] = true, ["autonomy_control"] = true,
+        // Live dashboard: edit colony settings + ant display profiles from the web console.
+        ["manage_settings"] = true, ["read_ui_state"] = true, ["manage_ui_state"] = true, ["prune_pheromones"] = true,
+        // Operator account management (admin-only at the role layer).
+        ["manage_users"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -163,7 +167,7 @@ public static class AnthillRuntime
     {
         "anthill_meta", "schema_migrations", "missions", "tasks", "events", "pheromone_trails",
         "patch_sets", "patch_proposals", "approval_requests", "task_result_summaries",
-        "message_metrics", "agent_messages", "source_records", "objectives", "autonomy_runs",
+        "message_metrics", "agent_messages", "source_records", "objectives", "autonomy_runs", "users",
     };
 
     // ---- Observability ----------------------------------------------------
@@ -348,4 +352,91 @@ public static class AnthillRuntime
         };
         foreach (var (role, route) in config.ModelRoutes) ModelRouting[role] = new Dictionary<string, string>(route);
     }
+
+    // ---- Live settings editing (web console) ------------------------------
+    // Keys the dashboard is allowed to write. Hard security gates (auth, host binding,
+    // token env) are deliberately NOT here — those stay file/profile-controlled so the UI
+    // can never weaken the boundary it is served behind.
+    private static readonly HashSet<string> EditableConfigKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "use_ollama", "ollama_host", "ollama_model", "model_routes",
+        "web_search_enabled", "patch_application_enabled", "file_writing_enabled",
+        "shell_tool_enabled", "file_tools_enabled", "parallel_execution_enabled",
+        "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
+        "max_context_packet_chars", "max_agent_message_content_chars",
+        "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
+        "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
+        "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
+    };
+
+    public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
+
+    /// <summary>
+    /// Applies a partial settings update from the web console: only whitelisted keys are honoured,
+    /// the merged config is re-projected into the live runtime gates, and the result is persisted
+    /// back to config.json so it survives a restart. Returns the keys that were actually applied.
+    /// </summary>
+    public static List<string> ApplySettingsUpdate(Dictionary<string, JsonElement> updates)
+    {
+        lock (InitLock)
+        {
+            var merged = JsonSerializer.SerializeToElement(Config, AnthillConfig.JsonOptions);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(merged.GetRawText())!;
+            var applied = new List<string>();
+            foreach (var (key, value) in updates)
+            {
+                if (!EditableConfigKeys.Contains(key)) continue;
+                dict[key] = value;
+                applied.Add(key);
+            }
+            if (applied.Count == 0) return applied;
+
+            Config = JsonSerializer.Deserialize<AnthillConfig>(JsonSerializer.Serialize(dict), AnthillConfig.JsonOptions)!;
+            Config.SafetyProfile = (Config.SafetyProfile ?? "SAFE_LOCAL").ToUpperInvariant();
+            ProjectConfig(Config);
+            SaveConfig();
+            return applied;
+        }
+    }
+
+    /// <summary>Persists the current in-memory config back to config.json (pretty-printed).</summary>
+    public static void SaveConfig()
+    {
+        var path = string.IsNullOrEmpty(ConfigPath) ? ConfigFilePath() : ConfigPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(Config, AnthillConfig.JsonOptions));
+    }
+
+    /// <summary>A safe, secret-free projection of the live config for the settings UI to render.</summary>
+    public static Dictionary<string, object?> SettingsSnapshot() => new()
+    {
+        ["safety_profile"] = Config.SafetyProfile,
+        ["use_ollama"] = UseOllama,
+        ["ollama_host"] = OllamaHost,
+        ["ollama_model"] = OllamaModel,
+        ["model_routes"] = ModelRouting.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        ["web_search_enabled"] = EnableWebSearch,
+        ["patch_application_enabled"] = EnablePatchApplication,
+        ["file_writing_enabled"] = EnableFileWriting,
+        ["shell_tool_enabled"] = EnableShellTool,
+        ["file_tools_enabled"] = EnableFileTools,
+        ["parallel_execution_enabled"] = EnableParallelExecution,
+        ["max_parallel_workers"] = MaxParallelWorkers,
+        ["max_web_searches_per_mission"] = MaxWebSearchesPerMission,
+        ["max_sources_per_mission"] = MaxSourcesPerMission,
+        ["max_context_packet_chars"] = MaxContextPacketChars,
+        ["max_agent_message_content_chars"] = MaxAgentMessageContentChars,
+        ["spec_ingestion_enabled"] = EnableSpecIngestion,
+        ["long_input_threshold"] = LongInputThreshold,
+        ["max_section_chars"] = MaxSectionChars,
+        ["max_section_tasks"] = MaxSectionTasks,
+        ["autonomy_enabled"] = EnableAutonomy,
+        ["autonomy_poll_seconds"] = AutonomyPollSeconds,
+        ["autonomy_max_missions_per_hour"] = AutonomyMaxMissionsPerHour,
+        ["autonomy_max_missions_per_day"] = AutonomyMaxMissionsPerDay,
+        ["autonomy_max_consecutive_failures"] = AutonomyMaxConsecutiveFailures,
+        ["api_host"] = ApiHost,
+        ["api_port"] = ApiPort,
+        ["editable_keys"] = EditableConfigKeys.ToList(),
+    };
 }

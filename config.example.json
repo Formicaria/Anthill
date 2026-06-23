@@ -61,5 +61,6 @@
   "autonomy_poll_seconds":                30,
   "autonomy_max_missions_per_hour":        6,
   "autonomy_max_missions_per_day":        60,
-  "autonomy_max_consecutive_failures":     3
+  "autonomy_max_consecutive_failures":     3,
+
 }
