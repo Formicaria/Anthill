@@ -1,27 +1,56 @@
 # ANTHILL Changelog
 
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
-> Phase 1 = **v1.8.1**, and so on.
+> Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, and so on.
 
-## v1.8.1 — spec-ingestion + autonomy Phases 0–1, live console, operator accounts
+## v1.8.2 — Live colony console + operator accounts
 
-Schema bumped to **v9**. Autonomy is fail-closed and off by default.
+Schema bumped to **v9**. The web console becomes a fully operable control plane, and the shared
+API token is replaced by real password-based operator accounts with roles.
 
 Added:
 
-- **Operator accounts + roles (replaces token-only auth)**: the web console is now secured by
-  password login, not a shared API key. First run creates an **administrator**; thereafter everyone
-  signs in with a username/password and receives an in-memory session (12h sliding expiry). Two roles:
-  **admin** (full control + user management) and **Mission Coordinator** (send missions + read event
-  logs only). Passwords are salted PBKDF2-SHA256. `ANTHILL_API_TOKEN` is now optional (programmatic
-  admin only). New `users` table (schema v9), `/auth/*` and `/users` endpoints, a Users management
-  page, and CLI recovery (`--add-user`, `--set-password`). The last admin can't be removed/demoted.
-- **Live, actionable console**: every setting is editable from the page (Ollama host/model, model
-  routes, capability gates, limits, autonomy budgets) and persisted to `config.json`. Draggable,
-  renamable, recolorable ants with a saved layout; a per-caste Ant Configuration page; a filterable
-  Event Log (ant / type / severity / time); and a Pheromone Memory page that prunes weak and
-  failure-dominant trails. New endpoints: `/settings`, `/ui/state`, `/events/json`,
-  `/pheromones/json`, `/pheromones/prune`. Deep-navy/yellow theme retained.
+- **Operator accounts + roles (replaces token-only web auth)**: the console is now secured by
+  password login, not a shared API key. First run shows a one-time setup screen that creates the
+  initial **administrator**; thereafter everyone signs in with a username/password and receives an
+  in-memory **session** (12-hour sliding expiry, dropped on restart). Two roles:
+  - **Administrator** — full control, including user management.
+  - **Mission Coordinator** — may *only* send missions to the Queen and read the event logs (plus
+    live status to watch them); everything else is denied at the API and hidden in the UI.
+
+  Passwords are salted **PBKDF2-SHA256** (120k iterations), verified in constant time. New `users`
+  table (schema v9, migration `user_accounts`); endpoints `GET /auth/status`, `POST /auth/{setup,
+  login,logout}`, `GET /auth/me`, and `GET/POST/PATCH/DELETE /users`. A 👥 Users management page
+  lets admins create accounts, assign roles, reset passwords, enable/disable, and delete. Changing a
+  user's password, role, or status immediately revokes their active sessions, and the last remaining
+  administrator can never be demoted, disabled, or deleted. CLI recovery: `--add-user <u> <p> [role]`
+  and `--set-password <u> <p>`.
+- **`ANTHILL_API_TOKEN` is now optional** (and no longer required to boot). If set (≥ 32 chars) it
+  acts as a programmatic **admin** bearer for scripts/CI; otherwise authentication is purely account-based.
+- **Live, actionable console** (same deep-navy/yellow theme):
+  - **Editable settings** — Ollama host/model, per-role model routes, capability gates, limits, and
+    autonomy budgets are all editable from the page and persisted to `config.json`
+    (`GET/POST /settings`). Whitelisted keys only; hard security boundaries stay file-controlled.
+  - **Movable / renamable / recolorable ants** — drag to arrange the anthill, double-click to rename,
+    set per-caste accent colours and model routes from a dedicated **Ant Configuration** page. Layout
+    persists server-side (`GET/PUT /ui/state`, stored in `.anthill/ui_state.json`).
+  - **Filterable Event Log** — by ant, event type, severity (errors/alarms), and time window, plus
+    text search (`GET /events/json`).
+  - **Pheromone Memory page** — strength table with success/failure/net counts and one-click pruning
+    of weak and failure-dominant trails (`GET /pheromones/json`, `POST /pheromones/prune`).
+
+Validation:
+
+- `dotnet test`: **52/52** pass. Self-test **15/15** on a fresh database (migration ledger at 9 entries).
+- Live HTTP smoke test: first-run setup, login, role gating (coordinator blocked from `/users`,
+  `/settings`, `/pheromones/json`), session revocation on password change, logout, last-admin
+  protection, and CLI password recovery all verified.
+
+## v1.8.1 — spec-ingestion + autonomy Phases 0–1
+
+Schema bumped to **v8**. Autonomy is fail-closed and off by default.
+
+Added:
 
 - **Long-input / specification-ingestion handling**: mission goals over `long_input_threshold`
   are split into bounded, non-critical section-analysis tasks (run in parallel), a synthesis

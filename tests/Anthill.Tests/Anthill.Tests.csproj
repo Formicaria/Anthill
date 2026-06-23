@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Anthill.Core\Anthill.Core.csproj" />
     <ProjectReference Include="..\..\src\Anthill.Api\Anthill.Api.csproj" />
   </ItemGroup>
 

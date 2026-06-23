@@ -4,7 +4,7 @@ using Anthill.Core.Diagnostics;
 using Anthill.Core.Orchestration;
 
 // ----------------------------------------------------------------------------
-// ANTHILL command-line entry point (v1.8.1).
+// ANTHILL command-line entry point (v1.8.2).
 // Successor to `python -m anthill`: runs missions, the self-test harness, status
 // views, or launches the secured API/UI host — all over the same Anthill.Core engine.
 // ----------------------------------------------------------------------------
@@ -138,10 +138,14 @@ Usage:
   anthill --help                 Show this help.
 
 Security:
-  The API refuses to start unless ANTHILL_API_TOKEN is set to a strong value
-  (>= 32 chars, not the default placeholder). Generate one and export it first:
+  On first launch, open http://127.0.0.1:8713/ui and you will be prompted to create
+  the admin password. No environment variable required.
 
-    export ANTHILL_API_TOKEN=""$(head -c 32 /dev/urandom | base64)""
+  Roles: admin (full control) | coordinator (send missions + view logs only).
+  Add accounts:  anthill --add-user <user> <pass> [admin|coordinator]
+  Reset password: anthill --set-password <user> <newpass>   (lock-out recovery)
+
+  Optional: set ANTHILL_API_TOKEN (>= 32 chars) for script/CI bearer access.
 
   Writes, shell, and web search are OFF by default (SAFE_LOCAL profile).
   Set ANTHILL_ENCRYPTION_KEY (32-byte base64/hex) to seal sensitive DB fields at rest.");

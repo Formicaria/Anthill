@@ -1,6 +1,6 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.1** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
+> **v1.8.2** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware, uses [Ollama](https://ollama.com) as the LLM backend (no cloud API keys required), and exposes a real-time colony console at `http://localhost:8713/ui`.
 

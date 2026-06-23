@@ -11,7 +11,7 @@
   "_comment_workspace": "Path the file ant is allowed to READ from. Set to your project source root.",
   "agent_workspace_dir": "/path/to/your/project",
 
-  "_comment_api": "api_host: 0.0.0.0 = accept from all interfaces, 127.0.0.1 = localhost only.",
+  "_comment_api": "api_host: 0.0.0.0 = accept from all interfaces, 127.0.0.1 = localhost only. On first launch the UI guides you through creating the admin account — no token needed. ANTHILL_API_TOKEN (optional, >= 32 chars) provides a programmatic bearer token for scripts/CI alongside normal operator accounts.",
   "api_host":             "127.0.0.1",
   "api_port":             8713,
   "api_auth_enabled":     true,
