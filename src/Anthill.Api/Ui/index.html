@@ -1,692 +1,1037 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ANTHILL Colony — v1.8.2</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ANTHILL v1.8.3</title>
 <style>
-:root {
-  --bg:       #0f1923;
-  --panel:    rgba(17,28,42,0.96);
-  --border:   rgba(255,255,255,0.07);
-  --border-hi:rgba(255,255,255,0.15);
-  --text:     #e2e8f0;
-  --muted:    #7fa0bc;
-  --dim:      #4a6278;
-  --queen:    #fbbf24;
-  --blue:     #38bdf8;
-  --green:    #4ade80;
-  --red:      #f87171;
-  --purple:   #c084fc;
-  --orange:   #fb923c;
-  --cyan:     #67e8f9;
-  --r:        7px;
-  --font:     -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  --mono:     'Cascadia Code','Fira Code','Courier New',monospace;
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.5;}
+a{text-decoration:none;color:inherit;}
+button{cursor:pointer;border:none;background:none;font-family:inherit;font-size:inherit;color:inherit;}
+input,select,textarea{font-family:inherit;font-size:inherit;}
+
+/* ── Design Tokens ─────────────────────────────────────────────────────────── */
+:root{
+  --queen:#fbbf24;
+  --queen-dim:rgba(251,191,36,.1);
+  --bg:#090e17;
+  --panel:#0d1525;
+  --card:#111d30;
+  --inner:#162440;
+  --border:#1e3354;
+  --text:#d1dce8;
+  --muted:#8ba3bc;
+  --dim:#4a6278;
+  --blue:#3b82f6;
+  --green:#10b981;
+  --red:#ef4444;
+  --purple:#8b5cf6;
+  --orange:#fb923c;
+  --cyan:#06b6d4;
+  --amber:#f59e0b;
+  --mono:'JetBrains Mono','Cascadia Code','Consolas',monospace;
+  --font:'Segoe UI',system-ui,-apple-system,sans-serif;
+  --nav-w:240px;
+  --nav-col:60px;
+  --hdr-h:50px;
+  --r:6px;
+  --t:200ms cubic-bezier(.4,0,.2,1);
 }
-*{margin:0;padding:0;box-sizing:border-box;}
-html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:var(--font);color:var(--text);}
 
-/* ── Top bar ─────────────────────────────────── */
-#topbar{
-  position:fixed;top:0;left:0;right:0;height:50px;
-  background:rgba(8,14,22,.97);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:12px;padding:0 18px;z-index:100;
+/* ── Auth Overlay ──────────────────────────────────────────────────────────── */
+#setup-overlay{
+  position:fixed;inset:0;z-index:9999;
+  background:radial-gradient(ellipse at 50% 30%,#142035 0%,#090e17 70%);
+  display:flex;align-items:center;justify-content:center;
 }
-.logo{font-size:14px;font-weight:800;letter-spacing:2.5px;color:var(--queen);flex-shrink:0;}
-.logo span{font-weight:400;font-size:10px;color:var(--dim);letter-spacing:1px;margin-left:5px;}
-.topbar-mission{flex:1;text-align:center;font-size:12px;color:var(--text);display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;}
-.topbar-mission .goal{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px;}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:background .4s;}
-.dot.active{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.8s ease-in-out infinite;}
-.dot.running{background:var(--queen);box-shadow:0 0 6px var(--queen);animation:pulse 1s ease-in-out infinite;}
-.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-#model-badge{font-size:10px;color:var(--muted);font-family:var(--mono);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
-#conn-badge{font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid;transition:all .3s;}
-#conn-badge.ok{color:var(--green);border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.07);}
-#conn-badge.err{color:var(--red);border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.07);}
-.icon-btn{background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;border-radius:5px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s;flex-shrink:0;}
-.icon-btn:hover{border-color:var(--border-hi);color:var(--text);}
-#approval-bell{position:relative;}
-#bell-count{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:8px;font-weight:700;border-radius:10px;padding:1px 4px;display:none;}
+.auth-box{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:36px 40px;width:370px;max-width:95vw;
+}
+.auth-logo{font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--text);margin-bottom:4px;}
+.auth-logo span{color:var(--queen);font-size:12px;font-weight:400;margin-left:8px;font-family:var(--mono);}
+.auth-sub{font-size:11px;color:var(--dim);margin-bottom:22px;}
+.auth-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;}
+.auth-input{
+  width:100%;padding:9px 12px;border-radius:var(--r);
+  background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:13px;
+  display:block;margin-bottom:12px;transition:border-color var(--t);
+}
+.auth-input:focus{outline:none;border-color:var(--queen);}
+.auth-btn{
+  width:100%;padding:10px;border-radius:var(--r);
+  background:var(--queen);color:#080808;font-weight:700;font-size:13px;
+  cursor:pointer;border:none;transition:opacity var(--t);margin-top:4px;
+}
+.auth-btn:hover{opacity:.88;}
+.auth-err{font-size:11px;color:var(--red);min-height:16px;margin-bottom:8px;}
+.auth-divider{border-top:1px solid var(--border);margin:18px 0 14px;}
+.auth-hint{font-size:10px;color:var(--dim);line-height:1.6;}
 
-/* ── Canvas ──────────────────────────────────── */
-#cw{position:fixed;top:50px;left:0;right:0;bottom:0;}
-canvas{display:block;width:100%;height:100%;}
+/* ── App Shell ─────────────────────────────────────────────────────────────── */
+#app-shell{display:flex;height:100vh;overflow:hidden;}
+#app-shell.hidden{display:none;}
 
-/* ── Tooltip ─────────────────────────────────── */
+/* ── Nav Rail ──────────────────────────────────────────────────────────────── */
+#nav-rail{
+  width:var(--nav-w);flex-shrink:0;height:100vh;overflow:hidden;
+  background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;transition:width var(--t);position:relative;z-index:100;
+}
+.nav-collapsed #nav-rail{width:var(--nav-col);}
+.nav-logo{
+  padding:13px 14px 11px;display:flex;align-items:baseline;gap:8px;
+  border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;white-space:nowrap;
+}
+.nav-logo-text{font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);}
+.nav-logo-ver{
+  font-size:10px;color:var(--dim);font-family:var(--mono);
+  transition:opacity var(--t);opacity:1;
+}
+.nav-collapsed .nav-logo-ver{opacity:0;}
+.nav-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 0;}
+.nav-section{
+  font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  color:var(--dim);padding:10px 14px 3px;white-space:nowrap;
+  transition:opacity var(--t),max-height var(--t),padding var(--t);
+}
+.nav-collapsed .nav-section{opacity:0;max-height:0;padding:0;overflow:hidden;}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;
+  margin:1px 6px;border-radius:var(--r);cursor:pointer;
+  color:var(--muted);white-space:nowrap;overflow:hidden;position:relative;
+  transition:background var(--t),color var(--t);
+}
+.nav-item:hover{background:rgba(255,255,255,.04);color:var(--text);}
+.nav-item.active{background:rgba(251,191,36,.08);color:var(--queen);}
+.nav-item.active::before{
+  content:'';position:absolute;left:0;top:25%;bottom:25%;
+  width:2px;border-radius:1px;background:var(--queen);
+}
+.nav-icon{width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.nav-icon svg{width:15px;height:15px;}
+.nav-label{font-size:12px;font-weight:500;transition:opacity var(--t);}
+.nav-collapsed .nav-label{opacity:0;}
+.nav-badge{
+  margin-left:auto;background:var(--red);color:#fff;
+  font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;
+  min-width:16px;text-align:center;transition:opacity var(--t);
+}
+.nav-collapsed .nav-badge{opacity:0;}
+.nav-footer{border-top:1px solid var(--border);padding:8px 6px;flex-shrink:0;display:flex;flex-direction:column;gap:5px;}
+.nav-user{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border-radius:var(--r);background:var(--inner);border:1px solid var(--border);overflow:hidden;
+}
+.nav-user-avatar{
+  width:24px;height:24px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:800;color:#080808;
+  background:linear-gradient(135deg,#fbbf24,#f59e0b);
+}
+.nav-user-info{flex:1;min-width:0;overflow:hidden;}
+.nav-user-name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nav-user-role{font-size:9px;color:var(--dim);}
+.nav-collapse-btn{
+  display:flex;align-items:center;justify-content:center;padding:6px;
+  border-radius:var(--r);color:var(--dim);transition:background var(--t),color var(--t);
+}
+.nav-collapse-btn:hover{background:rgba(255,255,255,.04);color:var(--text);}
+.nav-collapse-btn svg{transition:transform var(--t);}
+.nav-collapsed .nav-collapse-btn svg{transform:rotate(180deg);}
+
+/* ── Right Side / Header ───────────────────────────────────────────────────── */
+#right-side{flex:1;min-width:0;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+#top-header{
+  height:var(--hdr-h);flex-shrink:0;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:10px;
+}
+.hdr-left{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.hdr-title{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;}
+.hdr-mission{flex:1;display:flex;align-items:center;gap:7px;min-width:0;justify-content:center;}
+.hdr-goal{font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px;}
+.hdr-right{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;}
+.dot.running{background:var(--queen);box-shadow:0 0 6px var(--queen);animation:pulse-dot 1.2s ease-in-out infinite;}
+.dot.active{background:var(--blue);}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.35}}
+#model-badge{font-size:10px;color:var(--dim);font-family:var(--mono);padding:3px 8px;border:1px solid var(--border);border-radius:4px;}
+#conn-badge{font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid;}
+#conn-badge.ok{color:var(--green);border-color:rgba(16,185,129,.3);}
+#conn-badge.err{color:var(--red);border-color:rgba(239,68,68,.3);}
+.hdr-btn{
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-radius:var(--r);color:var(--muted);transition:background var(--t),color var(--t);position:relative;
+}
+.hdr-btn:hover{background:rgba(255,255,255,.06);color:var(--text);}
+#bell-count{
+  position:absolute;top:1px;right:1px;
+  background:var(--red);color:#fff;font-size:8px;font-weight:700;
+  padding:1px 3px;border-radius:8px;min-width:13px;text-align:center;display:none;
+}
+
+/* ── Main Area + Pages ─────────────────────────────────────────────────────── */
+#main-area{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.page{display:none;flex:1;flex-direction:column;}
+.page.active{display:flex;}
+.page-scroll{overflow-y:auto;padding:20px 22px;gap:14px;}
+
+/* ── Colony Page Layout ────────────────────────────────────────────────────── */
+#page-colony{flex-direction:row !important;overflow:hidden;}
+#colony-left{
+  width:205px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
+  border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
+}
+#colony-canvas-area{flex:1;position:relative;overflow:hidden;}
+#c{position:absolute;top:0;left:0;}
+#colony-right{
+  width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
+  border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
+}
+#zoom-hint{
+  position:absolute;bottom:56px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:rgba(255,255,255,.18);pointer-events:none;white-space:nowrap;
+}
+
+/* ── Mission Bar ───────────────────────────────────────────────────────────── */
+.mission-bar-wrap{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:7px 10px 9px;
+  background:linear-gradient(0deg,rgba(9,14,23,.96) 60%,transparent);
+}
+.mission-row{display:flex;gap:7px;align-items:center;}
+.mission-input{
+  flex:1;padding:8px 14px;border-radius:20px;
+  background:rgba(22,36,64,.85);border:1px solid var(--border);
+  color:var(--text);font-size:12px;font-family:var(--font);
+  transition:border-color var(--t);
+}
+.mission-input:focus{outline:none;border-color:var(--queen);}
+.mission-input:disabled{opacity:.35;cursor:default;}
+.send-btn{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  background:var(--queen);color:#080808;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity var(--t);
+}
+.send-btn:hover:not(:disabled){opacity:.85;}
+.send-btn:disabled{opacity:.28;cursor:default;}
+.bar-hint{font-size:9px;color:var(--dim);margin-top:3px;text-align:center;}
+
+/* ── Cards / Panels ────────────────────────────────────────────────────────── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);}
+.card-head{
+  padding:8px 10px 6px;font-size:9px;font-weight:700;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:6px;
+}
+.card-body{padding:8px 10px;}
+.card.collapsed .card-body{display:none;}
+.collapse-btn{margin-left:auto;font-size:10px;color:var(--dim);transition:transform var(--t);}
+.card.collapsed .collapse-btn{transform:rotate(-90deg);}
+
+/* ── Stat Grid ─────────────────────────────────────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.stat-cell{padding:7px 8px;background:var(--inner);border-radius:4px;border:1px solid var(--border);}
+.stat-label{font-size:9px;color:var(--dim);margin-bottom:2px;}
+.stat-num{font-size:20px;font-weight:700;font-family:var(--mono);line-height:1;}
+
+/* ── KPI Cards (Overview) ──────────────────────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.kpi-card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  padding:16px 18px;border-left:2px solid;
+}
+.kpi-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px;}
+.kpi-num{font-size:30px;font-weight:700;font-family:var(--mono);line-height:1;color:var(--text);}
+.kpi-sub{font-size:10px;color:var(--dim);margin-top:4px;}
+
+/* ── Badge ─────────────────────────────────────────────────────────────────── */
+.badge{background:var(--inner);border:1px solid var(--border);color:var(--muted);font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;}
+
+/* ── Jobs List ─────────────────────────────────────────────────────────────── */
+.job-item{padding:7px 8px;border-radius:4px;border:1px solid transparent;margin-bottom:4px;transition:border-color var(--t),background var(--t);cursor:pointer;}
+.job-item:hover{background:var(--inner);}
+.job-item.selected{border-color:var(--queen);background:var(--queen-dim);}
+.job-top{display:flex;align-items:center;gap:5px;margin-bottom:2px;}
+.job-status{font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:3px;text-transform:uppercase;flex-shrink:0;}
+.job-status.running{color:var(--queen);background:rgba(251,191,36,.12);}
+.job-status.complete{color:var(--green);background:rgba(16,185,129,.12);}
+.job-status.failed{color:var(--red);background:rgba(239,68,68,.12);}
+.job-status.queued{color:var(--blue);background:rgba(59,130,246,.12);}
+.job-status.partial{color:var(--orange);background:rgba(251,146,60,.12);}
+.job-goal{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.job-actions{display:flex;gap:4px;margin-top:4px;}
+.job-btn{font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid;cursor:pointer;transition:opacity var(--t);}
+.job-btn.view{color:var(--blue);border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.08);}
+.job-btn.cancel{color:var(--red);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08);}
+.job-btn:hover{opacity:.75;}
+
+/* ── Approvals ─────────────────────────────────────────────────────────────── */
+.approval-item{padding:8px;background:var(--inner);border-radius:4px;border:1px solid rgba(251,191,36,.2);margin-bottom:6px;}
+.approval-title{font-size:10px;color:var(--text);margin-bottom:2px;font-weight:500;}
+.approval-meta{font-size:9px;color:var(--dim);margin-bottom:5px;}
+.approval-btns{display:flex;gap:4px;}
+.approval-btn{font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid;cursor:pointer;transition:opacity var(--t);}
+.approval-btn.approve{color:var(--green);border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.08);}
+.approval-btn.reject{color:var(--red);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08);}
+.approval-btn:hover{opacity:.75;}
+
+/* ── Agent Inspector ───────────────────────────────────────────────────────── */
+.ad-empty{font-size:10px;color:var(--dim);text-align:center;padding:20px 0;line-height:1.7;}
+.ad-name{font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px;}
+.ad-type{font-size:9px;font-family:var(--mono);margin-bottom:8px;}
+.ad-row{display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03);}
+.ad-key{font-size:9px;color:var(--dim);}
+.ad-val{font-size:10px;color:var(--text);font-family:var(--mono);}
+.ad-val.active{color:var(--green);}
+.ad-val.idle{color:var(--dim);}
+.ad-section{font-size:9px;font-weight:700;color:var(--dim);margin:8px 0 4px;letter-spacing:.5px;text-transform:uppercase;}
+.ad-bar{height:4px;background:var(--inner);border-radius:2px;overflow:hidden;}
+.ad-bar-fill{height:100%;border-radius:2px;transition:width .5s;}
+
+/* ── Events Feed ───────────────────────────────────────────────────────────── */
+.ev{padding:6px 8px;border-radius:4px;margin-bottom:3px;background:var(--inner);border:1px solid transparent;font-size:11px;}
+.ev.ev-error{border-color:rgba(239,68,68,.22);}
+.ev.ev-patch{border-color:rgba(16,185,129,.18);}
+.ev.ev-approval{border-color:rgba(251,191,36,.28);}
+.ev.ev-mission{border-color:rgba(59,130,246,.18);}
+.ev.fresh{animation:flash-ev .7s ease;}
+@keyframes flash-ev{0%{background:rgba(251,191,36,.07)}100%{background:var(--inner)}}
+.ev-top{display:flex;align-items:center;gap:5px;margin-bottom:2px;}
+.ev-type{font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 4px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--muted);}
+.ev-type.type-error{color:var(--red);background:rgba(239,68,68,.1);}
+.ev-type.type-patch{color:var(--green);background:rgba(16,185,129,.1);}
+.ev-type.type-approval{color:var(--queen);background:rgba(251,191,36,.1);}
+.ev-type.type-mission{color:var(--blue);background:rgba(59,130,246,.1);}
+.ev-type.type-task{color:var(--purple);background:rgba(139,92,246,.1);}
+.ev-ant{font-size:9px;font-family:var(--mono);font-weight:600;}
+.ev-time{font-size:9px;color:var(--dim);margin-left:auto;}
+.ev-meta{font-size:9px;color:var(--dim);margin-bottom:2px;font-family:var(--mono);}
+.ev-msg{font-size:10px;color:var(--muted);word-break:break-word;}
+
+/* ── Tooltip ───────────────────────────────────────────────────────────────── */
 #tooltip{
-  position:fixed;background:rgba(8,14,22,.95);border:1px solid var(--border-hi);
-  border-radius:6px;padding:7px 11px;font-size:11px;pointer-events:none;
-  display:none;z-index:500;min-width:120px;
+  position:fixed;z-index:800;display:none;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  padding:10px 14px;min-width:170px;pointer-events:none;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);
 }
-.tt-name{font-weight:700;margin-bottom:4px;}
-.tt-row{display:flex;justify-content:space-between;gap:16px;font-size:10px;color:var(--muted);}
+.tt-name{font-size:13px;font-weight:700;margin-bottom:6px;}
+.tt-row{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 0;}
 .tt-val{color:var(--text);font-family:var(--mono);}
 
-/* ── Panels ──────────────────────────────────── */
-.panel{position:fixed;display:flex;flex-direction:column;gap:8px;}
-#left-panel{top:62px;left:14px;width:210px;}
-#right-panel{top:62px;right:14px;width:242px;height:calc(100vh - 76px);display:flex;flex-direction:column;gap:8px;}
-
-.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;backdrop-filter:blur(10px);}
-.card-head{padding:7px 12px;border-bottom:1px solid var(--border);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--dim);text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;}
-.card-head .badge{font-size:9px;font-weight:600;padding:1px 6px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--muted);}
-
-/* Stats grid */
-.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);}
-.stat-cell{background:var(--panel);padding:10px 12px;}
-.stat-label{font-size:9px;color:var(--dim);margin-bottom:3px;letter-spacing:.5px;}
-.stat-num{font-size:22px;font-weight:700;font-family:var(--mono);line-height:1;}
-
-/* Jobs list */
-#jobs-list{padding:6px;display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;}
-.job-item{padding:7px 9px;border-radius:5px;border:1px solid var(--border);background:rgba(255,255,255,.02);cursor:pointer;transition:border-color .2s;}
-.job-item:hover{border-color:var(--border-hi);}
-.job-item.selected{border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.05);}
-.job-top{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
-.job-status{font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;flex-shrink:0;text-transform:uppercase;letter-spacing:.5px;}
-.job-status.queued  {background:rgba(74,98,120,.3); color:var(--muted);}
-.job-status.running {background:rgba(251,191,36,.15);color:var(--queen);}
-.job-status.complete{background:rgba(74,222,128,.12);color:var(--green);}
-.job-status.partial {background:rgba(251,191,36,.12);color:var(--orange);}
-.job-status.failed  {background:rgba(248,113,113,.12);color:var(--red);}
-.job-goal{font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
-.job-actions{display:flex;gap:4px;margin-top:4px;}
-.job-btn{font-size:9px;padding:2px 7px;border-radius:3px;border:none;cursor:pointer;font-weight:600;}
-.job-btn.view{background:rgba(56,189,248,.12);color:var(--blue);}
-.job-btn.view:hover{background:rgba(56,189,248,.22);}
-.job-btn.cancel{background:rgba(248,113,113,.1);color:var(--red);}
-.job-btn.cancel:hover{background:rgba(248,113,113,.2);}
-
-/* Approvals panel */
-#approvals-card{display:none;}
-#approvals-list{padding:6px;display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;}
-.approval-item{padding:8px 10px;border-radius:5px;border:1px solid rgba(251,191,36,.25);background:rgba(251,191,36,.04);}
-.approval-title{font-size:10px;color:var(--text);margin-bottom:4px;}
-.approval-meta{font-size:9px;color:var(--dim);margin-bottom:6px;}
-.approval-btns{display:flex;gap:5px;}
-.approval-btn{flex:1;padding:4px 0;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:700;}
-.approval-btn.approve{background:rgba(74,222,128,.15);color:var(--green);}
-.approval-btn.approve:hover{background:rgba(74,222,128,.28);}
-.approval-btn.reject{background:rgba(248,113,113,.1);color:var(--red);}
-.approval-btn.reject:hover{background:rgba(248,113,113,.22);}
-
-/* Inspector */
-#agent-detail{padding:12px;}
-.ad-empty{color:var(--dim);font-size:11px;text-align:center;padding:16px 0;line-height:1.8;}
-.ad-name{font-size:15px;font-weight:700;margin-bottom:2px;}
-.ad-type{font-size:9px;font-weight:700;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase;}
-.ad-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);}
-.ad-key{font-size:11px;color:var(--muted);}
-.ad-val{font-size:11px;font-weight:600;font-family:var(--mono);}
-.ad-val.active{color:var(--green);}
-.ad-val.idle,.ad-val.queued{color:var(--dim);}
-.ad-val.running{color:var(--queen);}
-.ad-val.complete{color:var(--green);}
-.ad-val.failed{color:var(--red);}
-.ad-section{font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:10px 0 5px;}
-.ad-text{font-size:11px;color:var(--text);line-height:1.6;}
-.ad-bar{height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-top:8px;}
-.ad-bar-fill{height:100%;border-radius:2px;transition:width .8s;}
-
-/* Events feed — fills remaining right-panel height */
-#events-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
-#events-card-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
-#feed-list{flex:1;padding:6px;display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;}
-.ev{padding:5px 8px;border-radius:5px;border:1px solid transparent;background:rgba(255,255,255,.022);flex-shrink:0;}
-.ev.fresh{border-color:rgba(56,189,248,.2);background:rgba(56,189,248,.05);animation:fadeIn .4s ease;}
-.ev.ev-error{border-color:rgba(248,113,113,.15);background:rgba(248,113,113,.04);}
-.ev.ev-patch{border-color:rgba(251,191,36,.15);background:rgba(251,191,36,.04);}
-.ev.ev-approval{border-color:rgba(192,132,252,.15);background:rgba(192,132,252,.04);}
-.ev.ev-mission{border-color:rgba(74,222,128,.1);}
-.ev-top{display:flex;align-items:center;gap:5px;margin-bottom:2px;flex-wrap:wrap;}
-.ev-type{font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;flex-shrink:0;background:rgba(255,255,255,.06);color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ev-type.type-error{background:rgba(248,113,113,.18);color:var(--red);}
-.ev-type.type-patch{background:rgba(251,191,36,.15);color:var(--queen);}
-.ev-type.type-approval{background:rgba(192,132,252,.18);color:var(--purple);}
-.ev-type.type-mission{background:rgba(74,222,128,.12);color:var(--green);}
-.ev-type.type-task{background:rgba(56,189,248,.12);color:var(--blue);}
-.ev-ant{font-size:9px;font-weight:700;flex-shrink:0;}
-.ev-time{font-size:8px;color:var(--dim);font-family:var(--mono);margin-left:auto;flex-shrink:0;}
-.ev-meta{font-size:8px;color:var(--dim);font-family:var(--mono);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ev-msg{font-size:10px;color:var(--muted);line-height:1.4;word-break:break-word;}
-
-/* Mission bar */
-#mission-bar{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
-  width:540px;max-width:calc(100vw - 480px);z-index:100;
-}
-.mission-row{display:flex;gap:6px;align-items:stretch;}
-#mission-input{
-  flex:1;padding:11px 16px;
-  background:rgba(8,14,22,.97);border:1px solid var(--border-hi);
-  border-radius:var(--r);color:var(--text);font-family:var(--font);font-size:13px;
-  outline:none;box-shadow:0 4px 24px rgba(0,0,0,.5);transition:border-color .2s;
-}
-#mission-input:focus{border-color:var(--queen);}
-#mission-input:disabled{opacity:.5;cursor:not-allowed;}
-#mission-input::placeholder{color:var(--dim);}
-#send-btn{
-  padding:0 16px;background:var(--queen);border:none;border-radius:var(--r);
-  color:#000;font-weight:800;font-size:14px;cursor:pointer;flex-shrink:0;
-  box-shadow:0 4px 24px rgba(0,0,0,.5);transition:filter .2s;
-}
-#send-btn:hover{filter:brightness(1.15);}
-#send-btn:disabled{opacity:.4;cursor:not-allowed;}
-.bar-hint{font-size:9px;color:var(--dim);text-align:center;margin-top:4px;letter-spacing:.3px;}
-
-/* Result overlay */
-#result-overlay{
-  position:fixed;top:62px;left:50%;transform:translateX(-50%);
-  width:600px;max-width:calc(100vw - 480px);
-  background:rgba(8,14,22,.98);border:1px solid var(--border-hi);
-  border-radius:var(--r);box-shadow:0 8px 40px rgba(0,0,0,.6);
-  display:none;z-index:200;
-}
-#result-overlay.show{display:flex;flex-direction:column;}
-.result-head{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.result-head-title{font-size:11px;font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.result-head-actions{display:flex;gap:6px;flex-shrink:0;}
-.result-action-btn{background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;padding:3px 9px;font-size:10px;font-weight:600;transition:all .2s;}
-.result-action-btn:hover{border-color:var(--border-hi);color:var(--text);}
-.result-action-btn.copied{color:var(--green);border-color:rgba(74,222,128,.3);}
-.result-close{background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:0 4px;line-height:1;flex-shrink:0;}
-.result-close:hover{color:var(--text);}
-#result-body{padding:12px;max-height:340px;overflow-y:auto;font-size:11px;color:var(--muted);line-height:1.7;white-space:pre-wrap;font-family:var(--mono);}
-.result-status-bar{padding:6px 14px;border-top:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;gap:12px;}
-.result-status-bar span{color:var(--muted);}
-
-/* Setup overlay */
-#setup-overlay{
-  position:fixed;inset:0;background:rgba(8,14,22,.97);
-  display:flex;align-items:center;justify-content:center;z-index:999;
-}
-.setup-card{background:var(--panel);border:1px solid var(--border-hi);border-radius:10px;padding:32px;width:400px;text-align:center;}
-.setup-card h2{font-size:18px;font-weight:800;color:var(--queen);letter-spacing:2px;margin-bottom:6px;}
-.setup-card p{font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.6;}
-.setup-field{margin-bottom:10px;text-align:left;}
-.setup-field label{display:block;font-size:10px;color:var(--dim);margin-bottom:4px;letter-spacing:.5px;text-transform:uppercase;}
-.setup-card input{
-  width:100%;padding:10px 14px;background:rgba(255,255,255,.04);
-  border:1px solid var(--border-hi);border-radius:6px;color:var(--text);
-  font-family:var(--mono);font-size:12px;outline:none;
-}
-.setup-card input:focus{border-color:var(--queen);}
-.setup-card button{
-  width:100%;padding:10px;background:var(--queen);border:none;border-radius:6px;
-  color:#000;font-weight:700;font-size:13px;cursor:pointer;margin-top:14px;
-}
-.setup-card button:hover{filter:brightness(1.1);}
-.setup-err{font-size:11px;color:var(--red);margin-top:6px;min-height:16px;}
-
-/* Settings overlay */
-#settings-overlay{
-  position:fixed;inset:0;background:rgba(8,14,22,.7);
-  display:none;align-items:center;justify-content:center;z-index:800;backdrop-filter:blur(4px);
-}
-#settings-overlay.show{display:flex;}
-.settings-card{background:var(--panel);border:1px solid var(--border-hi);border-radius:10px;padding:0;width:440px;overflow:hidden;}
-.settings-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-.settings-head h3{font-size:13px;font-weight:700;color:var(--text);}
-.settings-body{padding:18px;display:flex;flex-direction:column;gap:14px;}
-.settings-field{display:flex;flex-direction:column;gap:5px;}
-.settings-label{font-size:10px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;}
-.settings-input{
-  padding:9px 12px;background:rgba(255,255,255,.04);
-  border:1px solid var(--border-hi);border-radius:6px;color:var(--text);
-  font-family:var(--mono);font-size:12px;outline:none;width:100%;
-}
-.settings-input:focus{border-color:var(--queen);}
-.settings-row{display:flex;gap:8px;}
-.settings-btn{flex:1;padding:9px;border:none;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;}
-.settings-btn.save{background:var(--queen);color:#000;}
-.settings-btn.save:hover{filter:brightness(1.1);}
-.settings-btn.secondary{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border);}
-.settings-btn.secondary:hover{border-color:var(--border-hi);color:var(--text);}
-.settings-info{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;padding:10px 12px;}
-.settings-info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;}
-.settings-info-key{color:var(--dim);}
-.settings-info-val{color:var(--text);font-family:var(--mono);font-size:10px;}
-.ollama-status{display:flex;align-items:center;gap:5px;}
-.ollama-dot{width:6px;height:6px;border-radius:50%;background:var(--dim);}
+/* ── Settings Page ─────────────────────────────────────────────────────────── */
+.settings-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;margin-bottom:16px;}
+.settings-tab{padding:9px 16px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color var(--t),border-color var(--t);cursor:pointer;}
+.settings-tab.active{color:var(--queen);border-color:var(--queen);}
+.settings-pane{display:none;}
+.settings-pane.active{display:block;}
+.set-label{font-size:10px;color:var(--muted);font-weight:600;margin-bottom:5px;display:block;}
+.set-input{width:100%;padding:8px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;margin-bottom:12px;}
+.set-input:focus{outline:none;border-color:var(--queen);}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;}
+.info-key{color:var(--dim);}
+.info-val{color:var(--text);font-family:var(--mono);}
+.ollama-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;}
 .ollama-dot.ok{background:var(--green);}
 .ollama-dot.err{background:var(--red);}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;color:var(--text);}
+.toggle-sw{width:30px;height:17px;border-radius:9px;background:var(--inner);border:1px solid var(--border);cursor:pointer;position:relative;transition:background var(--t),border-color var(--t);flex-shrink:0;}
+.toggle-sw::after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--dim);transition:transform var(--t),background var(--t);}
+.toggle-sw.on{background:rgba(251,191,36,.18);border-color:rgba(251,191,36,.45);}
+.toggle-sw.on::after{transform:translateX(13px);background:var(--queen);}
+.num-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;color:var(--text);}
+.num-row input{width:78px;padding:4px 8px;background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;font-family:var(--mono);text-align:right;}
+.num-row input:focus{outline:none;border-color:var(--queen);}
+.route-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;}
+.route-role{color:var(--dim);font-family:var(--mono);width:80px;flex-shrink:0;}
+.route-model{color:var(--text);flex:1;font-family:var(--mono);}
+.route-provider{font-size:9px;color:var(--blue);}
+.model-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:4px;background:var(--inner);border:1px solid var(--border);margin-bottom:4px;cursor:pointer;transition:border-color var(--t);}
+.model-item.active-route{border-color:rgba(251,191,36,.4);background:var(--queen-dim);}
+.model-name{flex:1;font-size:11px;color:var(--text);font-family:var(--mono);}
+.model-size{font-size:9px;color:var(--dim);}
+.model-badge-active{font-size:8px;color:var(--queen);background:var(--queen-dim);padding:1px 5px;border-radius:3px;font-weight:700;}
 
-/* Card collapse */
-.card-head .collapse-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 4px;line-height:1;transition:transform .2s;}
-.card-head .collapse-btn:hover{color:var(--text);}
-.card.collapsed .collapse-btn{transform:rotate(-90deg);}
-.card.collapsed .card-body{display:none;}
-.card-body{overflow:hidden;}
+/* ── Ant Config ────────────────────────────────────────────────────────────── */
+.antcfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;}
+.antcfg-card{background:var(--inner);border:1px solid var(--border);border-radius:var(--r);padding:14px;}
+.antcfg-top{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.antcfg-dot{width:20px;height:20px;border-radius:50%;flex-shrink:0;}
+.antcfg-role{font-size:9px;color:var(--dim);font-family:var(--mono);}
+.antcfg-field{margin-bottom:8px;}
+.antcfg-field label{font-size:9px;color:var(--dim);display:block;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+.antcfg-name{width:100%;padding:6px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:12px;}
+.antcfg-name:focus{outline:none;border-color:var(--queen);}
+.antcfg-color{width:38px;height:26px;padding:2px;background:var(--card);border:1px solid var(--border);border-radius:4px;cursor:pointer;}
+.antcfg-model{width:100%;padding:5px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;}
+.antcfg-model:focus{outline:none;border-color:var(--queen);}
 
-/* Full-screen log modal */
-#log-modal{position:fixed;inset:0;background:rgba(8,14,22,.98);z-index:700;display:none;flex-direction:column;}
-#log-modal.show{display:flex;}
-#log-modal-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
-#log-modal-head h3{font-size:13px;font-weight:700;color:var(--text);flex:1;}
-#log-search{flex:2;padding:6px 12px;background:rgba(255,255,255,.05);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;}
-#log-search:focus{border-color:var(--queen);}
-#log-filter-ant{padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;}
-#log-modal-body{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:4px;}
-.log-ev{padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:rgba(255,255,255,.02);font-size:11px;}
-.log-ev-head{display:flex;gap:8px;align-items:center;margin-bottom:3px;flex-wrap:wrap;}
-.log-ev-type{font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.07);color:var(--muted);}
-.log-ev-type.type-error{background:rgba(248,113,113,.18);color:var(--red);}
-.log-ev-type.type-patch{background:rgba(251,191,36,.15);color:var(--queen);}
-.log-ev-type.type-approval{background:rgba(192,132,252,.18);color:var(--purple);}
-.log-ev-type.type-mission{background:rgba(74,222,128,.12);color:var(--green);}
-.log-ev-type.type-task{background:rgba(56,189,248,.12);color:var(--blue);}
-.log-ev-ant{font-size:10px;font-weight:700;}
-.log-ev-ts{font-size:9px;color:var(--dim);font-family:var(--mono);margin-left:auto;}
-.log-ev-meta{font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px;}
-.log-ev-msg{font-size:11px;color:var(--text);line-height:1.5;word-break:break-word;}
-#log-modal-foot{padding:8px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:10px;flex-shrink:0;}
-
-/* Settings tabs */
-.settings-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 18px;gap:2px;}
-.settings-tab{padding:8px 14px;font-size:11px;font-weight:600;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s;}
-.settings-tab.active{color:var(--text);border-bottom-color:var(--queen);}
-.settings-tab:hover{color:var(--text);}
-.settings-pane{display:none;padding:18px;flex-direction:column;gap:14px;}
-.settings-pane.active{display:flex;}
-
-/* Model browser */
-.model-grid{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;}
-.model-item{padding:8px 10px;border-radius:5px;border:1px solid var(--border);background:rgba(255,255,255,.02);display:flex;align-items:center;gap:8px;cursor:pointer;transition:border-color .2s;}
-.model-item:hover{border-color:var(--border-hi);}
-.model-item.active-route{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.04);}
-.model-name{font-size:11px;font-weight:700;font-family:var(--mono);flex:1;}
-.model-size{font-size:9px;color:var(--dim);font-family:var(--mono);}
-.model-badge{font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(74,222,128,.12);color:var(--green);font-weight:700;}
-.route-grid{display:flex;flex-direction:column;gap:4px;}
-.route-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);}
-.route-role{font-size:10px;color:var(--dim);width:75px;flex-shrink:0;}
-.route-model{font-size:10px;font-family:var(--mono);color:var(--text);flex:1;}
-.route-provider{font-size:9px;color:var(--blue);padding:1px 4px;border-radius:2px;background:rgba(56,189,248,.1);}
-.section-label{font-size:9px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;margin-top:6px;}
-
-#zoom-hint{position:fixed;bottom:18px;right:14px;font-size:9px;color:var(--dim);letter-spacing:.3px;pointer-events:none;}
-
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:2px;}
-
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.7);}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
-
-/* Colony settings: toggles + numeric grids */
-.toggle-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
-.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border:1px solid var(--border);border-radius:5px;background:rgba(255,255,255,.02);}
-.toggle-row span{font-size:10px;color:var(--muted);}
-.toggle-sw{position:relative;width:34px;height:18px;flex-shrink:0;border-radius:10px;background:rgba(255,255,255,.1);cursor:pointer;transition:background .2s;}
-.toggle-sw.on{background:var(--queen);}
-.toggle-sw::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s;}
-.toggle-sw.on::after{left:18px;}
-.num-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
-.num-row{display:flex;flex-direction:column;gap:3px;}
-.num-row label{font-size:9px;color:var(--dim);letter-spacing:.3px;}
-.num-row input{padding:6px 8px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;width:100%;}
-.num-row input:focus{border-color:var(--queen);}
-
-/* Generic full-screen page overlay (Ant Config, Pheromones) */
-.page-modal{position:fixed;inset:0;background:rgba(8,14,22,.98);z-index:700;display:none;flex-direction:column;}
-.page-modal.show{display:flex;}
-.page-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.page-head h3{font-size:13px;font-weight:700;color:var(--text);flex:1;letter-spacing:.5px;}
-.page-head .sub{font-size:10px;color:var(--dim);}
-.page-body{flex:1;overflow-y:auto;padding:16px 20px;}
-.page-foot{padding:8px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:10px;flex-shrink:0;}
-
-/* Ant config cards */
-.antcfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;max-width:980px;}
-.antcfg-card{border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:14px;display:flex;flex-direction:column;gap:9px;}
-.antcfg-top{display:flex;align-items:center;gap:9px;}
-.antcfg-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
-.antcfg-role{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);}
-.antcfg-field{display:flex;flex-direction:column;gap:3px;}
-.antcfg-field label{font-size:9px;color:var(--dim);letter-spacing:.3px;text-transform:uppercase;}
-.antcfg-field input,.antcfg-field select{padding:7px 9px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:11px;font-family:var(--mono);outline:none;width:100%;}
-.antcfg-field input[type=color]{padding:2px;height:30px;cursor:pointer;}
-.antcfg-field input:focus,.antcfg-field select:focus{border-color:var(--queen);}
-
-/* Pheromone table */
-.phero-table{width:100%;border-collapse:collapse;font-size:11px;max-width:1100px;}
-.phero-table th{text-align:left;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);padding:6px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);}
-.phero-table td{padding:6px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);color:var(--muted);}
-.phero-key{color:var(--text);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.phero-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;min-width:70px;}
-.phero-bar-fill{height:100%;border-radius:3px;}
+/* ── Pheromone Table ───────────────────────────────────────────────────────── */
+.phero-table{width:100%;border-collapse:collapse;font-size:11px;}
+.phero-table th{text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.phero-table td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.03);}
+.phero-key{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);color:var(--muted);font-size:10px;}
+.phero-bar{width:60px;height:5px;background:var(--inner);border-radius:3px;overflow:hidden;display:inline-block;}
+.phero-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
 .phero-net.pos{color:var(--green);}
 .phero-net.neg{color:var(--red);}
 
-/* Rename popover */
-#rename-pop{position:fixed;z-index:850;background:rgba(8,14,22,.98);border:1px solid var(--border-hi);border-radius:7px;padding:10px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.6);}
-#rename-pop.show{display:block;}
-#rename-pop label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px;}
-#rename-pop input{padding:7px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:12px;outline:none;width:180px;}
-#rename-pop input:focus{border-color:var(--queen);}
-#rename-pop .rp-btns{display:flex;gap:6px;margin-top:8px;}
-#rename-pop button{flex:1;padding:6px;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;}
-#rename-pop .rp-save{background:var(--queen);color:#000;}
-#rename-pop .rp-cancel{background:rgba(255,255,255,.06);color:var(--muted);}
+/* ── Users Table ───────────────────────────────────────────────────────────── */
+.users-table{width:100%;border-collapse:collapse;font-size:12px;}
+.users-table th{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;}
+.users-table td{padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.03);}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;transition:opacity var(--t),background var(--t);border:1px solid transparent;}
+.btn-primary{background:var(--queen);color:#080808;border-color:var(--queen);}
+.btn-primary:hover{opacity:.88;}
+.btn-ghost{background:transparent;color:var(--muted);border-color:var(--border);}
+.btn-ghost:hover{background:rgba(255,255,255,.04);color:var(--text);}
+.btn-danger{background:rgba(239,68,68,.08);color:var(--red);border-color:rgba(239,68,68,.28);}
+.btn-danger:hover{background:rgba(239,68,68,.16);}
+.save-msg{font-size:11px;padding:3px 0;}
+.form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+.form-field{display:flex;flex-direction:column;gap:4px;}
+.form-field label{font-size:10px;color:var(--muted);font-weight:600;}
+.form-input{padding:7px 10px;background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:12px;}
+.form-input:focus{outline:none;border-color:var(--queen);}
+.form-select{padding:7px 10px;background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:12px;}
+
+/* ── Page Header Bar ───────────────────────────────────────────────────────── */
+.page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-shrink:0;}
+.page-hdr h1{font-size:17px;font-weight:700;color:var(--text);}
+.page-hdr .sub{font-size:11px;color:var(--dim);margin-top:2px;}
+
+/* ── Log Table ─────────────────────────────────────────────────────────────── */
+.log-ev{padding:7px 10px;margin-bottom:3px;border-radius:4px;background:var(--inner);border:1px solid transparent;}
+.log-ev-head{display:flex;align-items:center;gap:6px;margin-bottom:2px;}
+.log-ev-type{font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 4px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--muted);}
+.log-ev-ant{font-size:9px;font-family:var(--mono);font-weight:600;}
+.log-ev-ts{font-size:9px;color:var(--dim);margin-left:auto;}
+.log-ev-meta{font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:2px;}
+.log-ev-msg{font-size:10px;color:var(--muted);word-break:break-word;}
+.filter-row{display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;}
+.filter-select{padding:5px 8px;background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:11px;}
+.filter-select:focus{outline:none;border-color:var(--queen);}
+.filter-input{padding:5px 10px;background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:11px;min-width:140px;}
+.filter-input:focus{outline:none;border-color:var(--queen);}
+
+/* ── Result Overlay ────────────────────────────────────────────────────────── */
+#result-overlay{
+  position:fixed;top:var(--hdr-h);left:0;right:0;bottom:0;
+  background:rgba(9,14,23,.97);z-index:500;
+  display:none;flex-direction:column;
+}
+#result-overlay.show{display:flex;animation:slide-up .18s ease;}
+@keyframes slide-up{from{transform:translateY(18px);opacity:0}to{transform:none;opacity:1}}
+.result-head{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.result-head-title{font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.result-head-actions{display:flex;gap:6px;}
+.result-action-btn{padding:4px 11px;border-radius:var(--r);font-size:11px;background:var(--inner);border:1px solid var(--border);color:var(--muted);transition:color var(--t);}
+.result-action-btn:hover{color:var(--text);}
+.result-action-btn.copied{color:var(--green);border-color:rgba(16,185,129,.4);}
+.result-close{width:26px;height:26px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px;transition:background var(--t),color var(--t);}
+.result-close:hover{background:rgba(255,255,255,.06);color:var(--text);}
+#result-body{flex:1;overflow-y:auto;padding:18px 20px;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text);white-space:pre-wrap;}
+.result-status-bar{padding:7px 18px;border-top:1px solid var(--border);display:flex;gap:18px;font-size:10px;color:var(--dim);flex-shrink:0;}
+
+/* ── Rename Popover ────────────────────────────────────────────────────────── */
+#rename-pop{
+  position:fixed;z-index:1200;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r);padding:12px 14px;width:208px;
+  display:none;flex-direction:column;gap:8px;box-shadow:0 8px 28px rgba(0,0,0,.55);
+}
+#rename-pop.show{display:flex;}
+#rename-input{padding:7px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;width:100%;}
+#rename-input:focus{outline:none;border-color:var(--queen);}
+.rename-btns{display:flex;gap:6px;}
+
+/* ── Utility ───────────────────────────────────────────────────────────────── */
+.text-queen{color:var(--queen);}
+.text-green{color:var(--green);}
+.text-red{color:var(--red);}
+.text-blue{color:var(--blue);}
+.text-dim{color:var(--dim);}
+.text-muted{color:var(--muted);}
+.mono{font-family:var(--mono);}
+.section-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);padding:8px 0 5px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.scroll-body{flex:1;overflow-y:auto;}
+code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 5px;border-radius:3px;}
+
 </style>
 </head>
 <body>
 
-<!-- Login / first-run setup -->
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     AUTH OVERLAY  (shown until login / first-run setup completes)
+════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
-  <div class="setup-card">
-    <h2>ANTHILL</h2>
+  <div class="auth-box">
+    <div class="auth-logo">ANTHILL <span>v1.8.3</span></div>
+    <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
-    <!-- LOGIN mode -->
+    <!-- Login form -->
     <div id="auth-login">
-      <p>Sign in to the colony.</p>
-      <div class="setup-field"><label>Username</label><input id="login-user" type="text" placeholder="admin" autocomplete="username" /></div>
-      <div class="setup-field"><label>Password</label><input id="login-pass" type="password" placeholder="Your password" autocomplete="current-password" /></div>
-      <div class="setup-field"><label>API Base URL <span style="color:var(--dim)">(optional — blank = this server)</span></label><input id="apibase-input" type="text" placeholder="http://10.10.10.20:8713" autocomplete="off" /></div>
-      <button id="login-btn">Sign In</button>
-      <div class="setup-err" id="auth-err"></div>
+      <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
+      <input class="auth-input" id="apibase-input" type="url" placeholder="http://host:8713" autocomplete="off">
+      <label class="auth-label">Username</label>
+      <input class="auth-input" id="login-user" type="text" placeholder="admin" autocomplete="username">
+      <label class="auth-label">Password</label>
+      <input class="auth-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+      <div class="auth-err" id="auth-err"></div>
+      <button class="auth-btn" id="login-btn">Sign In</button>
     </div>
 
-    <!-- SETUP mode (first run only) -->
-    <div id="auth-setup" style="display:none;">
-      <p>Welcome. No accounts exist yet — create the <b style="color:var(--queen)">administrator</b> who will own this colony.</p>
-      <div class="setup-field"><label>Admin Username</label><input id="setup-user" type="text" value="admin" autocomplete="username" /></div>
-      <div class="setup-field"><label>Password <span style="color:var(--dim)">(min 8 chars)</span></label><input id="setup-pass" type="password" placeholder="Choose a strong password" autocomplete="new-password" /></div>
-      <div class="setup-field"><label>Confirm Password</label><input id="setup-pass2" type="password" placeholder="Re-enter password" autocomplete="new-password" /></div>
-      <div class="setup-field"><label>API Base URL <span style="color:var(--dim)">(optional)</span></label><input id="setup-apibase" type="text" placeholder="http://10.10.10.20:8713" autocomplete="off" /></div>
-      <button id="setup-btn">Create Administrator</button>
-      <div class="setup-err" id="setup-err-msg"></div>
+    <!-- First-run setup form -->
+    <div id="auth-setup" style="display:none">
+      <div style="font-size:12px;color:var(--queen);margin-bottom:14px;padding:8px 10px;background:var(--queen-dim);border-radius:var(--r);border:1px solid rgba(251,191,36,.25);">
+        ✦ First launch — create your admin account
+      </div>
+      <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
+      <input class="auth-input" id="setup-apibase" type="url" placeholder="http://host:8713" autocomplete="off">
+      <label class="auth-label">Admin Username</label>
+      <input class="auth-input" id="setup-user" type="text" placeholder="admin" value="admin" autocomplete="username">
+      <label class="auth-label">Password <span style="font-weight:400;color:var(--dim)">(min 8 characters)</span></label>
+      <input class="auth-input" id="setup-pass" type="password" placeholder="••••••••" autocomplete="new-password">
+      <label class="auth-label">Confirm Password</label>
+      <input class="auth-input" id="setup-pass2" type="password" placeholder="••••••••" autocomplete="new-password">
+      <div class="auth-err" id="setup-err-msg"></div>
+      <button class="auth-btn" id="setup-btn">Create Admin Account</button>
     </div>
   </div>
 </div>
 
-<!-- Settings overlay -->
-<div id="settings-overlay">
-  <div class="settings-card" style="width:520px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;">
-    <div class="settings-head">
-      <h3>Colony Settings</h3>
-      <button class="result-close" id="settings-close">✕</button>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     APP SHELL
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="app-shell" class="hidden">
+
+  <!-- ── Nav Rail ──────────────────────────────────────────────────────────── -->
+  <nav id="nav-rail">
+    <div class="nav-logo">
+      <span class="nav-logo-text">ANTHILL</span>
+      <span class="nav-logo-ver">v1.8.3</span>
     </div>
-    <div class="settings-tabs">
-      <div class="settings-tab active" data-tab="connection">Connection</div>
-      <div class="settings-tab" data-tab="colony">Colony</div>
-      <div class="settings-tab" data-tab="models">Models</div>
-      <div class="settings-tab" data-tab="info">System</div>
-    </div>
-    <!-- Connection tab -->
-    <div class="settings-pane active" id="tab-connection" style="overflow-y:auto;">
-      <div class="settings-info">
-        <div class="settings-info-row"><span class="settings-info-key">Signed in as</span><span class="settings-info-val" id="si-username">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Role</span><span class="settings-info-val" id="si-role">—</span></div>
+
+    <div class="nav-scroll">
+      <!-- Main -->
+      <div id="nav-item-overview" class="nav-item active" data-page="overview">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+        <span class="nav-label">Overview</span>
       </div>
-      <div class="settings-field">
-        <div class="settings-label">API Base URL <span style="color:var(--dim)">(blank = relative to page)</span></div>
-        <input class="settings-input" id="settings-apibase" type="text" placeholder="http://10.10.10.20:8713" />
+      <div id="nav-item-colony" class="nav-item" data-page="colony">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg></span>
+        <span class="nav-label">Colony</span>
       </div>
-      <div class="settings-info">
-        <div class="settings-info-row"><span class="settings-info-key">Ollama Status</span>
-          <span class="settings-info-val"><span class="ollama-status"><span class="ollama-dot" id="si-ollama-dot"></span><span id="si-ollama-status">checking...</span></span></span>
+      <div id="nav-item-missions" class="nav-item" data-page="missions">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+        <span class="nav-label">Missions</span>
+        <span class="nav-badge" id="nav-jobs-badge" style="display:none"></span>
+      </div>
+
+      <!-- Operations -->
+      <div class="nav-section">Operations</div>
+      <div id="nav-item-events" class="nav-item" data-page="events">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
+        <span class="nav-label">Event Log</span>
+      </div>
+      <div id="nav-item-pheromones" class="nav-item" data-page="pheromones">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
+        <span class="nav-label">Pheromones</span>
+      </div>
+
+      <!-- Configuration (admin only) -->
+      <div class="nav-section" id="nav-section-admin">Configuration</div>
+      <div id="nav-item-antconfig" class="nav-item" data-page="antconfig">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
+        <span class="nav-label">Ant Config</span>
+      </div>
+      <div id="nav-item-settings" class="nav-item" data-page="settings">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
+        <span class="nav-label">Settings</span>
+      </div>
+      <div id="nav-item-users" class="nav-item" data-page="users">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+        <span class="nav-label">Users</span>
+      </div>
+    </div><!-- /nav-scroll -->
+
+    <div class="nav-footer">
+      <div class="nav-user">
+        <div class="nav-user-avatar" id="nav-user-avatar">AH</div>
+        <div class="nav-user-info">
+          <div class="nav-user-name" id="nav-user-name">—</div>
+          <div class="nav-user-role" id="nav-user-role">—</div>
         </div>
-        <div class="settings-info-row"><span class="settings-info-key">Ollama Host</span><span class="settings-info-val" id="si-ollama-host">—</span></div>
       </div>
-      <div class="settings-row">
-        <button class="settings-btn save" id="settings-save">Save &amp; Reconnect</button>
-        <button class="settings-btn secondary" id="settings-cancel">Cancel</button>
-      </div>
+      <button class="nav-collapse-btn" id="nav-collapse-btn" title="Collapse sidebar">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
     </div>
-    <!-- Colony tab — live, persisted settings -->
-    <div class="settings-pane" id="tab-colony" style="overflow-y:auto;">
-      <div class="section-label">Ollama Backend</div>
-      <div class="settings-field">
-        <div class="settings-label">Ollama Host</div>
-        <input class="settings-input" id="set-ollama-host" type="text" placeholder="http://10.10.10.20:11434" />
-      </div>
-      <div class="settings-field">
-        <div class="settings-label">Default Model</div>
-        <input class="settings-input" id="set-ollama-model" type="text" placeholder="llama3.1:8b" />
-      </div>
-      <div class="section-label" style="margin-top:8px;">Capabilities</div>
-      <div class="toggle-grid" id="set-toggles"></div>
-      <div class="section-label" style="margin-top:8px;">Limits &amp; Long-Input</div>
-      <div class="num-grid" id="set-nums"></div>
-      <div class="section-label" style="margin-top:8px;">Autonomy</div>
-      <div class="num-grid" id="set-autonomy"></div>
-      <div class="settings-row" style="margin-top:6px;">
-        <button class="settings-btn save" id="colony-save">Save Colony Settings</button>
-        <button class="settings-btn secondary" id="colony-reload">↻ Reload</button>
-      </div>
-      <div id="colony-save-msg" style="font-size:10px;color:var(--green);min-height:14px;"></div>
-    </div>
-    <!-- Models tab -->
-    <div class="settings-pane" id="tab-models" style="overflow-y:auto;">
-      <div class="section-label">Active Model Routes</div>
-      <div class="route-grid" id="route-grid"><div style="font-size:10px;color:var(--dim)">Loading routes...</div></div>
-      <div class="section-label" style="margin-top:10px;">Available Ollama Models</div>
-      <div style="font-size:9px;color:var(--dim);margin-bottom:6px;">Click a model name to copy. Active routes are highlighted.</div>
-      <div class="model-grid" id="model-grid"><div style="font-size:10px;color:var(--dim)">Loading models...</div></div>
-      <button class="settings-btn secondary" id="models-refresh" style="margin-top:8px;">↻ Refresh Models</button>
-    </div>
-    <!-- System info tab -->
-    <div class="settings-pane" id="tab-info" style="overflow-y:auto;">
-      <div class="settings-info" id="settings-info">
-        <div class="settings-info-row"><span class="settings-info-key">Version</span><span class="settings-info-val" id="si-version">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Active Model</span><span class="settings-info-val" id="si-model">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Safety Profile</span><span class="settings-info-val" id="si-safety">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Native Kernel</span><span class="settings-info-val" id="si-kernel">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Job Workers</span><span class="settings-info-val" id="si-workers">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Web Search</span><span class="settings-info-val" id="si-web">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">File Writing</span><span class="settings-info-val" id="si-filewrite">—</span></div>
-        <div class="settings-info-row"><span class="settings-info-key">Patch Application</span><span class="settings-info-val" id="si-patch">—</span></div>
-      </div>
-      <div class="section-label" style="margin-top:12px;">Diagnostics</div>
-      <div id="si-diag" style="font-size:10px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono);max-height:180px;overflow-y:auto;background:rgba(0,0,0,.25);padding:8px;border-radius:5px;border:1px solid var(--border)">Click Refresh to load...</div>
-      <button class="settings-btn secondary" id="diag-refresh" style="margin-top:8px;">↻ Refresh Diagnostics</button>
-    </div>
-  </div>
-</div>
+  </nav><!-- /nav-rail -->
 
-<!-- Full-screen event log modal -->
-<div id="log-modal">
-  <div id="log-modal-head">
-    <h3>Colony Event Log</h3>
-    <input id="log-search" type="text" placeholder="Search events..." autocomplete="off" />
-    <select id="log-filter-ant">
-      <option value="">All Ants</option>
-      <option value="queen">Queen</option>
-      <option value="researcher">Researcher</option>
-      <option value="coder">Coder</option>
-      <option value="builder">Builder</option>
-      <option value="verifier">Verifier</option>
-      <option value="file">File</option>
-      <option value="web">Web</option>
-    </select>
-    <select id="log-filter-type" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
-      <option value="">All Types</option>
-    </select>
-    <select id="log-filter-level" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
-      <option value="">All Severity</option>
-      <option value="error">Errors / Alarms</option>
-    </select>
-    <select id="log-filter-since" style="padding:6px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;">
-      <option value="">All Time</option>
-      <option value="15m">Last 15 min</option>
-      <option value="1h">Last hour</option>
-      <option value="6h">Last 6 hours</option>
-      <option value="24h">Last 24 hours</option>
-    </select>
-    <button class="result-close" id="log-modal-close" style="font-size:20px;padding:0 8px;">✕</button>
-  </div>
-  <div id="log-modal-body"></div>
-  <div id="log-modal-foot">
-    <span id="log-modal-count">0 events</span>
-    <button class="settings-btn secondary" id="log-reload" style="padding:4px 12px;font-size:10px;">↻ Reload</button>
-  </div>
-</div>
+  <!-- ── Right Side ─────────────────────────────────────────────────────────── -->
+  <div id="right-side">
 
-<!-- Ant configuration page -->
-<div id="antcfg-modal" class="page-modal">
-  <div class="page-head">
-    <h3>🐜 Ant Configuration</h3>
-    <span class="sub">Rename your ants, recolor them, and assign each caste its model. Drag ants on the colony map to arrange your anthill.</span>
-    <button class="result-close" onclick="document.getElementById('antcfg-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
-  </div>
-  <div class="page-body"><div class="antcfg-grid" id="antcfg-grid"></div></div>
-  <div class="page-foot">
-    <button class="settings-btn save" id="antcfg-save" style="padding:6px 16px;flex:none;">Save Ant Profiles</button>
-    <button class="settings-btn secondary" id="antcfg-reset" style="padding:6px 16px;flex:none;">Reset to Defaults</button>
-    <span id="antcfg-msg" style="color:var(--green);"></span>
-  </div>
-</div>
+    <!-- Top Header -->
+    <header id="top-header">
+      <div class="hdr-left">
+        <span class="hdr-title" id="hdr-page-title">Overview</span>
+      </div>
+      <div class="hdr-mission">
+        <div class="dot" id="mission-dot"></div>
+        <div class="hdr-goal" id="mission-goal">Idle — no active mission</div>
+      </div>
+      <div class="hdr-right">
+        <div id="model-badge">connecting...</div>
+        <div id="conn-badge" class="err">● Offline</div>
+        <button class="hdr-btn" id="approval-bell" title="Pending Approvals" style="display:none">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="bell-count"></span>
+        </button>
+        <button class="hdr-btn" id="logout-btn" title="Sign Out">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </header>
 
-<!-- Pheromone memory page -->
-<div id="phero-modal" class="page-modal">
-  <div class="page-head">
-    <h3>🧬 Pheromone Memory</h3>
-    <span class="sub">Reinforcement trails the colony has learned. Pruning removes weak and failure-dominant trails, keeping only what's useful.</span>
-    <button class="result-close" onclick="document.getElementById('phero-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
-  </div>
-  <div class="page-body" id="phero-body"><div style="color:var(--dim)">Loading…</div></div>
-  <div class="page-foot">
-    <span id="phero-count">0 trails</span>
-    <button class="settings-btn secondary" id="phero-reload" style="padding:6px 14px;flex:none;">↻ Reload</button>
-    <button class="settings-btn save" id="phero-prune" style="padding:6px 14px;flex:none;background:var(--orange);">🧹 Prune Unusable</button>
-    <span id="phero-msg" style="color:var(--green);"></span>
-  </div>
-</div>
+    <!-- Main content area -->
+    <main id="main-area">
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: OVERVIEW
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll active" id="page-overview">
 
-<!-- User management page (admin only) -->
-<div id="users-modal" class="page-modal">
-  <div class="page-head">
-    <h3>👥 Operator Accounts</h3>
-    <span class="sub">Admins have full control. Mission Coordinators can only send missions to the Queen and read the event logs.</span>
-    <button class="result-close" onclick="document.getElementById('users-modal').classList.remove('show')" style="font-size:20px;padding:0 8px;">✕</button>
-  </div>
-  <div class="page-body">
-    <div style="max-width:760px;">
-      <div class="section-label">Add Account</div>
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px;">
-        <div class="num-row" style="flex:1;min-width:140px;"><label>Username</label><input id="nu-user" type="text" placeholder="coordinator1" autocomplete="off" /></div>
-        <div class="num-row" style="flex:1;min-width:140px;"><label>Password (min 8)</label><input id="nu-pass" type="password" placeholder="••••••••" autocomplete="new-password" /></div>
-        <div class="num-row" style="min-width:150px;"><label>Role</label>
-          <select id="nu-role" style="padding:6px 8px;background:rgba(255,255,255,.04);border:1px solid var(--border-hi);border-radius:5px;color:var(--text);font-size:11px;">
-            <option value="coordinator">Mission Coordinator</option>
-            <option value="admin">Administrator</option>
+        <!-- KPI grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card" style="border-left-color:var(--blue)">
+            <div class="kpi-label">Model Calls</div>
+            <div class="kpi-num" id="ov-calls" style="color:var(--blue)">—</div>
+            <div class="kpi-sub">Total LLM invocations</div>
+          </div>
+          <div class="kpi-card" style="border-left-color:var(--green)">
+            <div class="kpi-label">Tasks Done</div>
+            <div class="kpi-num" id="ov-tasks" style="color:var(--green)">—</div>
+            <div class="kpi-sub">Completed task nodes</div>
+          </div>
+          <div class="kpi-card" style="border-left-color:var(--muted)">
+            <div class="kpi-label">Events</div>
+            <div class="kpi-num" id="ov-events">—</div>
+            <div class="kpi-sub">Colony event log entries</div>
+          </div>
+          <div class="kpi-card" style="border-left-color:var(--queen)">
+            <div class="kpi-label">Approvals</div>
+            <div class="kpi-num" id="ov-approvals" style="color:var(--queen)">—</div>
+            <div class="kpi-sub">Pending patch reviews</div>
+          </div>
+        </div>
+
+        <!-- Mission dispatch bar (overview) -->
+        <div class="card" style="padding:14px 16px;">
+          <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Dispatch Mission</div>
+          <div class="mission-row">
+            <input class="mission-input" id="ov-mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled style="position:relative;">
+            <button class="send-btn" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
+          </div>
+          <div class="bar-hint">Enter or ▶ to dispatch → Queen orchestrates the colony</div>
+        </div>
+
+        <!-- Two column: jobs + events -->
+        <div class="two-col" style="flex:1;min-height:0;">
+
+          <!-- Recent Jobs -->
+          <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+            <div class="card-head">
+              Recent Jobs
+              <span class="badge" id="ov-jobs-badge">0</span>
+              <button class="btn btn-ghost" style="margin-left:auto;padding:2px 8px;font-size:10px;" onclick="showPage('missions')">All →</button>
+            </div>
+            <div class="card-body scroll-body" id="ov-jobs-list">
+              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">No jobs yet</div>
+            </div>
+          </div>
+
+          <!-- Live event feed -->
+          <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+            <div class="card-head">
+              Colony Events
+              <span class="badge" style="background:rgba(16,185,129,.15);color:var(--green);border-color:rgba(16,185,129,.3);">live</span>
+              <button class="btn btn-ghost" style="margin-left:auto;padding:2px 8px;font-size:10px;" onclick="showPage('events');reloadLogModal()">Log →</button>
+            </div>
+            <div class="card-body scroll-body" id="ov-feed-list">
+              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">Waiting for events...</div>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /page-overview -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: COLONY  (canvas visualization)
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page" id="page-colony">
+
+        <!-- Left sidebar: status + approvals + jobs -->
+        <div id="colony-left">
+
+          <div class="card" id="card-status">
+            <div class="card-head">
+              Colony Status
+              <button class="collapse-btn" data-card="card-status" title="Collapse">▾</button>
+            </div>
+            <div class="card-body">
+              <div class="stat-grid">
+                <div class="stat-cell"><div class="stat-label">Model Calls</div><div class="stat-num" id="s-calls" style="color:var(--blue)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Tasks Done</div><div class="stat-num" id="s-tasks" style="color:var(--green)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Events</div><div class="stat-num" id="s-events" style="color:var(--muted)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Approvals</div><div class="stat-num" id="s-approvals" style="color:var(--queen)">—</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" id="approvals-card" style="display:none">
+            <div class="card-head" style="color:var(--queen)">
+              ⚠ Approvals
+              <span class="badge" id="approval-count">0</span>
+              <button class="collapse-btn" data-card="approvals-card" title="Collapse">▾</button>
+            </div>
+            <div class="card-body">
+              <div id="approvals-list"></div>
+            </div>
+          </div>
+
+          <div class="card" id="card-jobs">
+            <div class="card-head">
+              Jobs
+              <span class="badge" id="jobs-badge">0</span>
+              <button class="collapse-btn" data-card="card-jobs" title="Collapse">▾</button>
+            </div>
+            <div class="card-body">
+              <div id="jobs-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:10px 0;">No jobs yet</div></div>
+            </div>
+          </div>
+
+        </div><!-- /colony-left -->
+
+        <!-- Canvas area -->
+        <div id="colony-canvas-area">
+          <canvas id="c"></canvas>
+          <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
+          <!-- Mission bar overlays the bottom of the canvas -->
+          <div class="mission-bar-wrap" id="mission-bar">
+            <div class="mission-row">
+              <input class="mission-input" id="mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled>
+              <button class="send-btn" id="send-btn" disabled title="Dispatch mission (Enter)">▶</button>
+            </div>
+            <div class="bar-hint">Enter or ▶ to dispatch &rarr; Queen orchestrates the colony</div>
+          </div>
+        </div><!-- /colony-canvas-area -->
+
+        <!-- Right sidebar: inspector + events -->
+        <div id="colony-right">
+
+          <div class="card" id="card-inspector">
+            <div class="card-head">
+              Agent Inspector
+              <button class="collapse-btn" data-card="card-inspector" title="Collapse">▾</button>
+            </div>
+            <div class="card-body">
+              <div id="agent-detail"><div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div></div>
+            </div>
+          </div>
+
+          <div class="card" id="events-card" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+            <div class="card-head" style="flex-shrink:0;">
+              Colony Events
+              <span class="badge" style="background:rgba(16,185,129,.15);color:var(--green);border-color:rgba(16,185,129,.3);" id="feed-badge">live</span>
+              <span style="font-size:8px;color:var(--dim);font-weight:400;margin-left:3px;" id="ev-count"></span>
+              <button class="collapse-btn" data-card="events-card" title="Collapse" style="margin-left:auto;">▾</button>
+              <button style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 3px;margin-left:3px;" title="Full event log" onclick="showPage('events');reloadLogModal()">⛶</button>
+            </div>
+            <div class="card-body scroll-body" id="events-card-body" style="flex:1;">
+              <div id="feed-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">Waiting for events...</div></div>
+            </div>
+          </div>
+
+        </div><!-- /colony-right -->
+
+      </div><!-- /page-colony -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: MISSIONS
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-missions">
+        <div class="page-hdr">
+          <div><h1>Missions</h1><div class="sub">Dispatch goals and review results</div></div>
+        </div>
+
+        <!-- Mission dispatch -->
+        <div class="card" style="padding:14px 16px;">
+          <div class="section-head">New Mission</div>
+          <div class="mission-row" style="gap:8px;">
+            <input class="mission-input" id="ms-mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled style="position:relative;">
+            <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">▶</button>
+          </div>
+          <div class="bar-hint" style="margin-top:4px;">Enter or ▶ to dispatch &rarr; Queen orchestrates the colony</div>
+        </div>
+
+        <!-- Jobs list -->
+        <div class="card">
+          <div class="card-head">
+            Job History
+            <span class="badge" id="ms-jobs-badge">0</span>
+          </div>
+          <div class="card-body">
+            <div id="ms-jobs-list">
+              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">No jobs yet</div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /page-missions -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: EVENT LOG
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-events">
+        <div class="page-hdr">
+          <div><h1>Event Log</h1><div class="sub" id="log-modal-count"></div></div>
+          <button class="btn btn-ghost" id="log-reload">↺ Reload</button>
+        </div>
+
+        <div class="filter-row">
+          <select class="filter-select" id="log-filter-ant"><option value="">All Ants</option></select>
+          <select class="filter-select" id="log-filter-type"><option value="">All Types</option></select>
+          <select class="filter-select" id="log-filter-level">
+            <option value="">All Levels</option>
+            <option value="info">Info</option>
+            <option value="warning">Warning</option>
+            <option value="error">Error</option>
           </select>
+          <select class="filter-select" id="log-filter-since">
+            <option value="">All Time</option>
+            <option value="15m">Last 15 min</option>
+            <option value="1h">Last 1h</option>
+            <option value="6h">Last 6h</option>
+            <option value="24h">Last 24h</option>
+          </select>
+          <input class="filter-input" id="log-search" type="text" placeholder="Search events...">
         </div>
-        <button class="settings-btn save" id="nu-add" style="flex:none;padding:7px 16px;">Create</button>
-      </div>
-      <div id="nu-msg" style="font-size:10px;min-height:14px;margin-bottom:10px;"></div>
-      <div class="section-label">Accounts</div>
-      <table class="phero-table" style="max-width:760px;"><thead><tr>
-        <th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
-        <tbody id="users-tbody"><tr><td colspan="5" style="color:var(--dim)">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-  <div class="page-foot"><span id="users-count">0 accounts</span>
-    <button class="settings-btn secondary" id="users-reload" style="padding:6px 14px;flex:none;">↻ Reload</button>
-  </div>
-</div>
 
-<!-- Rename popover (double-click an ant on the map) -->
-<div id="rename-pop">
-  <label>Rename Ant</label>
-  <input id="rename-input" type="text" maxlength="28" autocomplete="off" />
-  <div class="rp-btns">
-    <button class="rp-save" id="rename-save">Save</button>
-    <button class="rp-cancel" id="rename-cancel">Cancel</button>
-  </div>
-</div>
+        <div class="card scroll-body" style="flex:1;padding:10px;" id="log-modal-body">
+          <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px 0;">Loading...</div>
+        </div>
+      </div><!-- /page-events -->
 
-<!-- Top bar -->
-<div id="topbar">
-  <div class="logo">ANTHILL <span>v1.8.2</span></div>
-  <div class="topbar-mission">
-    <div class="dot" id="mission-dot"></div>
-    <div class="goal" id="mission-goal">Idle — no active mission</div>
-  </div>
-  <div class="topbar-right">
-    <div id="model-badge">connecting...</div>
-    <div id="conn-badge" class="err">● Offline</div>
-    <div id="user-chip" title="Signed-in operator" style="display:none;font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:4px;border:1px solid var(--border);color:var(--muted);"></div>
-    <button class="icon-btn" id="antconfig-btn" title="Ant Configuration" onclick="openAntConfig()">🐜</button>
-    <button class="icon-btn" id="pheromone-btn" title="Pheromone Memory" onclick="openPheromones()">🧬</button>
-    <button class="icon-btn" id="log-btn" title="Event Log (Ctrl+L)" onclick="openLogModal()">📋</button>
-    <button class="icon-btn" id="approval-bell" title="Pending Approvals">🔔<span id="bell-count"></span></button>
-    <button class="icon-btn" id="users-btn" title="Manage Users" onclick="openUsers()">👥</button>
-    <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
-    <button class="icon-btn" id="logout-btn" title="Sign Out">⎋</button>
-  </div>
-</div>
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: PHEROMONES
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-pheromones">
+        <div class="page-hdr">
+          <div>
+            <h1>Pheromone Memory</h1>
+            <div class="sub" id="phero-count"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="phero-msg"></span>
+            <button class="btn btn-ghost" id="phero-reload">↺ Reload</button>
+            <button class="btn btn-danger" id="phero-prune">✂ Prune Weak Trails</button>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div id="phero-body" style="padding:10px;">
+            <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px 0;">Loading...</div>
+          </div>
+        </div>
+      </div><!-- /page-pheromones -->
 
-<!-- Canvas -->
-<div id="cw"><canvas id="c"></canvas></div>
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: ANT CONFIG
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-antconfig">
+        <div class="page-hdr">
+          <div><h1>Ant Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="antcfg-msg"></span>
+            <button class="btn btn-ghost" id="antcfg-reset">↺ Reset Defaults</button>
+            <button class="btn btn-primary" id="antcfg-save">Save Changes</button>
+          </div>
+        </div>
+        <div class="antcfg-grid" id="antcfg-grid">
+          <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
+        </div>
+      </div><!-- /page-antconfig -->
 
-<!-- Tooltip -->
-<div id="tooltip">
-  <div class="tt-name" id="tt-name"></div>
-  <div class="tt-row"><span>Status</span><span class="tt-val" id="tt-status"></span></div>
-  <div class="tt-row"><span>Tasks</span><span class="tt-val" id="tt-tasks"></span></div>
-  <div class="tt-row"><span>Activity</span><span class="tt-val" id="tt-activity"></span></div>
-</div>
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: SETTINGS
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-settings">
+        <div class="page-hdr">
+          <div><h1>Settings</h1><div class="sub">Colony configuration, model routes, and system diagnostics</div></div>
+        </div>
 
-<!-- Left panel -->
-<div class="panel" id="left-panel">
-  <div class="card" id="card-status">
-    <div class="card-head">Colony Status <button class="collapse-btn" data-card="card-status" title="Collapse">▾</button></div>
-    <div class="card-body">
-      <div class="stat-grid">
-        <div class="stat-cell"><div class="stat-label">Model Calls</div><div class="stat-num" id="s-calls" style="color:var(--blue)">—</div></div>
-        <div class="stat-cell"><div class="stat-label">Tasks Done</div><div class="stat-num" id="s-tasks" style="color:var(--green)">—</div></div>
-        <div class="stat-cell"><div class="stat-label">Events</div><div class="stat-num" id="s-events" style="color:var(--muted)">—</div></div>
-        <div class="stat-cell"><div class="stat-label">Approvals</div><div class="stat-num" id="s-approvals" style="color:var(--queen)">—</div></div>
-      </div>
-    </div>
-  </div>
+        <div class="settings-tabs">
+          <div class="settings-tab active" data-tab="connection">Connection</div>
+          <div class="settings-tab" data-tab="colony">Colony</div>
+          <div class="settings-tab" data-tab="models">Models</div>
+          <div class="settings-tab" data-tab="info">System Info</div>
+        </div>
 
-  <!-- Approvals card — shown only when pending > 0 -->
-  <div class="card" id="approvals-card">
-    <div class="card-head" style="color:var(--queen)">⚠ Pending Approvals <span class="badge" id="approval-count">0</span> <button class="collapse-btn" data-card="approvals-card" title="Collapse">▾</button></div>
-    <div class="card-body"><div id="approvals-list"></div></div>
-  </div>
+        <!-- Tab: Connection -->
+        <div class="settings-pane active" id="tab-connection">
+          <div class="card" style="padding:16px 18px;max-width:540px;">
+            <div class="section-head" style="margin-top:0;">Operator Account</div>
+            <div class="info-row"><span class="info-key">Username</span><span class="info-val" id="si-username">—</span></div>
+            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Role</span><span class="info-val" id="si-role">—</span></div>
 
-  <div class="card" id="card-jobs">
-    <div class="card-head">Jobs <span class="badge" id="jobs-badge">0</span> <button class="collapse-btn" data-card="card-jobs" title="Collapse">▾</button></div>
-    <div class="card-body"><div id="jobs-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div></div></div>
-  </div>
-</div>
+            <div class="section-head">API Endpoint</div>
+            <label class="set-label">API Base URL <span style="font-weight:400;color:var(--dim)">(blank = local relative)</span></label>
+            <input class="set-input" id="settings-apibase" type="url" placeholder="http://host:8713">
+            <button class="btn btn-primary" id="settings-save" style="margin-bottom:16px;">Save & Test Connection</button>
 
-<!-- Right panel -->
-<div class="panel" id="right-panel">
-  <div class="card" id="card-inspector">
-    <div class="card-head">Agent Inspector <button class="collapse-btn" data-card="card-inspector" title="Collapse">▾</button></div>
-    <div class="card-body"><div id="agent-detail"><div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div></div></div>
-  </div>
-  <div class="card" id="events-card">
-    <div class="card-head" style="flex-shrink:0;">
-      Colony Events <span class="badge" id="feed-badge">live</span>
-      <span style="font-size:8px;color:var(--dim);font-weight:400;margin-left:4px;" id="ev-count"></span>
-      <button class="collapse-btn" data-card="events-card" title="Collapse" style="margin-left:auto;">▾</button>
-      <button id="log-expand-btn" title="Full-screen log" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:0 3px;margin-left:4px;" onclick="openLogModal()">⛶</button>
-    </div>
-    <div class="card-body" id="events-card-body">
-      <div id="feed-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">Waiting for events...</div></div>
-    </div>
-  </div>
-</div>
+            <div class="section-head">Ollama Status</div>
+            <div class="info-row"><span class="info-key">Host</span><span class="info-val" id="si-ollama-host">—</span></div>
+            <div class="info-row"><span class="info-key">Active Model</span><span class="info-val" id="si-model">—</span></div>
+            <div class="info-row">
+              <span class="info-key">Reachability</span>
+              <span class="info-val"><span class="ollama-dot err" id="si-ollama-dot"></span><span id="si-ollama-status">—</span></span>
+            </div>
+          </div>
+        </div>
 
-<!-- Mission input -->
-<div id="mission-bar">
-  <div class="mission-row">
-    <input id="mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled />
-    <button id="send-btn" disabled title="Dispatch mission (Enter)">▶</button>
-  </div>
-  <div class="bar-hint">Enter or ▶ to dispatch &rarr; Queen orchestrates the colony</div>
-</div>
+        <!-- Tab: Colony -->
+        <div class="settings-pane" id="tab-colony">
+          <div class="card" style="padding:16px 18px;max-width:600px;">
+            <div class="section-head" style="margin-top:0;">Ollama Connection</div>
+            <label class="set-label">Ollama Host</label>
+            <input class="set-input" id="set-ollama-host" type="text" placeholder="http://127.0.0.1:11434">
+            <label class="set-label">Default Model</label>
+            <input class="set-input" id="set-ollama-model" type="text" placeholder="llama3.1:8b">
 
-<!-- Result overlay -->
+            <div class="section-head">Feature Toggles</div>
+            <div id="set-toggles"></div>
+
+            <div class="section-head">Limits</div>
+            <div id="set-nums"></div>
+
+            <div class="section-head">Autonomy</div>
+            <div id="set-autonomy"></div>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
+              <button class="btn btn-primary" id="colony-save">Save Colony Settings</button>
+              <button class="btn btn-ghost" id="colony-reload">↺ Reload</button>
+              <span class="save-msg text-green" id="colony-save-msg"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Models -->
+        <div class="settings-pane" id="tab-models">
+          <div class="card" style="padding:16px 18px;max-width:700px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <div class="section-head" style="padding:0;">Active Routes</div>
+              <button class="btn btn-ghost" id="models-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
+            </div>
+            <div id="route-grid" style="margin-bottom:20px;"></div>
+
+            <div class="section-head">Available Models (Ollama)</div>
+            <div style="font-size:10px;color:var(--dim);margin-bottom:8px;">Click a model name to copy it.</div>
+            <div id="model-grid"></div>
+          </div>
+        </div>
+
+        <!-- Tab: System Info -->
+        <div class="settings-pane" id="tab-info">
+          <div class="card" style="padding:16px 18px;max-width:700px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <div class="section-head" style="padding:0;">System Information</div>
+              <button class="btn btn-ghost" id="diag-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
+            </div>
+            <div class="info-row"><span class="info-key">Version</span><span class="info-val" id="si-version">—</span></div>
+            <div class="info-row"><span class="info-key">Native Kernel</span><span class="info-val" id="si-kernel">—</span></div>
+            <div class="info-row"><span class="info-key">Safety Profile</span><span class="info-val" id="si-safety">—</span></div>
+            <div class="info-row"><span class="info-key">Job Workers</span><span class="info-val" id="si-workers">—</span></div>
+            <div class="info-row"><span class="info-key">Web Search</span><span class="info-val" id="si-web">—</span></div>
+            <div class="info-row"><span class="info-key">File Writing</span><span class="info-val" id="si-filewrite">—</span></div>
+            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Patch Application</span><span class="info-val" id="si-patch">—</span></div>
+            <div class="section-head">Diagnostics</div>
+            <pre id="si-diag" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-all;line-height:1.6;max-height:400px;overflow-y:auto;"></pre>
+          </div>
+        </div>
+
+      </div><!-- /page-settings -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: USERS
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-users">
+        <div class="page-hdr">
+          <div>
+            <h1>User Management</h1>
+            <div class="sub" id="users-count"></div>
+          </div>
+          <button class="btn btn-ghost" id="users-reload">↺ Reload</button>
+        </div>
+
+        <!-- Add user form -->
+        <div class="card" style="padding:14px 16px;">
+          <div class="section-head" style="margin-top:0;">Add Operator Account</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Username</label>
+              <input class="form-input" id="nu-user" type="text" placeholder="username" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label>Password</label>
+              <input class="form-input" id="nu-pass" type="password" placeholder="min 8 chars" autocomplete="new-password">
+            </div>
+            <div class="form-field">
+              <label>Role</label>
+              <select class="form-select" id="nu-role">
+                <option value="coordinator">Coordinator</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="form-field" style="justify-content:flex-end;">
+              <button class="btn btn-primary" id="nu-add">Add Account</button>
+            </div>
+          </div>
+          <div class="save-msg text-green" id="nu-msg" style="margin-top:6px;"></div>
+        </div>
+
+        <!-- Users table -->
+        <div class="card" style="overflow-x:auto;">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /page-users -->
+
+    </main><!-- /main-area -->
+
+  </div><!-- /right-side -->
+</div><!-- /app-shell -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     RESULT OVERLAY  (floating, shown over any page)
+════════════════════════════════════════════════════════════════════════════ -->
 <div id="result-overlay">
   <div class="result-head">
     <span class="result-head-title" id="result-title">Mission Result</span>
@@ -700,16 +1045,36 @@ canvas{display:block;width:100%;height:100%;}
   <div class="result-status-bar" id="result-status-bar"></div>
 </div>
 
-<div id="zoom-hint">Scroll zoom · Drag canvas to pan · Drag an ant to move it · Double-click to rename</div>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     RENAME POPOVER
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="rename-pop">
+  <div style="font-size:10px;color:var(--muted);font-weight:600;">Rename Agent</div>
+  <input id="rename-input" type="text" maxlength="28" placeholder="Display name">
+  <div class="rename-btns">
+    <button class="btn btn-primary" id="rename-save" style="flex:1;justify-content:center;">Save</button>
+    <button class="btn btn-ghost" id="rename-cancel">Cancel</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TOOLTIP
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-row"><span>Status</span><span class="tt-val" id="tt-status"></span></div>
+  <div class="tt-row"><span>Tasks</span><span class="tt-val" id="tt-tasks"></span></div>
+  <div class="tt-row"><span>Activity</span><span class="tt-val" id="tt-activity"></span></div>
+</div>
 
 <script>
 'use strict';
 
-var uiReady = false;  // hoisted gate: applyUiState() is a no-op until console state is initialised
+var uiReady = false;
 
 // ── Config & API ─────────────────────────────────────────────────────────────
-let TOKEN   = localStorage.getItem('anthill_token') || '';
-let API_BASE = localStorage.getItem('anthill_apibase') || '';  // '' = relative
+let TOKEN    = localStorage.getItem('anthill_token') || '';
+let API_BASE = localStorage.getItem('anthill_apibase') || '';
 
 function setToken(t)  { TOKEN = t;    localStorage.setItem('anthill_token', t); }
 function setApiBase(u){ API_BASE = u; localStorage.setItem('anthill_apibase', u); }
@@ -729,7 +1094,7 @@ async function apiText(path) {
   return r.text();
 }
 
-// ── Authentication: user + password sessions ──────────────────────────────────
+// ── Authentication ────────────────────────────────────────────────────────────
 const setupEl = document.getElementById('setup-overlay');
 let ROLE = localStorage.getItem('anthill_role') || '';
 let USERNAME = localStorage.getItem('anthill_user') || '';
@@ -737,7 +1102,8 @@ let pollingStarted = false;
 
 function setSession(token, role, username){
   setToken(token); ROLE=role; USERNAME=username;
-  localStorage.setItem('anthill_role', role||''); localStorage.setItem('anthill_user', username||'');
+  localStorage.setItem('anthill_role', role||'');
+  localStorage.setItem('anthill_user', username||'');
 }
 function clearSession(){
   TOKEN=''; ROLE=''; USERNAME='';
@@ -750,6 +1116,7 @@ async function rawPost(path, body){
 }
 
 function showAuth(mode, err){
+  document.getElementById('app-shell').classList.add('hidden');
   setupEl.style.display='flex';
   document.getElementById('auth-login').style.display = mode==='login'?'block':'none';
   document.getElementById('auth-setup').style.display = mode==='setup'?'block':'none';
@@ -757,7 +1124,6 @@ function showAuth(mode, err){
   if(el) el.textContent = err||'';
 }
 
-// Called from api()/apiText() when the server rejects our session.
 let authLost=false;
 function onUnauthorized(){
   if(authLost) return; authLost=true;
@@ -771,8 +1137,10 @@ async function bootAuth(){
   catch(e){ showAuth('login','Cannot reach API. Check the API Base URL and try again.'); return; }
   if(status?.data?.setup_required){ showAuth('setup'); return; }
   if(TOKEN){
-    try{ const me=await api('/auth/me'); if(me.success){ setSession(TOKEN, me.data.role, me.data.username); enterApp(); return; } }
-    catch{ /* fall through to login */ }
+    try{
+      const me=await api('/auth/me');
+      if(me.success){ setSession(TOKEN, me.data.role, me.data.username); enterApp(); return; }
+    } catch{ /* fall through */ }
   }
   showAuth('login');
 }
@@ -780,15 +1148,19 @@ async function bootAuth(){
 function enterApp(){
   authLost=false;
   setupEl.style.display='none';
+  document.getElementById('app-shell').classList.remove('hidden');
   applyRoleVisibility();
   enableInput(true);
   if(!pollingStarted){ pollingStarted=true; startPolling(); }
+  // Restore nav collapse state
+  if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
 }
 
 // Login
 document.getElementById('login-btn').addEventListener('click', doLogin);
 document.getElementById('login-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('login-user').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('login-pass').focus(); });
+
 async function doLogin(){
   const u=document.getElementById('login-user').value.trim();
   const p=document.getElementById('login-pass').value;
@@ -803,9 +1175,10 @@ async function doLogin(){
   }catch(e){ err.textContent='Cannot reach API: '+e.message; }
 }
 
-// First-run admin setup
+// First-run setup
 document.getElementById('setup-btn').addEventListener('click', doSetup);
 document.getElementById('setup-pass2').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
+
 async function doSetup(){
   const u=document.getElementById('setup-user').value.trim()||'admin';
   const p=document.getElementById('setup-pass').value;
@@ -827,126 +1200,153 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
   clearSession(); location.reload();
 });
 
-// Show/hide controls by role. Admins see everything; coordinators only get the
-// mission bar, event log, and live status.
+// Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['antconfig-btn','pheromone-btn','users-btn','settings-btn','approval-bell'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.style.display = admin?'':'none';
+  ['nav-item-antconfig','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
-  const chip=document.getElementById('user-chip');
-  chip.style.display='block';
-  chip.textContent=`${USERNAME||'?'} · ${admin?'ADMIN':'COORDINATOR'}`;
-  chip.style.color = admin?'var(--queen)':'var(--blue)';
-  chip.style.borderColor = admin?'rgba(251,191,36,.3)':'rgba(56,189,248,.3)';
+  // nav-item-pheromones: admin only
+  const phEl=document.getElementById('nav-item-pheromones');
+  if(phEl) phEl.style.display=admin?'':'none';
+  // approval bell
+  const bell=document.getElementById('approval-bell');
+  if(bell) bell.style.display=admin?'':'none';
+  // approvals card on colony page
   if(!admin){ const ac=document.getElementById('approvals-card'); if(ac) ac.style.display='none'; }
-}
-
-bootAuth();
-
-function enableInput(on) {
-  document.getElementById('mission-input').disabled = !on;
-  document.getElementById('send-btn').disabled = !on;
-}
-
-// ── Settings overlay ──────────────────────────────────────────────────────────
-const settingsOverlay = document.getElementById('settings-overlay');
-let settingsModelInfo = null;
-
-document.getElementById('settings-btn').addEventListener('click', openSettings);
-document.getElementById('settings-close').addEventListener('click', () => settingsOverlay.classList.remove('show'));
-document.getElementById('settings-cancel').addEventListener('click', () => settingsOverlay.classList.remove('show'));
-document.getElementById('settings-save').addEventListener('click', saveSettings);
-
-function openSettings() {
-  document.getElementById('si-username').textContent = USERNAME || '—';
-  document.getElementById('si-role').textContent = ROLE==='admin' ? 'Administrator' : (ROLE||'—');
-  document.getElementById('settings-apibase').value = API_BASE;
-  settingsOverlay.classList.add('show');
-  loadSettingsInfo();
-}
-
-async function loadSettingsInfo() {
-  try {
-    const text = await apiText('/models');
-    const ollamaHost = (text.match(/Ollama Host:\s*([^\n]+)/) || [])[1]?.trim() || '—';
-    const model      = (text.match(/Active Route Targets:\s*([^\n]+)/) || [])[1]?.trim() || '—';
-    document.getElementById('si-ollama-host').textContent = ollamaHost;
-    document.getElementById('si-model').textContent = model;
-    // Test Ollama reachability by calling the proxy
-    try {
-      const mr = await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
-      const md = await mr.json();
-      const ok = Array.isArray(md.models);
-      document.getElementById('si-ollama-dot').className = 'ollama-dot ' + (ok ? 'ok' : 'err');
-      document.getElementById('si-ollama-status').textContent = ok ? `${ollamaHost} (${md.models.length} models)` : 'unreachable';
-    } catch {
-      document.getElementById('si-ollama-dot').className = 'ollama-dot err';
-      document.getElementById('si-ollama-status').textContent = 'unreachable';
-    }
-  } catch {
-    document.getElementById('si-ollama-dot').className = 'ollama-dot err';
-    document.getElementById('si-ollama-status').textContent = 'unreachable';
+  // User chip in nav footer
+  const nameEl=document.getElementById('nav-user-name');
+  const roleEl=document.getElementById('nav-user-role');
+  if(nameEl) nameEl.textContent=USERNAME||'?';
+  if(roleEl) roleEl.textContent=admin?'Administrator':'Coordinator';
+  const avatarEl=document.getElementById('nav-user-avatar');
+  if(avatarEl){
+    const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
+    avatarEl.textContent=initials;
+    avatarEl.style.background=admin
+      ?'linear-gradient(135deg,#fbbf24,#f59e0b)'
+      :'linear-gradient(135deg,#3b82f6,#6366f1)';
   }
 }
 
-async function saveSettings() {
-  const base = document.getElementById('settings-apibase').value.trim();
-  setApiBase(base);
-  settingsOverlay.classList.remove('show');
-  try {
-    const r = await api('/status');
-    if (r.success) { enableInput(true); setConnected(true); }
-  } catch { setConnected(false); enableInput(false); }
+// ── Page Routing ──────────────────────────────────────────────────────────────
+const PAGE_TITLES = {
+  overview:'Overview', colony:'Colony', missions:'Missions',
+  events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
+  settings:'Settings', users:'Users'
+};
+const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
+
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg=document.getElementById('page-'+id);
+  if(pg) pg.classList.add('active');
+  // Nav active state
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const ni=document.getElementById('nav-item-'+id);
+  if(ni) ni.classList.add('active');
+  // Header title
+  const ht=document.getElementById('hdr-page-title');
+  if(ht) ht.textContent=PAGE_TITLES[id]||id;
+  // Per-page onEnter
+  if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
+  // Canvas resize when switching to colony
+  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); },50);
 }
 
-// ── Canvas ───────────────────────────────────────────────────────────────────
+// Nav item clicks
+document.querySelectorAll('.nav-item[data-page]').forEach(item=>{
+  item.addEventListener('click',()=>showPage(item.dataset.page));
+});
+
+// Nav collapse toggle
+document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
+  document.body.classList.toggle('nav-collapsed');
+  localStorage.setItem('nav-collapsed', document.body.classList.contains('nav-collapsed')?'1':'0');
+  setTimeout(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')) resize(); },220);
+});
+
+function enableInput(on){
+  ['mission-input','send-btn','ms-mission-input','ms-send-btn','ov-mission-input','ov-send-btn'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.disabled=!on;
+  });
+}
+
+// ── Settings overlay (now a page) ────────────────────────────────────────────
+let settingsModelInfo = null;
+
+function openSettings(){
+  document.getElementById('si-username').textContent = USERNAME||'—';
+  document.getElementById('si-role').textContent = ROLE==='admin'?'Administrator':(ROLE||'—');
+  document.getElementById('settings-apibase').value = API_BASE;
+  showPage('settings');
+  loadSettingsInfo();
+}
+
+document.getElementById('settings-save').addEventListener('click', saveSettings);
+async function saveSettings(){
+  const base=document.getElementById('settings-apibase').value.trim();
+  setApiBase(base);
+  try{
+    const r=await api('/status');
+    if(r.success){ enableInput(true); setConnected(true); }
+  }catch{ setConnected(false); enableInput(false); }
+}
+
+PAGE_ENTER['settings']=()=>{
+  document.getElementById('si-username').textContent=USERNAME||'—';
+  document.getElementById('si-role').textContent=ROLE==='admin'?'Administrator':(ROLE||'—');
+  document.getElementById('settings-apibase').value=API_BASE;
+  loadSettingsInfo();
+};
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let W, H, cx, cy;
 
-function resize() {
-  const el = document.getElementById('cw');
-  W = canvas.width = el.clientWidth;
-  H = canvas.height = el.clientHeight;
-  cx = W/2; cy = H/2;
+function resize(){
+  const el=document.getElementById('colony-canvas-area');
+  if(!el) return;
+  W=canvas.width=el.clientWidth;
+  H=canvas.height=el.clientHeight;
+  cx=W/2; cy=H/2;
 }
 resize();
-window.addEventListener('resize', () => { resize(); buildNodes(); });
+window.addEventListener('resize',()=>{ resize(); buildNodes(); });
 
-let camX=0, camY=0, camZ=1, tX=0, tY=0, tZ=1;
+let camX=0,camY=0,camZ=1,tX=0,tY=0,tZ=1;
 
-const ANT_MAP = {
-  researcher: { color:'#38bdf8', label:'Researcher', role:'SCOUT'     },
-  web:        { color:'#4ade80', label:'Web',        role:'FORAGER'   },
-  file:       { color:'#67e8f9', label:'File',       role:'ARCHIVIST' },
-  coder:      { color:'#fb923c', label:'Coder',      role:'WORKER'    },
-  builder:    { color:'#c084fc', label:'Builder',    role:'BUILDER'   },
-  verifier:   { color:'#f87171', label:'Verifier',   role:'SOLDIER'   },
+const ANT_MAP={
+  researcher:{ color:'#38bdf8', label:'Researcher', role:'SCOUT'     },
+  web:       { color:'#4ade80', label:'Web',        role:'FORAGER'   },
+  file:      { color:'#67e8f9', label:'File',       role:'ARCHIVIST' },
+  coder:     { color:'#fb923c', label:'Coder',      role:'WORKER'    },
+  builder:   { color:'#c084fc', label:'Builder',    role:'BUILDER'   },
+  verifier:  { color:'#f87171', label:'Verifier',   role:'SOLDIER'   },
 };
-
-const ANT_R = 15, QUEEN_R = 26;
-
-const colonyActivity = { researcher:0, web:0, file:0, coder:0, builder:0, verifier:0 };
+const ANT_R=15, QUEEN_R=26;
+const colonyActivity={ researcher:0, web:0, file:0, coder:0, builder:0, verifier:0 };
 let totalModelCalls=0, modelCallRate=0, colonyRunning=false;
 let nodes=[], edges=[], dataFlowEdges=[], particles=[], selectedNode=null, hoveredNode=null;
 
-function buildNodes() {
+function buildNodes(){
   nodes=[]; edges=[];
   const bR=Math.min(W,H)*0.27;
-  nodes.push({ id:'queen', ant:'queen', x:cx, y:cy, label:'Queen', role:'QUEEN', color:'#fbbf24', r:QUEEN_R, pp:0, activity:1 });
+  nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'QUEEN',color:'#fbbf24',r:QUEEN_R,pp:0,activity:1 });
   const branches=[
     {ant:'researcher',angle:-90},{ant:'coder',angle:-30},{ant:'builder',angle:30},
     {ant:'verifier',angle:90},{ant:'file',angle:150},{ant:'web',angle:210},
   ];
   branches.forEach(b=>{
-    const rad=b.angle*Math.PI/180, am=ANT_MAP[b.ant];
-    const bx=cx+Math.cos(rad)*bR, by=cy+Math.sin(rad)*bR;
+    const rad=b.angle*Math.PI/180,am=ANT_MAP[b.ant];
+    const bx=cx+Math.cos(rad)*bR,by=cy+Math.sin(rad)*bR;
     nodes.push({id:b.ant,ant:b.ant,x:bx,y:by,label:am.label,role:am.role,color:am.color,r:ANT_R,pp:Math.random()*Math.PI*2,activity:0});
     edges.push({from:'queen',to:b.ant});
     const sR=bR*.42;
     for(let c=0;c<2;c++){
-      const sa=c===0?-36:36, cr=(b.angle+sa)*Math.PI/180, sid=`${b.ant}_${c}`;
+      const sa=c===0?-36:36,cr=(b.angle+sa)*Math.PI/180,sid=`${b.ant}_${c}`;
       nodes.push({id:sid,ant:b.ant,x:bx+Math.cos(cr)*sR,y:by+Math.sin(cr)*sR,label:`${am.label}-${c+1}`,role:am.role,color:am.color,r:11,pp:Math.random()*Math.PI*2,activity:0});
       edges.push({from:b.ant,to:sid});
     }
@@ -1011,31 +1411,26 @@ function drawEdge(e){
   }
 }
 
-// Draw ant-to-ant data flow edges derived from task dependency graph
-function drawDataFlowEdge(e, ts){
+function drawDataFlowEdge(e,ts){
   const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
   if(!fn||!tn) return;
   const fp=w2s(fn.x,fn.y),tp=w2s(tn.x,tn.y);
-  // Curved arc bowing outward (opposite direction from queen spokes)
-  const dx=tp.x-fp.x, dy=tp.y-fp.y;
-  const mx=(fp.x+tp.x)/2, my=(fp.y+tp.y)/2;
-  const perp={x:-dy*.35, y:dx*.35};
-  const cp={x:mx+perp.x, y:my+perp.y};
+  const dx=tp.x-fp.x,dy=tp.y-fp.y;
+  const mx=(fp.x+tp.x)/2,my=(fp.y+tp.y)/2;
+  const perp={x:-dy*.35,y:dx*.35};
+  const cp={x:mx+perp.x,y:my+perp.y};
   const [r,g,b]=h2rgb(fn.color);
   const pulse=.4+Math.sin(ts*.002+e.phase)*0.25;
-  // Ghost path
   ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
   ctx.setLineDash([4*camZ,5*camZ]);
   ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.18})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
   ctx.setLineDash([]);
-  // Arrow at target end
-  const t2=qb(fp,cp,tp,.92),t1=qb(fp,cp,tp,.85);
-  const ax=tp.x-t2.x, ay=tp.y-t2.y, al=Math.hypot(ax,ay)||1;
-  const hn=t2, sz=5*camZ;
+  const t2=qb(fp,cp,tp,.92),sz=5*camZ;
+  const ax=tp.x-t2.x,ay=tp.y-t2.y,al=Math.hypot(ax,ay)||1;
   ctx.beginPath();
-  ctx.moveTo(hn.x+ax/al*sz*1.2, hn.y+ay/al*sz*1.2);
-  ctx.lineTo(hn.x-ay/al*sz*.5, hn.y+ax/al*sz*.5);
-  ctx.lineTo(hn.x+ay/al*sz*.5, hn.y-ax/al*sz*.5);
+  ctx.moveTo(t2.x+ax/al*sz*1.2,t2.y+ay/al*sz*1.2);
+  ctx.lineTo(t2.x-ay/al*sz*.5,t2.y+ax/al*sz*.5);
+  ctx.lineTo(t2.x+ay/al*sz*.5,t2.y-ax/al*sz*.5);
   ctx.closePath();
   ctx.fillStyle=`rgba(${r},${g},${b},${pulse*.55})`;ctx.fill();
 }
@@ -1058,15 +1453,10 @@ function drawNode(n,ts){
   const [cr,cg,cb]=h2rgb(n.color);
   const act=n.activity,sel=selectedNode&&selectedNode.id===n.id,hov=hoveredNode&&hoveredNode.id===n.id;
   const pulse=Math.sin(ts*.0018+n.pp)*.1+.9;
-
   if(act>0||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(1.7+Math.sin(ts*.0014+n.pp)*.15),0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},${(hov?.1:0)+act*.06})`;ctx.fill();}
-  if(sel||hov){
-    ctx.beginPath();ctx.arc(sp.x,sp.y,r*(hov?1.8:2),0,Math.PI*2);
-    ctx.strokeStyle=`rgba(${cr},${cg},${cb},${hov?.55:.4})`;ctx.lineWidth=hov?2:1.5;ctx.setLineDash([5,5]);ctx.stroke();ctx.setLineDash([]);
-  }
+  if(sel||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(hov?1.8:2),0,Math.PI*2);ctx.strokeStyle=`rgba(${cr},${cg},${cb},${hov?.55:.4})`;ctx.lineWidth=hov?2:1.5;ctx.setLineDash([5,5]);ctx.stroke();ctx.setLineDash([]);}
   ctx.save();
-  ctx.shadowColor=`rgba(${cr},${cg},${cb},${act*.5+(hov?.3:0)})`;
-  ctx.shadowBlur=r*(act>0||hov?2.2:.5);
+  ctx.shadowColor=`rgba(${cr},${cg},${cb},${act*.5+(hov?.3:0)})`;ctx.shadowBlur=r*(act>0||hov?2.2:.5);
   const grad=ctx.createRadialGradient(sp.x-r*.25,sp.y-r*.25,0,sp.x,sp.y,r);
   const alpha=act>0||hov?.95:.3;
   grad.addColorStop(0,`rgba(${Math.min(255,cr+55)},${Math.min(255,cg+55)},${Math.min(255,cb+40)},${alpha})`);
@@ -1077,32 +1467,39 @@ function drawNode(n,ts){
   ctx.strokeStyle=`rgba(${cr},${cg},${cb},${act>0||hov?.6:.2})`;ctx.lineWidth=sel||hov?2:1.2;ctx.stroke();
   ctx.beginPath();ctx.arc(sp.x,sp.y,r*.45,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${act>0?.1:.03})`;ctx.fill();
   if(r>7&&camZ>.42){
-    ctx.font=`${Math.max(9,10*camZ)}px var(--font,'Segoe UI',sans-serif)`;ctx.textAlign='center';
+    ctx.font=`${Math.max(9,10*camZ)}px 'Segoe UI',sans-serif`;ctx.textAlign='center';
     ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
     ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},.45)`;ctx.fillText(n.label,sp.x,sp.y+r*1.8);
   }
   if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
 }
 
-// ── Mouse ─────────────────────────────────────────────────────────────────────
+// ── Mouse (all coords via getBoundingClientRect) ──────────────────────────────
 let dragging=false,dragStart={x:0,y:0},dragCam={x:0,y:0};
 const tooltip=document.getElementById('tooltip');
+let draggingNode=null,nodeDragOff={x:0,y:0},nodeMoved=false;
 
-let draggingNode=null, nodeDragOff={x:0,y:0}, nodeMoved=false;
+function getCanvasLocal(e){
+  const rect=canvas.getBoundingClientRect();
+  return{x:e.clientX-rect.left,y:e.clientY-rect.top};
+}
+
 canvas.addEventListener('mousedown',e=>{
-  const wp=s2w(e.clientX,e.clientY-50);
+  const cl=getCanvasLocal(e);
+  const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
   if(hit){ draggingNode=hit; nodeDragOff={x:wp.x-hit.x,y:wp.y-hit.y}; nodeMoved=false; dragStart={x:e.clientX,y:e.clientY}; canvas.style.cursor='grabbing'; return; }
   dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};
 });
+
 canvas.addEventListener('mousemove',e=>{
   if(draggingNode){
-    const wp=s2w(e.clientX,e.clientY-50);
+    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
     draggingNode.x=wp.x-nodeDragOff.x; draggingNode.y=wp.y-nodeDragOff.y;
     nodeMoved=true; hoveredNode=null; tooltip.style.display='none'; return;
   }
   if(dragging){camX=dragCam.x+(e.clientX-dragStart.x);camY=dragCam.y+(e.clientY-dragStart.y);tX=camX;tY=camY;hoveredNode=null;tooltip.style.display='none';return;}
-  const wp=s2w(e.clientX,e.clientY-50);
+  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
   canvas.style.cursor=hit?'grab':'default';
   if(hit){
@@ -1115,14 +1512,14 @@ canvas.addEventListener('mousemove',e=>{
     document.getElementById('tt-tasks').textContent=tasks;
     document.getElementById('tt-activity').textContent=Math.round(hit.activity*100)+'%';
     tooltip.style.display='block';
-    const tx=e.clientX+14, ty=e.clientY-10;
+    const tx=e.clientX+14,ty=e.clientY-10;
     tooltip.style.left=(tx+150>window.innerWidth?e.clientX-tooltip.offsetWidth-10:tx)+'px';
     tooltip.style.top=ty+'px';
-  } else {
-    hoveredNode=null;tooltip.style.display='none';
-  }
+  } else { hoveredNode=null;tooltip.style.display='none'; }
 });
+
 canvas.addEventListener('mouseleave',()=>{hoveredNode=null;tooltip.style.display='none';});
+
 canvas.addEventListener('mouseup',e=>{
   if(draggingNode){
     const n=draggingNode; draggingNode=null; canvas.style.cursor='grab';
@@ -1132,23 +1529,25 @@ canvas.addEventListener('mouseup',e=>{
   const moved=Math.abs(e.clientX-dragStart.x)+Math.abs(e.clientY-dragStart.y);
   dragging=false;
   if(moved<5){
-    const wp=s2w(e.clientX,e.clientY-50);
+    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
     const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
     if(hit) showInspector(hit);
     else{selectedNode=null;document.getElementById('agent-detail').innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
   }
 });
-// Double-click an ant to rename it inline.
+
 canvas.addEventListener('dblclick',e=>{
-  const wp=s2w(e.clientX,e.clientY-50);
+  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
   if(hit) openRename(hit,e.clientX,e.clientY);
 });
+
 canvas.addEventListener('wheel',e=>{
   e.preventDefault();
+  const cl=getCanvasLocal(e);
   const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
-  const wx=(e.clientX-cx-tX)/tZ+cx,wy=(e.clientY-50-cy-tY)/tZ+cy;
-  tZ=nz;tX=e.clientX-cx-(wx-cx)*nz;tY=e.clientY-50-cy-(wy-cy)*nz;
+  const wx=(cl.x-cx-tX)/tZ+cx,wy=(cl.y-cy-tY)/tZ+cy;
+  tZ=nz;tX=cl.x-cx-(wx-cx)*nz;tY=cl.y-cy-(wy-cy)*nz;
 },{passive:false});
 
 function statusColor(s){return{complete:'var(--green)',failed:'var(--red)',running:'var(--queen)',blocked:'var(--purple)'}[s]||'var(--dim)';}
@@ -1173,8 +1572,25 @@ function showInspector(n){
       </div>`).join('')||''}`;
 }
 
+// ── Render Loop ───────────────────────────────────────────────────────────────
+function loop(ts){
+  requestAnimationFrame(loop);
+  camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
+  drawBg();
+  edges.forEach(e=>drawEdge(e));
+  dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
+  maybeSpawn(ts);
+  particles=particles.filter(p=>(p.t+=p.speed)<=1);
+  drawParticles();
+  nodes.forEach(n=>{
+    if(n.id!=='queen') n.activity+=(colonyActivity[n.ant]||0-n.activity)*.03;
+    drawNode(n,ts);
+  });
+}
+requestAnimationFrame(loop);
+
 // ── Real data polling ──────────────────────────────────────────────────────────
-let lastGraphData=null, lastEventText='', activeJobId=null, jobPollTimer=null, connected=false;
+let lastGraphData=null,lastEventText='',activeJobId=null,jobPollTimer=null,connected=false;
 let selectedJobId=null;
 
 function setConnected(ok){
@@ -1184,30 +1600,53 @@ function setConnected(ok){
   b.textContent=ok?'● Online':'● Offline';
 }
 
+function setEl(id,val){ const e=document.getElementById(id); if(e) e.textContent=val; }
+
 async function pollStatus(){
-  try {
+  try{
     const r=await api('/status'); if(!r.success) return;
     const d=r.data;
-    document.getElementById('s-calls').textContent    = d.model_calls??0;
-    document.getElementById('s-tasks').textContent    = d.tasks??0;
-    document.getElementById('s-events').textContent   = d.events??0;
-    document.getElementById('s-approvals').textContent= d.pending_approvals??0;
+    setEl('s-calls',d.model_calls??0);    setEl('ov-calls',d.model_calls??0);
+    setEl('s-tasks',d.tasks??0);          setEl('ov-tasks',d.tasks??0);
+    setEl('s-events',d.events??0);        setEl('ov-events',d.events??0);
+    setEl('s-approvals',d.pending_approvals??0); setEl('ov-approvals',d.pending_approvals??0);
     modelCallRate=Math.max(0,(d.model_calls??0)-totalModelCalls);
     totalModelCalls=d.model_calls??0;
     setConnected(true);
-    // Update bell
     const pending=d.pending_approvals??0;
-    const bellCount=document.getElementById('bell-count');
-    bellCount.style.display=pending>0?'block':'none';
-    bellCount.textContent=pending;
-  } catch { setConnected(false); }
+    const bc=document.getElementById('bell-count');
+    bc.style.display=pending>0?'block':'none';
+    bc.textContent=pending;
+  }catch{ setConnected(false); }
+}
+
+function renderJobList(jobs, listId, badgeId, limit){
+  const badge=document.getElementById(badgeId);
+  if(badge) badge.textContent=jobs.length;
+  const list=document.getElementById(listId);
+  if(!list) return;
+  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>'; return; }
+  list.innerHTML=jobs.slice(0,limit||8).map(j=>{
+    const isRunning=j.status==='running';
+    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" onclick="selectJob('${j.id}')">
+      <div class="job-top">
+        <span class="job-status ${j.status}">${j.status}</span>
+        <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
+      </div>
+      <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
+      <div class="job-actions">
+        ${isDone||isRunning?`<button class="job-btn view" onclick="event.stopPropagation();selectJob('${j.id}')">View Result</button>`:''}
+        ${isRunning?`<button class="job-btn cancel" onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 async function pollJobs(){
-  try {
+  try{
     const r=await api('/jobs'); if(!r.success) return;
     const jobs=r.data||[];
-    document.getElementById('jobs-badge').textContent=jobs.length;
     const running=jobs.find(j=>j.status==='running');
     const queued =jobs.find(j=>j.status==='queued');
     const current=running||queued;
@@ -1216,29 +1655,18 @@ async function pollJobs(){
     if(running){dot.className='dot running';goalEl.textContent=running.goal.substring(0,80)+(running.goal.length>80?'…':'');}
     else if(queued){dot.className='dot active';goalEl.textContent='Queued: '+queued.goal.substring(0,70);}
     else{dot.className='dot';goalEl.textContent='Idle — no active mission';}
-
-    const list=document.getElementById('jobs-list');
-    if(jobs.length===0){list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>';return;}
-    list.innerHTML=jobs.slice(0,8).map(j=>{
-      const isRunning=j.status==='running';
-      const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
-      return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}">
-        <div class="job-top">
-          <span class="job-status ${j.status}">${j.status}</span>
-          <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
-        </div>
-        <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
-        <div class="job-actions">
-          ${isDone||isRunning?`<button class="job-btn view" onclick="selectJob('${j.id}')">View Result</button>`:''}
-          ${isRunning?`<button class="job-btn cancel" onclick="cancelJob('${j.id}')">Cancel</button>`:''}
-        </div>
-      </div>`;
-    }).join('');
-  } catch {}
+    // Render to all job list containers
+    renderJobList(jobs,'jobs-list','jobs-badge',8);
+    renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5);
+    renderJobList(jobs,'ms-jobs-list','ms-jobs-badge',20);
+    // Nav badge
+    const navBadge=document.getElementById('nav-jobs-badge');
+    if(navBadge){ navBadge.style.display=jobs.length>0?'':'none'; navBadge.textContent=jobs.length; }
+  }catch{}
 }
 
 async function pollGraph(){
-  try {
+  try{
     const r=await api('/graph'); if(!r.success) return;
     lastGraphData=r.data;
     const antCounts=r.data?.ant_counts||{};
@@ -1246,14 +1674,13 @@ async function pollGraph(){
     Object.keys(colonyActivity).forEach(ant=>colonyActivity[ant]=(antCounts[ant]||0)/total);
     updateNodeActivity();
     if(selectedNode) showInspector(selectedNode);
-    // Build ant-to-ant data flow edges from task dependency graph
     buildDataFlowEdges(r.data?.nodes||[]);
-  } catch {}
+  }catch{}
 }
 
 function buildDataFlowEdges(taskNodes){
   const taskById={};
-  taskNodes.forEach(t=>{ taskById[t.id]=t; });
+  taskNodes.forEach(t=>{taskById[t.id]=t;});
   const seen=new Set();
   const newEdges=[];
   taskNodes.forEach(t=>{
@@ -1265,7 +1692,6 @@ function buildDataFlowEdges(taskNodes){
       const key=`${fromAnt}→${toAnt}`;
       if(seen.has(key)) return;
       seen.add(key);
-      // Only draw edges between main ant nodes (not sub-nodes)
       const fromNode=nodes.find(n=>n.id===fromAnt);
       const toNode=nodes.find(n=>n.id===toAnt);
       if(!fromNode||!toNode) return;
@@ -1274,11 +1700,9 @@ function buildDataFlowEdges(taskNodes){
       else existing.count=(existing.count||1)+1;
     });
   });
-  // Keep existing edges that are still valid, add new ones
   const existingKeys=new Set(dataFlowEdges.map(e=>`${e.from}→${e.to}`));
   newEdges.filter(e=>!existingKeys.has(`${e.from}→${e.to}`)).forEach(e=>dataFlowEdges.push(e));
-  // Prune edges whose ants no longer appear in the task graph (mission finished)
-  if(!colonyRunning && taskNodes.length===0) dataFlowEdges=[];
+  if(!colonyRunning&&taskNodes.length===0) dataFlowEdges=[];
 }
 
 function evTypeClass(t){
@@ -1301,92 +1725,82 @@ function evCardClass(t){
 
 let evTotalSeen=0;
 async function pollEvents(){
-  try {
+  try{
     const text=await apiText('/events');
     if(text===lastEventText) return;
     lastEventText=text;
     if(text.startsWith('No events')) return;
-    const list=document.getElementById('feed-list');
-    // Events: header line + double-newline-separated blocks
     const allBlocks=text.split('\n\n').slice(1).filter(b=>b.trim()&&b.includes('['));
     if(!allBlocks.length) return;
     const prevCount=evTotalSeen;
     evTotalSeen=allBlocks.length;
     const newCount=evTotalSeen-prevCount;
-    document.getElementById('ev-count').textContent=`${evTotalSeen} events`;
-    const wasAtBottom=list.scrollHeight-list.scrollTop-list.clientHeight<40;
-    list.innerHTML=allBlocks.slice(0,50).map((block,idx)=>{
-      const lines=block.trim().split('\n');
-      const l0=lines[0]||'';
-      const typeMatch=l0.match(/^\[([^\]]+)\]/);
-      const evType=typeMatch?typeMatch[1]:'event';
-      const isoTs=l0.replace(/^\[[^\]]+\]\s*/,'').substring(0,19);
-      const timeStr=isoTs.replace('T',' ');
-      const l1=lines[1]||'';
-      const antMatch=l1.match(/Ant:\s*([^\s|]+)/);
-      const ant=antMatch?antMatch[1].trim():'—';
-      const missionMatch=l1.match(/Mission:\s*([^\s|]+)/);
-      const missionShort=(missionMatch?missionMatch[1].trim():'').substring(0,12);
-      const taskMatch=l1.match(/Task:\s*([^\s|]+)/);
-      const taskShort=(taskMatch?taskMatch[1].trim():'').substring(0,10);
-      const msg=lines.slice(2).join(' ').replace(/\.\.\.\[.+?\]/g,'').trim().substring(0,160);
-      const col=ANT_MAP[ant]?.color||'var(--dim)';
-      const tc=evTypeClass(evType), cc=evCardClass(evType);
-      const isNew=idx<newCount&&newCount>0;
-      return `<div class="ev${cc?' '+cc:''}${isNew?' fresh':''}">
-        <div class="ev-top">
-          <span class="ev-type ${tc}">${evType}</span>
-          <span class="ev-ant" style="color:${col}">${ant}</span>
-          <span class="ev-time">${timeStr}</span>
-        </div>
-        <div class="ev-meta">mission:${missionShort||'—'} · task:${taskShort||'—'}</div>
-        <div class="ev-msg">${msg||'—'}</div>
-      </div>`;
-    }).join('');
-    // Scroll to top (newest events first) when new events arrive
-    if(newCount>0) list.scrollTop=0;
-    setTimeout(()=>list.querySelectorAll('.fresh').forEach(el=>el.classList.remove('fresh')),3000);
-  } catch {}
+    setEl('ev-count',`${evTotalSeen} events`);
+    function renderFeed(blocks, containerId, maxItems){
+      const list=document.getElementById(containerId); if(!list) return;
+      const wasAtBottom=list.scrollHeight-list.scrollTop-list.clientHeight<40;
+      list.innerHTML=blocks.slice(0,maxItems).map((block,idx)=>{
+        const lines=block.trim().split('\n');
+        const l0=lines[0]||'';
+        const typeMatch=l0.match(/^\[([^\]]+)\]/);
+        const evType=typeMatch?typeMatch[1]:'event';
+        const isoTs=l0.replace(/^\[[^\]]+\]\s*/,'').substring(0,19);
+        const timeStr=isoTs.replace('T',' ');
+        const l1=lines[1]||'';
+        const antMatch=l1.match(/Ant:\s*([^\s|]+)/);
+        const ant=antMatch?antMatch[1].trim():'—';
+        const missionMatch=l1.match(/Mission:\s*([^\s|]+)/);
+        const missionShort=(missionMatch?missionMatch[1].trim():'').substring(0,12);
+        const taskMatch=l1.match(/Task:\s*([^\s|]+)/);
+        const taskShort=(taskMatch?taskMatch[1].trim():'').substring(0,10);
+        const msg=lines.slice(2).join(' ').replace(/\.\.\.\[.+?\]/g,'').trim().substring(0,160);
+        const col=ANT_MAP[ant]?.color||'var(--dim)';
+        const tc=evTypeClass(evType),cc=evCardClass(evType);
+        const isNew=idx<newCount&&newCount>0;
+        return `<div class="ev${cc?' '+cc:''}${isNew?' fresh':''}">
+          <div class="ev-top">
+            <span class="ev-type ${tc}">${evType}</span>
+            <span class="ev-ant" style="color:${col}">${ant}</span>
+            <span class="ev-time">${timeStr}</span>
+          </div>
+          <div class="ev-meta">mission:${missionShort||'—'} · task:${taskShort||'—'}</div>
+          <div class="ev-msg">${msg||'—'}</div>
+        </div>`;
+      }).join('');
+      if(newCount>0) list.scrollTop=0;
+      setTimeout(()=>list.querySelectorAll('.fresh').forEach(el=>el.classList.remove('fresh')),3000);
+    }
+    renderFeed(allBlocks,'feed-list',50);
+    renderFeed(allBlocks,'ov-feed-list',20);
+  }catch{}
 }
 
-// Parse the plain-text /approvals response.
-// Backend format: "Approval Requests | status=pending | count=N\n\n<block>\n---50dashes---\n<block>..."
-function parseApprovalsText(text) {
-  if (!text || text.startsWith('No approval')) return [];
-  // Strip header line + blank line, then split on the C# Divider: \n + 50 dashes + \n
-  const body = text.replace(/^[^\n]*\n\n?/, '');
-  const rawBlocks = body.split(/\n-{40,}\n/);
-  const results = [];
-  for (const block of rawBlocks) {
-    if (!block.trim() || !block.includes('Approval ID:')) continue;
-    const get = (key) => { const m = block.match(new RegExp(key + ':\\s*(.+)')); return m ? m[1].trim() : ''; };
-    const id = get('Approval ID');
-    if (!id) continue;
-    results.push({
-      id,
-      status:      get('Status'),
-      action_type: get('Action'),
-      target_id:   get('Target ID'),
-      title:       get('Title'),
-      file_path:   get('File'),
-      created_at:  get('Created At'),
-    });
+function parseApprovalsText(text){
+  if(!text||text.startsWith('No approval')) return [];
+  const body=text.replace(/^[^\n]*\n\n?/,'');
+  const rawBlocks=body.split(/\n-{40,}\n/);
+  const results=[];
+  for(const block of rawBlocks){
+    if(!block.trim()||!block.includes('Approval ID:')) continue;
+    const get=(key)=>{const m=block.match(new RegExp(key+':\\s*(.+)'));return m?m[1].trim():'';}
+    const id=get('Approval ID'); if(!id) continue;
+    results.push({id,status:get('Status'),action_type:get('Action'),target_id:get('Target ID'),title:get('Title'),file_path:get('File'),created_at:get('Created At')});
   }
   return results;
 }
 
 async function pollApprovals(){
-  try {
-    const text = await apiText('/approvals');
-    const items = parseApprovalsText(text);
-    const card = document.getElementById('approvals-card');
-    const bellCount = document.getElementById('bell-count');
-    document.getElementById('approval-count').textContent = items.length;
-    bellCount.style.display = items.length > 0 ? 'block' : 'none';
-    bellCount.textContent = items.length;
-    if (!items.length) { card.style.display='none'; return; }
-    card.style.display = 'block';
-    document.getElementById('approvals-list').innerHTML = items.slice(0,5).map(a=>{
+  try{
+    const text=await apiText('/approvals');
+    const items=parseApprovalsText(text);
+    const card=document.getElementById('approvals-card');
+    const bellCount=document.getElementById('bell-count');
+    setEl('approval-count',items.length);
+    bellCount.style.display=items.length>0?'block':'none';
+    bellCount.textContent=items.length;
+    if(!items.length){if(card)card.style.display='none';return;}
+    if(card)card.style.display='block';
+    document.getElementById('approvals-list').innerHTML=items.slice(0,5).map(a=>{
       const filePath=a.file_path||(a.title||'').replace('Approve patch proposal for ','').trim();
       return `<div class="approval-item">
         <div class="approval-title">${(a.title||a.action_type||'Approval needed').substring(0,60)}</div>
@@ -1399,33 +1813,29 @@ async function pollApprovals(){
         </div>
       </div>`;
     }).join('');
-  } catch(e){ console.error('pollApprovals error', e); }
+  }catch(e){console.error('pollApprovals',e);}
 }
 
-async function doApproval(id, action){
-  try {
-    // Correct endpoints: POST /approve/{id} and POST /reject/{id}
-    const endpoint = action === 'approve' ? `/approve/${id}` : `/reject/${id}`;
-    await fetch(url(endpoint), { method:'POST', headers:{ 'Authorization':'Bearer '+TOKEN } });
+async function doApproval(id,action){
+  try{
+    const endpoint=action==='approve'?`/approve/${id}`:`/reject/${id}`;
+    await fetch(url(endpoint),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     pollApprovals(); pollStatus();
-  } catch(e){ console.error('Approval error',e); }
+  }catch(e){console.error('Approval error',e);}
 }
 
 async function cancelJob(id){
   if(!confirm('Cancel this running job?')) return;
-  try {
-    await api(`/jobs/${id}/cancel`, 'POST');
-    pollJobs();
-  } catch(e){ console.error('Cancel error',e); }
+  try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
 }
 
 async function pollModelInfo(){
-  try {
+  try{
     const text=await apiText('/models');
     const modelLine=text.match(/Active Route Targets:\s*([^\n]+)/);
     const model=modelLine?modelLine[1].trim():'llama3.1:8b';
-    document.getElementById('model-badge').textContent=model.split(',')[0].trim()+' · Ollama';
-  } catch {}
+    setEl('model-badge',model.split(',')[0].trim()+' · Ollama');
+  }catch{}
 }
 
 // ── Job result ────────────────────────────────────────────────────────────────
@@ -1436,10 +1846,9 @@ function selectJob(id){
 }
 
 async function showJobResult(id){
-  try {
+  try{
     const r=await api(`/jobs/${id}`); if(!r.success) return;
     const j=r.data;
-    const overlay=document.getElementById('result-overlay');
     document.getElementById('result-title').textContent=`${j.status.toUpperCase()} · ${(j.goal||'').substring(0,55)}`;
     const body=document.getElementById('result-body');
     if(j.status==='running'||j.status==='queued'){
@@ -1454,10 +1863,10 @@ async function showJobResult(id){
       body.textContent='No result recorded.';
     }
     const statusBar=document.getElementById('result-status-bar');
-    const start=j.started_at?fmtTime(j.started_at):'—', end=j.finished_at?fmtTime(j.finished_at):'—';
-    statusBar.innerHTML=`<span>Job ID: <span style="font-family:var(--mono);color:var(--text)">${id.substring(0,8)}…</span></span><span>Started: <span>${start}</span></span><span>Finished: <span>${end}</span></span>`;
-    overlay.classList.add('show');
-  } catch {}
+    const start=j.started_at?fmtTime(j.started_at):'—',end=j.finished_at?fmtTime(j.finished_at):'—';
+    statusBar.innerHTML=`<span>Job: <span style="font-family:var(--mono)">${id.substring(0,8)}…</span></span><span>Started: ${start}</span><span>Finished: ${end}</span>`;
+    document.getElementById('result-overlay').classList.add('show');
+  }catch{}
 }
 
 document.getElementById('result-close').addEventListener('click',()=>{
@@ -1465,9 +1874,7 @@ document.getElementById('result-close').addEventListener('click',()=>{
   selectedJobId=null;
   document.querySelectorAll('.job-item').forEach(el=>el.classList.remove('selected'));
 });
-
 document.getElementById('result-refresh-btn').addEventListener('click',()=>{ if(selectedJobId) showJobResult(selectedJobId); });
-
 document.getElementById('copy-btn').addEventListener('click',()=>{
   const text=document.getElementById('result-body').textContent;
   navigator.clipboard.writeText(text).then(()=>{
@@ -1479,7 +1886,7 @@ document.getElementById('copy-btn').addEventListener('click',()=>{
 
 async function pollActiveJob(){
   if(!activeJobId) return;
-  try {
+  try{
     const r=await api(`/jobs/${activeJobId}`); if(!r.success) return;
     const j=r.data;
     if(j.status==='complete'||j.status==='failed'||j.status==='partial'){
@@ -1488,16 +1895,17 @@ async function pollActiveJob(){
       enableInput(true);
       activeJobId=null;
     }
-  } catch {}
+  }catch{}
 }
 
 // ── Mission dispatch ──────────────────────────────────────────────────────────
-async function dispatchMission(){
-  const input=document.getElementById('mission-input');
+async function dispatchMission(inputId){
+  const input=document.getElementById(inputId||'mission-input');
+  if(!input) return;
   const val=input.value.trim(); if(!val) return;
   input.value='';
   enableInput(false);
-  try {
+  try{
     const r=await api('/missions','POST',{goal:val});
     if(!r.success){enableInput(true);return;}
     activeJobId=r.data.id;
@@ -1505,32 +1913,38 @@ async function dispatchMission(){
     if(jobPollTimer) clearInterval(jobPollTimer);
     jobPollTimer=setInterval(pollActiveJob,2500);
     pollJobs();
-  } catch { enableInput(true); }
+  }catch{enableInput(true);}
 }
 
-document.getElementById('mission-input').addEventListener('keydown',e=>{ if(e.key==='Enter') dispatchMission(); });
-document.getElementById('send-btn').addEventListener('click', dispatchMission);
+// Wire up all mission dispatch inputs
+document.getElementById('mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('mission-input');});
+document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
+document.getElementById('ms-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ms-mission-input');});
+document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
+document.getElementById('ov-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ov-mission-input');});
+document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtTime(iso){
   if(!iso) return '';
-  try{ return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-  catch{ return iso.substring(11,16); }
+  try{return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  catch{return iso.substring(11,16);}
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     document.getElementById('result-overlay').classList.remove('show');
-    settingsOverlay.classList.remove('show');
-    document.getElementById('log-modal').classList.remove('show');
-    document.getElementById('antcfg-modal').classList.remove('show');
-    document.getElementById('phero-modal').classList.remove('show');
-    document.getElementById('users-modal').classList.remove('show');
-    renamePop.classList.remove('show');
+    document.getElementById('rename-pop').classList.remove('show');
   }
-  if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();document.getElementById('mission-input').focus();}
-  if((e.ctrlKey||e.metaKey)&&e.key==='l'){e.preventDefault();openLogModal();}
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){
+    e.preventDefault();
+    const mi=document.getElementById('mission-input');
+    if(mi){showPage('colony');setTimeout(()=>mi.focus(),60);}
+  }
+  if((e.ctrlKey||e.metaKey)&&e.key==='l'){
+    e.preventDefault();showPage('events');reloadLogModal();
+  }
 });
 
 // ── Polling loop ──────────────────────────────────────────────────────────────
@@ -1545,10 +1959,13 @@ function startPolling(){
   setInterval(pollModelInfo,30000);
 }
 
-// ── Bell → scroll to approvals ────────────────────────────────────────────────
+// Bell → navigate to colony and scroll to approvals card
 document.getElementById('approval-bell').addEventListener('click',()=>{
-  const card=document.getElementById('approvals-card');
-  if(card.style.display!=='none') card.scrollIntoView({behavior:'smooth'});
+  showPage('colony');
+  setTimeout(()=>{
+    const card=document.getElementById('approvals-card');
+    if(card&&card.style.display!=='none') card.scrollIntoView({behavior:'smooth'});
+  },120);
   pollApprovals();
 });
 
@@ -1566,14 +1983,12 @@ function initCollapse(){
   });
 }
 function collapseCard(id,save){
-  const card=document.getElementById(id);
-  if(!card) return;
+  const card=document.getElementById(id); if(!card) return;
   card.classList.add('collapsed');
   if(save) localStorage.setItem('collapsed:'+id,'1');
 }
 function expandCard(id){
-  const card=document.getElementById(id);
-  if(!card) return;
+  const card=document.getElementById(id); if(!card) return;
   card.classList.remove('collapsed');
   localStorage.removeItem('collapsed:'+id);
 }
@@ -1589,10 +2004,36 @@ document.querySelectorAll('.settings-tab').forEach(tab=>{
     if(tab.dataset.tab==='models') loadModelsTab();
     if(tab.dataset.tab==='info') loadInfoTab();
     if(tab.dataset.tab==='colony') loadColonyTab();
+    if(tab.dataset.tab==='connection') loadSettingsInfo();
   });
 });
-document.getElementById('models-refresh').addEventListener('click', loadModelsTab);
-document.getElementById('diag-refresh').addEventListener('click', loadInfoTab);
+
+document.getElementById('models-refresh').addEventListener('click',loadModelsTab);
+document.getElementById('diag-refresh').addEventListener('click',loadInfoTab);
+
+// ── Settings info ─────────────────────────────────────────────────────────────
+async function loadSettingsInfo(){
+  try{
+    const text=await apiText('/models');
+    const ollamaHost=(text.match(/Ollama Host:\s*([^\n]+)/)||[])[1]?.trim()||'—';
+    const model=(text.match(/Active Route Targets:\s*([^\n]+)/)||[])[1]?.trim()||'—';
+    setEl('si-ollama-host',ollamaHost);
+    setEl('si-model',model);
+    try{
+      const mr=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
+      const md=await mr.json();
+      const ok=Array.isArray(md.models);
+      document.getElementById('si-ollama-dot').className='ollama-dot '+(ok?'ok':'err');
+      setEl('si-ollama-status',ok?`${ollamaHost} (${md.models.length} models)`:'unreachable');
+    }catch{
+      document.getElementById('si-ollama-dot').className='ollama-dot err';
+      setEl('si-ollama-status','unreachable');
+    }
+  }catch{
+    document.getElementById('si-ollama-dot').className='ollama-dot err';
+    setEl('si-ollama-status','unreachable');
+  }
+}
 
 // ── Model browser ──────────────────────────────────────────────────────────────
 let activeRouteModels=new Set();
@@ -1604,13 +2045,11 @@ async function loadModelsTab(){
 
 async function loadRoutes(){
   const grid=document.getElementById('route-grid');
-  try {
+  try{
     const text=await apiText('/routes');
-    // Parse route lines: "role → model (provider)"
     const lines=text.split('\n').filter(l=>l.includes('→')||l.includes('->'));
     activeRouteModels=new Set();
     if(!lines.length){
-      // Fallback: parse the /models text
       const mtext=await apiText('/models');
       grid.innerHTML=`<div style="font-size:10px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono)">${mtext.substring(0,800)}</div>`;
       return;
@@ -1626,7 +2065,7 @@ async function loadRoutes(){
       const provider=providerMatch?providerMatch[1]:'ollama';
       return `<div class="route-row"><span class="route-role">${role}</span><span class="route-model">${model}</span><span class="route-provider">${provider}</span></div>`;
     }).join('');
-  } catch(e){
+  }catch(e){
     grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${e.message}</div>`;
   }
 }
@@ -1634,10 +2073,10 @@ async function loadRoutes(){
 async function loadOllamaModels(){
   const grid=document.getElementById('model-grid');
   grid.innerHTML='<div style="font-size:10px;color:var(--dim)">Loading from Ollama...</div>';
-  try {
+  try{
     const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
     const data=await r.json();
-    if(!data.models?.length && data.error){
+    if(!data.models?.length&&data.error){
       grid.innerHTML=`<div style="font-size:10px;color:var(--red)">${data.message||'Ollama unreachable'}</div>`;
       return;
     }
@@ -1649,53 +2088,52 @@ async function loadOllamaModels(){
       return `<div class="model-item${isActive?' active-route':''}" onclick="navigator.clipboard.writeText('${name}').then(()=>{this.style.borderColor='var(--green)';setTimeout(()=>this.style.borderColor='',1500)})">
         <span class="model-name">${name}</span>
         <span class="model-size">${sizeGb}</span>
-        ${isActive?'<span class="model-badge">ACTIVE</span>':''}
+        ${isActive?'<span class="model-badge-active">ACTIVE</span>':''}
       </div>`;
     }).join('');
     if(!models.length) grid.innerHTML='<div style="font-size:10px;color:var(--dim)">No models found. Pull a model first: <code>ollama pull llama3.3:70b</code></div>';
-  } catch(e){
+  }catch(e){
     grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${e.message}</div>`;
   }
 }
 
 async function loadInfoTab(){
-  try {
-    const [sr, cfgText, diagText] = await Promise.all([
-      api('/status'), apiText('/config'), apiText('/diagnostics')
-    ]);
+  try{
+    const [sr,cfgText,diagText]=await Promise.all([api('/status'),apiText('/config'),apiText('/diagnostics')]);
     const d=sr.data||{};
-    document.getElementById('si-version').textContent=d.version||'—';
-    document.getElementById('si-kernel').textContent=d.native_kernel||'—';
-    document.getElementById('si-safety').textContent=cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'—';
-    document.getElementById('si-workers').textContent=cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'—';
-    document.getElementById('si-web').textContent=cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'—';
-    document.getElementById('si-filewrite').textContent=cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'—';
-    document.getElementById('si-patch').textContent=cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'—';
-    document.getElementById('si-diag').textContent=diagText.substring(0,2000);
-  } catch(e){
-    document.getElementById('si-diag').textContent='Error: '+e.message;
+    setEl('si-version',d.version||'—');
+    setEl('si-kernel',d.native_kernel||'—');
+    setEl('si-safety',cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-workers',cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-web',cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-filewrite',cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-patch',cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    const diagEl=document.getElementById('si-diag');
+    if(diagEl) diagEl.textContent=diagText.substring(0,2000);
+  }catch(e){
+    const diagEl=document.getElementById('si-diag');
+    if(diagEl) diagEl.textContent='Error: '+e.message;
   }
 }
 
-// ── Full-screen log modal ──────────────────────────────────────────────────────
+// ── Event log (full page) ─────────────────────────────────────────────────────
 let allLogEvents=[];
 
 async function openLogModal(){
-  document.getElementById('log-modal').classList.add('show');
+  showPage('events');
   await reloadLogModal();
 }
 
-document.getElementById('log-modal-close').addEventListener('click',()=>{
-  document.getElementById('log-modal').classList.remove('show');
-});
-document.getElementById('log-reload').addEventListener('click', reloadLogModal);
+PAGE_ENTER['events']=()=>{reloadLogModal();};
 
-function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+document.getElementById('log-reload').addEventListener('click',reloadLogModal);
+
+function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 const SINCE_MS={'15m':9e5,'1h':36e5,'6h':216e5,'24h':864e5};
 
 async function reloadLogModal(){
-  try {
+  try{
     const ant  =document.getElementById('log-filter-ant').value;
     const type =document.getElementById('log-filter-type').value;
     const level=document.getElementById('log-filter-level').value;
@@ -1704,19 +2142,19 @@ async function reloadLogModal(){
     if(ant)   p.set('ant',ant);
     if(type)  p.set('type',type);
     if(level) p.set('level',level);
-    if(since && SINCE_MS[since]) p.set('since', new Date(Date.now()-SINCE_MS[since]).toISOString());
+    if(since&&SINCE_MS[since]) p.set('since',new Date(Date.now()-SINCE_MS[since]).toISOString());
     p.set('limit','500');
     const r=await api('/events/json?'+p.toString());
     if(!r.success) throw new Error(r.message);
     allLogEvents=r.data.events||[];
-    populateLogFilters(r.data.ants||[], r.data.types||[]);
+    populateLogFilters(r.data.ants||[],r.data.types||[]);
     renderLogModal();
-  } catch(e){ document.getElementById('log-modal-body').innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`; }
+  }catch(e){
+    document.getElementById('log-modal-body').innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`;
+  }
 }
 
-// Populate the ant + type filter menus from what the colony has actually logged,
-// preserving the human's current selection.
-function populateLogFilters(ants, types){
+function populateLogFilters(ants,types){
   const antSel=document.getElementById('log-filter-ant');
   const want=ants.length?ants:Object.keys(ANT_DEFAULTS);
   const cur=antSel.value;
@@ -1736,7 +2174,7 @@ function renderLogModal(){
     if(!search) return true;
     return `${ev.event_type} ${ev.ant_name} ${ev.message} ${ev.mission_id}`.toLowerCase().includes(search);
   });
-  document.getElementById('log-modal-count').textContent=`${filtered.length} / ${allLogEvents.length} events`;
+  setEl('log-modal-count',`${filtered.length} / ${allLogEvents.length} events`);
   body.innerHTML=filtered.map(ev=>{
     const evType=ev.event_type||'event';
     const ant=ev.ant_name||'—';
@@ -1755,27 +2193,23 @@ function renderLogModal(){
   }).join('');
 }
 
-document.getElementById('log-search').addEventListener('input', renderLogModal);
-document.getElementById('log-filter-ant').addEventListener('change', reloadLogModal);
-document.getElementById('log-filter-type').addEventListener('change', reloadLogModal);
-document.getElementById('log-filter-level').addEventListener('change', reloadLogModal);
-document.getElementById('log-filter-since').addEventListener('change', reloadLogModal);
+document.getElementById('log-search').addEventListener('input',renderLogModal);
+document.getElementById('log-filter-ant').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-type').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-level').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-since').addEventListener('change',reloadLogModal);
 
-// ══ Console display state: custom ant names, colours, positions ════════════════
-// uiState.castes[ant] = {name,color,model}; uiState.positions[nodeId] = {x,y}
-let uiState = { version:1, castes:{}, positions:{} };
-const ANT_CASTES = ['researcher','web','file','coder','builder','verifier'];
-const ANT_DEFAULTS = Object.assign({ queen:{label:'Queen', color:'#fbbf24', role:'QUEEN'} },
+// ── UI State ──────────────────────────────────────────────────────────────────
+let uiState={version:1,castes:{},positions:{}};
+const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
+const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
-uiReady = true;  // from here on applyUiState() may safely touch the state above
+uiReady=true;
 
 async function loadUiState(){
   try{
-    const r = await api('/ui/state');
-    if(r.success && r.data){
-      uiState.castes    = r.data.castes    || {};
-      uiState.positions = r.data.positions || {};
-    }
+    const r=await api('/ui/state');
+    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; }
   }catch{}
   applyUiState();
 }
@@ -1784,132 +2218,140 @@ let uiSaveTimer=null;
 function saveUiState(){
   clearTimeout(uiSaveTimer);
   uiSaveTimer=setTimeout(async()=>{
-    try{ await api('/ui/state','PUT',{ version:1, castes:uiState.castes, positions:uiState.positions }); }
-    catch(e){ console.error('saveUiState',e); }
+    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions});}
+    catch(e){console.error('saveUiState',e);}
   },350);
 }
 
-function casteName(caste){ return uiState.castes[caste]?.name || ANT_DEFAULTS[caste]?.label || caste; }
-function casteColor(caste){ return uiState.castes[caste]?.color || ANT_DEFAULTS[caste]?.color || '#7fa0bc'; }
+function casteName(caste){return uiState.castes[caste]?.name||ANT_DEFAULTS[caste]?.label||caste;}
+function casteColor(caste){return uiState.castes[caste]?.color||ANT_DEFAULTS[caste]?.color||'#7fa0bc';}
 
-// Apply custom names / colours / positions onto the live canvas nodes.
 function applyUiState(){
-  if(!uiReady) return;  // guards the initial buildNodes() call during script parse
-  // Keep the events-feed colour map in sync with custom caste colours.
-  ANT_CASTES.forEach(c=>{ if(ANT_MAP[c]) ANT_MAP[c].color = casteColor(c); });
+  if(!uiReady) return;
+  ANT_CASTES.forEach(c=>{if(ANT_MAP[c]) ANT_MAP[c].color=casteColor(c);});
   nodes.forEach(n=>{
-    const caste = n.ant || 'queen';
-    const base  = casteName(caste);
-    if(n.id===caste || n.id==='queen') n.label = base;
-    else if(n.id.startsWith(caste+'_')){ const idx=parseInt(n.id.split('_').pop(),10)||0; n.label = base+'-'+(idx+1); }
-    n.color = casteColor(caste);
-    const pos = uiState.positions[n.id];
-    if(pos && typeof pos.x==='number' && typeof pos.y==='number'){ n.x=pos.x; n.y=pos.y; }
+    const caste=n.ant||'queen';
+    const base=casteName(caste);
+    if(n.id===caste||n.id==='queen') n.label=base;
+    else if(n.id.startsWith(caste+'_')){const idx=parseInt(n.id.split('_').pop(),10)||0;n.label=base+'-'+(idx+1);}
+    n.color=casteColor(caste);
+    const pos=uiState.positions[n.id];
+    if(pos&&typeof pos.x==='number'&&typeof pos.y==='number'){n.x=pos.x;n.y=pos.y;}
   });
 }
 
-function persistNodePosition(n){ uiState.positions[n.id] = { x:Math.round(n.x), y:Math.round(n.y) }; saveUiState(); }
+function persistNodePosition(n){uiState.positions[n.id]={x:Math.round(n.x),y:Math.round(n.y)};saveUiState();}
 
-// ── Inline rename popover ──────────────────────────────────────────────────────
+// ── Rename popover ────────────────────────────────────────────────────────────
 let renameCaste=null;
 const renamePop=document.getElementById('rename-pop');
+
 function openRename(node,sx,sy){
-  renameCaste = node.ant || 'queen';
+  renameCaste=node.ant||'queen';
   const inp=document.getElementById('rename-input');
-  inp.value = casteName(renameCaste);
-  renamePop.style.left = Math.min(sx, window.innerWidth-220)+'px';
-  renamePop.style.top  = Math.min(sy, window.innerHeight-120)+'px';
+  inp.value=casteName(renameCaste);
+  renamePop.style.left=Math.min(sx,window.innerWidth-220)+'px';
+  renamePop.style.top=Math.min(sy,window.innerHeight-120)+'px';
   renamePop.classList.add('show');
-  inp.focus(); inp.select();
+  inp.focus();inp.select();
 }
 function commitRename(){
   const v=document.getElementById('rename-input').value.trim();
-  if(renameCaste && v){
-    uiState.castes[renameCaste] = Object.assign({}, uiState.castes[renameCaste], { name:v });
-    applyUiState(); saveUiState();
+  if(renameCaste&&v){
+    uiState.castes[renameCaste]=Object.assign({},uiState.castes[renameCaste],{name:v});
+    applyUiState();saveUiState();
   }
-  renamePop.classList.remove('show'); renameCaste=null;
+  renamePop.classList.remove('show');renameCaste=null;
 }
-document.getElementById('rename-save').addEventListener('click', commitRename);
-document.getElementById('rename-cancel').addEventListener('click', ()=>{ renamePop.classList.remove('show'); renameCaste=null; });
-document.getElementById('rename-input').addEventListener('keydown', e=>{ if(e.key==='Enter') commitRename(); if(e.key==='Escape'){renamePop.classList.remove('show');renameCaste=null;} });
+document.getElementById('rename-save').addEventListener('click',commitRename);
+document.getElementById('rename-cancel').addEventListener('click',()=>{renamePop.classList.remove('show');renameCaste=null;});
+document.getElementById('rename-input').addEventListener('keydown',e=>{if(e.key==='Enter')commitRename();if(e.key==='Escape'){renamePop.classList.remove('show');renameCaste=null;}});
 
-// ══ Ant Configuration page ═════════════════════════════════════════════════════
+// ── Ant Config page ───────────────────────────────────────────────────────────
 let availableModels=[];
+
 async function fetchModelNames(){
   try{
     const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
     const d=await r.json();
     availableModels=(d.models||[]).map(m=>m.name||m.model).filter(Boolean);
-  }catch{ availableModels=[]; }
+  }catch{availableModels=[];}
 }
+
 async function openAntConfig(){
-  document.getElementById('antcfg-modal').classList.add('show');
+  showPage('antconfig');
   await fetchModelNames();
-  // Pull current routes from live settings so the dropdowns reflect reality.
   let routes={};
-  try{ const s=await api('/settings'); if(s.success) routes=s.data.model_routes||{}; }catch{}
+  try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
   const grid=document.getElementById('antcfg-grid');
   const castes=['queen',...ANT_CASTES];
   grid.innerHTML=castes.map(c=>{
-    const d=ANT_DEFAULTS[c], name=casteName(c), color=casteColor(c);
-    const curModel=uiState.castes[c]?.model || routes[c]?.model || '';
-    const modelField = c==='queen' ? '' : `
+    const d=ANT_DEFAULTS[c],name=casteName(c),color=casteColor(c);
+    const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
+    const modelField=c==='queen'?'':`
       <div class="antcfg-field">
         <label>Model (route)</label>
         <select data-caste="${c}" class="antcfg-model">
           <option value="">— default —</option>
           ${availableModels.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('')}
-          ${curModel && !availableModels.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:''}
+          ${curModel&&!availableModels.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:''}
         </select>
       </div>`;
     return `<div class="antcfg-card">
       <div class="antcfg-top">
-        <span class="antcfg-dot" style="background:${color};color:${color}"></span>
+        <span class="antcfg-dot" style="background:${color}"></span>
         <div><div style="font-size:13px;font-weight:700">${name}</div><div class="antcfg-role">${d.role} · ${c}</div></div>
       </div>
-      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28" /></div>
-      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" data-caste="${c}" type="color" value="${color}" /></div>
+      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
+      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" data-caste="${c}" type="color" value="${color}"></div>
       ${modelField}
     </div>`;
   }).join('');
 }
-document.getElementById('antcfg-save').addEventListener('click', async ()=>{
+
+PAGE_ENTER['antconfig']=()=>openAntConfig();
+
+document.getElementById('antcfg-save').addEventListener('click',async()=>{
   const msg=document.getElementById('antcfg-msg'); msg.textContent='';
-  document.querySelectorAll('.antcfg-name').forEach(i=>{ const c=i.dataset.caste, v=i.value.trim(); if(v) uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v}); });
-  document.querySelectorAll('.antcfg-color').forEach(i=>{ const c=i.dataset.caste; uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value}); });
+  document.querySelectorAll('.antcfg-name').forEach(i=>{const c=i.dataset.caste,v=i.value.trim();if(v)uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});});
+  document.querySelectorAll('.antcfg-color').forEach(i=>{const c=i.dataset.caste;uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value});});
   const routeUpdate={};
-  document.querySelectorAll('.antcfg-model').forEach(s=>{ const c=s.dataset.caste, v=s.value;
+  document.querySelectorAll('.antcfg-model').forEach(s=>{const c=s.dataset.caste,v=s.value;
     uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined});
-    if(v) routeUpdate[c]={ provider:'ollama', model:v };
+    if(v) routeUpdate[c]={provider:'ollama',model:v};
   });
-  applyUiState(); saveUiState();
+  applyUiState();saveUiState();
   if(Object.keys(routeUpdate).length){
-    try{ await api('/settings','POST',{ model_routes: routeUpdate }); }catch(e){ msg.style.color='var(--red)'; msg.textContent='Routes failed: '+e.message; return; }
+    try{await api('/settings','POST',{model_routes:routeUpdate});}
+    catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
   }
-  msg.style.color='var(--green)'; msg.textContent='Saved ✓'; setTimeout(()=>msg.textContent='',2500);
-});
-document.getElementById('antcfg-reset').addEventListener('click', ()=>{
-  if(!confirm('Reset all ant names, colours and positions to defaults?')) return;
-  uiState.castes={}; uiState.positions={}; applyUiState(); buildNodes(); saveUiState(); openAntConfig();
+  msg.style.color='var(--green)';msg.textContent='Saved ✓';setTimeout(()=>msg.textContent='',2500);
 });
 
-// ══ Pheromone memory page ══════════════════════════════════════════════════════
+document.getElementById('antcfg-reset').addEventListener('click',()=>{
+  if(!confirm('Reset all ant names, colours and positions to defaults?')) return;
+  uiState.castes={};uiState.positions={};applyUiState();buildNodes();saveUiState();openAntConfig();
+});
+
+// ── Pheromone memory page ─────────────────────────────────────────────────────
 async function openPheromones(){
-  document.getElementById('phero-modal').classList.add('show');
+  showPage('pheromones');
   await reloadPheromones();
 }
+
+PAGE_ENTER['pheromones']=()=>reloadPheromones();
+
 async function reloadPheromones(){
   const body=document.getElementById('phero-body');
   try{
-    const r=await api('/pheromones/json'); if(!r.success) throw new Error(r.message);
+    const r=await api('/pheromones/json');if(!r.success) throw new Error(r.message);
     const trails=r.data||[];
-    document.getElementById('phero-count').textContent=`${trails.length} trails`;
-    if(!trails.length){ body.innerHTML='<div style="color:var(--dim)">No pheromone trails recorded yet. Run a few missions to build colony memory.</div>'; return; }
+    setEl('phero-count',`${trails.length} trails`);
+    if(!trails.length){body.innerHTML='<div style="color:var(--dim)">No pheromone trails recorded yet. Run a few missions to build colony memory.</div>';return;}
     body.innerHTML=`<table class="phero-table"><thead><tr>
       <th>Trail</th><th>Type</th><th>Strength</th><th>✓</th><th>✕</th><th>Net</th><th>Updated</th></tr></thead><tbody>${
       trails.map(t=>{
-        const s=+t.strength||0, pct=Math.round(s*100), net=t.net_count||0;
+        const s=+t.strength||0,pct=Math.round(s*100),net=t.net_count||0;
         const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
         return `<tr>
           <td class="phero-key" title="${(t.trail_key||'').replace(/"/g,'&quot;')}">${t.trail_key||'—'}</td>
@@ -1921,18 +2363,19 @@ async function reloadPheromones(){
           <td>${fmtTime(t.last_updated)||'—'}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
-  }catch(e){ body.innerHTML=`<div style="color:var(--red)">Error: ${e.message}</div>`; }
+  }catch(e){body.innerHTML=`<div style="color:var(--red)">Error: ${e.message}</div>`;}
 }
-document.getElementById('phero-reload').addEventListener('click', reloadPheromones);
-document.getElementById('phero-prune').addEventListener('click', async ()=>{
+
+document.getElementById('phero-reload').addEventListener('click',reloadPheromones);
+document.getElementById('phero-prune').addEventListener('click',async()=>{
   if(!confirm('Prune weak and failure-dominant pheromone trails? This keeps only useful colony memory.')) return;
   const msg=document.getElementById('phero-msg');
-  try{ const r=await api('/pheromones/prune','POST'); msg.style.color='var(--green)'; msg.textContent=r.message||'Pruned'; await reloadPheromones(); }
-  catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+  try{const r=await api('/pheromones/prune','POST');msg.style.color='var(--green)';msg.textContent=r.message||'Pruned';await reloadPheromones();}
+  catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
   setTimeout(()=>msg.textContent='',3000);
 });
 
-// ══ Colony settings tab (editable, persisted) ══════════════════════════════════
+// ── Colony settings tab ───────────────────────────────────────────────────────
 const TOGGLE_KEYS=[
   ['web_search_enabled','Web Search'],['file_tools_enabled','File Tools'],
   ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
@@ -1949,111 +2392,114 @@ const AUTO_KEYS=[
   ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
 ];
 let colonySettings={};
+
 async function loadColonyTab(){
-  try{ const r=await api('/settings'); if(!r.success) return; colonySettings=r.data; }catch{ return; }
+  try{const r=await api('/settings');if(!r.success)return;colonySettings=r.data;}catch{return;}
   document.getElementById('set-ollama-host').value=colonySettings.ollama_host||'';
   document.getElementById('set-ollama-model').value=colonySettings.ollama_model||'';
   document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
     `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" onclick="this.classList.toggle('on')"></div></div>`).join('');
   document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
-    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}" /></div>`).join('');
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
   document.getElementById('set-autonomy').innerHTML=AUTO_KEYS.map(([k,label])=>
-    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}" /></div>`).join('');
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
 }
+
 async function saveColonyTab(){
   const msg=document.getElementById('colony-save-msg'); msg.textContent='';
   const payload={
-    ollama_host: document.getElementById('set-ollama-host').value.trim(),
-    ollama_model: document.getElementById('set-ollama-model').value.trim(),
+    ollama_host:document.getElementById('set-ollama-host').value.trim(),
+    ollama_model:document.getElementById('set-ollama-model').value.trim(),
   };
-  document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
-  document.querySelectorAll('#set-nums input, #set-autonomy input').forEach(i=>{ const v=parseInt(i.value,10); if(!isNaN(v)) payload[i.dataset.key]=v; });
+  document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{payload[sw.dataset.key]=sw.classList.contains('on');});
+  document.querySelectorAll('#set-nums input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});
   try{
     const r=await api('/settings','POST',payload);
-    if(r.success){ msg.style.color='var(--green)'; msg.textContent=r.message||'Saved'; colonySettings=r.data.settings||colonySettings; pollModelInfo(); }
-    else { msg.style.color='var(--red)'; msg.textContent=r.message||'Failed'; }
-  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+    if(r.success){msg.style.color='var(--green)';msg.textContent=r.message||'Saved';colonySettings=r.data.settings||colonySettings;pollModelInfo();}
+    else{msg.style.color='var(--red)';msg.textContent=r.message||'Failed';}
+  }catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
   setTimeout(()=>msg.textContent='',3000);
 }
-document.getElementById('colony-save').addEventListener('click', saveColonyTab);
-document.getElementById('colony-reload').addEventListener('click', loadColonyTab);
 
-// ══ User management (admin only) ═══════════════════════════════════════════════
+document.getElementById('colony-save').addEventListener('click',saveColonyTab);
+document.getElementById('colony-reload').addEventListener('click',loadColonyTab);
+
+// ── User management ───────────────────────────────────────────────────────────
 async function openUsers(){
   if(ROLE!=='admin') return;
-  document.getElementById('users-modal').classList.add('show');
+  showPage('users');
   await reloadUsers();
 }
+
+PAGE_ENTER['users']=()=>{ if(ROLE==='admin') reloadUsers(); };
+
 async function reloadUsers(){
   const tb=document.getElementById('users-tbody');
   try{
-    const r=await api('/users'); if(!r.success) throw new Error(r.message);
+    const r=await api('/users');if(!r.success) throw new Error(r.message);
     const users=r.data||[];
-    document.getElementById('users-count').textContent=`${users.length} account${users.length===1?'':'s'}`;
+    setEl('users-count',`${users.length} account${users.length===1?'':'s'}`);
     tb.innerHTML=users.map(u=>{
       const isAdmin=(u.role||'coordinator')==='admin';
       const status=u.active?'<span style="color:var(--green)">active</span>':'<span style="color:var(--red)">disabled</span>';
       const last=u.last_login_at?fmtTime(u.last_login_at):'never';
       const self=u.username===USERNAME;
       return `<tr>
-        <td class="phero-key" style="color:var(--text)">${escapeHtml(u.username)}${self?' <span style="color:var(--dim)">(you)</span>':''}</td>
+        <td style="font-family:var(--mono);color:var(--text)">${escapeHtml(u.username)}${self?' <span style="color:var(--dim)">(you)</span>':''}</td>
         <td><span style="color:${isAdmin?'var(--queen)':'var(--blue)'}">${isAdmin?'Administrator':'Coordinator'}</span></td>
         <td>${status}</td>
         <td>${last}</td>
         <td style="white-space:nowrap">
           <button class="job-btn view" onclick="userResetPw('${escapeHtml(u.username)}')">Reset PW</button>
-          <button class="job-btn view" onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coordinator':'→ Admin'}</button>
+          <button class="job-btn view" onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coord':'→ Admin'}</button>
           <button class="job-btn ${u.active?'cancel':'view'}" onclick="userToggleActive('${escapeHtml(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
           ${self?'':`<button class="job-btn cancel" onclick="userDelete('${escapeHtml(u.username)}')">Delete</button>`}
         </td></tr>`;
-    }).join('') || '<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
-  }catch(e){ tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+    }).join('')||'<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
+  }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`;}
 }
-function usersMsg(t,ok){ const m=document.getElementById('nu-msg'); m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },3500); }
-document.getElementById('nu-add').addEventListener('click', async ()=>{
+
+function usersMsg(t,ok){
+  const m=document.getElementById('nu-msg');
+  m.style.color=ok?'var(--green)':'var(--red)';
+  m.textContent=t;
+  setTimeout(()=>{if(m.textContent===t)m.textContent='';},3500);
+}
+
+document.getElementById('nu-add').addEventListener('click',async()=>{
   const u=document.getElementById('nu-user').value.trim();
   const p=document.getElementById('nu-pass').value;
   const role=document.getElementById('nu-role').value;
-  if(!u||!p){ usersMsg('Username and password are required.',false); return; }
-  try{ const r=await api('/users','POST',{username:u,password:p,role});
-    if(r.success){ usersMsg('Created '+u,true); document.getElementById('nu-user').value=''; document.getElementById('nu-pass').value=''; reloadUsers(); }
+  if(!u||!p){usersMsg('Username and password are required.',false);return;}
+  try{
+    const r=await api('/users','POST',{username:u,password:p,role});
+    if(r.success){usersMsg('Created '+u,true);document.getElementById('nu-user').value='';document.getElementById('nu-pass').value='';reloadUsers();}
     else usersMsg(r.message||'Failed',false);
-  }catch(e){ usersMsg('Failed: '+e.message,false); }
+  }catch(e){usersMsg('Failed: '+e.message,false);}
 });
-document.getElementById('users-reload').addEventListener('click', reloadUsers);
-async function userPatch(username, body, okMsg){
-  try{ const r=await api('/users/'+encodeURIComponent(username),'PATCH',body);
-    if(r.success){ usersMsg(okMsg,true); reloadUsers(); } else usersMsg(r.message||'Failed',false);
-  }catch(e){ usersMsg('Failed: '+e.message,false); }
+
+document.getElementById('users-reload').addEventListener('click',reloadUsers);
+
+async function userPatch(username,body,okMsg){
+  try{
+    const r=await api('/users/'+encodeURIComponent(username),'PATCH',body);
+    if(r.success){usersMsg(okMsg,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
+  }catch(e){usersMsg('Failed: '+e.message,false);}
 }
-function userResetPw(u){ const p=prompt(`New password for ${u} (min 8 characters):`); if(p) userPatch(u,{password:p},'Password reset for '+u); }
-function userToggleRole(u,role){ if(confirm(`Change role of ${u} to ${role}?`)) userPatch(u,{role},'Role changed for '+u); }
-function userToggleActive(u,active){ userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u); }
+function userResetPw(u){const p=prompt(`New password for ${u} (min 8 characters):`);if(p)userPatch(u,{password:p},'Password reset for '+u);}
+function userToggleRole(u,role){if(confirm(`Change role of ${u} to ${role}?`))userPatch(u,{role},'Role changed for '+u);}
+function userToggleActive(u,active){userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u);}
 async function userDelete(u){
   if(!confirm(`Delete account ${u}? This cannot be undone.`)) return;
-  try{ const r=await api('/users/'+encodeURIComponent(u),'DELETE');
-    if(r.success){ usersMsg('Deleted '+u,true); reloadUsers(); } else usersMsg(r.message||'Failed',false);
-  }catch(e){ usersMsg('Failed: '+e.message,false); }
+  try{
+    const r=await api('/users/'+encodeURIComponent(u),'DELETE');
+    if(r.success){usersMsg('Deleted '+u,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
+  }catch(e){usersMsg('Failed: '+e.message,false);}
 }
 
-// ── Render loop ───────────────────────────────────────────────────────────────
-function loop(ts){
-  requestAnimationFrame(loop);
-  camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
-  drawBg();
-  // Queen-to-ant structural edges
-  edges.forEach(e=>drawEdge(e));
-  // Ant-to-ant data flow edges (task dependency graph)
-  dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
-  maybeSpawn(ts);
-  particles=particles.filter(p=>(p.t+=p.speed)<=1);
-  drawParticles();
-  nodes.forEach(n=>{
-    if(n.id!=='queen') n.activity+=(colonyActivity[n.ant]||0-n.activity)*.03;
-    drawNode(n,ts);
-  });
-}
-requestAnimationFrame(loop);
+// ── Boot ──────────────────────────────────────────────────────────────────────
+bootAuth();
+
 </script>
 </body>
 </html>

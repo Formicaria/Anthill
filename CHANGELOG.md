@@ -1,7 +1,76 @@
 # ANTHILL Changelog
 
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
-> Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, and so on.
+> Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**, and so on.
+
+## v1.8.3 — Enterprise shell UI
+
+No schema change. The web console is rebuilt as a full enterprise-grade shell; all existing API
+endpoints, auth, and backend behaviour are unchanged.
+
+Added:
+
+- **Left navigation rail** — 240 px expanded / 60 px icon-only collapsed, toggled by the **‹**
+  button; collapse state persisted in `localStorage`. Eight nav items with icons: Overview, Colony,
+  Missions, Event Log, Pheromones, Ant Config, Settings, Users.
+- **8 routed pages** — `showPage(id)` swaps the active page, updates the nav active state, updates
+  the header title, and fires a per-page `PAGE_ENTER` callback. All former modal overlays are now
+  full pages:
+
+  | Page | Replaces |
+  |------|---------|
+  | **Overview** | *(new)* — KPI grid, mission dispatch, recent jobs, live event feed |
+  | **Colony** | Canvas page (unchanged layout; canvas now fills `#colony-canvas-area`) |
+  | **Missions** | *(new)* — dedicated dispatch + full job history |
+  | **Event Log** | `log-modal` overlay |
+  | **Pheromones** | `phero-modal` overlay |
+  | **Ant Config** | `antcfg-modal` overlay |
+  | **Settings** | `settings-overlay` |
+  | **Users** | `users-modal` overlay |
+
+- **Fixed top header (50 px)** containing: page title (left), active mission goal + status dot
+  (centre), model badge / connection badge / approval bell / logout button (right). The approval
+  bell is always visible regardless of active page; clicking it navigates to Colony and scrolls
+  to the Approvals card.
+- **KPI cards on Overview** — Model Calls, Tasks Done, Events, Approvals; updated by the same
+  `pollStatus()` that drives the Colony sidebar (both sets of stat elements are kept in sync).
+- **Three mission dispatch inputs** — Colony canvas bar (`mission-input`), Missions page
+  (`ms-mission-input`), Overview page (`ov-mission-input`); all feed the same `dispatchMission()`
+  function and `enableInput()` locks/unlocks all three simultaneously.
+- **Canvas mouse coordinate fix** — `mousedown`, `mousemove`, `mouseup`, `dblclick`, and `wheel`
+  handlers now derive canvas-local coordinates via `canvas.getBoundingClientRect()` instead of the
+  former `e.clientY - 50` hardcode. Hit-testing and zoom-pivot are accurate at every zoom level and
+  nav-rail state.
+- **Canvas resize fix** — `resize()` reads from `document.getElementById('colony-canvas-area')`
+  (the flex container) instead of the former `#cw` element, so the canvas fills its area exactly
+  regardless of sidebar widths.
+- **Keyboard shortcuts** — `Ctrl+K` focuses the mission input on Colony; `Ctrl+L` navigates to
+  Event Log; `Escape` closes the result overlay and rename popover.
+- **`ov-jobs-list` / `ov-feed-list`** — the Overview page renders job lists and the live event
+  feed (capped at 20 entries) from the same poll functions (`pollJobs`, `pollEvents`) that drive
+  the Colony sidebar; no additional polling.
+- **Card collapse** — every card in the Colony sidebars has a **▾** toggle; collapsed state is
+  persisted in `localStorage` keyed by card id.
+- **Result overlay** — position-fixed over the entire shell, shown when viewing a job result;
+  includes Copy, Refresh, and Close controls.
+
+Changed:
+
+- All event IDs and API calls are **unchanged** — only the surrounding layout changed.
+- `pollJobs()` now renders to three containers: `jobs-list` (colony left), `ov-jobs-list`
+  (overview), `ms-jobs-list` (missions page).
+- `pollEvents()` renders to `feed-list` (colony right) and `ov-feed-list` (overview, capped at 20).
+- `pollStatus()` updates both `s-calls/tasks/events/approvals` (colony) and the `ov-*` equivalents.
+- `applyRoleVisibility()` now also hides/shows nav items and the approval bell per role, not just
+  page-level controls.
+
+Validation:
+
+- ID audit: all 143 required element IDs verified present in the final `index.html` (automated
+  check with PowerShell regex pass).
+- JS balance: brace count delta = 0; backtick count even (no unclosed template literals).
+- No unreplaced CSS/JS/HTML placeholder markers; single `<style>` and `<script>` block.
+- All original API endpoints and auth flow verified unchanged (no backend edits in this release).
 
 ## v1.8.2 — Live colony console + operator accounts
 

@@ -1,6 +1,6 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.2** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
+> **v1.8.3** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware, uses [Ollama](https://ollama.com) as the LLM backend (no cloud API keys required), and exposes a real-time colony console at `http://localhost:8713/ui`.
 
@@ -621,54 +621,78 @@ Model names must match exactly what `ollama list` shows (e.g. `llama3.3:70b`, no
 
 ## Colony UI Guide
 
-Open `http://YOUR_ANTHILL_HOST:8713/ui` in a browser. On first load, you'll be prompted for your API token.
+Open `http://YOUR_ANTHILL_HOST:8713/ui` in a browser. On first load you'll be prompted to sign in (or create the initial admin account on first run).
 
-### Canvas
+### Navigation Rail
+
+A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggle) provides instant access to all pages. Collapse state is remembered across sessions.
+
+| Page | Contents |
+|------|---------|
+| **Overview** | 4 KPI cards (model calls, tasks, events, approvals), mission dispatch, recent jobs, live event feed |
+| **Colony** | Live canvas visualisation — the main control surface |
+| **Missions** | Mission dispatch + full job history with View/Cancel per job |
+| **Event Log** | Filterable, searchable full-page event log |
+| **Pheromones** | Colony pheromone trail table with prune button *(admin only)* |
+| **Ant Config** | Per-caste name, colour, and model route editor *(admin only)* |
+| **Settings** | Connection / Colony / Models / System Info tabs *(admin only)* |
+| **Users** | Operator account management *(admin only)* |
+
+### Colony Canvas (Colony page)
 
 The centre canvas shows the live colony graph:
 - **Gold node (centre)**: The Queen
 - **Coloured nodes (ring)**: The 6 ant types (Researcher, Coder, Builder, Verifier, File, Web)
 - **Smaller nodes**: Individual worker instances
 - **Solid edges**: Queen-to-ant command channels
-- **Dashed arrows**: Ant-to-ant data flow edges derived from the task dependency graph — these appear during a mission and show which ant's output is feeding which other ant
+- **Dashed arrows**: Ant-to-ant data flow edges derived from the task dependency graph — appear during a mission and show which ant's output feeds which other ant
 - **Particles**: Data flowing through active channels
 
 **Interactions:**
 - Hover a node → tooltip with status, task count, activity %
-- Click a node → Agent Inspector panel (right side) shows assigned tasks and pheromone strength
+- Click a node → Agent Inspector (right panel) shows assigned tasks and pheromone strength
+- Double-click a node → rename it (persisted to server)
+- Drag a node → reposition it on the canvas (persisted)
 - Scroll → zoom in/out
-- Drag canvas → pan
+- Drag canvas background → pan
+- **Ctrl+K** → focus mission input on Colony page
+- **Ctrl+L** → jump to Event Log page
 
-### Left Panel
+### Colony Left Sidebar
 
 | Card | What it shows |
 |------|--------------|
 | Colony Status | Live model calls, task count, event count, pending approvals |
-| ⚠ Pending Approvals | Appears when a coder ant has proposed code changes needing review |
-| Jobs | Active and recent missions with status, goal preview, View/Cancel buttons |
+| ⚠ Pending Approvals | Appears when a coder ant has proposed code changes — Approve or Reject inline |
+| Jobs | Active and recent missions with status, goal preview, View / Cancel buttons |
 
-### Right Panel
+### Colony Right Sidebar
 
 | Card | What it shows |
 |------|--------------|
-| Agent Inspector | Selected ant's status, task history, pheromone activity bar |
-| Colony Events | Real-time event stream, colour-coded by type (mission/task/patch/approval/error) |
+| Agent Inspector | Selected ant's status, activity bar, recent task list |
+| Colony Events | Real-time event stream, colour-coded by type (mission / task / patch / approval / error) |
 
-- Click **⛶** on Colony Events to open the **full-screen event log** with search and filter.
-- Press **Ctrl+L** anywhere to open the event log.
-- Click **▾** on any card header to collapse it.
+Click **⛶** on Colony Events to jump to the full Event Log page. Click **▾** on any card header to collapse it.
 
-### Settings Panel (⚙)
+### Settings (Settings page)
 
-**Connection tab**: API token, base URL, Ollama reachability status.
+**Connection tab**: API base URL, Ollama reachability status, active model.
+
+**Colony tab**: Ollama host/model, feature-gate toggles, limits, and autonomy budgets — all editable and persisted live.
 
 **Models tab**: Lists all models pulled on your Ollama instance with sizes. Active route assignments are highlighted. Click a model name to copy it to clipboard.
 
-**System tab**: Safety profile, feature flags, native kernel status, live diagnostics.
+**System Info tab**: Safety profile, feature flags, native kernel status, live diagnostics.
 
 ### Dispatching a Mission
 
-Type a goal into the bottom input bar and press **Enter** or **▶**.
+Type a goal into the mission bar and press **Enter** or **▶**. The mission bar appears in three places:
+- Bottom of the **Colony** canvas
+- Top of the **Missions** page
+- **Overview** page dispatch card
+
+All three are enabled/disabled together — whichever is in flight, all three lock until it completes.
 
 ---
 
@@ -709,7 +733,7 @@ curl -X POST http://localhost:8713/apply/APPROVAL_ID \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-> Future: the UI will add a one-click "Approve & Apply" button. The backend `/apply` endpoint already exists.
+> The UI **✓ Approve & Queue Apply** button marks the request approved and queues the patch for application in one click. The backend `/apply/{id}` endpoint remains available for scripted use.
 
 ---
 
