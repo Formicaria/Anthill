@@ -1,9 +1,9 @@
 name: CI
 
 # Runs the checks nobody in this project's sandbox environment can run locally: a real .NET SDK
-# build+test on Linux and Windows, a publish+selftest smoke test, and a Docker build+boot smoke
-# test. Treat a green run here as the actual "does this work" signal for any change touching
-# build/deploy — see docs/DEPLOYMENT.md.
+# build+test on Linux and Windows, a publish+selftest smoke test, a Docker build+boot smoke test,
+# and a shellcheck pass on the LXC installer. Treat a green run here as the actual "does this
+# work" signal for any change touching build/deploy — see docs/DEPLOYMENT.md.
 
 on:
   push:
@@ -121,3 +121,15 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker rm -f anthill-ci || true
+
+  lint-lxc-installer:
+    name: Shellcheck the LXC installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck deploy/lxc/setup.sh
+        run: shellcheck deploy/lxc/setup.sh
+
+      - name: bash -n syntax check (belt and suspenders)
+        run: bash -n deploy/lxc/setup.sh

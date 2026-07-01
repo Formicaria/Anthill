@@ -1,8 +1,8 @@
 # ANTHILL — Container & Appliance Deployment
 
-> Status: **Docker — IMPLEMENTED.** LXC and Windows Service packaging are next (see the roadmap
-> at the bottom). This doc is the living reference for all three; it grows as each lands instead
-> of being rewritten from scratch each time.
+> Status: **Docker + LXC — IMPLEMENTED.** Windows Service packaging is next (see the roadmap at
+> the bottom). This doc is the living reference for all three; it grows as each lands instead of
+> being rewritten from scratch each time.
 
 Goal: run ANTHILL the way most home-lab/production setups actually deploy things — a standalone
 LXC container, a Docker container, or a Windows service — reachable at the IP of the machine it's
@@ -154,16 +154,101 @@ This keeps the image free of a cmake/g++ build stage. If you want native-kernel 
 in-container, add a cmake stage before the `build` stage in the `Dockerfile` and copy the
 resulting shared library into `native/anthill_kernel/` before `dotnet publish` runs.
 
-## 3. LXC (planned — next up)
+## 3. LXC (implemented)
 
-Target: a setup script + systemd unit for deploying directly inside a Proxmox-style Linux
-container — install the .NET 9 runtime, publish/copy the app, register it as a systemd service
-(the existing `README.md` → Deploy on Linux → Option C systemd unit is the starting point), and
-document the couple of LXC-specific gotchas (unprivileged container capabilities, whether the
-managed kernel fallback is required vs. building the native kernel with cmake inside the
-container). Since LXC containers get a real network interface (unlike Docker's bridge default),
-`NetworkUtil`'s auto-detected IP should just work here with no extra networking config at all —
-this is expected to be the simplest of the three targets once written up.
+Ships at `deploy/lxc/`: `setup.sh` (unattended installer/upgrader) and
+`anthill.service.template` (the systemd unit it installs). Targets a fresh Debian 12+ or
+Ubuntu 22.04+ LXC container — Proxmox-created or otherwise, anything with systemd and `apt`.
+
+Unlike Docker, an LXC container gets a real network interface directly (no bridge/NAT layer to
+work around), so `NetworkUtil`'s auto-detected reachable IP just works here with zero extra
+networking config — this is the simplest of the three targets to actually use once it's running.
+
+### Creating the container (Proxmox)
+
+From the Proxmox host shell (or Datacenter → node → Create CT in the web UI):
+
+```bash
+# Download a template if you don't already have one (Debian 12 shown; Ubuntu 22.04/24.04 works too)
+pveam update
+pveam available --section system | grep debian-12
+pveam download local debian-12-standard_12.*_amd64.tar.zst
+
+# Create an unprivileged container — 2 vCPU / 4 GB RAM / 16 GB disk is plenty for ANTHILL itself
+# (Ollama, if it runs on the same box, wants a lot more — see README's Resource Requirements)
+pct create 200 local:vztmpl/debian-12-standard_12.*_amd64.tar.zst \
+  --hostname anthill \
+  --cores 2 --memory 4096 --swap 512 \
+  --rootfs local-lvm:16 \
+  --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  --unprivileged 1 \
+  --features nesting=0 \
+  --onboot 1
+
+pct start 200
+pct enter 200
+```
+
+No special LXC features are required — this is a plain systemd service running a normal .NET
+binary, not Docker-in-LXC, so `nesting`, `keyctl`, or privileged mode aren't needed. (`nesting`
+only matters if you're planning to run Docker or another container runtime *inside* this same
+LXC container — unrelated to ANTHILL itself.)
+
+Using plain LXD/incus instead of Proxmox? `lxc launch images:debian/12 anthill` (or the
+equivalent `incus launch`), then `lxc exec anthill -- bash` gets you to the same starting point —
+everything below is identical.
+
+### Installing ANTHILL
+
+Inside the container:
+
+```bash
+apt-get update && apt-get install -y curl ca-certificates git
+curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o setup.sh
+bash setup.sh
+```
+
+That one script: installs the .NET 9 SDK (via Microsoft's apt repo, falling back to
+`dotnet-install.sh` on distros/versions Microsoft's repo doesn't have an entry for yet), clones
+the repo, publishes a self-contained `linux-x64` binary, creates a dedicated unprivileged
+`anthill` system user, installs and enables the systemd unit, and starts the service.
+
+Check the result:
+
+```bash
+systemctl status anthill --no-pager
+journalctl -u anthill -n 20 --no-pager   # look for the "Open the colony console at http://..." line
+```
+
+Open the printed URL from another machine on your network and create your admin account.
+
+### Upgrading
+
+```bash
+cd /opt/anthill/src   # setup.sh's default checkout location
+git pull
+bash /opt/anthill/src/deploy/lxc/setup.sh
+```
+
+Or just re-run the same one-liner from the install step — `setup.sh` detects the existing
+checkout, pulls latest, republishes, and restarts the service. The named data directory
+(`/opt/anthill/.anthill` by default: DB, `config.json`, logs, backups, exports, encryption key)
+is untouched by an upgrade.
+
+### Customizing the install location / service user
+
+```bash
+ANTHILL_INSTALL_DIR=/srv/anthill ANTHILL_SERVICE_USER=anthill-svc bash setup.sh
+```
+
+### Uninstalling
+
+```bash
+systemctl disable --now anthill
+rm -f /etc/systemd/system/anthill.service
+systemctl daemon-reload
+rm -rf /opt/anthill /etc/anthill   # or just delete/destroy the whole LXC container instead
+```
 
 ## 4. Windows Service (planned — next up)
 
@@ -184,8 +269,8 @@ it's built and verified.
 |--------|--------|-----------|
 | **Container-style IP binding + env var overrides** ✅ | **DONE.** Underpins all three targets below. | `NetworkUtil.cs`, `AnthillConfig.cs`, `AnthillRuntime.cs`, `Anthill.Cli/Program.cs`, `Anthill.Api/ApiHost.cs` |
 | **Docker** ✅ | **DONE.** `Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root. | see §2 above |
-| **LXC** | Planned next. | new `deploy/lxc/` setup script + systemd unit |
+| **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
 | **Windows Service** | Planned next. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
 
-Implementation order: container-style networking (done) → Docker (done) → LXC → Windows Service,
-per the agreed build order.
+Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows
+Service, per the agreed build order.

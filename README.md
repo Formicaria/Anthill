@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.6** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.7** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -190,8 +190,8 @@ Ollama automatically distributes model layers across all available CUDA GPUs. Wi
 ### 1. Clone
 
 ```bash
-git clone https://github.com/YOUR_ORG/anthill-dotnet.git
-cd anthill-dotnet
+git clone https://github.com/thexonexone/operation-anthill.git
+cd operation-anthill
 ```
 
 ### 2. Pull Ollama models
@@ -355,8 +355,8 @@ sudo dpkg -i packages-microsoft-prod.deb
 sudo apt-get update && sudo apt-get install -y dotnet-sdk-9.0
 
 # 2. Clone and build
-git clone https://github.com/YOUR_ORG/anthill-dotnet.git
-cd anthill-dotnet
+git clone https://github.com/thexonexone/operation-anthill.git
+cd operation-anthill
 chmod +x build.sh
 ./build.sh
 
@@ -556,6 +556,33 @@ docker compose up -d --build
 
 The named volume persists across rebuilds; only the image layers change.
 
+### Option E — LXC (automated, Proxmox or plain LXD/incus)
+
+A one-shot installer ships at `deploy/lxc/setup.sh` for deploying straight into a fresh
+Debian 12+/Ubuntu 22.04+ LXC container — the common home-lab path (Proxmox, TrueNAS SCALE,
+plain LXD/incus). See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#3-lxc-implemented)** for the full
+guide (creating the container, upgrading, uninstalling); quick version:
+
+```bash
+# Inside a fresh Debian/Ubuntu LXC container, as root:
+apt-get update && apt-get install -y curl ca-certificates git
+curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o setup.sh
+bash setup.sh
+```
+
+That installs the .NET 9 SDK if it isn't already present, publishes a self-contained `linux-x64`
+binary, creates a dedicated unprivileged `anthill` system user, and installs + starts a hardened
+systemd unit (`deploy/lxc/anthill.service.template` — same `NoNewPrivileges`/`ProtectSystem=strict`
+posture as the manual [Option C](#option-c--systemd-service-recommended-for-always-on) unit
+above). No special LXC features (nesting, privileged mode) are required — this is a plain
+systemd service, not Docker-in-LXC. Re-run the same command any time to pull the latest source,
+republish, and restart — it's also the upgrade path.
+
+```bash
+systemctl status anthill --no-pager
+journalctl -u anthill -n 20 --no-pager   # look for the reachable URL
+```
+
 ### Exposing Ollama on the network (Linux)
 
 If Ollama runs on a **separate machine** from ANTHILL, you must bind Ollama to all interfaces:
@@ -591,8 +618,8 @@ sudo ufw allow 11434/tcp
 # 1. Install .NET 9 SDK from https://dotnet.microsoft.com/download/dotnet/9.0
 
 # 2. Clone
-git clone https://github.com/YOUR_ORG/anthill-dotnet.git
-cd anthill-dotnet
+git clone https://github.com/thexonexone/operation-anthill.git
+cd operation-anthill
 
 # 3. Build
 .\build.ps1
@@ -938,7 +965,7 @@ ANTHILL supports missions where agents read the ANTHILL source code itself, prop
 To enable this, set `agent_workspace_dir` to the ANTHILL source root:
 
 ```json
-"agent_workspace_dir": "/path/to/anthill-dotnet/src"
+"agent_workspace_dir": "/path/to/operation-anthill/src"
 ```
 
 The file ant can then list directories and read `.cs` files. The coder ant can propose patches. The Queen applies them only after you approve.

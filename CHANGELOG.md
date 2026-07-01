@@ -3,7 +3,47 @@
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
-> deployment (Docker) = **v1.8.6**, and so on.
+> deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, and so on.
+
+## v1.8.7 — LXC deployment
+
+No schema change. Second step of the container/LXC/Windows-Service deployment push (see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)) — a one-shot installer for a fresh Debian/Ubuntu-family
+LXC container, Proxmox or otherwise.
+
+Added:
+
+- **`deploy/lxc/setup.sh`** — unattended installer/upgrader for a fresh Debian 12+/Ubuntu 22.04+
+  LXC container. Installs the .NET 9 SDK if missing (Microsoft's apt repo, resolved dynamically
+  from `/etc/os-release` rather than hardcoded to one distro/version, with a `dotnet-install.sh`
+  fallback for distros/versions Microsoft's repo doesn't have an entry for), clones/updates the
+  repo, publishes a self-contained `linux-x64` binary, creates a dedicated unprivileged system
+  user, installs + enables the systemd unit, and starts it. Idempotent — re-running it is the
+  upgrade path (pulls latest, republishes, restarts). Configurable via `ANTHILL_REPO_URL`,
+  `ANTHILL_INSTALL_DIR`, `ANTHILL_SERVICE_USER` env vars.
+- **`deploy/lxc/anthill.service.template`** — the systemd unit `setup.sh` installs, with the same
+  hardening as the manual systemd install already documented in the README (`NoNewPrivileges`,
+  `PrivateTmp`, `ProtectSystem=strict`, scoped `ReadWritePaths`), plus `Environment=ANTHILL_HOME`
+  for unambiguous workspace resolution and a generated `/etc/anthill/token.env` for an optional
+  static API token.
+- No special LXC features (nesting, privileged mode) are required — this is a plain systemd
+  service, not Docker-in-LXC, so `NetworkUtil`'s auto-detected reachable IP works with zero extra
+  networking config (LXC containers get a real interface directly, unlike Docker's bridge
+  default).
+- **README**: new "Option E — LXC" under Deploy on Linux, quick-start + pointer to the full guide.
+- **`docs/DEPLOYMENT.md`**: §3 filled in — creating the container (Proxmox `pct` commands +
+  generic LXD/incus note), installing, upgrading, customizing install location/service user,
+  uninstalling. Roadmap table updated (LXC done, Windows Service next).
+- **CI**: new `lint-lxc-installer` job — `shellcheck` (GitHub-hosted runners have it preinstalled)
+  plus a `bash -n` syntax check on `deploy/lxc/setup.sh`.
+
+Validation:
+
+- `bash -n deploy/lxc/setup.sh` passes (checked manually — no shellcheck available in the
+  authoring environment, hence the new CI job to actually run it). Not run against a real LXC
+  container; no LXC/Proxmox host available in the environment this was authored in. Try it on an
+  actual container before trusting it in production, and watch the first CI run for the new
+  shellcheck job.
 
 ## v1.8.6 — Container-style deployment: Docker, all-interfaces binding, env var config
 

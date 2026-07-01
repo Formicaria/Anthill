@@ -1,0 +1,30 @@
+[Unit]
+Description=ANTHILL Colony Agent API
+After=network.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__INSTALL_DIR__
+Environment=ANTHILL_HOME=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/bin/anthill --api
+Restart=on-failure
+RestartSec=5s
+
+# Optional static bearer token for scripts/CI (not required — the web UI creates an admin
+# account on first launch). Generated once by setup.sh into this file.
+EnvironmentFile=-/etc/anthill/token.env
+
+# Uncomment to reach Ollama on a different machine, override the bind port, or pin a specific
+# model, without editing .anthill/config.json:
+# Environment=ANTHILL_OLLAMA_HOST=http://192.168.1.50:11434
+# Environment=ANTHILL_PORT=8713
+
+# Security hardening — same posture as the plain systemd install documented in README.md.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=__INSTALL_DIR__/.anthill
+
+[Install]
+WantedBy=multi-user.target
