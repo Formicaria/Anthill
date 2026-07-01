@@ -23,7 +23,10 @@ public sealed class AnthillConfig
     [JsonPropertyName("exports_dir")] public string ExportsDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/exports";
     [JsonPropertyName("agent_workspace_dir")] public string AgentWorkspaceDir { get; set; } = $"{AnthillRuntime.DefaultWorkspace}/workspace";
 
-    [JsonPropertyName("api_host")] public string ApiHost { get; set; } = "127.0.0.1";
+    // Defaults to all interfaces so a fresh container/LXC/Windows-Service deployment is reachable
+    // out of the box, like a normal container — the operator login (not network isolation) is
+    // what protects the API. Set to 127.0.0.1 (or ANTHILL_HOST=127.0.0.1) for localhost-only.
+    [JsonPropertyName("api_host")] public string ApiHost { get; set; } = "0.0.0.0";
     [JsonPropertyName("api_port")] public int ApiPort { get; set; } = 8713;
     [JsonPropertyName("api_auth_enabled")] public bool ApiAuthEnabled { get; set; } = true;
     [JsonPropertyName("api_token_env")] public string ApiTokenEnv { get; set; } = "ANTHILL_API_TOKEN";
@@ -73,7 +76,10 @@ public sealed class AnthillConfig
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
-    /// keeps the system fail-closed (no shell, no writes, auth on, loopback host).
+    /// keeps the system fail-closed (no shell, no writes, auth always on). Binding defaults to
+    /// all interfaces (container/appliance-friendly) because <c>ApiAuthEnabled</c> is forced true
+    /// here too — the operator login, not network isolation, is the security boundary. Set
+    /// api_host to 127.0.0.1 (or ANTHILL_HOST=127.0.0.1) explicitly for a localhost-only install.
     /// </summary>
     public static void ApplySafetyProfile(AnthillConfig config, string profile)
     {
@@ -86,7 +92,7 @@ public sealed class AnthillConfig
         config.FileWritingEnabled = false;
         config.ShellToolEnabled = false;
         config.ApiAuthEnabled = true;
-        config.ApiHost = "127.0.0.1";
+        config.ApiHost = "0.0.0.0";
         config.ApiJobWorkers = 1;
         // Autonomy is fail-closed across every shipped profile; the user must opt in explicitly.
         config.AutonomyEnabled = false;

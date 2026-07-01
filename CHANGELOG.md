@@ -2,7 +2,64 @@
 
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
-> model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, and so on.
+> model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
+> deployment (Docker) = **v1.8.6**, and so on.
+
+## v1.8.6 — Container-style deployment: Docker, all-interfaces binding, env var config
+
+No schema change. First step of ongoing work to make ANTHILL deployable like a normal home-lab
+appliance — standalone Docker container today, LXC and Windows Service to follow (see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+
+Added:
+
+- **Docker packaging** — `Dockerfile` (multi-stage: SDK build stage, framework-dependent publish
+  onto the `aspnet:9.0` runtime image, non-root user, unauthenticated `/health`-backed
+  `HEALTHCHECK`), `docker-compose.yml` (defaults to `network_mode: host` on Linux so the
+  container is reachable at the host's real LAN IP, with a bridge-mode alternative documented for
+  Windows/macOS Docker Desktop), and `.dockerignore`. No config file or token required to start —
+  ANTHILL self-seeds a container-safe default `config.json` into the mounted `.anthill` volume on
+  first boot.
+- **All-interfaces binding by default** — `api_host` now defaults to `0.0.0.0` (was `127.0.0.1`)
+  in both `AnthillConfig`'s default and every safety profile's forced override. The operator login
+  was already the real security boundary (auth is forced on in every profile regardless of bind
+  host), so this changes what a fresh container/LXC/service install looks like on first boot, not
+  the actual security posture. Set `api_host` to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`)
+  explicitly for a localhost-only install.
+- **`ANTHILL_HOST` / `ANTHILL_PORT` / `ANTHILL_OLLAMA_HOST` / `ANTHILL_OLLAMA_MODEL` env vars** —
+  new highest-precedence overrides (win over `config.json`) in `AnthillRuntime.ProjectConfig`,
+  so container/LXC/service deployments can be configured entirely from the outside. This also
+  fixes a latent bug: the CLI's `--host`/`--port`/`--ollama-host`/`--ollama-model` flags
+  previously wrote a static field that `AnthillRuntime.Initialize()` immediately overwrote from
+  `config.json` a moment later inside `ApiHost.Run()`, silently ignoring the flags; they now set
+  these same env vars instead, which survive.
+- **`NetworkUtil.GetLikelyLanIPv4()`** (`Anthill.Core/Common/NetworkUtil.cs`) — cross-platform,
+  no-network-traffic LAN IP auto-detection (local UDP "connect", no packet sent), used to print a
+  real, clickable URL in the startup console banner and in `GET /status` (`reachable_ip` field)
+  instead of the unusable `0.0.0.0` bind address, on both Linux and Windows.
+- **Config hygiene**: `config.example.json` had a trailing comma making it invalid JSON — copying
+  it verbatim per the documented Quick Start steps would silently fall back to all-default config
+  with just a console warning easy to miss in a container. Fixed, and added the three Phase 2
+  Strategist knobs (`autonomy_dedupe_similarity`, `autonomy_max_followups_per_run`,
+  `autonomy_max_objective_depth`) that were missing from the example file.
+- **`Anthill.sln` fix**: the solution file only registered `Anthill.Tests`; `Anthill.Cli`,
+  `Anthill.Api`, and `Anthill.Core` were never top-level entries, so `dotnet build Anthill.sln`
+  (as documented in the README) silently never built the actual CLI/API projects — only
+  `build.sh`/`build.ps1`'s explicit direct-publish step did. Added all three so the documented
+  build/IDE-open workflow matches what actually ships.
+- **README**: Docker section now points at the real root-level files instead of an untested
+  inline snippet; new `docs/DEPLOYMENT.md` pointer; Security Model table gained a network-binding
+  row; Windows Service section flagged as pending proper SCM integration (planned next, see
+  `docs/DEPLOYMENT.md` §4).
+
+Validation:
+
+- Manual review only — no `dotnet` SDK or Docker daemon was available in the environment this
+  change was authored in, so `docker build`/`docker compose up` and `dotnet build`/`dotnet test`
+  have **not** been run against this change. Brace/paren balance checked by hand on every edited
+  `.cs` file; `config.example.json` re-validated as parseable JSON. Run `dotnet build && dotnet
+  test`, then `docker compose up -d --build` and confirm the console banner prints a real LAN IP,
+  before relying on this in production.
 
 ## v1.8.5 — Autonomy Phase 2: Strategist
 

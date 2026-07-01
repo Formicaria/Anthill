@@ -1,0 +1,38 @@
+# ANTHILL — docker-compose deployment.
+#
+# Default mode below uses network_mode: host, which is the closest container equivalent to
+# "runs like it's installed directly on this machine": ANTHILL shares the host's network
+# stack, so its auto-detected reachable IP (printed at startup and in GET /status) IS the
+# host machine's real LAN IP, and a locally-running Ollama at http://localhost:11434 just
+# works with no extra config. This only works on Linux Docker hosts (the common case for
+# home-lab/production — Proxmox, bare Debian/Ubuntu, TrueNAS SCALE, etc.).
+#
+# Running on Windows or macOS (Docker Desktop)? host networking isn't supported there — see
+# the bridge-mode alternative in docs/DEPLOYMENT.md, which publishes the port explicitly and
+# reaches host services via host.docker.internal instead.
+
+services:
+  anthill:
+    build: .
+    image: anthill:latest
+    container_name: anthill
+    network_mode: "host"
+    environment:
+      # Uncomment to reach Ollama on a different machine, or to override the port ANTHILL binds:
+      # - ANTHILL_OLLAMA_HOST=http://192.168.1.50:11434
+      # - ANTHILL_PORT=8713
+      #
+      # Optional: a static bearer token for scripts/CI. Not required for normal use — the web
+      # UI walks you through creating an admin account on first launch.
+      # - ANTHILL_API_TOKEN=your-32-char-minimum-token-here
+      - ANTHILL_HOST=0.0.0.0
+    volumes:
+      - anthill-data:/app/.anthill
+      # Uncomment and point at a project directory to let the file ant read/propose patches
+      # against real source on disk, then set agent_workspace_dir in .anthill/config.json to
+      # match the path you mount it at below:
+      # - /path/on/host/to/your/project:/workspace
+    restart: unless-stopped
+
+volumes:
+  anthill-data:

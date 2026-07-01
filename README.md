@@ -1,6 +1,6 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.5** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.6** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -26,6 +26,9 @@ ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrate
 16. [Security Model](#security-model)
 17. [Building from Source](#building-from-source)
 18. [Troubleshooting](#troubleshooting)
+
+> **Deploying to a home-lab/production box?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+> for Docker (ready today), plus LXC and Windows-Service packaging (in progress).
 
 ---
 
@@ -205,9 +208,15 @@ cp config.example.json .anthill/config.json
 # Edit .anthill/config.json — set your Ollama host IP and model routes
 ```
 
-**The only required changes are:**
+**The only required change is:**
 - `ollama_host` → the IP/hostname of the machine running Ollama
-- `api_host` → `0.0.0.0` to listen on all interfaces, or `127.0.0.1` for localhost-only
+
+`api_host` already defaults to `0.0.0.0` (all interfaces) so ANTHILL is reachable at this
+machine's LAN IP with no edits — set it to `127.0.0.1` if you want localhost-only instead. Both
+`api_host`/`api_port` and `ollama_host`/`ollama_model` can also be set via the `ANTHILL_HOST`,
+`ANTHILL_PORT`, `ANTHILL_OLLAMA_HOST`, and `ANTHILL_OLLAMA_MODEL` environment variables, which
+take precedence over `config.json` — handy for Docker/LXC/Windows Service deployments where you'd
+rather not bake settings into the image/profile.
 
 ### 4. Build and run
 
@@ -261,9 +270,11 @@ Copy `config.example.json` to `.anthill/config.json` and edit the values marked 
   "agent_workspace_dir": "/home/user/my-project",   // CHANGE_ME
 
   // ── API binding ──────────────────────────────────────────────────────────
-  // Use "0.0.0.0" to accept connections from other machines on the network.
-  // Use "127.0.0.1" for localhost-only (more secure if not sharing the UI).
-  "api_host": "127.0.0.1",                          // CHANGE_ME if remote access needed
+  // Defaults to "0.0.0.0" (all interfaces) — container/LXC/service-friendly, reachable at
+  // this machine's LAN IP with zero config. The operator login is the security boundary here,
+  // not network isolation. Use "127.0.0.1" for localhost-only. ANTHILL_HOST / ANTHILL_PORT env
+  // vars override both of these if set (highest precedence).
+  "api_host": "0.0.0.0",
   "api_port": 8713,
   "api_auth_enabled": true,
   "api_token_env": "ANTHILL_API_TOKEN",             // env var that holds the token
@@ -323,7 +334,7 @@ Copy `config.example.json` to `.anthill/config.json` and edit the values marked 
 | Setting | What to change | Default |
 |---------|----------------|---------|
 | `ollama_host` | IP of Ollama machine | `http://localhost:11434` |
-| `api_host` | Bind address for ANTHILL API | `127.0.0.1` |
+| `api_host` | Bind address for ANTHILL API | `0.0.0.0` (all interfaces) |
 | `agent_workspace_dir` | Root dir agents can read/propose patches in | `.anthill/workspace` |
 | `model_routes.*` | Model per ant role | see above |
 | `api_job_workers` | Concurrent missions | `1` |
@@ -427,36 +438,121 @@ sudo journalctl -u anthill -f
 
 ### Option D — Docker
 
-```dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
-WORKDIR /app
-EXPOSE 8713
+A real, maintained `Dockerfile`, `docker-compose.yml`, and `.dockerignore` ship at the repo root.
+No config file or token is required to start — ANTHILL self-seeds a container-safe default
+`config.json` into a mounted volume on first boot, and binds all interfaces automatically
+(protected by the operator login, not network isolation — see [Security Model](#security-model)).
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the fuller write-up this section summarizes.
 
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
-WORKDIR /src
-COPY . .
-RUN dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
-    -c Release -r linux-x64 --self-contained true \
-    -p:PublishSingleFile=true -p:DebugType=none \
-    -o /app/publish
+#### Quick start
 
-FROM base AS final
-WORKDIR /app
-COPY --from=build /app/publish .
-COPY config.example.json .anthill/config.json
-ENV ANTHILL_API_TOKEN=CHANGE_ME
-ENTRYPOINT ["./anthill", "--api"]
+```bash
+docker compose up -d --build
+docker compose logs -f anthill   # watch for "Open the colony console at http://<your-lan-ip>:8713/ui"
 ```
+
+Open the URL printed in the logs and create your admin account. That's it.
+
+#### `docker-compose.yml` (shipped default — Linux host networking)
+
+```yaml
+services:
+  anthill:
+    build: .
+    image: anthill:latest
+    container_name: anthill
+    network_mode: "host"
+    environment:
+      # - ANTHILL_OLLAMA_HOST=http://192.168.1.50:11434
+      # - ANTHILL_PORT=8713
+      # - ANTHILL_API_TOKEN=your-32-char-minimum-token-here
+      - ANTHILL_HOST=0.0.0.0
+    volumes:
+      - anthill-data:/app/.anthill
+      # - /path/on/host/to/your/project:/workspace
+    restart: unless-stopped
+
+volumes:
+  anthill-data:
+```
+
+| Field | What it does |
+|-------|--------------|
+| `network_mode: "host"` | Container shares the host's network stack directly — no NAT/bridge translation. This is what makes ANTHILL's auto-detected reachable IP equal your actual host machine's LAN IP, and lets a local Ollama at `http://localhost:11434` just work with zero extra config. **Linux Docker hosts only** — see the bridge-mode alternative below for Windows/macOS Docker Desktop. |
+| `environment: ANTHILL_HOST` | Bind address override (highest precedence over `config.json`). Already defaults to `0.0.0.0`; set here explicitly so `docker inspect` shows it without opening a shell. |
+| `environment: ANTHILL_PORT` | Port override, default `8713`. Only needed if you're changing the port. |
+| `environment: ANTHILL_OLLAMA_HOST` / `ANTHILL_OLLAMA_MODEL` | Point at a different machine's Ollama, or change the default model, without editing `config.json`. |
+| `environment: ANTHILL_API_TOKEN` | Optional static bearer token (≥ 32 chars) for scripts/CI. Not required for normal use — the web UI creates an admin account on first launch. Generate one with `openssl rand -hex 24`. |
+| `volumes: anthill-data:/app/.anthill` | Persists the SQLite DB, `config.json`, logs, backups, exports, and the AES-256-GCM field-encryption key across container recreates. Back this volume up like any other stateful volume. |
+| `volumes: <host-path>:/workspace` (commented out) | Bind-mount a real project so the file ant can read/propose patches against it. Set `agent_workspace_dir` to the same path (`/workspace`) in `.anthill/config.json` (inside the `anthill-data` volume) to match. |
+| `restart: unless-stopped` | Survives host reboots and crashes; doesn't restart after an explicit `docker compose stop`. |
+
+#### Bridge mode (Windows/macOS Docker Desktop)
+
+`network_mode: host` isn't supported on Docker Desktop. Use explicit port publishing instead:
+
+```yaml
+services:
+  anthill:
+    build: .
+    image: anthill:latest
+    container_name: anthill
+    ports:
+      - "8713:8713"
+    environment:
+      - ANTHILL_OLLAMA_HOST=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux Docker Engine also needs this line;
+                                                # Docker Desktop for Mac/Windows provides it automatically
+    volumes:
+      - anthill-data:/app/.anthill
+    restart: unless-stopped
+volumes:
+  anthill-data:
+```
+
+With bridge mode, open ANTHILL at `http://<docker-host-ip>:8713/ui` — the published-port address
+— rather than whatever `NetworkUtil` detects inside the container's own network namespace (that
+value is only meaningful in host-network mode).
+
+#### Plain `docker build`/`docker run` (no compose)
 
 ```bash
 docker build -t anthill:latest .
 docker run -d \
+  --name anthill \
+  --network host \
+  -v anthill-data:/app/.anthill \
+  anthill:latest
+
+# Bridge mode instead:
+docker run -d \
+  --name anthill \
   -p 8713:8713 \
-  -e ANTHILL_API_TOKEN="your-32-char-token-here-change-me" \
-  -v /your/workspace:/workspace \
+  -e ANTHILL_OLLAMA_HOST=http://host.docker.internal:11434 \
+  --add-host=host.docker.internal:host-gateway \
   -v anthill-data:/app/.anthill \
   anthill:latest
 ```
+
+#### Dockerfile summary
+
+Multi-stage: `mcr.microsoft.com/dotnet/sdk:9.0` publishes `Anthill.Cli` (framework-dependent, not
+self-contained/single-file — avoids single-file extraction quirks in containers and keeps rebuild
+layers smaller), then the runtime stage is `mcr.microsoft.com/dotnet/aspnet:9.0` running as a
+non-root user, with a `HEALTHCHECK` hitting the app's own unauthenticated `GET /health` endpoint.
+The optional native C++ kernel is **not** built in the image — ANTHILL falls back to a
+bit-identical managed implementation automatically when it's absent (`native_kernel:
+managed-fallback` in `/status`), so the image needs no cmake/g++ stage.
+
+#### Upgrading
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The named volume persists across rebuilds; only the image layers change.
 
 ### Exposing Ollama on the network (Linux)
 
@@ -540,6 +636,13 @@ New-Service -Name "ANTHILL" `
 Start-Service -Name "ANTHILL"
 Get-Service -Name "ANTHILL"
 ```
+
+> **Note:** this registers the published exe directly with the Service Control Manager. It
+> works for start/stop, but the exe doesn't yet integrate with SCM lifecycle events (graceful
+> stop, service-specific logging) via `Microsoft.Extensions.Hosting.WindowsServices`. A proper
+> `UseWindowsService()`-based service host is planned next (see
+> [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for status) — this section will be updated when
+> that lands. Docker is the most battle-tested unattended-deployment path today.
 
 ### Exposing Ollama on the network (Windows)
 
@@ -1044,6 +1147,7 @@ unnecessary for normal use. Leave it unset to rely purely on operator accounts.
 
 | Control | Implementation |
 |---------|---------------|
+| Network binding | Listens on all interfaces (`0.0.0.0`) by default — container/LXC/service-friendly, reachable at this machine's LAN IP with zero config. Auth (not network isolation) is the boundary; set `api_host` to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`) to restrict to localhost only |
 | Operator accounts | Password login (PBKDF2-SHA256, salted, 120k iters); role-based authorization (admin / coordinator) |
 | Sessions | In-memory bearer sessions with sliding 12h expiry; revoked on password/role/status change and restart |
 | Optional static token | `ANTHILL_API_TOKEN` is optional; if set it must be ≥ 32 chars and acts as a programmatic admin credential |

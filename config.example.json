@@ -11,8 +11,8 @@
   "_comment_workspace": "Path the file ant is allowed to READ from. Set to your project source root.",
   "agent_workspace_dir": "/path/to/your/project",
 
-  "_comment_api": "api_host: 0.0.0.0 = accept from all interfaces, 127.0.0.1 = localhost only. On first launch the UI guides you through creating the admin account — no token needed. ANTHILL_API_TOKEN (optional, >= 32 chars) provides a programmatic bearer token for scripts/CI alongside normal operator accounts.",
-  "api_host":             "127.0.0.1",
+  "_comment_api": "api_host: 0.0.0.0 (default) = accept from all interfaces, like a normal container/service — reachable at this machine's LAN IP with zero config. Set to 127.0.0.1 for localhost-only. Either can also be set via the ANTHILL_HOST / ANTHILL_PORT env vars (highest precedence, handy for Docker/LXC/Windows Service). On first launch the UI guides you through creating the admin account — no token needed. ANTHILL_API_TOKEN (optional, >= 32 chars) provides a programmatic bearer token for scripts/CI alongside normal operator accounts.",
+  "api_host":             "0.0.0.0",
   "api_port":             8713,
   "api_auth_enabled":     true,
   "api_token_env":        "ANTHILL_API_TOKEN",
@@ -22,7 +22,7 @@
   "parallel_execution_enabled": true,
   "max_parallel_workers":      3,
 
-  "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine, use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1).",
+  "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.",
   "use_ollama":    true,
   "ollama_host":   "http://YOUR_OLLAMA_HOST_IP:11434",
   "ollama_model":  "llama3.1:8b",
@@ -56,11 +56,15 @@
   "max_section_chars":      3500,
   "max_section_tasks":         6,
 
-  "_comment_autonomy": "24/7 autonomy rails (Phase 0). Off by default and fail-closed: the Director only runs when autonomy_enabled is true AND it is started explicitly. Budgets are hard caps; a .anthill/STOP file (or the API) is the kill switch. See docs/AUTONOMY.md.",
+  "_comment_autonomy": "24/7 autonomy rails (Phase 0/1). Off by default and fail-closed: the Director only runs when autonomy_enabled is true AND it is started explicitly. Budgets are hard caps; a .anthill/STOP file (or the API) is the kill switch. See docs/AUTONOMY.md.",
   "autonomy_enabled":                  false,
   "autonomy_poll_seconds":                30,
   "autonomy_max_missions_per_hour":        6,
   "autonomy_max_missions_per_day":        60,
   "autonomy_max_consecutive_failures":     3,
 
+  "_comment_strategist": "Phase 2: LLM-generated mission goals (falls back to charter-as-goal if no route/provider is configured, or the call fails). Dedup rejects a goal too similar to a recent run for the same objective. Follow-up objectives the colony discovers are capped by rate and parent-chain depth so the backlog can't grow unbounded. See docs/AUTONOMY.md.",
+  "autonomy_dedupe_similarity":          0.8,
+  "autonomy_max_followups_per_run":        1,
+  "autonomy_max_objective_depth":          3
 }

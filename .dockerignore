@@ -1,0 +1,30 @@
+# Build output — rebuilt fresh inside the image
+**/bin/
+**/obj/
+
+# Local runtime state — never bake secrets/DB/mission history into an image
+.anthill/
+*.db
+*.db-wal
+*.db-shm
+field.key
+
+# Native kernel build artifacts (managed fallback is used in-container; see Dockerfile)
+native/anthill_kernel/build/
+native/anthill_kernel/*.so
+native/anthill_kernel/*.dll
+native/anthill_kernel/*.dylib
+
+# Already-published/release output — the image builds its own
+dist/
+publish/
+
+# VCS / IDE / misc
+.git/
+.github/
+.vs/
+.idea/
+*.user
+*.suo
+py.old/
+test/

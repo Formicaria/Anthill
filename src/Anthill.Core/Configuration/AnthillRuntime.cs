@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.5";
+    public const string Version = "1.8.6";
     public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -34,7 +34,9 @@ public static class AnthillRuntime
     public const string SystemApiMissionId = "system_api";
     public const int ApiJobMaxHistory = 100;
     public static bool EnableApiAuth = true;
-    public static string ApiHost = "127.0.0.1";
+    // Defaults to all interfaces (container/appliance-friendly); the operator login is the
+    // real security boundary, not network isolation. See ANTHILL_HOST env override below.
+    public static string ApiHost = "0.0.0.0";
     public static int ApiPort = 8713;
     public static bool EnableCors = false;
     public static int ApiJobWorkers = 1;
@@ -320,15 +322,23 @@ public static class AnthillRuntime
     private static void ProjectConfig(AnthillConfig config)
     {
         EnableApiAuth = config.ApiAuthEnabled;
-        ApiHost = config.ApiHost;
-        ApiPort = config.ApiPort;
+        // Env vars win over config.json — highest precedence, so container/LXC/Windows-Service
+        // deployments can be configured entirely from the outside (docker-compose environment:,
+        // an LXC profile, or the Windows Service's registry env block) with no file editing.
+        // This is also what makes the CLI's --host/--port/--ollama-host/--ollama-model flags work:
+        // Program.cs sets these same env vars before calling ApiHost.Run(), which is what actually
+        // invokes Initialize()/ProjectConfig() — a direct static-field set before that point would
+        // otherwise be silently overwritten right here.
+        ApiHost = Environment.GetEnvironmentVariable("ANTHILL_HOST") ?? config.ApiHost;
+        ApiPort = int.TryParse(Environment.GetEnvironmentVariable("ANTHILL_PORT"), out var envPort)
+            ? envPort : config.ApiPort;
         EnableCors = config.CorsEnabled;
         ApiJobWorkers = Math.Max(1, config.ApiJobWorkers);
         ApiAuthToken = Environment.GetEnvironmentVariable(config.ApiTokenEnv) ?? ApiAuthToken;
 
         UseOllama = config.UseOllama;
-        OllamaModel = config.OllamaModel;
-        OllamaHost = config.OllamaHost;
+        OllamaModel = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_MODEL") ?? config.OllamaModel;
+        OllamaHost = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
         EnableWebSearch = config.WebSearchEnabled;
         EnablePatchApplication = config.PatchApplicationEnabled;
         EnableFileWriting = config.FileWritingEnabled;

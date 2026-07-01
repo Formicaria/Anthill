@@ -66,7 +66,18 @@ public static class ApiHost
         MapEndpoints(app);
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
-        Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
+        if (NetworkUtil.IsWildcardBindHost(AnthillRuntime.ApiHost))
+        {
+            var lanIp = NetworkUtil.GetLikelyLanIPv4();
+            Console.WriteLine(lanIp is not null
+                ? $"Open the colony console at http://{lanIp}:{AnthillRuntime.ApiPort}/ui  (or http://localhost:{AnthillRuntime.ApiPort}/ui on this machine)"
+                : $"Open the colony console at http://localhost:{AnthillRuntime.ApiPort}/ui");
+            Console.WriteLine("Listening on all network interfaces — protected by the operator login, not network isolation.");
+        }
+        else
+        {
+            Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
+        }
 
         if (autostart)
         {
@@ -104,6 +115,8 @@ public static class ApiHost
                 ["events"] = events.GetValueOrDefault("event_count"), ["failures"] = events.GetValueOrDefault("failure_event_count"),
                 ["tasks"] = tasks.GetValueOrDefault("task_count"), ["pending_approvals"] = Queen.Memory.CountPendingApprovals(),
                 ["model_calls"] = Queen.Router?.CallCount ?? 0,
+                ["api_host"] = AnthillRuntime.ApiHost, ["api_port"] = AnthillRuntime.ApiPort,
+                ["reachable_ip"] = NetworkUtil.IsWildcardBindHost(AnthillRuntime.ApiHost) ? NetworkUtil.GetLikelyLanIPv4() : AnthillRuntime.ApiHost,
             });
         });
 

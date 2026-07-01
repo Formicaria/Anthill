@@ -4,7 +4,7 @@ using Anthill.Core.Diagnostics;
 using Anthill.Core.Orchestration;
 
 // ----------------------------------------------------------------------------
-// ANTHILL command-line entry point (v1.8.5).
+// ANTHILL command-line entry point (v1.8.6).
 // Successor to `python -m anthill`: runs missions, the self-test harness, status
 // views, or launches the secured API/UI host — all over the same Anthill.Core engine.
 // ----------------------------------------------------------------------------
@@ -32,14 +32,20 @@ switch (command)
 
     case "--api":
     {
-        // Parse optional flags before handing off to the web host.
+        // Parse optional flags before handing off to the web host. These are applied as env-var
+        // overrides (ANTHILL_HOST/ANTHILL_PORT/ANTHILL_OLLAMA_HOST/ANTHILL_OLLAMA_MODEL) rather
+        // than static field writes, because ApiHost.Run() calls AnthillRuntime.Initialize() as
+        // its first step, which reloads everything from config.json — a direct field set here
+        // would just get overwritten. Env vars are read inside ProjectConfig() and win over
+        // config.json, so this works whether ANTHILL is started via the CLI, Docker, an LXC
+        // profile, or a Windows Service.
         var apiArgs = rest.ToList();
         for (int i = 0; i < apiArgs.Count - 1; i++)
         {
-            if (apiArgs[i] == "--host") { AnthillRuntime.ApiHost = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
-            else if (apiArgs[i] == "--port" && int.TryParse(apiArgs[i + 1], out var p)) { AnthillRuntime.ApiPort = p; apiArgs.RemoveRange(i, 2); i--; }
-            else if (apiArgs[i] == "--ollama-host") { AnthillRuntime.OllamaHost = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
-            else if (apiArgs[i] == "--ollama-model") { AnthillRuntime.OllamaModel = apiArgs[i + 1]; apiArgs.RemoveRange(i, 2); i--; }
+            if (apiArgs[i] == "--host") { Environment.SetEnvironmentVariable("ANTHILL_HOST", apiArgs[i + 1]); apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--port") { Environment.SetEnvironmentVariable("ANTHILL_PORT", apiArgs[i + 1]); apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--ollama-host") { Environment.SetEnvironmentVariable("ANTHILL_OLLAMA_HOST", apiArgs[i + 1]); apiArgs.RemoveRange(i, 2); i--; }
+            else if (apiArgs[i] == "--ollama-model") { Environment.SetEnvironmentVariable("ANTHILL_OLLAMA_MODEL", apiArgs[i + 1]); apiArgs.RemoveRange(i, 2); i--; }
         }
         return ApiHost.Run(apiArgs.ToArray());
     }
@@ -123,8 +129,11 @@ Usage:
   anthill --mission ""<goal>""    Run a mission through the colony and print the result.
   anthill ""<goal>""              Shorthand for --mission.
   anthill --api [--host <ip>] [--port <n>]          Launch the secured API + colony UI.
-            [--ollama-host <url>] [--ollama-model <m>]  Default: http://127.0.0.1:8713/ui
-            [--autonomous]                              Use --host 0.0.0.0 to bind all interfaces.
+            [--ollama-host <url>] [--ollama-model <m>]  Binds 0.0.0.0:8713 by default (all
+            [--autonomous]                              interfaces) — reachable at your machine's
+                                                        LAN IP out of the box, container/LXC/
+                                                        service-style. Pass --host 127.0.0.1 to
+                                                        restrict to localhost only.
                                                         Use --ollama-host http://10.10.10.43:11434 for remote Ollama.
                                                         --autonomous starts the 24/7 Colony Director
                                                         at boot (requires autonomy_enabled=true in config).
