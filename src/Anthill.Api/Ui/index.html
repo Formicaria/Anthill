@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.4</title>
+<title>ANTHILL v1.8.5</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -405,6 +405,23 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .phero-net.pos{color:var(--green);}
 .phero-net.neg{color:var(--red);}
 
+/* ── Generic data table (objectives, autonomy runs) ───────────────────────── */
+.data-table{width:100%;border-collapse:collapse;font-size:12px;}
+.data-table th{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;}
+.data-table td{padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.03);vertical-align:top;}
+.obj-status{font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:3px;text-transform:uppercase;white-space:nowrap;}
+.obj-status.pending{color:var(--blue);background:rgba(59,130,246,.12);}
+.obj-status.active{color:var(--green);background:rgba(16,185,129,.12);}
+.obj-status.paused{color:var(--queen);background:rgba(251,191,36,.12);}
+.obj-status.done{color:var(--dim);background:rgba(255,255,255,.06);}
+.obj-status.failed{color:var(--red);background:rgba(239,68,68,.12);}
+.obj-charter{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px;}
+.obj-prio-btn{font-size:10px;width:18px;height:18px;line-height:16px;padding:0;border-radius:3px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;}
+.obj-prio-btn:hover{color:var(--text);border-color:var(--queen);}
+.kill-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;}
+.kill-dot.ok{background:var(--green);}
+.kill-dot.engaged{background:var(--red);}
+
 /* ── Users Table ───────────────────────────────────────────────────────────── */
 .users-table{width:100%;border-collapse:collapse;font-size:12px;}
 .users-table th{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;}
@@ -497,7 +514,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.4</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.5</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -540,7 +557,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.4</span>
+      <span class="nav-logo-ver">v1.8.5</span>
     </div>
 
     <div class="nav-scroll">
@@ -575,6 +592,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div id="nav-item-antconfig" class="nav-item" data-page="antconfig">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
         <span class="nav-label">Ant Config</span>
+      </div>
+      <div id="nav-item-autonomy" class="nav-item" data-page="autonomy">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+        <span class="nav-label">Autonomy</span>
+        <span class="nav-badge" id="nav-autonomy-badge" style="display:none"></span>
       </div>
       <div id="nav-item-settings" class="nav-item" data-page="settings">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
@@ -890,6 +912,93 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
         </div>
       </div><!-- /page-antconfig -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: AUTONOMY
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-autonomy">
+        <div class="page-hdr">
+          <div><h1>Autonomy</h1><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="auto-msg"></span>
+            <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Director status -->
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
+              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
+              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
+            </div>
+          </div>
+          <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
+            Autonomy is disabled in config. Enable it in Settings → Colony (Autonomy toggle) before starting the Director.
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Director</div>
+              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
+              <div class="kpi-sub" id="auto-poll-sub">—</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--blue)">
+              <div class="kpi-label">Missions / Hour</div>
+              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--purple)">
+              <div class="kpi-label">Missions / Day</div>
+              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--queen)">
+              <div class="kpi-label">Backlog</div>
+              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
+              <div class="kpi-sub">pending / active</div>
+            </div>
+          </div>
+          <div class="info-row" style="margin-top:10px;"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
+          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
+        </div>
+
+        <!-- Add objective -->
+        <div class="card" style="padding:14px 16px;margin-bottom:16px;">
+          <div class="section-head" style="margin-top:0;">Add Objective</div>
+          <div class="form-row">
+            <div class="form-field"><label>Title</label><input class="form-input" id="obj-title" type="text" placeholder="short title"></div>
+            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="what the Director should keep working on" style="width:100%"></div>
+            <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
+            <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
+          </div>
+          <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
+        </div>
+
+        <!-- Objectives backlog -->
+        <div class="card" style="overflow-x:auto;margin-bottom:16px;">
+          <div style="padding:10px 12px 0;">
+            <div class="section-head" style="margin-top:0;padding:0;" id="obj-count">Objectives</div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
+            <tbody id="obj-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Recent autonomous runs -->
+        <div class="card" style="overflow-x:auto;">
+          <div style="padding:10px 12px 0;">
+            <div class="section-head" style="margin-top:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Started</th></tr></thead>
+            <tbody id="auto-runs-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div><!-- /page-autonomy -->
 
       <!-- ════════════════════════════════════════════════════════════════════
            PAGE: SETTINGS
@@ -1244,7 +1353,7 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['nav-item-antconfig','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+  ['nav-item-antconfig','nav-item-autonomy','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   // nav-item-pheromones: admin only
@@ -1274,7 +1383,7 @@ function applyRoleVisibility(){
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions',
   events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
-  settings:'Settings', users:'Users'
+  autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 
@@ -2517,6 +2626,173 @@ document.getElementById('antcfg-reset').addEventListener('click',()=>{
   if(!confirm('Reset all ant names, colours and positions to defaults?')) return;
   uiState.castes={};uiState.positions={};applyUiState();buildNodes();saveUiState();openAntConfig();
 });
+
+// ── Autonomy page (Phase 1/2: Colony Director, objective backlog, Strategist runs) ─────────────
+let autonomyObjectives=[];
+let autoRefreshTimer=null;
+
+async function openAutonomy(){
+  showPage('autonomy');
+  await reloadAutonomy();
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;
+  // self-cancels the moment the user navigates elsewhere so it never polls in the background.
+  autoRefreshTimer=setInterval(()=>{
+    if(!document.getElementById('page-autonomy')?.classList.contains('active')){
+      clearInterval(autoRefreshTimer); autoRefreshTimer=null; return;
+    }
+    reloadAutonomyStatus();
+  },4000);
+}
+PAGE_ENTER['autonomy']=()=>{ if(ROLE==='admin') openAutonomy(); };
+
+async function reloadAutonomy(){
+  await reloadObjectives();
+  await Promise.all([reloadAutonomyStatus(), reloadAutonomyRuns()]);
+}
+
+document.getElementById('auto-refresh').addEventListener('click',reloadAutonomy);
+
+function autoMsg(t,ok){
+  const m=document.getElementById('auto-msg');
+  m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t;
+  setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },3500);
+}
+
+async function reloadAutonomyStatus(){
+  try{
+    const r=await api('/autonomy/status'); if(!r.success) throw new Error(r.message);
+    const s=r.data||{};
+    document.getElementById('auto-disabled-note').style.display=s.enabled?'none':'block';
+    document.getElementById('auto-start-btn').disabled=!s.enabled||!!s.running;
+    document.getElementById('auto-stop-btn').disabled=!s.running;
+    const runEl=document.getElementById('auto-running');
+    runEl.textContent=s.running?'RUNNING':(s.enabled?'IDLE':'OFF');
+    runEl.style.color=s.running?'var(--green)':(s.enabled?'var(--queen)':'var(--dim)');
+    setEl('auto-poll-sub','poll every '+(s.poll_seconds??'—')+'s');
+    setEl('auto-hour',`${s.missions_last_hour??0}/${s.max_missions_per_hour??'—'}`);
+    setEl('auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
+    setEl('auto-backlog',`${s.backlog_pending??0}/${s.backlog_active??0}`);
+    const killEngaged=!!s.kill_switch_engaged;
+    document.getElementById('auto-kill-dot').className='kill-dot '+(killEngaged?'engaged':'ok');
+    setEl('auto-kill-text',killEngaged?'Kill switch engaged':'Kill switch clear');
+    setEl('auto-next',s.next_objective?`${s.next_objective.title} (priority ${s.next_objective.priority})`:'— backlog empty —');
+    setEl('auto-decision',s.budget_decision||'—');
+    const badge=document.getElementById('nav-autonomy-badge');
+    if(badge){
+      if(s.running){ badge.style.display=''; badge.textContent='●'; badge.style.color='var(--green)'; }
+      else badge.style.display='none';
+    }
+  }catch(e){ setEl('auto-decision','Error: '+e.message); }
+}
+
+document.getElementById('auto-start-btn').addEventListener('click',async()=>{
+  try{
+    const r=await api('/autonomy/start','POST');
+    autoMsg(r.success?'Director started.':(r.message||'Failed'),r.success);
+    await reloadAutonomyStatus();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+document.getElementById('auto-stop-btn').addEventListener('click',async()=>{
+  if(!confirm('Stop the Colony Director and engage the kill switch?')) return;
+  try{
+    const r=await api('/autonomy/stop','POST');
+    autoMsg(r.success?'Director stopped; kill switch engaged.':(r.message||'Failed'),r.success);
+    await reloadAutonomyStatus();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+async function reloadObjectives(){
+  const tb=document.getElementById('obj-tbody');
+  try{
+    const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
+    autonomyObjectives=r.data||[];
+    setEl('obj-count',`Objectives (${autonomyObjectives.length})`);
+    tb.innerHTML=autonomyObjectives.map(o=>{
+      const paused=o.status==='paused';
+      return `<tr>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(o.title)}</td>
+        <td class="obj-charter" title="${escapeHtml(o.charter||'')}">${escapeHtml(o.charter||'')}</td>
+        <td style="white-space:nowrap;">
+          <button class="obj-prio-btn" onclick="objAdjustPriority('${o.id}',${o.priority-1})" title="Lower priority">−</button>
+          <span style="font-family:var(--mono);font-size:11px;margin:0 3px;">${o.priority}</span>
+          <button class="obj-prio-btn" onclick="objAdjustPriority('${o.id}',${o.priority+1})" title="Raise priority">+</button>
+        </td>
+        <td><span class="obj-status ${o.status}">${o.status}</span></td>
+        <td style="font-family:var(--mono);font-size:11px;">${o.run_count}${o.max_runs?'/'+o.max_runs:''}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:${o.consecutive_failures>0?'var(--red)':'var(--dim)'}">${o.consecutive_failures}</td>
+        <td>${o.last_run_at?fmtTime(o.last_run_at):'never'}</td>
+        <td style="white-space:nowrap;">
+          <button class="job-btn view" onclick="objToggleStatus('${o.id}','${paused?'active':'paused'}')">${paused?'Resume':'Pause'}</button>
+          <button class="job-btn cancel" onclick="objDelete('${o.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="8" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
+
+document.getElementById('obj-add').addEventListener('click',async()=>{
+  const title=document.getElementById('obj-title').value.trim();
+  const charter=document.getElementById('obj-charter').value.trim();
+  const priority=parseInt(document.getElementById('obj-priority').value,10)||0;
+  const maxRuns=parseInt(document.getElementById('obj-maxruns').value,10)||0;
+  if(!title||!charter){ autoMsg('Title and charter are required.',false); return; }
+  try{
+    const r=await api('/objectives','POST',{title,charter,priority,max_runs:maxRuns});
+    if(r.success){
+      autoMsg('Objective added.',true);
+      document.getElementById('obj-title').value='';
+      document.getElementById('obj-charter').value='';
+      document.getElementById('obj-priority').value='0';
+      document.getElementById('obj-maxruns').value='0';
+      await reloadObjectives();
+    } else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+async function objToggleStatus(id,status){
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'PATCH',{status});
+    if(r.success){ autoMsg(status==='paused'?'Objective paused.':'Objective resumed.',true); await reloadObjectives(); }
+    else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+async function objAdjustPriority(id,priority){
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'PATCH',{priority});
+    if(r.success) await reloadObjectives(); else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+async function objDelete(id){
+  if(!confirm('Delete this objective? This cannot be undone.')) return;
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'DELETE');
+    if(r.success){ autoMsg('Objective deleted.',true); await reloadObjectives(); }
+    else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+
+async function reloadAutonomyRuns(){
+  const tb=document.getElementById('auto-runs-tbody');
+  try{
+    const r=await api('/autonomy/runs'); if(!r.success) throw new Error(r.message);
+    const runs=r.data||[];
+    setEl('auto-runs-count',`Recent Autonomous Runs (${runs.length})`);
+    const titleById={}; autonomyObjectives.forEach(o=>{ titleById[o.id]=o.title; });
+    tb.innerHTML=runs.map(run=>{
+      const status=run.mission_status||'—';
+      const statusColor=status==='complete'?'var(--green)':status==='failed'?'var(--red)':status==='partial'?'var(--orange)':'var(--dim)';
+      return `<tr>
+        <td>${escapeHtml(titleById[run.objective_id]||run.objective_id||'—')}</td>
+        <td class="obj-charter" title="${escapeHtml(run.generated_goal||'')}">${escapeHtml(run.generated_goal||'')}</td>
+        <td style="color:${statusColor}">${status}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
+        <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="6" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
 
 // ── Pheromone memory page ─────────────────────────────────────────────────────
 async function openPheromones(){

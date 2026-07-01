@@ -2,7 +2,48 @@
 
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
-> model provider connections = **v1.8.4**, and so on.
+> model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, and so on.
+
+## v1.8.5 — Autonomy Phase 2: Strategist
+
+No schema change. Mission goals for the 24/7 Colony Director are now LLM-generated per objective
+instead of charter-as-goal, with dedup against recent mission history and capped self-enqueued
+follow-up objectives. See [docs/AUTONOMY.md](docs/AUTONOMY.md) for the full design.
+
+Added:
+
+- **`Anthill.Core.Autonomy.Strategist`** — turns an objective + recent `autonomy_runs` history +
+  top pheromone trails into a concrete mission goal via a new `strategist` model-router role.
+  Always computes the deterministic charter-as-goal fallback first; any router failure, missing
+  router, or unparseable response falls back to it — never blocks or throws. `StrategistResult`
+  reports `Source` (`"strategist"` or `"fallback"`) for auditability.
+- **Dedup** — rejects a generated goal that's a near-duplicate of a recent completed/partial run
+  for the same objective (`TextUtil.ExtractKeywords` containment-ratio overlap, threshold
+  `autonomy_dedupe_similarity`, default `0.8`); a rejected goal falls back to the charter goal.
+- **Follow-up objectives** — the Strategist can propose follow-ups in its JSON response;
+  `ColonyDirector` saves them only after a successful mission, capped by
+  `autonomy_max_followups_per_run` (default `1`) and `autonomy_max_objective_depth` (default `3`,
+  walked via new `SqliteMemory.ObjectiveDepth`). Follow-ups inherit `ParentObjectiveId` and run at
+  `Priority - 1`.
+- **New config knobs** (all fail-closed): `autonomy_dedupe_similarity`,
+  `autonomy_max_followups_per_run`, `autonomy_max_objective_depth`.
+- **`ColonyDirector.RunObjectiveOnce`** rewritten to call `Strategist.GenerateGoal`; logs
+  `goal_source`/`strategist_notes` on `autonomy_mission_started` and `follow_ups_created` on
+  `autonomy_mission_finished`. Writes remain queue-only — the Strategist only chooses the next
+  mission, never applies patches.
+- **UI: Autonomy page** *(admin only)* — Director status card (start/stop, budgets, kill switch),
+  objectives backlog editor (add/pause-resume/reprioritize/delete), and a recent-runs table
+  showing goal source and outcome per run.
+
+Validation:
+
+- Offline `StrategistTests` cover the no-router fallback path (never blocks/throws) and
+  `ObjectiveDepth` walking/edge cases. The LLM-driven generation/dedup paths require a live
+  provider and aren't testable offline.
+- Manual review only — no `dotnet` SDK was available in the environment this change was authored
+  in, so this release has **not** been compiled or run. Run `dotnet build`/`dotnet test`, then
+  exercise the Autonomy page end-to-end (add an objective, start the Director, confirm a run
+  appears with a goal source) before shipping.
 
 ## v1.8.4 — Model provider connections
 

@@ -1,6 +1,6 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.4** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.5** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -695,6 +695,7 @@ A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggl
 | **Event Log** | Filterable, searchable full-page event log |
 | **Pheromones** | Colony pheromone trail table with prune button *(admin only)* |
 | **Ant Config** | Per-caste name, colour, and provider + model route editor *(admin only)* |
+| **Autonomy** | Director status/start/stop/kill-switch, objectives backlog editor, recent autonomous runs *(admin only)* |
 | **Settings** | Connection / Providers / Colony / Models / System Info tabs *(admin only)* |
 | **Users** | Operator account management *(admin only)* |
 
@@ -753,6 +754,25 @@ for how keys are stored.
 **Models tab**: Lists all models pulled on your Ollama instance with sizes. Active route assignments are highlighted. Click a model name to copy it to clipboard.
 
 **System Info tab**: Safety profile, feature flags, native kernel status, live diagnostics.
+
+### Autonomy (Autonomy page)
+
+*Admin only.* Control panel for the 24/7 Colony Director (see [Autonomy design doc](docs/AUTONOMY.md)).
+
+- **Director Status card**: running/stopped state, missions this hour/day against budget, backlog
+  size, kill-switch indicator, and Start/Stop buttons. Disabled with an explanatory note unless
+  `autonomy_enabled: true` is set in config.
+- **Add Objective**: title, charter (the standing goal text), and priority — enqueues a new backlog
+  entry.
+- **Objectives table**: every objective with status (pending/active/paused/done/failed),
+  charter preview, priority +/- buttons, pause/resume, and delete.
+- **Recent Autonomous Runs table**: each Director-driven mission with its objective, generated
+  goal, goal source (LLM Strategist vs. deterministic fallback), outcome, and follow-ups created.
+
+The Director only *proposes* — file changes still land in the normal approval queue for a human to
+review. Mission goals come from the Strategist (`autonomy_dedupe_similarity`,
+`autonomy_max_followups_per_run`, `autonomy_max_objective_depth` govern dedup and follow-up
+enqueueing; see [Configuration Reference](#configuration-reference)).
 
 ### Dispatching a Mission
 

@@ -12,10 +12,14 @@ namespace Anthill.Api;
 /// priority ready objective → run a mission for it through the shared job worker → record the
 /// outcome → idle backoff → repeat.
 ///
-/// Phase 1 keeps mission generation deliberately simple — the objective's charter is used
-/// directly as the mission goal. The LLM Strategist (smart goal synthesis + dedup) is Phase 2.
-/// Writes stay queue-for-review: the Director only launches missions; it never approves or
-/// applies patches. The kill switch (<see cref="AutonomyControl"/>) halts it before every mission.
+/// Phase 2 adds the LLM Strategist: instead of using the objective's charter verbatim every
+/// cycle, it synthesises the next concrete goal from the charter + this objective's own recent
+/// run history + colony pheromone memory, rejects near-duplicate goals, and — within a hard cap
+/// — can enqueue follow-up objectives it discovers. It fails closed to the Phase 1 behaviour
+/// (charter-as-goal) whenever routing is off or the model misbehaves, so the loop never blocks
+/// or stalls on the LLM. Writes stay queue-for-review: the Director only launches missions; it
+/// never approves or applies patches. The kill switch (<see cref="AutonomyControl"/>) halts it
+/// before every mission.
 /// </summary>
 public sealed class ColonyDirector : IDisposable
 {
@@ -24,6 +28,7 @@ public sealed class ColonyDirector : IDisposable
     private readonly Queen _queen;
     private readonly ApiJobRegistry _jobs;
     private readonly BudgetGuard _budget;
+    private readonly Strategist _strategist;
     private readonly object _lifecycleLock = new();
     private Thread? _thread;
     private volatile bool _running;
@@ -33,6 +38,7 @@ public sealed class ColonyDirector : IDisposable
         _queen = queen;
         _jobs = jobs;
         _budget = new BudgetGuard(queen.Memory);
+        _strategist = new Strategist(queen.Router, queen.Memory);
         _queen.Memory.EnsureSystemMission(SystemMissionId, "System API events");
     }
 
@@ -106,13 +112,19 @@ public sealed class ColonyDirector : IDisposable
 
     private void RunObjectiveOnce(Objective objective)
     {
-        var goal = BuildGoal(objective);
+        var strategy = _strategist.GenerateGoal(objective);
+        var goal = strategy.Goal;
         var run = new AutonomyRun { ObjectiveId = objective.Id, GeneratedGoal = goal };
         // Persist the run at launch so it immediately counts toward the rate budget.
         _queen.Memory.SaveAutonomyRun(run);
         _queen.Memory.LogEvent(SystemMissionId, "autonomy_mission_started",
             $"Director launched a mission for objective: {objective.Title}", antName: "director",
-            metadata: new() { ["objective_id"] = objective.Id, ["autonomy_run_id"] = run.Id, ["goal"] = goal, ["writes"] = "queued_for_review" });
+            metadata: new()
+            {
+                ["objective_id"] = objective.Id, ["autonomy_run_id"] = run.Id, ["goal"] = goal,
+                ["goal_source"] = strategy.Source, ["strategist_notes"] = strategy.Notes,
+                ["writes"] = "queued_for_review",
+            });
 
         var job = _jobs.Submit(goal);
         WaitForJob(job);
@@ -123,6 +135,11 @@ public sealed class ColonyDirector : IDisposable
         run.SuccessScore = score;
         run.FinishedAt = AnthillTime.NowUtc();
         run.Notes = job.Error;
+
+        // Only a successful mission's discoveries are worth enqueuing — a failed run's follow-ups
+        // are, by construction, follow-ups to work that didn't actually land.
+        var enqueuedFollowUps = success ? SaveFollowUps(strategy.FollowUps) : 0;
+        run.FollowUpsCreated = enqueuedFollowUps;
         _queen.Memory.SaveAutonomyRun(run);
 
         var updated = _queen.Memory.RecordObjectiveRunOutcome(objective.Id, success);
@@ -133,13 +150,16 @@ public sealed class ColonyDirector : IDisposable
                 ["objective_id"] = objective.Id, ["autonomy_run_id"] = run.Id, ["mission_id"] = job.MissionId,
                 ["mission_status"] = missionStatus, ["success"] = success, ["success_score"] = score,
                 ["objective_status"] = updated?.Status.Value(), ["run_count"] = updated?.RunCount,
-                ["consecutive_failures"] = updated?.ConsecutiveFailures,
+                ["consecutive_failures"] = updated?.ConsecutiveFailures, ["follow_ups_created"] = enqueuedFollowUps,
             });
     }
 
-    /// <summary>Phase 1: the charter is the goal. Phase 2 replaces this with the LLM Strategist.</summary>
-    private static string BuildGoal(Objective objective) =>
-        string.IsNullOrWhiteSpace(objective.Charter) ? objective.Title : objective.Charter;
+    /// <summary>Persists Strategist-discovered follow-up objectives and returns how many were saved.</summary>
+    private int SaveFollowUps(List<Objective> followUps)
+    {
+        foreach (var fu in followUps) _queen.Memory.SaveObjective(fu);
+        return followUps.Count;
+    }
 
     private void WaitForJob(ApiMissionJob job)
     {

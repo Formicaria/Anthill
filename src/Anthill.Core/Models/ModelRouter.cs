@@ -183,7 +183,7 @@ public sealed class ModelRouter
     public string FormatRoutes()
     {
         var lines = new List<string> { $"ANTHILL v{AnthillRuntime.Version} Model Routes" };
-        foreach (var role in new[] { "planner", "researcher", "web", "coder", "builder", "verifier", "fallback" })
+        foreach (var role in new[] { "planner", "researcher", "web", "coder", "builder", "verifier", "strategist", "fallback" })
         {
             var (provider, model) = GetRoute(role);
             lines.Add($"{role}: provider={provider} | model={model}");

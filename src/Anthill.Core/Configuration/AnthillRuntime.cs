@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.4";
+    public const string Version = "1.8.5";
     public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -108,6 +108,13 @@ public static class AnthillRuntime
     public static int AutonomyMaxConsecutiveFailures = 3;
     /// <summary>Sentinel file whose presence halts the autonomous Director. Lives under the workspace root.</summary>
     public static string AutonomyStopFileName = "STOP";
+    // ---- Phase 2: Strategist (self-generated missions) --------------------
+    /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
+    public static double AutonomyDedupeSimilarity = 0.8;
+    /// <summary>Hard cap on follow-up objectives the Strategist may enqueue per mission, to bound backlog growth.</summary>
+    public static int AutonomyMaxFollowupsPerRun = 1;
+    /// <summary>Hard cap on parent_objective_id chain depth; follow-ups at or beyond this depth are dropped.</summary>
+    public static int AutonomyMaxObjectiveDepth = 3;
 
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
@@ -342,6 +349,9 @@ public static class AnthillRuntime
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
         AutonomyMaxConsecutiveFailures = Math.Max(1, config.AutonomyMaxConsecutiveFailures);
+        AutonomyDedupeSimilarity = Math.Clamp(config.AutonomyDedupeSimilarity, 0.0, 1.0);
+        AutonomyMaxFollowupsPerRun = Math.Max(0, config.AutonomyMaxFollowupsPerRun);
+        AutonomyMaxObjectiveDepth = Math.Max(0, config.AutonomyMaxObjectiveDepth);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -352,7 +362,7 @@ public static class AnthillRuntime
         {
             ["planner"] = defaultRoute(), ["researcher"] = defaultRoute(), ["coder"] = defaultRoute(),
             ["builder"] = defaultRoute(), ["verifier"] = defaultRoute(), ["web"] = defaultRoute(),
-            ["fallback"] = defaultRoute(),
+            ["strategist"] = defaultRoute(), ["fallback"] = defaultRoute(),
         };
         foreach (var (role, route) in config.ModelRoutes) ModelRouting[role] = new Dictionary<string, string>(route);
     }
@@ -371,6 +381,7 @@ public static class AnthillRuntime
         "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
+        "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -439,6 +450,9 @@ public static class AnthillRuntime
         ["autonomy_max_missions_per_hour"] = AutonomyMaxMissionsPerHour,
         ["autonomy_max_missions_per_day"] = AutonomyMaxMissionsPerDay,
         ["autonomy_max_consecutive_failures"] = AutonomyMaxConsecutiveFailures,
+        ["autonomy_dedupe_similarity"] = AutonomyDedupeSimilarity,
+        ["autonomy_max_followups_per_run"] = AutonomyMaxFollowupsPerRun,
+        ["autonomy_max_objective_depth"] = AutonomyMaxObjectiveDepth,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["editable_keys"] = EditableConfigKeys.ToList(),

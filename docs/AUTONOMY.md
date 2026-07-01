@@ -1,9 +1,42 @@
 # ANTHILL — 24/7 Autonomy Design
 
-> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) IMPLEMENTED.** The colony can now
-> run autonomously: the Director works the objective backlog one mission at a time, under
-> budgets and the kill switch, with writes queued for human review. Mission generation is still
-> charter-as-goal (the LLM Strategist is Phase 2). Target: ANTHILL v1.9.x.
+> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) + Phase 2 (Strategist) IMPLEMENTED.**
+> The colony can now run autonomously: the Director works the objective backlog one mission at a
+> time, under budgets and the kill switch, with writes queued for human review. Mission goals are
+> now LLM-generated per objective (with a deterministic charter-as-goal fallback), deduped against
+> recent mission history, and the colony can enqueue its own follow-up objectives within depth/rate
+> caps. Target: ANTHILL v1.9.x.
+
+## Phase 2 — what landed
+
+- **`Strategist`** (`Anthill.Core/Autonomy/Strategist.cs`): turns an objective + recent
+  `autonomy_runs` history + top pheromone trails into a concrete mission goal via the new
+  `strategist` model-router role. Always computes the deterministic charter-as-goal fallback
+  first; if the router is unset, the call errors, or the response isn't parseable JSON, it
+  returns the fallback — never blocks or throws (`StrategistResult.Source` is `"strategist"` or
+  `"fallback"` so the choice is auditable).
+- **Dedup**: rejects a generated goal that's a near-duplicate of a recent completed/partial run
+  for the same objective, using `TextUtil.ExtractKeywords` containment-ratio overlap against
+  `ListAutonomyRuns(objectiveId, limit: 10)`, threshold `autonomy_dedupe_similarity` (default 0.8).
+  A rejected goal falls back to the deterministic charter goal.
+- **Follow-up objectives**: the Strategist can propose follow-up objectives in its JSON response;
+  `ColonyDirector` only saves them after a *successful* mission, capped by
+  `autonomy_max_followups_per_run` (default 1) and `autonomy_max_objective_depth` (default 3,
+  walked via the new `SqliteMemory.ObjectiveDepth`). Follow-ups inherit `ParentObjectiveId` and
+  run at `Priority - 1` so they don't outrank their parent's siblings.
+- **Config knobs** (all fail-closed, safe defaults): `autonomy_dedupe_similarity` (0–1, clamped),
+  `autonomy_max_followups_per_run`, `autonomy_max_objective_depth`.
+- **`ColonyDirector`**: `RunObjectiveOnce` now calls `Strategist.GenerateGoal` instead of a static
+  charter-as-goal builder; logs `goal_source` and `strategist_notes` on the
+  `autonomy_mission_started` event, and `follow_ups_created` on `autonomy_mission_finished`. Writes
+  are still queue-only — the Strategist only chooses *what mission to run next*, never applies
+  patches.
+- **UI**: new admin-only "Autonomy" page — Director status/start/stop/kill-switch card, an
+  objectives table (add/pause-resume/reprioritize/delete), and a recent-runs table showing the
+  goal source (strategist vs. fallback) per run.
+- **Tests**: offline `StrategistTests` cover the no-router fallback path (never blocks/throws) and
+  `ObjectiveDepth` walking/edge cases. The LLM-driven generation/dedup paths aren't testable
+  without a live provider — covered by manual verification once a provider key is configured.
 
 ## Phase 1 — what landed
 
@@ -22,7 +55,7 @@
 - **Tests**: 3 Director integration tests (offline loop runs an objective end-to-end, start
   refusal when disabled, halt on kill switch) + the Phase 0 suite. Verified live over HTTP.
 
-Still simple by design: **no LLM-driven goal synthesis and no mission de-dup yet** — that's Phase 2.
+LLM-driven goal synthesis and mission de-dup landed in Phase 2 (see above).
 
 ## Phase 0 — what landed
 
@@ -151,6 +184,8 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 "autonomy_max_missions_per_day": 60,
 "autonomy_max_consecutive_failures": 3, // circuit breaker per objective
 "autonomy_dedupe_similarity": 0.8,    // reject near-duplicate generated goals
+"autonomy_max_followups_per_run": 1,  // cap self-enqueued follow-up objectives per mission
+"autonomy_max_objective_depth": 3,    // cap parent-chain depth for follow-up objectives
 "autonomy_concurrency": 1             // Phase 3: >1 enables concurrent missions
 ```
 
@@ -162,7 +197,7 @@ All default to the safe/off values. Auto-apply gets **no** config key until Phas
 |-------|-------------|-----------|
 | **0 — Rails** ✅ | **DONE.** Kill switch, budgets, `objectives` + `autonomy_runs` tables, config knobs, schema v8. No loop yet. | `AnthillConfig`, `AnthillRuntime`, `SqliteMemory.Schema`, `SqliteMemory.Autonomy`, `Autonomy/` namespace |
 | **1 — Loop (MVP)** ✅ | **DONE.** Director runs one objective at a time, queue-for-review writes only, `--autonomous` flag, `/autonomy/{start,stop,status,runs}` + `/objectives` CRUD. **This is the milestone that must be stable before anything else.** | `Anthill.Api/ColonyDirector.cs`, `ApiHost.cs`, `Program.cs` |
-| **2 — Self-generated missions** | Strategist role + dedup + follow-up enqueue. | new `Autonomy/Strategist.cs`, `ModelRouter` route |
+| **2 — Self-generated missions** ✅ | **DONE.** Strategist role + dedup + follow-up enqueue (depth/rate capped). | `Autonomy/Strategist.cs`, `ModelRouter` route, `ColonyDirector.cs` |
 | **3 — Concurrency** | `ResourceGovernor`, unlock `ApiJobWorkers`/`autonomy_concurrency`, VRAM-aware scaling. | `ApiHost`, governor |
 | **4 — Learning loop** | Outcomes bias objective priority; retire stale/looping objectives. | `PheromoneEngine`, ObjectiveStore |
 | **5 — Auto-apply (gated, OFF)** | Strict allowlist auto-approve+apply (path allowlist, size cap, must build+test green, auto-rollback). Enabled only after Phase 1 is proven. | new policy module + `/apply` automation |
@@ -176,11 +211,12 @@ Implementation order is strictly 0 → 1 → (stabilize) → 2 → 3 → 4 → 5
 - Backlog editor: add/reprioritize/pause objectives.
 - Reuse the existing event stream + colony canvas for the running mission.
 
-## 10. Open questions (revisit before Phase 2)
+## 10. Open questions (revisit before Phase 3)
 
 - **Auto-apply criteria** (Phase 5): exact allowlist, and "must build + test green" needs a
   sandboxed build runner — design separately.
-- **Follow-up explosion control**: cap depth/rate of self-enqueued objectives so the backlog
-  can't grow unbounded.
+- ~~**Follow-up explosion control**~~: resolved in Phase 2 — `autonomy_max_followups_per_run` and
+  `autonomy_max_objective_depth` cap rate/depth of self-enqueued objectives.
 - **Multi-objective fairness** (Phase 3): strict priority vs. round-robin/weighted.
-- **Mission de-dup window**: how many days of history to compare against.
+- **Mission de-dup window**: Phase 2 compares against the last 10 runs per objective
+  (`ListAutonomyRuns(..., limit: 10)`); revisit if a time-based window is preferred instead.

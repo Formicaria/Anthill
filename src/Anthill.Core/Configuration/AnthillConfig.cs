@@ -65,6 +65,10 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_max_missions_per_hour")] public int AutonomyMaxMissionsPerHour { get; set; } = 6;
     [JsonPropertyName("autonomy_max_missions_per_day")] public int AutonomyMaxMissionsPerDay { get; set; } = 60;
     [JsonPropertyName("autonomy_max_consecutive_failures")] public int AutonomyMaxConsecutiveFailures { get; set; } = 3;
+    // ---- Phase 2: Strategist (self-generated missions) ----
+    [JsonPropertyName("autonomy_dedupe_similarity")] public double AutonomyDedupeSimilarity { get; set; } = 0.8;
+    [JsonPropertyName("autonomy_max_followups_per_run")] public int AutonomyMaxFollowupsPerRun { get; set; } = 1;
+    [JsonPropertyName("autonomy_max_objective_depth")] public int AutonomyMaxObjectiveDepth { get; set; } = 3;
 
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.

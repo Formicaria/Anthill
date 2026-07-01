@@ -119,6 +119,25 @@ public sealed partial class SqliteMemory
         return o;
     }
 
+    /// <summary>
+    /// How many parent_objective_id hops separate this objective from a root (non-follow-up)
+    /// objective. Root objectives are depth 0. Used by the Phase 2 Strategist to cap how deep a
+    /// chain of self-enqueued follow-ups can grow. Bounded to 64 hops so a corrupted/cyclic
+    /// parent chain can never loop forever.
+    /// </summary>
+    public int ObjectiveDepth(string objectiveId)
+    {
+        var depth = 0;
+        var current = GetObjective(objectiveId);
+        var seen = new HashSet<string>();
+        while (current?.ParentObjectiveId is { Length: > 0 } parentId && seen.Add(current.Id) && depth < 64)
+        {
+            depth++;
+            current = GetObjective(parentId);
+        }
+        return depth;
+    }
+
     private static Objective ObjectiveFromRow(Dictionary<string, object?> row) => new()
     {
         Id = row.GetValueOrDefault("id")?.ToString() ?? "",
