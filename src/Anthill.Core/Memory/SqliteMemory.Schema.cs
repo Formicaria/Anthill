@@ -217,6 +217,15 @@ public sealed partial class SqliteMemory : IDisposable
         @"CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_login_at TEXT)",
+        // Model provider connections: one row per external provider (openai/anthropic/perplexity/
+        // openrouter/...). api_key is sealed at rest with FieldCipher (AES-256-GCM); it is never
+        // returned to the console — only a "configured" boolean and metadata are. Ollama needs no
+        // row here since it has no key (host/model live in config.json).
+        @"CREATE TABLE IF NOT EXISTS provider_credentials (
+            provider TEXT PRIMARY KEY, api_key TEXT, base_url TEXT, label TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_verified_at TEXT, last_verify_ok INTEGER, last_verify_message TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
         // Helpful indexes for the hot lookups the colony performs constantly.
         "CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_mission ON events(mission_id)",
@@ -278,6 +287,7 @@ public sealed partial class SqliteMemory : IDisposable
             (7, "scheduler_task_lifecycle", "Task scheduler lifecycle, retry, failure, skip, and graph metadata columns verified."),
             (8, "autonomy_rails", "Autonomy backlog (objectives) and per-mission audit trail (autonomy_runs) tables verified."),
             (9, "user_accounts", "Operator accounts (users) with password login and roles verified."),
+            (10, "model_provider_connections", "Encrypted API-key storage for external model providers (provider_credentials) verified."),
         };
         foreach (var (id, name, description) in migrations)
         {

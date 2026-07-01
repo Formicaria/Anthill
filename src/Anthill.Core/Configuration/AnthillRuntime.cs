@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.2";
-    public const int SchemaVersion = 9;
+    public const string Version = "1.8.4";
+    public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -58,6 +58,10 @@ public static class AnthillRuntime
         ["manage_settings"] = true, ["read_ui_state"] = true, ["manage_ui_state"] = true, ["prune_pheromones"] = true,
         // Operator account management (admin-only at the role layer).
         ["manage_users"] = true,
+        // Model provider connections (API keys for OpenAI/Anthropic/Perplexity/OpenRouter/...).
+        // Keys are never readable back through the API regardless of this gate; it only controls
+        // who may add/update/remove/test a connection and who may see the secret-free status list.
+        ["read_providers"] = true, ["manage_providers"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------

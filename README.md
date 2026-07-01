@@ -1,8 +1,8 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
-> **v1.8.3** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local
+> **v1.8.4** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
-ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware, uses [Ollama](https://ollama.com) as the LLM backend (no cloud API keys required), and exposes a real-time colony console at `http://localhost:8713/ui`.
+ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
 ---
 
@@ -17,14 +17,15 @@ ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrate
 7. [Deploy on Linux](#deploy-on-linux)
 8. [Deploy on Windows](#deploy-on-windows)
 9. [Ollama Setup & Model Routing](#ollama-setup--model-routing)
-10. [Colony UI Guide](#colony-ui-guide)
-11. [The Approval Workflow](#the-approval-workflow)
-12. [Self-Modification Missions](#self-modification-missions)
-13. [API Reference](#api-reference)
-14. [Authentication & Operator Accounts](#authentication--operator-accounts)
-15. [Security Model](#security-model)
-16. [Building from Source](#building-from-source)
-17. [Troubleshooting](#troubleshooting)
+10. [Model Providers](#model-providers)
+11. [Colony UI Guide](#colony-ui-guide)
+12. [The Approval Workflow](#the-approval-workflow)
+13. [Self-Modification Missions](#self-modification-missions)
+14. [API Reference](#api-reference)
+15. [Authentication & Operator Accounts](#authentication--operator-accounts)
+16. [Security Model](#security-model)
+17. [Building from Source](#building-from-source)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -601,21 +602,80 @@ CUDA_VISIBLE_DEVICES=0,1 ollama serve
 
 ### Routing a specific ant to a specific model
 
-Edit `model_routes` in `.anthill/config.json`. The route map is:
+Easiest path: **Settings → Ant Config** in the colony UI — pick a provider and model per caste and
+save. Under the hood this edits the same `model_routes` map you can also hand-edit in
+`.anthill/config.json`:
 
 ```json
 "model_routes": {
   "planner":    { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
   "researcher": { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
-  "coder":      { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
-  "builder":    { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
+  "coder":      { "provider": "openai", "model": "gpt-4o-mini" },
+  "builder":    { "provider": "anthropic", "model": "claude-sonnet-4-5" },
   "verifier":   { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
-  "web":        { "provider": "ollama", "model": "YOUR_MODEL_NAME" },
+  "web":        { "provider": "perplexity", "model": "sonar" },
   "fallback":   { "provider": "ollama", "model": "YOUR_MODEL_NAME" }
 }
 ```
 
-Model names must match exactly what `ollama list` shows (e.g. `llama3.3:70b`, not `llama3.3`).
+Model names must match exactly what `ollama list` shows for Ollama routes (e.g. `llama3.3:70b`,
+not `llama3.3`). Any role routed to a non-`ollama` provider needs that provider connected first —
+see [Model Providers](#model-providers).
+
+---
+
+## Model Providers
+
+Ants aren't limited to local Ollama models. ANTHILL can route any role (planner, researcher,
+coder, builder, verifier, web, fallback) to a paid cloud provider instead, mixing free-local and
+paid-API routes in the same colony:
+
+| Provider | Kind | API surface used |
+|----------|------|-------------------|
+| **Ollama** | Free · local | `/api/generate` on your configured `ollama_host` — no key needed |
+| **OpenAI (ChatGPT)** | Paid | `/v1/chat/completions` |
+| **Anthropic (Claude)** | Paid | `/v1/messages` |
+| **Perplexity** | Paid | `/chat/completions` (web-grounded Sonar models) |
+| **OpenRouter** | Paid | `/v1/chat/completions` (one key, many hosted models) |
+
+### Connecting a provider
+
+In the colony UI: **Settings → Providers**. Each card shows connection status, an API-key field,
+an optional base-URL override, and **Save** / **Test Connection** / **Remove** actions. Testing
+fires one small live request through the real routing path and records whether it succeeded.
+Once a provider is connected, assign it to a caste in **Settings → Ant Config**.
+
+### Security
+
+- API keys are sealed at rest with the same AES-256-GCM field cipher (`FieldCipher`, see
+  [Security Model](#security-model)) used elsewhere in the database — key resolution order is
+  `ANTHILL_ENCRYPTION_KEY` env var, then an auto-generated 0600 key file under the workspace.
+- Keys are **write-only** from the console's perspective: `GET /providers` never returns a key,
+  only a `configured` boolean, `enabled` flag, and last-verification status.
+- Managing connections requires the `manage_providers` permission, reading status requires
+  `read_providers` — both admin-only by default (see [Roles](#roles)); a Mission Coordinator
+  cannot see or touch provider connections.
+- Deleting a connection immediately stops routing to it; any role still pointed at that provider
+  will fail closed with a clear `ERROR: <provider> API key not configured` message rather than
+  silently falling back to a different model.
+
+### API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/providers/catalog` | Static metadata for every known provider (name, kind, default model, curated model list, key help URL) |
+| `GET` | `/providers` | Secret-free connection status for every keyed provider (configured, enabled, last verification) |
+| `POST` | `/providers` | Add/update a connection `{"provider","api_key"?,"base_url"?,"enabled"?,"label"?}` — `api_key` omitted leaves the stored key untouched |
+| `DELETE` | `/providers/{provider}` | Remove a connection |
+| `POST` | `/providers/{provider}/test` | Fire a live probe call and record the verification result |
+
+```bash
+curl -X POST http://localhost:8713/providers -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"openai","api_key":"sk-..."}'
+curl -X POST http://localhost:8713/providers/openai/test -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8713/providers -H "Authorization: Bearer $TOKEN"
+```
 
 ---
 
@@ -634,8 +694,8 @@ A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggl
 | **Missions** | Mission dispatch + full job history with View/Cancel per job |
 | **Event Log** | Filterable, searchable full-page event log |
 | **Pheromones** | Colony pheromone trail table with prune button *(admin only)* |
-| **Ant Config** | Per-caste name, colour, and model route editor *(admin only)* |
-| **Settings** | Connection / Colony / Models / System Info tabs *(admin only)* |
+| **Ant Config** | Per-caste name, colour, and provider + model route editor *(admin only)* |
+| **Settings** | Connection / Providers / Colony / Models / System Info tabs *(admin only)* |
 | **Users** | Operator account management *(admin only)* |
 
 ### Colony Canvas (Colony page)
@@ -678,6 +738,15 @@ Click **⛶** on Colony Events to jump to the full Event Log page. Click **▾**
 ### Settings (Settings page)
 
 **Connection tab**: API base URL, Ollama reachability status, active model.
+
+**Providers tab**: Connect API keys for external model providers — OpenAI (ChatGPT), Anthropic
+(Claude), Perplexity, and OpenRouter — alongside free local Ollama. Each provider is its own card:
+paste a key, optionally override the base URL, **Save**, then **Test Connection** to fire a live
+probe call and confirm it works. Keys are encrypted at rest (AES-256-GCM) and are never sent back
+to the browser after saving — the console only ever shows a configured/verified status, not the
+key itself. Remove a connection to stop routing to it (ants routed there fall back to Ollama).
+See [Model Providers](#model-providers) below for the API and [Security Model](#security-model)
+for how keys are stored.
 
 **Colony tab**: Ollama host/model, feature-gate toggles, limits, and autonomy budgets — all editable and persisted live.
 
@@ -926,8 +995,8 @@ The web console is secured by **password-based operator accounts**, not a shared
 
 | Role | Can do |
 |------|--------|
-| **Administrator** | Everything: dispatch missions, approvals, settings, ant config, pheromone memory, autonomy control, and **user management**. |
-| **Mission Coordinator** | Only **send missions to the Queen** and **read the event logs** (plus live status to watch them run). Settings, approvals, patches, autonomy, pheromones, ant config, and user management are all denied. |
+| **Administrator** | Everything: dispatch missions, approvals, settings, ant config, model provider connections, pheromone memory, autonomy control, and **user management**. |
+| **Mission Coordinator** | Only **send missions to the Queen** and **read the event logs** (plus live status to watch them run). Settings, approvals, patches, autonomy, pheromones, ant config, provider connections, and user management are all denied. |
 
 Admins manage accounts from the **👥 Users** page in the console: create users, assign roles, reset
 passwords, enable/disable, or delete. Changing a user's password, role, or status immediately revokes

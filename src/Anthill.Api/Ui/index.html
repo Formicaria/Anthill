@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.3</title>
+<title>ANTHILL v1.8.4</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -205,10 +205,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 }
 .mission-row{display:flex;gap:7px;align-items:center;}
 .mission-input{
-  flex:1;padding:8px 14px;border-radius:20px;
+  flex:1;padding:8px 14px;border-radius:18px;
   background:rgba(22,36,64,.85);border:1px solid var(--border);
-  color:var(--text);font-size:12px;font-family:var(--font);
+  color:var(--text);font-size:12px;font-family:var(--font);line-height:1.5;
   transition:border-color var(--t);
+  box-sizing:border-box;resize:none;overflow-y:auto;
+  min-height:34px;max-height:140px;
+  white-space:pre-wrap;word-wrap:break-word;
 }
 .mission-input:focus{outline:none;border-color:var(--queen);}
 .mission-input:disabled{opacity:.35;cursor:default;}
@@ -372,6 +375,26 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .antcfg-model{width:100%;padding:5px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;}
 .antcfg-model:focus{outline:none;border-color:var(--queen);}
 
+/* ── Provider Connections ─────────────────────────────────────────────────── */
+.provider-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+.provider-card{background:var(--inner);border:1px solid var(--border);border-radius:var(--r);padding:14px;}
+.provider-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.provider-name{font-size:13px;font-weight:700;color:var(--text);}
+.provider-kind{font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}
+.provider-kind.paid{color:var(--queen);background:rgba(251,191,36,.12);}
+.provider-kind.free-local{color:var(--green);background:rgba(16,185,129,.12);}
+.provider-desc{font-size:10px;color:var(--dim);line-height:1.5;margin-bottom:10px;}
+.provider-status{display:flex;align-items:center;font-size:10px;color:var(--muted);margin-bottom:10px;}
+.provider-field{margin-bottom:8px;}
+.provider-field label{font-size:9px;color:var(--dim);display:block;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+.provider-input{width:100%;padding:6px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;font-family:var(--mono);}
+.provider-input:focus{outline:none;border-color:var(--queen);}
+.provider-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.provider-actions .btn{font-size:10px;padding:5px 10px;}
+.provider-help{font-size:9px;margin-top:6px;}
+.provider-help a{color:var(--blue);text-decoration:none;}
+.provider-help a:hover{text-decoration:underline;}
+
 /* ── Pheromone Table ───────────────────────────────────────────────────────── */
 .phero-table{width:100%;border-collapse:collapse;font-size:11px;}
 .phero-table th{text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
@@ -474,7 +497,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.3</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.4</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -517,7 +540,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.3</span>
+      <span class="nav-logo-ver">v1.8.4</span>
     </div>
 
     <div class="nav-scroll">
@@ -637,10 +660,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="padding:14px 16px;">
           <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Dispatch Mission</div>
           <div class="mission-row">
-            <input class="mission-input" id="ov-mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled style="position:relative;">
+            <textarea class="mission-input" id="ov-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
             <button class="send-btn" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
           </div>
-          <div class="bar-hint">Enter or ▶ to dispatch → Queen orchestrates the colony</div>
+          <div class="bar-hint">Enter to dispatch, Shift+Enter for a new line → Queen orchestrates the colony</div>
         </div>
 
         <!-- Two column: jobs + events -->
@@ -727,10 +750,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <!-- Mission bar overlays the bottom of the canvas -->
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">
-              <input class="mission-input" id="mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled>
+              <textarea class="mission-input" id="mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled></textarea>
               <button class="send-btn" id="send-btn" disabled title="Dispatch mission (Enter)">▶</button>
             </div>
-            <div class="bar-hint">Enter or ▶ to dispatch &rarr; Queen orchestrates the colony</div>
+            <div class="bar-hint">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
           </div>
         </div><!-- /colony-canvas-area -->
 
@@ -776,10 +799,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="padding:14px 16px;">
           <div class="section-head">New Mission</div>
           <div class="mission-row" style="gap:8px;">
-            <input class="mission-input" id="ms-mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled style="position:relative;">
+            <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
             <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">▶</button>
           </div>
-          <div class="bar-hint" style="margin-top:4px;">Enter or ▶ to dispatch &rarr; Queen orchestrates the colony</div>
+          <div class="bar-hint" style="margin-top:4px;">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
         </div>
 
         <!-- Jobs list -->
@@ -878,6 +901,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <div class="settings-tabs">
           <div class="settings-tab active" data-tab="connection">Connection</div>
+          <div class="settings-tab" data-tab="providers">Providers</div>
           <div class="settings-tab" data-tab="colony">Colony</div>
           <div class="settings-tab" data-tab="models">Models</div>
           <div class="settings-tab" data-tab="info">System Info</div>
@@ -901,6 +925,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="info-row">
               <span class="info-key">Reachability</span>
               <span class="info-val"><span class="ollama-dot err" id="si-ollama-dot"></span><span id="si-ollama-status">—</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Providers -->
+        <div class="settings-pane" id="tab-providers">
+          <div class="card" style="padding:16px 18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <div class="section-head" style="margin-top:0;padding:0;">Model Provider Connections</div>
+              <button class="btn btn-ghost" id="providers-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
+            </div>
+            <div style="font-size:10px;color:var(--dim);margin-bottom:14px;">
+              Connect API keys so ants can route to paid cloud models alongside free local Ollama.
+              Keys are encrypted at rest and never sent back to the browser after saving.
+            </div>
+            <div class="provider-grid" id="providers-grid">
+              <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
             </div>
           </div>
         </div>
@@ -1899,11 +1940,19 @@ async function pollActiveJob(){
 }
 
 // ── Mission dispatch ──────────────────────────────────────────────────────────
+// Mission inputs are auto-growing <textarea>s: they wrap into a paragraph instead of
+// scrolling as a single line, capped at max-height (then they scroll internally).
+function autoGrowMissionInput(el){
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,140)+'px';
+}
+
 async function dispatchMission(inputId){
   const input=document.getElementById(inputId||'mission-input');
   if(!input) return;
   const val=input.value.trim(); if(!val) return;
   input.value='';
+  autoGrowMissionInput(input);
   enableInput(false);
   try{
     const r=await api('/missions','POST',{goal:val});
@@ -1916,12 +1965,16 @@ async function dispatchMission(inputId){
   }catch{enableInput(true);}
 }
 
-// Wire up all mission dispatch inputs
-document.getElementById('mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('mission-input');});
+// Wire up all mission dispatch inputs — Enter dispatches, Shift+Enter inserts a newline.
+['mission-input','ms-mission-input','ov-mission-input'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); dispatchMission(id); }
+  });
+  el.addEventListener('input',()=>autoGrowMissionInput(el));
+});
 document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
-document.getElementById('ms-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ms-mission-input');});
 document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
-document.getElementById('ov-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ov-mission-input');});
 document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2005,6 +2058,7 @@ document.querySelectorAll('.settings-tab').forEach(tab=>{
     if(tab.dataset.tab==='info') loadInfoTab();
     if(tab.dataset.tab==='colony') loadColonyTab();
     if(tab.dataset.tab==='connection') loadSettingsInfo();
+    if(tab.dataset.tab==='providers') loadProvidersTab();
   });
 });
 
@@ -2034,6 +2088,97 @@ async function loadSettingsInfo(){
     setEl('si-ollama-status','unreachable');
   }
 }
+
+// ── Provider connections ──────────────────────────────────────────────────────
+let providerCatalog=[];
+
+function providerKindLabel(kind){return kind==='free-local'?'Free · Local':'Paid API';}
+
+async function loadProvidersTab(){
+  const grid=document.getElementById('providers-grid');
+  grid.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>';
+  try{
+    const [catRes,connRes]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+    if(!catRes.success) throw new Error(catRes.message);
+    providerCatalog=(catRes.data||[]).filter(p=>p.requires_key);
+    const connections=connRes.success?(connRes.data||[]):[];
+    const byProvider={};
+    connections.forEach(c=>{byProvider[c.provider]=c;});
+    grid.innerHTML=providerCatalog.map(p=>renderProviderCard(p,byProvider[p.provider]||{})).join('')
+      ||'<div style="font-size:10px;color:var(--dim)">No providers available.</div>';
+  }catch(e){
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+function renderProviderCard(p,conn){
+  const configured=!!conn.configured;
+  let statusHtml,statusColor;
+  if(!configured){statusColor='var(--dim)';statusHtml='Not connected';}
+  else if(conn.last_verify_ok===true){statusColor='var(--green)';statusHtml='Connected · verified '+(conn.last_verified_at?fmtTime(conn.last_verified_at):'');}
+  else if(conn.last_verify_ok===false){statusColor='var(--red)';statusHtml='Connected · last test failed';}
+  else{statusColor='var(--queen)';statusHtml='Connected · not yet tested';}
+  return `<div class="provider-card" data-provider="${p.provider}">
+    <div class="provider-top">
+      <div class="provider-name">${escapeHtml(p.name)}</div>
+      <span class="provider-kind ${p.kind}">${providerKindLabel(p.kind)}</span>
+    </div>
+    <div class="provider-desc">${escapeHtml(p.description||'')}</div>
+    <div class="provider-status"><span class="ollama-dot ${configured?(conn.last_verify_ok===false?'err':'ok'):'err'}"></span>${statusHtml}</div>
+    <div class="provider-field">
+      <label>API Key</label>
+      <input type="password" class="provider-input pv-key" placeholder="${configured?'•••••••••••••••• (leave blank to keep)':'Paste API key'}" autocomplete="off">
+    </div>
+    <div class="provider-field">
+      <label>Base URL <span style="text-transform:none;font-weight:400;">(optional override)</span></label>
+      <input type="text" class="provider-input pv-baseurl" placeholder="${escapeHtml(p.default_endpoint||'')}" value="${escapeHtml(conn.base_url||'')}">
+    </div>
+    <div class="provider-actions">
+      <button class="btn btn-primary pv-save">Save</button>
+      <button class="btn btn-ghost pv-test" ${configured?'':'disabled'}>Test Connection</button>
+      <button class="btn btn-danger pv-remove" ${configured?'':'disabled'}>Remove</button>
+    </div>
+    <div class="save-msg pv-msg"></div>
+    <div class="provider-help">Get a key: <a href="${p.key_help_url}" target="_blank" rel="noopener">${escapeHtml((p.key_help_url||'').replace(/^https?:\/\//,''))}</a></div>
+  </div>`;
+}
+
+document.getElementById('providers-refresh').addEventListener('click',loadProvidersTab);
+
+document.getElementById('providers-grid').addEventListener('click',async(e)=>{
+  const card=e.target.closest('.provider-card'); if(!card) return;
+  const provider=card.dataset.provider;
+  const msg=card.querySelector('.pv-msg');
+  const setMsg=(t,ok)=>{msg.style.color=ok?'var(--green)':'var(--red)';msg.textContent=t;setTimeout(()=>{if(msg.textContent===t)msg.textContent='';},4000);};
+
+  if(e.target.classList.contains('pv-save')){
+    const key=card.querySelector('.pv-key').value.trim();
+    const baseUrl=card.querySelector('.pv-baseurl').value.trim();
+    try{
+      const r=await api('/providers','POST',{provider,api_key:key||undefined,base_url:baseUrl||undefined});
+      if(r.success){setMsg('Saved ✓',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
+      else setMsg(r.message||'Failed',false);
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+
+  if(e.target.classList.contains('pv-test')){
+    setMsg('Testing…',true);
+    try{
+      const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
+      setMsg(r.success?'Verified ✓':(r.message||'Test failed'),r.success);
+      await loadProvidersTab();
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+
+  if(e.target.classList.contains('pv-remove')){
+    if(!confirm(`Remove the ${provider} connection? Ants routed to it will fall back to Ollama.`)) return;
+    try{
+      const r=await api('/providers/'+encodeURIComponent(provider),'DELETE');
+      if(r.success){setMsg('Removed',true);await loadProvidersTab();}
+      else setMsg(r.message||'Failed',false);
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+});
 
 // ── Model browser ──────────────────────────────────────────────────────────────
 let activeRouteModels=new Set();
@@ -2269,6 +2414,8 @@ document.getElementById('rename-input').addEventListener('keydown',e=>{if(e.key=
 
 // ── Ant Config page ───────────────────────────────────────────────────────────
 let availableModels=[];
+let antcfgCatalog=[];       // provider catalog (ollama + keyed providers), from /providers/catalog
+let antcfgConfigured=new Set(); // provider ids that currently have a working key saved
 
 async function fetchModelNames(){
   try{
@@ -2278,23 +2425,50 @@ async function fetchModelNames(){
   }catch{availableModels=[];}
 }
 
+async function fetchProviderCatalog(){
+  try{
+    const [catRes,connRes]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+    antcfgCatalog=catRes.success?(catRes.data||[]):[];
+    antcfgConfigured=new Set((connRes.success?(connRes.data||[]):[]).filter(c=>c.configured).map(c=>c.provider));
+  }catch{antcfgCatalog=[];antcfgConfigured=new Set();}
+}
+
+function antcfgModelOptions(provider,curModel){
+  const models=provider==='ollama'?availableModels:((antcfgCatalog.find(p=>p.provider===provider)||{}).models||[]);
+  const opts=models.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('');
+  const extra=curModel&&!models.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:'';
+  return `<option value="">— default —</option>${opts}${extra}`;
+}
+
+function antcfgProviderOptions(curProvider){
+  const providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
+  return providers.map(p=>{
+    const connected=p.provider==='ollama'||antcfgConfigured.has(p.provider);
+    const label=connected?p.name:`${p.name} (not connected)`;
+    return `<option value="${p.provider}"${p.provider===(curProvider||'ollama')?' selected':''}>${label}</option>`;
+  }).join('');
+}
+
 async function openAntConfig(){
   showPage('antconfig');
-  await fetchModelNames();
+  await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
   let routes={};
   try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
   const grid=document.getElementById('antcfg-grid');
   const castes=['queen',...ANT_CASTES];
   grid.innerHTML=castes.map(c=>{
     const d=ANT_DEFAULTS[c],name=casteName(c),color=casteColor(c);
+    const curProvider=uiState.castes[c]?.provider||routes[c]?.provider||'ollama';
     const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
     const modelField=c==='queen'?'':`
       <div class="antcfg-field">
+        <label>Provider</label>
+        <select data-caste="${c}" class="antcfg-model antcfg-provider">${antcfgProviderOptions(curProvider)}</select>
+      </div>
+      <div class="antcfg-field">
         <label>Model (route)</label>
-        <select data-caste="${c}" class="antcfg-model">
-          <option value="">— default —</option>
-          ${availableModels.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('')}
-          ${curModel&&!availableModels.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:''}
+        <select data-caste="${c}" class="antcfg-model antcfg-modelname" data-provider="${curProvider}">
+          ${antcfgModelOptions(curProvider,curModel)}
         </select>
       </div>`;
     return `<div class="antcfg-card">
@@ -2307,6 +2481,16 @@ async function openAntConfig(){
       ${modelField}
     </div>`;
   }).join('');
+
+  // Switching provider repopulates the model list for that caste from the right catalog.
+  grid.querySelectorAll('.antcfg-provider').forEach(sel=>{
+    sel.addEventListener('change',()=>{
+      const c=sel.dataset.caste,provider=sel.value;
+      const modelSel=grid.querySelector(`.antcfg-modelname[data-caste="${c}"]`);
+      modelSel.dataset.provider=provider;
+      modelSel.innerHTML=antcfgModelOptions(provider,'');
+    });
+  });
 }
 
 PAGE_ENTER['antconfig']=()=>openAntConfig();
@@ -2316,9 +2500,10 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
   document.querySelectorAll('.antcfg-name').forEach(i=>{const c=i.dataset.caste,v=i.value.trim();if(v)uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});});
   document.querySelectorAll('.antcfg-color').forEach(i=>{const c=i.dataset.caste;uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value});});
   const routeUpdate={};
-  document.querySelectorAll('.antcfg-model').forEach(s=>{const c=s.dataset.caste,v=s.value;
-    uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined});
-    if(v) routeUpdate[c]={provider:'ollama',model:v};
+  document.querySelectorAll('.antcfg-modelname').forEach(s=>{
+    const c=s.dataset.caste,v=s.value,provider=s.dataset.provider||'ollama';
+    uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined,provider:provider!=='ollama'?provider:undefined});
+    if(v) routeUpdate[c]={provider,model:v};
   });
   applyUiState();saveUiState();
   if(Object.keys(routeUpdate).length){

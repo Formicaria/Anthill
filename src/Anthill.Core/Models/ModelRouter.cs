@@ -96,6 +96,14 @@ public sealed class ModelRouter
 
     private IModelClient GetClient(string provider, string model)
     {
+        // Keyed providers (OpenAI/Anthropic/Perplexity/OpenRouter/...) are built fresh on every
+        // call instead of cached: the API key lives in provider_credentials and can be rotated or
+        // revoked from Settings → Providers at any time, and a cached client would keep using a
+        // stale (or just-deleted) key until process restart. Construction itself is cheap — each
+        // client shares one static HttpClient — so this costs nothing but an allocation.
+        if (ProviderCatalog.KeyedProviders.Contains(provider))
+            return BuildKeyedClient(provider, model);
+
         var key = $"{provider}:{model}";
         lock (_lock)
         {
@@ -103,15 +111,38 @@ public sealed class ModelRouter
             IModelClient client = provider switch
             {
                 "ollama" => new OllamaClient(model),
-                "openai" => new PlaceholderClient("OpenAI"),
-                "anthropic" => new PlaceholderClient("Anthropic"),
-                "openrouter" => new PlaceholderClient("OpenRouter"),
                 _ => new OllamaClient(AnthillRuntime.OllamaModel),
             };
             _clients[key] = client;
             return client;
         }
     }
+
+    /// <summary>Builds a client for a keyed external provider, resolving its API key and endpoint
+    /// from <see cref="SqliteMemory"/> (see <c>SqliteMemory.Providers.cs</c>).</summary>
+    private IModelClient BuildKeyedClient(string provider, string model)
+    {
+        var info = ProviderCatalog.Find(provider);
+        var apiKey = _memory?.GetDecryptedApiKey(provider);
+        var storedBaseUrl = _memory?.GetProviderBaseUrl(provider);
+        var endpoint = string.IsNullOrWhiteSpace(storedBaseUrl) ? info?.DefaultEndpoint ?? "" : storedBaseUrl;
+        var effectiveModel = string.IsNullOrWhiteSpace(model) ? info?.DefaultModel ?? model : model;
+
+        return provider switch
+        {
+            "openai" => new OpenAiCompatibleClient("OpenAI", endpoint, apiKey, effectiveModel),
+            "perplexity" => new OpenAiCompatibleClient("Perplexity", endpoint, apiKey, effectiveModel),
+            "openrouter" => new OpenAiCompatibleClient("OpenRouter", endpoint, apiKey, effectiveModel,
+                new Dictionary<string, string> { ["HTTP-Referer"] = "https://anthill.local", ["X-Title"] = "ANTHILL" }),
+            "anthropic" => new AnthropicClient(apiKey, effectiveModel),
+            _ => new PlaceholderClient(provider),
+        };
+    }
+
+    /// <summary>Builds a client for an ad-hoc connection test — the same routing used at mission
+    /// time, but callable directly by the API's "Test Connection" action without a role/route.</summary>
+    public IModelClient GetClientForProvider(string provider, string? model = null) =>
+        GetClient(provider, model ?? ProviderCatalog.Find(provider)?.DefaultModel ?? "");
 
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
         string? antName = null, int retries = 2)
@@ -165,12 +196,18 @@ public sealed class ModelRouter
         var active = AnthillRuntime.ModelRouting.Keys
             .Select(r => { var (p, m) = GetRoute(r); return $"{p}:{m}"; })
             .Distinct().OrderBy(x => x, StringComparer.Ordinal);
+        var configuredProviders = _memory?.ListProviderConnections()
+            .Where(c => c["configured"] is true)
+            .Select(c => c["provider"]?.ToString() ?? "")
+            .ToList() ?? new List<string>();
         return $"ANTHILL v{AnthillRuntime.Version} Model Router\n" +
                $"Routing Enabled: {(AnthillRuntime.EnableModelRouting ? "ON" : "OFF")}\n" +
                $"Default Provider: {AnthillRuntime.DefaultModelProvider}\n" +
                $"Ollama Host: {AnthillRuntime.OllamaHost}\n" +
                $"Total Model Calls This Session: {CallCount}\n" +
                $"Active Route Targets: {string.Join(", ", active)}\n" +
-               "Provider Status: Ollama active; OpenAI/Anthropic/OpenRouter placeholders available for future provider wiring.";
+               $"Configured External Providers: {(configuredProviders.Count > 0 ? string.Join(", ", configuredProviders) : "none")}\n" +
+               "Provider Support: Ollama (local, keyless), OpenAI, Anthropic (Claude), Perplexity, and OpenRouter — " +
+               "connect API keys in Settings → Providers.";
     }
 }

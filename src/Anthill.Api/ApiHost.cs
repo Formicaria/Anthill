@@ -4,6 +4,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Diagnostics;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
+using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Security;
 using Microsoft.AspNetCore.Builder;
@@ -204,6 +205,7 @@ public static class ApiHost
         MapAuthEndpoints(app);
         MapAutonomyEndpoints(app);
         MapDashboardEndpoints(app);
+        MapProviderEndpoints(app);
     }
 
     // ---- Authentication + operator accounts ----
@@ -422,6 +424,71 @@ public static class ApiHost
         });
     }
 
+    // ---- Model provider connections (API keys for OpenAI/Anthropic/Perplexity/OpenRouter/...) ----
+    private static void MapProviderEndpoints(WebApplication app)
+    {
+        // Static catalog metadata: which providers exist, whether they need a key, curated model
+        // lists, and where to go get a key. No secrets here — safe to read with read_providers.
+        app.MapGet("/providers/catalog", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_providers"); if (auth is not null) return auth;
+            var catalog = ProviderCatalog.All.Select(p => new Dictionary<string, object?>
+            {
+                ["provider"] = p.Id, ["name"] = p.Name, ["kind"] = p.Kind, ["description"] = p.Description,
+                ["requires_key"] = p.RequiresKey, ["default_endpoint"] = p.DefaultEndpoint,
+                ["key_help_url"] = p.KeyHelpUrl, ["default_model"] = p.DefaultModel, ["models"] = p.Models,
+            }).ToList();
+            return ApiJson.Ok(catalog);
+        });
+
+        // Secret-free connection status for every keyed provider (configured or not).
+        app.MapGet("/providers", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_providers") ?? ApiJson.Ok(Queen.Memory.ListProviderConnections()));
+
+        // Add or update a connection. api_key is optional on update (blank = leave the stored key
+        // untouched); required the first time a provider is connected.
+        app.MapPost("/providers", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_providers"); if (auth is not null) return auth;
+            ProviderUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ProviderUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Provider)) return ApiJson.Error("Provider is required.", "bad_request");
+
+            var err = Queen.Memory.UpsertProviderCredential(
+                body!.Provider!, body.ApiKey, body.BaseUrl, body.Enabled ?? true, body.Label);
+            if (err.Length > 0) return ApiJson.Error(err, "bad_request");
+            return ApiJson.Ok(Queen.Memory.ListProviderConnections(), $"Saved {SqliteMemory.NormalizeProvider(body.Provider)} connection.");
+        });
+
+        app.MapDelete("/providers/{provider}", (HttpContext ctx, string provider) =>
+        {
+            var auth = RequireAuth(ctx, "manage_providers"); if (auth is not null) return auth;
+            Queen.Memory.DeleteProviderCredential(provider);
+            return ApiJson.Ok(Queen.Memory.ListProviderConnections(), $"Removed {SqliteMemory.NormalizeProvider(provider)} connection.");
+        });
+
+        // Fires one small live request through the real routing path (ModelRouter) to confirm the
+        // stored key actually works, and records the outcome for the console to display.
+        app.MapPost("/providers/{provider}/test", (HttpContext ctx, string provider) =>
+        {
+            var auth = RequireAuth(ctx, "manage_providers"); if (auth is not null) return auth;
+            var p = SqliteMemory.NormalizeProvider(provider);
+            if (!ProviderCatalog.KeyedProviders.Contains(p))
+                return ApiJson.Error($"Unknown provider '{p}'.", "bad_request");
+            if (Queen.Router is null)
+                return ApiJson.Error("Model routing is disabled for this colony.", "bad_request");
+
+            var client = Queen.Router.GetClientForProvider(p);
+            var reply = client.Generate("Reply with the single word: OK", retries: 1);
+            var ok = !reply.StartsWith("ERROR:", StringComparison.Ordinal);
+            Queen.Memory.SetProviderVerification(p, ok, reply);
+            return ok
+                ? ApiJson.Ok(Queen.Memory.ListProviderConnections(), $"{p} connection verified.")
+                : ApiJson.Error(reply, "provider_test_failed");
+        });
+    }
+
     // ---- Autonomy (Phase 1): objective backlog + Director control plane ----
     private static void MapAutonomyEndpoints(WebApplication app)
     {
@@ -599,6 +666,14 @@ public sealed class LoginRequest { public string? Username { get; set; } public 
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
 public sealed class RejectBody { public string? Reason { get; set; } }
+public sealed class ProviderUpsertRequest
+{
+    public string? Provider { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("api_key")] public string? ApiKey { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("base_url")] public string? BaseUrl { get; set; }
+    public bool? Enabled { get; set; }
+    public string? Label { get; set; }
+}
 public sealed class ObjectiveRequest
 {
     public string? Title { get; set; }

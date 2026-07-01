@@ -1,7 +1,52 @@
 # ANTHILL Changelog
 
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
-> Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**, and so on.
+> Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
+> model provider connections = **v1.8.4**, and so on.
+
+## v1.8.4 — Model provider connections
+
+Schema bumped to **v10** (new `provider_credentials` table, migration `model_provider_connections`).
+Ants can now be routed to paid cloud model providers — OpenAI (ChatGPT), Anthropic (Claude),
+Perplexity, and OpenRouter — alongside free local Ollama, with API keys managed from the console.
+
+Added:
+
+- **`provider_credentials` table** — one row per external provider. The API key is sealed at rest
+  with the existing AES-256-GCM `FieldCipher` (same key resolution as other encrypted columns:
+  `ANTHILL_ENCRYPTION_KEY` env var, else an auto-generated 0600 workspace key file) and is never
+  read back over the API; only a `configured` boolean, `enabled` flag, optional base-URL override,
+  and last-verification status are ever exposed.
+- **Real provider clients** (`Anthill.Core.Models.ProviderClients`) — `OpenAiCompatibleClient`
+  (shared by OpenAI, Perplexity, and OpenRouter, which all speak the same `{model, messages}` →
+  `choices[0].message.content` contract) and `AnthropicClient` (Messages API, `x-api-key` header,
+  `content[]` block array). Both fail closed with `ERROR:` sentinel strings on missing keys,
+  auth failures, timeouts, or transport errors, matching `OllamaClient`'s existing contract so the
+  rest of the colony (retries, pheromone scoring, event logging) needs no changes.
+- **`ProviderCatalog`** — static metadata (display name, free/paid kind, curated model list, key
+  help URL, default endpoint) for every known provider, driving both the API's `/providers/catalog`
+  response and the console's dropdowns.
+- **`ModelRouter` keyed-client routing** — OpenAI/Anthropic/Perplexity/OpenRouter clients are built
+  fresh on every call (not cached like Ollama's) so a rotated or removed key takes effect
+  immediately without a process restart.
+- **New endpoints**: `GET /providers/catalog`, `GET /providers`, `POST /providers` (upsert — a
+  blank `api_key` on update leaves the stored key untouched), `DELETE /providers/{provider}`,
+  `POST /providers/{provider}/test` (fires one live probe call through the real routing path and
+  records the verification result). Gated by two new permissions, `read_providers` and
+  `manage_providers`, both admin-only like `manage_settings`/`manage_users`.
+- **Settings → Providers tab** — a card per provider with API-key input, optional base-URL
+  override, Save / Test Connection / Remove actions, and a status pill (not connected / connected /
+  verified / verification failed).
+- **Ant Config provider + model routing** — each caste's model route editor now has a Provider
+  selector (Ollama or any connected external provider) in addition to the existing model picker;
+  saving writes `{provider, model}` into `model_routes` exactly as before.
+
+Validation:
+
+- Manual review only — no `dotnet` SDK was available in the environment this change was authored
+  in, so this release has **not** been compiled or run. Run `dotnet build` and exercise
+  `POST /providers`, `POST /providers/{provider}/test`, and an Ant Config route change before
+  shipping.
 
 ## v1.8.3 — Enterprise shell UI
 
