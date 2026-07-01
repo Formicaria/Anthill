@@ -1,5 +1,7 @@
 # ANTHILL — Swarm Intelligence Agent Framework
 
+[![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
+
 > **v1.8.6** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).

@@ -47,10 +47,18 @@ Added:
   (as documented in the README) silently never built the actual CLI/API projects — only
   `build.sh`/`build.ps1`'s explicit direct-publish step did. Added all three so the documented
   build/IDE-open workflow matches what actually ships.
-- **README**: Docker section now points at the real root-level files instead of an untested
-  inline snippet; new `docs/DEPLOYMENT.md` pointer; Security Model table gained a network-binding
-  row; Windows Service section flagged as pending proper SCM integration (planned next, see
-  `docs/DEPLOYMENT.md` §4).
+- **README**: Docker section expanded to include the full `docker-compose.yml` walkthrough (field
+  table, bridge-mode alternative for Windows/macOS Docker Desktop, plain `docker build`/`docker
+  run` commands, Dockerfile summary, upgrade steps) instead of just pointing at
+  `docs/DEPLOYMENT.md`; Security Model table gained a network-binding row; Windows Service section
+  flagged as pending proper SCM integration (planned next, see `docs/DEPLOYMENT.md` §4); CI badge
+  added.
+- **CI** (`.github/workflows/ci.yml`, previously an empty placeholder): now runs on every push/PR
+  to `main` (and manually via `workflow_dispatch`) — `dotnet build`/`dotnet test` on Linux and
+  Windows, a self-contained `linux-x64` publish + `--selftest` run, and a Docker build + container
+  boot smoke test that polls the `HEALTHCHECK` status and hits `GET /health` directly. This is the
+  actual "does this work" signal going forward, since neither a .NET SDK nor a Docker daemon is
+  available in the environment these changes were authored in.
 
 Validation:
 
