@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.14.1** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.14.3** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -881,11 +881,14 @@ A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggl
 |------|---------|
 | **Overview** | 4 KPI cards (model calls, tasks, events, approvals), mission dispatch, recent jobs, live event feed |
 | **Colony** | Live canvas visualisation — the main control surface |
-| **Missions** | Mission dispatch + full job history — "View Result" opens the structured **Mission Report**: status in plain English, the mission's final output (separate from per-task outputs), every task's readable result, tangible changes (patches + approval state), and problems |
+| **Missions** | Mission dispatch + full job history — "View Result" jumps to the Results page with that mission expanded |
+| **Results** | Every mission as a compact, expandable row (filter by completed/partial/failed). Expanding shows the full **Mission Report**: status in plain English, the mission's final output (separate from per-task outputs), every task's readable result, tangible changes (patches + approval state), problems, the objective that drove an autonomous run, and any objectives the mission created |
 | **Event Log** | Filterable, searchable full-page event log |
 | **Pheromones** | Colony pheromone trail table with prune button *(admin only)* |
 | **Ant Config** | Per-caste name, colour, and provider + model route editor *(admin only)* |
 | **Autonomy** | Director status/start/stop/kill-switch, objectives backlog editor, recent autonomous runs *(admin only)* |
+| **Security** | Security posture (auth, safety profile, bind exposure, encryption), capability-gate toggles, workspace boundary, and operator-shell controls *(admin only)* |
+| **Shell** | Direct interactive terminal into the host ANTHILL runs on — command history, streamed output, exit codes, settable working dir. Admin-only, config-gated, every command audit-logged *(admin only)* |
 | **Settings** | Connection / Providers / Colony / Models / System Info tabs *(admin only)* |
 | **Users** | Operator account management *(admin only)* |
 
@@ -1006,6 +1009,10 @@ Mission runs
 **What triggers an approval:**
 - Any coder ant task that returns a JSON object with a `proposals` array
 - Each proposal in the array gets its own approval request
+- **Duplicates are deduped**: if an identical change (same file, change type, and content) is
+  already pending, no second request is created — an `approval_request_deduped` event is logged
+  instead. This keeps high-frequency autonomous runs from flooding the queue while a proposal
+  awaits review.
 
 **What requires old_content:**
 - `change_type: "modify"` and `change_type: "delete"` use `old_content` to find the exact text to replace (like a surgical diff). If missing, the patch is rejected at apply time.
@@ -1120,7 +1127,8 @@ Authorization: Bearer YOUR_TOKEN
 | `POST` | `/missions` | Submit a mission `{"goal": "your goal here"}` |
 | `GET` | `/jobs` | List all jobs |
 | `GET` | `/jobs/{id}` | Get job detail including result and debug trace |
-| `GET` | `/missions` | Mission history |
+| `GET` | `/missions` | Mission history (plain text) |
+| `GET` | `/missions/json` | Mission history as JSON (`?limit=`) — powers the Results page |
 | `GET` | `/missions/{id}` | Mission detail (plain text) |
 | `GET` | `/missions/{id}/report` | Structured readable report: final output, per-task results in plain English, patches + approval states, problems |
 | `GET` | `/missions/{id}/graph` | Task DAG for a specific mission |
@@ -1165,6 +1173,17 @@ Authorization: Bearer YOUR_TOKEN
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/ollama/models` | List available Ollama models (proxied from Ollama host) |
+
+### Operator Shell (admin only)
+
+Admin-only host terminal behind the `operator_shell` permission (never granted to coordinators)
+and the `operator_shell_enabled` config gate. Every command is audit-logged. See
+[Security Model](#security-model).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/shell/info` | Console status: enabled flag, default working dir, host, OS, timeout |
+| `POST` | `/shell/exec` | Run one command `{"command","dir"?}` → `{exit_code, stdout, stderr, timed_out, dir, elapsed_seconds}` |
 
 ### Autonomy (24/7 Director)
 
@@ -1259,6 +1278,7 @@ unnecessary for normal use. Leave it unset to rely purely on operator accounts.
 | Encryption at rest | Sensitive columns encrypted with AES-256-GCM; key auto-generated to `.anthill/field.key` |
 | DB hardening | Files chmod-600 (POSIX); pre-mission backup; fully parameterised SQL |
 | Tool gates | Shell, file write, patch apply, web search all off by default; each gated by config |
+| Operator shell console | Admin-only host terminal (Configuration → Shell). Four gates: authenticated + admin role (`operator_shell` never granted to coordinators) + `operator_shell_enabled` config gate + every command audit-logged with the operator's username. 60s/command timeout, output capped. Ships enabled for admins; disable on untrusted networks. Separate from the AI ants' allowlisted `shell_tool_enabled` (off by default) |
 | No public API docs | No Swagger/OpenAPI surface exposed |
 
 ---

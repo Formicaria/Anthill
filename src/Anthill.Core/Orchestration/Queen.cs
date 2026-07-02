@@ -516,6 +516,15 @@ public sealed partial class Queen : IDisposable
             {
                 Memory.LogEvent(mission.Id, "patch_proposal_created", $"Patch proposal created for {proposal.FilePath}", task.Id, task.AssignedAnt,
                     new() { ["patch_set_id"] = patchSet.Id, ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value(), ["requires_approval"] = proposal.RequiresApproval, ["status"] = proposal.Status.Value() });
+                // Autonomous objectives re-propose the same change run after run while the first
+                // request sits unreviewed — don't stack identical approval requests.
+                if (Memory.HasDuplicatePendingApproval(proposal))
+                {
+                    Memory.LogEvent(mission.Id, "approval_request_deduped",
+                        $"Identical change for {proposal.FilePath} is already awaiting approval — no duplicate request created.", task.Id, "queen",
+                        new() { ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value() });
+                    continue;
+                }
                 var approval = CreatePatchApprovalRequest(mission, task, patchSet, proposal);
                 Memory.SaveApprovalRequest(approval);
                 Memory.LogEvent(mission.Id, "approval_request_created", $"Approval request created for patch proposal: {proposal.FilePath}", task.Id, "queen",

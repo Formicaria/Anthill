@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.14.1</title>
+<title>ANTHILL v1.8.14.3</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -516,7 +516,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.14.1</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.14.3</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -559,7 +559,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.14.1</span>
+      <span class="nav-logo-ver">v1.8.14.3</span>
     </div>
 
     <div class="nav-scroll">
@@ -584,6 +584,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
         <span class="nav-label">Event Log</span>
       </div>
+      <div id="nav-item-results" class="nav-item" data-page="results">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>
+        <span class="nav-label">Results</span>
+      </div>
       <div id="nav-item-pheromones" class="nav-item" data-page="pheromones">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
         <span class="nav-label">Pheromones</span>
@@ -599,6 +603,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
         <span class="nav-label">Autonomy</span>
         <span class="nav-badge" id="nav-autonomy-badge" style="display:none"></span>
+      </div>
+      <div id="nav-item-security" class="nav-item" data-page="security">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span class="nav-label">Security</span>
+      </div>
+      <div id="nav-item-shell" class="nav-item" data-page="shell">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
+        <span class="nav-label">Shell</span>
       </div>
       <div id="nav-item-settings" class="nav-item" data-page="settings">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
@@ -842,6 +854,25 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
       </div><!-- /page-missions -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: RESULTS — expandable mission reports, out of the way of the canvas
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-results">
+        <div class="page-hdr">
+          <div><h1>Results</h1><div class="sub">Every mission's outcome — expand a row to read the full report: final output, per-task results, tangible changes, and objectives it created</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="results-filter" class="form-input" style="width:auto;font-size:11px;padding:5px 8px;">
+              <option value="">All statuses</option>
+              <option value="complete">Completed</option>
+              <option value="partial">Partial</option>
+              <option value="failed">Failed / errored</option>
+            </select>
+            <button class="btn btn-ghost" id="results-refresh">↺ Refresh</button>
+          </div>
+        </div>
+        <div id="results-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading missions...</div></div>
+      </div><!-- /page-results -->
 
       <!-- ════════════════════════════════════════════════════════════════════
            PAGE: EVENT LOG
@@ -1133,6 +1164,78 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-settings -->
 
       <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: SECURITY — app security posture + gates (admin only)
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-security">
+        <div class="page-hdr">
+          <div><h1>Security</h1><div class="sub">Application security posture, capability gates, and the workspace boundary</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="sec-msg"></span>
+            <button class="btn btn-ghost" id="sec-refresh">↺ Refresh</button>
+            <button class="btn btn-primary" id="sec-save">Save changes</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div class="section-head" style="margin-top:0;padding:0;">Posture</div>
+          <div class="kpi-grid" style="margin-top:12px;">
+            <div class="kpi-card" style="border-left-color:var(--green)"><div class="kpi-label">Auth</div><div class="kpi-num" id="sec-auth" style="font-size:16px">—</div><div class="kpi-sub">operator login</div></div>
+            <div class="kpi-card" style="border-left-color:var(--blue)"><div class="kpi-label">Safety Profile</div><div class="kpi-num" id="sec-profile" style="font-size:16px">—</div><div class="kpi-sub">shipped default</div></div>
+            <div class="kpi-card" style="border-left-color:var(--purple)"><div class="kpi-label">Bind</div><div class="kpi-num" id="sec-bind" style="font-size:16px">—</div><div class="kpi-sub">network exposure</div></div>
+            <div class="kpi-card" style="border-left-color:var(--queen)"><div class="kpi-label">Encryption</div><div class="kpi-num" id="sec-enc" style="font-size:16px">—</div><div class="kpi-sub">secrets at rest</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div class="section-head" style="margin-top:0;">Capability Gates</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Each gate is off-by-default and fail-closed. Turning one on widens what the colony (or an admin) can do — review before enabling on a network-reachable install.</div>
+          <div id="sec-toggles"></div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div class="section-head" style="margin-top:0;">Workspace Boundary</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">The only directory the file/coder ants may read from and propose patches against. Paths outside it are always rejected.</div>
+          <div class="form-field"><label>agent_workspace_dir</label><input class="form-input" id="sec-workspace" type="text" placeholder="/opt/anthill/.anthill/workspace" style="width:100%;font-family:var(--mono);"></div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div class="section-head" style="margin-top:0;">Operator Shell</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Configuration → Shell) — a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
+          <div id="sec-shell-toggle"></div>
+          <div class="form-field" style="margin-top:10px;"><label>Default shell working directory <span style="color:var(--dim);font-weight:400">(blank = workspace root)</span></label><input class="form-input" id="sec-shell-dir" type="text" placeholder="/opt/anthill/src" style="width:100%;font-family:var(--mono);"></div>
+        </div>
+      </div><!-- /page-security -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: SHELL — admin-only interactive host terminal
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-shell">
+        <div class="page-hdr">
+          <div><h1>Shell</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> — administrators only, every command is audit-logged</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg" id="sh-msg"></span>
+            <button class="btn btn-ghost" id="sh-clear">Clear</button>
+          </div>
+        </div>
+        <div id="sh-disabled-note" style="display:none;background:rgba(251,191,36,.08);border:1px solid var(--queen);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--queen);">
+          The operator shell is disabled. Enable it in <b>Configuration → Security → Operator Shell</b> to use this terminal.
+        </div>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);">
+            <span style="font-size:10px;color:var(--dim);">cwd</span>
+            <input class="form-input" id="sh-dir" type="text" placeholder="working directory" style="flex:1;font-family:var(--mono);font-size:11px;padding:4px 8px;">
+          </div>
+          <div id="sh-output" style="font-family:var(--mono);font-size:12px;line-height:1.55;padding:12px 14px;height:460px;overflow-y:auto;white-space:pre-wrap;color:var(--text);background:#0a121e;"></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);">
+            <span style="color:var(--green);font-family:var(--mono);">$</span>
+            <input class="form-input" id="sh-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter…" style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 8px;" disabled>
+            <button class="btn btn-primary" id="sh-run" disabled>Run</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history.</div>
+      </div><!-- /page-shell -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
            PAGE: USERS
       ═════════════════════════════════════════════════════════════════════ -->
       <div class="page page-scroll" id="page-users">
@@ -1368,7 +1471,7 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['nav-item-antconfig','nav-item-autonomy','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+  ['nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   // nav-item-pheromones: admin only
@@ -1396,7 +1499,7 @@ function applyRoleVisibility(){
 
 // ── Page Routing ──────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-  overview:'Overview', colony:'Colony', missions:'Missions',
+  overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
   events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
@@ -1808,7 +1911,8 @@ function renderJobList(jobs, listId, badgeId, limit){
       </div>
       <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
       <div class="job-actions">
-        ${isDone||isRunning?`<button class="job-btn view" onclick="event.stopPropagation();selectJob('${j.id}')">View Result</button>`:''}
+        ${isDone?`<button class="job-btn view" onclick="event.stopPropagation();openJobResult('${j.id}','${j.mission_id||''}')">View Result</button>`
+          :isRunning?`<button class="job-btn view" onclick="event.stopPropagation();selectJob('${j.id}')">View Status</button>`:''}
         ${isRunning?`<button class="job-btn cancel" onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
       </div>
     </div>`;
@@ -2098,6 +2202,22 @@ async function renderMissionReport(missionId, body){
   }
   if(rep.sources_saved) html+=sec('Research', `<div style="white-space:normal;color:var(--dim)">${rep.sources_saved} web source(s) saved.</div>`);
 
+  // Autonomy linkage — which objective drove this mission, and what it spawned.
+  if(rep.autonomy_run){
+    const ar=rep.autonomy_run;
+    html+=sec('Autonomous run',
+      `<div style="white-space:normal;line-height:1.6;color:var(--dim)">Driven by objective <b style="color:var(--text)">${escapeHtml(ar.objective_title||ar.objective_id||'?')}</b>`+
+      `${ar.follow_ups_created?` · spawned ${ar.follow_ups_created} follow-up objective(s)`:''}</div>`);
+  }
+  const created=rep.created_objectives||[];
+  if(created.length){
+    html+=sec(`Objectives created by this mission (${created.length})`,
+      created.map(o=>`<div style="white-space:normal;margin-bottom:5px;line-height:1.5">`+
+        `<b>${escapeHtml(o.title||'')}</b> <span class="obj-status ${o.status}">${o.status}</span> <span style="color:var(--dim)">(priority ${o.priority})</span>`+
+        `<div style="color:var(--dim);font-size:11px">${escapeHtml(o.charter||'')}</div></div>`).join('')+
+      `<div style="white-space:normal;color:var(--dim);font-size:11px;margin-top:4px">These now live in the <b>Autonomy</b> backlog.</div>`);
+  }
+
   // Problems — surfaced instead of buried (incl. unparseable coder proposals).
   const problems=rep.problems||[];
   if(problems.length){
@@ -2129,7 +2249,69 @@ async function renderMissionReport(missionId, body){
   body.innerHTML=html;
 }
 
-// Opens the report modal directly for a mission id (used by the Autonomy runs table).
+// ── Results page: expandable mission reports ─────────────────────────────────
+let resultsMissions=[], resultsPendingExpand=null;
+
+PAGE_ENTER['results']=()=>loadResults();
+document.getElementById('results-refresh').addEventListener('click',()=>loadResults());
+document.getElementById('results-filter').addEventListener('change',()=>renderResultsList());
+
+async function loadResults(){
+  try{
+    const r=await api('/missions/json?limit=100'); if(!r.success) throw new Error(r.message);
+    resultsMissions=r.data||[];
+    renderResultsList();
+  }catch(e){ document.getElementById('results-list').innerHTML=`<div style="color:var(--red);padding:20px;">Error loading missions: ${escapeHtml(e.message)}</div>`; }
+}
+
+function renderResultsList(){
+  const filter=document.getElementById('results-filter').value;
+  const list=document.getElementById('results-list');
+  const rows=resultsMissions.filter(m=>!filter||m.status===filter);
+  if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No missions match.</div>'; return; }
+  list.innerHTML=rows.map(m=>{
+    const [stLabel,stColor]=MR_STATUS[m.status]||[m.status,'var(--text)'];
+    const score=m.success_score!=null?Number(m.success_score).toFixed(2):'—';
+    return `<details class="card" style="margin-bottom:8px;padding:0;" data-mission="${m.id}" ontoggle="onResultToggle(this)">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;user-select:none;">
+        <span style="color:${stColor};font-weight:600;white-space:nowrap;font-size:11px;">${stLabel}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${escapeHtml(m.goal||'')}</span>
+        <span style="color:var(--dim);font-size:10px;font-family:var(--mono);white-space:nowrap;">score ${score} · ${fmtTime(m.saved_at||m.created_at)}</span>
+        <span class="box-caret" style="color:var(--dim);font-size:11px;">▸</span>
+      </summary>
+      <div class="mr-body" style="padding:4px 16px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;line-height:1.7;white-space:pre-wrap;">
+        <div style="color:var(--dim);padding:8px 0;">Loading report…</div>
+      </div>
+    </details>`;
+  }).join('');
+  if(resultsPendingExpand){
+    const target=list.querySelector(`details[data-mission="${resultsPendingExpand}"]`);
+    resultsPendingExpand=null;
+    if(target){ target.open=true; target.scrollIntoView({behavior:'smooth',block:'start'}); }
+  }
+}
+
+async function onResultToggle(det){
+  const caret=det.querySelector('.box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open||det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  await renderMissionReport(det.dataset.mission, det.querySelector('.mr-body'));
+}
+
+// Deep link: open the Results page with one mission expanded (View Result buttons land here).
+function openResults(missionId){
+  resultsPendingExpand=missionId||null;
+  showPage('results');
+}
+
+// Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
+// the quick view for running/queued jobs and legacy jobs without a mission id.
+function openJobResult(jobId, missionId){
+  if(missionId) openResults(missionId);
+  else selectJob(jobId);
+}
+
+// Opens the report modal directly for a mission id (used as a fallback quick view).
 async function showMissionReport(missionId,label){
   document.getElementById('result-title').textContent=label||'Mission Report';
   const body=document.getElementById('result-body');
@@ -2938,7 +3120,7 @@ async function reloadAutonomyRuns(){
         <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
         <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
         <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
-        <td>${run.mission_id?`<button class="job-btn view" onclick="showMissionReport('${run.mission_id}','Autonomous run · ${escapeHtml((titleById[run.objective_id]||'').replace(/'/g,''))}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
+        <td>${run.mission_id?`<button class="job-btn view" onclick="openResults('${run.mission_id}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
       </tr>`;
     }).join('')||'<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
   }catch(e){ tb.innerHTML=`<tr><td colspan="7" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
@@ -2951,6 +3133,101 @@ async function openPheromones(){
 }
 
 PAGE_ENTER['pheromones']=()=>reloadPheromones();
+
+// ── Security page ─────────────────────────────────────────────────────────────
+const SEC_GATES=[
+  ['web_search_enabled','Web Search','Read-only external research (DuckDuckGo). No API key.'],
+  ['file_tools_enabled','File Read Tools','Let ants list dirs and read files inside the workspace.'],
+  ['file_writing_enabled','File Writing','Allow approved patches to write files (still needs approval).'],
+  ['patch_application_enabled','Patch Application','Allow /apply to write approved patches to disk.'],
+  ['shell_tool_enabled','AI Shell Tool','Allowlisted shell for the AI ants. High risk.'],
+];
+let secSettings={};
+
+PAGE_ENTER['security']=()=>{ if(ROLE==='admin') loadSecurity(); };
+document.getElementById('sec-refresh').addEventListener('click',loadSecurity);
+document.getElementById('sec-save').addEventListener('click',saveSecurity);
+
+async function loadSecurity(){
+  try{ const r=await api('/settings'); if(!r.success) return; secSettings=r.data; }catch{ return; }
+  const bind=secSettings.api_host==='0.0.0.0'?'All interfaces':secSettings.api_host;
+  setEl('sec-auth', secSettings.api_auth_enabled===false?'DISABLED':'Password login');
+  setEl('sec-profile', secSettings.safety_profile||'—');
+  setEl('sec-bind', bind);
+  setEl('sec-enc','AES-256-GCM');
+  document.getElementById('sec-auth').style.color = secSettings.api_auth_enabled===false?'var(--red)':'var(--green)';
+  document.getElementById('sec-bind').style.color = secSettings.api_host==='0.0.0.0'?'var(--queen)':'var(--green)';
+  const tog=(k,label,desc)=>`<div class="toggle-row" style="align-items:flex-start"><div><div>${label}</div><div style="font-size:10px;color:var(--dim)">${desc}</div></div><div class="toggle-sw${secSettings[k]?' on':''}" data-key="${k}" onclick="this.classList.toggle('on')"></div></div>`;
+  document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
+  document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
+  document.getElementById('sec-workspace').value=secSettings.agent_workspace_dir||'';
+  document.getElementById('sec-shell-dir').value=secSettings.operator_shell_dir||'';
+}
+
+async function saveSecurity(){
+  const payload={};
+  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
+  const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
+  payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
+  const msg=document.getElementById('sec-msg');
+  try{
+    const r=await api('/settings','POST',payload);
+    msg.style.color=r.success?'var(--green)':'var(--red)'; msg.textContent=r.success?'Saved.':(r.message||'Failed');
+    if(r.success) await loadSecurity();
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+  setTimeout(()=>{ msg.textContent=''; },3500);
+}
+
+// ── Shell page (admin-only host terminal) ─────────────────────────────────────
+let shHistory=[], shHistIdx=-1, shBusy=false;
+
+PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
+document.getElementById('sh-clear').addEventListener('click',()=>{ document.getElementById('sh-output').innerHTML=''; });
+document.getElementById('sh-run').addEventListener('click',runShell);
+document.getElementById('sh-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); runShell(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.max(0,shHistIdx-1); e.target.value=shHistory[shHistIdx]||''; } }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.min(shHistory.length,shHistIdx+1); e.target.value=shHistory[shHistIdx]||''; } }
+});
+
+async function initShell(){
+  try{
+    const r=await api('/shell/info'); if(!r.success) throw new Error(r.message);
+    const info=r.data||{};
+    const enabled=!!info.enabled;
+    document.getElementById('sh-disabled-note').style.display=enabled?'none':'block';
+    document.getElementById('sh-input').disabled=!enabled;
+    document.getElementById('sh-run').disabled=!enabled;
+    setEl('sh-host', info.host?`(${info.host})`:'');
+    setEl('sh-host2', (info.host||'host')+' · '+(info.os||''));
+    const dirEl=document.getElementById('sh-dir');
+    if(!dirEl.value) dirEl.value=info.default_dir||'';
+  }catch(e){ document.getElementById('sh-disabled-note').style.display='block'; }
+}
+
+function shAppend(html){ const o=document.getElementById('sh-output'); o.innerHTML+=html; o.scrollTop=o.scrollHeight; }
+
+async function runShell(){
+  if(shBusy) return;
+  const inp=document.getElementById('sh-input'); const cmd=inp.value.trim(); if(!cmd) return;
+  const dir=document.getElementById('sh-dir').value.trim();
+  shHistory.push(cmd); shHistIdx=shHistory.length; inp.value=''; shBusy=true;
+  document.getElementById('sh-run').disabled=true;
+  shAppend(`<div style="color:var(--dim)"><span style="color:var(--green)">$</span> ${escapeHtml(cmd)}</div>`);
+  try{
+    const r=await api('/shell/exec','POST',{command:cmd,dir});
+    if(!r.success){ shAppend(`<div style="color:var(--red)">${escapeHtml(r.message||'command failed')}</div>`); }
+    else{
+      const d=r.data||{};
+      if(d.stdout) shAppend(`<div>${escapeHtml(d.stdout)}</div>`);
+      if(d.stderr) shAppend(`<div style="color:var(--queen)">${escapeHtml(d.stderr)}</div>`);
+      const ec=d.exit_code, col=ec===0?'var(--dim)':'var(--red)';
+      shAppend(`<div style="color:${col};font-size:10px">[exit ${ec}${d.timed_out?' · timed out':''} · ${d.elapsed_seconds}s · ${escapeHtml(d.dir||'')}]</div>`);
+      if(d.dir) document.getElementById('sh-dir').value=d.dir;
+    }
+  }catch(e){ shAppend(`<div style="color:var(--red)">${escapeHtml(e.message)}</div>`); }
+  shBusy=false; document.getElementById('sh-run').disabled=false; inp.focus();
+}
 
 async function reloadPheromones(){
   const body=document.getElementById('phero-body');

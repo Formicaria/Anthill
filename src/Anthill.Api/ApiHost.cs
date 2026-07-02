@@ -101,7 +101,13 @@ public static class ApiHost
             ["name"] = "ANTHILL Core", ["version"] = AnthillRuntime.Version, ["ui"] = "/ui",
         }, "ANTHILL local API. Authenticate with X-Anthill-Token for colony endpoints."));
 
-        app.MapGet("/ui", () => Results.Content(UiHtml, "text/html"));
+        // no-store: the UI is embedded in the binary, so a cached copy silently pins operators to
+        // the previous version's console after an upgrade (stale canvas logic, missing panels).
+        app.MapGet("/ui", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiHtml, "text/html");
+        });
 
         app.MapGet("/health", () => ApiJson.Ok(new Dictionary<string, object?>
         {
@@ -160,6 +166,21 @@ public static class ApiHost
             return ApiJson.Ok(Queen.BuildTaskGraphData(includeResults: includeResults));
         });
 
+        // JSON mission history for the Results page: one row per mission, newest first.
+        app.MapGet("/missions/json", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var limit = Math.Clamp(int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var l) ? l : 50, 1, AnthillRuntime.ApiMaxLimit);
+            var rows = Queen.Memory.GetRecentMissions(limit)
+                .Where(m => m.GetValueOrDefault("id")?.ToString() != AnthillRuntime.SystemApiMissionId)
+                .Select(m => new Dictionary<string, object?>
+                {
+                    ["id"] = m.GetValueOrDefault("id"), ["goal"] = m.GetValueOrDefault("goal"),
+                    ["status"] = m.GetValueOrDefault("status"), ["success_score"] = m.GetValueOrDefault("success_score"),
+                    ["created_at"] = m.GetValueOrDefault("created_at"), ["saved_at"] = m.GetValueOrDefault("saved_at"),
+                }).ToList();
+            return ApiJson.Ok(rows);
+        });
         app.MapGet("/missions/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_status") ?? Results.Text(Queen.FormatMissionDetail(id), "text/plain"));
         // Structured, human-readable mission report: what the mission was, what the colony
@@ -404,6 +425,61 @@ public static class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
             return ApiJson.Ok(UiStateStore.Save(body), "Console layout saved.");
+        });
+
+        // ---- Operator shell console (Configuration → Shell) — admin only ----
+        app.MapGet("/shell/info", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "operator_shell"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["enabled"] = AnthillRuntime.EnableOperatorShell,
+                ["default_dir"] = OperatorShell.DefaultWorkingDir(),
+                ["timeout_seconds"] = OperatorShell.TimeoutSeconds,
+                ["host"] = Environment.MachineName,
+                ["os"] = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            });
+        });
+
+        app.MapPost("/shell/exec", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "operator_shell"); if (auth is not null) return auth;
+            if (!AnthillRuntime.EnableOperatorShell)
+                return ApiJson.Error("The operator shell is disabled. Enable it in Configuration → Security.", "shell_disabled");
+
+            System.Text.Json.JsonElement body;
+            try { body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var command = body.TryGetProperty("command", out var c) ? c.GetString() ?? "" : "";
+            var dir = body.TryGetProperty("dir", out var d) ? d.GetString() : null;
+            command = command.Trim();
+            if (command.Length == 0) return ApiJson.Error("Missing required field: command.", "bad_request");
+
+            var who = ResolveIdentity(ctx)?.Username ?? "admin";
+            // Audit BEFORE running, so the record survives even if the command wedges the host.
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_shell_command",
+                $"Operator {who} ran a shell command.", antName: "operator",
+                metadata: new() { ["operator"] = who, ["command"] = command, ["dir"] = dir ?? OperatorShell.DefaultWorkingDir() });
+
+            OperatorShell.ShellResult result;
+            try { result = OperatorShell.Execute(command, dir); }
+            catch (Exception ex)
+            {
+                Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_shell_error",
+                    $"Operator shell command failed to start: {ex.Message}", antName: "operator",
+                    metadata: new() { ["operator"] = who, ["command"] = command, ["error"] = ex.Message });
+                return ApiJson.Error($"Failed to run command: {ex.Message}", "shell_error");
+            }
+
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_shell_result",
+                $"Operator {who} shell command exited {result.ExitCode}{(result.TimedOut ? " (timed out)" : "")}.", antName: "operator",
+                metadata: new() { ["operator"] = who, ["exit_code"] = result.ExitCode, ["timed_out"] = result.TimedOut, ["elapsed_seconds"] = result.ElapsedSeconds });
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["exit_code"] = result.ExitCode, ["stdout"] = result.Stdout, ["stderr"] = result.Stderr,
+                ["timed_out"] = result.TimedOut, ["dir"] = result.WorkingDir, ["elapsed_seconds"] = result.ElapsedSeconds,
+            });
         });
 
         // Filterable event feed (ant / type / level / since / mission).
@@ -677,9 +753,29 @@ public static class ApiHost
             };
         }).ToList();
 
+        // Autonomy linkage: which objective drove this mission, and which objectives it created.
+        var run = Queen.Memory.GetAutonomyRunForMission(id);
+        var runObjective = run?.GetValueOrDefault("objective_id")?.ToString() is { Length: > 0 } oid
+            ? Queen.Memory.GetObjective(oid) : null;
+        var createdObjectives = Queen.Memory.ListObjectivesCreatedByMission(id)
+            .Select(o => new Dictionary<string, object?>
+            {
+                ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter,
+                ["priority"] = o.Priority, ["status"] = o.Status.Value(),
+            }).ToList();
+
         var statuses = tasks.Select(t => t.GetValueOrDefault("status")?.ToString() ?? "").ToList();
         return ApiJson.Ok(new Dictionary<string, object?>
         {
+            ["autonomy_run"] = run is null ? null : new Dictionary<string, object?>
+            {
+                ["run_id"] = run.GetValueOrDefault("id"),
+                ["objective_id"] = run.GetValueOrDefault("objective_id"),
+                ["objective_title"] = runObjective?.Title,
+                ["generated_goal"] = run.GetValueOrDefault("generated_goal"),
+                ["follow_ups_created"] = run.GetValueOrDefault("follow_ups_created"),
+            },
+            ["created_objectives"] = createdObjectives,
             ["id"] = id,
             ["goal"] = mission.GetValueOrDefault("goal"),
             ["status"] = mission.GetValueOrDefault("status"),

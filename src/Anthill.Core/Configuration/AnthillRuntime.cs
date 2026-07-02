@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.14.1";
+    public const string Version = "1.8.14.3";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -64,6 +64,9 @@ public static class AnthillRuntime
         // Keys are never readable back through the API regardless of this gate; it only controls
         // who may add/update/remove/test a connection and who may see the secret-free status list.
         ["read_providers"] = true, ["manage_providers"] = true,
+        // Operator shell console: admin-only interactive host terminal. Gated a second time by
+        // operator_shell_enabled at runtime; never granted to coordinators (see UserRoles).
+        ["operator_shell"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -139,6 +142,10 @@ public static class AnthillRuntime
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
     public static bool EnableShellTool = false;
+    /// <summary>Operator shell console (admin-only interactive host terminal). Distinct from EnableShellTool (the AI ants' allowlisted tool).</summary>
+    public static bool EnableOperatorShell = true;
+    /// <summary>Default working directory for the operator shell console; empty falls back to AllowedWorkspaceRoot.</summary>
+    public static string OperatorShellDir = "";
     public static bool EnablePatchApplication = false;
     public static bool EnableFileWriting = false;
     public static bool EnableParallelExecution = true;
@@ -361,6 +368,8 @@ public static class AnthillRuntime
         EnablePatchApplication = config.PatchApplicationEnabled;
         EnableFileWriting = config.FileWritingEnabled;
         EnableShellTool = config.ShellToolEnabled;
+        EnableOperatorShell = config.OperatorShellEnabled;
+        OperatorShellDir = config.OperatorShellDir ?? "";
         EnableFileTools = config.FileToolsEnabled;
         EnableParallelExecution = config.ParallelExecutionEnabled;
         MaxParallelWorkers = Math.Max(1, config.MaxParallelWorkers);
@@ -411,7 +420,7 @@ public static class AnthillRuntime
     {
         "use_ollama", "ollama_host", "ollama_model", "model_routes",
         "web_search_enabled", "patch_application_enabled", "file_writing_enabled",
-        "shell_tool_enabled", "file_tools_enabled", "parallel_execution_enabled",
+        "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
         "max_context_packet_chars", "max_agent_message_content_chars",
         "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
@@ -421,6 +430,7 @@ public static class AnthillRuntime
         "autonomy_concurrency", "autonomy_aging_minutes",
         "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
+        "operator_shell_enabled", "operator_shell_dir",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -473,6 +483,8 @@ public static class AnthillRuntime
         ["patch_application_enabled"] = EnablePatchApplication,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
+        ["operator_shell_enabled"] = EnableOperatorShell,
+        ["operator_shell_dir"] = OperatorShellDir,
         ["file_tools_enabled"] = EnableFileTools,
         ["parallel_execution_enabled"] = EnableParallelExecution,
         ["max_parallel_workers"] = MaxParallelWorkers,
@@ -502,6 +514,8 @@ public static class AnthillRuntime
         ["autonomy_loop_window"] = AutonomyLoopWindow,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
+        ["api_auth_enabled"] = EnableApiAuth,
+        ["agent_workspace_dir"] = AllowedWorkspaceRoot,
         ["editable_keys"] = EditableConfigKeys.ToList(),
     };
 }

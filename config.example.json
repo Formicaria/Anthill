@@ -45,6 +45,10 @@
   "shell_tool_enabled":        true,
   "file_tools_enabled":        true,
 
+  "_comment_operator_shell": "Configuration -> Shell: admin-only interactive terminal into THIS host. Distinct from shell_tool_enabled (the AI ants' allowlisted tool) -- this is arbitrary command execution by a logged-in human admin, host RCE, every command audit-logged, never granted to coordinators. Turn off on untrusted networks. operator_shell_dir = default working directory (blank = agent_workspace_dir).",
+  "operator_shell_enabled":    true,
+  "operator_shell_dir":        "",
+
   "max_web_searches_per_mission":    3,
   "max_sources_per_mission":        15,
   "max_context_packet_chars":     7000,

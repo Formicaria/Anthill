@@ -8,6 +8,7 @@
 > cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, Phase 3 autonomy
 > (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, Phase 4
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
+> UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > and so on.
 
 > **Pre-commit checklist** — the docs must be true before every commit:
@@ -21,6 +22,79 @@
 > 4. Update `docs/AUTONOMY.md` / `docs/DEPLOYMENT.md` when behavior in their scope changes.
 > 5. Sweep for leftovers: stale comments, dead config keys, outdated status claims, debug code.
 > 6. `dotnet test Anthill.sln -c Release` green, then commit + tag + push.
+
+## v1.8.14.3 — Configuration: Security tab + admin-only Shell console
+
+Two new admin-only pages under Configuration.
+
+- **Security tab**: a single place for the app's security posture — auth mode, safety profile,
+  network bind exposure, and encryption-at-rest at a glance — plus live toggles for every
+  capability gate (web search, file read/write, patch application, the AI ants' shell tool), the
+  **workspace boundary** (`agent_workspace_dir`, the only path the file/coder ants may touch), and
+  the operator-shell controls. All persist through the existing `/settings` path.
+- **Shell tab**: a direct interactive terminal into the host ANTHILL runs on (the LXC/VM/box) —
+  command input with history (↑/↓), streamed stdout/stderr, exit code, elapsed time, and a
+  settable working directory. Built for host maintenance the AI ants must never do (restart the
+  service, pull updates, edit config).
+
+Because the Shell console is host remote-code-execution, it is gated four independent ways:
+(1) authenticated, (2) **admin role only** — the new `operator_shell` permission is never in the
+coordinator set, so a Mission Coordinator cannot see or use it; (3) the `operator_shell_enabled`
+config gate (toggleable from the Security tab); and (4) **every command is written to the audit
+event log** (`operator_shell_command` before it runs, `operator_shell_result` after) with the
+operator's username, so there's a durable record of who ran what. Each command is bounded by a
+60-second timeout and its output capped. Per operator request it ships **enabled for admins** by
+default; set `operator_shell_enabled: false` (or toggle it off in Security) on any install you
+don't fully trust on the network. Distinct from `shell_tool_enabled`, which gates the AI ants'
+*allowlisted* tool and stays off by default.
+
+- New: `GET /shell/info`, `POST /shell/exec` (both `operator_shell`, admin-only);
+  `src/Anthill.Api/OperatorShell.cs`; config keys `operator_shell_enabled` / `operator_shell_dir`;
+  `api_auth_enabled` + `agent_workspace_dir` added to the settings snapshot.
+- Tests: `OperatorShellTests` — admin-only permission, command execution, non-zero exit,
+  working-directory handling.
+
+## v1.8.14.2 — Results page; stale-UI cache fix; approval-queue dedupe
+
+New — **Results page** (operator request: mission results shouldn't take over the whole screen):
+
+- A dedicated **Results** nav page lists every mission (newest first, filterable by
+  completed / partial / failed) as compact collapsible rows — status in plain English, goal,
+  score, and finish time. Expanding a row lazily loads the full Mission Report inline: final
+  output, per-task readable results, tangible changes with approval states, problems, and — new —
+  the **autonomous-run context** (which objective drove the mission) and the **objectives this
+  mission created** (Strategist follow-ups, now stamped with `created_by_mission_id` /
+  `created_by_run_id` metadata when the Director saves them, so the lineage is queryable).
+- Every **View Result** button routes here and auto-expands that mission (jobs lists, Missions
+  page, and the Autonomy runs table's View). Running jobs keep a compact "View Status" quick
+  view; the old full-screen overlay remains only as a fallback for legacy jobs without a
+  mission id.
+- New API: `GET /missions/json?limit=` (mission history as JSON) and mission reports now include
+  `autonomy_run` + `created_objectives`. New `SqliteMemory.GetAutonomyRunForMission` /
+  `ListObjectivesCreatedByMission`.
+
+Verified live against the running LXC instance (v1.8.14.1) before shipping: the backend live
+task feed and the new canvas logic were confirmed working in a fresh browser session — particles
+flowing, per-ant activity tracking real task states, correct idle when nothing runs. The
+"still broken" console was the *browser's cached copy of the previous UI*.
+
+- **`/ui` is now served with `Cache-Control: no-store`.** The console is embedded in the binary,
+  and without cache headers a browser can silently pin an operator to the previous version's
+  UI after every upgrade (stale canvas logic, missing panels) until a manual hard-refresh. Now
+  every page load fetches the UI the running binary actually ships. (One last hard-refresh is
+  needed to pick this version up; after that, never again.)
+- **Approval-queue flooding fixed with dedupe.** High-frequency autonomous testing (observed
+  live: 62 missions/hour, 1000/day until the daily budget tripped) re-proposes the same change
+  run after run while the first request sits unreviewed — every rerun stacked another identical
+  approval request. `Queen.ProcessPatchProposals` now checks
+  `SqliteMemory.HasDuplicatePendingApproval` (same file, change type, and old/new content,
+  compared after decryption) and skips creating a duplicate, logging an
+  `approval_request_deduped` event instead. Decided (approved/rejected) requests never block a
+  fresh proposal. Reminder that stacking ≠ malfunction: the Director *never* auto-approves —
+  clearing the queue is the operator's half of the workflow until gated auto-apply (Phase 5)
+  lands.
+- **Tests**: `ApprovalDedupeTests` — identical pending change detected; different content/file
+  not deduped; decided approvals don't block; null-content comparisons.
 
 ## v1.8.14.1 — Mission Reports: see exactly what the colony did, in plain English
 

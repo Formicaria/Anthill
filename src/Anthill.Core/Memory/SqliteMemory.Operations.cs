@@ -412,6 +412,32 @@ public sealed partial class SqliteMemory
     public int CountPendingApprovals() =>
         (int)AsLong(Scalar("SELECT COUNT(*) FROM approval_requests WHERE status = @s", ("@s", ApprovalStatus.Pending.Value())));
 
+    /// <summary>
+    /// True when an identical change (same file, change type, and old/new content) is already
+    /// sitting in the pending approval queue. Autonomous objectives re-propose the same fix run
+    /// after run while nobody has reviewed the first one — without this check every rerun stacks
+    /// another identical approval request. Contents are sealed at rest, so the comparison
+    /// decrypts candidates matching on file+change first (bounded by <paramref name="scanLimit"/>).
+    /// </summary>
+    public bool HasDuplicatePendingApproval(PatchProposal proposal, int scanLimit = 200)
+    {
+        var candidates = Query(
+            @"SELECT pp.old_content, pp.new_content
+              FROM approval_requests ar JOIN patch_proposals pp ON pp.id = ar.target_id
+              WHERE ar.status = @pending AND ar.action_type = @at
+                AND pp.file_path = @fp AND pp.change_type = @ct
+              ORDER BY ar.created_at DESC LIMIT @lim",
+            ("@pending", ApprovalStatus.Pending.Value()), ("@at", ApprovalActionType.PatchProposal.Value()),
+            ("@fp", proposal.FilePath), ("@ct", proposal.ChangeType.Value()), ("@lim", scanLimit));
+        foreach (var row in candidates)
+        {
+            var oldContent = _cipher.Unprotect(row.GetValueOrDefault("old_content") as string);
+            var newContent = _cipher.Unprotect(row.GetValueOrDefault("new_content") as string);
+            if (oldContent == proposal.OldContent && newContent == proposal.NewContent) return true;
+        }
+        return false;
+    }
+
     // ---- per-mission observability (the mission report) --------------------
 
     /// <summary>Secret-free patch proposals for one mission — the report's "tangible changes" list.</summary>

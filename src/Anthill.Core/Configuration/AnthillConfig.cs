@@ -43,6 +43,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("file_writing_enabled")] public bool FileWritingEnabled { get; set; } = false;
     [JsonPropertyName("shell_tool_enabled")] public bool ShellToolEnabled { get; set; } = false;
     [JsonPropertyName("file_tools_enabled")] public bool FileToolsEnabled { get; set; } = true;
+    // Operator shell console (Configuration -> Shell): an interactive host terminal for admins
+    // ONLY. Distinct from shell_tool_enabled (which gates the AI ants' allowlisted shell tool) —
+    // this is arbitrary command execution by a logged-in human admin, every command audit-logged.
+    // It is host remote-code-execution by design; keep it off on anything network-exposed you
+    // don't fully trust. Default working directory for the console (blank = agent_workspace_dir).
+    [JsonPropertyName("operator_shell_enabled")] public bool OperatorShellEnabled { get; set; } = true;
+    [JsonPropertyName("operator_shell_dir")] public string OperatorShellDir { get; set; } = "";
 
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
     [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;

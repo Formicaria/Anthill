@@ -217,6 +217,24 @@ public sealed partial class SqliteMemory
         InvalidateCache();
     }
 
+    /// <summary>The autonomy run (if any) that launched the given mission — links a mission report back to its objective.</summary>
+    public Dictionary<string, object?>? GetAutonomyRunForMission(string missionId) =>
+        Query("SELECT * FROM autonomy_runs WHERE mission_id = @m ORDER BY started_at DESC LIMIT 1", ("@m", missionId)).FirstOrDefault();
+
+    /// <summary>
+    /// Objectives enqueued as follow-ups by a specific mission (stamped via metadata by the
+    /// Director when it saves Strategist-discovered follow-ups). Powers the Results page's
+    /// "objectives this mission created" section.
+    /// </summary>
+    public List<Objective> ListObjectivesCreatedByMission(string missionId, int limit = 20)
+    {
+        // The stamp is a plain JSON string field; the id is a GUID (no LIKE metacharacters).
+        var rows = Query(
+            "SELECT * FROM objectives WHERE metadata_json LIKE @needle ORDER BY created_at ASC LIMIT @lim",
+            ("@needle", $"%\"created_by_mission_id\":\"{missionId}\"%"), ("@lim", limit));
+        return rows.Select(ObjectiveFromRow).ToList();
+    }
+
     public List<Dictionary<string, object?>> ListAutonomyRuns(string? objectiveId = null, int limit = 50) =>
         objectiveId is null
             ? Query("SELECT * FROM autonomy_runs ORDER BY started_at DESC LIMIT @lim", ("@lim", limit))

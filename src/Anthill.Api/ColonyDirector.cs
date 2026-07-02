@@ -221,7 +221,7 @@ public sealed class ColonyDirector : IDisposable
 
         // Only a successful mission's discoveries are worth enqueuing — a failed run's follow-ups
         // are, by construction, follow-ups to work that didn't actually land.
-        var enqueuedFollowUps = success ? SaveFollowUps(strategy.FollowUps) : 0;
+        var enqueuedFollowUps = success ? SaveFollowUps(strategy.FollowUps, job.MissionId, run.Id) : 0;
         run.FollowUpsCreated = enqueuedFollowUps;
         _queen.Memory.SaveAutonomyRun(run);
 
@@ -281,10 +281,18 @@ public sealed class ColonyDirector : IDisposable
         return false;
     }
 
-    /// <summary>Persists Strategist-discovered follow-up objectives and returns how many were saved.</summary>
-    private int SaveFollowUps(List<Objective> followUps)
+    /// <summary>
+    /// Persists Strategist-discovered follow-up objectives, stamping which mission/run created
+    /// them (so mission reports can show "objectives this mission created"). Returns how many were saved.
+    /// </summary>
+    private int SaveFollowUps(List<Objective> followUps, string? missionId, string runId)
     {
-        foreach (var fu in followUps) _queen.Memory.SaveObjective(fu);
+        foreach (var fu in followUps)
+        {
+            if (missionId is not null) fu.Metadata["created_by_mission_id"] = missionId;
+            fu.Metadata["created_by_run_id"] = runId;
+            _queen.Memory.SaveObjective(fu);
+        }
         return followUps.Count;
     }
 
