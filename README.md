@@ -6,28 +6,55 @@
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
+> **New here?** [Quick Start](#quick-start) gets a colony running from source in ~10 minutes.
+> Deploying to a server or home-lab instead? Jump straight to the
+> [deployment chooser](#deploy-on-linux). Already running in an LXC container?
+> [Update it in three commands](#updating-an-existing-anthill-container).
+
 ---
 
 ## Table of Contents
 
-1. [What Is ANTHILL?](#what-is-anthill)
-2. [Architecture](#architecture)
-3. [Resource Requirements](#resource-requirements)
-4. [Prerequisites](#prerequisites)
-5. [Quick Start](#quick-start)
-6. [Configuration Reference](#configuration-reference)
-7. [Deploy on Linux](#deploy-on-linux)
-8. [Deploy on Windows](#deploy-on-windows)
-9. [Ollama Setup & Model Routing](#ollama-setup--model-routing)
-10. [Model Providers](#model-providers)
-11. [Colony UI Guide](#colony-ui-guide)
-12. [The Approval Workflow](#the-approval-workflow)
-13. [Self-Modification Missions](#self-modification-missions)
-14. [API Reference](#api-reference)
-15. [Authentication & Operator Accounts](#authentication--operator-accounts)
-16. [Security Model](#security-model)
-17. [Building from Source](#building-from-source)
-18. [Troubleshooting](#troubleshooting)
+**Overview**
+
+- [What Is ANTHILL?](#what-is-anthill)
+- [Architecture](#architecture)
+- [Resource Requirements](#resource-requirements)
+
+**Getting Started**
+
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start) — clone → pull models → configure → run
+- [Configuration Reference](#configuration-reference)
+
+**Deployment** *(pick one — see the [chooser table](#deploy-on-linux))*
+
+- [Deploy on Linux](#deploy-on-linux) — from source · standalone binary · systemd · Docker · **LXC/Proxmox** (install *and* [update](#updating-an-existing-anthill-container))
+- [Deploy on Windows](#deploy-on-windows) — from source · standalone exe · Windows Service
+
+**Models**
+
+- [Ollama Setup & Model Routing](#ollama-setup--model-routing)
+- [Model Providers](#model-providers) — optional cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter)
+
+**Using the Colony**
+
+- [Colony UI Guide](#colony-ui-guide)
+- [The Approval Workflow](#the-approval-workflow) — how code changes get reviewed and applied
+- [Self-Modification Missions](#self-modification-missions)
+- [Long-Input / Specification-Ingestion Handling](#long-input--specification-ingestion-handling)
+
+**Reference**
+
+- [API Reference](#api-reference)
+- [Authentication & Operator Accounts](#authentication--operator-accounts)
+- [Security Model](#security-model)
+- [Building from Source](#building-from-source)
+
+**Help**
+
+- [Troubleshooting](#troubleshooting)
+- [Changelog](#changelog) · [License](#license)
 
 > **Deploying to a home-lab/production box?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 > for Docker (ready today), plus LXC and Windows-Service packaging (in progress).
@@ -346,6 +373,17 @@ Copy `config.example.json` to `.anthill/config.json` and edit the values marked 
 
 ## Deploy on Linux
 
+Five options, one decision — where is ANTHILL going to live?
+
+| You want | Use |
+|----------|-----|
+| To hack on the code and run it locally | [Option A — from source](#option-a--run-from-source-development) |
+| One binary on a bare box, no .NET runtime needed | [Option B — self-contained binary](#option-b--self-contained-binary-production) |
+| Always-on service on bare metal or a VM | [Option C — systemd service](#option-c--systemd-service-recommended-for-always-on) |
+| A container on a Docker host | [Option D — Docker](#option-d--docker) |
+| A Proxmox / LXD / incus container (home-lab) | [Option E — LXC](#option-e--lxc-automated-proxmox-or-plain-lxdincus) — one-shot installer, also the upgrade path |
+| A Windows machine | [Deploy on Windows](#deploy-on-windows) |
+
 ### Option A — Run from source (development)
 
 ```bash
@@ -561,7 +599,9 @@ The named volume persists across rebuilds; only the image layers change.
 A one-shot installer ships at `deploy/lxc/setup.sh` for deploying straight into a fresh
 Debian 12+/Ubuntu 22.04+ LXC container — the common home-lab path (Proxmox, TrueNAS SCALE,
 plain LXD/incus). See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#3-lxc-implemented)** for the full
-guide (creating the container, upgrading, uninstalling); quick version:
+guide (creating the container, upgrading, uninstalling).
+
+#### Installing into a fresh container
 
 ```bash
 # Inside a fresh Debian/Ubuntu LXC container, as root:
@@ -570,18 +610,31 @@ curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/
 bash setup.sh
 ```
 
-That installs the .NET 9 SDK if it isn't already present, publishes a self-contained `linux-x64`
-binary, creates a dedicated unprivileged `anthill` system user, and installs + starts a hardened
-systemd unit (`deploy/lxc/anthill.service.template` — same `NoNewPrivileges`/`ProtectSystem=strict`
-posture as the manual [Option C](#option-c--systemd-service-recommended-for-always-on) unit
-above). No special LXC features (nesting, privileged mode) are required — this is a plain
-systemd service, not Docker-in-LXC. Re-run the same command any time to pull the latest source,
-republish, and restart — it's also the upgrade path.
+That clones the repo to `/opt/anthill/src`, installs the .NET 9 SDK if it isn't already present,
+publishes a self-contained `linux-x64` binary, creates a dedicated unprivileged `anthill` system
+user, and installs + starts a hardened systemd unit (`deploy/lxc/anthill.service.template` — same
+`NoNewPrivileges`/`ProtectSystem=strict` posture as the manual
+[Option C](#option-c--systemd-service-recommended-for-always-on) unit above). No special LXC
+features (nesting, privileged mode) are required — this is a plain systemd service, not
+Docker-in-LXC.
 
 ```bash
 systemctl status anthill --no-pager
 journalctl -u anthill -n 20 --no-pager   # look for the reachable URL
 ```
+
+#### Updating an existing ANTHILL container
+
+```bash
+# Inside the LXC container, as root:
+cd /opt/anthill/src
+git pull
+bash deploy/lxc/setup.sh
+```
+
+The installer detects it's running from the existing checkout, stops the service, republishes the
+binary, and restarts it. Your database, `config.json`, operator accounts, and encryption key under
+`/opt/anthill/.anthill` are untouched — this is a binary upgrade, not a reinstall.
 
 ### Exposing Ollama on the network (Linux)
 
