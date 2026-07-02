@@ -165,4 +165,37 @@ public class ProviderTests : IDisposable
         Assert.StartsWith("ERROR:", result);
         Assert.Contains("API key not configured", result);
     }
+
+    // Regression coverage for a real bug hit in production: a "Base URL" override saved as just
+    // the conventional host+version prefix (e.g. "https://api.openai.com/v1", exactly how OpenAI's
+    // own SDKs define base_url) was sent to the provider as the literal request URL with no path
+    // appended, so every call 404'd. NormalizeEndpoint must accept both the bare-prefix form and
+    // the full-path form, with or without a trailing slash.
+    [Theory]
+    [InlineData("https://api.openai.com/v1", "https://api.openai.com/v1/chat/completions")]
+    [InlineData("https://api.openai.com/v1/", "https://api.openai.com/v1/chat/completions")]
+    [InlineData("https://api.openai.com/v1/chat/completions", "https://api.openai.com/v1/chat/completions")]
+    [InlineData("https://api.openai.com/v1/chat/completions/", "https://api.openai.com/v1/chat/completions")]
+    [InlineData("https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/chat/completions")]
+    public void OpenAiCompatibleClient_NormalizeEndpoint_AcceptsBarePrefixOrFullPath(string input, string expected)
+    {
+        Assert.Equal(expected, OpenAiCompatibleClient.NormalizeEndpoint(input));
+    }
+
+    [Theory]
+    [InlineData("https://api.anthropic.com/v1", "https://api.anthropic.com/v1/messages")]
+    [InlineData("https://api.anthropic.com/v1/", "https://api.anthropic.com/v1/messages")]
+    [InlineData("https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1/messages")]
+    public void AnthropicClient_NormalizeEndpoint_AcceptsBarePrefixOrFullPath(string input, string expected)
+    {
+        Assert.Equal(expected, AnthropicClient.NormalizeEndpoint(input));
+    }
+
+    [Fact]
+    public void AnthropicClient_NormalizeEndpoint_FallsBackToDefaultWhenNoOverrideGiven()
+    {
+        Assert.Equal("https://api.anthropic.com/v1/messages", AnthropicClient.NormalizeEndpoint(null));
+        Assert.Equal("https://api.anthropic.com/v1/messages", AnthropicClient.NormalizeEndpoint(""));
+        Assert.Equal("https://api.anthropic.com/v1/messages", AnthropicClient.NormalizeEndpoint("   "));
+    }
 }

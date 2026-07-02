@@ -3,7 +3,50 @@
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
-> deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, and so on.
+> deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
+> and so on.
+
+## v1.8.8 — Fix: provider Base URL override sent as a bare prefix, not a real endpoint
+
+No schema change. Bug found live on a real LXC deployment: testing the OpenAI connection in
+Settings → Providers failed every time with `ERROR: OpenAI request failed (404): `.
+
+Root cause: the stored `base_url` override (`https://api.openai.com/v1`) was used as the literal
+request URL in `OpenAiCompatibleClient`, with no path appended — so the request actually hit
+`https://api.openai.com/v1`, not a real API route, and OpenAI correctly 404'd it. The value that
+was stored is exactly how OpenAI's own SDKs define `base_url` (host + version prefix only, path
+appended internally), so typing it that way into the override field is a completely reasonable
+thing to do even though the field's placeholder shows the full path — the code should tolerate
+both forms rather than silently breaking on one of them.
+
+Fixed:
+
+- **`OpenAiCompatibleClient.NormalizeEndpoint`** (covers OpenAI, Perplexity, and OpenRouter, which
+  all share this client): if a configured endpoint doesn't already end with `/chat/completions`,
+  it's appended automatically. Handles a trailing slash either way. Applied in the constructor, so
+  it self-corrects for any already-stored override without needing a database fix or the user to
+  re-save anything.
+- **`AnthropicClient`**: previously didn't accept a `base_url` override at all —
+  `ModelRouter.BuildKeyedClient`'s `"anthropic"` branch built the client with only the API key and
+  model, silently discarding whatever was stored in `provider_credentials.base_url`. Now accepts
+  an optional endpoint, normalized the same way (`/messages` appended if missing), wired through
+  from `ModelRouter`.
+- **`tests/Anthill.Tests/ProviderTests.cs`**: added `NormalizeEndpoint` coverage for both
+  providers — bare prefix, full path, and either with/without a trailing slash — plus confirms
+  `AnthropicClient` falls back to its documented default when no override is stored. Made both
+  `NormalizeEndpoint` methods `public` (were `private`) specifically so this is directly
+  unit-testable without a network call.
+
+Validation:
+
+- Found via live testing against a real running LXC instance (`10.10.10.60:8713`, connected via
+  browser automation) — reproduced the exact failing request, read the actual response body
+  (`ERROR: OpenAI request failed (404): `) and the stored `base_url` from `GET /providers`,
+  confirmed the root cause by reading `OpenAiCompatibleClient`/`ModelRouter` against that data.
+  The fix itself has **not yet been re-verified live** — no `dotnet` SDK available in the
+  environment this was authored in. Brace/paren balance checked manually. Once deployed
+  (`git pull && bash deploy/lxc/setup.sh` on the LXC box, or a new tagged release), re-run Test
+  Connection on OpenAI and confirm it now succeeds.
 
 ## v1.8.7 — LXC deployment
 

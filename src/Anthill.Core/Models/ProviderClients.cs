@@ -24,10 +24,28 @@ public sealed class OpenAiCompatibleClient : IModelClient
         Dictionary<string, string>? extraHeaders = null)
     {
         _providerLabel = providerLabel;
-        _endpoint = endpoint;
+        _endpoint = NormalizeEndpoint(endpoint);
         _apiKey = apiKey;
         _model = model;
         _extraHeaders = extraHeaders;
+    }
+
+    /// <summary>
+    /// A "Base URL" override is conventionally just the host+version prefix — OpenAI's own client
+    /// libraries define <c>base_url</c> exactly as e.g. "https://api.openai.com/v1" and append the
+    /// request path themselves — so that's what operators naturally type into Settings → Providers
+    /// even though the field's placeholder shows the full endpoint. Accept both forms: if the
+    /// configured value doesn't already end with the chat-completions path, append it, rather than
+    /// sending the request straight to the bare prefix and getting a 404 back from the provider.
+    /// </summary>
+    /// <summary>Public (rather than private) so it's directly unit-testable without a network call
+    /// — pure string normalization, no side effects, nothing sensitive about exposing it.</summary>
+    public static string NormalizeEndpoint(string endpoint)
+    {
+        var trimmed = (endpoint ?? "").Trim().TrimEnd('/');
+        return trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : trimmed + "/chat/completions";
     }
 
     public string Generate(string prompt, int retries = 2)
@@ -96,15 +114,28 @@ public sealed class OpenAiCompatibleClient : IModelClient
 public sealed class AnthropicClient : IModelClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
+    private const string DefaultEndpoint = "https://api.anthropic.com/v1/messages";
     private const string ApiVersion = "2023-06-01";
+    private readonly string _endpoint;
     private readonly string? _apiKey;
     private readonly string _model;
 
-    public AnthropicClient(string? apiKey, string model)
+    /// <summary>endpoint: optional Base URL override from Settings → Providers. Same normalization
+    /// rationale as <see cref="OpenAiCompatibleClient"/> — accept the conventional "just the host
+    /// prefix" form (e.g. "https://api.anthropic.com/v1") as well as the full path.</summary>
+    public AnthropicClient(string? apiKey, string model, string? endpoint = null)
     {
         _apiKey = apiKey;
         _model = model;
+        _endpoint = NormalizeEndpoint(endpoint);
+    }
+
+    /// <summary>Public for the same reason as <see cref="OpenAiCompatibleClient.NormalizeEndpoint"/>.</summary>
+    public static string NormalizeEndpoint(string? endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint)) return DefaultEndpoint;
+        var trimmed = endpoint.Trim().TrimEnd('/');
+        return trimmed.EndsWith("/messages", StringComparison.OrdinalIgnoreCase) ? trimmed : trimmed + "/messages";
     }
 
     public string Generate(string prompt, int retries = 2)
@@ -123,7 +154,7 @@ public sealed class AnthropicClient : IModelClient
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
                 request.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
                 request.Headers.TryAddWithoutValidation("anthropic-version", ApiVersion);
                 request.Content = new StringContent(payload, Encoding.UTF8, "application/json");

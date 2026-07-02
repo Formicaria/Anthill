@@ -134,7 +134,7 @@ public sealed class ModelRouter
             "perplexity" => new OpenAiCompatibleClient("Perplexity", endpoint, apiKey, effectiveModel),
             "openrouter" => new OpenAiCompatibleClient("OpenRouter", endpoint, apiKey, effectiveModel,
                 new Dictionary<string, string> { ["HTTP-Referer"] = "https://anthill.local", ["X-Title"] = "ANTHILL" }),
-            "anthropic" => new AnthropicClient(apiKey, effectiveModel),
+            "anthropic" => new AnthropicClient(apiKey, effectiveModel, storedBaseUrl),
             _ => new PlaceholderClient(provider),
         };
     }
