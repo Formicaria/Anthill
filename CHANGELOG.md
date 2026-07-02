@@ -6,7 +6,49 @@
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
 > LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
 > cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, Phase 3 autonomy
-> (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, and so on.
+> (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, Phase 4
+> autonomy (learning loop) = **v1.8.14**, and so on.
+
+## v1.8.14 — Phase 4 autonomy: the learning loop
+
+Mission outcomes now feed back into what the Director chooses to work on. Design per operator
+review: read-time bias (stored priorities never drift — same philosophy as Phase 3 aging) and
+auto-pause retirement with explicit events (never delete; a human reviews and resumes).
+
+New:
+
+- **Per-objective success EMA** (`objectives.success_ema`, schema v10 → v11, additive migration):
+  every recorded run folds its mission success score into an exponential moving average
+  (`autonomy_score_ema_alpha`, default 0.3; an unscored/failed run counts as 0). Always recorded
+  — even with learning disabled — so history exists the moment it's turned on.
+- **Selection bias** (`Autonomy/ObjectiveLearning.cs`, new): at selection time an objective's
+  EMA adds a bounded, linear bias to its effective priority — EMA 1.0 → +`autonomy_priority_bias_max`
+  (default 2), EMA 0.5 → 0, EMA 0.0 → −max. Computed read-time in
+  `SqliteMemory.EffectivePriority` alongside Phase 3 aging; new objectives (null EMA) are
+  unbiased. Operator numbers in the backlog stay authoritative.
+- **Stale retirement**: after `autonomy_retire_min_runs` (default 5) runs, an objective whose EMA
+  is below `autonomy_retire_score_threshold` (default 0.25) is auto-paused — it keeps running
+  without producing value.
+- **Loop retirement**: if the last `autonomy_loop_window` (default 4, 0 = off) generated goals
+  are all near-identical (≥ `autonomy_dedupe_similarity` keyword overlap — the exact metric the
+  Strategist's dedup uses), the objective is auto-paused. Catches the charter-fallback spiral:
+  dedup already replaces repeat goals with the charter, so a true loop shows up as the same goal
+  run after run.
+- **Retirement = pause + event, never delete**: the Director emits an `objective_retired` event
+  (code `stale_low_success` or `looping_goals`, with reason, EMA, and run count) and sets the
+  objective to Paused, exactly like the existing failure circuit breaker. Resume from the
+  Autonomy page after review. Retirement checks run on the director thread after each outcome is
+  recorded, so nothing races the objective's own bookkeeping.
+- **Config**: `autonomy_learning_enabled` (default true; false = exact Phase 3 behavior),
+  `autonomy_priority_bias_max`, `autonomy_score_ema_alpha`, `autonomy_retire_min_runs`,
+  `autonomy_retire_score_threshold`, `autonomy_loop_window` — all clamped, all in the settings
+  whitelist; toggle + integer knobs editable from Settings → Colony.
+- **Observability**: `/objectives` and the Autonomy page's backlog table gain a **Score** column
+  (the EMA, color-coded); `autonomy_mission_finished` events and `/autonomy/status` include
+  `success_ema` / `learning_enabled`.
+- **Tests**: `LearningTests` — EMA seeding/smoothing/persistence, bias linearity and bounds,
+  EMA-driven selection ordering (and its disappearance when learning is off), stale/loop/never
+  retirement decisions.
 
 ## v1.8.13 — Fix: coder ant proposed Python patches regardless of the project's language
 

@@ -21,12 +21,12 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR REPLACE INTO objectives (id, title, charter, priority, status, max_runs, run_count,
-                    consecutive_failures, parent_objective_id, metadata_json, created_at, last_run_at)
-                  VALUES (@id, @title, @charter, @prio, @status, @max, @rc, @cf, @parent, @meta, @created, @last)",
+                    consecutive_failures, parent_objective_id, metadata_json, created_at, last_run_at, success_ema)
+                  VALUES (@id, @title, @charter, @prio, @status, @max, @rc, @cf, @parent, @meta, @created, @last, @ema)",
                 ("@id", o.Id), ("@title", o.Title), ("@charter", o.Charter), ("@prio", o.Priority),
                 ("@status", o.Status.Value()), ("@max", o.MaxRuns), ("@rc", o.RunCount), ("@cf", o.ConsecutiveFailures),
                 ("@parent", o.ParentObjectiveId), ("@meta", Json.SafeDumps(o.Metadata)),
-                ("@created", o.CreatedAt.ToIso()), ("@last", o.LastRunAt.ToIsoOrNull()));
+                ("@created", o.CreatedAt.ToIso()), ("@last", o.LastRunAt.ToIsoOrNull()), ("@ema", o.SuccessEma));
         }
         InvalidateCache();
     }
@@ -79,13 +79,18 @@ public sealed partial class SqliteMemory
             .ToList();
     }
 
-    /// <summary>Stored priority plus aging credit: +1 per <see cref="AnthillRuntime.AutonomyAgingMinutes"/> waited. 0 disables aging.</summary>
+    /// <summary>
+    /// Stored priority plus read-time adjustments: aging credit (+1 per
+    /// <see cref="AnthillRuntime.AutonomyAgingMinutes"/> waited; 0 disables) and the Phase 4
+    /// learning bias (±<see cref="AnthillRuntime.AutonomyPriorityBiasMax"/> from the success EMA).
+    /// </summary>
     internal static long EffectivePriority(Objective o, DateTime nowUtc)
     {
+        var effective = (long)o.Priority + Autonomy.ObjectiveLearning.PriorityBias(o);
         var aging = AnthillRuntime.AutonomyAgingMinutes;
-        if (aging <= 0) return o.Priority;
+        if (aging <= 0) return effective;
         var waitedMinutes = Math.Max(0, (nowUtc - QueuedSince(o)).TotalMinutes);
-        return o.Priority + (long)(waitedMinutes / aging);
+        return effective + (long)(waitedMinutes / aging);
     }
 
     /// <summary>When the objective started waiting for its next run: last run if it has one, else creation.</summary>
@@ -130,11 +135,13 @@ public sealed partial class SqliteMemory
 
     /// <summary>
     /// Applies a completed run's outcome to an objective: increments the run count, stamps
-    /// last_run_at, resets/raises the consecutive-failure breaker, and transitions status
-    /// (Done when the run budget is exhausted, Paused when the breaker trips, otherwise Active).
+    /// last_run_at, resets/raises the consecutive-failure breaker, folds the run's success score
+    /// into the learning EMA (Phase 4 — always recorded, even with learning disabled, so history
+    /// exists when it's turned on), and transitions status (Done when the run budget is
+    /// exhausted, Paused when the breaker trips, otherwise Active).
     /// Returns the updated objective, or null if it no longer exists.
     /// </summary>
-    public Objective? RecordObjectiveRunOutcome(string objectiveId, bool success)
+    public Objective? RecordObjectiveRunOutcome(string objectiveId, bool success, double? successScore = null)
     {
         var o = GetObjective(objectiveId);
         if (o is null) return null;
@@ -142,6 +149,7 @@ public sealed partial class SqliteMemory
         o.RunCount += 1;
         o.LastRunAt = AnthillTime.NowUtc();
         o.ConsecutiveFailures = success ? 0 : o.ConsecutiveFailures + 1;
+        o.SuccessEma = Autonomy.ObjectiveLearning.UpdateEma(o.SuccessEma, successScore);
 
         if (o.MaxRuns > 0 && o.RunCount >= o.MaxRuns) o.Status = ObjectiveStatus.Done;
         else if (o.ConsecutiveFailures >= AnthillRuntime.AutonomyMaxConsecutiveFailures) o.Status = ObjectiveStatus.Paused;
@@ -184,7 +192,12 @@ public sealed partial class SqliteMemory
         Metadata = Json.TryParseObject(row.GetValueOrDefault("metadata_json") as string),
         CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         LastRunAt = AnthillTime.ParseIsoOrNull(row.GetValueOrDefault("last_run_at")?.ToString()),
+        SuccessEma = AsNullableDouble(row.GetValueOrDefault("success_ema")),
     };
+
+    private static double? AsNullableDouble(object? value) =>
+        value is null or DBNull ? null
+        : double.TryParse(value.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
 
     // ---- autonomy run audit trail -----------------------------------------
 

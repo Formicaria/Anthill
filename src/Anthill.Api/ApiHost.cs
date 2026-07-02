@@ -601,6 +601,7 @@ public static class ApiHost
         ["status"] = o.Status.Value(), ["max_runs"] = o.MaxRuns, ["run_count"] = o.RunCount,
         ["consecutive_failures"] = o.ConsecutiveFailures, ["parent_objective_id"] = o.ParentObjectiveId,
         ["created_at"] = o.CreatedAt.ToIso(), ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
+        ["success_ema"] = o.SuccessEma,
     };
 
     private static void ProtectedJson(WebApplication app, string path, string permission, Func<HttpContext, IResult> handler) =>

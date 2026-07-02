@@ -225,7 +225,7 @@ public sealed class ColonyDirector : IDisposable
         run.FollowUpsCreated = enqueuedFollowUps;
         _queen.Memory.SaveAutonomyRun(run);
 
-        var updated = _queen.Memory.RecordObjectiveRunOutcome(objective.Id, success);
+        var updated = _queen.Memory.RecordObjectiveRunOutcome(objective.Id, success, score);
         _queen.Memory.LogEvent(SystemMissionId, "autonomy_mission_finished",
             $"Director mission finished for objective: {objective.Title} ({missionStatus})", antName: "director",
             metadata: new()
@@ -234,7 +234,37 @@ public sealed class ColonyDirector : IDisposable
                 ["mission_status"] = missionStatus, ["success"] = success, ["success_score"] = score,
                 ["objective_status"] = updated?.Status.Value(), ["run_count"] = updated?.RunCount,
                 ["consecutive_failures"] = updated?.ConsecutiveFailures, ["follow_ups_created"] = enqueuedFollowUps,
-                ["in_flight"] = _inFlight.Count,
+                ["success_ema"] = updated?.SuccessEma, ["in_flight"] = _inFlight.Count,
+            });
+
+        if (updated is not null) CheckRetirement(updated);
+    }
+
+    /// <summary>
+    /// Phase 4 learning loop: after an outcome lands, retire (auto-pause) the objective if it has
+    /// stopped producing value or is looping on near-identical goals. Runs on the director thread
+    /// only, after the outcome is recorded, so it never races the objective's own bookkeeping.
+    /// Retirement is a pause + <c>objective_retired</c> event — a human reviews and resumes.
+    /// </summary>
+    private void CheckRetirement(Objective objective)
+    {
+        var recentGoals = _queen.Memory
+            .ListAutonomyRuns(objective.Id, limit: Math.Max(AnthillRuntime.AutonomyLoopWindow, 1))
+            .Select(r => r.GetValueOrDefault("generated_goal")?.ToString() ?? "")
+            .ToList();
+        var decision = ObjectiveLearning.EvaluateRetirement(objective, recentGoals);
+        if (decision is null) return;
+
+        _queen.Memory.UpdateObjectiveStatus(objective.Id, ObjectiveStatus.Paused);
+        _queen.Memory.LogEvent(SystemMissionId, "objective_retired",
+            $"Director retired objective \"{objective.Title}\" ({decision.Code}): {decision.Reason}",
+            antName: "director",
+            metadata: new()
+            {
+                ["objective_id"] = objective.Id, ["objective_title"] = objective.Title,
+                ["code"] = decision.Code, ["reason"] = decision.Reason,
+                ["success_ema"] = objective.SuccessEma, ["run_count"] = objective.RunCount,
+                ["action"] = "paused_for_review",
             });
     }
 
@@ -301,6 +331,7 @@ public sealed class ColonyDirector : IDisposable
             ["governor_reason"] = governor?.Reason,
             ["governor_signals"] = governor?.Signals,
             ["aging_minutes"] = AnthillRuntime.AutonomyAgingMinutes,
+            ["learning_enabled"] = AnthillRuntime.AutonomyLearningEnabled,
             ["in_flight"] = inFlight.Select(f => new Dictionary<string, object?>
             {
                 ["objective_id"] = f.Objective.Id, ["objective_title"] = f.Objective.Title,

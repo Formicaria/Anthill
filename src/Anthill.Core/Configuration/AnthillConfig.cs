@@ -79,6 +79,20 @@ public sealed class AnthillConfig
     // Anti-starvation aging: a ready objective gains +1 effective priority for every this-many
     // minutes it has waited since its last run (or creation). 0 disables aging (pure strict priority).
     [JsonPropertyName("autonomy_aging_minutes")] public int AutonomyAgingMinutes { get; set; } = 30;
+    // ---- Phase 4: learning loop ----
+    // Mission outcomes bias objective selection: each objective keeps a success-score EMA; at
+    // selection time it contributes up to ±autonomy_priority_bias_max effective priority points
+    // (read-time only — stored priorities never drift). Objectives that keep failing to produce
+    // value (low EMA over enough runs) or loop on near-identical generated goals are auto-paused
+    // with an objective_retired event for human review.
+    [JsonPropertyName("autonomy_learning_enabled")] public bool AutonomyLearningEnabled { get; set; } = true;
+    [JsonPropertyName("autonomy_priority_bias_max")] public int AutonomyPriorityBiasMax { get; set; } = 2;
+    [JsonPropertyName("autonomy_score_ema_alpha")] public double AutonomyScoreEmaAlpha { get; set; } = 0.3;
+    [JsonPropertyName("autonomy_retire_min_runs")] public int AutonomyRetireMinRuns { get; set; } = 5;
+    [JsonPropertyName("autonomy_retire_score_threshold")] public double AutonomyRetireScoreThreshold { get; set; } = 0.25;
+    // How many recent generated goals to compare for loop detection (0 = off). Uses
+    // autonomy_dedupe_similarity as the overlap threshold, same metric as Strategist dedup.
+    [JsonPropertyName("autonomy_loop_window")] public int AutonomyLoopWindow { get; set; } = 4;
 
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.

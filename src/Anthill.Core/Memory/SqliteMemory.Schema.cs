@@ -205,7 +205,8 @@ public sealed partial class SqliteMemory : IDisposable
             priority INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL,
             max_runs INTEGER NOT NULL DEFAULT 0, run_count INTEGER NOT NULL DEFAULT 0,
             consecutive_failures INTEGER NOT NULL DEFAULT 0, parent_objective_id TEXT,
-            metadata_json TEXT, created_at TEXT NOT NULL, last_run_at TEXT)",
+            metadata_json TEXT, created_at TEXT NOT NULL, last_run_at TEXT,
+            success_ema REAL)",
         @"CREATE TABLE IF NOT EXISTS autonomy_runs (
             id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, mission_id TEXT,
             generated_goal TEXT NOT NULL, mission_status TEXT NOT NULL, success_score REAL,
@@ -267,6 +268,8 @@ public sealed partial class SqliteMemory : IDisposable
             ["failure_reason"] = "TEXT", ["failure_type"] = "TEXT", ["skipped_reason"] = "TEXT", ["blocked_reason"] = "TEXT",
         });
         AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT" });
+        // Phase 4 learning loop: per-objective success EMA (nullable — null until the first recorded run).
+        AddMissing("objectives", new() { ["success_ema"] = "REAL" });
         AddMissing("source_records", new()
         {
             ["relevance_score"] = "REAL DEFAULT 0", ["freshness_score"] = "REAL DEFAULT 0", ["authority_score"] = "REAL DEFAULT 0",
@@ -288,6 +291,7 @@ public sealed partial class SqliteMemory : IDisposable
             (8, "autonomy_rails", "Autonomy backlog (objectives) and per-mission audit trail (autonomy_runs) tables verified."),
             (9, "user_accounts", "Operator accounts (users) with password login and roles verified."),
             (10, "model_provider_connections", "Encrypted API-key storage for external model providers (provider_credentials) verified."),
+            (11, "autonomy_learning", "Phase 4 learning loop: per-objective success EMA column (objectives.success_ema) verified."),
         };
         foreach (var (id, name, description) in migrations)
         {

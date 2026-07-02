@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.13</title>
+<title>ANTHILL v1.8.14</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -514,7 +514,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.13</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.14</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -557,7 +557,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.13</span>
+      <span class="nav-logo-ver">v1.8.14</span>
     </div>
 
     <div class="nav-scroll">
@@ -990,8 +990,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="section-head" style="margin-top:0;padding:0;" id="obj-count">Objectives</div>
           </div>
           <table class="data-table">
-            <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
-            <tbody id="obj-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Score</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
+            <tbody id="obj-tbody"><tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
           </table>
         </div>
 
@@ -2745,6 +2745,7 @@ async function reloadObjectives(){
         </td>
         <td><span class="obj-status ${o.status}">${o.status}</span></td>
         <td style="font-family:var(--mono);font-size:11px;">${o.run_count}${o.max_runs?'/'+o.max_runs:''}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:${o.success_ema==null?'var(--dim)':(o.success_ema>=0.5?'var(--green)':(o.success_ema>=0.25?'var(--queen)':'var(--red)'))}" title="Success score EMA — biases selection priority (Phase 4 learning)">${o.success_ema==null?'—':o.success_ema.toFixed(2)}</td>
         <td style="font-family:var(--mono);font-size:11px;color:${o.consecutive_failures>0?'var(--red)':'var(--dim)'}">${o.consecutive_failures}</td>
         <td>${o.last_run_at?fmtTime(o.last_run_at):'never'}</td>
         <td style="white-space:nowrap;">
@@ -2752,8 +2753,8 @@ async function reloadObjectives(){
           <button class="job-btn cancel" onclick="objDelete('${o.id}')">Delete</button>
         </td>
       </tr>`;
-    }).join('')||'<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
-  }catch(e){ tb.innerHTML=`<tr><td colspan="8" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+    }).join('')||'<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="9" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
 }
 
 document.getElementById('obj-add').addEventListener('click',async()=>{
@@ -2867,6 +2868,7 @@ const TOGGLE_KEYS=[
   ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
   ['shell_tool_enabled','Shell Tool'],['parallel_execution_enabled','Parallel Exec'],
   ['spec_ingestion_enabled','Spec Ingestion'],['autonomy_enabled','Autonomy'],
+  ['autonomy_learning_enabled','Autonomy Learning'],
 ];
 const NUM_KEYS=[
   ['max_parallel_workers','Parallel Workers'],['max_web_searches_per_mission','Web Searches/Mission'],
@@ -2877,6 +2879,8 @@ const AUTO_KEYS=[
   ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
   ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
   ['autonomy_concurrency','Concurrency'],['autonomy_aging_minutes','Aging Minutes'],
+  ['autonomy_priority_bias_max','Learning Bias Max'],['autonomy_retire_min_runs','Retire Min Runs'],
+  ['autonomy_loop_window','Loop Window'],
 ];
 let colonySettings={};
 

@@ -26,6 +26,12 @@ public sealed class Objective
     public Dictionary<string, object?> Metadata { get; set; } = new();
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
     public DateTime? LastRunAt { get; set; }
+    /// <summary>
+    /// Phase 4 learning loop: exponential moving average of this objective's mission success
+    /// scores (0..1). Null until the first recorded run. Biases selection at read time (never
+    /// mutates <see cref="Priority"/>) and drives stale-objective retirement.
+    /// </summary>
+    public double? SuccessEma { get; set; }
 }
 
 /// <summary>

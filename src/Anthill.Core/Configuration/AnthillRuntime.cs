@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.13";
-    public const int SchemaVersion = 10;
+    public const string Version = "1.8.14";
+    public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -122,6 +122,19 @@ public static class AnthillRuntime
     public static int AutonomyConcurrency = 1;
     /// <summary>Anti-starvation aging: minutes of waiting per +1 effective priority for ready objectives. 0 = off.</summary>
     public static int AutonomyAgingMinutes = 30;
+    // ---- Phase 4: learning loop --------------------------------------------
+    /// <summary>Master switch for outcome-driven selection bias and stale/loop retirement. Off = pure Phase 3 behavior.</summary>
+    public static bool AutonomyLearningEnabled = true;
+    /// <summary>Max effective-priority points the success EMA may add or subtract at selection time.</summary>
+    public static int AutonomyPriorityBiasMax = 2;
+    /// <summary>EMA smoothing factor for per-objective success scores (weight of the newest run).</summary>
+    public static double AutonomyScoreEmaAlpha = 0.3;
+    /// <summary>Minimum recorded runs before an objective may be retired as stale.</summary>
+    public static int AutonomyRetireMinRuns = 5;
+    /// <summary>Success EMA below which an objective (with enough runs) is retired as stale.</summary>
+    public static double AutonomyRetireScoreThreshold = 0.25;
+    /// <summary>Recent generated goals compared for loop detection (0 = off); threshold is AutonomyDedupeSimilarity.</summary>
+    public static int AutonomyLoopWindow = 4;
 
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
@@ -369,6 +382,12 @@ public static class AnthillRuntime
         AutonomyMaxObjectiveDepth = Math.Max(0, config.AutonomyMaxObjectiveDepth);
         AutonomyConcurrency = Math.Clamp(config.AutonomyConcurrency, 1, 8);
         AutonomyAgingMinutes = Math.Clamp(config.AutonomyAgingMinutes, 0, 10080);
+        AutonomyLearningEnabled = config.AutonomyLearningEnabled;
+        AutonomyPriorityBiasMax = Math.Clamp(config.AutonomyPriorityBiasMax, 0, 10);
+        AutonomyScoreEmaAlpha = Math.Clamp(config.AutonomyScoreEmaAlpha, 0.01, 1.0);
+        AutonomyRetireMinRuns = Math.Clamp(config.AutonomyRetireMinRuns, 1, 1000);
+        AutonomyRetireScoreThreshold = Math.Clamp(config.AutonomyRetireScoreThreshold, 0.0, 1.0);
+        AutonomyLoopWindow = Math.Clamp(config.AutonomyLoopWindow, 0, 20);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -400,6 +419,8 @@ public static class AnthillRuntime
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
         "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
         "autonomy_concurrency", "autonomy_aging_minutes",
+        "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
+        "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -473,6 +494,12 @@ public static class AnthillRuntime
         ["autonomy_max_objective_depth"] = AutonomyMaxObjectiveDepth,
         ["autonomy_concurrency"] = AutonomyConcurrency,
         ["autonomy_aging_minutes"] = AutonomyAgingMinutes,
+        ["autonomy_learning_enabled"] = AutonomyLearningEnabled,
+        ["autonomy_priority_bias_max"] = AutonomyPriorityBiasMax,
+        ["autonomy_score_ema_alpha"] = AutonomyScoreEmaAlpha,
+        ["autonomy_retire_min_runs"] = AutonomyRetireMinRuns,
+        ["autonomy_retire_score_threshold"] = AutonomyRetireScoreThreshold,
+        ["autonomy_loop_window"] = AutonomyLoopWindow,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["editable_keys"] = EditableConfigKeys.ToList(),

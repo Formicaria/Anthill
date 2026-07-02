@@ -70,5 +70,13 @@
 
   "_comment_concurrency": "Phase 3: how many autonomous missions may run at once (1-8). The ResourceGovernor can only lower the effective value below this cap — high CPU load, low free memory, or a slow/unreachable Ollama backend halve it or clamp it to 1. Scheduling stays strict-priority, but a ready objective gains +1 effective priority per autonomy_aging_minutes waited so low-priority work can't starve (0 disables aging).",
   "autonomy_concurrency":                  1,
-  "autonomy_aging_minutes":               30
+  "autonomy_aging_minutes":               30,
+
+  "_comment_learning": "Phase 4: mission outcomes bias objective selection. Each objective keeps a success-score EMA (weight of newest run = autonomy_score_ema_alpha); at selection time it adds up to ±autonomy_priority_bias_max effective priority points — read-time only, stored priorities never drift. Objectives with a low EMA after autonomy_retire_min_runs runs, or whose last autonomy_loop_window generated goals are near-identical (threshold = autonomy_dedupe_similarity), are auto-paused with an objective_retired event for human review. Set autonomy_learning_enabled false for pure Phase 3 behavior.",
+  "autonomy_learning_enabled":          true,
+  "autonomy_priority_bias_max":            2,
+  "autonomy_score_ema_alpha":            0.3,
+  "autonomy_retire_min_runs":              5,
+  "autonomy_retire_score_threshold":    0.25,
+  "autonomy_loop_window":                  4
 }

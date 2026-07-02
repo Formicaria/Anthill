@@ -1,13 +1,40 @@
 # ANTHILL — 24/7 Autonomy Design
 
 > Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) + Phase 2 (Strategist) + Phase 3
-> (Concurrency) IMPLEMENTED.** The colony can now run autonomously: the Director works the
-> objective backlog — up to `autonomy_concurrency` missions at once, sized down live by the
-> ResourceGovernor under host/backend pressure — under budgets and the kill switch, with writes
-> queued for human review. Mission goals are LLM-generated per objective (with a deterministic
-> charter-as-goal fallback), deduped against recent mission history, and the colony can enqueue
-> its own follow-up objectives within depth/rate caps. Scheduling is strict priority with
-> anti-starvation aging. Target: ANTHILL v1.9.x.
+> (Concurrency) + Phase 4 (Learning loop) IMPLEMENTED.** The colony can now run autonomously:
+> the Director works the objective backlog — up to `autonomy_concurrency` missions at once,
+> sized down live by the ResourceGovernor under host/backend pressure — under budgets and the
+> kill switch, with writes queued for human review. Mission goals are LLM-generated per
+> objective (with a deterministic charter-as-goal fallback), deduped against recent mission
+> history, and the colony can enqueue its own follow-up objectives within depth/rate caps.
+> Scheduling is strict priority with anti-starvation aging plus an outcome-driven learning bias;
+> objectives that stop producing value or loop are auto-paused for review. Target: ANTHILL v1.9.x.
+
+## Phase 4 — what landed
+
+- **`ObjectiveLearning`** (`Anthill.Core/Autonomy/ObjectiveLearning.cs`): three pure functions
+  over the per-objective success EMA. `UpdateEma` folds each run's mission success score into
+  `objectives.success_ema` (α = `autonomy_score_ema_alpha`, default 0.3; unscored runs count as
+  0; always recorded even when learning is off). `PriorityBias` maps the EMA linearly to
+  ±`autonomy_priority_bias_max` effective-priority points at selection time — read-time only,
+  stored priorities never drift, new objectives (null EMA) are unbiased. `EvaluateRetirement`
+  decides stale (`run_count ≥ autonomy_retire_min_runs` and EMA <
+  `autonomy_retire_score_threshold`) and looping (last `autonomy_loop_window` generated goals
+  all ≥ `autonomy_dedupe_similarity` keyword overlap — same containment metric as Strategist
+  dedup, so a charter-fallback spiral is caught as identical goals run after run).
+- **Retirement = auto-pause + `objective_retired` event** (code `stale_low_success` /
+  `looping_goals`, with reason, EMA, run count) — mirrors the failure circuit breaker; a human
+  reviews and resumes from the Autonomy page. Checks run on the director thread after each
+  outcome, so they never race the objective's bookkeeping. Only Active objectives are considered.
+- **Schema v11** (additive): `objectives.success_ema REAL`, `EnsureColumns` + migration 11.
+- **Config knobs** (clamped, settings-whitelisted): `autonomy_learning_enabled` (default true —
+  false restores exact Phase 3 behavior), `autonomy_priority_bias_max` (2),
+  `autonomy_score_ema_alpha` (0.3), `autonomy_retire_min_runs` (5),
+  `autonomy_retire_score_threshold` (0.25), `autonomy_loop_window` (4, 0 = off).
+- **Observability**: Score (EMA) column in `/objectives` + the backlog table;
+  `success_ema` on `autonomy_mission_finished` events; `learning_enabled` in `/autonomy/status`.
+- **Tests**: `LearningTests` — EMA math and persistence, bias bounds/linearity, EMA-driven
+  selection ordering, and every retirement branch (stale, looping, disabled, non-active).
 
 ## Phase 3 — what landed
 
@@ -228,7 +255,13 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 "autonomy_max_followups_per_run": 1,  // cap self-enqueued follow-up objectives per mission
 "autonomy_max_objective_depth": 3,    // cap parent-chain depth for follow-up objectives
 "autonomy_concurrency": 1,            // Phase 3: >1 enables concurrent missions (governor can lower it)
-"autonomy_aging_minutes": 30          // Phase 3: anti-starvation aging; 0 = pure strict priority
+"autonomy_aging_minutes": 30,         // Phase 3: anti-starvation aging; 0 = pure strict priority
+"autonomy_learning_enabled": true,    // Phase 4: outcome bias + retirement; false = pure Phase 3
+"autonomy_priority_bias_max": 2,      // Phase 4: max ± effective-priority points from the success EMA
+"autonomy_score_ema_alpha": 0.3,      // Phase 4: EMA weight of the newest run's score
+"autonomy_retire_min_runs": 5,        // Phase 4: runs required before stale retirement may trigger
+"autonomy_retire_score_threshold": 0.25, // Phase 4: EMA below this (with enough runs) = stale
+"autonomy_loop_window": 4             // Phase 4: near-identical goals in a row = looping; 0 = off
 ```
 
 All default to the safe/off values. Auto-apply gets **no** config key until Phase 5.
@@ -241,7 +274,7 @@ All default to the safe/off values. Auto-apply gets **no** config key until Phas
 | **1 — Loop (MVP)** ✅ | **DONE.** Director runs one objective at a time, queue-for-review writes only, `--autonomous` flag, `/autonomy/{start,stop,status,runs}` + `/objectives` CRUD. **This is the milestone that must be stable before anything else.** | `Anthill.Api/ColonyDirector.cs`, `ApiHost.cs`, `Program.cs` |
 | **2 — Self-generated missions** ✅ | **DONE.** Strategist role + dedup + follow-up enqueue (depth/rate capped). | `Autonomy/Strategist.cs`, `ModelRouter` route, `ColonyDirector.cs` |
 | **3 — Concurrency** ✅ | **DONE.** `ResourceGovernor` (load/memory/backend-probe sizing), concurrent Director loop with drain-on-stop, strict priority + aging scheduling, `autonomy_concurrency`/`autonomy_aging_minutes` knobs. VRAM-aware scaling deferred to a later hardware-aware phase. | `Autonomy/ResourceGovernor.cs`, `ColonyDirector.cs`, `SqliteMemory.Autonomy`, `ApiHost` |
-| **4 — Learning loop** | Outcomes bias objective priority; retire stale/looping objectives. | `PheromoneEngine`, ObjectiveStore |
+| **4 — Learning loop** ✅ | **DONE.** Success-EMA per objective biases selection (read-time, bounded); stale/looping objectives auto-pause with `objective_retired` events. | `Autonomy/ObjectiveLearning.cs`, `SqliteMemory.Autonomy`, `ColonyDirector.cs` |
 | **5 — Auto-apply (gated, OFF)** | Strict allowlist auto-approve+apply (path allowlist, size cap, must build+test green, auto-rollback). Enabled only after Phase 1 is proven. | new policy module + `/apply` automation |
 
 Implementation order is strictly 0 → 1 → (stabilize) → 2 → 3 → 4 → 5.
