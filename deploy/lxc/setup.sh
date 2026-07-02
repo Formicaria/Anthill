@@ -147,17 +147,41 @@ sed \
     "$SRC_DIR/deploy/lxc/anthill.service.template" > /etc/systemd/system/anthill.service
 
 # ---------------------------------------------------------------------------
-# Scoped polkit rule: let the admin-only operator Shell console manage ONLY the anthill unit
-# (restart/stop/start/status) without a password. NoNewPrivileges=true blocks sudo, so this is
-# how service control works from the console. Best-effort — skipped if polkit isn't installed.
+log "Installing polkit + scoped rule for operator-shell service control"
 # ---------------------------------------------------------------------------
-if [ -d /etc/polkit-1/rules.d ]; then
-    log "Installing scoped polkit rule for operator-shell service control"
+# NoNewPrivileges=true blocks sudo, so the admin-only operator Shell manages the service over
+# D-Bus via polkit. Install polkit natively (like the .NET SDK) so `systemctl restart anthill`
+# works from the console out of the box. Package name varies by distro; try newest first.
+if ! command -v pkaction >/dev/null 2>&1 && [ ! -d /etc/polkit-1 ]; then
+    apt-get update -qq || true
+    apt-get install -y polkitd 2>/dev/null \
+        || apt-get install -y polkit 2>/dev/null \
+        || apt-get install -y policykit-1 2>/dev/null \
+        || echo "    WARNING: could not install polkit via apt — operator-shell service control will be unavailable."
+fi
+
+if [ -d /etc/polkit-1 ]; then
+    # Modern polkit (>= 0.106, e.g. Debian 12): JS rule scoped to ONLY the anthill.service unit.
+    mkdir -p /etc/polkit-1/rules.d
     sed -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
         "$SRC_DIR/deploy/lxc/anthill-polkit.rules.template" > /etc/polkit-1/rules.d/49-anthill.rules
+    # Legacy polkit (0.105, e.g. Ubuntu 22.04) ignores JS rules — provide a .pkla fallback too.
+    # .pkla can only scope by action (not per-unit), so it's a touch broader; the JS rule above
+    # takes precedence wherever it's supported.
+    mkdir -p /etc/polkit-1/localauthority/50-local.d
+    cat > /etc/polkit-1/localauthority/50-local.d/49-anthill.pkla <<PKLA
+[Allow ANTHILL service user to manage systemd units]
+Identity=unix-user:$SERVICE_USER
+Action=org.freedesktop.systemd1.manage-units
+ResultActive=yes
+ResultInactive=yes
+ResultAny=yes
+PKLA
+    systemctl enable --now polkit 2>/dev/null || systemctl enable --now polkitd 2>/dev/null || true
     systemctl try-restart polkit 2>/dev/null || systemctl try-restart polkitd 2>/dev/null || true
+    echo "    polkit rule installed — the operator Shell can now restart/stop/start the service."
 else
-    echo "    polkit not present — skipping. Operator-shell service control (systemctl restart anthill) will not be available until polkit is installed."
+    echo "    polkit unavailable — operator-shell service control (systemctl restart anthill) will not work on this host."
 fi
 
 systemctl daemon-reload

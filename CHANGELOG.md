@@ -11,7 +11,18 @@
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
-> intent + shell service control = **v1.8.15.2**, and so on.
+> intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, and so on.
+
+## v1.8.15.3 — Install polkit natively in the LXC setup
+
+v1.8.15.2 shipped the scoped polkit rule but only installed it *if* polkit was already present —
+on a fresh Debian LXC it isn't, so the installer skipped it ("polkit not present"). `setup.sh`
+now **installs polkit itself** (like it installs the .NET SDK): `apt-get install polkitd` with
+fallbacks to `polkit` / `policykit-1` across distros, enables the daemon, writes the scoped JS
+rule (modern polkit, Debian 12+) *and* a `.pkla` fallback (legacy polkit 0.105, Ubuntu 22.04),
+and restarts polkit. After a `git pull && bash deploy/lxc/setup.sh` the operator Shell's
+Restart/Status/Logs buttons work with no extra steps. No application-code change — same binary,
+version bumped for deploy traceability.
 
 ## v1.8.15.2 — Strategist intent fidelity, backlog-sprawl cap, operator-shell service control
 
