@@ -1,7 +1,7 @@
 # ANTHILL — 24/7 Autonomy Design
 
-> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) + Phase 2 (Strategist) + Phase 3
-> (Concurrency) + Phase 4 (Learning loop) IMPLEMENTED.** The colony can now run autonomously:
+> Status: **Phase 0–5 IMPLEMENTED — the autonomy roadmap is complete.** Rails, Director loop,
+> Strategist, Concurrency, Learning loop, and now Phase 5 gated auto-apply. The colony can now run autonomously:
 > the Director works the objective backlog — up to `autonomy_concurrency` missions at once,
 > sized down live by the ResourceGovernor under host/backend pressure — under budgets and the
 > kill switch, with writes queued for human review. Mission goals are LLM-generated per
@@ -9,6 +9,45 @@
 > history, and the colony can enqueue its own follow-up objectives within depth/rate caps.
 > Scheduling is strict priority with anti-starvation aging plus an outcome-driven learning bias;
 > objectives that stop producing value or loop are auto-paused for review. Target: ANTHILL v1.9.x.
+
+## Phase 5 — what landed (gated auto-apply)
+
+The Director can now **apply a coder patch without human review** — the answer to the approval
+queue filling up with fixes nobody has time to click through. It is the highest-risk capability
+in the system (autonomous writes to disk), so it is fail-closed and multiply gated, and the whole
+safety story is *apply → verify → keep-or-rollback*.
+
+- **`AutoApplyPolicy`** (`Anthill.Core/Autonomy/AutoApplyPolicy.cs`): the pure, side-effect-free
+  eligibility gate. A patch is a candidate only when **all** hold: `autonomy_autoapply_enabled` is
+  on; the change is `add`/`modify` (never delete/rename); the file path matches at least one
+  operator glob in `autonomy_autoapply_paths` (an **empty allowlist means nothing is eligible**, so
+  the feature is inert until deliberately widened); and the change is within
+  `autonomy_autoapply_max_lines`. Glob supports `**` (subtree), `*` (within a segment), `?`.
+- **`AutoApplyRunner`** (`Anthill.Api/AutoApplyRunner.cs`): runs on the Director thread after a
+  **successful** mission's outcome is recorded. Filters the mission's proposals through the policy,
+  applies the eligible ones to disk (each with a pre-apply backup via the existing `apply_patch`
+  tool), then runs the **verify** step — built-in `dotnet build && dotnet test`, or an operator
+  `autonomy_autoapply_verify_cmd` — in the workspace root, timeout-bounded
+  (`autonomy_autoapply_verify_timeout`, default 900s). **Green** ⇒ the changes stay, the matching
+  approval requests are marked `consumed` (so they leave the queue), and — if
+  `autonomy_autoapply_git_commit` is on — a local `git add`+`commit` (never pushed). **Red or
+  timeout** ⇒ every applied patch is rolled back (modify → restore backup, add → delete the file),
+  marked `failed`, and logged.
+- **Write-gate dependency**: auto-apply also requires `patch_application_enabled` +
+  `file_writing_enabled`; if they're off it logs `autonomy_autoapply_skipped` and does nothing.
+- **Full audit trail**: `autonomy_autoapply_started` / `_applied` / `_verified` / `_reverted` /
+  `_rolled_back` / `_ineligible` / `_skipped` events, all replayable, and the applied/reverted
+  patches show up in the mission report's "tangible changes" with their final status.
+- **Config** (all clamped/whitelisted; forced off in every safety profile):
+  `autonomy_autoapply_enabled` (false), `autonomy_autoapply_paths` ([]), `autonomy_autoapply_max_lines`
+  (40), `autonomy_autoapply_verify_cmd` (""), `autonomy_autoapply_verify_timeout` (900),
+  `autonomy_autoapply_git_commit` (false). All editable in **Configuration → Security → Autonomous
+  Auto-Apply**.
+- **Tests**: `AutoApplyPolicyTests` — eligibility matrix, glob semantics, size cap, change-type,
+  disabled and empty-allowlist denial.
+
+Operational note: the verify build blocks the Director thread (deliberately — no new launches
+mid-verify), so keep `autonomy_concurrency` and the verify command in mind on a busy box.
 
 ## Phase 4 — what landed
 
@@ -261,10 +300,16 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 "autonomy_score_ema_alpha": 0.3,      // Phase 4: EMA weight of the newest run's score
 "autonomy_retire_min_runs": 5,        // Phase 4: runs required before stale retirement may trigger
 "autonomy_retire_score_threshold": 0.25, // Phase 4: EMA below this (with enough runs) = stale
-"autonomy_loop_window": 4             // Phase 4: near-identical goals in a row = looping; 0 = off
+"autonomy_loop_window": 4,            // Phase 4: near-identical goals in a row = looping; 0 = off
+"autonomy_autoapply_enabled": false,  // Phase 5: apply allowlisted patches that verify green, no review
+"autonomy_autoapply_paths": [],       // Phase 5: workspace globs a patch must match; [] = nothing eligible
+"autonomy_autoapply_max_lines": 40,   // Phase 5: max changed lines per auto-applied patch
+"autonomy_autoapply_verify_cmd": "",  // Phase 5: verify command; "" = dotnet build && dotnet test
+"autonomy_autoapply_verify_timeout": 900, // Phase 5: verify hard timeout (seconds)
+"autonomy_autoapply_git_commit": false    // Phase 5: also git-commit verified changes locally
 ```
 
-All default to the safe/off values. Auto-apply gets **no** config key until Phase 5.
+All default to the safe/off values.
 
 ## 8. Phased plan
 
@@ -275,9 +320,9 @@ All default to the safe/off values. Auto-apply gets **no** config key until Phas
 | **2 — Self-generated missions** ✅ | **DONE.** Strategist role + dedup + follow-up enqueue (depth/rate capped). | `Autonomy/Strategist.cs`, `ModelRouter` route, `ColonyDirector.cs` |
 | **3 — Concurrency** ✅ | **DONE.** `ResourceGovernor` (load/memory/backend-probe sizing), concurrent Director loop with drain-on-stop, strict priority + aging scheduling, `autonomy_concurrency`/`autonomy_aging_minutes` knobs. VRAM-aware scaling deferred to a later hardware-aware phase. | `Autonomy/ResourceGovernor.cs`, `ColonyDirector.cs`, `SqliteMemory.Autonomy`, `ApiHost` |
 | **4 — Learning loop** ✅ | **DONE.** Success-EMA per objective biases selection (read-time, bounded); stale/looping objectives auto-pause with `objective_retired` events. | `Autonomy/ObjectiveLearning.cs`, `SqliteMemory.Autonomy`, `ColonyDirector.cs` |
-| **5 — Auto-apply (gated, OFF)** | Strict allowlist auto-approve+apply (path allowlist, size cap, must build+test green, auto-rollback). Enabled only after Phase 1 is proven. | new policy module + `/apply` automation |
+| **5 — Auto-apply (gated, OFF)** ✅ | **DONE.** Strict allowlist auto-approve+apply — path globs, size cap, add/modify only, must build+test green afterward, auto-rollback on red. Fail-closed OFF, inert with an empty allowlist, forced off in every safety profile. | `Autonomy/AutoApplyPolicy.cs`, `Anthill.Api/AutoApplyRunner.cs`, `Queen.Views` (apply/rollback), `ColonyDirector.cs` |
 
-Implementation order is strictly 0 → 1 → (stabilize) → 2 → 3 → 4 → 5.
+Implementation order was strictly 0 → 1 → (stabilize) → 2 → 3 → 4 → 5 — **all phases now shipped.**
 
 ## 9. UI / observability
 

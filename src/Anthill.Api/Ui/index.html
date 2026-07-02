@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.14.5</title>
+<title>ANTHILL v1.8.15</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -530,7 +530,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.14.5</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.15</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -573,7 +573,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.14.5</span>
+      <span class="nav-logo-ver">v1.8.15</span>
     </div>
 
     <div class="nav-scroll">
@@ -1236,11 +1236,27 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="form-field"><label>agent_workspace_dir</label><input class="form-input" id="sec-workspace" type="text" placeholder="/opt/anthill/.anthill/workspace" style="width:100%;font-family:var(--mono);"></div>
         </div>
 
-        <div class="card" style="padding:16px 18px;">
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;">Operator Shell</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Configuration → Shell) — a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
           <div id="sec-shell-toggle"></div>
           <div class="form-field" style="margin-top:10px;"><label>Default shell working directory <span style="color:var(--dim);font-weight:400">(blank = workspace root)</span></label><input class="form-input" id="sec-shell-dir" type="text" placeholder="/opt/anthill/src" style="width:100%;font-family:var(--mono);"></div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;border-color:var(--queen);">
+          <div class="section-head" style="margin-top:0;color:var(--queen);">Autonomous Auto-Apply <span style="font-size:9px;background:rgba(251,191,36,.14);color:var(--queen);padding:1px 6px;border-radius:3px;margin-left:6px;">HIGHEST RISK · PHASE 5</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">
+            Lets the 24/7 Director apply coder patches <b>without human review</b> — but only ones matching the allowlist below, and only if the workspace still <b>builds + tests green</b> afterward (a red verify auto-rolls-back from backup). Inert until you add at least one path glob. Also requires the File Writing + Patch Application gates above.
+          </div>
+          <div id="sec-autoapply-toggle"></div>
+          <div class="form-field" style="margin-top:10px;"><label>Allowlist path globs <span style="color:var(--dim);font-weight:400">(one per line; empty = nothing eligible)</span></label>
+            <textarea class="form-input" id="sec-autoapply-paths" rows="3" placeholder="docs/**&#10;src/**/*.cs" style="width:100%;font-family:var(--mono);font-size:11px;"></textarea></div>
+          <div class="form-row" style="margin-top:8px;">
+            <div class="form-field"><label>Max lines / patch</label><input class="form-input" id="sec-autoapply-maxlines" type="number" value="40" style="width:90px"></div>
+            <div class="form-field"><label>Verify timeout (s)</label><input class="form-input" id="sec-autoapply-timeout" type="number" value="900" style="width:100px"></div>
+            <div class="form-field" style="flex:1;min-width:220px;"><label>Verify command <span style="color:var(--dim);font-weight:400">(blank = dotnet build &amp;&amp; dotnet test)</span></label><input class="form-input" id="sec-autoapply-verify" type="text" placeholder="dotnet build && dotnet test" style="width:100%;font-family:var(--mono);"></div>
+          </div>
+          <div id="sec-autoapply-git" style="margin-top:8px;"></div>
         </div>
       </div><!-- /page-security -->
 
@@ -3277,8 +3293,14 @@ async function loadSecurity(){
   const tog=(k,label,desc)=>`<div class="toggle-row" style="align-items:flex-start"><div><div>${label}</div><div style="font-size:10px;color:var(--dim)">${desc}</div></div><div class="toggle-sw${secSettings[k]?' on':''}" data-key="${k}" onclick="this.classList.toggle('on')"></div></div>`;
   document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
   document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
+  document.getElementById('sec-autoapply-toggle').innerHTML=tog('autonomy_autoapply_enabled','Enable auto-apply','Director applies allowlisted patches that verify green, without review.');
+  document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, also commit locally (never pushed).');
   document.getElementById('sec-workspace').value=secSettings.agent_workspace_dir||'';
   document.getElementById('sec-shell-dir').value=secSettings.operator_shell_dir||'';
+  document.getElementById('sec-autoapply-paths').value=(secSettings.autonomy_autoapply_paths||[]).join('\n');
+  document.getElementById('sec-autoapply-maxlines').value=secSettings.autonomy_autoapply_max_lines??40;
+  document.getElementById('sec-autoapply-timeout').value=secSettings.autonomy_autoapply_verify_timeout??900;
+  document.getElementById('sec-autoapply-verify').value=secSettings.autonomy_autoapply_verify_cmd||'';
 }
 
 async function saveSecurity(){
@@ -3286,6 +3308,10 @@ async function saveSecurity(){
   document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
   const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
   payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
+  payload.autonomy_autoapply_paths=document.getElementById('sec-autoapply-paths').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  payload.autonomy_autoapply_max_lines=parseInt(document.getElementById('sec-autoapply-maxlines').value,10)||40;
+  payload.autonomy_autoapply_verify_timeout=parseInt(document.getElementById('sec-autoapply-timeout').value,10)||900;
+  payload.autonomy_autoapply_verify_cmd=document.getElementById('sec-autoapply-verify').value.trim();
   const msg=document.getElementById('sec-msg');
   try{
     const r=await api('/settings','POST',payload);

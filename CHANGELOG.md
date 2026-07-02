@@ -10,7 +10,47 @@
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
-> and so on.
+> Phase 5 autonomy (gated auto-apply) = **v1.8.15**, and so on.
+
+## v1.8.15 — Phase 5 autonomy: gated auto-apply (the autonomy roadmap is complete)
+
+The Director can now **ship low-risk fixes on its own** instead of queueing every patch for a
+human forever — the direct answer to the approval pile-up. It's the highest-risk capability in the
+system (autonomous writes to disk), so it's fail-closed and multiply gated, and the entire safety
+model is *apply → verify → keep-or-rollback*.
+
+- **Strict eligibility gate** (`Autonomy/AutoApplyPolicy.cs`): a patch is auto-appliable only when
+  every condition holds — the master switch is on; the change is `add`/`modify` (never
+  delete/rename); the file path matches an operator glob in `autonomy_autoapply_paths` (an **empty
+  allowlist means nothing is eligible**, so it's inert until you widen it); and the change is
+  within `autonomy_autoapply_max_lines`. Glob supports `**`/`*`/`?`.
+- **Apply → verify → rollback** (`Anthill.Api/AutoApplyRunner.cs`, runs on the Director thread
+  after a *successful* mission): applies eligible patches with per-file backups, then runs
+  `dotnet build && dotnet test` (or your `autonomy_autoapply_verify_cmd`) in the workspace,
+  timeout-bounded. **Green** ⇒ changes stay, the matching approval requests are marked `consumed`
+  (they leave the queue), optional local `git` commit (never pushed). **Red/timeout** ⇒ every
+  applied patch is rolled back (modify → restore backup, add → delete) and marked failed.
+- **Depends on the write gates** (`patch_application_enabled` + `file_writing_enabled`); logs
+  `autonomy_autoapply_skipped` and does nothing if they're off. **Forced off in every safety
+  profile** and off by default.
+- **Full audit trail**: `autonomy_autoapply_started`/`_applied`/`_verified`/`_reverted`/
+  `_rolled_back`/`_ineligible`/`_skipped` events; applied/reverted patches appear in the mission
+  report's tangible-changes with their final status.
+- **Config** (clamped, settings-whitelisted, editable in **Configuration → Security → Autonomous
+  Auto-Apply**): `autonomy_autoapply_enabled`, `autonomy_autoapply_paths`,
+  `autonomy_autoapply_max_lines`, `autonomy_autoapply_verify_cmd`,
+  `autonomy_autoapply_verify_timeout`, `autonomy_autoapply_git_commit`.
+- New `Queen.ApplyPatchForAutomation` / `RollbackAutoApplied` (structured apply with backup path
+  for rollback). `/autonomy/status` gains `autoapply_enabled` / `autoapply_paths`.
+- Tests: `AutoApplyPolicyTests` — eligibility matrix, glob semantics, size cap, change-type,
+  disabled and empty-allowlist denial.
+
+Also fixed: **`UpdateChecker.Compare` didn't tolerate a leading `v`** — `Compare("v1.8.15", …)`
+parsed the `v1` segment as `0`, so the version read as older (a CI test caught it; production was
+unaffected because `Fetch()` stripped the `v` before calling `Compare`). `Compare` now strips a
+leading `v`/`V` on both sides itself.
+
+With Phase 5 in, **the autonomy roadmap (Phases 0–5) is complete.**
 
 ## v1.8.14.5 — Auto-publish releases + hardening pass (audit)
 

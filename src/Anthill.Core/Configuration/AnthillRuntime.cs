@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.14.5";
+    public const string Version = "1.8.15";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -138,6 +138,19 @@ public static class AnthillRuntime
     public static double AutonomyRetireScoreThreshold = 0.25;
     /// <summary>Recent generated goals compared for loop detection (0 = off); threshold is AutonomyDedupeSimilarity.</summary>
     public static int AutonomyLoopWindow = 4;
+    // ---- Phase 5: gated auto-apply -----------------------------------------
+    /// <summary>Master switch: the Director may auto-approve+apply allowlisted patches that verify green. Fail-closed OFF.</summary>
+    public static bool AutonomyAutoApplyEnabled = false;
+    /// <summary>Workspace-relative globs a patch file_path must match to be auto-appliable. Empty = nothing eligible.</summary>
+    public static List<string> AutonomyAutoApplyPaths = new();
+    /// <summary>Max changed lines a single patch may have to auto-apply.</summary>
+    public static int AutonomyAutoApplyMaxLines = 40;
+    /// <summary>Verify command run after apply; empty = built-in dotnet build + test.</summary>
+    public static string AutonomyAutoApplyVerifyCmd = "";
+    /// <summary>Hard timeout (seconds) for the verify step.</summary>
+    public static int AutonomyAutoApplyVerifyTimeout = 900;
+    /// <summary>After a green verify, also git add + commit locally (never pushed).</summary>
+    public static bool AutonomyAutoApplyGitCommit = false;
 
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
@@ -397,6 +410,13 @@ public static class AnthillRuntime
         AutonomyRetireMinRuns = Math.Clamp(config.AutonomyRetireMinRuns, 1, 1000);
         AutonomyRetireScoreThreshold = Math.Clamp(config.AutonomyRetireScoreThreshold, 0.0, 1.0);
         AutonomyLoopWindow = Math.Clamp(config.AutonomyLoopWindow, 0, 20);
+        AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
+        AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
+            .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
+        AutonomyAutoApplyMaxLines = Math.Clamp(config.AutonomyAutoApplyMaxLines, 1, 100000);
+        AutonomyAutoApplyVerifyCmd = (config.AutonomyAutoApplyVerifyCmd ?? "").Trim();
+        AutonomyAutoApplyVerifyTimeout = Math.Clamp(config.AutonomyAutoApplyVerifyTimeout, 30, 7200);
+        AutonomyAutoApplyGitCommit = config.AutonomyAutoApplyGitCommit;
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -431,6 +451,8 @@ public static class AnthillRuntime
         "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
         "operator_shell_enabled", "operator_shell_dir",
+        "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
+        "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -512,6 +534,12 @@ public static class AnthillRuntime
         ["autonomy_retire_min_runs"] = AutonomyRetireMinRuns,
         ["autonomy_retire_score_threshold"] = AutonomyRetireScoreThreshold,
         ["autonomy_loop_window"] = AutonomyLoopWindow,
+        ["autonomy_autoapply_enabled"] = AutonomyAutoApplyEnabled,
+        ["autonomy_autoapply_paths"] = AutonomyAutoApplyPaths.ToList(),
+        ["autonomy_autoapply_max_lines"] = AutonomyAutoApplyMaxLines,
+        ["autonomy_autoapply_verify_cmd"] = AutonomyAutoApplyVerifyCmd,
+        ["autonomy_autoapply_verify_timeout"] = AutonomyAutoApplyVerifyTimeout,
+        ["autonomy_autoapply_git_commit"] = AutonomyAutoApplyGitCommit,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["api_auth_enabled"] = EnableApiAuth,

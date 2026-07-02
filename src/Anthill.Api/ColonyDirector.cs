@@ -238,6 +238,21 @@ public sealed class ColonyDirector : IDisposable
             });
 
         if (updated is not null) CheckRetirement(updated);
+
+        // Phase 5: on a successful mission, try to auto-apply any allowlisted patches it produced
+        // (apply → build+test verify → keep or roll back). Fail-closed and no-op unless the
+        // operator has enabled it AND configured a path allowlist. Runs on the director thread,
+        // after bookkeeping, so it never races the loop.
+        if (success && job.MissionId is { Length: > 0 } mid)
+        {
+            try { AutoApplyRunner.Run(_queen, mid); }
+            catch (Exception ex)
+            {
+                _queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_error",
+                    $"Auto-apply run errored for mission {mid}: {ex.Message}", antName: "director",
+                    metadata: new() { ["mission_id"] = mid, ["error"] = ex.Message });
+            }
+        }
     }
 
     /// <summary>
@@ -340,6 +355,8 @@ public sealed class ColonyDirector : IDisposable
             ["governor_signals"] = governor?.Signals,
             ["aging_minutes"] = AnthillRuntime.AutonomyAgingMinutes,
             ["learning_enabled"] = AnthillRuntime.AutonomyLearningEnabled,
+            ["autoapply_enabled"] = AnthillRuntime.AutonomyAutoApplyEnabled,
+            ["autoapply_paths"] = AnthillRuntime.AutonomyAutoApplyPaths.Count,
             ["in_flight"] = inFlight.Select(f => new Dictionary<string, object?>
             {
                 ["objective_id"] = f.Objective.Id, ["objective_title"] = f.Objective.Title,

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.14.5** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.15** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -969,9 +969,12 @@ for how keys are stored.
   button that opens the full [Mission Report](#the-approval-workflow) — final output, per-task
   results in plain English, and every tangible change the run proposed with its approval state.
 
-The Director only *proposes* — file changes still land in the normal approval queue for a human to
-review; if a run's report shows no patches and no pending approvals, that run changed nothing on
-disk. Mission goals come from the Strategist (`autonomy_dedupe_similarity`,
+By default the Director only *proposes* — file changes land in the normal approval queue for a
+human to review; if a run's report shows no patches and no pending approvals, that run changed
+nothing on disk. **Phase 5 gated auto-apply** (Configuration → Security → Autonomous Auto-Apply,
+off by default) can let it apply low-risk fixes on its own — but only patches matching your path
+allowlist and size cap, and only if the workspace still builds + tests green afterward, with
+automatic rollback on failure. Mission goals come from the Strategist (`autonomy_dedupe_similarity`,
 `autonomy_max_followups_per_run`, `autonomy_max_objective_depth` govern dedup and follow-up
 enqueueing), selection order from strict priority + aging + the Phase 4 learning bias, and
 objectives that stop producing value (or loop on near-identical goals) are auto-paused with an

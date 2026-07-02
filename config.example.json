@@ -82,5 +82,13 @@
   "autonomy_score_ema_alpha":            0.3,
   "autonomy_retire_min_runs":              5,
   "autonomy_retire_score_threshold":    0.25,
-  "autonomy_loop_window":                  4
+  "autonomy_loop_window":                  4,
+
+  "_comment_autoapply": "Phase 5: the Director may auto-approve+apply a coder patch WITHOUT human review, but ONLY when it clears the strict allowlist below AND the workspace still builds+tests green afterward (a red verify auto-rolls-back from the pre-apply backup). Highest-risk capability: OFF by default, forced off in every safety profile, and inert while autonomy_autoapply_paths is empty. Also requires patch_application_enabled + file_writing_enabled. autonomy_autoapply_paths = workspace-relative globs a patch must match (e.g. [\"docs/**\",\"src/**/*.cs\"]); autonomy_autoapply_max_lines caps a single change; autonomy_autoapply_verify_cmd overrides the built-in 'dotnet build && dotnet test'; autonomy_autoapply_git_commit optionally commits verified changes locally (never pushed).",
+  "autonomy_autoapply_enabled":        false,
+  "autonomy_autoapply_paths":             [],
+  "autonomy_autoapply_max_lines":         40,
+  "autonomy_autoapply_verify_cmd":        "",
+  "autonomy_autoapply_verify_timeout":   900,
+  "autonomy_autoapply_git_commit":     false
 }

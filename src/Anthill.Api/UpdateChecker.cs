@@ -81,11 +81,14 @@ public static class UpdateChecker
         ["checked_at"] = AnthillTime.NowUtc().ToIso(), ["status"] = "unknown", ["reason"] = reason,
     };
 
-    /// <summary>Dotted numeric version compare (1.8.14.3 vs 1.8.14). Returns &gt;0 if a is newer than b.</summary>
+    /// <summary>
+    /// Dotted numeric version compare (1.8.14.3 vs 1.8.14). Returns &gt;0 if a is newer than b.
+    /// Tolerates a leading "v"/"V" on either side so "v1.8.15" and "1.8.15" compare equal.
+    /// </summary>
     internal static int Compare(string a, string b)
     {
-        var pa = Parse(a);
-        var pb = Parse(b);
+        var pa = Parse((a ?? "").TrimStart('v', 'V'));
+        var pb = Parse((b ?? "").TrimStart('v', 'V'));
         var len = Math.Max(pa.Length, pb.Length);
         for (var i = 0; i < len; i++)
         {

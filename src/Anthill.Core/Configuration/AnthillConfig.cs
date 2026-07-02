@@ -100,6 +100,24 @@ public sealed class AnthillConfig
     // How many recent generated goals to compare for loop detection (0 = off). Uses
     // autonomy_dedupe_similarity as the overlap threshold, same metric as Strategist dedup.
     [JsonPropertyName("autonomy_loop_window")] public int AutonomyLoopWindow { get; set; } = 4;
+    // ---- Phase 5: gated auto-apply ----
+    // The Director may auto-approve + apply a coder patch WITHOUT human review, but only when the
+    // patch clears a strict allowlist AND the workspace still builds + tests green afterward; a
+    // red verify auto-rolls-back from the pre-apply backup. Fail-closed: OFF by default, and with
+    // an EMPTY path allowlist nothing is ever eligible even when enabled. Requires the
+    // patch_application_enabled + file_writing_enabled write gates to also be on.
+    [JsonPropertyName("autonomy_autoapply_enabled")] public bool AutonomyAutoApplyEnabled { get; set; } = false;
+    // Glob patterns (workspace-relative) a patch's file_path must match to be auto-appliable.
+    // Empty = nothing is eligible. e.g. ["docs/**", "src/**/*.cs"].
+    [JsonPropertyName("autonomy_autoapply_paths")] public List<string> AutonomyAutoApplyPaths { get; set; } = new();
+    // Max changed lines (new_content line count) a single patch may have to auto-apply.
+    [JsonPropertyName("autonomy_autoapply_max_lines")] public int AutonomyAutoApplyMaxLines { get; set; } = 40;
+    // Verify command run in the workspace after apply; empty = built-in `dotnet build` + `dotnet test`.
+    [JsonPropertyName("autonomy_autoapply_verify_cmd")] public string AutonomyAutoApplyVerifyCmd { get; set; } = "";
+    // Hard timeout (seconds) for the verify step.
+    [JsonPropertyName("autonomy_autoapply_verify_timeout")] public int AutonomyAutoApplyVerifyTimeout { get; set; } = 900;
+    // After a green verify, also `git add` + `git commit` the change locally (never pushed). Off = leave on disk.
+    [JsonPropertyName("autonomy_autoapply_git_commit")] public bool AutonomyAutoApplyGitCommit { get; set; } = false;
 
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
@@ -124,6 +142,9 @@ public sealed class AnthillConfig
         config.ApiJobWorkers = 1;
         // Autonomy is fail-closed across every shipped profile; the user must opt in explicitly.
         config.AutonomyEnabled = false;
+        // Phase 5 auto-apply is the highest-risk capability (autonomous writes) — always off in
+        // every shipped profile, re-enabled only by an explicit operator edit.
+        config.AutonomyAutoApplyEnabled = false;
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new()

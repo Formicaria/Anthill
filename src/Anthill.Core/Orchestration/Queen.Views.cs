@@ -98,6 +98,83 @@ public sealed partial class Queen
         return $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied";
     }
 
+    /// <summary>Structured outcome of an automated patch apply, carrying what rollback needs.</summary>
+    public sealed record AutoApplyOutcome(bool Success, string PatchId, string? Error,
+        string? ResolvedPath, string? BackupPath, string ChangeType, string FilePath);
+
+    /// <summary>
+    /// Phase 5: applies a patch directly for the auto-apply runner (no separate approval step) and
+    /// returns the resolved path + backup path so a failed verify can be rolled back. Honors the
+    /// same write gates and path guard as the human <see cref="ApplyApprovedPatch"/> path — the
+    /// only difference is the actor and that no human approval row is consumed. Logs an audit event.
+    /// </summary>
+    public AutoApplyOutcome ApplyPatchForAutomation(string patchId, string missionId, string? taskId)
+    {
+        var patch = Memory.GetPatchProposal(patchId);
+        if (patch is null) return new AutoApplyOutcome(false, patchId, "patch not found", null, null, "", "");
+        var changeType = Str(patch, "change_type");
+        var filePath = Str(patch, "file_path");
+
+        var result = Tools.RunTool("apply_patch", missionId, taskId, "director",
+            new() { ["patch"] = patch });
+        if (!result.Success)
+        {
+            Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
+            return new AutoApplyOutcome(false, patchId, result.Error, null, null, changeType, filePath);
+        }
+
+        string? backupPath = null, resolvedPath = null;
+        try
+        {
+            var root = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement;
+            backupPath = root.TryGetProperty("backup_path", out var bp) ? bp.GetString() : null;
+            resolvedPath = root.TryGetProperty("file_path", out var fp) ? fp.GetString() : null;
+        }
+        catch { /* tolerate — rollback for a modify still needs the backup, handled by caller */ }
+
+        Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
+        Memory.LogEvent(missionId, "autonomy_autoapply_applied", $"Director auto-applied patch: {filePath}", taskId, "director",
+            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["verified"] = false });
+        return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath);
+    }
+
+    /// <summary>
+    /// Reverts a patch applied by <see cref="ApplyPatchForAutomation"/>: restores the pre-apply
+    /// backup for a modify, deletes the created file for an add. Marks the patch Failed and logs
+    /// the rollback. Used when the post-apply verify (build+test) comes back red.
+    /// </summary>
+    public bool RollbackAutoApplied(AutoApplyOutcome applied, string missionId, string? taskId, string reason)
+    {
+        var ok = false;
+        try
+        {
+            if (applied.ChangeType.Equals("add", StringComparison.OrdinalIgnoreCase))
+            {
+                if (applied.ResolvedPath is { Length: > 0 } addPath && File.Exists(addPath)) { File.Delete(addPath); ok = true; }
+            }
+            else if (applied.BackupPath is { Length: > 0 } backup && applied.ResolvedPath is { Length: > 0 } target
+                     && File.Exists(backup))
+            {
+                File.Copy(backup, target, overwrite: true);
+                ok = true;
+            }
+        }
+        catch (Exception e)
+        {
+            Memory.LogEvent(missionId, "autonomy_autoapply_rollback_failed",
+                $"Rollback FAILED for {applied.FilePath}: {e.Message}", taskId, "director",
+                new() { ["patch_id"] = applied.PatchId, ["file_path"] = applied.FilePath, ["error"] = e.Message });
+            return false;
+        }
+
+        Memory.UpdatePatchStatus(applied.PatchId, PatchStatus.Failed, lastError: $"Auto-apply rolled back: {reason}");
+        Memory.LogEvent(missionId, "autonomy_autoapply_rolled_back",
+            $"Director rolled back auto-applied patch ({(ok ? "restored" : "no backup — could not restore")}): {applied.FilePath}",
+            taskId, "director",
+            new() { ["patch_id"] = applied.PatchId, ["file_path"] = applied.FilePath, ["change_type"] = applied.ChangeType, ["restored"] = ok, ["reason"] = reason });
+        return ok;
+    }
+
     public string FormatPendingApprovals(int limit = 20) => FormatApprovals(limit, ApprovalStatus.Pending);
 
     public string FormatApprovals(int limit = 20, ApprovalStatus? status = ApprovalStatus.Pending)
