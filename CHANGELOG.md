@@ -9,7 +9,33 @@
 > (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, Phase 4
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
-> and so on.
+> header status + update check = **v1.8.14.4**, and so on.
+
+## v1.8.14.4 — Live header status: update check, model/provider popover, local-vs-cloud icon
+
+The top-right header was static — a fixed model string and an "Online" badge that didn't say what
+was online. It's now a live, clickable status chip.
+
+- **Update check** (`GET /update/check`): compares the running version against the latest release
+  tag on the public GitHub repo and flags when a newer one exists. Result is cached server-side
+  (30 min) so the header poll never hammers GitHub, and every failure (offline, rate-limited, no
+  releases) degrades to "unknown" rather than erroring. When an update is available the chip shows
+  a pulsing dot and the popover gives the new version, a release-notes link, and the exact LXC
+  upgrade command. A "Re-check" button forces a fresh look (`?force=1`).
+- **Local vs Providers icon**: the chip carries a monitor icon (green **LOCAL**) when every model
+  role runs on local Ollama, or a cloud icon (purple **PROVIDERS** / **MIXED**) when any role is
+  routed to OpenAI/Anthropic/Perplexity/OpenRouter — so the colony's cost/privacy posture is
+  visible at a glance.
+- **What's actually online**: the chip's dot now reflects backend health, not just the API — it
+  goes red if Ollama is unreachable even while the API answers. The popover breaks it down: API
+  server, Ollama backend reachability (with a live 3s probe), and Ollama host.
+- **Model visibility + quick actions** (`GET /system/summary`): the popover lists every role's
+  provider + model (each tagged local/cloud), the default model, and how many providers are
+  connected, with one-click buttons to Ant Config (change models) and Settings → Providers.
+- New: `src/Anthill.Api/UpdateChecker.cs`; `GET /update/check` + `GET /system/summary`.
+- Tests: `UpdateCheckerTests` (dotted four-part version ordering, leading-v tolerance).
+
+## v1.8.14.3 — Configuration: Security tab + admin-only Shell console
 
 > **Pre-commit checklist** — the docs must be true before every commit:
 > 1. Bump the version in all markers: `Directory.Build.props`, `AnthillRuntime.Version`,

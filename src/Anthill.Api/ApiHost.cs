@@ -152,6 +152,22 @@ public static class ApiHost
         ProtectedText(app, "/pheromones", "read_pheromones", () => Queen.FormatPheromoneView());
         ProtectedText(app, "/models", "read_models", () => Queen.FormatModelStatus());
         ProtectedText(app, "/routes", "read_models", () => Queen.FormatModelRoutes());
+
+        // Is a newer release published on the public GitHub repo? Cached; ?force=1 bypasses.
+        app.MapGet("/update/check", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var force = ctx.Request.Query["force"].FirstOrDefault() is "1" or "true";
+            return ApiJson.Ok(UpdateChecker.Check(force));
+        });
+
+        // Consolidated header status: version, what's actually online (API + Ollama reachability),
+        // the active default model, and whether routing is fully local or uses cloud providers.
+        app.MapGet("/system/summary", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            return ApiJson.Ok(SystemSummary());
+        });
         ProtectedText(app, "/sources", "read_sources", () => Queen.FormatSources());
         ProtectedText(app, "/source-quality", "read_sources", () => Queen.FormatSourceQuality());
         ProtectedText(app, "/patches", "read_patches", () => Queen.FormatPatchList());
@@ -674,6 +690,66 @@ public static class ApiHost
             Queen.Memory.DeleteObjective(id);
             return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id }, "Objective removed.");
         });
+    }
+
+    // ---- header status ------------------------------------------------------
+
+    /// <summary>
+    /// Everything the top-right header needs in one call: version, a live Ollama reachability
+    /// probe (so "online" means the model backend, not just the API), the active default model,
+    /// and a local-vs-providers breakdown of the model routes.
+    /// </summary>
+    private static Dictionary<string, object?> SystemSummary()
+    {
+        // Per-role routing: how many roles run on local Ollama vs a cloud provider.
+        var routes = AnthillRuntime.ModelRouting;
+        var providerRoles = new List<string>();
+        var localRoles = new List<string>();
+        foreach (var (role, cfg) in routes)
+        {
+            var provider = cfg.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider;
+            if (string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)) localRoles.Add(role);
+            else providerRoles.Add(role);
+        }
+        var routeList = routes.Select(kv => new Dictionary<string, object?>
+        {
+            ["role"] = kv.Key,
+            ["provider"] = kv.Value.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider,
+            ["model"] = kv.Value.GetValueOrDefault("model"),
+        }).ToList();
+
+        // Live Ollama probe (cheap GET /api/version). Only meaningful when Ollama is in use.
+        bool? ollamaReachable = null;
+        if (AnthillRuntime.UseOllama)
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                using var resp = http.GetAsync($"{AnthillRuntime.OllamaHost.TrimEnd('/')}/api/version").GetAwaiter().GetResult();
+                ollamaReachable = resp.IsSuccessStatusCode;
+            }
+            catch { ollamaReachable = false; }
+        }
+
+        var providersConfigured = Queen.Memory.ListProviderConnections()
+            .Count(p => p.GetValueOrDefault("configured") as bool? == true);
+
+        return new Dictionary<string, object?>
+        {
+            ["version"] = AnthillRuntime.Version,
+            ["native_kernel"] = Anthill.Core.Native.NativeKernel.UsingNative ? "active" : "managed-fallback",
+            ["safety_profile"] = AnthillRuntime.Config.SafetyProfile,
+            ["api_host"] = AnthillRuntime.ApiHost,
+            ["use_ollama"] = AnthillRuntime.UseOllama,
+            ["ollama_host"] = AnthillRuntime.OllamaHost,
+            ["ollama_reachable"] = ollamaReachable,
+            ["default_model"] = AnthillRuntime.OllamaModel,
+            ["routing_mode"] = providerRoles.Count == 0 ? "local" : (localRoles.Count == 0 ? "providers" : "mixed"),
+            ["local_role_count"] = localRoles.Count,
+            ["provider_role_count"] = providerRoles.Count,
+            ["providers_configured"] = providersConfigured,
+            ["routes"] = routeList,
+        };
     }
 
     // ---- mission report -----------------------------------------------------

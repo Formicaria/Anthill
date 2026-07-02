@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.14.3</title>
+<title>ANTHILL v1.8.14.4</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -159,10 +159,24 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .dot.running{background:var(--queen);box-shadow:0 0 6px var(--queen);animation:pulse-dot 1.2s ease-in-out infinite;}
 .dot.active{background:var(--blue);}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.35}}
-#model-badge{font-size:10px;color:var(--dim);font-family:var(--mono);padding:3px 8px;border:1px solid var(--border);border-radius:4px;}
-#conn-badge{font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid;}
-#conn-badge.ok{color:var(--green);border-color:rgba(16,185,129,.3);}
-#conn-badge.err{color:var(--red);border-color:rgba(239,68,68,.3);}
+/* Interactive header status chip + popover */
+#status-chip{display:flex;align-items:center;gap:7px;padding:3px 9px;border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:border-color var(--t),background var(--t);background:transparent;}
+#status-chip:hover{border-color:var(--queen);background:rgba(255,255,255,.02);}
+#status-chip .sc-mode{display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+#status-chip .sc-model{font-size:10px;color:var(--dim);font-family:var(--mono);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#status-chip .sc-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);}
+#status-chip .sc-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green);}
+#status-chip .sc-dot.err{background:var(--red);}
+#status-chip .sc-update{width:7px;height:7px;border-radius:50%;background:var(--queen);box-shadow:0 0 6px var(--queen);display:none;}
+#status-pop{position:absolute;top:46px;right:14px;width:340px;max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:820;display:none;padding:14px;}
+#status-pop.show{display:block;}
+.sp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;}
+.sp-row:last-child{border-bottom:none;}
+.sp-key{color:var(--dim);}
+.sp-val{font-family:var(--mono);text-align:right;}
+.sp-head{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:12px 0 4px;font-weight:700;}
+.sp-btn{flex:1;text-align:center;font-size:11px;padding:6px;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--muted);transition:border-color var(--t),color var(--t);}
+.sp-btn:hover{border-color:var(--queen);color:var(--text);}
 .hdr-btn{
   width:30px;height:30px;display:flex;align-items:center;justify-content:center;
   border-radius:var(--r);color:var(--muted);transition:background var(--t),color var(--t);position:relative;
@@ -516,7 +530,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.14.3</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.14.4</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -559,7 +573,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.14.3</span>
+      <span class="nav-logo-ver">v1.8.14.4</span>
     </div>
 
     <div class="nav-scroll">
@@ -649,8 +663,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="hdr-goal" id="mission-goal">Idle — no active mission</div>
       </div>
       <div class="hdr-right">
-        <div id="model-badge">connecting...</div>
-        <div id="conn-badge" class="err">● Offline</div>
+        <div id="status-chip" title="System status — click for details">
+          <span class="sc-mode" id="sc-mode"><span class="sc-mode-icon"></span><span id="sc-mode-txt">—</span></span>
+          <span class="sc-model" id="sc-model">connecting…</span>
+          <span class="sc-dot err" id="sc-dot"></span>
+          <span class="sc-update" id="sc-update" title="Update available"></span>
+        </div>
+        <div id="status-pop">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-weight:600;font-size:13px;">System Status</div>
+            <div style="font-size:9px;color:var(--dim);font-family:var(--mono);" id="sp-version">—</div>
+          </div>
+          <div id="sp-update-banner" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid var(--queen);font-size:11px;color:var(--queen);"></div>
+          <div class="sp-head">Connectivity</div>
+          <div class="sp-row"><span class="sp-key">API server</span><span class="sp-val" id="sp-api">—</span></div>
+          <div class="sp-row"><span class="sp-key">Ollama backend</span><span class="sp-val" id="sp-ollama">—</span></div>
+          <div class="sp-row"><span class="sp-key">Ollama host</span><span class="sp-val" id="sp-ollama-host" style="font-size:10px;color:var(--dim);">—</span></div>
+          <div class="sp-head">Model Routing</div>
+          <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">—</span></div>
+          <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">—</span></div>
+          <div id="sp-routes" style="margin-top:6px;"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <div class="sp-btn" onclick="closeStatusPop();showPage('antconfig')">Change models</div>
+            <div class="sp-btn" onclick="closeStatusPop();showPage('settings')">Providers</div>
+            <div class="sp-btn" id="sp-recheck">Re-check update</div>
+          </div>
+        </div>
         <button class="hdr-btn" id="approval-bell" title="Pending Approvals" style="display:none">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span id="bell-count"></span>
@@ -1870,9 +1908,7 @@ let selectedJobId=null;
 
 function setConnected(ok){
   connected=ok;
-  const b=document.getElementById('conn-badge');
-  b.className=ok?'ok':'err';
-  b.textContent=ok?'● Online':'● Offline';
+  renderStatusChip(); // the header chip's online dot reflects API + backend health
 }
 
 function setEl(id,val){ const e=document.getElementById(id); if(e) e.textContent=val; }
@@ -2116,14 +2152,94 @@ async function cancelJob(id){
   try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
 }
 
+// ── Header status chip + popover ──────────────────────────────────────────────
+let lastSystemSummary=null, lastUpdateInfo=null;
+const LOCAL_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+const CLOUD_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
+
 async function pollModelInfo(){
   try{
-    const text=await apiText('/models');
-    const modelLine=text.match(/Active Route Targets:\s*([^\n]+)/);
-    const model=modelLine?modelLine[1].trim():'llama3.1:8b';
-    setEl('model-badge',model.split(',')[0].trim()+' · Ollama');
+    const r=await api('/system/summary'); if(!r.success) return;
+    lastSystemSummary=r.data; renderStatusChip(); if(document.getElementById('status-pop').classList.contains('show')) renderStatusPop();
   }catch{}
 }
+
+function renderStatusChip(){
+  const s=lastSystemSummary; if(!s) return;
+  const providers=s.routing_mode!=='local';
+  const modeTxt=s.routing_mode==='local'?'Local':s.routing_mode==='providers'?'Providers':'Mixed';
+  const modeCol=s.routing_mode==='local'?'var(--green)':'var(--purple)';
+  const modeEl=document.getElementById('sc-mode'); modeEl.style.color=modeCol;
+  modeEl.querySelector('.sc-mode-icon').innerHTML=providers?CLOUD_ICON:LOCAL_ICON;
+  setEl('sc-mode-txt',modeTxt);
+  setEl('sc-model',s.default_model||'—');
+  // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
+  const dot=document.getElementById('sc-dot');
+  const ok = connected && (s.ollama_reachable!==false);
+  dot.className='sc-dot '+(ok?'ok':'err');
+  document.getElementById('status-chip').title = ok?'Online — click for details':(s.ollama_reachable===false?'Ollama unreachable — click for details':'Click for details');
+}
+
+function renderStatusPop(){
+  const s=lastSystemSummary||{};
+  setEl('sp-version','v'+(s.version||'—'));
+  setEl('sp-api', connected?'● Online':'● Offline');
+  document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
+  const or=s.ollama_reachable;
+  const oTxt = !s.use_ollama?'not in use':(or===true?'● Reachable':or===false?'● Unreachable':'—');
+  setEl('sp-ollama',oTxt);
+  document.getElementById('sp-ollama').style.color = or===true?'var(--green)':or===false?'var(--red)':'var(--dim)';
+  setEl('sp-ollama-host',s.ollama_host||'—');
+  setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  setEl('sp-default',s.default_model||'—');
+  const routes=s.routes||[];
+  document.getElementById('sp-routes').innerHTML=routes.map(rt=>{
+    const local=(rt.provider||'ollama').toLowerCase()==='ollama';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;font-size:10px;">
+      <span style="color:var(--dim);text-transform:capitalize;">${escapeHtml(rt.role)}</span>
+      <span style="font-family:var(--mono);display:flex;align-items:center;gap:5px;">
+        <span style="color:${local?'var(--green)':'var(--purple)'};font-size:8px;font-weight:700;text-transform:uppercase;">${local?'local':escapeHtml(rt.provider)}</span>
+        ${escapeHtml(rt.model||'—')}</span></div>`;
+  }).join('')||'<div style="color:var(--dim);font-size:10px;">No routes configured.</div>';
+  renderUpdateBanner();
+}
+
+function renderUpdateBanner(){
+  const u=lastUpdateInfo, banner=document.getElementById('sp-update-banner'), dot=document.getElementById('sc-update');
+  if(!u){ banner.style.display='none'; if(dot) dot.style.display='none'; return; }
+  if(u.update_available){
+    banner.style.display='block';
+    banner.innerHTML=`⬆ Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+
+      (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `:'')+
+      `On the LXC: <span style="font-family:var(--mono)">cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh</span>`;
+    if(dot) dot.style.display='';
+  } else {
+    if(dot) dot.style.display='none';
+    banner.style.display=u.status==='unknown'?'block':'none';
+    if(u.status==='unknown') banner.innerHTML=`<span style="color:var(--dim)">Update check unavailable (${escapeHtml(u.reason||'offline')}). You have v${escapeHtml(u.current)}.</span>`;
+  }
+}
+
+async function checkForUpdate(force){
+  try{
+    const r=await api('/update/check'+(force?'?force=1':'')); if(!r.success) return;
+    lastUpdateInfo=r.data; renderUpdateBanner();
+  }catch{}
+}
+
+function closeStatusPop(){ document.getElementById('status-pop').classList.remove('show'); }
+document.getElementById('status-chip').addEventListener('click',e=>{
+  e.stopPropagation();
+  const pop=document.getElementById('status-pop');
+  const show=!pop.classList.contains('show');
+  pop.classList.toggle('show',show);
+  if(show){ renderStatusPop(); checkForUpdate(false); }
+});
+document.addEventListener('click',e=>{
+  const pop=document.getElementById('status-pop');
+  if(pop.classList.contains('show') && !pop.contains(e.target) && !document.getElementById('status-chip').contains(e.target)) pop.classList.remove('show');
+});
+document.getElementById('sp-recheck').addEventListener('click',e=>{ e.stopPropagation(); setEl('sp-update-banner','Checking…'); document.getElementById('sp-update-banner').style.display='block'; checkForUpdate(true); });
 
 // ── Job result ────────────────────────────────────────────────────────────────
 function selectJob(id){
@@ -2416,13 +2532,14 @@ document.addEventListener('keydown',e=>{
 // ── Polling loop ──────────────────────────────────────────────────────────────
 function startPolling(){
   loadUiState();
-  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();
+  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();checkForUpdate(false);
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
   setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollApprovals,6000);
-  setInterval(pollModelInfo,30000);
+  setInterval(pollModelInfo,15000);
+  setInterval(()=>checkForUpdate(false), 6*60*60*1000); // update check is cached server-side (30m)
 }
 
 // Bell → navigate to colony and scroll to approvals card
