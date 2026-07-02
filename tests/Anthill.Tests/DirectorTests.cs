@@ -122,6 +122,65 @@ public class DirectorTests : IDisposable
     }
 
     [Fact]
+    public void Director_RunsObjectivesConcurrently_AndRecordsBothOutcomes()
+    {
+        // Phase 3: two ready objectives, two slots, a healthy injected governor (so host load on
+        // the test machine can never clamp the cap), and a 2-worker job pool.
+        var savedConcurrency = AnthillRuntime.AutonomyConcurrency;
+        AnthillRuntime.AutonomyConcurrency = 2;
+        var jobs = new ApiJobRegistry(_queen, 2);
+        var governor = new ResourceGovernor(() => 0.1, () => 0.9, () => null);
+        var director = new ColonyDirector(_queen, jobs, governor);
+        try
+        {
+            var first = new Objective { Title = "conc-a", Charter = "Summarize what ANTHILL is.", MaxRuns = 1, Priority = 2 };
+            var second = new Objective { Title = "conc-b", Charter = "List the ant roles in the colony.", MaxRuns = 1, Priority = 1 };
+            _queen.Memory.SaveObjective(first);
+            _queen.Memory.SaveObjective(second);
+
+            Assert.True(director.Start());
+
+            var completed = WaitUntil(() =>
+                _queen.Memory.GetObjective(first.Id)?.Status == ObjectiveStatus.Done &&
+                _queen.Memory.GetObjective(second.Id)?.Status == ObjectiveStatus.Done, 120000);
+            director.Stop("test done");
+
+            Assert.True(completed, "Director did not complete both objectives in time.");
+            Assert.Single(_queen.Memory.ListAutonomyRuns(first.Id));
+            Assert.Single(_queen.Memory.ListAutonomyRuns(second.Id));
+
+            // Every run must be recorded with its own mission id — no cross-talk between slots.
+            var allRuns = _queen.Memory.ListAutonomyRuns();
+            var missionIds = allRuns.Select(r => r.GetValueOrDefault("mission_id")?.ToString()).ToList();
+            Assert.All(missionIds, id => Assert.False(string.IsNullOrEmpty(id)));
+            Assert.Equal(missionIds.Count, missionIds.Distinct().Count());
+
+            var status = director.StatusSnapshot();
+            Assert.Equal(2, status["concurrency_configured"]);
+            Assert.NotNull(status["governor_code"]);
+        }
+        finally
+        {
+            director.Stop("test teardown");
+            director.Dispose();
+            jobs.Dispose();
+            AnthillRuntime.AutonomyConcurrency = savedConcurrency;
+            AutonomyControl.Resume();
+        }
+    }
+
+    [Fact]
+    public void StatusSnapshot_ExposesConcurrencyAndGovernorFields()
+    {
+        var status = _director.StatusSnapshot();
+        Assert.True(status.ContainsKey("concurrency_configured"));
+        Assert.True(status.ContainsKey("concurrency_effective"));
+        Assert.True(status.ContainsKey("governor_code"));
+        Assert.True(status.ContainsKey("in_flight"));
+        Assert.Empty((List<Dictionary<string, object?>>)status["in_flight"]!);
+    }
+
+    [Fact]
     public void Director_HaltsWhenKillSwitchEngagedWhileRunning()
     {
         // Empty backlog: the Director idles, so engaging the kill switch is the only thing

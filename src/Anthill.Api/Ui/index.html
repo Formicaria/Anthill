@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.11</title>
+<title>ANTHILL v1.8.12</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -514,7 +514,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.11</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.12</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -557,7 +557,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.11</span>
+      <span class="nav-logo-ver">v1.8.12</span>
     </div>
 
     <div class="nav-scroll">
@@ -959,8 +959,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
               <div class="kpi-sub">pending / active</div>
             </div>
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Concurrency</div>
+              <div class="kpi-num" id="auto-conc">—</div>
+              <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
+            </div>
           </div>
-          <div class="info-row" style="margin-top:10px;"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
+          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
+          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
+          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
           <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
         </div>
 
@@ -2689,6 +2696,13 @@ async function reloadAutonomyStatus(){
     setEl('auto-kill-text',killEngaged?'Kill switch engaged':'Kill switch clear');
     setEl('auto-next',s.next_objective?`${s.next_objective.title} (priority ${s.next_objective.priority})`:'— backlog empty —');
     setEl('auto-decision',s.budget_decision||'—');
+    setEl('auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
+    setEl('auto-conc-sub',(s.governor_code&&s.governor_code!=='ok')?('governed: '+s.governor_code):'effective / configured');
+    setEl('auto-governor',s.governor_reason||(s.running?'— first cycle pending —':'—'));
+    const inflight=s.in_flight||[];
+    setEl('auto-inflight',inflight.length
+      ?inflight.map(f=>`${f.objective_title} (${f.job_status}${f.mission_id?', mission '+String(f.mission_id).slice(0,8):''})`).join(' · ')
+      :'— none —');
     const badge=document.getElementById('nav-autonomy-badge');
     if(badge){
       if(s.running){ badge.style.display=''; badge.textContent='●'; badge.style.color='var(--green)'; }
@@ -2862,6 +2876,7 @@ const NUM_KEYS=[
 const AUTO_KEYS=[
   ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
   ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
+  ['autonomy_concurrency','Concurrency'],['autonomy_aging_minutes','Aging Minutes'],
 ];
 let colonySettings={};
 

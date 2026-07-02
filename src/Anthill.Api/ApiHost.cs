@@ -44,7 +44,12 @@ public static class ApiHost
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
         Queen = new Queen();
-        Jobs = new ApiJobRegistry(Queen, AnthillRuntime.ApiJobWorkers);
+        // Phase 3: the Director multiplexes its concurrent missions through this same worker
+        // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
+        // ensuring autonomous missions can actually run side by side without starving user jobs.
+        var jobWorkers = Math.Max(AnthillRuntime.ApiJobWorkers,
+            AnthillRuntime.EnableAutonomy ? AnthillRuntime.AutonomyConcurrency : 1);
+        Jobs = new ApiJobRegistry(Queen, jobWorkers);
         Director = new ColonyDirector(Queen, Jobs);
         MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);

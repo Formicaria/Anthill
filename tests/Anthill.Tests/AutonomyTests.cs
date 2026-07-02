@@ -166,4 +166,73 @@ public class AutonomyTests : IDisposable
         Assert.Equal("autonomy_disabled", decision.Code);
         AnthillRuntime.EnableAutonomy = true;
     }
+
+    // ---- Phase 3: multi-slot selection (concurrency) -----------------------
+
+    [Fact]
+    public void NextReadyObjectives_ReturnsDistinctAndExcludesInFlight()
+    {
+        var a = NewObjective("a", 10);
+        var b = NewObjective("b", 5);
+        var c = NewObjective("c", 1);
+        _memory.SaveObjective(a);
+        _memory.SaveObjective(b);
+        _memory.SaveObjective(c);
+
+        var picked = _memory.NextReadyObjectives(2);
+        Assert.Equal(new[] { a.Id, b.Id }, picked.Select(o => o.Id).ToArray());
+
+        // With `a` in flight, the two slots fall to b and c — never the in-flight objective.
+        var excluded = _memory.NextReadyObjectives(2, new[] { a.Id });
+        Assert.Equal(new[] { b.Id, c.Id }, excluded.Select(o => o.Id).ToArray());
+    }
+
+    [Fact]
+    public void NextReadyObjectives_AgingPromotesLongWaitingObjective()
+    {
+        var savedAging = AnthillRuntime.AutonomyAgingMinutes;
+        try
+        {
+            AnthillRuntime.AutonomyAgingMinutes = 30;
+            // Waited 10 hours at priority 1 → +20 effective priority; beats a fresh priority-5.
+            var starved = NewObjective("starved", 1);
+            starved.CreatedAt = DateTime.UtcNow.AddHours(-10);
+            var fresh = NewObjective("fresh", 5);
+            _memory.SaveObjective(starved);
+            _memory.SaveObjective(fresh);
+
+            Assert.Equal(starved.Id, _memory.NextReadyObjective()!.Id);
+
+            // Aging off → pure strict priority: the fresh priority-5 wins.
+            AnthillRuntime.AutonomyAgingMinutes = 0;
+            Assert.Equal(fresh.Id, _memory.NextReadyObjective()!.Id);
+        }
+        finally
+        {
+            AnthillRuntime.AutonomyAgingMinutes = savedAging;
+        }
+    }
+
+    [Fact]
+    public void NextReadyObjectives_AgingCountsFromLastRunNotCreation()
+    {
+        var savedAging = AnthillRuntime.AutonomyAgingMinutes;
+        try
+        {
+            AnthillRuntime.AutonomyAgingMinutes = 30;
+            // Created long ago but ran recently → aging credit resets to the last run.
+            var ranRecently = NewObjective("ran-recently", 1);
+            ranRecently.CreatedAt = DateTime.UtcNow.AddHours(-10);
+            ranRecently.LastRunAt = DateTime.UtcNow.AddMinutes(-1);
+            var fresh = NewObjective("fresh", 5);
+            _memory.SaveObjective(ranRecently);
+            _memory.SaveObjective(fresh);
+
+            Assert.Equal(fresh.Id, _memory.NextReadyObjective()!.Id);
+        }
+        finally
+        {
+            AnthillRuntime.AutonomyAgingMinutes = savedAging;
+        }
+    }
 }

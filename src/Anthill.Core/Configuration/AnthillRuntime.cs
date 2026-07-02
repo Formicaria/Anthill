@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.11";
+    public const string Version = "1.8.12";
     public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -117,6 +117,11 @@ public static class AnthillRuntime
     public static int AutonomyMaxFollowupsPerRun = 1;
     /// <summary>Hard cap on parent_objective_id chain depth; follow-ups at or beyond this depth are dropped.</summary>
     public static int AutonomyMaxObjectiveDepth = 3;
+    // ---- Phase 3: concurrency (ResourceGovernor) ---------------------------
+    /// <summary>Configured cap on concurrent autonomous missions. The ResourceGovernor may lower the effective value, never raise it.</summary>
+    public static int AutonomyConcurrency = 1;
+    /// <summary>Anti-starvation aging: minutes of waiting per +1 effective priority for ready objectives. 0 = off.</summary>
+    public static int AutonomyAgingMinutes = 30;
 
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
@@ -362,6 +367,8 @@ public static class AnthillRuntime
         AutonomyDedupeSimilarity = Math.Clamp(config.AutonomyDedupeSimilarity, 0.0, 1.0);
         AutonomyMaxFollowupsPerRun = Math.Max(0, config.AutonomyMaxFollowupsPerRun);
         AutonomyMaxObjectiveDepth = Math.Max(0, config.AutonomyMaxObjectiveDepth);
+        AutonomyConcurrency = Math.Clamp(config.AutonomyConcurrency, 1, 8);
+        AutonomyAgingMinutes = Math.Clamp(config.AutonomyAgingMinutes, 0, 10080);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -392,6 +399,7 @@ public static class AnthillRuntime
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
         "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
+        "autonomy_concurrency", "autonomy_aging_minutes",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -463,6 +471,8 @@ public static class AnthillRuntime
         ["autonomy_dedupe_similarity"] = AutonomyDedupeSimilarity,
         ["autonomy_max_followups_per_run"] = AutonomyMaxFollowupsPerRun,
         ["autonomy_max_objective_depth"] = AutonomyMaxObjectiveDepth,
+        ["autonomy_concurrency"] = AutonomyConcurrency,
+        ["autonomy_aging_minutes"] = AutonomyAgingMinutes,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["editable_keys"] = EditableConfigKeys.ToList(),

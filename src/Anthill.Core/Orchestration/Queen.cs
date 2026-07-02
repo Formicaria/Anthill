@@ -70,7 +70,15 @@ public sealed partial class Queen : IDisposable
         return registry;
     }
 
-    public string RunMission(string goal)
+    public string RunMission(string goal) => RunMission(goal, onMissionCreated: null);
+
+    /// <summary>
+    /// Runs a mission and reports the new mission's id to <paramref name="onMissionCreated"/> as
+    /// soon as the row is persisted. Callers running missions concurrently (Phase 3) must use
+    /// this callback instead of <see cref="LastMissionId"/>, which is a last-writer-wins
+    /// convenience kept for the single-mission CLI path.
+    /// </summary>
+    public string RunMission(string goal, Action<string>? onMissionCreated)
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
@@ -79,6 +87,7 @@ public sealed partial class Queen : IDisposable
 
         // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
         Memory.SaveMission(mission);
+        onMissionCreated?.Invoke(mission.Id);
 
         var backupPath = FileSecurity.BackupDb(AnthillRuntime.DbPath, AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
         Memory.LogEvent(mission.Id, backupPath is not null ? "db_backup_created" : "db_backup_skipped",

@@ -5,7 +5,56 @@
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
 > LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
-> cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, and so on.
+> cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, Phase 3 autonomy
+> (concurrency + ResourceGovernor) = **v1.8.12**, and so on.
+
+## v1.8.12 — Phase 3 autonomy: concurrent missions + ResourceGovernor
+
+The Director can now run up to `autonomy_concurrency` missions side by side (default 1 —
+behavior is unchanged until the operator raises it; clamped 1–8). Design decisions per operator
+review: strict-priority scheduling with anti-starvation aging, and a load/probe governor with
+full VRAM tracking deferred to a later hardware-aware scheduler phase.
+
+New:
+
+- **`ResourceGovernor`** (`src/Anthill.Core/Autonomy/ResourceGovernor.cs`): sizes effective
+  concurrency each cycle from the configured cap — and can only ever lower it. Signals:
+  normalized CPU load per core (≥1.25 halves, ≥2.0 clamps to 1), available-memory fraction
+  (≤20% halves, ≤10% clamps to 1), and an Ollama probe (`GET /api/version`, 15s cache —
+  unreachable clamps to 1, ≥2.5s latency halves). Unreadable *host* signals fail open (skip);
+  a dead *backend* fails safe (clamp to 1 — missions would fail anyway, don't multiply them).
+  Skipped entirely when `use_ollama` is false, so offline installs are never clamped by it.
+- **Concurrent Director loop** (`src/Anthill.Api/ColonyDirector.cs`): non-blocking launches with
+  an in-flight table, reaped as jobs finish. Everything still happens on the one director thread
+  (Strategist/BudgetGuard stay sequential by construction); the hard rails are re-checked before
+  every individual launch. Stop/kill-switch now *drains*: no new launches, in-flight missions
+  finish and are recorded, then the thread exits — nothing is ever left unrecorded.
+- **Strict priority + aging** (`SqliteMemory.NextReadyObjectives`): slots fill with the
+  highest-effective-priority distinct ready objectives; an objective never runs two missions at
+  once. Effective priority = priority + 1 per `autonomy_aging_minutes` waited (default 30;
+  0 = pure strict priority); longest-queued wins ties. Computed at read time — stored priorities
+  never drift.
+- **Config**: `autonomy_concurrency`, `autonomy_aging_minutes` — in `config.example.json`, the
+  settings whitelist, `/settings`, and the Settings → Autonomy panel.
+- **Observability**: `/autonomy/status` gains `concurrency_configured`/`concurrency_effective`,
+  `governor_code`/`governor_reason`/`governor_signals`, `aging_minutes`, and `in_flight`;
+  `autonomy_mission_started` events carry the governor verdict. Autonomy page: Concurrency KPI +
+  In-flight and Governor rows.
+
+Fixed (latent, pre-existing):
+
+- **`Queen.LastMissionId` race**: with >1 job worker, a finishing worker could stamp its job with
+  *another* worker's mission id. `Queen.RunMission` now reports the mission id through an
+  `onMissionCreated` callback the moment the row is persisted, and `ApiJobRegistry` uses it —
+  also making the mission id visible on the job while it's still running. `LastMissionId` remains
+  for the single-mission CLI path.
+- Job worker pool is sized `max(api_job_workers, autonomy_concurrency)` at boot so concurrent
+  autonomous missions actually get worker slots instead of queueing behind each other.
+
+Validation: `GovernorTests` (every clamp path, fail-open vs. fail-safe, tightest-constraint-wins,
+throwing readers), multi-slot selection/aging tests in `AutonomyTests`, and an offline two-slot
+Director run in `DirectorTests` asserting both objectives complete with distinct mission ids and
+per-objective run records. Existing Phase 0–2 suites unchanged and still green.
 
 ## v1.8.11 — Fix: Autonomy page's Start/Stop (kill switch) froze the UI via infinite recursion
 

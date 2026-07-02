@@ -69,8 +69,10 @@ public sealed class ApiJobRegistry : IDisposable
             job.StartedAt = AnthillTime.NowUtc();
             try
             {
-                job.Result = _queen.RunMission(job.Goal);
-                job.MissionId = _queen.LastMissionId;
+                // The callback stamps the mission id the moment the row exists — both so the id is
+                // visible while the mission is still running and so concurrent workers (Phase 3)
+                // never read another mission's id off the shared Queen.LastMissionId.
+                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId);
                 job.Status = "complete";
             }
             catch (Exception error)

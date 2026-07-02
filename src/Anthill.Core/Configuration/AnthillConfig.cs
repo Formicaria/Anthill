@@ -72,6 +72,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_dedupe_similarity")] public double AutonomyDedupeSimilarity { get; set; } = 0.8;
     [JsonPropertyName("autonomy_max_followups_per_run")] public int AutonomyMaxFollowupsPerRun { get; set; } = 1;
     [JsonPropertyName("autonomy_max_objective_depth")] public int AutonomyMaxObjectiveDepth { get; set; } = 3;
+    // ---- Phase 3: concurrency (ResourceGovernor) ----
+    // Upper bound on missions the Director may run at once. The ResourceGovernor can only ever
+    // lower the effective value below this cap (host load / model-backend pressure), never raise it.
+    [JsonPropertyName("autonomy_concurrency")] public int AutonomyConcurrency { get; set; } = 1;
+    // Anti-starvation aging: a ready objective gains +1 effective priority for every this-many
+    // minutes it has waited since its last run (or creation). 0 disables aging (pure strict priority).
+    [JsonPropertyName("autonomy_aging_minutes")] public int AutonomyAgingMinutes { get; set; } = 30;
 
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.

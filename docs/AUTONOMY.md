@@ -1,11 +1,51 @@
 # ANTHILL — 24/7 Autonomy Design
 
-> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) + Phase 2 (Strategist) IMPLEMENTED.**
-> The colony can now run autonomously: the Director works the objective backlog one mission at a
-> time, under budgets and the kill switch, with writes queued for human review. Mission goals are
-> now LLM-generated per objective (with a deterministic charter-as-goal fallback), deduped against
-> recent mission history, and the colony can enqueue its own follow-up objectives within depth/rate
-> caps. Target: ANTHILL v1.9.x.
+> Status: **Phase 0 (Rails) + Phase 1 (Director loop, MVP) + Phase 2 (Strategist) + Phase 3
+> (Concurrency) IMPLEMENTED.** The colony can now run autonomously: the Director works the
+> objective backlog — up to `autonomy_concurrency` missions at once, sized down live by the
+> ResourceGovernor under host/backend pressure — under budgets and the kill switch, with writes
+> queued for human review. Mission goals are LLM-generated per objective (with a deterministic
+> charter-as-goal fallback), deduped against recent mission history, and the colony can enqueue
+> its own follow-up objectives within depth/rate caps. Scheduling is strict priority with
+> anti-starvation aging. Target: ANTHILL v1.9.x.
+
+## Phase 3 — what landed
+
+- **`ResourceGovernor`** (`Anthill.Core/Autonomy/ResourceGovernor.cs`): sizes effective
+  concurrency each Director cycle, starting from the configured `autonomy_concurrency` cap and
+  only ever lowering it. Three cheap signals: normalized CPU load (1-min loadavg per core,
+  soft ≥1.25 halves / hard ≥2.0 clamps to 1), available-memory fraction (soft ≤20% halves /
+  hard ≤10% clamps to 1), and an Ollama latency probe (`GET /api/version`, cached 15s —
+  unreachable clamps to 1, ≥2.5s halves). Failure posture: unreachable backend clamps (missions
+  would fail anyway); an unreadable *host* signal is skipped, failing open to the configured cap
+  (e.g. non-Linux hosts without /proc). Full VRAM tracking is deferred to a later hardware-aware
+  scheduler phase. Signal readers are injectable — see `GovernorTests`.
+- **Concurrent Director loop**: `ColonyDirector` now launches without blocking, tracks in-flight
+  missions, and reaps outcomes as jobs finish. All launching/reaping stays on the single director
+  thread, so `BudgetGuard` and `Strategist` calls remain sequential by construction; budgets are
+  re-checked before *every individual launch* within a cycle. Kill switch / stop now *drains*:
+  no new launches, in-flight missions finish and are recorded, then the thread exits.
+- **Scheduling — strict priority + aging** (`SqliteMemory.NextReadyObjectives`): concurrency
+  slots are filled with the highest-effective-priority distinct ready objectives; an objective
+  never has two missions in flight at once (which also keeps its run-outcome bookkeeping serial).
+  Effective priority = stored priority + 1 per `autonomy_aging_minutes` waited since last run
+  (or creation); ties break toward the longest-queued. Aging is computed at read time — stored
+  priorities never drift. `autonomy_aging_minutes = 0` disables aging (pure strict priority).
+- **Mission-id integrity**: `Queen.RunMission` gained an `onMissionCreated` callback and
+  `ApiJobRegistry` stamps `job.MissionId` from it the moment the mission row exists — concurrent
+  workers can no longer read another mission's id off the shared `Queen.LastMissionId` (which
+  remains, last-writer-wins, for the single-mission CLI path). Job workers are sized to
+  `max(api_job_workers, autonomy_concurrency)` at boot so autonomous missions actually get slots.
+- **Config knobs**: `autonomy_concurrency` (default 1, clamped 1–8) and `autonomy_aging_minutes`
+  (default 30, clamped 0–10080). Both editable from the Settings UI.
+- **Observability**: `/autonomy/status` adds `concurrency_configured` / `concurrency_effective`,
+  `governor_code` / `governor_reason` / `governor_signals`, `aging_minutes`, and an `in_flight`
+  list (objective, run id, mission id, job status, started_at). `autonomy_mission_started` events
+  record the in-flight count, effective concurrency, and governor code; the Autonomy page shows a
+  Concurrency KPI plus live In-flight / Governor rows.
+- **Tests**: `GovernorTests` (all clamp paths, fail-open vs. fail-safe, tightest-constraint-wins),
+  multi-slot selection + aging tests in `AutonomyTests`, and an offline two-slot Director run in
+  `DirectorTests` asserting both outcomes are recorded with distinct mission ids.
 
 ## Phase 2 — what landed
 
@@ -148,8 +188,9 @@ The supervisor service. One instance per process. Responsibilities:
 - Idle backoff when the backlog is empty or budgets are exhausted (sleep, then re-check).
 - Graceful shutdown on kill switch / SIGINT.
 
-### 4.4 ResourceGovernor (Phase 3)
-Sizes concurrency to load and Ollama VRAM headroom. Until Phase 3, concurrency is fixed at 1.
+### 4.4 ResourceGovernor (Phase 3) — LANDED
+Sizes concurrency to host load, memory headroom, and Ollama responsiveness (see "Phase 3 — what
+landed" above). VRAM-level tracking is deferred to a later hardware-aware scheduler phase.
 
 ## 5. Safety model for unattended operation
 
@@ -186,7 +227,8 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 "autonomy_dedupe_similarity": 0.8,    // reject near-duplicate generated goals
 "autonomy_max_followups_per_run": 1,  // cap self-enqueued follow-up objectives per mission
 "autonomy_max_objective_depth": 3,    // cap parent-chain depth for follow-up objectives
-"autonomy_concurrency": 1             // Phase 3: >1 enables concurrent missions
+"autonomy_concurrency": 1,            // Phase 3: >1 enables concurrent missions (governor can lower it)
+"autonomy_aging_minutes": 30          // Phase 3: anti-starvation aging; 0 = pure strict priority
 ```
 
 All default to the safe/off values. Auto-apply gets **no** config key until Phase 5.
@@ -198,7 +240,7 @@ All default to the safe/off values. Auto-apply gets **no** config key until Phas
 | **0 — Rails** ✅ | **DONE.** Kill switch, budgets, `objectives` + `autonomy_runs` tables, config knobs, schema v8. No loop yet. | `AnthillConfig`, `AnthillRuntime`, `SqliteMemory.Schema`, `SqliteMemory.Autonomy`, `Autonomy/` namespace |
 | **1 — Loop (MVP)** ✅ | **DONE.** Director runs one objective at a time, queue-for-review writes only, `--autonomous` flag, `/autonomy/{start,stop,status,runs}` + `/objectives` CRUD. **This is the milestone that must be stable before anything else.** | `Anthill.Api/ColonyDirector.cs`, `ApiHost.cs`, `Program.cs` |
 | **2 — Self-generated missions** ✅ | **DONE.** Strategist role + dedup + follow-up enqueue (depth/rate capped). | `Autonomy/Strategist.cs`, `ModelRouter` route, `ColonyDirector.cs` |
-| **3 — Concurrency** | `ResourceGovernor`, unlock `ApiJobWorkers`/`autonomy_concurrency`, VRAM-aware scaling. | `ApiHost`, governor |
+| **3 — Concurrency** ✅ | **DONE.** `ResourceGovernor` (load/memory/backend-probe sizing), concurrent Director loop with drain-on-stop, strict priority + aging scheduling, `autonomy_concurrency`/`autonomy_aging_minutes` knobs. VRAM-aware scaling deferred to a later hardware-aware phase. | `Autonomy/ResourceGovernor.cs`, `ColonyDirector.cs`, `SqliteMemory.Autonomy`, `ApiHost` |
 | **4 — Learning loop** | Outcomes bias objective priority; retire stale/looping objectives. | `PheromoneEngine`, ObjectiveStore |
 | **5 — Auto-apply (gated, OFF)** | Strict allowlist auto-approve+apply (path allowlist, size cap, must build+test green, auto-rollback). Enabled only after Phase 1 is proven. | new policy module + `/apply` automation |
 
@@ -211,12 +253,17 @@ Implementation order is strictly 0 → 1 → (stabilize) → 2 → 3 → 4 → 5
 - Backlog editor: add/reprioritize/pause objectives.
 - Reuse the existing event stream + colony canvas for the running mission.
 
-## 10. Open questions (revisit before Phase 3)
+## 10. Open questions
 
 - **Auto-apply criteria** (Phase 5): exact allowlist, and "must build + test green" needs a
   sandboxed build runner — design separately.
 - ~~**Follow-up explosion control**~~: resolved in Phase 2 — `autonomy_max_followups_per_run` and
   `autonomy_max_objective_depth` cap rate/depth of self-enqueued objectives.
-- **Multi-objective fairness** (Phase 3): strict priority vs. round-robin/weighted.
+- ~~**Multi-objective fairness**~~: resolved in Phase 3 — strict priority with anti-starvation
+  aging (`autonomy_aging_minutes`); queued time breaks ties. Round-robin/weighted rejected as
+  less predictable/auditable.
+- **VRAM-aware scaling**: deferred from Phase 3 — the governor uses load/memory/backend-probe
+  signals; explicit VRAM budgeting needs a configured GPU capacity (Ollama doesn't report total
+  VRAM) and belongs to a later hardware-aware scheduler phase.
 - **Mission de-dup window**: Phase 2 compares against the last 10 runs per objective
   (`ListAutonomyRuns(..., limit: 10)`); revisit if a time-based window is preferred instead.

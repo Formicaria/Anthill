@@ -48,16 +48,48 @@ public sealed partial class SqliteMemory
 
     /// <summary>
     /// The next objective the Director should work: pending or active, not paused/done/failed,
-    /// still within its run budget. Highest priority first, oldest first on ties.
+    /// still within its run budget. Highest effective priority first (see
+    /// <see cref="NextReadyObjectives"/> for the aging rule), longest-queued first on ties.
     /// </summary>
-    public Objective? NextReadyObjective()
+    public Objective? NextReadyObjective() => NextReadyObjectives(1).FirstOrDefault();
+
+    /// <summary>
+    /// Up to <paramref name="limit"/> distinct ready objectives for the Director's concurrency
+    /// slots (Phase 3), excluding any already in flight so no objective ever runs two missions at
+    /// once. Ordering is strict priority with anti-starvation aging: effective priority =
+    /// stored priority + (minutes waited since last run, or creation, ÷
+    /// <see cref="AnthillRuntime.AutonomyAgingMinutes"/>); ties break toward the objective that
+    /// has been queued longest. Aging is computed here (not persisted) so stored priorities never
+    /// drift and the operator's numbers stay authoritative.
+    /// </summary>
+    public List<Objective> NextReadyObjectives(int limit, ICollection<string>? excludeObjectiveIds = null)
     {
-        var row = Query(
+        if (limit <= 0) return new List<Objective>();
+        var rows = Query(
             @"SELECT * FROM objectives
               WHERE status IN ('pending','active') AND (max_runs = 0 OR run_count < max_runs)
-              ORDER BY priority DESC, created_at ASC LIMIT 1").FirstOrDefault();
-        return row is null ? null : ObjectiveFromRow(row);
+              ORDER BY priority DESC, created_at ASC LIMIT 200");
+        var now = AnthillTime.NowUtc();
+        var excluded = excludeObjectiveIds is { Count: > 0 } ? new HashSet<string>(excludeObjectiveIds) : null;
+        return rows.Select(ObjectiveFromRow)
+            .Where(o => excluded is null || !excluded.Contains(o.Id))
+            .OrderByDescending(o => EffectivePriority(o, now))
+            .ThenBy(o => QueuedSince(o))
+            .Take(limit)
+            .ToList();
     }
+
+    /// <summary>Stored priority plus aging credit: +1 per <see cref="AnthillRuntime.AutonomyAgingMinutes"/> waited. 0 disables aging.</summary>
+    internal static long EffectivePriority(Objective o, DateTime nowUtc)
+    {
+        var aging = AnthillRuntime.AutonomyAgingMinutes;
+        if (aging <= 0) return o.Priority;
+        var waitedMinutes = Math.Max(0, (nowUtc - QueuedSince(o)).TotalMinutes);
+        return o.Priority + (long)(waitedMinutes / aging);
+    }
+
+    /// <summary>When the objective started waiting for its next run: last run if it has one, else creation.</summary>
+    private static DateTime QueuedSince(Objective o) => o.LastRunAt ?? o.CreatedAt;
 
     public Objective? UpdateObjectiveStatus(string objectiveId, ObjectiveStatus status)
     {
