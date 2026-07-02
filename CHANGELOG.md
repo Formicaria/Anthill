@@ -6,7 +6,32 @@
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
 > LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
 > cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, Phase 3 autonomy
-> (concurrency + ResourceGovernor) = **v1.8.12**, and so on.
+> (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, and so on.
+
+## v1.8.13 — Fix: coder ant proposed Python patches regardless of the project's language
+
+Reported from live use: send the colony an objective against this (C#) repo and the coder ant
+comes back proposing Python. Root cause was leftover DNA from ANTHILL's original Python build
+(`py.old/`) — three compounding biases, no model misbehavior:
+
+- **CoderAnt's JSON format example showed a `.py` path** (`"file_path":
+  "relative/path/to/file.py"`). Small local models imitate format examples very literally, so
+  the example language became the answer language. Now a neutral `file.ext`, plus a new
+  first-position rule: match the language/conventions of the files visible in context, and if no
+  existing code is visible and the goal names no language, return an empty proposals list rather
+  than guess.
+- **FileAnt injected `anthill.py` as a candidate path** whenever a mission mentioned "anthill",
+  "this script", or "main script" — a relic of the Python-era entry point that fed Python-flavored
+  context to every downstream ant. Removed; candidate paths now come only from what the mission
+  text actually names.
+- **FileAnt's path-extraction regex couldn't see .NET paths**: its suffix list (`py|txt|md|...`)
+  predated the port and omitted `cs|csproj|sln|props|targets` (and other patchable types:
+  `sh|bat|ps1|cmd|go|rs|java|kt|rb|php|tf|hcl|sql`). A mission saying "fix
+  src/Anthill.Api/ApiHost.cs" never surfaced that path as a read candidate. The list now matches
+  `AnthillRuntime.PatchAllowedSuffixes`, so every file type the coder may patch is also one the
+  file ant can spot and read — including the colony's own sources for self-modification missions.
+
+No schema change, no API change, no config change.
 
 ## v1.8.12 — Phase 3 autonomy: concurrent missions + ResourceGovernor
 

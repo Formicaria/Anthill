@@ -305,9 +305,9 @@ public sealed partial class FileAnt : BaseAnt
         var candidates = new List<string>();
         candidates.AddRange(QuotedPath().Matches(text).Select(m => m.Groups[1].Value));
         candidates.AddRange(SuffixPath().Matches(text).Select(m => m.Value));
-        var lowered = text.ToLowerInvariant();
-        if (new[] { "anthill", "this script", "main script", "python script" }.Any(lowered.Contains))
-            candidates.Add("anthill.py");
+        // (An old heuristic injected "anthill.py" here whenever the mission mentioned "anthill" or
+        // "script" — a relic of the Python build that biased the whole colony toward Python. Gone:
+        // candidate paths now come only from what the mission text actually names.)
         var cleaned = new List<string>();
         var seen = new HashSet<string>();
         foreach (var raw in candidates)
@@ -319,7 +319,10 @@ public sealed partial class FileAnt : BaseAnt
     }
 
     [GeneratedRegex("['\"]([^'\"]+\\.[A-Za-z0-9]+)['\"]")] private static partial Regex QuotedPath();
-    [GeneratedRegex(@"\b[\w\-/\\.]+\.(?:py|txt|md|json|yaml|yml|toml|ini|cfg|log|csv|html|css|js|ts|tsx|jsx|xml)\b")] private static partial Regex SuffixPath();
+    // Keep this suffix list aligned with AnthillRuntime.PatchAllowedSuffixes so the file ant can
+    // spot (and read) every file type the coder is allowed to patch — most importantly the
+    // colony's own C#/.NET sources for self-modification missions.
+    [GeneratedRegex(@"\b[\w\-/\\.]+\.(?:cs|csproj|sln|props|targets|py|txt|md|json|yaml|yml|toml|ini|cfg|log|csv|html|css|js|ts|tsx|jsx|xml|sh|bat|ps1|cmd|go|rs|java|kt|rb|php|tf|hcl|sql)\b")] private static partial Regex SuffixPath();
 }
 
 public sealed class CoderAnt : BaseAnt
@@ -367,7 +370,7 @@ Required format:
   ""summary"": ""Brief summary."",
   ""proposals"": [
     {{
-      ""file_path"": ""relative/path/to/file.py"",
+      ""file_path"": ""relative/path/to/file.ext"",
       ""change_type"": ""modify"",
       ""reason"": ""Why this change is recommended."",
       ""risk"": ""Risk level and what should be reviewed."",
@@ -382,6 +385,10 @@ Allowed change_type values:
 add, modify, delete, rename
 
 Rules:
+- Match the programming language, file types, and conventions of the files shown in the prior
+  context and mission goal. Never assume a language: if the context shows C# (.cs), propose C#;
+  if it shows Python (.py), propose Python. If no existing code is visible in context and the
+  goal doesn't name a language, return an empty proposals list instead of guessing a language.
 - Prefer modify or add.
 - If you are unsure of the exact old_content, return an empty proposals list rather than guessing.
 - Do not wrap JSON in markdown code fences.
