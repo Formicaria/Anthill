@@ -270,7 +270,13 @@ public sealed class ColonyDirector : IDisposable
         var decision = ObjectiveLearning.EvaluateRetirement(objective, recentGoals);
         if (decision is null) return;
 
-        _queen.Memory.UpdateObjectiveStatus(objective.Id, ObjectiveStatus.Paused);
+        // Stamp the retirement onto the objective's metadata so the UI can surface it (looping-
+        // retired objectives are shown in "Completed Objectives" instead of the paused backlog).
+        objective.Status = ObjectiveStatus.Paused;
+        objective.Metadata["retired_code"] = decision.Code;      // "looping_goals" | "stale_low_success"
+        objective.Metadata["retired_reason"] = decision.Reason;
+        objective.Metadata["retired_at"] = AnthillTime.NowUtc().ToIso();
+        _queen.Memory.SaveObjective(objective);
         _queen.Memory.LogEvent(SystemMissionId, "objective_retired",
             $"Director retired objective \"{objective.Title}\" ({decision.Code}): {decision.Reason}",
             antName: "director",

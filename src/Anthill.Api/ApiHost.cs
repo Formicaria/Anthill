@@ -511,6 +511,29 @@ public static class ApiHost
                 "Config reset to defaults. Connection settings preserved.");
         });
 
+        // Completed Objectives: the Director's loop-retired objectives (collapsed rows) — shown
+        // in Configuration → Autonomy instead of the active/paused backlog.
+        app.MapGet("/objectives/completed", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_objectives"); if (auth is not null) return auth;
+            var rows = Queen.Memory.ListRetiredObjectives("looping_goals").Select(o => new Dictionary<string, object?>
+            {
+                ["id"] = o.Id, ["title"] = o.Title,
+                ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
+                ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
+                ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
+                ["run_count"] = o.RunCount,
+            }).ToList();
+            return ApiJson.Ok(rows);
+        });
+        // Expanded detail for one completed objective: compiled runs, missions, and tasks.
+        app.MapGet("/objectives/{id}/detail", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_objectives"); if (auth is not null) return auth;
+            var o = Queen.Memory.GetObjective(id);
+            return o is null ? ApiJson.Error($"No objective found with id: {id}", "not_found") : ApiJson.Ok(CompletedObjectiveDetail(o));
+        });
+
         // Dump directives: clear the whole objective backlog + its run history.
         app.MapPost("/objectives/clear", (HttpContext ctx) =>
         {
@@ -1024,7 +1047,57 @@ public static class ApiHost
         ["consecutive_failures"] = o.ConsecutiveFailures, ["parent_objective_id"] = o.ParentObjectiveId,
         ["created_at"] = o.CreatedAt.ToIso(), ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
         ["success_ema"] = o.SuccessEma,
+        // Retirement markers (stamped by the Director). Looping-retired objectives are shown in the
+        // console's "Completed Objectives" box and filtered out of the active/paused backlog list.
+        ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
+        ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
+        ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
     };
+
+    /// <summary>
+    /// Compiles the "Completed Objectives" expanded view for one retired objective: the objective's
+    /// own fields plus every autonomy run it produced, the missions those runs launched, and the
+    /// tasks within those missions — all from existing models, no new storage.
+    /// </summary>
+    private static Dictionary<string, object?> CompletedObjectiveDetail(Objective o)
+    {
+        var runs = Queen.Memory.ListAutonomyRuns(o.Id, limit: 100);
+        var missions = new List<Dictionary<string, object?>>();
+        var tasks = new List<Dictionary<string, object?>>();
+        foreach (var missionId in runs.Select(r => r.GetValueOrDefault("mission_id")?.ToString())
+                     .Where(m => !string.IsNullOrEmpty(m)).Distinct())
+        {
+            var mission = Queen.Memory.GetMission(missionId!);
+            if (mission is not null)
+                missions.Add(new Dictionary<string, object?>
+                {
+                    ["id"] = mission.GetValueOrDefault("id"), ["goal"] = mission.GetValueOrDefault("goal"),
+                    ["status"] = mission.GetValueOrDefault("status"), ["success_score"] = mission.GetValueOrDefault("success_score"),
+                });
+            foreach (var t in Queen.Memory.GetTasksForMission(missionId!, 200))
+                tasks.Add(new Dictionary<string, object?>
+                {
+                    ["mission_id"] = missionId, ["title"] = t.GetValueOrDefault("title"),
+                    ["ant"] = t.GetValueOrDefault("assigned_ant"), ["status"] = t.GetValueOrDefault("status"),
+                });
+        }
+        return new Dictionary<string, object?>
+        {
+            ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter,
+            ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
+            ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
+            ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
+            ["run_count"] = o.RunCount, ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
+            ["runs"] = runs.Select(r => new Dictionary<string, object?>
+            {
+                ["generated_goal"] = r.GetValueOrDefault("generated_goal"), ["mission_status"] = r.GetValueOrDefault("mission_status"),
+                ["mission_id"] = r.GetValueOrDefault("mission_id"), ["started_at"] = r.GetValueOrDefault("started_at"),
+                ["success_score"] = r.GetValueOrDefault("success_score"),
+            }).ToList(),
+            ["missions"] = missions,
+            ["tasks"] = tasks,
+        };
+    }
 
     private static void ProtectedJson(WebApplication app, string path, string permission, Func<HttpContext, IResult> handler) =>
         app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? handler(ctx));

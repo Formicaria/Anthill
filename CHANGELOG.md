@@ -12,7 +12,28 @@
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
 > intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
-> hygiene + maintenance controls = **v1.8.15.4**, and so on.
+> hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, and so on.
+
+## v1.8.15.5 — Completed Objectives box for loop-retired objectives
+
+Objectives the Director retires for looping (Phase 4 loop detection) previously stayed in the
+paused backlog, mixed in with normal paused objectives. They now move to a dedicated
+**Completed Objectives** box under Configuration → Autonomy.
+
+- The Director stamps a retirement marker (`retired_code`, `retired_reason`, `retired_at`) onto
+  the objective's metadata when it retires it — reusing the existing objective model, no schema
+  change and no change to the loop-detection logic itself.
+- The active/paused backlog table now filters out `retired_code == "looping_goals"`; normal
+  paused objectives (circuit-breaker / stale) are unaffected.
+- New **Completed Objectives** card: each loop-retired objective is one collapsed expandable row —
+  title, a **Stopped** badge, a **Looping** badge, and the short stop reason. Expanding lazy-loads
+  the compiled detail (objective ID, title, stop/loop reason, related runs, missions, tasks, and
+  the stopped timestamp).
+- New: `SqliteMemory.ListRetiredObjectives`, `ApiHost.CompletedObjectiveDetail`; endpoints
+  `GET /objectives/completed` and `GET /objectives/{id}/detail` (both `read_objectives`); retirement
+  markers added to the `/objectives` response.
+- Tests: `ListRetiredObjectives_FindsLoopingRetired_ByMetadata` (looping-retired found; plain-paused
+  and stale-retired excluded).
 
 ## v1.8.15.4 — Disk hygiene: backup retention + maintenance controls
 

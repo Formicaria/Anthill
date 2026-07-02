@@ -113,6 +113,32 @@ public class AutonomyTests : IDisposable
     }
 
     [Fact]
+    public void ListRetiredObjectives_FindsLoopingRetired_ByMetadata()
+    {
+        // Mirror what the Director stamps when it retires an objective for looping.
+        var looping = NewObjective("looping-one", 5);
+        looping.Status = ObjectiveStatus.Paused;
+        looping.Metadata["retired_code"] = "looping_goals";
+        looping.Metadata["retired_reason"] = "The last 4 generated goals are near-identical.";
+        _memory.SaveObjective(looping);
+
+        // A normally-paused objective (breaker/stale) must NOT be returned as looping-retired.
+        var plainPaused = NewObjective("plain-paused", 5);
+        plainPaused.Status = ObjectiveStatus.Paused;
+        _memory.SaveObjective(plainPaused);
+
+        var stale = NewObjective("stale-one", 5);
+        stale.Status = ObjectiveStatus.Paused;
+        stale.Metadata["retired_code"] = "stale_low_success";
+        _memory.SaveObjective(stale);
+
+        var retired = _memory.ListRetiredObjectives("looping_goals");
+        Assert.Single(retired);
+        Assert.Equal(looping.Id, retired[0].Id);
+        Assert.Equal("looping_goals", retired[0].Metadata.GetValueOrDefault("retired_code")?.ToString());
+    }
+
+    [Fact]
     public void DeleteObjective_CascadesRunsAndDetachesChildren()
     {
         // An objective that has run has autonomy_runs rows referencing it (FK, foreign_keys=ON).

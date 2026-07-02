@@ -96,6 +96,19 @@ public sealed partial class SqliteMemory
     /// <summary>When the objective started waiting for its next run: last run if it has one, else creation.</summary>
     private static DateTime QueuedSince(Objective o) => o.LastRunAt ?? o.CreatedAt;
 
+    /// <summary>
+    /// Objectives the Director retired for the given reason code (default "looping_goals"), newest
+    /// retirement first. These carry a <c>retired_code</c> in their metadata (stamped by the
+    /// Director) and are shown in the console's "Completed Objectives" box rather than the backlog.
+    /// </summary>
+    public List<Objective> ListRetiredObjectives(string retiredCode = "looping_goals", int limit = 100)
+    {
+        var rows = Query(
+            "SELECT * FROM objectives WHERE metadata_json LIKE @needle ORDER BY last_run_at DESC, created_at DESC LIMIT @lim",
+            ("@needle", $"%\"retired_code\":\"{retiredCode}\"%"), ("@lim", limit));
+        return rows.Select(ObjectiveFromRow).ToList();
+    }
+
     public Objective? UpdateObjectiveStatus(string objectiveId, ObjectiveStatus status)
     {
         if (GetObjective(objectiveId) is null) return null;

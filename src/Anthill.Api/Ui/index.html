@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.15.4</title>
+<title>ANTHILL v1.8.15.5</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -530,7 +530,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.15.4</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.15.5</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -573,7 +573,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.15.4</span>
+      <span class="nav-logo-ver">v1.8.15.5</span>
     </div>
 
     <div class="nav-scroll">
@@ -1086,6 +1086,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Started</th><th>Result</th></tr></thead>
               <tbody id="auto-runs-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Completed Objectives (Director loop-retired; collapsible, scrolls after ~20 rows) -->
+        <div class="card" style="margin-top:16px;">
+          <div class="box-toggle-head" onclick="toggleBoxBody('completed-obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="completed-obj-count">Completed Objectives</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+          </div>
+          <div id="completed-obj-box" style="max-height:640px;overflow-y:auto;padding:6px 12px 12px;">
+            <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading…</div></div>
           </div>
         </div>
       </div><!-- /page-autonomy -->
@@ -3254,8 +3265,10 @@ async function reloadObjectives(){
   const tb=document.getElementById('obj-tbody');
   try{
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
-    autonomyObjectives=r.data||[];
+    // Loop-retired objectives move to the Completed Objectives box below — hide them here.
+    autonomyObjectives=(r.data||[]).filter(o=>o.retired_code!=='looping_goals');
     setEl('obj-count',`Objectives (${autonomyObjectives.length})`);
+    reloadCompletedObjectives();
     tb.innerHTML=autonomyObjectives.map(o=>{
       const paused=o.status==='paused';
       return `<tr>
@@ -3278,6 +3291,52 @@ async function reloadObjectives(){
       </tr>`;
     }).join('')||'<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
   }catch(e){ tb.innerHTML=`<tr><td colspan="9" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
+
+// ── Completed Objectives (Director loop-retired) ──────────────────────────────
+async function reloadCompletedObjectives(){
+  const list=document.getElementById('completed-obj-list'); if(!list) return;
+  try{
+    const r=await api('/objectives/completed'); if(!r.success) throw new Error(r.message);
+    const rows=r.data||[];
+    setEl('completed-obj-count',`Completed Objectives (${rows.length})`);
+    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None — objectives the Director stopped for looping will appear here.</div>'; return; }
+    list.innerHTML=rows.map(o=>`
+      <details class="card" style="margin-bottom:6px;padding:0;" data-obj="${o.id}" ontoggle="onCompletedToggle(this)">
+        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:9px 12px;user-select:none;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;">${escapeHtml(o.title||'')}</span>
+          <span class="obj-status paused" style="background:rgba(239,68,68,.12);color:var(--red);">Stopped</span>
+          <span class="obj-status" style="background:rgba(251,191,36,.14);color:var(--queen);">Looping</span>
+          <span class="box-caret" style="color:var(--dim);font-size:11px;">▸</span>
+        </summary>
+        <div style="padding:2px 14px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">
+          <div style="margin:6px 0;color:var(--red);">${escapeHtml(o.retired_reason||'Stopped for looping.')}</div>
+          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, and tasks…</div>
+        </div>
+      </details>`).join('');
+  }catch(e){ list.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${escapeHtml(e.message)}</div>`; }
+}
+
+async function onCompletedToggle(det){
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.co-detail');
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    const kv=(k,v)=>`<div style="display:flex;gap:8px;padding:2px 0;"><span style="color:var(--dim);min-width:130px;">${k}</span><span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(String(v??'—'))}</span></div>`;
+    const runs=(d.runs||[]).map(x=>`<div style="padding:2px 0;">• ${escapeHtml((x.generated_goal||'').slice(0,110))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).map(x=>`<div style="padding:2px 0;">• <span style="font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</span> ${escapeHtml((x.goal||'').slice(0,90))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const tasks=(d.tasks||[]).map(x=>`<div style="padding:1px 0;">• ${escapeHtml(x.ant||'')}: ${escapeHtml((x.title||'').slice(0,80))} <span style="color:var(--dim)">(${escapeHtml(x.status||'')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    box.innerHTML=
+      kv('Objective ID', d.id)+kv('Original title', d.title)+kv('Stop reason', 'Retired by loop detection')+
+      kv('Loop detection', d.retired_reason)+kv('Runs', (d.runs||[]).length)+kv('Missions', (d.missions||[]).length)+
+      kv('Tasks', (d.tasks||[]).length)+kv('Stopped at', d.retired_at)+
+      `<div style="margin-top:8px;color:var(--muted);font-weight:600;">Related runs</div>${runs}`+
+      `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related missions</div>${missions}`+
+      `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related tasks</div>${tasks}`;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
 }
 
 document.getElementById('obj-add').addEventListener('click',async()=>{
