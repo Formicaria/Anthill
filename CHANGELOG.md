@@ -60,13 +60,20 @@ New:
 
 Fixed (Colony canvas + Autonomy page housekeeping):
 
-- **Ant/Queen hover tooltips showed activity over 100% and not live data.** Two bugs: an
-  operator-precedence error in the animation loop — `(colonyActivity[ant]||0-n.activity)` parses
-  as `colonyActivity || (0-activity)`, accumulating activity unboundedly every frame — and the
-  activity source itself was "this ant's share of all tasks in the mission" (including finished
-  ones), not a live reading. Activity is now computed from current task states each poll
-  (running = 100%, queued work = 35%, idle = 0%), clamped to [0,1] everywhere, so the hover
-  panel is a true live view of the colony.
+- **Ant/Queen hover tooltips showed activity over 100% and not live data.** Three bugs, one of
+  them structural: (1) an operator-precedence error in the animation loop —
+  `(colonyActivity[ant]||0-n.activity)` parses as `colonyActivity || (0-activity)`, accumulating
+  activity unboundedly every frame; (2) the activity source was "this ant's share of all tasks"
+  (including finished ones), not a live reading; and (3) — the structural one — **task rows were
+  only persisted at mission start (before tasks exist) and mission end**, so `/graph` had no
+  nodes at all while a mission ran; every mid-run number the canvas ever showed was stale data
+  from the previous completed mission. Fixed end to end: the Queen now persists the planned task
+  DAG before execution and upserts each task on every status transition (started → live
+  "running"; complete/failed/skipped on finalize — new `SqliteMemory.SaveTask`), and the canvas
+  computes activity from those current task states each poll (running = 100%, queued work = 35%,
+  idle = 0%), clamped to [0,1] everywhere. Signal particles, node glow, the hover panel, and the
+  task-DAG dataflow arrows now reflect what the colony is doing *right now* — the graph poll
+  tightened from 5s to 2.5s to match.
 - **Colony canvas sharpened**: the canvas now renders at the display's real pixel density
   (devicePixelRatio-scaled backing store, logical-coordinate drawing) — crisp nodes, edges, and
   labels on HiDPI screens instead of the previous blurry 1x upscale.

@@ -2238,7 +2238,7 @@ function startPolling(){
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
-  setInterval(pollGraph,    5000);
+  setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollApprovals,6000);
   setInterval(pollModelInfo,30000);
 }

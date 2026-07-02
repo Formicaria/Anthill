@@ -134,6 +134,10 @@ public sealed partial class Queen : IDisposable
         Console.WriteLine($"Mission ID: {mission.Id}");
         Console.WriteLine($"Created {mission.Tasks.Count} tasks. Parallel execution: {(AnthillRuntime.EnableParallelExecution ? "ON" : "OFF")}\n");
 
+        // Persist the planned DAG before execution so /graph (and the live colony canvas) can see
+        // the mission's tasks while they run — not only after the mission finishes.
+        Memory.SaveMission(mission);
+
         if (AnthillRuntime.EnableParallelExecution) ExecuteTasksParallel(mission, missionStartedAt);
         else ExecuteTasksSequential(mission, missionStartedAt);
 
@@ -357,6 +361,7 @@ public sealed partial class Queen : IDisposable
                 task.ElapsedSeconds = null;
             }
             Console.WriteLine($"Task {index}/{total} -> {task.AssignedAnt} ant: {task.Title}");
+            Memory.SaveTask(mission.Id, task); // live status: the canvas/graph sees "running" now
             Memory.LogEvent(mission.Id, "task_started", $"Task started: {task.Title}", task.Id, task.AssignedAnt, new()
             {
                 ["task_type"] = task.TaskType, ["index"] = index, ["parallel"] = AnthillRuntime.EnableParallelExecution,
@@ -481,6 +486,7 @@ public sealed partial class Queen : IDisposable
         task.ResultChars = (task.Result ?? "").Length;
         task.EstimatedTokens = TextUtil.EstimateTokenCount(task.Result);
         task.ResultSummary = TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars);
+        Memory.SaveTask(mission.Id, task); // live status: terminal state visible to /graph immediately
         Memory.SaveTaskResultSummary(mission.Id, task);
         Memory.LogMessageMetric(mission.Id, task.Id, task.AssignedAnt, "task_result",
             (task.Description ?? "").Length, task.ResultChars,

@@ -93,26 +93,7 @@ public sealed partial class SqliteMemory
                 ("@created", mission.CreatedAt.ToIso()), ("@saved", AnthillTime.NowUtc().ToIso()));
 
             foreach (var task in mission.Tasks)
-                NonQuery(conn, tx,
-                    @"INSERT OR REPLACE INTO tasks (id, mission_id, title, description, assigned_ant, task_type,
-                        parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
-                        result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
-                        skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
-                        skipped_reason, blocked_reason)
-                      VALUES (@id, @mid, @title, @desc, @ant, @tt, @pid, @pids, @deps, @status, @result, @summary,
-                        @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
-                        @max, @freason, @ftype, @sreason, @breason)",
-                    ("@id", task.Id), ("@mid", mission.Id), ("@title", task.Title), ("@desc", task.Description),
-                    ("@ant", task.AssignedAnt), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
-                    ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
-                    ("@status", task.Status.Value()), ("@result", task.Result), ("@summary", task.ResultSummary),
-                    ("@rc", task.ResultChars), ("@et", task.EstimatedTokens),
-                    ("@created", ((DateTime?)task.CreatedAt).ToIsoOrNull()), ("@started", task.StartedAt.ToIsoOrNull()),
-                    ("@finished", task.FinishedAt.ToIsoOrNull()), ("@completed", task.CompletedAt.ToIsoOrNull()),
-                    ("@failed", task.FailedAt.ToIsoOrNull()), ("@skipped", task.SkippedAt.ToIsoOrNull()),
-                    ("@elapsed", task.ElapsedSeconds), ("@attempts", task.AttemptCount),
-                    ("@max", Math.Max(1, task.MaxAttempts)), ("@freason", task.FailureReason),
-                    ("@ftype", task.FailureType), ("@sreason", task.SkippedReason), ("@breason", task.BlockedReason));
+                UpsertTask(conn, tx, mission.Id, task);
 
             if (FtsAvailable)
             {
@@ -129,6 +110,43 @@ public sealed partial class SqliteMemory
         }
         InvalidateCache();
     }
+
+    /// <summary>
+    /// Persists one task's current state mid-mission so /graph (and the colony canvas driven by
+    /// it) reflects live execution — running, complete, failed, skipped — instead of only seeing
+    /// tasks after the mission finishes. Called on every task status transition.
+    /// </summary>
+    public void SaveTask(string missionId, Task task)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            UpsertTask(conn, null, missionId, task);
+        }
+        InvalidateCache();
+    }
+
+    private void UpsertTask(SqliteConnection conn, SqliteTransaction? tx, string missionId, Task task) =>
+        NonQuery(conn, tx,
+            @"INSERT OR REPLACE INTO tasks (id, mission_id, title, description, assigned_ant, task_type,
+                parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
+                result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
+                skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
+                skipped_reason, blocked_reason)
+              VALUES (@id, @mid, @title, @desc, @ant, @tt, @pid, @pids, @deps, @status, @result, @summary,
+                @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
+                @max, @freason, @ftype, @sreason, @breason)",
+            ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
+            ("@ant", task.AssignedAnt), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
+            ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
+            ("@status", task.Status.Value()), ("@result", task.Result), ("@summary", task.ResultSummary),
+            ("@rc", task.ResultChars), ("@et", task.EstimatedTokens),
+            ("@created", ((DateTime?)task.CreatedAt).ToIsoOrNull()), ("@started", task.StartedAt.ToIsoOrNull()),
+            ("@finished", task.FinishedAt.ToIsoOrNull()), ("@completed", task.CompletedAt.ToIsoOrNull()),
+            ("@failed", task.FailedAt.ToIsoOrNull()), ("@skipped", task.SkippedAt.ToIsoOrNull()),
+            ("@elapsed", task.ElapsedSeconds), ("@attempts", task.AttemptCount),
+            ("@max", Math.Max(1, task.MaxAttempts)), ("@freason", task.FailureReason),
+            ("@ftype", task.FailureType), ("@sreason", task.SkippedReason), ("@breason", task.BlockedReason));
 
     public void SavePatchSet(PatchSet patchSet)
     {
