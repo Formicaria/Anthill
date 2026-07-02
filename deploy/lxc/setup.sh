@@ -35,6 +35,7 @@ if command -v dotnet >/dev/null 2>&1 && dotnet --list-sdks 2>/dev/null | grep -q
     echo "    dotnet 9 SDK already present — skipping install."
 else
     apt-get update -qq
+    # shellcheck disable=SC1091  # /etc/os-release only exists at runtime; nothing to follow statically
     . /etc/os-release
     PKG_URL="https://packages.microsoft.com/config/${ID}/${VERSION_ID}/packages-microsoft-prod.deb"
     if curl -fsSL "$PKG_URL" -o /tmp/packages-microsoft-prod.deb 2>/dev/null; then
