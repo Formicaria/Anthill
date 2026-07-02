@@ -4,7 +4,38 @@
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
-> and so on.
+> LXC upgrade-in-place fix = **v1.8.9**, and so on.
+
+## v1.8.9 — Fix: LXC upgrade-in-place failed with "Text file busy"
+
+No schema change. Bug found live re-running `deploy/lxc/setup.sh` to upgrade an already-running
+LXC install to v1.8.8: `dotnet publish` failed with
+`System.IO.IOException: Text file busy : '/opt/anthill/bin/anthill'` inside the `GenerateBundle`
+MSBuild task.
+
+Root cause: `setup.sh` republishes directly into `$INSTALL_DIR/bin`, which is exactly where the
+systemd unit's `ExecStart` runs the binary from. .NET's single-file bundler does an in-place file
+copy rather than write-to-temp-then-atomic-rename, and Linux refuses to open a currently-executing
+binary for direct write access (`ETXTBSY`) — replacing a running program's file via `rename()` is
+fine, overwriting it in place while it's executing is not. First-time installs never hit this
+(nothing running yet); every subsequent upgrade-in-place did, 100% of the time.
+
+Fixed:
+
+- **`deploy/lxc/setup.sh`**: stops the `anthill` systemd unit immediately before the publish step
+  (`systemctl stop anthill 2>/dev/null || true` — safe no-op on a first install, since the unit
+  doesn't exist yet). The existing `systemctl restart anthill` at the end of the script already
+  starts it back up regardless of whether it was freshly installed or stopped for an upgrade, so
+  this was a one-line, symmetrical fix.
+
+Validation:
+
+- Found via the user's real upgrade attempt on their LXC instance — full MSBuild stack trace
+  confirmed root cause precisely (`Microsoft.NET.HostModel.Bundle.Bundler.GenerateBundle` →
+  `SafeFileHandle.Open` → `ETXTBSY`). Fix itself has **not been re-verified live** — no LXC/Proxmox
+  host or dotnet SDK available in the environment this was authored in. `bash -n` syntax check
+  passes. Confirm the fix by re-running `bash deploy/lxc/setup.sh` on the same instance and
+  checking it completes without stopping mid-publish this time.
 
 ## v1.8.8 — Fix: provider Base URL override sent as a bare prefix, not a real endpoint
 

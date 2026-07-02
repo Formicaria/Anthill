@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.8";
+    public const string Version = "1.8.9";
     public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";

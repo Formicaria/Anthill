@@ -12,7 +12,7 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <AnthillVersion>1.8.8</AnthillVersion>
+    <AnthillVersion>1.8.9</AnthillVersion>
     <Version>$(AnthillVersion)</Version>
     <Authors>ANTHILL Project</Authors>
     <Product>ANTHILL Core</Product>

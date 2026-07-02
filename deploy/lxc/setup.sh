@@ -80,6 +80,14 @@ fi
 # ---------------------------------------------------------------------------
 log "Publishing self-contained linux-x64 binary"
 # ---------------------------------------------------------------------------
+# Stop the service first if this is an upgrade (re-run on an already-installed instance): the
+# publish step below overwrites the binary in place at $BIN_DIR/anthill, and .NET's single-file
+# bundler does an in-place file copy rather than write-then-atomic-rename. On Linux, opening a
+# currently-executing binary for direct write access fails with ETXTBSY ("text file busy") — you
+# can replace a running program's file via rename, but not overwrite it in place while it's
+# executing. No-op (and harmless) on a first-ever install, since the unit doesn't exist yet.
+systemctl stop anthill 2>/dev/null || true
+
 BIN_DIR="$INSTALL_DIR/bin"
 dotnet publish "$SRC_DIR/src/Anthill.Cli/Anthill.Cli.csproj" \
     -c Release -r linux-x64 --self-contained true \
