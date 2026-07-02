@@ -127,7 +127,15 @@ public sealed partial class SqliteMemory
         lock (_writeLock)
         {
             using var conn = Connect();
-            NonQuery(conn, null, "DELETE FROM objectives WHERE id = @id", ("@id", objectiveId));
+            using var tx = conn.BeginTransaction();
+            // autonomy_runs.objective_id has a FK to objectives(id) and foreign_keys=ON, so an
+            // objective that has ever run can't be deleted until its run rows go first. Cascade
+            // them here (the audit trail for a deleted objective is deleted with it), and detach
+            // any follow-up children so they survive as roots rather than dangling on a gone parent.
+            NonQuery(conn, tx, "DELETE FROM autonomy_runs WHERE objective_id = @id", ("@id", objectiveId));
+            NonQuery(conn, tx, "UPDATE objectives SET parent_objective_id = NULL WHERE parent_objective_id = @id", ("@id", objectiveId));
+            NonQuery(conn, tx, "DELETE FROM objectives WHERE id = @id", ("@id", objectiveId));
+            tx.Commit();
         }
         InvalidateCache();
         return true;

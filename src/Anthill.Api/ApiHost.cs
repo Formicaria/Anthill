@@ -699,7 +699,8 @@ public static class ApiHost
         {
             var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
             if (Queen.Memory.GetObjective(id) is null) return ApiJson.Error($"No objective found with id: {id}", "not_found");
-            Queen.Memory.DeleteObjective(id);
+            try { Queen.Memory.DeleteObjective(id); }
+            catch (Exception ex) { return ApiJson.Error($"Could not delete objective: {ex.Message}", "delete_failed"); }
             return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id }, "Objective removed.");
         });
     }

@@ -49,6 +49,16 @@ safety story is *apply → verify → keep-or-rollback*.
 Operational note: the verify build blocks the Director thread (deliberately — no new launches
 mid-verify), so keep `autonomy_concurrency` and the verify command in mind on a busy box.
 
+**Deploying auto-apply for real self-modification.** On the hardened LXC/systemd install the ANTHILL
+source tree (`/opt/anthill/src`) is **read-only** to the service (`ProtectSystem=strict` +
+`ReadWritePaths=…/.anthill`), so auto-apply can only write inside the workspace — it cannot modify
+the running source. That's a safe default. To actually let the Director ship changes to a codebase:
+point `agent_workspace_dir` at a **writable checkout the `anthill` service user owns** (add it to
+the unit's `ReadWritePaths`, or keep it under `…/.anthill/`), set `autonomy_autoapply_paths` to the
+paths within it you trust, and turn on `autonomy_autoapply_git_commit` so verified changes land as
+local commits. If the workspace root isn't writable when auto-apply runs, the Director logs a single
+`autonomy_autoapply_skipped` (`reason: workspace_readonly`) rather than failing patch-by-patch.
+
 ## Phase 4 — what landed
 
 - **`ObjectiveLearning`** (`Anthill.Core/Autonomy/ObjectiveLearning.cs`): three pure functions

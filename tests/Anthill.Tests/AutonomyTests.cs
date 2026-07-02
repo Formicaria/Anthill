@@ -113,6 +113,27 @@ public class AutonomyTests : IDisposable
     }
 
     [Fact]
+    public void DeleteObjective_CascadesRunsAndDetachesChildren()
+    {
+        // An objective that has run has autonomy_runs rows referencing it (FK, foreign_keys=ON).
+        // Deleting it must cascade those runs (was a 500) and detach follow-up children.
+        var parent = NewObjective("parent", 5);
+        _memory.SaveObjective(parent);
+        _memory.SaveAutonomyRun(new AutonomyRun { ObjectiveId = parent.Id, GeneratedGoal = "g", MissionStatus = "complete" });
+        var child = NewObjective("child", 4);
+        child.ParentObjectiveId = parent.Id;
+        _memory.SaveObjective(child);
+
+        Assert.True(_memory.DeleteObjective(parent.Id));
+        Assert.Null(_memory.GetObjective(parent.Id));
+        Assert.Empty(_memory.ListAutonomyRuns(parent.Id));
+        // The child survives as a root (parent link detached), not dangling on a deleted parent.
+        var reloadedChild = _memory.GetObjective(child.Id);
+        Assert.NotNull(reloadedChild);
+        Assert.Null(reloadedChild!.ParentObjectiveId);
+    }
+
+    [Fact]
     public void KillSwitch_StopsAndResumesDurably()
     {
         AutonomyControl.Resume();

@@ -10,7 +10,35 @@
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
-> Phase 5 autonomy (gated auto-apply) = **v1.8.15**, and so on.
+> Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, and so on.
+
+## v1.8.15.1 — Fixes from the live Phase 5 test
+
+A live test of Phase 5 on the LXC confirmed both the keep and rollback branches work end to end
+(patch applied → verify → kept + approval consumed; and applied → verify failed → rolled back,
+workspace clean). It also surfaced three issues, all fixed here:
+
+- **`DELETE /objectives/{id}` returned 500 for any objective that had run.** `autonomy_runs` has a
+  foreign key to `objectives(id)` with `foreign_keys=ON`, so deleting an objective with run history
+  threw — meaning the Delete button in the backlog was broken for anything that had executed.
+  `DeleteObjective` now cascades the dependent runs and detaches follow-up children in one
+  transaction; the endpoint returns a clean error instead of a 500 on any other failure.
+- **The planner rarely routed file-creation goals to the coder ant** — the root cause of "work
+  happens but nothing lands." Two prompt bugs: `docs` was listed as a *web-search* trigger (so
+  "create a file in docs/" went to web research), and nothing told the planner that creating or
+  editing a file requires a coder patch. The planner prompt now states plainly that any goal which
+  creates/adds/writes/edits/patches a file (including `.md`/config) **must** include a
+  `patch_proposal` coder task, clarifies that proposing a patch is expected (not a "don't write
+  files" violation), and stops treating a documentation path as a web trigger. The offline fallback
+  planner now checks code/file keywords **before** the web branch and recognizes create/add/write/
+  edit/`.md`/`.cs` goals.
+- **Auto-apply on a read-only workspace failed one patch at a time with no explanation.** On a
+  hardened LXC (`systemd ProtectSystem=strict`) the source tree is read-only to the service, so
+  every apply failed individually. The runner now does a one-shot writability preflight and, if the
+  workspace root can't be written, logs a single clear `autonomy_autoapply_skipped`
+  (`reason: workspace_readonly`) pointing at `agent_workspace_dir` — instead of a stream of
+  `apply_failed`. Docs add the writable-checkout deployment pattern for real self-modification.
+- Tests: `DeleteObjective_CascadesRunsAndDetachesChildren`.
 
 ## v1.8.15 — Phase 5 autonomy: gated auto-apply (the autonomy roadmap is complete)
 

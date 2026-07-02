@@ -38,6 +38,17 @@ public static class AutoApplyRunner
             return;
         }
 
+        // Preflight: if the workspace root isn't writable (e.g. the source tree is read-only under
+        // systemd ProtectSystem=strict), every apply would fail one-by-one. Surface it once, clearly.
+        if (!WorkspaceWritable(out var wsReason))
+        {
+            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_skipped",
+                $"Auto-apply is enabled but the workspace root ({AnthillRuntime.AllowedWorkspaceRoot}) is not writable — {wsReason}. " +
+                "Point agent_workspace_dir at a writable checkout the service owns to let auto-apply land changes.",
+                antName: "director", metadata: new() { ["reason"] = "workspace_readonly", ["mission_id"] = missionId, ["workspace"] = AnthillRuntime.AllowedWorkspaceRoot });
+            return;
+        }
+
         // Candidate patches: still-proposed proposals from this mission.
         var candidates = queen.Memory.ListPatchProposalsForMission(missionId)
             .Where(p => (p.GetValueOrDefault("status")?.ToString() ?? "") == PatchStatus.Proposed.Value())
@@ -121,6 +132,22 @@ public static class AutoApplyRunner
                     ["timed_out"] = verify.TimedOut, ["verify_tail"] = Tail(verify.Output, 1500),
                 });
         }
+    }
+
+    /// <summary>Probes whether the workspace root accepts writes (a temp file create+delete). Cheap; runs only when eligible patches exist.</summary>
+    private static bool WorkspaceWritable(out string reason)
+    {
+        var root = AnthillRuntime.AllowedWorkspaceRoot;
+        try
+        {
+            if (!Directory.Exists(root)) { reason = "directory does not exist"; return false; }
+            var probe = Path.Combine(root, $".autoapply_probe_{Guid.NewGuid():N}");
+            File.WriteAllText(probe, "probe");
+            File.Delete(probe);
+            reason = "";
+            return true;
+        }
+        catch (Exception e) { reason = e.GetType().Name; return false; }
     }
 
     private sealed record VerifyResult(bool Green, int ExitCode, bool TimedOut, double Seconds, string Output);

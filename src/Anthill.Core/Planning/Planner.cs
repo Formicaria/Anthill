@@ -52,7 +52,7 @@ Available ants:
 - researcher: summarizes local memory, tool context, and mission-relevant internal context.
 - web: performs read-only external research when the mission requires current/public information.
 - file: inspects workspace files read-only. Use only for file/code/repo/folder missions.
-- coder: proposes structured JSON patches only.
+- coder: proposes structured JSON patches to CREATE or MODIFY files (code, config, documentation, scripts). This is the ONLY ant that changes files — any goal that creates, adds, writes, edits, or patches a file needs a coder task.
 - builder: creates the final response from prior ant outputs.
 - verifier: verifies result quality and safety.
 
@@ -75,10 +75,10 @@ Do not wrap JSON in markdown code fences.
 - assigned_ant must be one of: researcher, web, file, coder, builder, verifier.
 - Keep each task description under 100 words.
 - Skip the file ant unless file/code/repo/folder/path keywords appear in the goal.
-- Use web only when the mission needs current, public, external, version, docs, price, news, or online information.
-- Use file/coder for code, scripts, patches, folders, repos, bugs, or refactors.
-- Do not ask ants to write files.
-- Patch application is user-triggered later through /apply after approval.
+- Use web only when the mission needs current, public, external, version, price, news, or online information from the internet. Do NOT use web merely because the goal mentions a documentation file or a path.
+- If the goal creates, adds, writes, edits, modifies, or patches ANY file — including documentation (.md), config, or a new source file — you MUST include a coder task with task_type ""patch_proposal"" that proposes the change as a structured JSON patch. This is the only way ANTHILL produces file changes; a research/build answer that merely describes the change is NOT sufficient.
+- Ants never write to disk directly — the coder only PROPOSES a patch, which a human (or gated auto-apply) applies later through /apply after approval. So proposing a patch via the coder is correct and expected, not a violation.
+- Use file/coder for code, scripts, patches, folders, repos, bugs, refactors, and creating or editing any file.
 - Final task should usually be verifier.
 - depends_on should usually be [] because ANTHILL auto-wires safe dependencies.
 
@@ -323,9 +323,12 @@ Required JSON:
     private static List<Task> FallbackTasks(string goal)
     {
         var lowered = goal.ToLowerInvariant();
-        var codeKeywords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor", "function", "class", "repo", "repository", "file", "folder", "directory", "patch", "modify", "change" };
+        var codeKeywords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor", "function", "class", "repo", "repository", "file", "folder", "directory", "patch", "modify", "change", "create", "add", "write", "edit", "document", "docs/", ".md", ".cs", ".json" };
+        var isCodeGoal = codeKeywords.Any(lowered.Contains);
 
-        if (AnthillRuntime.EnableWebSearch && TextUtil.ShouldUseWebSearch(goal))
+        // A goal that creates/edits a file must reach the coder — check it BEFORE the web branch,
+        // so "create a docs file" produces a patch rather than a research answer that never lands.
+        if (!isCodeGoal && AnthillRuntime.EnableWebSearch && TextUtil.ShouldUseWebSearch(goal))
             return new()
             {
                 new() { Title = "Frame research need", Description = $"Identify what current/public information is needed for: {goal}", AssignedAnt = "researcher", TaskType = "research" },
@@ -334,7 +337,7 @@ Required JSON:
                 new() { Title = "Verify sourced result", Description = $"Check that the answer addresses the question and notes source limitations: {goal}", AssignedAnt = "verifier", TaskType = "verification" },
             };
 
-        if (codeKeywords.Any(lowered.Contains))
+        if (isCodeGoal)
             return new()
             {
                 new() { Title = "Research mission", Description = $"Understand the goal and frame the code/project inspection need: {goal}", AssignedAnt = "researcher", TaskType = "research" },
