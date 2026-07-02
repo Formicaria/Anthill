@@ -9,7 +9,9 @@ public sealed class ApiMissionJob
 {
     public string Id { get; init; } = Guid.NewGuid().ToString();
     public string Goal { get; init; } = "";
-    public string Status { get; set; } = "queued"; // queued | running | complete | failed
+    public string Status { get; set; } = "queued"; // queued | running | complete | failed | cancelled
+    /// <summary>Set by Cancel/CancelAll; a queued job is skipped by the worker instead of running.</summary>
+    public volatile bool Cancelled;
     public string? MissionId { get; set; }
     public string? Result { get; set; }
     public string? Error { get; set; }
@@ -65,6 +67,14 @@ public sealed class ApiJobRegistry : IDisposable
     {
         foreach (var job in _queue.GetConsumingEnumerable())
         {
+            // Skip work cancelled while it sat in the queue (a running mission can't be interrupted
+            // mid-flight — it's bounded by MaxMissionSeconds — but queued work is dropped cleanly).
+            if (job.Cancelled)
+            {
+                job.Status = "cancelled";
+                job.FinishedAt = AnthillTime.NowUtc();
+                continue;
+            }
             job.Status = "running";
             job.StartedAt = AnthillTime.NowUtc();
             try
@@ -91,6 +101,30 @@ public sealed class ApiJobRegistry : IDisposable
         _jobs.Values.OrderByDescending(j => j.CreatedAt).Take(limit).Select(j => j.ToDict()).ToList();
 
     public ApiMissionJob? GetJob(string id) => _jobs.TryGetValue(id, out var job) ? job : null;
+
+    /// <summary>Requests cancellation of one job. Queued work is dropped before it runs; a running mission finishes (bounded by its timeout). Returns true if the job exists and wasn't already terminal.</summary>
+    public bool Cancel(string id)
+    {
+        if (!_jobs.TryGetValue(id, out var job)) return false;
+        if (job.Status is "complete" or "failed" or "cancelled") return false;
+        job.Cancelled = true;
+        if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
+        return true;
+    }
+
+    /// <summary>Cancels every non-terminal job. Returns how many were affected.</summary>
+    public int CancelAll()
+    {
+        var n = 0;
+        foreach (var job in _jobs.Values)
+        {
+            if (job.Status is "complete" or "failed" or "cancelled") continue;
+            job.Cancelled = true;
+            if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
+            n++;
+        }
+        return n;
+    }
 
     private void TrimLocked()
     {

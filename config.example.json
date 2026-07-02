@@ -60,6 +60,10 @@
   "max_section_chars":      3500,
   "max_section_tasks":         6,
 
+  "_comment_maintenance": "Disk hygiene. A full DB copy is written before every mission; max_db_backups keeps only the newest N (older ones pruned each mission -- the main bloat control; 0 = keep all). Flush Cache (Settings -> System Info -> Maintenance) prunes backups + compacts the DB, and deletes events older than event_retention_days (0 = keep all).",
+  "max_db_backups":           10,
+  "event_retention_days":      0,
+
   "_comment_autonomy": "24/7 autonomy rails (Phase 0/1). Off by default and fail-closed: the Director only runs when autonomy_enabled is true AND it is started explicitly. Budgets are hard caps; a .anthill/STOP file (or the API) is the kill switch. See docs/AUTONOMY.md.",
   "autonomy_enabled":                  false,
   "autonomy_poll_seconds":                30,

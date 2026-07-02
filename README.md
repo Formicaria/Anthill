@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.15.3** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.15.4** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -1123,6 +1123,12 @@ Authorization: Bearer YOUR_TOKEN
 | `GET` | `/status` | System stats — model calls, task count, pending approvals |
 | `GET` | `/system/summary` | Header status: version, live Ollama reachability, default model, and a local-vs-providers routing breakdown |
 | `GET` | `/update/check` | Whether a newer release is published on GitHub (`?force=1` bypasses the 30-min cache) |
+| `GET` | `/maintenance/stats` | Disk free, DB size, backup count/size, table row counts |
+| `POST` | `/maintenance/flush` | Prune old backups + old events + VACUUM; returns bytes freed |
+| `POST` | `/maintenance/clear-missions` | Delete all mission history (keeps objectives/pheromones/users/config) |
+| `POST` | `/maintenance/reset-config` | Reset settings to defaults, preserving connection settings |
+| `POST` | `/objectives/clear` | Dump the entire objective backlog + run history |
+| `POST` | `/jobs/cancel-all` · `/jobs/{id}/cancel` | Cancel all / one job (queued work dropped; a running mission finishes) |
 | `GET` | `/selftest` | Run 15-check self-test suite |
 
 ### Missions & Jobs

@@ -66,6 +66,11 @@ public sealed class AnthillConfig
     [JsonPropertyName("long_input_threshold")] public int LongInputThreshold { get; set; } = 6000;
     [JsonPropertyName("max_section_chars")] public int MaxSectionChars { get; set; } = 3500;
     [JsonPropertyName("max_section_tasks")] public int MaxSectionTasks { get; set; } = 6;
+    // Maintenance / disk hygiene. A full DB copy is written before every mission; keep only the
+    // newest N to bound the backup directory (the main source of disk bloat). event_retention_days
+    // > 0 lets Flush Cache delete events older than that many days (0 = keep all).
+    [JsonPropertyName("max_db_backups")] public int MaxDbBackups { get; set; } = 10;
+    [JsonPropertyName("event_retention_days")] public int EventRetentionDays { get; set; } = 0;
 
     // ---- 24/7 autonomy (Phase 0 rails) ----
     // The Director only runs when BOTH autonomy_enabled is true AND it is started explicitly

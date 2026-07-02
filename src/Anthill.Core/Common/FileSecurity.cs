@@ -53,4 +53,44 @@ public static class FileSecurity
             return null;
         }
     }
+
+    /// <summary>
+    /// Keeps only the newest <paramref name="keep"/> DB backups in the backup directory, deleting
+    /// the rest. A full DB copy is written before every mission (<see cref="BackupDb"/>), so without
+    /// this the backup dir grows without bound — the primary cause of disk bloat. Returns how many
+    /// files were deleted and how many bytes that freed. keep &lt;= 0 leaves everything untouched.
+    /// </summary>
+    public static (int Deleted, long BytesFreed) PruneBackups(string backupDir, int keep, Func<string, string> pathResolver)
+    {
+        if (keep <= 0) return (0, 0);
+        try
+        {
+            var dir = pathResolver(backupDir);
+            if (!Directory.Exists(dir)) return (0, 0);
+            var backups = new DirectoryInfo(dir).GetFiles("anthill_*.db")
+                .OrderByDescending(f => f.Name) // timestamped name sorts chronologically
+                .ToList();
+            var deleted = 0; long freed = 0;
+            foreach (var f in backups.Skip(keep))
+            {
+                var size = f.Length;
+                try { f.Delete(); deleted++; freed += size; } catch { /* skip locked/removed */ }
+            }
+            return (deleted, freed);
+        }
+        catch { return (0, 0); }
+    }
+
+    /// <summary>Total size (bytes) and file count of the DB backup directory — for maintenance stats.</summary>
+    public static (int Count, long Bytes) BackupStats(string backupDir, Func<string, string> pathResolver)
+    {
+        try
+        {
+            var dir = pathResolver(backupDir);
+            if (!Directory.Exists(dir)) return (0, 0);
+            var files = new DirectoryInfo(dir).GetFiles("anthill_*.db");
+            return (files.Length, files.Sum(f => f.Length));
+        }
+        catch { return (0, 0); }
+    }
 }

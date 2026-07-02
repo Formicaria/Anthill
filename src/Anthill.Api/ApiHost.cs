@@ -232,6 +232,21 @@ public static class ApiHost
             var job = Jobs.GetJob(id);
             return job is null ? ApiJson.Error($"No job found with id: {id}", "not_found") : ApiJson.Ok(job.ToDict());
         });
+        app.MapPost("/jobs/{id}/cancel", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var ok = Jobs.Cancel(id);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id, ["cancelled"] = ok },
+                ok ? "Job cancelled (queued work dropped; a running mission finishes)." : "Job not found or already finished.");
+        });
+        app.MapPost("/jobs/cancel-all", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var n = Jobs.CancelAll();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "jobs_cancel_all", $"Cancelled {n} non-terminal job(s).", antName: "operator");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["cancelled"] = n },
+                $"Cancelled {n} job(s). Queued work dropped; any running mission finishes (bounded by its timeout).");
+        });
 
         app.MapPost("/missions", async (HttpContext ctx) =>
         {
@@ -440,6 +455,71 @@ public static class ApiHost
             {
                 ["applied"] = applied, ["settings"] = AnthillRuntime.SettingsSnapshot(),
             }, $"Updated {applied.Count} setting(s).");
+        });
+
+        // ---- Maintenance / data hygiene (admin-only, audited) ----
+        app.MapGet("/maintenance/stats", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var (bkCount, bkBytes) = FileSecurity.BackupStats(AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
+            long diskFree = 0, diskTotal = 0;
+            try { var d = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(AnthillRuntime.PathFromScript(AnthillRuntime.DbPath)))!); diskFree = d.AvailableFreeSpace; diskTotal = d.TotalSize; }
+            catch { /* best effort */ }
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["db_bytes"] = Queen.Memory.DatabaseFileBytes(),
+                ["backup_count"] = bkCount, ["backup_bytes"] = bkBytes,
+                ["max_db_backups"] = AnthillRuntime.MaxDbBackups, ["event_retention_days"] = AnthillRuntime.EventRetentionDays,
+                ["disk_free_bytes"] = diskFree, ["disk_total_bytes"] = diskTotal,
+                ["table_counts"] = Queen.Memory.TableCounts(),
+            });
+        });
+
+        app.MapPost("/maintenance/flush", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var (deletedBackups, backupFreed) = FileSecurity.PruneBackups(AnthillRuntime.BackupDir, AnthillRuntime.MaxDbBackups, AnthillRuntime.PathFromScript);
+            var (dbBefore, dbAfter, eventsDeleted) = Queen.Memory.FlushCache(AnthillRuntime.EventRetentionDays);
+            var totalFreed = backupFreed + Math.Max(0, dbBefore - dbAfter);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_flush",
+                $"Flush cache: freed {totalFreed} bytes ({deletedBackups} backups, {eventsDeleted} old events).", antName: "operator",
+                metadata: new() { ["backups_deleted"] = deletedBackups, ["backup_bytes_freed"] = backupFreed, ["db_reclaimed"] = Math.Max(0, dbBefore - dbAfter), ["events_deleted"] = eventsDeleted });
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["bytes_freed"] = totalFreed, ["backups_deleted"] = deletedBackups, ["backup_bytes_freed"] = backupFreed,
+                ["db_reclaimed_bytes"] = Math.Max(0, dbBefore - dbAfter), ["events_deleted"] = eventsDeleted,
+            }, $"Freed {HumanBytes(totalFreed)}.");
+        });
+
+        app.MapPost("/maintenance/clear-missions", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var (freed, missions) = Queen.Memory.ClearMissionHistory();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_clear_missions",
+                $"Cleared mission history: {missions} mission(s), freed {freed} bytes.", antName: "operator");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["missions_deleted"] = missions, ["bytes_freed"] = freed },
+                $"Cleared {missions} mission(s); freed {HumanBytes(freed)}.");
+        });
+
+        app.MapPost("/maintenance/reset-config", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var preserved = AnthillRuntime.ResetConfig();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_reset_config",
+                "Config reset to safe defaults (connection settings preserved).", antName: "operator");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["preserved"] = preserved, ["settings"] = AnthillRuntime.SettingsSnapshot() },
+                "Config reset to defaults. Connection settings preserved.");
+        });
+
+        // Dump directives: clear the whole objective backlog + its run history.
+        app.MapPost("/objectives/clear", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
+            var (freed, deleted) = Queen.Memory.ClearObjectives();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "objectives_cleared",
+                $"Dumped {deleted} objective(s) from the backlog.", antName: "operator");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["objectives_deleted"] = deleted, ["bytes_freed"] = freed },
+                $"Dumped {deleted} objective(s).");
         });
 
         // Console display state: custom ant names, accent colours, node positions, layout prefs.
@@ -976,6 +1056,15 @@ public static class ApiHost
     }
 
     private static bool ApiPermissionAllowed(string permission) => AnthillRuntime.ApiPermissions.GetValueOrDefault(permission, false);
+
+    /// <summary>Human-readable byte size (e.g. "34.0 GB") for maintenance messages.</summary>
+    private static string HumanBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double v = bytes; var i = 0;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return $"{v:0.#} {units[i]}";
+    }
 
     /// <summary>
     /// Resolves the caller's identity from their bearer token: first as a login session, then —

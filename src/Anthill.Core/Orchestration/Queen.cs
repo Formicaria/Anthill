@@ -90,9 +90,13 @@ public sealed partial class Queen : IDisposable
         onMissionCreated?.Invoke(mission.Id);
 
         var backupPath = FileSecurity.BackupDb(AnthillRuntime.DbPath, AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
+        // Retention: a full DB copy is written before every mission, so prune to the newest N right
+        // after — otherwise the backup dir grows without bound (the top cause of disk bloat).
+        var (prunedBackups, freedBytes) = FileSecurity.PruneBackups(AnthillRuntime.BackupDir, AnthillRuntime.MaxDbBackups, AnthillRuntime.PathFromScript);
         Memory.LogEvent(mission.Id, backupPath is not null ? "db_backup_created" : "db_backup_skipped",
             backupPath is not null ? "Pre-mission DB backup created." : "Pre-mission DB backup skipped because no database file exists yet.",
-            metadata: new() { ["backup_file"] = backupPath is not null ? Path.GetFileName(backupPath) : null });
+            metadata: new() { ["backup_file"] = backupPath is not null ? Path.GetFileName(backupPath) : null,
+                ["backups_pruned"] = prunedBackups, ["bytes_freed"] = freedBytes, ["keep"] = AnthillRuntime.MaxDbBackups });
         Memory.LogEvent(mission.Id, "mission_created", "Mission created.", metadata: new() { ["goal"] = goal });
 
         // Classify the request. Oversized specification/architecture documents are ingested

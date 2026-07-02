@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.15.3</title>
+<title>ANTHILL v1.8.15.4</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -530,7 +530,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.15.3</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.15.4</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -573,7 +573,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.15.3</span>
+      <span class="nav-logo-ver">v1.8.15.4</span>
     </div>
 
     <div class="nav-scroll">
@@ -867,6 +867,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page page-scroll" id="page-missions">
         <div class="page-hdr">
           <div><h1>Missions</h1><div class="sub">Dispatch goals and review results</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg" id="ms-maint-msg" style="font-size:11px;"></span>
+            <button class="btn btn-ghost" id="ms-cancel-all" style="font-size:11px;">Cancel All</button>
+            <button class="btn btn-ghost" id="ms-clear" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Clear Missions</button>
+          </div>
         </div>
 
         <!-- Mission dispatch -->
@@ -993,6 +998,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="auto-msg"></span>
             <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
+            <button class="btn btn-ghost" id="auto-dump" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Dump Directives</button>
           </div>
         </div>
 
@@ -1196,6 +1202,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Patch Application</span><span class="info-val" id="si-patch">—</span></div>
             <div class="section-head">Diagnostics</div>
             <pre id="si-diag" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-all;line-height:1.6;max-height:400px;overflow-y:auto;"></pre>
+          </div>
+
+          <!-- Maintenance / disk hygiene -->
+          <div class="card" style="padding:16px 18px;max-width:700px;margin-top:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div class="section-head" style="padding:0;">Maintenance</div>
+              <span class="save-msg" id="maint-msg" style="font-size:11px;"></span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin:6px 0 10px;">A full DB backup is written before every mission; only the newest <b id="maint-keep">—</b> are kept. Flush Cache prunes old backups (and old events, if a retention window is set) and compacts the database.</div>
+            <div class="info-row"><span class="info-key">Disk free</span><span class="info-val" id="maint-disk">—</span></div>
+            <div class="info-row"><span class="info-key">Database</span><span class="info-val" id="maint-db">—</span></div>
+            <div class="info-row" style="margin-bottom:12px;"><span class="info-key">Backups</span><span class="info-val" id="maint-backups">—</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="maint-flush">Flush Cache</button>
+              <button class="btn btn-ghost" id="maint-refresh" style="font-size:11px;">↺ Refresh</button>
+              <button class="btn btn-ghost" id="maint-reset" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);margin-left:auto;">Reset Config</button>
+            </div>
           </div>
         </div>
 
@@ -2618,6 +2641,60 @@ document.querySelectorAll('.settings-tab').forEach(tab=>{
 document.getElementById('models-refresh').addEventListener('click',loadModelsTab);
 document.getElementById('diag-refresh').addEventListener('click',loadInfoTab);
 
+// ── Maintenance / data hygiene ────────────────────────────────────────────────
+function humanBytes(b){ if(b==null) return '—'; const u=['B','KB','MB','GB','TB']; let v=b,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(v<10&&i>0?1:0)+' '+u[i]; }
+function maintMsg(el,t,ok){ const m=document.getElementById(el); if(!m)return; m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },5000); }
+
+async function loadMaintStats(){
+  try{
+    const r=await api('/maintenance/stats'); if(!r.success) return; const d=r.data||{};
+    setEl('maint-keep', d.max_db_backups);
+    setEl('maint-disk', d.disk_total_bytes?`${humanBytes(d.disk_free_bytes)} free of ${humanBytes(d.disk_total_bytes)}`:'—');
+    setEl('maint-db', humanBytes(d.db_bytes));
+    setEl('maint-backups', `${d.backup_count||0} files · ${humanBytes(d.backup_bytes)}`);
+  }catch{}
+}
+document.getElementById('maint-refresh').addEventListener('click',loadMaintStats);
+document.getElementById('maint-flush').addEventListener('click',async()=>{
+  if(!confirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
+  maintMsg('maint-msg','Flushing…',true);
+  try{ const r=await api('/maintenance/flush','POST',{});
+    maintMsg('maint-msg', r.success?`Freed ${humanBytes(r.data?.bytes_freed)} (${r.data?.backups_deleted} backups).`:(r.message||'Failed'), r.success);
+    loadMaintStats();
+  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
+});
+document.getElementById('maint-reset').addEventListener('click',async()=>{
+  if(!confirm('Reset all settings to safe defaults? Connection settings (Ollama host/model/routes, API bind) are preserved.')) return;
+  try{ const r=await api('/maintenance/reset-config','POST',{});
+    maintMsg('maint-msg', r.success?'Config reset (connection preserved).':(r.message||'Failed'), r.success);
+  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
+});
+
+// Missions page: Cancel All + Clear Missions
+document.getElementById('ms-cancel-all').addEventListener('click',async()=>{
+  if(!confirm('Cancel all jobs? Queued work is dropped; a running mission finishes on its own.')) return;
+  try{ const r=await api('/jobs/cancel-all','POST',{});
+    maintMsg('ms-maint-msg', r.success?`Cancelled ${r.data?.cancelled} job(s).`:(r.message||'Failed'), r.success);
+    pollJobs();
+  }catch(e){ maintMsg('ms-maint-msg','Failed: '+e.message,false); }
+});
+document.getElementById('ms-clear').addEventListener('click',async()=>{
+  if(!confirm('Clear ALL mission history (missions, tasks, events, patches, approvals)? Objectives, pheromones, users, and config are kept. This cannot be undone.')) return;
+  try{ const r=await api('/maintenance/clear-missions','POST',{});
+    maintMsg('ms-maint-msg', r.success?`Cleared ${r.data?.missions_deleted} mission(s); freed ${humanBytes(r.data?.bytes_freed)}.`:(r.message||'Failed'), r.success);
+    pollJobs(); pollStatus();
+  }catch(e){ maintMsg('ms-maint-msg','Failed: '+e.message,false); }
+});
+
+// Autonomy page: Dump Directives
+document.getElementById('auto-dump').addEventListener('click',async()=>{
+  if(!confirm('Dump the entire objective backlog and its run history? Missions and everything else are kept. This cannot be undone.')) return;
+  try{ const r=await api('/objectives/clear','POST',{});
+    autoMsg(r.success?`Dumped ${r.data?.objectives_deleted} objective(s).`:(r.message||'Failed'), r.success);
+    if(typeof reloadAutonomy==='function') reloadAutonomy();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
 // ── Settings info ─────────────────────────────────────────────────────────────
 async function loadSettingsInfo(){
   try{
@@ -2796,6 +2873,7 @@ async function loadOllamaModels(){
 }
 
 async function loadInfoTab(){
+  loadMaintStats();
   try{
     const [sr,cfgText,diagText]=await Promise.all([api('/status'),apiText('/config'),apiText('/diagnostics')]);
     const d=sr.data||{};

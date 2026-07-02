@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.15.3";
+    public const string Version = "1.8.15.4";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -104,6 +104,12 @@ public static class AnthillRuntime
     public static int LongInputThreshold = 6000;
     public static int MaxSectionChars = 3500;
     public static int MaxSectionTasks = 6;
+
+    // ---- Maintenance / disk hygiene ---------------------------------------
+    /// <summary>Keep only the newest N pre-mission DB backups; older ones are pruned each mission. 0 = keep all (unbounded).</summary>
+    public static int MaxDbBackups = 10;
+    /// <summary>Flush Cache deletes events older than this many days. 0 = keep all.</summary>
+    public static int EventRetentionDays = 0;
 
     // ---- 24/7 autonomy (Phase 0 rails) -----------------------------------
     public static bool EnableAutonomy = false;
@@ -396,6 +402,8 @@ public static class AnthillRuntime
         LongInputThreshold = Math.Max(1000, config.LongInputThreshold);
         MaxSectionChars = Math.Max(500, config.MaxSectionChars);
         MaxSectionTasks = Math.Clamp(config.MaxSectionTasks, 2, 12);
+        MaxDbBackups = Math.Clamp(config.MaxDbBackups, 0, 1000);
+        EventRetentionDays = Math.Clamp(config.EventRetentionDays, 0, 3650);
         EnableAutonomy = config.AutonomyEnabled;
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
@@ -447,6 +455,7 @@ public static class AnthillRuntime
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
         "max_context_packet_chars", "max_agent_message_content_chars",
         "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
+        "max_db_backups", "event_retention_days",
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
         "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
@@ -488,6 +497,34 @@ public static class AnthillRuntime
         }
     }
 
+    /// <summary>
+    /// Resets all tunable settings (feature gates, limits, autonomy, maintenance) to their safe
+    /// defaults for the current safety profile — but PRESERVES connection settings (Ollama host/
+    /// model/routes, API bind, agent workspace) so the reset never disconnects or hides the colony.
+    /// Persists and re-projects. Returns the fields that were preserved.
+    /// </summary>
+    public static List<string> ResetConfig()
+    {
+        lock (InitLock)
+        {
+            var old = Config;
+            var fresh = new AnthillConfig
+            {
+                SafetyProfile = old.SafetyProfile,
+                // Preserve reachability/connection so a reset doesn't strand the operator.
+                UseOllama = old.UseOllama, OllamaHost = old.OllamaHost, OllamaModel = old.OllamaModel,
+                ModelRoutes = old.ModelRoutes, ApiHost = old.ApiHost, ApiPort = old.ApiPort,
+                AgentWorkspaceDir = old.AgentWorkspaceDir,
+            };
+            AnthillConfig.ApplySafetyProfile(fresh, fresh.SafetyProfile ?? "SAFE_LOCAL");
+            Config = fresh;
+            ProjectConfig(Config);
+            SaveConfig();
+            return new List<string> { "safety_profile", "use_ollama", "ollama_host", "ollama_model",
+                "model_routes", "api_host", "api_port", "agent_workspace_dir" };
+        }
+    }
+
     /// <summary>Persists the current in-memory config back to config.json (pretty-printed).</summary>
     public static void SaveConfig()
     {
@@ -521,6 +558,8 @@ public static class AnthillRuntime
         ["long_input_threshold"] = LongInputThreshold,
         ["max_section_chars"] = MaxSectionChars,
         ["max_section_tasks"] = MaxSectionTasks,
+        ["max_db_backups"] = MaxDbBackups,
+        ["event_retention_days"] = EventRetentionDays,
         ["autonomy_enabled"] = EnableAutonomy,
         ["autonomy_poll_seconds"] = AutonomyPollSeconds,
         ["autonomy_max_missions_per_hour"] = AutonomyMaxMissionsPerHour,

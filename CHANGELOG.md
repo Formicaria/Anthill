@@ -11,7 +11,38 @@
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
-> intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, and so on.
+> intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
+> hygiene + maintenance controls = **v1.8.15.4**, and so on.
+
+## v1.8.15.4 — Disk hygiene: backup retention + maintenance controls
+
+Live diagnosis of a filling 51 GB disk found the cause: **1,032 pre-mission DB backups = 34 GB**.
+ANTHILL copies the whole 68 MB database before every mission and never pruned the copies. Fixed at
+the root, plus operator controls for cleanup.
+
+- **Backup retention (the fix).** After each pre-mission backup the Queen now prunes the backup
+  directory to the newest `max_db_backups` (default 10) via `FileSecurity.PruneBackups`. The backup
+  dir is now bounded (~10 × DB size) instead of growing one full copy per mission forever. Existing
+  bloat is reclaimed by the first Flush (or the next mission's auto-prune).
+- **Flush Cache** (Settings → System Info → Maintenance): prunes old backups, deletes events older
+  than `event_retention_days` (0 = keep all), and `VACUUM`s the database — reports the bytes freed.
+  The panel shows disk free, DB size, and backup count/size.
+- **Clear Missions** (Missions page): deletes all mission-execution history (missions, tasks,
+  events, patches, approvals, sources, agent messages) and compacts — keeps objectives, pheromones,
+  users, providers, config.
+- **Cancel All** (Missions page): drops all queued jobs (a running mission finishes on its own,
+  bounded by its timeout). Also adds `POST /jobs/{id}/cancel` and `POST /jobs/cancel-all`, with a
+  `cancelled` job status the worker honors.
+- **Dump Directives** (Autonomy page): clears the entire objective backlog + its run history.
+- **Reset Config** (Maintenance): resets all tunable settings to safe defaults while **preserving
+  connection settings** (Ollama host/model/routes, API bind, workspace) so a reset never strands the
+  colony.
+- New: `SqliteMemory.Maintenance` (FlushCache / ClearMissionHistory / ClearObjectives / TableCounts
+  / DatabaseFileBytes), `FileSecurity.PruneBackups`/`BackupStats`, `AnthillRuntime.ResetConfig`,
+  `ApiJobRegistry.Cancel`/`CancelAll`; endpoints `GET /maintenance/stats`, `POST /maintenance/{flush,
+  clear-missions,reset-config}`, `POST /objectives/clear`. Config: `max_db_backups`,
+  `event_retention_days`.
+- Tests: `MaintenanceTests` (retention keeps newest N, reports freed, edge cases).
 
 ## v1.8.15.3 — Install polkit natively in the LXC setup
 
