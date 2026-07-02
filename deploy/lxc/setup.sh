@@ -88,12 +88,35 @@ log "Publishing self-contained linux-x64 binary"
 # executing. No-op (and harmless) on a first-ever install, since the unit doesn't exist yet.
 systemctl stop anthill 2>/dev/null || true
 
+# Wipe obj/bin for the three published projects before every publish. A `dotnet publish` that
+# reuses obj/ incremental state left over from a previous run — especially one that was
+# interrupted partway (e.g. the ETXTBSY case above, which used to kill the process mid-bundle) —
+# can decide native runtime assets (like SQLitePCLRaw's e_sqlite3.so) are already "up to date"
+# and skip copying them into the output directory, even though they're not actually there. That
+# produces a binary that builds and runs the systemd unit fine but immediately SIGABRTs the
+# instant it touches SQLite: `DllNotFoundException: Unable to load shared library 'e_sqlite3'`.
+# A full clean makes every install/upgrade a from-scratch publish — a few extra seconds, but a
+# script meant to be re-run unattended for upgrades needs to be correct more than it needs to be
+# fast.
+log "Cleaning previous build output (avoids stale incremental state from a prior interrupted publish)"
+rm -rf \
+    "$SRC_DIR/src/Anthill.Cli/obj" "$SRC_DIR/src/Anthill.Cli/bin" \
+    "$SRC_DIR/src/Anthill.Core/obj" "$SRC_DIR/src/Anthill.Core/bin" \
+    "$SRC_DIR/src/Anthill.Api/obj" "$SRC_DIR/src/Anthill.Api/bin"
+
 BIN_DIR="$INSTALL_DIR/bin"
 dotnet publish "$SRC_DIR/src/Anthill.Cli/Anthill.Cli.csproj" \
     -c Release -r linux-x64 --self-contained true \
     -p:PublishSingleFile=true -p:DebugType=none \
     -o "$BIN_DIR"
 chmod +x "$BIN_DIR/anthill"
+
+# Verify the SQLite native library actually landed — this is the exact failure mode being
+# guarded against above, so fail loudly here instead of leaving it to a silent SIGABRT loop
+# under systemd.
+if ! ls "$BIN_DIR"/*e_sqlite3* >/dev/null 2>&1; then
+    die "Publish completed but no e_sqlite3 native library was found in $BIN_DIR — SQLite will fail to load at runtime. Try re-running this script; if it persists, run 'dotnet nuget locals all --clear' and retry."
+fi
 
 # ---------------------------------------------------------------------------
 log "Creating dedicated service user + data directory"

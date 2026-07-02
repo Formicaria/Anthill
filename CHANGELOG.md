@@ -4,7 +4,49 @@
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
-> LXC upgrade-in-place fix = **v1.8.9**, and so on.
+> LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
+> cache) = **v1.8.10**, and so on.
+
+## v1.8.10 — Fix: LXC upgrade republish silently dropped the SQLite native library
+
+No schema change. Bug found live re-running `deploy/lxc/setup.sh` on the user's LXC instance
+immediately after the v1.8.9 ETXTBSY fix — the very first time a republish onto that install
+directory ever ran to full completion. The service came up, then immediately crashed in a
+restart loop:
+
+```
+Unhandled exception. System.TypeInitializationException: The type initializer for
+'Microsoft.Data.Sqlite.SqliteConnection' threw an exception.
+ ---> System.DllNotFoundException: Unable to load shared library 'e_sqlite3' or one of its
+dependencies.
+/opt/anthill/bin/e_sqlite3.so: cannot open shared object file: No such file or directory
+```
+
+Root cause: that same install directory had been publish-targeted several times across this
+session's earlier v1.8.7/v1.8.8/v1.8.9 attempts, including at least one run that was killed
+mid-bundle by the ETXTBSY bug itself. `dotnet publish` reused the leftover `obj/`/`bin`
+incremental state from those prior (partially-failed) runs and decided the RID-specific SQLite
+native asset (`e_sqlite3.so`) was already up to date — so it skipped copying it into the output
+directory, even though it wasn't actually there. The resulting single-file binary builds, starts,
+and immediately SIGABRTs the moment it touches the database.
+
+Fixed:
+
+- **`deploy/lxc/setup.sh`**: wipes `obj/`/`bin` for `Anthill.Cli`, `Anthill.Core`, and
+  `Anthill.Api` immediately before every publish, so install/upgrade is always a from-scratch
+  build rather than trusting incremental state that a prior interrupted run may have left
+  inconsistent. Adds a post-publish check that fails loudly (with a clear error) if no
+  `e_sqlite3` native library made it into the output directory, instead of letting it surface
+  later as a silent SIGABRT crash loop under systemd.
+
+Validation:
+
+- Found via the user's real upgrade attempt on their LXC instance — full stack trace confirmed
+  root cause precisely (`SqliteConnection..cctor` → `SQLitePCL.Batteries_V2.Init` →
+  `DllNotFoundException`). Fix itself has **not been re-verified live** — no LXC/Proxmox host or
+  dotnet SDK available in the environment this was authored in. `bash -n` syntax check passes.
+  Confirm by re-running `bash deploy/lxc/setup.sh` and checking `ls /opt/anthill/bin/*e_sqlite3*`
+  finds the native library, then that the service stays up (`systemctl status anthill`).
 
 ## v1.8.9 — Fix: LXC upgrade-in-place failed with "Text file busy"
 
