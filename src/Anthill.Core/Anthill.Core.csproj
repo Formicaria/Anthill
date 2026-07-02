@@ -6,6 +6,11 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- Let the test suite exercise internal helpers (e.g. AutoApplyPolicy.GlobMatches). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- ADO.NET SQLite provider — the managed replacement for Python's sqlite3 module. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />

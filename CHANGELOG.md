@@ -43,7 +43,9 @@ model is *apply → verify → keep-or-rollback*.
 - New `Queen.ApplyPatchForAutomation` / `RollbackAutoApplied` (structured apply with backup path
   for rollback). `/autonomy/status` gains `autoapply_enabled` / `autoapply_paths`.
 - Tests: `AutoApplyPolicyTests` — eligibility matrix, glob semantics, size cap, change-type,
-  disabled and empty-allowlist denial.
+  disabled and empty-allowlist denial. (`InternalsVisibleTo("Anthill.Tests")` added to
+  Anthill.Core so the suite can exercise the internal `GlobMatches` helper — same pattern as
+  Anthill.Api.)
 
 Also fixed: **`UpdateChecker.Compare` didn't tolerate a leading `v`** — `Compare("v1.8.15", …)`
 parsed the `v1` segment as `0`, so the version read as older (a CI test caught it; production was
