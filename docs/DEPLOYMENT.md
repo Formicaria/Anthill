@@ -1,8 +1,10 @@
 # ANTHILL — Container & Appliance Deployment
 
-> Status: **Docker + LXC — IMPLEMENTED.** Windows Service packaging is next (see the roadmap at
-> the bottom). This doc is the living reference for all three; it grows as each lands instead of
-> being rewritten from scratch each time.
+> Status: **Docker, LXC, and Windows deployments are all ready to use today.** Like the rest of
+> ANTHILL they remain under continuous development and improvement — the current refinement
+> target is deeper Windows SCM integration (see the roadmap at the bottom). This doc is the
+> living reference for all three; it grows as each improvement lands instead of being rewritten
+> from scratch each time.
 
 Goal: run ANTHILL the way most home-lab/production setups actually deploy things — a standalone
 LXC container, a Docker container, or a Windows service — reachable at the IP of the machine it's
@@ -273,11 +275,12 @@ bump actually landed. If it fails: bump the version, commit, delete the bad tag
 for real — review the draft on GitHub (notes, attached binaries, Docker tag) and hit "Publish
 release" yourself once it looks right.
 
-## 5. Windows Service (planned — next up)
+## 5. Windows Service (ready — refinements ongoing)
 
-`README.md` already documents registering the published `anthill.exe` directly via
-`New-Service`/`sc.exe` (Deploy on Windows → Option C), which works for basic start/stop today.
-What's still needed for a *proper* Windows Service — graceful shutdown on service stop, correct
+Windows deployment is ready to use today: `README.md` documents registering the published
+`anthill.exe` directly via `New-Service`/`sc.exe` (Deploy on Windows → Option C) — start, stop,
+and automatic startup all work. Like the other deployment paths, it's under continuous
+improvement. The current refinement target — graceful shutdown on service stop, correct
 integration with the Service Control Manager's startup/shutdown timeouts, Windows Event Log
 output instead of a console — is wiring up
 [`Microsoft.Extensions.Hosting.WindowsServices`](https://learn.microsoft.com/dotnet/core/extensions/windows-service)
@@ -294,7 +297,7 @@ it's built and verified.
 | **Docker** ✅ | **DONE.** `Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root. | see §2 above |
 | **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
 | **Tagged releases** ✅ | **DONE.** Binaries + Docker image + draft GitHub Release on tag push. | `.github/workflows/release.yml`, see §4 above |
-| **Windows Service** | Planned next. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
+| **Windows Service** ✅ | **READY** via `New-Service`/`sc.exe` registration (see §5). Refinement in progress: `UseWindowsService()` SCM integration + install script. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
 
 Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows
-Service, per the agreed build order.
+Service (ready; SCM refinements ongoing), per the agreed build order.

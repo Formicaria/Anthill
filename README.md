@@ -56,8 +56,9 @@ ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrate
 - [Troubleshooting](#troubleshooting)
 - [Changelog](#changelog) · [License](#license)
 
-> **Deploying to a home-lab/production box?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
-> for Docker (ready today), plus LXC and Windows-Service packaging (in progress).
+> **Deploying to a home-lab/production box?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+> Docker, LXC, and Windows deployments are all ready to use today — and, like the rest of
+> ANTHILL, under continuous development and improvement.
 
 ---
 
@@ -719,12 +720,12 @@ Start-Service -Name "ANTHILL"
 Get-Service -Name "ANTHILL"
 ```
 
-> **Note:** this registers the published exe directly with the Service Control Manager. It
-> works for start/stop, but the exe doesn't yet integrate with SCM lifecycle events (graceful
-> stop, service-specific logging) via `Microsoft.Extensions.Hosting.WindowsServices`. A proper
-> `UseWindowsService()`-based service host is planned next (see
-> [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for status) — this section will be updated when
-> that lands. Docker is the most battle-tested unattended-deployment path today.
+> **Note:** this registers the published exe directly with the Service Control Manager and is
+> ready to use today — start, stop, and automatic startup all work. Like every deployment path,
+> it's under continuous improvement: deeper SCM integration (graceful-stop lifecycle events,
+> service-specific logging via `Microsoft.Extensions.Hosting.WindowsServices` /
+> `UseWindowsService()`) is on the roadmap — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for
+> status.
 
 ### Exposing Ollama on the network (Windows)
 
