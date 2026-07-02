@@ -71,6 +71,7 @@
   "autonomy_dedupe_similarity":          0.8,
   "autonomy_max_followups_per_run":        1,
   "autonomy_max_objective_depth":          3,
+  "autonomy_max_backlog":                 40,
 
   "_comment_concurrency": "Phase 3: how many autonomous missions may run at once (1-8). The ResourceGovernor can only lower the effective value below this cap — high CPU load, low free memory, or a slow/unreachable Ollama backend halve it or clamp it to 1. Scheduling stays strict-priority, but a ready objective gains +1 effective priority per autonomy_aging_minutes waited so low-priority work can't starve (0 disables aging).",
   "autonomy_concurrency":                  1,

@@ -59,6 +59,22 @@ public class StrategistTests : IDisposable
     }
 
     [Fact]
+    public void OneShotObjective_UsesCharterVerbatim_EvenWithNoRouter()
+    {
+        // max_runs==1 is an explicit do-this-once task; the Strategist must not "diversify" it
+        // (that drift once turned "create docs/x.md" into "train a model"). Charter is used as-is.
+        var strategist = new Strategist(router: null, _memory);
+        var oneShot = new Objective { Title = "make-file", Charter = "Create a new file docs/x.md.", MaxRuns = 1 };
+
+        var result = strategist.GenerateGoal(oneShot);
+
+        Assert.Equal("charter_verbatim", result.Source);
+        Assert.Equal(oneShot.Charter, result.Goal);
+        Assert.Empty(result.FollowUps);
+        Assert.Contains("one-shot", (result.Notes ?? "").ToLowerInvariant());
+    }
+
+    [Fact]
     public void NoRouter_NeverThrowsAndNeverBlocks()
     {
         var strategist = new Strategist(router: null, _memory);

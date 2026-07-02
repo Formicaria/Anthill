@@ -146,6 +146,20 @@ sed \
     -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
     "$SRC_DIR/deploy/lxc/anthill.service.template" > /etc/systemd/system/anthill.service
 
+# ---------------------------------------------------------------------------
+# Scoped polkit rule: let the admin-only operator Shell console manage ONLY the anthill unit
+# (restart/stop/start/status) without a password. NoNewPrivileges=true blocks sudo, so this is
+# how service control works from the console. Best-effort — skipped if polkit isn't installed.
+# ---------------------------------------------------------------------------
+if [ -d /etc/polkit-1/rules.d ]; then
+    log "Installing scoped polkit rule for operator-shell service control"
+    sed -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
+        "$SRC_DIR/deploy/lxc/anthill-polkit.rules.template" > /etc/polkit-1/rules.d/49-anthill.rules
+    systemctl try-restart polkit 2>/dev/null || systemctl try-restart polkitd 2>/dev/null || true
+else
+    echo "    polkit not present — skipping. Operator-shell service control (systemctl restart anthill) will not be available until polkit is installed."
+fi
+
 systemctl daemon-reload
 systemctl enable anthill >/dev/null
 systemctl restart anthill

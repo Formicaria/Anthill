@@ -46,6 +46,16 @@ public sealed class Strategist
     public StrategistResult GenerateGoal(Objective objective)
     {
         var fallback = new StrategistResult { Goal = FallbackGoal(objective), Source = "fallback" };
+
+        // One-shot objectives (max_runs == 1) are explicit, do-this-exact-thing tasks — e.g.
+        // "create docs/x.md". Letting the LLM Strategist "diversify" them is pure drift (it once
+        // rewrote a file-creation charter into "train a model"). Use the charter verbatim so the
+        // operator's intent reaches the planner unchanged. Broad standing objectives (max_runs 0
+        // or >1) still go through the Strategist to make forward progress across runs.
+        if (objective.MaxRuns == 1)
+            return new StrategistResult { Goal = FallbackGoal(objective), Source = "charter_verbatim",
+                Notes = "One-shot objective (max_runs=1): charter used verbatim to preserve intent." };
+
         if (_router is null) return fallback;
 
         string response;
@@ -148,6 +158,16 @@ public sealed class Strategist
         var parentDepth = _memory.ObjectiveDepth(objective.Id);
         if (parentDepth + 1 > AnthillRuntime.AutonomyMaxObjectiveDepth) return result;
 
+        // Structural sprawl guard: stop enqueuing self-generated objectives once the open backlog
+        // (pending + active) is already at the cap. Without this, 1 follow-up/run across a busy
+        // Director compounds into hundreds of objectives regardless of the per-run rate limit.
+        if (AnthillRuntime.AutonomyMaxBacklog > 0)
+        {
+            var openBacklog = _memory.ListObjectives(ObjectiveStatus.Pending).Count
+                            + _memory.ListObjectives(ObjectiveStatus.Active).Count;
+            if (openBacklog >= AnthillRuntime.AutonomyMaxBacklog) return result;
+        }
+
         foreach (var item in raw.Take(AnthillRuntime.AutonomyMaxFollowupsPerRun))
         {
             if (item is not JsonObject obj) continue;
@@ -200,11 +220,17 @@ Colony pheromone memory (routes/strategies that have worked well elsewhere):
 
 Rules:
 - Return ONLY valid JSON. Do not wrap it in markdown code fences.
-- ""goal"" must be a single concrete, actionable mission goal — specific enough that the Queen
-  can decompose it into tasks, and meaningfully different from the recent runs listed above.
-- Do not restate a goal that is essentially the same as a recent run; make forward progress.
-- ""follow_ups"" is optional: at most {AnthillRuntime.AutonomyMaxFollowupsPerRun} genuinely new
-  standing objective(s) this work surfaced. Omit or leave empty when nothing new was discovered.
+- ""goal"" MUST directly accomplish the standing objective's charter above. Do NOT substitute a
+  different, broader, or tangential task. If the charter names a concrete deliverable (create/add/
+  write/edit a specific file, fix a specific thing, produce a specific artifact), the goal must
+  produce exactly that deliverable — restate it concretely, do not reinterpret it.
+- If there are NO prior runs, execute the charter as written (concretized just enough for the
+  Queen to plan). Only when a recent run already accomplished the charter should the goal be the
+  next incremental step toward the same charter — never a new topic.
+- Keep the goal specific enough that the Queen can decompose it into tasks.
+- ""follow_ups"" should almost always be empty. Add one ONLY if this mission genuinely uncovered a
+  distinct, necessary new standing objective that the charter does not already cover — this is
+  rare. Never invent follow-ups to seem productive. Max {AnthillRuntime.AutonomyMaxFollowupsPerRun}.
 
 Required JSON:
 {{

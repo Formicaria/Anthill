@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.15.1</title>
+<title>ANTHILL v1.8.15.2</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -530,7 +530,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.15.1</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.15.2</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -573,7 +573,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.15.1</span>
+      <span class="nav-logo-ver">v1.8.15.2</span>
     </div>
 
     <div class="nav-scroll">
@@ -1286,7 +1286,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-primary" id="sh-run" disabled>Run</button>
           </div>
         </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history.</div>
+        <div id="sh-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+          <span style="font-size:10px;color:var(--dim);align-self:center;">Quick:</span>
+          <button class="btn btn-ghost sh-qbtn" data-cmd="systemctl status anthill --no-pager" style="font-size:10px;padding:3px 8px;">Service status</button>
+          <button class="btn btn-ghost sh-qbtn" data-cmd="journalctl -u anthill -n 40 --no-pager" style="font-size:10px;padding:3px 8px;">Recent logs</button>
+          <button class="btn btn-ghost sh-qbtn" data-cmd="systemctl restart anthill" style="font-size:10px;padding:3px 8px;color:var(--queen);">Restart service</button>
+          <button class="btn btn-ghost sh-qbtn" data-cmd="df -h; echo; free -h; echo; uptime" style="font-size:10px;padding:3px 8px;">Host health</button>
+        </div>
+        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history. Service control (restart/status/logs) works via a scoped polkit rule installed by the LXC setup script.</div>
       </div><!-- /page-shell -->
 
       <!-- ════════════════════════════════════════════════════════════════════
@@ -3327,6 +3334,13 @@ let shHistory=[], shHistIdx=-1, shBusy=false;
 PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
 document.getElementById('sh-clear').addEventListener('click',()=>{ document.getElementById('sh-output').innerHTML=''; });
 document.getElementById('sh-run').addEventListener('click',runShell);
+// Quick-command buttons: put the command in the input and run it (restart asks first).
+document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',()=>{
+  const cmd=b.dataset.cmd;
+  if(cmd==='systemctl restart anthill' && !confirm('Restart the ANTHILL service now? The console will briefly disconnect.')) return;
+  const inp=document.getElementById('sh-input'); if(inp.disabled) return;
+  inp.value=cmd; runShell();
+}));
 document.getElementById('sh-input').addEventListener('keydown',e=>{
   if(e.key==='Enter'){ e.preventDefault(); runShell(); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.max(0,shHistIdx-1); e.target.value=shHistory[shHistIdx]||''; } }

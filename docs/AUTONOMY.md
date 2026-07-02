@@ -173,6 +173,16 @@ local commits. If the workspace root isn't writable when auto-apply runs, the Di
 
 LLM-driven goal synthesis and mission de-dup landed in Phase 2 (see above).
 
+**Intent fidelity (v1.8.15.2).** Live testing showed the Strategist could drift — rewriting a
+one-shot charter like "create docs/x.md" into an unrelated goal ("train a model on docs"). Two
+guards now keep the operator's intent intact: an objective with `max_runs == 1` bypasses the LLM
+and uses its charter verbatim (explicit one-shot tasks are never reinterpreted, `Source =
+"charter_verbatim"`), and the Strategist prompt for standing objectives now requires the goal to
+directly accomplish the charter (execute it as written on the first run; only take the next
+incremental step once a prior run already accomplished it) and to almost never invent follow-ups.
+A structural `autonomy_max_backlog` cap stops the Strategist enqueuing new follow-ups once the open
+backlog (pending + active) is full, bounding sprawl regardless of model behavior.
+
 ## Phase 0 — what landed
 
 - **Schema v8** (`objectives`, `autonomy_runs` tables + indexes, migration ledger entry 8).
@@ -303,6 +313,7 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 "autonomy_dedupe_similarity": 0.8,    // reject near-duplicate generated goals
 "autonomy_max_followups_per_run": 1,  // cap self-enqueued follow-up objectives per mission
 "autonomy_max_objective_depth": 3,    // cap parent-chain depth for follow-up objectives
+"autonomy_max_backlog": 40,           // stop enqueuing follow-ups when pending+active hits this; 0 = no cap
 "autonomy_concurrency": 1,            // Phase 3: >1 enables concurrent missions (governor can lower it)
 "autonomy_aging_minutes": 30,         // Phase 3: anti-starvation aging; 0 = pure strict priority
 "autonomy_learning_enabled": true,    // Phase 4: outcome bias + retirement; false = pure Phase 3

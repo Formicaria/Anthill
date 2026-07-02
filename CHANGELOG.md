@@ -10,7 +10,45 @@
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
-> Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, and so on.
+> Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
+> intent + shell service control = **v1.8.15.2**, and so on.
+
+## v1.8.15.2 — Strategist intent fidelity, backlog-sprawl cap, operator-shell service control
+
+The v1.8.15.1 live test proved the planner now routes file goals to the coder, but exposed that
+the **Strategist drifts** — it rewrote a one-shot charter ("create docs/x.md") into an unrelated
+goal ("train a model on docs") before the planner ever saw it — and that autonomous runs **spawn
+follow-up objectives aggressively** (13 accumulated in a short test). Both fixed, plus the
+operator-shell service-control item from the roadmap.
+
+Autonomy — intent fidelity:
+
+- **One-shot objectives are never reinterpreted.** An objective with `max_runs == 1` is an
+  explicit do-this-once task; `Strategist.GenerateGoal` now uses its charter verbatim (bypassing
+  the LLM entirely, `Source = "charter_verbatim"`) so the operator's intent reaches the planner
+  unchanged. Standing objectives (`max_runs` 0/>1) still go through the Strategist.
+- **The Strategist prompt now preserves the charter.** It must produce a goal that directly
+  accomplishes the charter (execute it as written on the first run; only take the next incremental
+  step once a prior run already accomplished it) — never substitute a different or broader task —
+  and follow-ups should "almost always be empty" (add one only for a genuinely distinct new
+  objective, never to seem productive).
+
+Autonomy — sprawl guard:
+
+- **`autonomy_max_backlog` (default 40).** The Strategist stops enqueuing self-generated follow-up
+  objectives once the open backlog (pending + active) reaches the cap — a structural bound on
+  sprawl regardless of model behavior, on top of the existing per-run rate and depth caps. 0 = no
+  cap. Clamped, settings-whitelisted, in `config.example.json`.
+
+Operator-shell service control:
+
+- The systemd unit's `NoNewPrivileges=true` blocks `sudo`, so `setup.sh` now installs a **scoped
+  polkit rule** (`deploy/lxc/anthill-polkit.rules.template` → `/etc/polkit-1/rules.d/49-anthill.rules`)
+  that lets the admin-only operator Shell manage **only** the `anthill.service` unit
+  (restart/stop/start/status) over D-Bus — no privilege escalation, hardening untouched. The Shell
+  tab gains quick buttons: Service status, Recent logs, Restart service (with a confirm), Host
+  health. Best-effort: skipped with a message if polkit isn't installed. Docs in DEPLOYMENT.md.
+- Tests: `OneShotObjective_UsesCharterVerbatim_EvenWithNoRouter`.
 
 ## v1.8.15.1 — Fixes from the live Phase 5 test
 

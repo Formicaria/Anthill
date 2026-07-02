@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.15.1** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.15.2** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -888,7 +888,7 @@ A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggl
 | **Ant Config** | Per-caste name, colour, and provider + model route editor *(admin only)* |
 | **Autonomy** | Director status/start/stop/kill-switch, objectives backlog editor, recent autonomous runs *(admin only)* |
 | **Security** | Security posture (auth, safety profile, bind exposure, encryption), capability-gate toggles, workspace boundary, and operator-shell controls *(admin only)* |
-| **Shell** | Direct interactive terminal into the host ANTHILL runs on — command history, streamed output, exit codes, settable working dir. Admin-only, config-gated, every command audit-logged *(admin only)* |
+| **Shell** | Direct interactive terminal into the host ANTHILL runs on — command history, streamed output, exit codes, settable working dir, and quick buttons for service status/logs/restart (the LXC installer adds a scoped polkit rule so `systemctl restart anthill` works without weakening the unit's hardening). Admin-only, config-gated, every command audit-logged *(admin only)* |
 | **Settings** | Connection / Providers / Colony / Models / System Info tabs *(admin only)* |
 | **Users** | Operator account management *(admin only)* |
 

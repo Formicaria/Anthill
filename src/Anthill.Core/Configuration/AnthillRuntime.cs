@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.15.1";
+    public const string Version = "1.8.15.2";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -120,6 +120,8 @@ public static class AnthillRuntime
     public static int AutonomyMaxFollowupsPerRun = 1;
     /// <summary>Hard cap on parent_objective_id chain depth; follow-ups at or beyond this depth are dropped.</summary>
     public static int AutonomyMaxObjectiveDepth = 3;
+    /// <summary>Cap on the open backlog (pending+active); the Strategist stops enqueuing follow-ups at/above it. 0 = no cap.</summary>
+    public static int AutonomyMaxBacklog = 40;
     // ---- Phase 3: concurrency (ResourceGovernor) ---------------------------
     /// <summary>Configured cap on concurrent autonomous missions. The ResourceGovernor may lower the effective value, never raise it.</summary>
     public static int AutonomyConcurrency = 1;
@@ -402,6 +404,7 @@ public static class AnthillRuntime
         AutonomyDedupeSimilarity = Math.Clamp(config.AutonomyDedupeSimilarity, 0.0, 1.0);
         AutonomyMaxFollowupsPerRun = Math.Max(0, config.AutonomyMaxFollowupsPerRun);
         AutonomyMaxObjectiveDepth = Math.Max(0, config.AutonomyMaxObjectiveDepth);
+        AutonomyMaxBacklog = Math.Max(0, config.AutonomyMaxBacklog);
         AutonomyConcurrency = Math.Clamp(config.AutonomyConcurrency, 1, 8);
         AutonomyAgingMinutes = Math.Clamp(config.AutonomyAgingMinutes, 0, 10080);
         AutonomyLearningEnabled = config.AutonomyLearningEnabled;
@@ -447,7 +450,7 @@ public static class AnthillRuntime
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
         "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
-        "autonomy_concurrency", "autonomy_aging_minutes",
+        "autonomy_max_backlog", "autonomy_concurrency", "autonomy_aging_minutes",
         "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
         "operator_shell_enabled", "operator_shell_dir",
@@ -526,6 +529,7 @@ public static class AnthillRuntime
         ["autonomy_dedupe_similarity"] = AutonomyDedupeSimilarity,
         ["autonomy_max_followups_per_run"] = AutonomyMaxFollowupsPerRun,
         ["autonomy_max_objective_depth"] = AutonomyMaxObjectiveDepth,
+        ["autonomy_max_backlog"] = AutonomyMaxBacklog,
         ["autonomy_concurrency"] = AutonomyConcurrency,
         ["autonomy_aging_minutes"] = AutonomyAgingMinutes,
         ["autonomy_learning_enabled"] = AutonomyLearningEnabled,

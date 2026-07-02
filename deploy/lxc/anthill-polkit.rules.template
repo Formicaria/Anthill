@@ -1,0 +1,22 @@
+// ANTHILL — scoped polkit rule for the operator Shell console.
+//
+// The systemd unit runs with NoNewPrivileges=true, which blocks sudo/setuid escalation entirely —
+// so the admin-only operator Shell (running as the service user) cannot `sudo systemctl restart`.
+// polkit is the correct path: systemctl talks to systemd over D-Bus, and systemd performs the
+// privileged action itself, authorized here for THIS user and ONLY the anthill.service unit.
+//
+// Effect: the operator Shell console (Configuration -> Shell) can run
+//   systemctl restart anthill   /   stop   /   start   /   status
+// after a config change, without a password and without weakening the unit's hardening.
+// Nothing else is granted — no other units, no package/system management. Installed by
+// deploy/lxc/setup.sh to /etc/polkit-1/rules.d/49-anthill.rules (installer substitutes the user).
+
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "__SERVICE_USER__") {
+        var unit = action.lookup("unit");
+        if (unit == "anthill.service") {
+            return polkit.Result.YES;
+        }
+    }
+});

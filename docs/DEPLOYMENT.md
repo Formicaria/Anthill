@@ -281,6 +281,19 @@ First run only: GHCR creates the container package as **private** by default. Ma
 at `github.com/users/<you>/packages/container/operation-anthill/settings → Change visibility` so
 `docker pull` works without a login.
 
+### Operator-shell service control (polkit)
+
+The systemd unit runs with `NoNewPrivileges=true`, which blocks `sudo`/setuid escalation — so the
+admin-only operator Shell console (running as the `anthill` service user) can't `sudo systemctl
+restart`. `setup.sh` therefore installs a **scoped polkit rule**
+(`/etc/polkit-1/rules.d/49-anthill.rules`, from `deploy/lxc/anthill-polkit.rules.template`) that
+authorizes the service user to manage **only** the `anthill.service` unit (restart/stop/start/
+status) over D-Bus — systemd performs the action, so no privilege escalation is needed and the
+unit's hardening is untouched. The Shell tab's "Restart service", "Service status", and "Recent
+logs" buttons use it. Nothing else is granted — no other units, no package or system management;
+upgrades still run `bash deploy/lxc/setup.sh` from a root shell. If polkit isn't installed the rule
+is skipped (the installer says so) and service control from the console won't be available.
+
 ## 5. Windows Service (ready — refinements ongoing)
 
 Windows deployment is ready to use today: `README.md` documents registering the published

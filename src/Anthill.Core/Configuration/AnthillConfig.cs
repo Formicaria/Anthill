@@ -79,6 +79,9 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_dedupe_similarity")] public double AutonomyDedupeSimilarity { get; set; } = 0.8;
     [JsonPropertyName("autonomy_max_followups_per_run")] public int AutonomyMaxFollowupsPerRun { get; set; } = 1;
     [JsonPropertyName("autonomy_max_objective_depth")] public int AutonomyMaxObjectiveDepth { get; set; } = 3;
+    // Hard cap on the open backlog (pending + active). The Strategist stops enqueuing self-generated
+    // follow-up objectives once the backlog reaches this size, bounding sprawl. 0 = no cap.
+    [JsonPropertyName("autonomy_max_backlog")] public int AutonomyMaxBacklog { get; set; } = 40;
     // ---- Phase 3: concurrency (ResourceGovernor) ----
     // Upper bound on missions the Director may run at once. The ResourceGovernor can only ever
     // lower the effective value below this cap (host load / model-backend pressure), never raise it.
