@@ -1229,6 +1229,16 @@ dotnet publish src\Anthill.Cli\Anthill.Cli.csproj `
   -o .\publish\win-x64
 ```
 
+Prefer not to build it yourself? `.github/workflows/release.yml` builds both of these plus a
+versioned Docker image on every tagged release (`git tag vX.Y.Z && git push origin vX.Y.Z`) and
+attaches them as a **draft** GitHub Release for review — see
+[docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases). Once published, grab a binary from the
+[Releases page](https://github.com/thexonexone/operation-anthill/releases) or pull the image:
+
+```bash
+docker pull ghcr.io/thexonexone/operation-anthill:latest
+```
+
 ### Run tests
 
 ```bash

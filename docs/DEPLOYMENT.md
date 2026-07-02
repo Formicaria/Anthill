@@ -250,7 +250,30 @@ systemctl daemon-reload
 rm -rf /opt/anthill /etc/anthill   # or just delete/destroy the whole LXC container instead
 ```
 
-## 4. Windows Service (planned — next up)
+## 4. Releases
+
+`.github/workflows/release.yml` builds a tagged release: self-contained `linux-x64`/`win-x64`
+binaries, a versioned Docker image pushed to `ghcr.io/thexonexone/operation-anthill`, and a
+GitHub Release with notes pulled straight from the matching `## vX.Y.Z` section of
+`CHANGELOG.md`.
+
+To cut a release once a version bump is committed to `main`:
+
+```bash
+git tag v1.8.7
+git push origin v1.8.7
+```
+
+The workflow's first job (`verify-version`) fails loudly if the tag doesn't match
+`AnthillRuntime.Version` in the pushed commit — this guards against tagging before the version
+bump actually landed. If it fails: bump the version, commit, delete the bad tag
+(`git tag -d v1.8.7 && git push origin :refs/tags/v1.8.7`), and re-tag.
+
+**The release is created as a draft, not published automatically.** This workflow has never run
+for real — review the draft on GitHub (notes, attached binaries, Docker tag) and hit "Publish
+release" yourself once it looks right.
+
+## 5. Windows Service (planned — next up)
 
 `README.md` already documents registering the published `anthill.exe` directly via
 `New-Service`/`sc.exe` (Deploy on Windows → Option C), which works for basic start/stop today.
@@ -263,13 +286,14 @@ output instead of a console — is wiring up
 happen on a machine with real NuGet access; this doc will be updated with the install script once
 it's built and verified.
 
-## 5. Roadmap
+## 6. Roadmap
 
 | Target | Status | Key files |
 |--------|--------|-----------|
 | **Container-style IP binding + env var overrides** ✅ | **DONE.** Underpins all three targets below. | `NetworkUtil.cs`, `AnthillConfig.cs`, `AnthillRuntime.cs`, `Anthill.Cli/Program.cs`, `Anthill.Api/ApiHost.cs` |
 | **Docker** ✅ | **DONE.** `Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root. | see §2 above |
 | **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
+| **Tagged releases** ✅ | **DONE.** Binaries + Docker image + draft GitHub Release on tag push. | `.github/workflows/release.yml`, see §4 above |
 | **Windows Service** | Planned next. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
 
 Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows

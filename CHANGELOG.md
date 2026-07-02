@@ -36,6 +36,15 @@ Added:
   uninstalling. Roadmap table updated (LXC done, Windows Service next).
 - **CI**: new `lint-lxc-installer` job — `shellcheck` (GitHub-hosted runners have it preinstalled)
   plus a `bash -n` syntax check on `deploy/lxc/setup.sh`.
+- **Releases** (`.github/workflows/release.yml`, added after this version shipped): triggered by
+  pushing a `vX.Y.Z` tag. A `verify-version` job fails loudly if the tag doesn't match
+  `AnthillRuntime.Version` in the tagged commit, guarding against tagging before a version bump
+  actually landed. Builds self-contained `linux-x64`/`win-x64` binaries and a versioned Docker
+  image pushed to `ghcr.io/thexonexone/operation-anthill`, then opens a **draft** GitHub Release
+  (never auto-published) with notes pulled from the matching `## vX.Y.Z` CHANGELOG section and
+  the binaries/image attached. Also fixed the stray `YOUR_ORG`/`anthill-dotnet` placeholder repo
+  references across `README.md` to the real `thexonexone/operation-anthill` URL and directory
+  name. See [docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases).
 
 Validation:
 
