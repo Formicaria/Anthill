@@ -26,6 +26,10 @@ public static class ApiHost
     private static RateLimiter MissionLimiter = null!;
     private static RateLimiter AuthLimiter = null!;
     private static string UiHtml = "";
+    // One shared client for the host's own internal probes (Ollama reachability, model list).
+    // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
+    // reuses connections. Per-call timeouts are applied via CancellationToken.
+    private static readonly HttpClient InternalHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     public static int Run(string[] args)
     {
@@ -203,7 +207,15 @@ public static class ApiHost
         // produced (mission-level output, separate from per-task outputs), which tangible
         // changes it proposed (patches + their approval state), and anything that went wrong.
         app.MapGet("/missions/{id}/report", (HttpContext ctx, string id) =>
-            RequireAuth(ctx, "read_status") ?? MissionReport(id));
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            // The report can surface patch proposals, approval state, and autonomy objectives —
+            // all admin-only reads (read_patches/read_approvals/read_objectives are never in the
+            // coordinator set). Include those sections only for callers who could read them
+            // directly, so the report can't become a side channel around the permission model.
+            var sensitive = CallerHas(ctx, "read_patches");
+            return MissionReport(id, sensitive);
+        });
         app.MapGet("/missions/{id}/graph", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.BuildTaskGraphData(id)));
         app.MapGet("/sources/{id}", (HttpContext ctx, string id) =>
@@ -241,10 +253,10 @@ public static class ApiHost
             var auth = RequireAuth(ctx, "read_models"); if (auth is not null) return auth;
             try
             {
-                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                 var host = AnthillRuntime.OllamaHost.TrimEnd('/');
-                var resp = await http.GetAsync($"{host}/api/tags");
-                var body = await resp.Content.ReadAsStringAsync();
+                var resp = await InternalHttp.GetAsync($"{host}/api/tags", cts.Token);
+                var body = await resp.Content.ReadAsStringAsync(cts.Token);
                 return Results.Content(body, "application/json");
             }
             catch (Exception ex) { return ApiJson.Error($"Cannot reach Ollama: {ex.Message}", "ollama_unreachable"); }
@@ -510,7 +522,7 @@ public static class ApiHost
                 sinceIso: q["since"].FirstOrDefault(),
                 level: q["level"].FirstOrDefault(),
                 missionId: q["mission_id"].FirstOrDefault(),
-                limit: limit <= 0 ? 200 : limit);
+                limit: Math.Clamp(limit <= 0 ? 200 : limit, 1, 1000)); // cap so a huge ?limit can't sweep the whole log
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["events"] = rows,
@@ -524,7 +536,7 @@ public static class ApiHost
         {
             var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
             int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var limit);
-            return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(limit <= 0 ? 300 : limit));
+            return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000)));
         });
 
         app.MapPost("/pheromones/prune", (HttpContext ctx) =>
@@ -724,8 +736,9 @@ public static class ApiHost
         {
             try
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-                using var resp = http.GetAsync($"{AnthillRuntime.OllamaHost.TrimEnd('/')}/api/version").GetAwaiter().GetResult();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                using var resp = InternalHttp.GetAsync($"{AnthillRuntime.OllamaHost.TrimEnd('/')}/api/version", cts.Token)
+                    .GetAwaiter().GetResult();
                 ollamaReachable = resp.IsSuccessStatusCode;
             }
             catch { ollamaReachable = false; }
@@ -760,14 +773,24 @@ public static class ApiHost
     /// tangible changes (patch proposals + approval state), and problems (failures, timeouts,
     /// unparseable proposals) — everything the console needs to show what actually happened.
     /// </summary>
-    private static IResult MissionReport(string id)
+    /// <summary>True when the authenticated caller's role permits the named permission (and it's enabled).</summary>
+    private static bool CallerHas(HttpContext ctx, string permission)
+    {
+        if (!AnthillRuntime.EnableApiAuth) return true;
+        var identity = ResolveIdentity(ctx);
+        return identity is not null && UserRoles.RoleAllows(identity.Role, permission) && ApiPermissionAllowed(permission);
+    }
+
+    private static IResult MissionReport(string id, bool includeSensitive)
     {
         var mission = Queen.Memory.GetMission(id);
         if (mission is null) return ApiJson.Error($"No mission found with id: {id}", "not_found");
 
         var tasks = Queen.Memory.GetTasksForMission(id);
-        var patches = Queen.Memory.ListPatchProposalsForMission(id);
-        var approvals = Queen.Memory.ListApprovalRequestsForMission(id);
+        // Patches/approvals/objectives are admin-only surfaces — skip the queries entirely for
+        // non-admin callers so nothing sensitive is even assembled.
+        var patches = includeSensitive ? Queen.Memory.ListPatchProposalsForMission(id) : new List<Dictionary<string, object?>>();
+        var approvals = includeSensitive ? Queen.Memory.ListApprovalRequestsForMission(id) : new List<Dictionary<string, object?>>();
         var approvalByTarget = approvals
             .GroupBy(a => a.GetValueOrDefault("target_id")?.ToString() ?? "")
             .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.GetValueOrDefault("created_at")?.ToString()).First());
@@ -829,16 +852,19 @@ public static class ApiHost
             };
         }).ToList();
 
-        // Autonomy linkage: which objective drove this mission, and which objectives it created.
-        var run = Queen.Memory.GetAutonomyRunForMission(id);
+        // Autonomy linkage (admin-only surface): which objective drove this mission, and which it
+        // created. Only assembled for callers who can read objectives directly.
+        var run = includeSensitive ? Queen.Memory.GetAutonomyRunForMission(id) : null;
         var runObjective = run?.GetValueOrDefault("objective_id")?.ToString() is { Length: > 0 } oid
             ? Queen.Memory.GetObjective(oid) : null;
-        var createdObjectives = Queen.Memory.ListObjectivesCreatedByMission(id)
-            .Select(o => new Dictionary<string, object?>
-            {
-                ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter,
-                ["priority"] = o.Priority, ["status"] = o.Status.Value(),
-            }).ToList();
+        var createdObjectives = includeSensitive
+            ? Queen.Memory.ListObjectivesCreatedByMission(id)
+                .Select(o => new Dictionary<string, object?>
+                {
+                    ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter,
+                    ["priority"] = o.Priority, ["status"] = o.Status.Value(),
+                }).ToList()
+            : new List<Dictionary<string, object?>>();
 
         var statuses = tasks.Select(t => t.GetValueOrDefault("status")?.ToString() ?? "").ToList();
         return ApiJson.Ok(new Dictionary<string, object?>

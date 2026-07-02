@@ -13,7 +13,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'      # three-part releases, e.g. v1.8.15
+      - 'v*.*.*.*'    # four-part maintenance patches, e.g. v1.8.14.4
   workflow_dispatch:
     inputs:
       tag:
@@ -120,7 +121,7 @@ jobs:
           docker push "$IMAGE:latest"
 
   publish-release:
-    name: Create draft GitHub Release
+    name: Publish GitHub Release
     needs: [verify-version, build-binaries, build-docker]
     runs-on: ubuntu-latest
     steps:
@@ -149,18 +150,27 @@ jobs:
           echo "Docker: \`docker pull ghcr.io/${{ github.repository }}:${VERSION}\`" >> /tmp/release-notes.md
           echo "LXC: \`curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/deploy/lxc/setup.sh | bash\`" >> /tmp/release-notes.md
 
-      - name: Create release (draft)
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.verify-version.outputs.ref }}
           name: ANTHILL v${{ needs.verify-version.outputs.version }}
           body_path: /tmp/release-notes.md
           files: artifacts/*
-          draft: true
+          draft: false
+          make_latest: true
+          # A four-part version like 1.8.14.4 is a maintenance patch, not a pre-release.
+          prerelease: false
 
-# Note: this creates the release as a DRAFT, not published, on purpose — this workflow has never
-# been run for real (no GitHub Actions runner, GHCR, or `gh` access in the environment it was
-# authored in). Review the draft (notes, attached binaries, Docker tag) on GitHub and hit
-# "Publish release" yourself once it looks right. If verify-version fails, it means the tag you
-# pushed doesn't match AnthillRuntime.Version — bump the version file, commit, delete/re-push the
-# tag, and try again.
+# On every tag push (git tag vX.Y.Z[.W] && git push origin vX.Y.Z[.W]) this workflow:
+#   1. verify-version — fails fast unless the tag matches AnthillRuntime.Version.
+#   2. build-binaries — self-contained linux-x64 (.tar.gz) + win-x64 (.zip), each bundling
+#      config.example.json, README, CHANGELOG.
+#   3. build-docker — builds and PUSHES ghcr.io/<repo>:<version> and :latest (GitHub Packages).
+#   4. publish-release — creates and PUBLISHES the GitHub Release (not a draft) with the matching
+#      CHANGELOG section as notes and both archives attached, marked as "latest".
+#
+# First run only: GHCR creates the package as PRIVATE by default. Make it public once at
+#   github.com/users/<you>/packages/container/operation-anthill/settings  →  Change visibility.
+# If verify-version fails, the tag doesn't match AnthillRuntime.Version — bump the version file,
+# commit, delete/re-push the tag, and try again.

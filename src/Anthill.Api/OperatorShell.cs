@@ -61,8 +61,10 @@ public static class OperatorShell
         using var proc = Process.Start(psi)!;
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
-        proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        // The async handlers fire on a threadpool thread; lock the builders so a concurrent
+        // AppendLine can't tear the StringBuilder while the result thread reads it.
+        proc.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (stdout) stdout.AppendLine(e.Data); };
+        proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (stderr) stderr.AppendLine(e.Data); };
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
@@ -72,11 +74,16 @@ public static class OperatorShell
             try { proc.Kill(entireProcessTree: true); } catch { /* best effort */ }
             proc.WaitForExit(2000);
             sw.Stop();
-            return new ShellResult(-1, Cap(stdout.ToString()), Cap(stderr + $"\n[command exceeded {TimeoutSeconds}s and was terminated]"),
-                true, dir, Math.Round(sw.Elapsed.TotalSeconds, 2));
+            lock (stdout) lock (stderr)
+                return new ShellResult(-1, Cap(stdout.ToString()), Cap(stderr + $"\n[command exceeded {TimeoutSeconds}s and was terminated]"),
+                    true, dir, Math.Round(sw.Elapsed.TotalSeconds, 2));
         }
+        // WaitForExit(ms)==true can return BEFORE the async output handlers finish draining; the
+        // parameterless overload blocks until stdout/stderr are fully flushed, so no truncation.
+        proc.WaitForExit();
         sw.Stop();
-        return new ShellResult(proc.ExitCode, Cap(stdout.ToString()), Cap(stderr.ToString()), false, dir, Math.Round(sw.Elapsed.TotalSeconds, 2));
+        lock (stdout) lock (stderr)
+            return new ShellResult(proc.ExitCode, Cap(stdout.ToString()), Cap(stderr.ToString()), false, dir, Math.Round(sw.Elapsed.TotalSeconds, 2));
     }
 
     private static string Cap(string s) =>

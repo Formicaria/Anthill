@@ -271,9 +271,15 @@ The workflow's first job (`verify-version`) fails loudly if the tag doesn't matc
 bump actually landed. If it fails: bump the version, commit, delete the bad tag
 (`git tag -d v1.8.7 && git push origin :refs/tags/v1.8.7`), and re-tag.
 
-**The release is created as a draft, not published automatically.** This workflow has never run
-for real — review the draft on GitHub (notes, attached binaries, Docker tag) and hit "Publish
-release" yourself once it looks right.
+**The release and the container package are published automatically** on tag push — no manual
+"Publish" step. Each tag produces: the self-contained `linux-x64`/`win-x64` archives attached to
+a published GitHub Release (marked "latest"), and `ghcr.io/<repo>:<version>` + `:latest` pushed to
+GitHub Packages (GHCR). Four-part maintenance tags (`vX.Y.Z.W`) are handled the same as three-part
+releases.
+
+First run only: GHCR creates the container package as **private** by default. Make it public once
+at `github.com/users/<you>/packages/container/operation-anthill/settings → Change visibility` so
+`docker pull` works without a login.
 
 ## 5. Windows Service (ready — refinements ongoing)
 
@@ -296,7 +302,7 @@ it's built and verified.
 | **Container-style IP binding + env var overrides** ✅ | **DONE.** Underpins all three targets below. | `NetworkUtil.cs`, `AnthillConfig.cs`, `AnthillRuntime.cs`, `Anthill.Cli/Program.cs`, `Anthill.Api/ApiHost.cs` |
 | **Docker** ✅ | **DONE.** `Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root. | see §2 above |
 | **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
-| **Tagged releases** ✅ | **DONE.** Binaries + Docker image + draft GitHub Release on tag push. | `.github/workflows/release.yml`, see §4 above |
+| **Tagged releases** ✅ | **DONE.** Binaries + Docker image (GHCR) + published GitHub Release, all automatic on tag push. | `.github/workflows/release.yml`, see §4 above |
 | **Windows Service** ✅ | **READY** via `New-Service`/`sc.exe` registration (see §5). Refinement in progress: `UseWindowsService()` SCM integration + install script. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
 
 Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows

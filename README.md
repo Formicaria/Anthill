@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.14.4** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.14.5** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -1322,9 +1322,9 @@ dotnet publish src\Anthill.Cli\Anthill.Cli.csproj `
 ```
 
 Prefer not to build it yourself? `.github/workflows/release.yml` builds both of these plus a
-versioned Docker image on every tagged release (`git tag vX.Y.Z && git push origin vX.Y.Z`) and
-attaches them as a **draft** GitHub Release for review — see
-[docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases). Once published, grab a binary from the
+versioned Docker image and **publishes** them automatically on every tagged release
+(`git tag vX.Y.Z && git push origin vX.Y.Z` — four-part maintenance tags like `vX.Y.Z.W` work
+too) — see [docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases). Grab a binary from the
 [Releases page](https://github.com/thexonexone/operation-anthill/releases) or pull the image:
 
 ```bash

@@ -19,9 +19,19 @@ public static class AuthSessions
 
     public static string Issue(string username, string role)
     {
+        PruneExpired(); // opportunistic: abandoned tokens are otherwise only evicted on their own resolve
         var token = TokenSecurity.GenerateStrongToken(32);
         _sessions[token] = new AuthSession(username, role, DateTime.UtcNow.Add(Ttl));
         return token;
+    }
+
+    /// <summary>Drops every session whose sliding expiry has already lapsed. Cheap; called on login.</summary>
+    private static void PruneExpired()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var kv in _sessions)
+            if (kv.Value.ExpiresAt <= now)
+                _sessions.TryRemove(kv.Key, out _);
     }
 
     /// <summary>Resolves a session token, renewing its sliding expiry. Null if missing or expired.</summary>

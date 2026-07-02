@@ -9,7 +9,48 @@
 > (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, Phase 4
 > autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
 > UI cache + approval dedupe fixes = **v1.8.14.2**, Security + Shell config tabs = **v1.8.14.3**,
-> header status + update check = **v1.8.14.4**, and so on.
+> header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
+> and so on.
+
+## v1.8.14.5 — Auto-publish releases + hardening pass (audit)
+
+Wraps the release-automation change with a thorough audit of everything shipped in the 1.8.14.x
+line — resource leaks, security boundaries, and correctness. All findings fixed.
+
+Release automation:
+
+- The release workflow now **publishes** the GitHub Release and pushes the GHCR container package
+  automatically on every tag push (was: created as a draft for manual publishing). `make_latest`,
+  and four-part maintenance tags (`vX.Y.Z.W`) matched explicitly. README/DEPLOYMENT.md updated.
+
+Security:
+
+- **Fixed a privilege leak in the mission report.** `GET /missions/{id}/report` is served under
+  `read_status` (which Mission Coordinators hold) but surfaced patch proposals, approval state,
+  and autonomy objectives — all admin-only reads (`read_patches`/`read_approvals`/`read_objectives`
+  are never in the coordinator set). The report now includes those sections only for callers who
+  could read them directly (`CallerHas`), so it can't be used as a side channel around the
+  permission model. Non-admins still get goal, status, final output, per-task results, and
+  problems (all things they can already read).
+- **Bounded two unbounded `?limit` query params** (`/events/json`, `/pheromones/json`) — a huge
+  value could sweep the entire log/trail table in one request; now clamped.
+
+Resource leaks:
+
+- **Removed two per-request `new HttpClient` allocations** (`/system/summary`'s Ollama probe and
+  the `/ollama/models` proxy). Under the header's periodic polling these leaked sockets over time;
+  both now share one static client with per-call `CancellationToken` timeouts.
+- **Session registry no longer grows unbounded**: abandoned session tokens (user logs in, never
+  returns) were only evicted when that exact token was next resolved. Login now opportunistically
+  prunes expired sessions.
+
+Correctness:
+
+- **Operator shell could truncate output.** `Process.WaitForExit(timeout)` can return before the
+  async stdout/stderr handlers finish draining; the executor now calls the parameterless
+  `WaitForExit()` afterward to guarantee a full flush, and locks the output builders against the
+  threadpool callbacks that append to them.
+- Tests: `PermissionBoundaryTests` (admin-only vs coordinator permission matrix).
 
 ## v1.8.14.4 — Live header status: update check, model/provider popover, local-vs-cloud icon
 
@@ -34,6 +75,15 @@ was online. It's now a live, clickable status chip.
   connected, with one-click buttons to Ant Config (change models) and Settings → Providers.
 - New: `src/Anthill.Api/UpdateChecker.cs`; `GET /update/check` + `GET /system/summary`.
 - Tests: `UpdateCheckerTests` (dotted four-part version ordering, leading-v tolerance).
+
+Release automation:
+
+- The release workflow now **publishes** the GitHub Release and the GHCR container package
+  automatically on every tag push (was: created as a draft for manual publishing). Each
+  `git push origin vX.Y.Z[.W]` builds the self-contained linux-x64/win-x64 archives, pushes
+  `ghcr.io/<repo>:<version>` + `:latest`, and publishes the Release (marked "latest") with the
+  matching CHANGELOG section as notes. Four-part maintenance tags (`vX.Y.Z.W`) are matched
+  explicitly. Docs (README, DEPLOYMENT.md) updated to match.
 
 ## v1.8.14.3 — Configuration: Security tab + admin-only Shell console
 
