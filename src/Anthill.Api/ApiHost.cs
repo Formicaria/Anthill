@@ -162,6 +162,11 @@ public static class ApiHost
 
         app.MapGet("/missions/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_status") ?? Results.Text(Queen.FormatMissionDetail(id), "text/plain"));
+        // Structured, human-readable mission report: what the mission was, what the colony
+        // produced (mission-level output, separate from per-task outputs), which tangible
+        // changes it proposed (patches + their approval state), and anything that went wrong.
+        app.MapGet("/missions/{id}/report", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_status") ?? MissionReport(id));
         app.MapGet("/missions/{id}/graph", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.BuildTaskGraphData(id)));
         app.MapGet("/sources/{id}", (HttpContext ctx, string id) =>
@@ -593,6 +598,144 @@ public static class ApiHost
             Queen.Memory.DeleteObjective(id);
             return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id }, "Objective removed.");
         });
+    }
+
+    // ---- mission report -----------------------------------------------------
+
+    /// <summary>
+    /// Assembles the structured mission report for /missions/{id}/report: mission-level outcome
+    /// and final output, per-task readable results (coder JSON translated to plain English),
+    /// tangible changes (patch proposals + approval state), and problems (failures, timeouts,
+    /// unparseable proposals) — everything the console needs to show what actually happened.
+    /// </summary>
+    private static IResult MissionReport(string id)
+    {
+        var mission = Queen.Memory.GetMission(id);
+        if (mission is null) return ApiJson.Error($"No mission found with id: {id}", "not_found");
+
+        var tasks = Queen.Memory.GetTasksForMission(id);
+        var patches = Queen.Memory.ListPatchProposalsForMission(id);
+        var approvals = Queen.Memory.ListApprovalRequestsForMission(id);
+        var approvalByTarget = approvals
+            .GroupBy(a => a.GetValueOrDefault("target_id")?.ToString() ?? "")
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.GetValueOrDefault("created_at")?.ToString()).First());
+
+        // Problem events for this mission, translated for humans. patch_proposal_parse_failed is
+        // the big silent one: the coder did work, but its proposal never reached the approval
+        // queue — from the outside it looks like "nothing happened".
+        var problemTypes = new HashSet<string>
+        {
+            "task_failed", "task_blocked", "task_skipped_dependency", "mission_failed",
+            "patch_proposal_parse_failed", "autonomy_error",
+        };
+        var problems = Queen.Memory.GetRecentEvents(300, null, id)
+            .Where(e => problemTypes.Contains(e.GetValueOrDefault("event_type")?.ToString() ?? ""))
+            .Select(e => new Dictionary<string, object?>
+            {
+                ["type"] = e.GetValueOrDefault("event_type"),
+                ["message"] = e.GetValueOrDefault("message"),
+                ["task_id"] = e.GetValueOrDefault("task_id"),
+                ["at"] = e.GetValueOrDefault("created_at"),
+            })
+            .ToList();
+
+        var taskReports = tasks.Select(t =>
+        {
+            var ant = t.GetValueOrDefault("assigned_ant")?.ToString() ?? "";
+            var result = t.GetValueOrDefault("result")?.ToString() ?? "";
+            return new Dictionary<string, object?>
+            {
+                ["id"] = t.GetValueOrDefault("id"),
+                ["title"] = t.GetValueOrDefault("title"),
+                ["ant"] = ant,
+                ["task_type"] = t.GetValueOrDefault("task_type"),
+                ["status"] = t.GetValueOrDefault("status"),
+                ["elapsed_seconds"] = t.GetValueOrDefault("elapsed_seconds"),
+                ["readable_output"] = ReadableTaskOutput(ant, result),
+                ["failure_reason"] = t.GetValueOrDefault("failure_reason"),
+                ["skipped_reason"] = t.GetValueOrDefault("skipped_reason"),
+                ["blocked_reason"] = t.GetValueOrDefault("blocked_reason"),
+            };
+        }).ToList();
+
+        var patchReports = patches.Select(p =>
+        {
+            var patchId = p.GetValueOrDefault("id")?.ToString() ?? "";
+            var approval = approvalByTarget.GetValueOrDefault(patchId);
+            return new Dictionary<string, object?>
+            {
+                ["id"] = patchId,
+                ["file_path"] = p.GetValueOrDefault("file_path"),
+                ["change_type"] = p.GetValueOrDefault("change_type"),
+                ["reason"] = p.GetValueOrDefault("reason"),
+                ["risk"] = p.GetValueOrDefault("risk"),
+                ["status"] = p.GetValueOrDefault("status"),
+                ["applied_at"] = p.GetValueOrDefault("applied_at"),
+                ["last_error"] = p.GetValueOrDefault("last_error"),
+                ["approval_id"] = approval?.GetValueOrDefault("id"),
+                ["approval_status"] = approval?.GetValueOrDefault("status"),
+            };
+        }).ToList();
+
+        var statuses = tasks.Select(t => t.GetValueOrDefault("status")?.ToString() ?? "").ToList();
+        return ApiJson.Ok(new Dictionary<string, object?>
+        {
+            ["id"] = id,
+            ["goal"] = mission.GetValueOrDefault("goal"),
+            ["status"] = mission.GetValueOrDefault("status"),
+            ["success_score"] = mission.GetValueOrDefault("success_score"),
+            ["created_at"] = mission.GetValueOrDefault("created_at"),
+            ["completed_at"] = mission.GetValueOrDefault("completed_at"),
+            ["final_output"] = mission.GetValueOrDefault("user_result"),
+            ["task_counts"] = new Dictionary<string, object?>
+            {
+                ["total"] = statuses.Count,
+                ["complete"] = statuses.Count(s => s == "complete"),
+                ["failed"] = statuses.Count(s => s == "failed"),
+                ["skipped"] = statuses.Count(s => s == "skipped"),
+            },
+            ["tasks"] = taskReports,
+            ["patches"] = patchReports,
+            ["pending_approvals"] = approvals.Count(a => a.GetValueOrDefault("status")?.ToString() == "pending"),
+            ["sources_saved"] = Queen.Memory.CountSourcesForMission(id),
+            ["problems"] = problems,
+        });
+    }
+
+    /// <summary>
+    /// Turns a task's raw result into readable English. Coder results are structured JSON patch
+    /// sets — rendered as "Proposed change to <file>: <reason>" lines instead of raw JSON. Other
+    /// ants already produce prose; it is passed through (bounded) as-is.
+    /// </summary>
+    internal static string ReadableTaskOutput(string ant, string result)
+    {
+        if (string.IsNullOrWhiteSpace(result)) return "";
+        if (ant == "coder")
+        {
+            try
+            {
+                var parsed = Json.ExtractJsonObject(result);
+                var summary = parsed["summary"]?.GetValue<string>()?.Trim() ?? "";
+                var lines = new List<string>();
+                if (summary.Length > 0) lines.Add(summary);
+                if (parsed["proposals"] is System.Text.Json.Nodes.JsonArray proposals)
+                {
+                    if (proposals.Count == 0)
+                        lines.Add("No file changes were proposed.");
+                    foreach (var item in proposals)
+                    {
+                        if (item is not System.Text.Json.Nodes.JsonObject o) continue;
+                        var file = o["file_path"]?.GetValue<string>() ?? "?";
+                        var change = o["change_type"]?.GetValue<string>() ?? "modify";
+                        var reason = o["reason"]?.GetValue<string>() ?? "";
+                        lines.Add($"Proposed {change} to {file}: {reason}");
+                    }
+                }
+                if (lines.Count > 0) return string.Join("\n", lines);
+            }
+            catch { /* not parseable as a patch set — fall through to raw text */ }
+        }
+        return TextUtil.Truncate(result, 4000, "\n...[output truncated — full text in the mission detail]");
     }
 
     private static Dictionary<string, object?> ObjectiveDict(Objective o) => new()

@@ -10,6 +10,11 @@
     <ProjectReference Include="..\Anthill.Core\Anthill.Core.csproj" />
   </ItemGroup>
 
+  <!-- Let the test suite exercise internal helpers (e.g. the mission-report formatter). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
   <!-- The single-page colony UI is embedded so the API stays self-contained. -->
   <ItemGroup>
     <EmbeddedResource Include="Ui\index.html" />

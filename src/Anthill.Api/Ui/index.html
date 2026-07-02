@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.14</title>
+<title>ANTHILL v1.8.14.1</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -409,6 +409,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .data-table{width:100%;border-collapse:collapse;font-size:12px;}
 .data-table th{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;}
 .data-table td{padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.03);vertical-align:top;}
+/* Scrollable table boxes (Autonomy page): capped at ~20 rows; headers stay pinned while scrolling. */
+#obj-box .data-table thead th,#auto-runs-box .data-table thead th{position:sticky;top:0;background:var(--card);z-index:1;}
 .obj-status{font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:3px;text-transform:uppercase;white-space:nowrap;}
 .obj-status.pending{color:var(--blue);background:rgba(59,130,246,.12);}
 .obj-status.active{color:var(--green);background:rgba(16,185,129,.12);}
@@ -514,7 +516,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.14</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.14.1</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -557,7 +559,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.14</span>
+      <span class="nav-logo-ver">v1.8.14.1</span>
     </div>
 
     <div class="nav-scroll">
@@ -984,26 +986,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
         </div>
 
-        <!-- Objectives backlog -->
-        <div class="card" style="overflow-x:auto;margin-bottom:16px;">
-          <div style="padding:10px 12px 0;">
-            <div class="section-head" style="margin-top:0;padding:0;" id="obj-count">Objectives</div>
+        <!-- Objectives backlog (collapsible; body capped at ~20 rows, then scrolls) -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="box-toggle-head" onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
-          <table class="data-table">
-            <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Score</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
-            <tbody id="obj-tbody"><tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
+          <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Score</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
+              <tbody id="obj-tbody"><tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+          </div>
         </div>
 
-        <!-- Recent autonomous runs -->
-        <div class="card" style="overflow-x:auto;">
-          <div style="padding:10px 12px 0;">
-            <div class="section-head" style="margin-top:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
+        <!-- Recent autonomous runs (collapsible; body capped at ~20 rows, then scrolls) -->
+        <div class="card">
+          <div class="box-toggle-head" onclick="toggleBoxBody('auto-runs-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
-          <table class="data-table">
-            <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Started</th></tr></thead>
-            <tbody id="auto-runs-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
+          <div id="auto-runs-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Started</th><th>Result</th></tr></thead>
+              <tbody id="auto-runs-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </div><!-- /page-autonomy -->
 
@@ -1466,8 +1474,13 @@ let W, H, cx, cy;
 function resize(){
   const el=document.getElementById('colony-canvas-area');
   if(!el) return;
-  W=canvas.width=el.clientWidth;
-  H=canvas.height=el.clientHeight;
+  // Render at the display's real pixel density so the colony stays sharp on HiDPI screens:
+  // backing store scaled by devicePixelRatio, all drawing kept in logical (CSS px) coordinates.
+  const dpr=window.devicePixelRatio||1;
+  W=el.clientWidth; H=el.clientHeight;
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
   cx=W/2; cy=H/2;
 }
 resize();
@@ -1515,7 +1528,7 @@ buildNodes();
 function updateNodeActivity(){
   nodes.forEach(n=>{
     if(n.id==='queen'){n.activity=colonyRunning?1:.3;return;}
-    n.activity=colonyRunning?Math.max(.1,colonyActivity[n.ant]??0):0;
+    n.activity=Math.min(1,Math.max(0,colonyRunning?(colonyActivity[n.ant]??0):0));
   });
 }
 
@@ -1740,7 +1753,9 @@ function loop(ts){
   particles=particles.filter(p=>(p.t+=p.speed)<=1);
   drawParticles();
   nodes.forEach(n=>{
-    if(n.id!=='queen') n.activity+=(colonyActivity[n.ant]||0-n.activity)*.03;
+    // NB: parentheses matter — this used to parse as `colonyActivity || (0-n.activity)`,
+    // which accumulated activity unboundedly every frame (tooltips showing >100%).
+    if(n.id!=='queen') n.activity=Math.min(1,Math.max(0,n.activity+((colonyActivity[n.ant]||0)-n.activity)*.06));
     drawNode(n,ts);
   });
 }
@@ -1826,9 +1841,20 @@ async function pollGraph(){
   try{
     const r=await api('/graph'); if(!r.success) return;
     lastGraphData=r.data;
-    const antCounts=r.data?.ant_counts||{};
-    const total=Object.values(antCounts).reduce((a,b)=>a+(b||0),0)||1;
-    Object.keys(colonyActivity).forEach(ant=>colonyActivity[ant]=(antCounts[ant]||0)/total);
+    // True live activity from current task states — not "share of all tasks in the mission".
+    // running task(s) = fully active (1.0); only queued work (ready/pending) = warming (0.35);
+    // everything terminal = idle (0). Always in [0,1], so the tooltip can never exceed 100%.
+    const live={};
+    (r.data?.nodes||[]).forEach(t=>{
+      const a=t.assigned_ant; if(!a) return;
+      const s=live[a]||(live[a]={running:0,queued:0});
+      if(t.status==='running') s.running++;
+      else if(t.status==='ready'||t.status==='pending') s.queued++;
+    });
+    Object.keys(colonyActivity).forEach(ant=>{
+      const s=live[ant];
+      colonyActivity[ant]=!s?0:(s.running>0?1:(s.queued>0?0.35:0));
+    });
     updateNodeActivity();
     if(selectedNode) showInspector(selectedNode);
     buildDataFlowEdges(r.data?.nodes||[]);
@@ -2012,10 +2038,12 @@ async function showJobResult(id){
       body.textContent=j.status==='running'
         ?'Mission is running — the colony is working...\n\nWatch Colony Events for live updates.'
         :'Job is queued, waiting for a worker...';
-    } else if(j.result){
-      body.textContent=j.result;
+    } else if(j.mission_id){
+      await renderMissionReport(j.mission_id, body);
     } else if(j.error){
       body.textContent='ERROR:\n'+j.error;
+    } else if(j.result){
+      body.textContent=j.result;
     } else {
       body.textContent='No result recorded.';
     }
@@ -2024,6 +2052,93 @@ async function showJobResult(id){
     statusBar.innerHTML=`<span>Job: <span style="font-family:var(--mono)">${id.substring(0,8)}…</span></span><span>Started: ${start}</span><span>Finished: ${end}</span>`;
     document.getElementById('result-overlay').classList.add('show');
   }catch{}
+}
+
+// ── Mission report: the readable "what actually happened" view ────────────────
+const MR_STATUS={complete:['✔ Completed','var(--green)'],partial:['◐ Completed with gaps','var(--queen)'],
+  failed:['✕ Failed','var(--red)'],running:['● Running','var(--blue)']};
+const MR_TASK_ICON={complete:'✔',failed:'✕',skipped:'⤼',blocked:'⛔',running:'●',pending:'…',ready:'…'};
+const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
+  applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
+
+async function renderMissionReport(missionId, body){
+  const r=await api(`/missions/${encodeURIComponent(missionId)}/report`);
+  if(!r.success){ body.textContent='Could not load the mission report: '+(r.message||'unknown error'); return; }
+  const rep=r.data, tc=rep.task_counts||{};
+  const [stLabel,stColor]=MR_STATUS[rep.status]||[rep.status,'var(--text)'];
+  const sec=(title,inner)=>`<div style="margin-bottom:16px"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">${title}</div>${inner}</div>`;
+  let html='';
+
+  // Mission-level outcome — separate from the tasks that produced it.
+  html+=sec('Mission',
+    `<div style="white-space:normal;line-height:1.6"><span style="color:${stColor};font-weight:600">${stLabel}</span>`+
+    `<span style="color:var(--dim)"> · score ${rep.success_score!=null?Number(rep.success_score).toFixed(2):'—'}`+
+    ` · ${tc.complete||0}/${tc.total||0} tasks completed${tc.failed?` · <span style="color:var(--red)">${tc.failed} failed</span>`:''}${tc.skipped?` · ${tc.skipped} skipped`:''}</span>`+
+    `<div style="margin-top:6px;color:var(--text)">${escapeHtml(rep.goal||'')}</div></div>`);
+
+  html+=sec('Final output (mission result)',
+    `<div style="background:var(--panel2,rgba(255,255,255,.03));border:1px solid var(--border);border-radius:6px;padding:10px 12px;">${escapeHtml(rep.final_output||'No mission-level output was recorded.')}</div>`);
+
+  // Tangible changes — the part that answers "did anything actually happen?"
+  const patches=rep.patches||[];
+  if(patches.length){
+    html+=sec(`Tangible changes proposed (${patches.length})`,
+      patches.map(p=>{
+        const [pl,pc]=MR_PATCH_STATE[p.status]||[p.status,'var(--text)'];
+        return `<div style="white-space:normal;margin-bottom:6px;line-height:1.5">`+
+          `<span style="font-family:var(--mono)">${escapeHtml(p.file_path||'?')}</span> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
+          ` — <span style="color:${pc}">${pl}</span>`+
+          `<div style="color:var(--dim);font-size:11px">${escapeHtml(p.reason||'')}</div>`+
+          (p.last_error?`<div style="color:var(--red);font-size:11px">Apply error: ${escapeHtml(p.last_error)}</div>`:'')+`</div>`;
+      }).join('')+
+      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">⚠ ${rep.pending_approvals} change(s) are waiting in <b>Approvals</b> — nothing touches disk until you approve &amp; apply.</div>`:''));
+  } else {
+    html+=sec('Tangible changes proposed',
+      `<div style="white-space:normal;color:var(--dim)">None — this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
+  }
+  if(rep.sources_saved) html+=sec('Research', `<div style="white-space:normal;color:var(--dim)">${rep.sources_saved} web source(s) saved.</div>`);
+
+  // Problems — surfaced instead of buried (incl. unparseable coder proposals).
+  const problems=rep.problems||[];
+  if(problems.length){
+    html+=sec(`Problems (${problems.length})`,
+      problems.map(p=>{
+        const friendly=p.type==='patch_proposal_parse_failed'
+          ?'The coder produced a change proposal the parser could not read — that work never reached the approval queue.'
+          :escapeHtml(p.message||p.type);
+        return `<div style="white-space:normal;color:var(--red);font-size:11px;margin-bottom:4px">✕ [${escapeHtml(p.type)}] ${friendly}</div>`;
+      }).join(''));
+  }
+
+  // Per-task breakdown — each task's own readable output, expandable.
+  const tasks=rep.tasks||[];
+  html+=sec(`Tasks (${tasks.length})`,
+    tasks.map((t,i)=>{
+      const icon=MR_TASK_ICON[t.status]||'·';
+      const color=t.status==='complete'?'var(--green)':t.status==='failed'?'var(--red)':t.status==='skipped'?'var(--dim)':'var(--queen)';
+      const reason=t.failure_reason||t.skipped_reason||t.blocked_reason;
+      const elapsed=t.elapsed_seconds!=null?` · ${Number(t.elapsed_seconds).toFixed(1)}s`:'';
+      return `<details style="white-space:normal;margin-bottom:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px">`+
+        `<summary style="cursor:pointer;line-height:1.5"><span style="color:${color}">${icon}</span> `+
+        `<b>${i+1}. ${escapeHtml(t.title||'')}</b> <span style="color:var(--dim)">— ${escapeHtml(t.ant||'')} ant${elapsed}</span></summary>`+
+        `<div style="margin-top:6px;white-space:pre-wrap;font-size:11px;color:var(--text)">${escapeHtml(t.readable_output||'(no output recorded)')}</div>`+
+        (reason?`<div style="margin-top:4px;color:var(--red);font-size:11px;white-space:pre-wrap">Why: ${escapeHtml(reason)}</div>`:'')+
+        `</details>`;
+    }).join('')||'<div style="color:var(--dim)">No tasks recorded.</div>');
+
+  body.innerHTML=html;
+}
+
+// Opens the report modal directly for a mission id (used by the Autonomy runs table).
+async function showMissionReport(missionId,label){
+  document.getElementById('result-title').textContent=label||'Mission Report';
+  const body=document.getElementById('result-body');
+  body.textContent='Loading mission report...';
+  document.getElementById('result-overlay').classList.add('show');
+  const statusBar=document.getElementById('result-status-bar');
+  statusBar.innerHTML=`<span>Mission: <span style="font-family:var(--mono)">${escapeHtml(String(missionId)).substring(0,8)}…</span></span>`;
+  try{ await renderMissionReport(missionId, body); }
+  catch(e){ body.textContent='Could not load the mission report: '+e.message; }
 }
 
 document.getElementById('result-close').addEventListener('click',()=>{
@@ -2671,6 +2786,14 @@ async function reloadAutonomy(){
 
 document.getElementById('auto-refresh').addEventListener('click',reloadAutonomy);
 
+// Collapsible table boxes (Autonomy page): header click folds the body; caret tracks state.
+function toggleBoxBody(id,hdr){
+  const box=document.getElementById(id); if(!box) return;
+  const hidden=box.style.display==='none';
+  box.style.display=hidden?'':'none';
+  const caret=hdr.querySelector('.box-caret'); if(caret) caret.textContent=hidden?'▾':'▸';
+}
+
 function autoMsg(t,ok){
   const m=document.getElementById('auto-msg');
   m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t;
@@ -2815,9 +2938,10 @@ async function reloadAutonomyRuns(){
         <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
         <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
         <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
+        <td>${run.mission_id?`<button class="job-btn view" onclick="showMissionReport('${run.mission_id}','Autonomous run · ${escapeHtml((titleById[run.objective_id]||'').replace(/'/g,''))}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
       </tr>`;
-    }).join('')||'<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
-  }catch(e){ tb.innerHTML=`<tr><td colspan="6" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+    }).join('')||'<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="7" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
 }
 
 // ── Pheromone memory page ─────────────────────────────────────────────────────

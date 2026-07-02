@@ -7,7 +7,78 @@
 > LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
 > cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, Phase 3 autonomy
 > (concurrency + ResourceGovernor) = **v1.8.12**, coder Python-bias fix = **v1.8.13**, Phase 4
-> autonomy (learning loop) = **v1.8.14**, and so on.
+> autonomy (learning loop) = **v1.8.14**, mission reports (readable observability) = **v1.8.14.1**,
+> and so on.
+
+> **Pre-commit checklist** — the docs must be true before every commit:
+> 1. Bump the version in all markers: `Directory.Build.props`, `AnthillRuntime.Version`,
+>    `src/Anthill.Api/Ui/index.html` (title + auth logo + nav badge), `src/Anthill.Api/Program.cs`,
+>    `src/Anthill.Cli/Program.cs`, `build.sh`, `build.ps1`, and the README banner.
+>    Verify with: `grep -rn "<old version>" --exclude-dir=.git --exclude-dir=obj --exclude-dir=bin .`
+> 2. Add the CHANGELOG entry (this file) — it becomes the GitHub release notes.
+> 3. **Update README.md sections touched by the change** (Colony UI Guide, API Reference,
+>    Configuration Reference, deployment sections) and `config.example.json` for new knobs.
+> 4. Update `docs/AUTONOMY.md` / `docs/DEPLOYMENT.md` when behavior in their scope changes.
+> 5. Sweep for leftovers: stale comments, dead config keys, outdated status claims, debug code.
+> 6. `dotnet test Anthill.sln -c Release` green, then commit + tag + push.
+
+## v1.8.14.1 — Mission Reports: see exactly what the colony did, in plain English
+
+Operator feedback from live use: work was "seemingly being done" (autonomous runs completing,
+follow-up objectives appearing) but nothing readable in the UI showed what actually happened or
+changed. Two root causes: (1) the only result view was the raw CLI dump — final output, debug
+trace, and task JSON in one wall of jargon; (2) the tangible outputs of missions (patch
+proposals waiting in the approval queue) were never connected to the mission/run that produced
+them. Note the design constraint that makes visibility essential: **the colony cannot change
+files or its own UI by itself** — every file change is a patch proposal that waits for human
+approval + apply. If nothing is approved, nothing changes; the console now says so explicitly.
+
+New:
+
+- **`GET /missions/{id}/report`**: structured, human-readable report per mission — goal, status,
+  score; the mission-level **final output** (kept separate from per-task outputs, since tasks are
+  the steps and the mission is the deliverable); a per-task breakdown (title, ant, status,
+  elapsed, readable output, and the *why* for failed/skipped/blocked tasks); **tangible changes**
+  (every patch proposal the mission created, its file, reason, and current state — awaiting
+  approval / approved / applied to disk / rejected, with apply errors); pending-approval count;
+  sources saved; and **problems** — including `patch_proposal_parse_failed`, the silent killer
+  where the coder did work but its proposal never reached the approval queue.
+- **Plain-English task outputs**: coder results (raw JSON patch sets) are translated to
+  "Proposed modify to src/... : reason" lines server-side (`ApiHost.ReadableTaskOutput`);
+  other ants' prose passes through; malformed output falls back to raw text.
+- **Mission Report modal**: "View Result" on any completed job now renders the structured report
+  — status in words, final output, tangible-changes list with a pointer into Approvals,
+  problems, and an expandable per-task list — instead of the raw CLI text (which remains the
+  fallback for legacy jobs without a mission id).
+- **Autonomy runs are inspectable**: each row in Recent Autonomous Runs gains a **View** button
+  opening the same mission report, so every unattended run answers "what did it actually do,
+  and did anything tangible come out of it?" in one click.
+- **`SqliteMemory`**: `ListPatchProposalsForMission` / `ListApprovalRequestsForMission`
+  (secret-free, per-mission).
+- **Tests**: `ReportTests` — coder-JSON translation, empty-proposal wording, malformed-output
+  fallback, prose passthrough. `InternalsVisibleTo("Anthill.Tests")` added to Anthill.Api.
+
+Fixed (Colony canvas + Autonomy page housekeeping):
+
+- **Ant/Queen hover tooltips showed activity over 100% and not live data.** Two bugs: an
+  operator-precedence error in the animation loop — `(colonyActivity[ant]||0-n.activity)` parses
+  as `colonyActivity || (0-activity)`, accumulating activity unboundedly every frame — and the
+  activity source itself was "this ant's share of all tasks in the mission" (including finished
+  ones), not a live reading. Activity is now computed from current task states each poll
+  (running = 100%, queued work = 35%, idle = 0%), clamped to [0,1] everywhere, so the hover
+  panel is a true live view of the colony.
+- **Colony canvas sharpened**: the canvas now renders at the display's real pixel density
+  (devicePixelRatio-scaled backing store, logical-coordinate drawing) — crisp nodes, edges, and
+  labels on HiDPI screens instead of the previous blurry 1x upscale.
+- **Autonomy tables no longer grow the page unboundedly**: the Objectives and Recent Autonomous
+  Runs boxes are collapsible (click the header) and cap at ~20 rows with their own scrollbar and
+  sticky column headers.
+- **Docs housekeeping**: README brought up to date with everything shipped since v1.8.12
+  (Concurrency/Governor status card, Score column, Mission Report views, `/missions/{id}/report`
+  in the API reference, autonomy-knob pointers), and a pre-commit checklist added at the top of
+  this file so the docs stay true on every release.
+
+No schema change, no config change.
 
 ## v1.8.14 — Phase 4 autonomy: the learning loop
 

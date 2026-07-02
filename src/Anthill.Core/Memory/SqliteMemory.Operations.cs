@@ -394,6 +394,21 @@ public sealed partial class SqliteMemory
     public int CountPendingApprovals() =>
         (int)AsLong(Scalar("SELECT COUNT(*) FROM approval_requests WHERE status = @s", ("@s", ApprovalStatus.Pending.Value())));
 
+    // ---- per-mission observability (the mission report) --------------------
+
+    /// <summary>Secret-free patch proposals for one mission — the report's "tangible changes" list.</summary>
+    public List<Dictionary<string, object?>> ListPatchProposalsForMission(string missionId, int limit = 100) =>
+        Query(@"SELECT pp.id, pp.patch_set_id, pp.task_id, pp.file_path, pp.change_type, pp.reason, pp.risk,
+                    pp.status, pp.created_at, pp.applied_at, pp.last_error, ps.summary AS patch_set_summary
+                FROM patch_proposals pp LEFT JOIN patch_sets ps ON pp.patch_set_id = ps.id
+                WHERE pp.mission_id = @m ORDER BY pp.created_at ASC LIMIT @lim",
+            ("@m", missionId), ("@lim", limit));
+
+    /// <summary>Approval requests raised by one mission, any status.</summary>
+    public List<Dictionary<string, object?>> ListApprovalRequestsForMission(string missionId, int limit = 100) =>
+        Query("SELECT * FROM approval_requests WHERE mission_id = @m ORDER BY created_at ASC LIMIT @lim",
+            ("@m", missionId), ("@lim", limit));
+
     public Dictionary<string, object?>? UpdateApprovalStatus(string approvalId, ApprovalStatus newStatus, string? decisionNote = null)
     {
         if (GetApprovalRequest(approvalId) is null) return null;

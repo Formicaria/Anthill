@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-> **v1.8.14** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
+> **v1.8.14.1** — .NET 9 / C++20 hybrid · self-hosted · Ollama-native · fully local by default
 
 ANTHILL is a **local swarm-intelligence multi-agent framework** that orchestrates a colony of specialised AI agents (called *ants*) under the command of a *Queen* orchestrator. It runs entirely on your own hardware and uses [Ollama](https://ollama.com) as the default LLM backend — no cloud API keys required — while exposing a real-time colony console at `http://localhost:8713/ui`. Cloud providers (OpenAI, Anthropic, Perplexity, OpenRouter) can optionally be connected per-role from **Settings → Providers**; see [Model Providers](#model-providers).
 
@@ -369,6 +369,10 @@ Copy `config.example.json` to `.anthill/config.json` and edit the values marked 
 | `model_routes.*` | Model per ant role | see above |
 | `api_job_workers` | Concurrent missions | `1` |
 | `max_parallel_workers` | Parallel ants per mission | `3` |
+
+The full autonomy knob set (budgets, kill switch, Strategist dedup/follow-ups, Phase 3
+concurrency + aging, Phase 4 learning/retirement) is documented inline in
+[`config.example.json`](config.example.json) and in [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ---
 
@@ -877,7 +881,7 @@ A collapsible left rail (240px expanded / 60px icon-only; click **‹** to toggl
 |------|---------|
 | **Overview** | 4 KPI cards (model calls, tasks, events, approvals), mission dispatch, recent jobs, live event feed |
 | **Colony** | Live canvas visualisation — the main control surface |
-| **Missions** | Mission dispatch + full job history with View/Cancel per job |
+| **Missions** | Mission dispatch + full job history — "View Result" opens the structured **Mission Report**: status in plain English, the mission's final output (separate from per-task outputs), every task's readable result, tangible changes (patches + approval state), and problems |
 | **Event Log** | Filterable, searchable full-page event log |
 | **Pheromones** | Colony pheromone trail table with prune button *(admin only)* |
 | **Ant Config** | Per-caste name, colour, and provider + model route editor *(admin only)* |
@@ -935,7 +939,7 @@ key itself. Remove a connection to stop routing to it (ants routed there fall ba
 See [Model Providers](#model-providers) below for the API and [Security Model](#security-model)
 for how keys are stored.
 
-**Colony tab**: Ollama host/model, feature-gate toggles, limits, and autonomy budgets — all editable and persisted live.
+**Colony tab**: Ollama host/model, feature-gate toggles, limits, and the autonomy knobs (budgets, concurrency, aging, learning) — all editable and persisted live.
 
 **Models tab**: Lists all models pulled on your Ollama instance with sizes. Active route assignments are highlighted. Click a model name to copy it to clipboard.
 
@@ -946,19 +950,30 @@ for how keys are stored.
 *Admin only.* Control panel for the 24/7 Colony Director (see [Autonomy design doc](docs/AUTONOMY.md)).
 
 - **Director Status card**: running/stopped state, missions this hour/day against budget, backlog
-  size, kill-switch indicator, and Start/Stop buttons. Disabled with an explanatory note unless
+  size, kill-switch indicator, and Start/Stop buttons — plus, since Phase 3, a **Concurrency** KPI
+  (effective / configured, with the ResourceGovernor's verdict when it's throttling) and live
+  **In flight** / **Governor** rows showing exactly which missions are running right now and why
+  concurrency is (or isn't) reduced. Disabled with an explanatory note unless
   `autonomy_enabled: true` is set in config.
 - **Add Objective**: title, charter (the standing goal text), and priority — enqueues a new backlog
   entry.
-- **Objectives table**: every objective with status (pending/active/paused/done/failed),
-  charter preview, priority +/- buttons, pause/resume, and delete.
-- **Recent Autonomous Runs table**: each Director-driven mission with its objective, generated
-  goal, goal source (LLM Strategist vs. deterministic fallback), outcome, and follow-ups created.
+- **Objectives table** (collapsible, scrolls after ~20 rows): every objective with status
+  (pending/active/paused/done/failed), charter preview, priority +/- buttons, a **Score** column
+  (the Phase 4 success EMA that biases selection — color-coded, "—" until the first run),
+  pause/resume, and delete.
+- **Recent Autonomous Runs table** (collapsible, scrolls after ~20 rows): each Director-driven
+  mission with its objective, generated goal, outcome score, follow-ups created, and a **View**
+  button that opens the full [Mission Report](#the-approval-workflow) — final output, per-task
+  results in plain English, and every tangible change the run proposed with its approval state.
 
 The Director only *proposes* — file changes still land in the normal approval queue for a human to
-review. Mission goals come from the Strategist (`autonomy_dedupe_similarity`,
+review; if a run's report shows no patches and no pending approvals, that run changed nothing on
+disk. Mission goals come from the Strategist (`autonomy_dedupe_similarity`,
 `autonomy_max_followups_per_run`, `autonomy_max_objective_depth` govern dedup and follow-up
-enqueueing; see [Configuration Reference](#configuration-reference)).
+enqueueing), selection order from strict priority + aging + the Phase 4 learning bias, and
+objectives that stop producing value (or loop on near-identical goals) are auto-paused with an
+`objective_retired` event. All knobs are in `config.example.json` and
+[docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ### Dispatching a Mission
 
@@ -1106,7 +1121,8 @@ Authorization: Bearer YOUR_TOKEN
 | `GET` | `/jobs` | List all jobs |
 | `GET` | `/jobs/{id}` | Get job detail including result and debug trace |
 | `GET` | `/missions` | Mission history |
-| `GET` | `/missions/{id}` | Mission detail |
+| `GET` | `/missions/{id}` | Mission detail (plain text) |
+| `GET` | `/missions/{id}/report` | Structured readable report: final output, per-task results in plain English, patches + approval states, problems |
 | `GET` | `/missions/{id}/graph` | Task DAG for a specific mission |
 
 ### Graph & Events
