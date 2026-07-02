@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.10</title>
+<title>ANTHILL v1.8.11</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -514,7 +514,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.10</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.11</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -557,7 +557,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.10</span>
+      <span class="nav-logo-ver">v1.8.11</span>
     </div>
 
     <div class="nav-scroll">
@@ -2559,7 +2559,11 @@ function antcfgProviderOptions(curProvider){
 }
 
 async function openAntConfig(){
-  showPage('antconfig');
+  // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
+  // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
+  // from the "Reset" button below (where the page is already active). Calling showPage from in
+  // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
+  // mutual-recursion loop, blowing the call stack every single time this page was opened.
   await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
   let routes={};
   try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
@@ -2632,7 +2636,14 @@ let autonomyObjectives=[];
 let autoRefreshTimer=null;
 
 async function openAutonomy(){
-  showPage('autonomy');
+  // Data-loader only — do NOT call showPage('autonomy') here. This is invoked exclusively from
+  // PAGE_ENTER['autonomy'] below, which showPage() itself calls *after* switching to this page.
+  // Calling showPage from in here used to re-fire PAGE_ENTER['autonomy'] -> openAutonomy() ->
+  // showPage() in an unbounded mutual-recursion loop: every single visit to the Autonomy page
+  // (including clicking Start/Stop, which reloads this page's status) burned the call stack down
+  // to a "RangeError: Maximum call stack size exceeded" within milliseconds. Recoverable on its
+  // own (the thrown error just aborts that call chain), but it froze page interaction long enough
+  // that clicks — like the kill switch's Stop button — appeared to hang or crash the app.
   await reloadAutonomy();
   if(autoRefreshTimer) clearInterval(autoRefreshTimer);
   // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;

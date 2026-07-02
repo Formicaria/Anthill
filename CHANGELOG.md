@@ -5,7 +5,46 @@
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
 > deployment (Docker) = **v1.8.6**, LXC deployment = **v1.8.7**, provider base-URL fix = **v1.8.8**,
 > LXC upgrade-in-place fix (ETXTBSY) = **v1.8.9**, LXC upgrade-in-place fix (stale native asset
-> cache) = **v1.8.10**, and so on.
+> cache) = **v1.8.10**, Autonomy page recursion fix = **v1.8.11**, and so on.
+
+## v1.8.11 — Fix: Autonomy page's Start/Stop (kill switch) froze the UI via infinite recursion
+
+No schema change, no API change — pure front-end JS bug in `src/Anthill.Api/Ui/index.html`.
+Reported live as "the web app and service crashes when you hit the kill switch in the autonomy
+page." Reproduced by driving the real running instance directly: clicking the "■ Stop" kill
+switch caused the browser tab to stop responding to input.
+
+Root cause: `openAutonomy()` called `showPage('autonomy')` at its top, but `showPage()` itself
+calls `PAGE_ENTER['autonomy']()` right after switching pages — and `PAGE_ENTER['autonomy']` was
+wired to call `openAutonomy()` again. That's unbounded mutual recursion:
+`openAutonomy → showPage → PAGE_ENTER.autonomy → openAutonomy → showPage → ...`. It fired on
+*every* visit to the Autonomy page — including the periodic status refresh the page runs while
+open — and threw `RangeError: Maximum call stack size exceeded` hundreds of times per trigger
+(confirmed live via the browser console). Each occurrence briefly pegs the JS main thread as it
+unwinds thousands of stack frames, which is what made the tab appear to hang or "crash" right as
+a click (like Stop) landed. `openAntConfig()` (the Ant Config page) had the exact same bug
+pattern, not yet reported but fixed here too. The .NET backend was never actually affected —
+`/health` and the Director's own stop/start logic kept working the entire time this was
+happening; confirmed via `/autonomy/status` and the `autonomy_stopped`/`autonomy_started` event
+log entries recording correctly through repeated live reproduction.
+
+Fixed:
+
+- **`openAutonomy()`**: no longer calls `showPage('autonomy')` — it's now a pure data-loader,
+  correct since its only caller is `PAGE_ENTER['autonomy']`, which `showPage()` already invokes
+  *after* switching to the page.
+- **`openAntConfig()`**: same fix, same reasoning (its `showPage('antconfig')` call is gone; its
+  second caller, the Ant Config "Reset" button, doesn't need a page-switch either since the user
+  is already on that page when clicking Reset).
+
+Validation:
+
+- Reproduced and fixed live against the user's running LXC instance via direct browser
+  automation: captured the exact `RangeError` stack trace from the browser console, hot-patched
+  the corrected function into the live page, then repeated the same Start → Stop sequence with
+  the patch active — no errors, no hang, instant response both times. `bash -n`/syntax not
+  applicable (HTML/JS); confirmed by the live before/after test described above. Ship this build
+  to make the fix permanent (the hot-patch only lived in that one browser tab's memory).
 
 ## v1.8.10 — Fix: LXC upgrade republish silently dropped the SQLite native library
 
