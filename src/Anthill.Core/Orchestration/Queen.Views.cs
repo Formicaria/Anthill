@@ -437,7 +437,8 @@ public sealed partial class Queen
             var node = new Dictionary<string, object?>
             {
                 ["task_id"] = id, ["mission_id"] = missionId, ["title"] = Str(row, "title"), ["name"] = Str(row, "title"),
-                ["assigned_ant"] = Str(row, "assigned_ant", "unknown"), ["assigned_agent"] = Str(row, "assigned_ant", "unknown"),
+                ["assigned_ant"] = Str(row, "assigned_ant", "unknown"), ["assigned_worker"] = Str(row, "assigned_worker"),
+                ["assigned_agent"] = string.IsNullOrEmpty(Str(row, "assigned_worker")) ? Str(row, "assigned_ant", "unknown") : Str(row, "assigned_worker"),
                 ["role"] = Str(row, "assigned_ant", "unknown"), ["task_type"] = Str(row, "task_type", "general"), ["status"] = status,
                 ["dependency_ids"] = deps, ["depends_on"] = deps, ["parent_task_id"] = row.GetValueOrDefault("parent_task_id"),
                 ["parent_task_ids"] = parents, ["child_task_ids"] = childIds.GetValueOrDefault(id, new()).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList(),
@@ -459,6 +460,7 @@ public sealed partial class Queen
 
         var statusCounts = nodes.GroupBy(n => n.GetValueOrDefault("status")?.ToString() ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         var antCounts = nodes.GroupBy(n => n.GetValueOrDefault("assigned_ant")?.ToString() ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
+        var workerCounts = nodes.GroupBy(n => n.GetValueOrDefault("assigned_worker")?.ToString() ?? n.GetValueOrDefault("assigned_ant")?.ToString() ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         var safeMission = includeResults ? mission : new Dictionary<string, object?>
         {
             ["id"] = mission.GetValueOrDefault("id"), ["goal"] = mission.GetValueOrDefault("goal"), ["status"] = mission.GetValueOrDefault("status"),
@@ -468,7 +470,7 @@ public sealed partial class Queen
         return new()
         {
             ["schema_version"] = AnthillRuntime.TaskGraphVersion, ["enabled"] = true, ["mission"] = safeMission, ["mission_id"] = missionId,
-            ["nodes"] = nodes, ["edges"] = edges, ["status_counts"] = statusCounts, ["ant_counts"] = antCounts,
+            ["nodes"] = nodes, ["edges"] = edges, ["status_counts"] = statusCounts, ["ant_counts"] = antCounts, ["worker_counts"] = workerCounts,
         };
     }
 

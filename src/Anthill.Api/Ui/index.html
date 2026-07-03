@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.21</title>
+<title>ANTHILL v1.8.22</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -523,6 +523,28 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .ob-lane-empty{font-size:10px;color:var(--dim);text-align:center;padding:12px 0;}
 .ob-chip{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--muted);}
 .ob-mini{padding:2px 0;line-height:1.4;}
+/* ── Ant Inspector + Performance Observatory (v1.8.22, Phase 8) ── */
+.antobs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+.ant-card{background:var(--hud-glass);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:13px 15px;}
+.ant-card .ac-hd{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+.ant-card .ac-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
+.ant-card .ac-name{font-size:14px;font-weight:700;color:var(--text);}
+.ant-card .ac-role{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-left:auto;}
+.ant-card .ac-route{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:8px;word-break:break-all;}
+.ant-card .ac-gates{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+.ac-gate{font-size:8px;font-weight:700;font-family:var(--mono);padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em;}
+.ac-gate.on{color:var(--green);background:rgba(16,185,129,.12);}
+.ac-gate.off{color:var(--dim);background:rgba(255,255,255,.04);}
+.ant-card .ac-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;}
+.ant-card .ac-stat{text-align:center;}
+.ant-card .ac-stat .n{font-size:16px;font-weight:700;font-family:var(--mono);line-height:1.1;}
+.ant-card .ac-stat .l{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;}
+.ant-card .ac-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;display:flex;margin-bottom:4px;}
+.ant-card .ac-bar>i{height:100%;display:block;}
+.ant-card .ac-sub{font-size:10px;color:var(--muted);}
+.ant-card details summary{cursor:pointer;font-size:10px;color:var(--hud-cyan);margin-top:8px;list-style:none;}
+.ant-card details summary::-webkit-details-marker{display:none;}
+.ant-card .ac-recent{margin-top:6px;max-height:150px;overflow-y:auto;font-size:10px;}
 /* ── Mission Timeline + Task DAG (v1.8.20, Phase 6) ── */
 .mrflow-tabs{display:flex;gap:6px;margin-bottom:8px;}
 .mrflow-view{border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:8px;overflow:auto;max-height:340px;}
@@ -823,7 +845,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.21</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.22</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -866,7 +888,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.21</span>
+      <span class="nav-logo-ver">v1.8.22</span>
     </div>
 
     <div class="nav-scroll">
@@ -914,6 +936,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div id="nav-item-antconfig" class="nav-item" data-page="antconfig">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
         <span class="nav-label">Ant Config</span>
+      </div>
+      <div id="nav-item-antobs" class="nav-item" data-page="antobs">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></span>
+        <span class="nav-label">Ant Inspector</span>
       </div>
       <div id="nav-item-autonomy" class="nav-item" data-page="autonomy">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
@@ -1433,6 +1459,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-antconfig -->
 
       <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: ANT INSPECTOR + PERFORMANCE OBSERVATORY (v1.8.22, UI Phase 8)
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-antobs">
+        <div class="page-hdr">
+          <div><h1>Ant Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance — expand a card for recent activity.</div></div>
+          <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
+        </div>
+        <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div></div>
+      </div><!-- /page-antobs -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
            PAGE: AUTONOMY
       ═════════════════════════════════════════════════════════════════════ -->
       <div class="page page-scroll" id="page-autonomy">
@@ -1771,6 +1808,53 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <button class="btn btn-ghost sh-qbtn" data-cmd="df -h; echo; free -h; echo; uptime" style="font-size:10px;padding:3px 8px;">Host health</button>
         </div>
         <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history. Service control (restart/status/logs) works via a scoped polkit rule installed by the LXC setup script.</div>
+        <!-- ANTHILL shell banner source (hidden; rendered into the terminal on open). Injected verbatim from deploy/anthill-banner.txt -->
+        <pre id="sh-banner-src" style="display:none">                                                                                                  
+                                                                                    :=:                           
+                   +#%:                                                          :,=#:=#:                         
+              :%@@=:. ,;+                            .:: ,::.,,,               .*@@#.  =@;                        
+          .;,+.+.  ++;;;.:=:       ,.            ;=%=@@@@@@@#@@@@:          ;%@@@@@@@%@@@@#.                      
+        ..,.  ;;        ,#:=%,::@@:@@@@@@@@; ,#@@@@@@@@@@@@@@@@@@@@;   :;, :@@. ;@@@+;@@%@@@@@:;.                 
+       =      ,           .%@@@#, .@@@@@@@@@@@: :#@@@@@@@@@@@@@@@@@@*+,:=#.@@@@%@@@@@@@@@@@@@@@@@@%               
+    .+;      ;            @@@@,   #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=@@@@@@@@@@@@@@@@@@@@@@@@@=             
+   ,+.      .#           ##@@=,. .*@@@@@@@@@@@;,;@@@@@@@@@+@@@@@@@@@@@@@@@@@@@@@@@@@@@@%@@@@@@@@@@@@@@;.          
+ .+:        =           .#@#@@@@@@@@@@@@@@@@=, .,   @*#@@@;  =@@@@@@@@@@:+@@@@@#@%@@@@@@@@@@@@@@@@@@@@@+          
+ ;;        '            +%*@@@@@@@@@@@@%%, +=%%@@@#=:#%@@@+   :;@@@@%@@@:@@@@@@@%@@@@@@@@@@@%@@@@@@@@@@%          
+                         ,;=@;@@@@@@@=.  ,;  .@@@@@@@@@@@@+   ;%@@;,#: . ::::,      .:%=%#%@@@@%+###%%@=.          
+                            .   .;##.  ;@##%#*@@@@@@@@@@@;, =@@@@:    .::+                   =%        ;===.      
+                              .+#%+   :%.                 +@:            ,                    ,@;          ';##=#,  
+                            ;=,:    .#@,                   ,+;                                 +@*.              #._
+                         .;+:      :+#.                      =#.                                +@@.              
+                   .  ::;;      ..=::                         :%,                                 :#;             
+                  ..           ,@%.                            ;*=                                  +*=          
+                              .@+                               :@+                                  ++=          
+                             ,;                                   ;=.                                   +#+.      
+                          ,*#=                                      #=                                    ;:=     
+                       ,...                                         +@,                                     #;.  
+                                                                     .#+                                      .#;.,
+                                                                       :+                                          +.
+                                                                        .                                         
+                                                                         +.                                        
+                                                                                                                  
+                                                                                                                  
+   
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                               
+                                                                                                                  
+  __           __           __                 ..--------._    __          __           __           __           
+ (__)..@c     (__)..@c     (__)..@c           (_ |  |  |  _)o.(__)c       (__)..@c     (__)..@c     (__)..@c      
+  / | \        / | \        / | \               `--------'    / | \        / | \        / | \        / | \        
+</pre>
       </div><!-- /page-shell -->
 
       <!-- ════════════════════════════════════════════════════════════════════
@@ -2014,7 +2098,7 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+  ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   // nav-item-pheromones: admin only
@@ -2043,7 +2127,7 @@ function applyRoleVisibility(){
 // ── Page Routing ──────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  patches:'Patch Center', objboard:'Objective Command Board', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
+  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -2390,6 +2474,14 @@ function showInspector(n){
     <div class="ad-row" style="margin-top:6px"><span class="ad-key">Running</span><span class="ad-val">${tRunning}</span></div>
     <div class="ad-row"><span class="ad-key">Completed</span><span class="ad-val" style="color:${tDone?'var(--green)':''}">${tDone}</span></div>
     <div class="ad-row"><span class="ad-key">Failed</span><span class="ad-val" style="color:${tFailed?'var(--red)':''}">${tFailed}</span></div>
+    ${(()=>{ // v1.8.22: worker sub-caste breakdown for this ant (Ant Capability Profiles).
+      const wc={};
+      antTasks.forEach(t=>{ const w=t.assigned_worker||t.assigned_agent; if(w&&w!==n.ant){wc[w]=(wc[w]||0)+1;} });
+      const ent=Object.entries(wc);
+      if(!ent.length) return '';
+      return `<div class="ad-section">Workers</div>`+ent.map(([w,c])=>`
+        <div class="ad-row"><span class="ad-key" title="${escapeHtml(w)}">${escapeHtml(w.split('.').pop())}</span><span class="ad-val">${c}</span></div>`).join('');
+    })()}
     ${(lastGraphData?.nodes?.filter(t=>t.assigned_ant===n.ant).slice(0,4)||[]).map(t=>`
       <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
         <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
@@ -3268,7 +3360,7 @@ function flowSelect(cid,taskId){
   const row=(k,val)=>val?`<div style="display:flex;gap:8px;padding:1px 0"><span style="color:var(--dim);min-width:90px">${k}</span><span>${escapeHtml(String(val))}</span></div>`:'';
   drawer.innerHTML=
     `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(n.title||'task')}</div>`+
-    row('Ant', n.assigned_ant)+row('Type', n.task_type)+row('Status', n.status)+
+    row('Ant', n.assigned_ant)+row('Worker', n.assigned_worker)+row('Type', n.task_type)+row('Status', n.status)+
     row('Elapsed', n.elapsed_seconds!=null?(+n.elapsed_seconds).toFixed(1)+'s':'')+
     row('Attempts', (n.attempt_count!=null?`${n.attempt_count}/${n.max_attempts??1}`:''))+
     (reason?`<div style="color:${n.status==='failed'?'var(--red)':'var(--muted)'};margin-top:4px">${escapeHtml(reason)}</div>`:'');
@@ -3622,6 +3714,71 @@ async function onObjCardToggle(det){
 }
 document.getElementById('ob-refresh')?.addEventListener('click',loadObjBoard);
 
+// ══ Ant Inspector + Performance Observatory (v1.8.22, UI Phase 8) ════════════
+const ANTOBS_CASTES=[
+  ['researcher','Researcher',['model']],
+  ['web','Web',['web_search']],
+  ['file','File',['file_tools']],
+  ['coder','Coder',['file_writing','patch_application']],
+  ['builder','Builder',['model']],
+  ['verifier','Verifier',['model']],
+];
+const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'file write',patch_application:'apply',model:'model only'};
+PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin') loadAntObs(); };
+async function loadAntObs(){
+  const grid=document.getElementById('antobs-grid'); if(!grid) return;
+  grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
+  try{
+    const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
+    grid.innerHTML=ANTOBS_CASTES.map(([ant,label,gateKeys])=>{
+      const am=(typeof ANT_MAP!=='undefined'&&ANT_MAP[ant])||{color:'var(--muted)',role:ant};
+      const s=stats[ant]||{total:0,complete:0,failed:0,skipped:0,running:0,avg_seconds:0};
+      const total=s.total||0, ok=s.complete||0, fail=s.failed||0, skip=s.skipped||0;
+      const rate=total?Math.round(ok/total*100):null;
+      const rt=routes[ant]||{};
+      const gateBadges=gateKeys.map(g=>{
+        if(g==='model') return `<span class="ac-gate off">model only</span>`;
+        const on=!!gates[g];
+        return `<span class="ac-gate ${on?'on':'off'}">${ANTOBS_GATELABEL[g]||g}${on?'':' off'}</span>`;
+      }).join('');
+      const okPct=total?ok/total*100:0, failPct=total?fail/total*100:0, skipPct=total?skip/total*100:0;
+      return `<div class="ant-card" style="border-left-color:${am.color}">
+        <div class="ac-hd"><span class="ac-dot" style="color:${am.color};background:${am.color}"></span>
+          <span class="ac-name">${label}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span></div>
+        <div class="ac-route">▸ ${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
+        <div class="ac-gates">${gateBadges}</div>
+        <div class="ac-stats">
+          <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
+          <div class="ac-stat"><div class="n" style="color:var(--green)">${ok}</div><div class="l">Done</div></div>
+          <div class="ac-stat"><div class="n" style="color:${fail?'var(--red)':'var(--dim)'}">${fail}</div><div class="l">${ant==='verifier'?'Reject':'Failed'}</div></div>
+          <div class="ac-stat"><div class="n" style="color:${rate==null?'var(--dim)':(rate>=70?'var(--green)':rate>=40?'var(--queen)':'var(--red)')}">${rate==null?'—':rate+'%'}</div><div class="l">Success</div></div>
+        </div>
+        <div class="ac-bar">
+          <i style="width:${okPct}%;background:var(--green)"></i><i style="width:${failPct}%;background:var(--red)"></i><i style="width:${skipPct}%;background:var(--dim)"></i>
+        </div>
+        <div class="ac-sub">avg ${s.avg_seconds?Number(s.avg_seconds).toFixed(1)+'s':'—'}/task${skip?` · ${skip} skipped`:''}${s.running?` · ${s.running} running`:''}</div>
+        <details data-ant="${ant}" ontoggle="onAntRecentToggle(this)"><summary>▸ recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
+      </div>`;
+    }).join('');
+  }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
+}
+async function onAntRecentToggle(det){
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.ac-recent');
+  try{
+    const r=await api('/events/json?limit=12&ant='+encodeURIComponent(det.dataset.ant)); if(!r.success) throw new Error(r.message);
+    const evs=(r.data&&r.data.events)||[];
+    box.innerHTML = evs.length ? evs.map(e=>{
+      const t=(e.event_type||'').replace(/_/g,' ');
+      return `<div style="padding:2px 0;border-bottom:1px solid rgba(30,51,84,.4)"><span style="color:var(--dim);font-size:9px">${fmtTime(e.created_at)||''}</span> ${escapeHtml(t)}<div style="color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((e.message||'').slice(0,90))}</div></div>`;
+    }).join('') : '<div style="color:var(--dim)">No recent events for this caste.</div>';
+  }catch(e){ box.innerHTML=`<div style="color:var(--red)">Error: ${escapeHtml(e.message)}</div>`; }
+}
+document.getElementById('antobs-refresh')?.addEventListener('click',loadAntObs);
+
+
 // Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
 // the quick view for running/queued jobs and legacy jobs without a mission id.
 function openJobResult(jobId, missionId){
@@ -3741,11 +3898,16 @@ function renderPlan(d){
     const ant=(t.ant||'').toLowerCase();
     const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
     const crit=t.critical===false?' · optional':'';
+    // v1.8.22: show the resolved worker sub-caste, when the planner picked one.
+    const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">→ ${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
     return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
       `<div class="p-title">${escapeHtml(t.title||'')}</div>`+
-      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
+      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${worker}${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
       `</div></div>`;
   }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
+  // v1.8.22: surface any capability-contract warnings from worker validation.
+  const warns=(Array.isArray(d.constraint_warnings)?d.constraint_warnings:[]).filter(Boolean);
+  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' · ')}</div>`;
   box.innerHTML=
     `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
     `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+
@@ -4710,7 +4872,7 @@ async function saveSecurity(){
 let shHistory=[], shHistIdx=-1, shBusy=false;
 
 PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
-document.getElementById('sh-clear').addEventListener('click',()=>{ document.getElementById('sh-output').innerHTML=''; });
+document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
 document.getElementById('sh-run').addEventListener('click',runShell);
 // Quick-command buttons: put the command in the input and run it (restart asks first).
 document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',()=>{
@@ -4725,7 +4887,17 @@ document.getElementById('sh-input').addEventListener('keydown',e=>{
   else if(e.key==='ArrowDown'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.min(shHistory.length,shHistIdx+1); e.target.value=shHistory[shHistIdx]||''; } }
 });
 
+function showShellBanner(){
+  const out=document.getElementById('sh-output'); if(!out || out.dataset.banner) return;
+  out.dataset.banner='1';
+  const src=document.getElementById('sh-banner-src');
+  const art=src?src.textContent.replace(/\s+$/,''):'';
+  const ver=(typeof lastSystemSummary==='object'&&lastSystemSummary&&lastSystemSummary.version)?('v'+lastSystemSummary.version):'';
+  out.innerHTML=`<pre style="margin:0 0 6px;color:var(--cyan);line-height:1.05;font-size:10px;white-space:pre;overflow-x:auto">${escapeHtml(art)}</pre>`+
+    `<div style="color:var(--dim);margin-bottom:10px;">ANTHILL operator shell ${ver} · type a command and press Enter.</div>`;
+}
 async function initShell(){
+  showShellBanner();
   try{
     const r=await api('/shell/info'); if(!r.success) throw new Error(r.message);
     const info=r.data||{};

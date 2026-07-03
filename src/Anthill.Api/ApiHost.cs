@@ -1,4 +1,5 @@
 using System.Reflection;
+using Anthill.Core.Agents;
 using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
@@ -220,6 +221,18 @@ public static class ApiHost
         });
         app.MapGet("/missions/{id}/graph", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.BuildTaskGraphData(id)));
+        // v1.8.22: the ant colony registry (roles, workers, permission contracts) + worker telemetry.
+        app.MapGet("/colony/registry", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["roles"] = AntRegistry.Roles,
+                ["validation_errors"] = AntRegistry.ValidateRegistry(),
+                ["view_modes"] = new[] { "command", "expanded", "active", "group" },
+                ["executable_roles"] = AntRegistry.ExecutableRoleIds.ToList(),
+                ["worker_telemetry"] = Queen.Memory.SummarizeWorkerTelemetry(),
+            }));
+        app.MapGet("/colony/workers/telemetry", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.Memory.SummarizeWorkerTelemetry()));
         app.MapGet("/sources/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_sources") ?? Results.Text(Queen.FormatSourceDetail(id), "text/plain"));
         app.MapGet("/patches/{id}", (HttpContext ctx, string id) =>
@@ -323,6 +336,8 @@ public static class ApiHost
                     ["index"] = i + 1,
                     ["title"] = t.Title,
                     ["ant"] = t.AssignedAnt,
+                    ["worker"] = t.AssignedWorker,
+                    ["display"] = t.AssignedWorker ?? t.AssignedAnt,
                     ["task_type"] = t.TaskType,
                     ["description"] = TextUtil.Truncate(t.Description, 400),
                     ["critical"] = t.Critical,
@@ -335,6 +350,13 @@ public static class ApiHost
                     ["task_count"] = tasks.Count,
                     ["spec_ingestion"] = Planner.IsLongInput(goal),
                     ["has_coder_task"] = tasks.Any(t => t.AssignedAnt == "coder"),
+                    // v1.8.22: worker path the plan resolves to, plus any capability warnings.
+                    ["selected_path"] = tasks.Select(t => t.AssignedWorker ?? t.AssignedAnt).ToList(),
+                    ["constraint_warnings"] = tasks
+                        .Select(t => AntRegistry.ValidateTask(t, constraints))
+                        .Where(r => !r.Allowed)
+                        .Select(r => r.Reason)
+                        .ToList(),
                     ["constraints"] = new Dictionary<string, object?>
                     {
                         ["verification_only"] = constraints.VerificationOnly,
@@ -741,6 +763,36 @@ public static class ApiHost
             var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
             int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var limit);
             return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000)));
+        });
+
+        // v1.8.22 Ant Inspector + Performance Observatory: per-caste task stats (all history), the
+        // model route each role runs on, and the capability gates that apply to each ant.
+        app.MapGet("/ants/stats", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var routes = new Dictionary<string, object?>();
+            foreach (var role in new[] { "researcher", "web", "file", "coder", "builder", "verifier", "planner", "strategist" })
+            {
+                AnthillRuntime.ModelRouting.TryGetValue(role, out var cfg);
+                routes[role] = new Dictionary<string, object?>
+                {
+                    ["provider"] = cfg?.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider,
+                    ["model"] = cfg?.GetValueOrDefault("model") ?? AnthillRuntime.OllamaModel,
+                };
+            }
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ants"] = Queen.Memory.AntTaskStats(),
+                ["routes"] = routes,
+                ["gates"] = new Dictionary<string, object?>
+                {
+                    ["web_search"] = AnthillRuntime.EnableWebSearch,
+                    ["file_tools"] = AnthillRuntime.EnableFileTools,
+                    ["file_writing"] = AnthillRuntime.EnableFileWriting,
+                    ["patch_application"] = AnthillRuntime.EnablePatchApplication,
+                    ["shell_tool"] = AnthillRuntime.EnableShellTool,
+                },
+            });
         });
 
         app.MapPost("/pheromones/prune", (HttpContext ctx) =>
@@ -1328,6 +1380,8 @@ public static class ApiHost
                 {
                     ["mission_id"] = missionId, ["title"] = t.GetValueOrDefault("title"),
                     ["ant"] = t.GetValueOrDefault("assigned_ant"), ["status"] = t.GetValueOrDefault("status"),
+                    ["worker"] = t.GetValueOrDefault("assigned_worker"),
+                    ["path_node"] = t.GetValueOrDefault("assigned_worker") ?? t.GetValueOrDefault("assigned_ant"),
                 });
         }
         var endReason = o.Metadata.GetValueOrDefault("end_reason")?.ToString()

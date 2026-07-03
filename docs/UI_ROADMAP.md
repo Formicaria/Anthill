@@ -41,11 +41,14 @@ Lazy "Task Flow" section in the mission report: a dependency-layered DAG (status
 paths in red) and a start-ordered timeline with duration bars, both from `/missions/{id}/graph`, plus
 a click-to-open task detail drawer. Final-output separation preserved.
 
+### Phase 8 — Ant Inspector + Performance Observatory (v1.8.22)
+New admin Ant Inspector page: per-caste model route, applicable capability gates, and lifetime task
+stats (totals, done/failed/skipped, success rate, avg seconds) from `GET /ants/stats`, plus a
+recent-activity expander. Bundled with the ANTHILL boot/shell ASCII banner.
+
 ## Future direction (not yet built)
 - **Phase 7 — Visual Patch Center 2.0:** grouping by mission/objective/file/risk/status on top of the
   existing Patch Center (shipped in v1.8.16).
-- **Phase 8 — Ant Inspector + Performance Observatory:** per-ant permissions, current tasks, history,
-  model routes, success/failure and verifier-rejection stats.
 - **Phase 9 — Memory + Pheromone Explorer:** success/failure and loop-pattern visualization, mission
   memory + task/source/patch search, prune/archive controls.
 - **Phase 10 — Full Command Center Polish:** command palette, global search, notification center,

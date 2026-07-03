@@ -54,6 +54,47 @@ public sealed partial class SqliteMemory
         Query("SELECT DISTINCT ant_name FROM events WHERE ant_name IS NOT NULL AND ant_name <> '' ORDER BY ant_name")
             .Select(r => r.GetValueOrDefault("ant_name")?.ToString() ?? "").Where(s => s.Length > 0).ToList();
 
+    /// <summary>
+    /// v1.8.22 Ant Performance Observatory: per-ant task aggregates across all missions —
+    /// total/complete/failed/skipped/running counts and average elapsed seconds. Grouped straight
+    /// from the tasks table, so it reflects the whole run history the DB still holds.
+    /// Returns ant_name → { total, complete, failed, skipped, running, avg_seconds }.
+    /// </summary>
+    public Dictionary<string, Dictionary<string, object?>> AntTaskStats()
+    {
+        var rows = Query(
+            @"SELECT assigned_ant, status, COUNT(*) AS n, AVG(elapsed_seconds) AS avg_sec
+              FROM tasks WHERE assigned_ant IS NOT NULL AND assigned_ant <> ''
+              GROUP BY assigned_ant, status");
+        var result = new Dictionary<string, Dictionary<string, object?>>();
+        foreach (var r in rows)
+        {
+            var ant = r.GetValueOrDefault("assigned_ant")?.ToString() ?? "";
+            if (ant.Length == 0) continue;
+            var status = (r.GetValueOrDefault("status")?.ToString() ?? "").ToLowerInvariant();
+            var n = (int)AsLong(r.GetValueOrDefault("n"));
+            if (!result.TryGetValue(ant, out var s))
+                result[ant] = s = new Dictionary<string, object?>
+                {
+                    ["total"] = 0, ["complete"] = 0, ["failed"] = 0, ["skipped"] = 0, ["running"] = 0,
+                    ["avg_seconds"] = 0.0, ["_elapsed_weight"] = 0,
+                };
+            s["total"] = (int)s["total"]! + n;
+            if (s.ContainsKey(status)) s[status] = (int)s[status]! + n;
+            // Weighted average of elapsed across status buckets that have a value.
+            var avg = r.GetValueOrDefault("avg_sec");
+            if (avg is not null && double.TryParse(avg.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var a))
+            {
+                var w = (int)s["_elapsed_weight"]!;
+                var cur = (double)s["avg_seconds"]!;
+                s["avg_seconds"] = Math.Round((cur * w + a * n) / Math.Max(1, w + n), 2);
+                s["_elapsed_weight"] = w + n;
+            }
+        }
+        foreach (var s in result.Values) s.Remove("_elapsed_weight");
+        return result;
+    }
+
     /// <summary>Distinct event types seen — for the type filter and at-a-glance vocabulary.</summary>
     public List<string> DistinctEventTypes() =>
         Query("SELECT DISTINCT event_type FROM events ORDER BY event_type")

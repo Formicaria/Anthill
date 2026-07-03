@@ -14,6 +14,7 @@ public sealed class Task
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
     public string AssignedAnt { get; set; } = "";
+    public string? AssignedWorker { get; set; }
     public string TaskType { get; set; } = "general";
     public string? ParentTaskId { get; set; }
     public List<string> ParentTaskIds { get; set; } = new();
@@ -52,7 +53,7 @@ public sealed class Task
     /// <summary>Deep clone for the locked mission snapshot ants receive (pydantic_deep_copy).</summary>
     public Task DeepCopy() => new()
     {
-        Id = Id, Title = Title, Description = Description, AssignedAnt = AssignedAnt, TaskType = TaskType,
+        Id = Id, Title = Title, Description = Description, AssignedAnt = AssignedAnt, AssignedWorker = AssignedWorker, TaskType = TaskType,
         ParentTaskId = ParentTaskId, ParentTaskIds = new List<string>(ParentTaskIds), DependsOn = new List<string>(DependsOn),
         Critical = Critical, Status = Status, Result = Result, ResultSummary = ResultSummary, ResultChars = ResultChars,
         EstimatedTokens = EstimatedTokens, CreatedAt = CreatedAt, StartedAt = StartedAt, FinishedAt = FinishedAt,
