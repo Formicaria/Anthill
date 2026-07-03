@@ -25,9 +25,13 @@ without creating a mission, and a Mission Composer on the Overview node: compose
 Plan (ordered steps with ant badges, types, and dependencies + a constraint banner), then Approve &
 Dispatch / Edit / Reject. One-shot dispatch preserved.
 
+### Phase 4 — Colony Live Canvas 2.0 (v1.8.19)
+Additive upgrade to the Colony canvas: caste legend + live pheromone-trail HUD (`/pheromones/json`),
+real pheromone drift scaled by colony trail strength, and a corrected node inspector showing live
+task load (running/completed/failed). Pre-existing task-dependency edges, handoff animation, worker
+nodes, pan/zoom, and inspector preserved.
+
 ## Future direction (not yet built)
-- **Phase 4 — Colony Live Canvas 2.0:** Queen + ant caste nodes, task dependency edges, pheromone
-  trails, handoff animation, clickable worker/task detail.
 - **Phase 5 — Objective Command Board:** backlog/active/paused/completed/stopped/looping/failed
   lanes; objective cards with expandable related runs/missions/tasks/patches and clear end reasons.
 - **Phase 6 — Mission Timeline + Task DAG Viewer:** timeline + DAG, task detail drawer, patch links,

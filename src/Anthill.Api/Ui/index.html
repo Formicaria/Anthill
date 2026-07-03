@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.18.1</title>
+<title>ANTHILL v1.8.19</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -202,6 +202,23 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 }
 #colony-canvas-area{flex:1;position:relative;overflow:hidden;}
 #c{position:absolute;top:0;left:0;}
+/* Colony Live Canvas 2.0 HUD overlay (v1.8.19) */
+.colony-hud{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:8px;z-index:5;max-width:250px;pointer-events:none;}
+.chud-legend{display:flex;flex-wrap:wrap;gap:5px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.chud-caste{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);}
+.chud-caste .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.chud-caste.on{color:var(--text);}
+.chud-caste.on .dot{box-shadow:0 0 7px currentColor;animation:chud-pulse 1.5s ease-in-out infinite;}
+.chud-phero{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:8px 10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.chud-phero-hd{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:6px;}
+.chud-trail{margin-bottom:5px;}
+.chud-trail:last-child{margin-bottom:0;}
+.chud-trail .tk{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:228px;}
+.chud-trail .tb{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:2px;overflow:hidden;}
+.chud-trail .tb>i{display:block;height:100%;border-radius:2px;transition:width .5s ease;}
+.chud-empty{font-size:9px;color:var(--dim);line-height:1.4;}
+@keyframes chud-pulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+@media (prefers-reduced-motion:reduce){ .chud-caste.on .dot{animation:none;} }
 #colony-right{
   width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
   border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
@@ -762,7 +779,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.18.1</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.19</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -805,7 +822,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.18.1</span>
+      <span class="nav-logo-ver">v1.8.19</span>
     </div>
 
     <div class="nav-scroll">
@@ -1154,6 +1171,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- Canvas area -->
         <div id="colony-canvas-area">
           <canvas id="c"></canvas>
+          <!-- Canvas 2.0 HUD overlay: caste legend + live pheromone trails (v1.8.19) -->
+          <div id="colony-hud" class="colony-hud">
+            <div class="chud-legend" id="chud-legend"></div>
+            <div class="chud-phero">
+              <div class="chud-phero-hd">Colony Learning · Pheromones</div>
+              <div id="chud-phero-body"><div class="chud-empty">Loading trails…</div></div>
+            </div>
+          </div>
           <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
           <!-- Mission bar overlays the bottom of the canvas -->
           <div class="mission-bar-wrap" id="mission-bar">
@@ -1976,7 +2001,7 @@ function showPage(id){
   // Per-page onEnter
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
   // Canvas resize when switching to colony
-  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); },50);
+  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
 }
 
 // Nav item clicks
@@ -2287,14 +2312,22 @@ function showInspector(n){
   const act=n.activity,pct=Math.round(act*100);
   const tasks=lastGraphData?.ant_counts?.[n.ant]??0;
   const statusLine=n.id==='queen'?'Commander':colonyRunning&&act>0?'Active':'Idle';
+  // v1.8.19: real live task load for this caste from the current mission graph.
+  const antTasks=(lastGraphData?.nodes||[]).filter(t=>t.assigned_ant===n.ant);
+  const tRunning=antTasks.filter(t=>t.status==='running').length;
+  const tDone=antTasks.filter(t=>t.status==='complete').length;
+  const tFailed=antTasks.filter(t=>t.status==='failed').length;
   document.getElementById('agent-detail').innerHTML=`
     <div class="ad-name">${n.label}</div>
     <div class="ad-type" style="color:${n.color}">${n.role} · ${n.ant||'queen'}</div>
     <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
     <div class="ad-row"><span class="ad-key">Activity</span><span class="ad-val">${pct}%</span></div>
     <div class="ad-row"><span class="ad-key">Task Count</span><span class="ad-val">${tasks}</span></div>
-    <div class="ad-section">Pheromone Trail</div>
+    <div class="ad-section">Live Task Load</div>
     <div class="ad-bar"><div class="ad-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${n.color}88,${n.color})"></div></div>
+    <div class="ad-row" style="margin-top:6px"><span class="ad-key">Running</span><span class="ad-val">${tRunning}</span></div>
+    <div class="ad-row"><span class="ad-key">Completed</span><span class="ad-val" style="color:${tDone?'var(--green)':''}">${tDone}</span></div>
+    <div class="ad-row"><span class="ad-key">Failed</span><span class="ad-val" style="color:${tFailed?'var(--red)':''}">${tFailed}</span></div>
     ${(lastGraphData?.nodes?.filter(t=>t.assigned_ant===n.ant).slice(0,4)||[]).map(t=>`
       <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
         <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
@@ -2308,6 +2341,7 @@ function loop(ts){
   camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
   drawBg();
   edges.forEach(e=>drawEdge(e));
+  drawPheromoneField();            // v1.8.19: real-pheromone drift under the structural edges
   dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
   maybeSpawn(ts);
   particles=particles.filter(p=>(p.t+=p.speed)<=1);
@@ -2631,6 +2665,7 @@ async function pollGraph(){
     updateNodeActivity();
     if(selectedNode) showInspector(selectedNode);
     buildDataFlowEdges(r.data?.nodes||[]);
+    renderColonyLegend(); // v1.8.19: keep the caste legend's live state in sync
   }catch{}
 }
 
@@ -2659,6 +2694,61 @@ function buildDataFlowEdges(taskNodes){
   const existingKeys=new Set(dataFlowEdges.map(e=>`${e.from}→${e.to}`));
   newEdges.filter(e=>!existingKeys.has(`${e.from}→${e.to}`)).forEach(e=>dataFlowEdges.push(e));
   if(!colonyRunning&&taskNodes.length===0) dataFlowEdges=[];
+}
+
+// ══ Colony Live Canvas 2.0 (v1.8.19) — caste legend + real pheromone trails ══
+const CHUD_CASTES=['researcher','web','file','coder','builder','verifier'];
+let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
+
+function renderColonyLegend(){
+  const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
+  el.innerHTML=CHUD_CASTES.map(a=>{
+    const am=ANT_MAP[a]; if(!am) return '';
+    const on=(colonyActivity[a]||0)>0;
+    return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${am.color};background:${am.color}"></span>${am.label}</div>`;
+  }).join('');
+}
+
+// Real pheromone memory → the HUD trail bars + a global intensity that drives the canvas drift.
+async function pollColonyPheromones(){
+  if(!document.getElementById('page-colony')?.classList.contains('active')) return;
+  try{
+    const r=await api('/pheromones/json'); if(!r||!r.success) return;
+    const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));
+    pheromoneTrails=trails.slice(0,6);
+    const topN=pheromoneTrails.slice(0,3);
+    pheromoneIntensity = topN.length ? Math.max(0,Math.min(1, topN.reduce((s,t)=>s+(+t.strength||0),0)/topN.length)) : 0;
+    const body=document.getElementById('chud-phero-body'); if(!body) return;
+    body.innerHTML = pheromoneTrails.length ? pheromoneTrails.slice(0,4).map(t=>{
+      const s=Math.max(0,Math.min(1,+t.strength||0)), pct=Math.round(s*100);
+      const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
+      const key=(t.trail_key||'—').split(':').slice(-1)[0];
+      return `<div class="chud-trail"><div class="tk" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(key)}</div><div class="tb"><i style="width:${pct}%;background:${col}"></i></div></div>`;
+    }).join('') : '<div class="chud-empty">No trails yet — run missions to build colony memory.</div>';
+  }catch{}
+}
+
+// Additive canvas pass: motes drifting from the castes toward the Queen, density + opacity scaled by
+// real pheromone intensity. CSS-cheap, guarded (invisible when there is no colony memory yet).
+function drawPheromoneField(){
+  if(pheromoneIntensity<=0) return;
+  const queen=nodes.find(n=>n.id==='queen'); if(!queen) return;
+  const target=Math.round(6+pheromoneIntensity*14);
+  while(pheroMotes.length<target){
+    const src=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen;
+    pheroMotes.push({from:src,t:Math.random(),speed:.0015+Math.random()*.002});
+  }
+  if(pheroMotes.length>target) pheroMotes.length=target;
+  const qp=w2s(queen.x,queen.y);
+  pheroMotes.forEach(m=>{
+    m.t+=m.speed; if(m.t>=1){ m.t=0; m.from=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen; }
+    const fp=w2s(m.from.x,m.from.y);
+    const x=fp.x+(qp.x-fp.x)*m.t, y=fp.y+(qp.y-fp.y)*m.t;
+    const a=(0.10+pheromoneIntensity*0.22)*(1-Math.abs(m.t-0.5)*1.2);
+    if(a<=0) return;
+    ctx.beginPath();ctx.arc(x,y,1.6*camZ,0,Math.PI*2);
+    ctx.fillStyle=`rgba(251,191,36,${a})`;ctx.fill();
+  });
 }
 
 function evTypeClass(t){
@@ -3452,6 +3542,7 @@ function startPolling(){
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
   setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
+  setInterval(pollColonyPheromones, 15000); // Canvas 2.0 pheromone HUD (only fetches when Colony is visible)
   setInterval(pollApprovals,6000);
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
   setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)

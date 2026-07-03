@@ -16,7 +16,27 @@
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
-plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, and so on.
+plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, and so on.
+
+## v1.8.19 — Colony Live Canvas 2.0 (UI Phase 4)
+
+Additive upgrade to the existing Colony canvas — the working node graph, task-dependency edges
+(`dataFlowEdges`), handoff animation, pan/zoom, and node inspector are all preserved. New:
+
+- **Caste legend + pheromone HUD overlay** on the canvas: the six ant castes with live-activity dots,
+  and a "Colony Learning · Pheromones" panel showing the top real pheromone trails (`/pheromones/json`)
+  with strength bars. Polls only while the Colony page is visible; glass overlay, `pointer-events:none`.
+- **Real pheromone drift** on the canvas: motes drift from the castes toward the Queen with density and
+  opacity scaled by actual colony trail strength (a global `pheromoneIntensity`). One additive CSS-cheap
+  draw pass, guarded so it's invisible until the colony has learned something; reduced-motion aware.
+- **Corrected node inspector**: the previously mislabeled "Pheromone Trail" bar (which just showed
+  activity %) is now a **Live Task Load** breakdown — running / completed / failed tasks for that caste
+  from the current mission graph. Real data.
+
+No backend or API changes; reuses `/pheromones/json` and the existing `/graph` feed. The render loop
+gains a single guarded pass; existing colony interaction and behavior are unchanged.
+
+
 
 ## v1.8.18.1 — Fix: Patch Center empty HTTP 500 (invalid UTF-16 in JSON)
 
