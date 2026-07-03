@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.20";
+    public const string Version = "1.8.21";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -161,6 +161,8 @@ public static class AnthillRuntime
     public static int AutonomyAutoApplyVerifyTimeout = 900;
     /// <summary>After a green verify, also git add + commit locally (never pushed).</summary>
     public static bool AutonomyAutoApplyGitCommit = false;
+    /// <summary>v1.8.21: keep auto-applied patches without a verify gate when no verify command is set (opt-in; default off = verify).</summary>
+    public static bool AutonomyAutoApplyKeepWithoutVerify = false;
 
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
@@ -431,6 +433,7 @@ public static class AnthillRuntime
         AutonomyAutoApplyVerifyCmd = (config.AutonomyAutoApplyVerifyCmd ?? "").Trim();
         AutonomyAutoApplyVerifyTimeout = Math.Clamp(config.AutonomyAutoApplyVerifyTimeout, 30, 7200);
         AutonomyAutoApplyGitCommit = config.AutonomyAutoApplyGitCommit;
+        AutonomyAutoApplyKeepWithoutVerify = config.AutonomyAutoApplyKeepWithoutVerify;
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -469,6 +472,7 @@ public static class AnthillRuntime
         "operator_shell_enabled", "operator_shell_dir",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
+        "autonomy_autoapply_keep_without_verify",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -588,6 +592,7 @@ public static class AnthillRuntime
         ["autonomy_autoapply_verify_cmd"] = AutonomyAutoApplyVerifyCmd,
         ["autonomy_autoapply_verify_timeout"] = AutonomyAutoApplyVerifyTimeout,
         ["autonomy_autoapply_git_commit"] = AutonomyAutoApplyGitCommit,
+        ["autonomy_autoapply_keep_without_verify"] = AutonomyAutoApplyKeepWithoutVerify,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["api_auth_enabled"] = EnableApiAuth,

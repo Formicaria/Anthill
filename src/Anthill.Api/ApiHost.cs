@@ -1039,8 +1039,11 @@ public static class ApiHost
         {
             "task_failed", "task_blocked", "task_skipped_dependency", "mission_failed",
             "patch_proposal_parse_failed", "autonomy_error",
+            // v1.8.21: auto-apply failures the operator needs to see ("why didn't it save?").
+            "autonomy_autoapply_reverted", "autonomy_autoapply_apply_failed", "autonomy_autoapply_git_failed",
         };
-        var problems = Queen.Memory.GetRecentEvents(300, null, id)
+        var missionEvents = Queen.Memory.GetRecentEvents(400, null, id);
+        var problems = missionEvents
             .Where(e => problemTypes.Contains(e.GetValueOrDefault("event_type")?.ToString() ?? ""))
             .Select(e => new Dictionary<string, object?>
             {
@@ -1050,6 +1053,27 @@ public static class ApiHost
                 ["at"] = e.GetValueOrDefault("created_at"),
             })
             .ToList();
+
+        // v1.8.21: the latest gated auto-apply outcome for this mission, surfaced so the operator can
+        // see whether auto-applied changes were kept, kept-unverified, reverted, or skipped — and why.
+        Dictionary<string, object?>? autoApply = null;
+        if (includeSensitive)
+        {
+            var aa = missionEvents.FirstOrDefault(e =>
+                (e.GetValueOrDefault("event_type")?.ToString() ?? "").StartsWith("autonomy_autoapply_"));
+            if (aa is not null)
+            {
+                var t = aa.GetValueOrDefault("event_type")?.ToString() ?? "";
+                autoApply = new Dictionary<string, object?>
+                {
+                    ["type"] = t,
+                    ["outcome"] = t.Replace("autonomy_autoapply_", ""),
+                    ["kept"] = t is "autonomy_autoapply_verified" or "autonomy_autoapply_kept_unverified",
+                    ["message"] = aa.GetValueOrDefault("message"),
+                    ["at"] = aa.GetValueOrDefault("created_at"),
+                };
+            }
+        }
 
         var taskReports = tasks.Select(t =>
         {
@@ -1135,6 +1159,7 @@ public static class ApiHost
             ["patch_counts"] = includeSensitive ? Queen.Memory.PatchCountsForMission(id) : null,
             ["pending_approvals"] = approvals.Count(a => a.GetValueOrDefault("status")?.ToString() == "pending"),
             ["sources_saved"] = Queen.Memory.CountSourcesForMission(id),
+            ["auto_apply"] = autoApply,
             ["problems"] = problems,
         });
     }

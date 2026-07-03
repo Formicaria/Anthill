@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.20 
+**Current version:** v1.8.21 
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.21` | Fix: autonomous auto-apply now persists on deployments without a build toolchain (`autonomy_autoapply_keep_without_verify`); clearer keep/revert reporting. |
 | `v1.8.20` | Objective Command Board (lifecycle lanes) + Mission Timeline & Task DAG viewer. |
 | `v1.8.19` | Colony Live Canvas 2.0 — caste legend + live pheromone-trail HUD, pheromone drift, real task-load inspector. |
 | `v1.8.18.1` | Fix: Patch Center empty HTTP 500 — scrub invalid UTF-16 in JSON responses. |
@@ -236,6 +237,25 @@ Environment variables can override common settings:
 | `ANTHILL_API_TOKEN` | Optional programmatic admin token, minimum 32 characters |
 
 Normal web login does not require `ANTHILL_API_TOKEN`.
+
+### Autonomous auto-apply (advanced)
+
+Gated auto-apply lets the Director apply low-risk patches without human review, then **verify and roll
+back** if the check fails. It is OFF by default and does nothing without a path allowlist.
+
+| Setting | Purpose |
+|---|---|
+| `autonomy_autoapply_enabled` | Master switch (default `false`). |
+| `autonomy_autoapply_paths` | Workspace-relative globs a patch must match (empty = nothing eligible). |
+| `autonomy_autoapply_verify_cmd` | Verify command run in `agent_workspace_dir`. Empty = built-in `dotnet build && dotnet test`. |
+| `autonomy_autoapply_keep_without_verify` | If `true` **and** no verify command is set, keep applied patches without verifying (default `false`). |
+| `autonomy_autoapply_git_commit` | After keeping, `git add` + `git commit` locally (never pushed). |
+
+**Important:** the built-in verify needs a *buildable* `agent_workspace_dir` (a checkout with a
+solution) **and** the dotnet SDK on the host. On a published-binary deployment (e.g. an LXC without
+the SDK), point `agent_workspace_dir` at a real checkout and set `autonomy_autoapply_verify_cmd` to a
+check it can run — **or** set `autonomy_autoapply_keep_without_verify: true` to keep changes without a
+verify gate. Otherwise every auto-applied patch fails verify and is rolled back (nothing persists).
 
 ---
 

@@ -79,9 +79,14 @@ public static class AutoApplyRunner
         }
         if (eligible.Count == 0) return;
 
+        var verifyCmdConfigured = !string.IsNullOrWhiteSpace(AnthillRuntime.AutonomyAutoApplyVerifyCmd);
+        var verifyDescription = verifyCmdConfigured ? AnthillRuntime.AutonomyAutoApplyVerifyCmd
+            : (AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify ? "(none — keep without verify)" : "dotnet build && dotnet test");
+        var workspace = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
+            ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : AnthillRuntime.AllowedWorkspaceRoot;
         queen.Memory.LogEvent(missionId, "autonomy_autoapply_started",
-            $"Director auto-applying {eligible.Count} eligible patch(es), then verifying.", antName: "director",
-            metadata: new() { ["mission_id"] = missionId, ["eligible_count"] = eligible.Count });
+            $"Director auto-applying {eligible.Count} eligible patch(es), then verifying with: {verifyDescription}.", antName: "director",
+            metadata: new() { ["mission_id"] = missionId, ["eligible_count"] = eligible.Count, ["verify_cmd"] = verifyDescription, ["workspace"] = workspace });
 
         // Apply each eligible patch, remembering enough to roll back.
         var applied = new List<Queen.AutoApplyOutcome>();
@@ -96,27 +101,27 @@ public static class AutoApplyRunner
         }
         if (applied.Count == 0) return;
 
+        // v1.8.21 fix: on a deployment with no build toolchain, the default `dotnet build && dotnet test`
+        // verify always fails and every applied patch is rolled back — so auto-apply never persists. When
+        // the operator has explicitly opted in (autonomy_autoapply_keep_without_verify) AND set no verify
+        // command, keep the applied patches instead of running (and failing) the built-in verify.
+        if (!verifyCmdConfigured && AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify)
+        {
+            KeepApplied(queen, missionId, applied,
+                "autonomy_autoapply_kept_unverified",
+                $"Kept {applied.Count} auto-applied patch(es) WITHOUT verification " +
+                "(autonomy_autoapply_keep_without_verify=true; no verify command configured).");
+            return;
+        }
+
         // Verify: the change must still build + test green, or every applied patch is reverted.
         var verify = RunVerify();
         if (verify.Green)
         {
-            foreach (var a in applied)
-            {
-                // Consume the human approval that would otherwise sit in the queue for this patch.
-                var approval = queen.Memory.GetApprovalForTarget(a.PatchId);
-                if (approval is not null)
-                    queen.Memory.UpdateApprovalStatus(approval.GetValueOrDefault("id")?.ToString() ?? "",
-                        ApprovalStatus.Consumed, "Auto-applied by the Director and verified green.");
-            }
-            var committed = AnthillRuntime.AutonomyAutoApplyGitCommit && GitCommit(applied, out var commitNote);
-            queen.Memory.LogEvent(missionId, "autonomy_autoapply_verified",
-                $"Verify passed — kept {applied.Count} auto-applied patch(es).", antName: "director",
-                metadata: new()
-                {
-                    ["mission_id"] = missionId, ["kept_count"] = applied.Count, ["verify_exit"] = verify.ExitCode,
-                    ["verify_seconds"] = verify.Seconds, ["git_committed"] = committed,
-                    ["files"] = applied.Select(a => a.FilePath).ToList(),
-                });
+            KeepApplied(queen, missionId, applied,
+                "autonomy_autoapply_verified",
+                $"Verify passed — kept {applied.Count} auto-applied patch(es).",
+                new() { ["verify_exit"] = verify.ExitCode, ["verify_seconds"] = verify.Seconds });
         }
         else
         {
@@ -125,13 +130,50 @@ public static class AutoApplyRunner
             for (var i = applied.Count - 1; i >= 0; i--)
                 queen.RollbackAutoApplied(applied[i], missionId, null, reason);
             queen.Memory.LogEvent(missionId, "autonomy_autoapply_reverted",
-                $"Verify FAILED — rolled back all {applied.Count} auto-applied patch(es).", antName: "director",
+                $"Verify FAILED ({reason}) — rolled back all {applied.Count} auto-applied patch(es). " +
+                $"Verify ran in {workspace} with: {verifyDescription}. " +
+                "If this deployment has no build toolchain, set autonomy_autoapply_verify_cmd to a check it can run, " +
+                "or autonomy_autoapply_keep_without_verify=true to keep changes without verifying.", antName: "director",
                 metadata: new()
                 {
                     ["mission_id"] = missionId, ["reverted_count"] = applied.Count, ["verify_exit"] = verify.ExitCode,
-                    ["timed_out"] = verify.TimedOut, ["verify_tail"] = Tail(verify.Output, 1500),
+                    ["timed_out"] = verify.TimedOut, ["verify_cmd"] = verifyDescription, ["workspace"] = workspace,
+                    ["verify_tail"] = Tail(verify.Output, 1500),
                 });
         }
+    }
+
+    /// <summary>
+    /// Finalize a set of kept (not rolled-back) auto-applied patches: consume the human approvals that
+    /// would otherwise sit in the queue, optionally git-commit locally, and log the outcome. Shared by
+    /// the verify-green path and the keep-without-verify path (v1.8.21).
+    /// </summary>
+    private static void KeepApplied(Queen queen, string missionId, List<Queen.AutoApplyOutcome> applied,
+        string eventType, string message, Dictionary<string, object?>? extra = null)
+    {
+        foreach (var a in applied)
+        {
+            var approval = queen.Memory.GetApprovalForTarget(a.PatchId);
+            if (approval is not null)
+                queen.Memory.UpdateApprovalStatus(approval.GetValueOrDefault("id")?.ToString() ?? "",
+                    ApprovalStatus.Consumed, "Auto-applied by the Director and kept.");
+        }
+        var committed = false;
+        if (AnthillRuntime.AutonomyAutoApplyGitCommit)
+        {
+            committed = GitCommit(applied, out var commitNote);
+            if (!committed)
+                queen.Memory.LogEvent(missionId, "autonomy_autoapply_git_failed",
+                    $"Kept the applied patch(es) on disk but the local git commit failed: {commitNote}", antName: "director",
+                    metadata: new() { ["mission_id"] = missionId, ["note"] = commitNote });
+        }
+        var meta = new Dictionary<string, object?>
+        {
+            ["mission_id"] = missionId, ["kept_count"] = applied.Count, ["git_commit_enabled"] = AnthillRuntime.AutonomyAutoApplyGitCommit,
+            ["git_committed"] = committed, ["files"] = applied.Select(a => a.FilePath).ToList(),
+        };
+        foreach (var kv in extra ?? new()) meta[kv.Key] = kv.Value;
+        queen.Memory.LogEvent(missionId, eventType, message, antName: "director", metadata: meta);
     }
 
     /// <summary>Probes whether the workspace root accepts writes (a temp file create+delete). Cheap; runs only when eligible patches exist.</summary>

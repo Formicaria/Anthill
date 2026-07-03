@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.20</title>
+<title>ANTHILL v1.8.21</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -823,7 +823,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.20</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.21</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -866,7 +866,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.20</span>
+      <span class="nav-logo-ver">v1.8.21</span>
     </div>
 
     <div class="nav-scroll">
@@ -3107,6 +3107,17 @@ async function renderMissionReport(missionId, body){
       `<div style="white-space:normal;color:var(--dim)">None — this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
   }
   if(rep.sources_saved) html+=sec('Research', `<div style="white-space:normal;color:var(--dim)">${rep.sources_saved} web source(s) saved.</div>`);
+
+  // v1.8.21: gated auto-apply outcome — answers "did the autonomous change actually stick?"
+  if(rep.auto_apply){
+    const aa=rep.auto_apply, kept=!!aa.kept;
+    const col=kept?'var(--green)':(aa.outcome==='reverted'?'var(--red)':'var(--queen)');
+    const label={verified:'Kept (verified)',kept_unverified:'Kept (no verify)',reverted:'Reverted after failed verify',
+      apply_failed:'Apply failed',git_failed:'Kept, git commit failed',skipped:'Skipped',started:'In progress'}[aa.outcome]||aa.outcome;
+    html+=sec('Autonomous auto-apply',
+      `<div style="white-space:normal;line-height:1.5"><span style="color:${col};font-weight:600">${label}</span>`+
+      `<div style="color:var(--dim);font-size:11px;margin-top:3px">${escapeHtml(aa.message||'')}</div></div>`);
+  }
 
   // Autonomy linkage — which objective drove this mission, and what it spawned.
   if(rep.autonomy_run){

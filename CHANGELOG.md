@@ -17,7 +17,33 @@
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
 plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
-Mission Timeline/DAG = **v1.8.20**, and so on.
+Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, and so on.
+
+## v1.8.21 — Fix: autonomous auto-apply changes not persisting
+
+Auto-apply is *apply → verify → keep-or-rollback*: a patch is kept only if verify exits 0, else every
+applied patch is reverted. On a deployment with no build toolchain (a published-binary LXC, no dotnet
+SDK, or `agent_workspace_dir` that isn't a buildable checkout), the built-in
+`dotnet build && dotnet test` verify always failed — so auto-applied changes were silently rolled
+back and never persisted ("not saving").
+
+- **New opt-in gate `autonomy_autoapply_keep_without_verify`** (default false = keep verifying, safe).
+  When true **and** no `autonomy_autoapply_verify_cmd` is configured, auto-apply keeps the applied
+  patches instead of running (and failing) the built-in verify. If a verify command *is* set, it
+  always runs and gates keep/rollback as before.
+- **Clearer outcome logging.** The `autonomy_autoapply_started` / `_reverted` events now record the
+  workspace path and the verify command; the reverted event's message spells out the fix options.
+  A new `autonomy_autoapply_kept_unverified` event marks the keep-without-verify path, and
+  `autonomy_autoapply_git_failed` surfaces a failed local git commit (kept on disk regardless).
+- **Mission report surfacing.** `/missions/{id}/report` now includes an `auto_apply` outcome
+  (kept / kept-unverified / reverted / apply-failed / git-failed / skipped) and the console shows an
+  "Autonomous auto-apply" section — so "did the change actually stick?" is answerable at a glance.
+  Auto-apply failures are also added to the report's Problems list.
+
+Config default stays fail-safe: auto-apply is still OFF unless enabled with a path allowlist, and it
+still verifies unless the operator explicitly opts out.
+
+
 
 ## v1.8.20 — Objective Command Board + Mission Timeline & Task DAG (UI Phases 5–6)
 
