@@ -64,6 +64,25 @@ public static class ApiHost
 
         var app = builder.Build();
 
+        // Outermost safety net: turn any unhandled exception (including a response-serialization
+        // failure during result execution) into a valid JSON 500 instead of an empty-body 500.
+        app.Use(async (ctx, next) =>
+        {
+            try { await next(); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[unhandled] {ctx.Request.Method} {ctx.Request.Path}: {ex}");
+                if (!ctx.Response.HasStarted)
+                {
+                    ctx.Response.Clear();
+                    ctx.Response.StatusCode = 500;
+                    ctx.Response.ContentType = "application/json";
+                    await ctx.Response.WriteAsync(
+                        "{\"success\":false,\"message\":\"Internal server error.\",\"error\":\"internal_error\",\"data\":null}");
+                }
+            }
+        });
+
         // Security headers on every response.
         app.Use(async (ctx, next) =>
         {
@@ -1629,12 +1648,48 @@ public sealed class ObjectivePatch
 /// <summary>Standard JSON response envelopes — {success,message,data} / {success,message,error,data}.</summary>
 public static class ApiJson
 {
+    // AllowNamedFloatingPointLiterals so a stray NaN/Infinity double serializes as "NaN" instead of
+    // throwing during response writing (one of the ways an endpoint used to emit an empty 500).
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOpts = new()
+    {
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
     public static IResult Ok(object? data = null, string message = "ok") =>
-        Results.Json(new Dictionary<string, object?> { ["success"] = true, ["message"] = TextUtil.SanitizeUtf16(message), ["data"] = SanitizeJson(data) });
+        Envelope(new Dictionary<string, object?> { ["success"] = true, ["message"] = TextUtil.SanitizeUtf16(message), ["data"] = SanitizeJson(data) }, 200);
 
     public static IResult Error(string message, string? error = null, object? data = null) =>
-        Results.Json(new Dictionary<string, object?> { ["success"] = false, ["message"] = TextUtil.SanitizeUtf16(message), ["error"] = error, ["data"] = SanitizeJson(data) },
-            statusCode: error switch { "unauthorized" => 401, "permission_denied" => 403, "rate_limited" => 429, "not_found" => 404, _ => 400 });
+        Envelope(new Dictionary<string, object?> { ["success"] = false, ["message"] = TextUtil.SanitizeUtf16(message), ["error"] = error, ["data"] = SanitizeJson(data) },
+            error switch { "unauthorized" => 401, "permission_denied" => 403, "rate_limited" => 429, "not_found" => 404, _ => 400 });
+
+    /// <summary>
+    /// Serializes the response envelope to a string HERE — inside our own try/catch — and returns it as
+    /// pre-rendered content, instead of handing the object graph to <c>Results.Json</c> which serializes
+    /// later during result execution, after the endpoint's own try/catch has already returned. A failure
+    /// at that later stage is uncatchable and surfaces as a silent empty HTTP 500 (the recurring Patch
+    /// Center bug). By serializing up front we either succeed, or we return a valid JSON error that names
+    /// the exception — the operator never sees an empty 500 again.
+    /// </summary>
+    private static IResult Envelope(Dictionary<string, object?> payload, int statusCode)
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, JsonOpts);
+            return Results.Content(json, "application/json", System.Text.Encoding.UTF8, statusCode);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ApiJson] response serialization failed ({ex.GetType().Name}): {ex.Message}");
+            var safe = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["success"] = false,
+                ["message"] = TextUtil.SanitizeUtf16($"Response could not be serialized: {ex.Message}"),
+                ["error"] = "serialization_error",
+                ["data"] = null,
+            }, JsonOpts);
+            return Results.Content(safe, "application/json", System.Text.Encoding.UTF8, 500);
+        }
+    }
 
     /// <summary>
     /// Recursively replaces invalid UTF-16 (lone surrogates) in every string reachable from the
@@ -1651,6 +1706,8 @@ public static class ApiJson
         {
             case null: return null;
             case string s: return TextUtil.SanitizeUtf16(s);
+            case double d when double.IsNaN(d) || double.IsInfinity(d): return null; // STJ throws on non-finite
+            case float f when float.IsNaN(f) || float.IsInfinity(f): return null;
             case byte[]: return value; // keep byte[] → base64, don't expand into a number array
             case System.Collections.IDictionary dict:
             {
