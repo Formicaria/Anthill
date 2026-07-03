@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.17</title>
+<title>ANTHILL v1.8.18</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -717,6 +717,25 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
 .mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
 .mn-hint{font-size:9px;color:var(--dim);margin-top:8px;}
+.mn-actions{display:flex;gap:6px;margin-top:9px;}
+/* Plan preview (Mission Composer, v1.8.18) */
+.hud-plan{margin-top:10px;border:1px solid var(--hud-line);border-radius:6px;padding:10px 12px;background:rgba(2,6,23,.35);}
+.hud-plan-banner{font-size:10px;padding:6px 9px;border-radius:5px;margin-bottom:8px;line-height:1.4;}
+.hud-plan-banner.warn{color:var(--amber);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.3);}
+.hud-plan-banner.info{color:var(--hud-cyan);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);}
+.plan-step{display:flex;gap:9px;align-items:flex-start;padding:6px 2px;border-bottom:1px solid rgba(30,51,84,.4);}
+.plan-step:last-child{border-bottom:none;}
+.plan-step .p-num{font-family:var(--mono);font-size:10px;color:var(--dim);min-width:18px;text-align:right;flex-shrink:0;padding-top:2px;}
+.plan-step .p-body{min-width:0;flex:1;}
+.plan-step .p-title{font-size:11px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.plan-step .p-meta{font-size:9px;color:var(--dim);margin-top:1px;}
+.ant-badge{display:inline-flex;align-items:center;font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em;}
+.ant-badge.researcher{color:var(--blue);background:rgba(59,130,246,.12);}
+.ant-badge.web{color:var(--cyan);background:rgba(6,182,212,.12);}
+.ant-badge.file{color:var(--hud-cyan);background:rgba(34,211,238,.10);}
+.ant-badge.coder{color:var(--purple);background:rgba(139,92,246,.14);}
+.ant-badge.builder{color:var(--amber);background:rgba(245,158,11,.12);}
+.ant-badge.verifier{color:var(--green);background:rgba(16,185,129,.12);}
 
 /* Attention items */
 .hud-attn-item{display:flex;gap:9px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(30,51,84,.4);cursor:pointer;}
@@ -743,7 +762,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.17</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.18</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -786,7 +805,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.17</span>
+      <span class="nav-logo-ver">v1.8.18</span>
     </div>
 
     <div class="nav-scroll">
@@ -980,6 +999,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <button class="hud-act" data-mode="build" aria-pressed="false" onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
               </div>
               <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
+              <div class="mn-actions">
+                <button class="hud-act" id="ov-preview-btn" onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
+              </div>
+              <div class="hud-plan" id="ov-plan" style="display:none"></div>
             </div>
           </div>
         </div>
@@ -1969,7 +1992,7 @@ document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
 });
 
 function enableInput(on){
-  ['mission-input','send-btn','ms-mission-input','ms-send-btn','ov-mission-input','ov-send-btn'].forEach(id=>{
+  ['mission-input','send-btn','ms-mission-input','ms-send-btn','ov-mission-input','ov-send-btn','ov-preview-btn'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.disabled=!on;
   });
@@ -3296,20 +3319,19 @@ function autoGrowMissionInput(el){
   el.style.height=Math.min(el.scrollHeight,140)+'px';
 }
 
-async function dispatchMission(inputId){
-  const input=document.getElementById(inputId||'mission-input');
-  if(!input) return;
-  let val=input.value.trim(); if(!val) return;
-  // v1.8.17: the Overview mission node supports mode helpers that prepend safe, visible wording
-  // which the v1.8.16 planner reads as constraints (verification-only / no-patch / inspect-only).
-  if(inputId==='ov-mission-input' && ovMode && typeof OV_MODE_TEXT!=='undefined' && OV_MODE_TEXT[ovMode]){
-    val = OV_MODE_TEXT[ovMode] + val;
-  }
-  input.value='';
-  autoGrowMissionInput(input);
+// Compose the effective goal for the Overview node: prepend the selected mode's safe wording
+// (read by the v1.8.16 planner constraints) to the raw directive.
+function composeOvGoal(raw){
+  if(ovMode && typeof OV_MODE_TEXT!=='undefined' && OV_MODE_TEXT[ovMode]) return OV_MODE_TEXT[ovMode] + raw;
+  return raw;
+}
+// Core dispatch: POST a goal and start tracking the resulting job. Shared by direct dispatch and
+// by the Mission Composer's Approve & Dispatch, so both submit the exact same goal string.
+async function submitMissionGoal(goal){
+  if(!goal) return;
   enableInput(false);
   try{
-    const r=await api('/missions','POST',{goal:val});
+    const r=await api('/missions','POST',{goal});
     if(!r.success){enableInput(true);return;}
     activeJobId=r.data.id;
     selectedJobId=r.data.id;
@@ -3318,6 +3340,74 @@ async function dispatchMission(inputId){
     pollJobs();
   }catch{enableInput(true);}
 }
+async function dispatchMission(inputId){
+  const input=document.getElementById(inputId||'mission-input');
+  if(!input) return;
+  let val=input.value.trim(); if(!val) return;
+  if(inputId==='ov-mission-input'){ val=composeOvGoal(val); hidePlanPreview(); }
+  input.value='';
+  autoGrowMissionInput(input);
+  submitMissionGoal(val);
+}
+
+// ══ Mission Composer plan preview (v1.8.18, UI Phase 3) ══════════════════════
+let ovPreviewGoal='';
+async function previewPlan(){
+  const input=document.getElementById('ov-mission-input'); if(!input) return;
+  const raw=input.value.trim();
+  if(!raw){ if(typeof pcToast==='function') pcToast('Enter a directive to preview.',false); return; }
+  ovPreviewGoal=composeOvGoal(raw);
+  const box=document.getElementById('ov-plan'); if(!box) return;
+  box.style.display=''; box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Planning… (the planner runs once; no mission is created)</div>';
+  const btn=document.getElementById('ov-preview-btn'); if(btn) btn.disabled=true;
+  try{
+    const r=await api('/missions/plan','POST',{goal:ovPreviewGoal});
+    if(!r.success){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(r.message||'error')}</div>`; return; }
+    renderPlan(r.data||{});
+  }catch(e){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(e.message)}</div>`; }
+  finally{ if(btn) btn.disabled=false; }
+}
+function renderPlan(d){
+  const box=document.getElementById('ov-plan'); if(!box) return;
+  const c=d.constraints||{}, tasks=Array.isArray(d.tasks)?d.tasks:[];
+  const flags=[];
+  if(c.verification_only) flags.push('verification-only');
+  if(c.read_only) flags.push('read-only');
+  if(c.no_patches) flags.push('no file changes');
+  if(c.one_shot) flags.push('one-shot');
+  let banner='';
+  if(c.blocks_patches) banner=`<div class="hud-plan-banner warn">Constraint: ${flags.join(' · ')} — this plan proposes <b>no file changes</b> (coder patch steps are dropped).</div>`;
+  else if(d.has_coder_task) banner=`<div class="hud-plan-banner info">This plan includes a <b>coder patch-proposal</b> step. Nothing is written to disk until you approve &amp; apply the patch in the Patch Center.</div>`;
+  const steps=tasks.map(t=>{
+    const ant=(t.ant||'').toLowerCase();
+    const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
+    const crit=t.critical===false?' · optional':'';
+    return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
+      `<div class="p-title">${escapeHtml(t.title||'')}</div>`+
+      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
+      `</div></div>`;
+  }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
+  box.innerHTML=
+    `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
+    `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+
+    banner+
+    `<div style="font-size:10px;color:var(--dim);margin-bottom:6px;word-break:break-word">Goal: ${escapeHtml(d.goal||ovPreviewGoal)}</div>`+
+    steps+
+    `<div class="hud-actions" style="margin-top:10px">`+
+      `<button class="hud-act primary" onclick="approveDispatch()">✓ Approve &amp; Dispatch</button>`+
+      `<button class="hud-act" onclick="editPlan()">Edit</button>`+
+      `<button class="hud-act danger" onclick="hidePlanPreview()">Reject</button>`+
+    `</div>`;
+}
+function approveDispatch(){
+  if(!ovPreviewGoal){ hidePlanPreview(); return; }
+  const goal=ovPreviewGoal; ovPreviewGoal='';
+  const input=document.getElementById('ov-mission-input'); if(input){ input.value=''; autoGrowMissionInput(input); }
+  hidePlanPreview();
+  submitMissionGoal(goal);
+}
+function editPlan(){ hidePlanPreview(); document.getElementById('ov-mission-input')?.focus(); }
+function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b.style.display='none'; b.innerHTML=''; } }
 
 // Wire up all mission dispatch inputs — Enter dispatches, Shift+Enter inserts a newline.
 ['mission-input','ms-mission-input','ov-mission-input'].forEach(id=>{

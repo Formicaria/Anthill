@@ -15,7 +15,35 @@
 > hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
-Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, and so on.
+Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
+plan preview = **v1.8.18**, and so on.
+
+## v1.8.18 — Mission Composer + Plan Preview (UI Phase 3)
+
+Lets an operator review the generated task plan — and see how a mode/constraint reshapes it — before
+a mission runs. Additive; existing one-shot dispatch is unchanged.
+
+**Backend — dry-run planner.** New `POST /missions/plan` (permission `run_mission`, rate-limited)
+runs the real planner + v1.8.16 constraint enforcement for a goal and returns the task list
+**without creating, persisting, executing, or logging a mission** (`Queen.PlanPreview`). The response
+includes each step's title, assigned ant, task type, and dependency edges (as human step numbers),
+plus the parsed constraint flags (`verification_only` / `read_only` / `no_patches` / `one_shot` /
+`blocks_patches`) and whether the plan contains a coder patch step. No fake capability — the preview
+is exactly what a dispatch would plan.
+
+**UI — Mission Composer.** The Overview mission node gains a **Preview Plan** action. It composes the
+goal (raw directive + any selected mode's safe wording), calls `/missions/plan`, and renders the plan:
+a constraint banner (e.g. "verification-only — no file changes"), the ordered steps with per-ant
+badges, task types, and "after step N" dependencies, then **Approve & Dispatch** / **Edit** / **Reject**.
+Approve submits the exact previewed goal via the existing `/missions` path; the raw ▶ / Enter dispatch
+still works unchanged for one-shot use. Direct dispatch and Approve share one `submitMissionGoal()`
+so the goal string is identical either way.
+
+**Tests.** `PlanPreviewTests` (Ollama forced off → deterministic fallback planner) assert the preview
+drops coder steps for verification-only goals, keeps them for code goals, always ends with a verifier,
+and creates no mission row.
+
+
 
 ## v1.8.17 — Colony Command Center HUD Upgrade (Phases 1–2)
 
