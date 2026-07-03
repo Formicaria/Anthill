@@ -58,7 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
-| `v1.8.22` | Ant Inspector + Performance Observatory (per-caste routes/gates/stats); ANTHILL banner on setup + in the operator shell. |
+| `v1.8.22` | Phase 8 Ant Inspector + Performance Observatory (+ ASCII banner on setup/shell); **Ant Capability Profiles + Worker Runtime** — 17 role definitions with permission contracts, sub-worker selection per task, capability validation in planner/queen, worker telemetry, and `/colony/registry` + `/colony/workers/telemetry` endpoints. |
 | `v1.8.21` | Fix: autonomous auto-apply now persists on deployments without a build toolchain (`autonomy_autoapply_keep_without_verify`); clearer keep/revert reporting. |
 | `v1.8.20` | Objective Command Board (lifecycle lanes) + Mission Timeline & Task DAG viewer. |
 | `v1.8.19` | Colony Live Canvas 2.0 — caste legend + live pheromone-trail HUD, pheromone drift, real task-load inspector. |

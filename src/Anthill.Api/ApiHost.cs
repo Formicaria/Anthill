@@ -1,4 +1,5 @@
 using System.Reflection;
+using Anthill.Core.Agents;
 using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
@@ -220,6 +221,18 @@ public static class ApiHost
         });
         app.MapGet("/missions/{id}/graph", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.BuildTaskGraphData(id)));
+        // v1.8.22: the ant colony registry (roles, workers, permission contracts) + worker telemetry.
+        app.MapGet("/colony/registry", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["roles"] = AntRegistry.Roles,
+                ["validation_errors"] = AntRegistry.ValidateRegistry(),
+                ["view_modes"] = new[] { "command", "expanded", "active", "group" },
+                ["executable_roles"] = AntRegistry.ExecutableRoleIds.ToList(),
+                ["worker_telemetry"] = Queen.Memory.SummarizeWorkerTelemetry(),
+            }));
+        app.MapGet("/colony/workers/telemetry", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.Memory.SummarizeWorkerTelemetry()));
         app.MapGet("/sources/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_sources") ?? Results.Text(Queen.FormatSourceDetail(id), "text/plain"));
         app.MapGet("/patches/{id}", (HttpContext ctx, string id) =>
@@ -323,6 +336,8 @@ public static class ApiHost
                     ["index"] = i + 1,
                     ["title"] = t.Title,
                     ["ant"] = t.AssignedAnt,
+                    ["worker"] = t.AssignedWorker,
+                    ["display"] = t.AssignedWorker ?? t.AssignedAnt,
                     ["task_type"] = t.TaskType,
                     ["description"] = TextUtil.Truncate(t.Description, 400),
                     ["critical"] = t.Critical,
@@ -335,6 +350,13 @@ public static class ApiHost
                     ["task_count"] = tasks.Count,
                     ["spec_ingestion"] = Planner.IsLongInput(goal),
                     ["has_coder_task"] = tasks.Any(t => t.AssignedAnt == "coder"),
+                    // v1.8.22: worker path the plan resolves to, plus any capability warnings.
+                    ["selected_path"] = tasks.Select(t => t.AssignedWorker ?? t.AssignedAnt).ToList(),
+                    ["constraint_warnings"] = tasks
+                        .Select(t => AntRegistry.ValidateTask(t, constraints))
+                        .Where(r => !r.Allowed)
+                        .Select(r => r.Reason)
+                        .ToList(),
                     ["constraints"] = new Dictionary<string, object?>
                     {
                         ["verification_only"] = constraints.VerificationOnly,
@@ -1358,6 +1380,8 @@ public static class ApiHost
                 {
                     ["mission_id"] = missionId, ["title"] = t.GetValueOrDefault("title"),
                     ["ant"] = t.GetValueOrDefault("assigned_ant"), ["status"] = t.GetValueOrDefault("status"),
+                    ["worker"] = t.GetValueOrDefault("assigned_worker"),
+                    ["path_node"] = t.GetValueOrDefault("assigned_worker") ?? t.GetValueOrDefault("assigned_ant"),
                 });
         }
         var endReason = o.Metadata.GetValueOrDefault("end_reason")?.ToString()

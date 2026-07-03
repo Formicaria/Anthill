@@ -128,16 +128,16 @@ public sealed partial class SqliteMemory
 
     private void UpsertTask(SqliteConnection conn, SqliteTransaction? tx, string missionId, Task task) =>
         NonQuery(conn, tx,
-            @"INSERT OR REPLACE INTO tasks (id, mission_id, title, description, assigned_ant, task_type,
+            @"INSERT OR REPLACE INTO tasks (id, mission_id, title, description, assigned_ant, assigned_worker, task_type,
                 parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
                 result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
                 skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
                 skipped_reason, blocked_reason)
-              VALUES (@id, @mid, @title, @desc, @ant, @tt, @pid, @pids, @deps, @status, @result, @summary,
+              VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @status, @result, @summary,
                 @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
                 @max, @freason, @ftype, @sreason, @breason)",
             ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
-            ("@ant", task.AssignedAnt), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
+            ("@ant", task.AssignedAnt), ("@worker", task.AssignedWorker), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
             ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
             ("@status", task.Status.Value()), ("@result", task.Result), ("@summary", task.ResultSummary),
             ("@rc", task.ResultChars), ("@et", task.EstimatedTokens),
@@ -321,7 +321,7 @@ public sealed partial class SqliteMemory
                   COALESCE(SUM(output_tokens_est),0) AS output_tokens_est FROM message_metrics").FirstOrDefault() ?? new();
 
     public List<Dictionary<string, object?>> GetRecentTasks(int limit = 20) =>
-        Query(@"SELECT t.id, t.mission_id, t.title, t.assigned_ant, t.task_type, t.status, t.result_summary,
+        Query(@"SELECT t.id, t.mission_id, t.title, t.assigned_ant, t.assigned_worker, t.task_type, t.status, t.result_summary,
                   t.result_chars, t.estimated_tokens, t.created_at, t.started_at, t.finished_at, t.completed_at,
                   t.failed_at, t.skipped_at, t.elapsed_seconds, t.attempt_count, t.max_attempts, t.failure_type,
                   t.failure_reason, t.skipped_reason, t.blocked_reason, m.goal AS mission_goal
@@ -334,6 +334,35 @@ public sealed partial class SqliteMemory
                   COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed_count,
                   COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END),0) AS skipped_count
                 FROM tasks").FirstOrDefault() ?? new();
+
+    public Dictionary<string, object?> SummarizeWorkerTelemetry(int limit = 40)
+    {
+        var workers = Query(@"SELECT assigned_worker, assigned_ant, COUNT(*) AS task_count,
+                  COALESCE(SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END),0) AS complete_count,
+                  COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed_count,
+                  COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END),0) AS skipped_count,
+                  COALESCE(ROUND(AVG(elapsed_seconds),3),0) AS avg_elapsed_seconds,
+                  COALESCE(MAX(finished_at), MAX(started_at), MAX(created_at)) AS last_seen_at
+                FROM tasks
+                WHERE assigned_worker IS NOT NULL AND assigned_worker <> ''
+                GROUP BY assigned_worker, assigned_ant
+                ORDER BY task_count DESC, last_seen_at DESC LIMIT @lim", ("@lim", limit));
+        var audits = Query(@"SELECT ant_name AS runtime_node, COUNT(*) AS audit_count, MAX(created_at) AS last_audit_at
+                FROM events WHERE event_type='worker_permission_audited'
+                GROUP BY ant_name ORDER BY audit_count DESC, last_audit_at DESC LIMIT @lim", ("@lim", limit));
+        var metrics = Query(@"SELECT ant_name AS runtime_node, COUNT(*) AS metric_count,
+                  COALESCE(SUM(input_chars),0) AS input_chars, COALESCE(SUM(output_chars),0) AS output_chars,
+                  COALESCE(SUM(input_tokens_est),0) AS input_tokens_est, COALESCE(SUM(output_tokens_est),0) AS output_tokens_est
+                FROM message_metrics
+                WHERE metric_type='worker_task_result'
+                GROUP BY ant_name ORDER BY metric_count DESC LIMIT @lim", ("@lim", limit));
+        return new Dictionary<string, object?>
+        {
+            ["workers"] = workers,
+            ["permission_audits"] = audits,
+            ["message_metrics"] = metrics,
+        };
+    }
 
     // ---- patches ----------------------------------------------------------
 
@@ -665,10 +694,13 @@ public sealed partial class SqliteMemory
             _ => -0.08,
         };
         var antPath = mission.Tasks.Select(t => t.AssignedAnt).ToList();
+        var workerPath = mission.Tasks.Select(t => string.IsNullOrWhiteSpace(t.AssignedWorker) ? t.AssignedAnt : t.AssignedWorker!).ToList();
         var taskTypePath = mission.Tasks.Select(t => t.TaskType).ToList();
 
         UpdatePheromoneTrail("planner_pattern:" + string.Join("_", antPath), "planner_pattern", success, delta,
             new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["ant_path"] = antPath, ["mission_status"] = mission.Status.Value() });
+        UpdatePheromoneTrail("worker_pattern:" + string.Join("_", workerPath), "worker_pattern", success, delta,
+            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["worker_path"] = workerPath, ["mission_status"] = mission.Status.Value() });
         UpdatePheromoneTrail("task_pattern:" + string.Join("_", taskTypePath), "task_pattern", success, delta,
             new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["task_type_path"] = taskTypePath, ["mission_status"] = mission.Status.Value() });
 
@@ -678,6 +710,9 @@ public sealed partial class SqliteMemory
             var taskDelta = task.Status == TaskStatus.Skipped ? -0.01 : taskSuccess && success ? 0.03 : -0.04;
             UpdatePheromoneTrail($"ant:{task.AssignedAnt}", "ant", taskSuccess, taskDelta,
                 new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value() });
+            if (!string.IsNullOrWhiteSpace(task.AssignedWorker))
+                UpdatePheromoneTrail($"worker:{task.AssignedWorker}", "worker", taskSuccess, taskDelta,
+                    new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value() });
             UpdatePheromoneTrail($"task_type:{task.TaskType}", "task_type", taskSuccess, taskDelta,
                 new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_status"] = task.Status.Value() });
         }
@@ -690,7 +725,7 @@ public sealed partial class SqliteMemory
                   success_score, created_at, saved_at FROM missions WHERE id = @id", ("@id", missionId)).FirstOrDefault();
 
     public List<Dictionary<string, object?>> GetTasksForMission(string missionId, int limit = 200) =>
-        Query(@"SELECT id, mission_id, title, description, assigned_ant, task_type, parent_task_id,
+        Query(@"SELECT id, mission_id, title, description, assigned_ant, assigned_worker, task_type, parent_task_id,
                   parent_task_ids_json, depends_on_json, status, result, result_summary, result_chars,
                   estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at, skipped_at,
                   elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason

@@ -2474,6 +2474,14 @@ function showInspector(n){
     <div class="ad-row" style="margin-top:6px"><span class="ad-key">Running</span><span class="ad-val">${tRunning}</span></div>
     <div class="ad-row"><span class="ad-key">Completed</span><span class="ad-val" style="color:${tDone?'var(--green)':''}">${tDone}</span></div>
     <div class="ad-row"><span class="ad-key">Failed</span><span class="ad-val" style="color:${tFailed?'var(--red)':''}">${tFailed}</span></div>
+    ${(()=>{ // v1.8.22: worker sub-caste breakdown for this ant (Ant Capability Profiles).
+      const wc={};
+      antTasks.forEach(t=>{ const w=t.assigned_worker||t.assigned_agent; if(w&&w!==n.ant){wc[w]=(wc[w]||0)+1;} });
+      const ent=Object.entries(wc);
+      if(!ent.length) return '';
+      return `<div class="ad-section">Workers</div>`+ent.map(([w,c])=>`
+        <div class="ad-row"><span class="ad-key" title="${escapeHtml(w)}">${escapeHtml(w.split('.').pop())}</span><span class="ad-val">${c}</span></div>`).join('');
+    })()}
     ${(lastGraphData?.nodes?.filter(t=>t.assigned_ant===n.ant).slice(0,4)||[]).map(t=>`
       <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
         <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
@@ -3352,7 +3360,7 @@ function flowSelect(cid,taskId){
   const row=(k,val)=>val?`<div style="display:flex;gap:8px;padding:1px 0"><span style="color:var(--dim);min-width:90px">${k}</span><span>${escapeHtml(String(val))}</span></div>`:'';
   drawer.innerHTML=
     `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(n.title||'task')}</div>`+
-    row('Ant', n.assigned_ant)+row('Type', n.task_type)+row('Status', n.status)+
+    row('Ant', n.assigned_ant)+row('Worker', n.assigned_worker)+row('Type', n.task_type)+row('Status', n.status)+
     row('Elapsed', n.elapsed_seconds!=null?(+n.elapsed_seconds).toFixed(1)+'s':'')+
     row('Attempts', (n.attempt_count!=null?`${n.attempt_count}/${n.max_attempts??1}`:''))+
     (reason?`<div style="color:${n.status==='failed'?'var(--red)':'var(--muted)'};margin-top:4px">${escapeHtml(reason)}</div>`:'');
@@ -3890,11 +3898,16 @@ function renderPlan(d){
     const ant=(t.ant||'').toLowerCase();
     const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
     const crit=t.critical===false?' · optional':'';
+    // v1.8.22: show the resolved worker sub-caste, when the planner picked one.
+    const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">→ ${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
     return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
       `<div class="p-title">${escapeHtml(t.title||'')}</div>`+
-      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
+      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${worker}${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
       `</div></div>`;
   }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
+  // v1.8.22: surface any capability-contract warnings from worker validation.
+  const warns=(Array.isArray(d.constraint_warnings)?d.constraint_warnings:[]).filter(Boolean);
+  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' · ')}</div>`;
   box.innerHTML=
     `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
     `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+

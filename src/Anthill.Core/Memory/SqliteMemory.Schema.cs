@@ -142,7 +142,7 @@ public sealed partial class SqliteMemory : IDisposable
             created_at TEXT NOT NULL, saved_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, title TEXT NOT NULL,
-            description TEXT NOT NULL, assigned_ant TEXT NOT NULL, task_type TEXT NOT NULL,
+            description TEXT NOT NULL, assigned_ant TEXT NOT NULL, assigned_worker TEXT, task_type TEXT NOT NULL,
             parent_task_id TEXT, parent_task_ids_json TEXT, depends_on_json TEXT,
             status TEXT NOT NULL, result TEXT, result_summary TEXT,
             result_chars INTEGER DEFAULT 0, estimated_tokens INTEGER DEFAULT 0,
@@ -261,6 +261,7 @@ public sealed partial class SqliteMemory : IDisposable
         AddMissing("tasks", new()
         {
             ["task_type"] = "TEXT DEFAULT 'general'", ["parent_task_id"] = "TEXT", ["parent_task_ids_json"] = "TEXT",
+            ["assigned_worker"] = "TEXT",
             ["depends_on_json"] = "TEXT", ["result_summary"] = "TEXT", ["result_chars"] = "INTEGER DEFAULT 0",
             ["estimated_tokens"] = "INTEGER DEFAULT 0", ["created_at"] = "TEXT", ["started_at"] = "TEXT",
             ["finished_at"] = "TEXT", ["completed_at"] = "TEXT", ["failed_at"] = "TEXT", ["skipped_at"] = "TEXT",

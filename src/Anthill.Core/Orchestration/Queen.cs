@@ -115,21 +115,35 @@ public sealed partial class Queen : IDisposable
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
         mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
 
+        var constraints = MissionConstraints.Parse(goal);
         foreach (var task in mission.Tasks)
+        {
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
+            if (string.IsNullOrWhiteSpace(task.AssignedWorker))
+                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
+            var selection = AntRegistry.ValidateTask(task, constraints);
+            if (!selection.Allowed)
+            {
+                task.Status = TaskStatus.Failed;
+                task.FailureType = "ant_permission_denied";
+                task.FailureReason = selection.Reason;
+                task.Result = $"Task rejected by ant registry: {selection.Reason}";
+            }
+        }
         // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
         // non-critical section flags; auto-wiring would only re-derive the same edges.
         if (AnthillRuntime.EnableAutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
 
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
-                new() { ["task_type"] = task.TaskType, ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds });
+                new() { ["task_type"] = task.TaskType, ["assigned_worker"] = task.AssignedWorker, ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds });
 
         Memory.LogEvent(mission.Id, "mission_started", "Mission execution started.", metadata: new()
         {
             ["mission_type"] = missionType,
             ["task_count"] = mission.Tasks.Count,
             ["planner_pattern"] = mission.Tasks.Select(t => t.AssignedAnt).ToList(),
+            ["worker_path"] = mission.Tasks.Select(t => t.AssignedWorker ?? t.AssignedAnt).ToList(),
             ["task_type_pattern"] = mission.Tasks.Select(t => t.TaskType).ToList(),
             ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
             ["max_parallel_workers"] = AnthillRuntime.MaxParallelWorkers,
@@ -187,7 +201,11 @@ public sealed partial class Queen : IDisposable
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
         var tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
         foreach (var task in tasks)
+        {
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
+            if (string.IsNullOrWhiteSpace(task.AssignedWorker))
+                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
+        }
         // Mirror RunMission's auto-wiring so the preview shows the same dependency edges the
         // scheduler would actually run. Spec-ingestion plans carry their own explicit wiring.
         if (AnthillRuntime.EnableAutoDependencyWiring && !Planner.IsLongInput(goal))
@@ -373,6 +391,27 @@ public sealed partial class Queen : IDisposable
     private void RunSingleTask(Task task, Mission mission, int index, int total, TaskScheduler? scheduler)
     {
         var taskStartedAt = AnthillTime.NowUtc();
+        AntRuntimeSelection runtimeSelection;
+        try
+        {
+            runtimeSelection = AntRuntime.Resolve(task, MissionConstraints.Parse(mission.Goal));
+        }
+        catch (Exception error)
+        {
+            lock (_executionLock)
+            {
+                task.Result = $"Task rejected by worker runtime: {error.Message}";
+                task.FinishedAt = AnthillTime.NowUtc();
+                task.ElapsedSeconds = Math.Round((task.FinishedAt.Value - taskStartedAt).TotalSeconds, 3);
+                if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "worker_runtime_denied", false, task.FinishedAt, task.ElapsedSeconds);
+                else { task.Status = TaskStatus.Failed; task.FailedAt = task.FinishedAt; task.FailureReason = task.Result; task.FailureType = "worker_runtime_denied"; }
+                FinalizeTaskResult(mission, task);
+                Memory.LogEvent(mission.Id, "worker_runtime_denied", task.Result, task.Id, task.AssignedWorker ?? task.AssignedAnt,
+                    new() { ["assigned_ant"] = task.AssignedAnt, ["assigned_worker"] = task.AssignedWorker, ["error"] = error.Message });
+                Console.WriteLine(task.Result);
+            }
+            return;
+        }
         Task taskSnapshot;
         Mission missionSnapshot;
         lock (_executionLock)
@@ -391,38 +430,43 @@ public sealed partial class Queen : IDisposable
                 task.FinishedAt = null;
                 task.ElapsedSeconds = null;
             }
-            Console.WriteLine($"Task {index}/{total} -> {task.AssignedAnt} ant: {task.Title}");
+            var runtimeMetadata = AntRuntime.Metadata(runtimeSelection);
+            Console.WriteLine($"Task {index}/{total} -> {runtimeSelection.RuntimeNodeId} worker via {task.AssignedAnt} ant: {task.Title}");
             Memory.SaveTask(mission.Id, task); // live status: the canvas/graph sees "running" now
-            Memory.LogEvent(mission.Id, "task_started", $"Task started: {task.Title}", task.Id, task.AssignedAnt, new()
+            Memory.LogEvent(mission.Id, "worker_permission_audited", $"Worker permission boundary audited: {runtimeSelection.RuntimeNodeId}", task.Id, runtimeSelection.RuntimeNodeId,
+                runtimeMetadata);
+            Memory.LogEvent(mission.Id, "task_started", $"Task started: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId, MergeMetadata(runtimeMetadata, new()
             {
                 ["task_type"] = task.TaskType, ["index"] = index, ["parallel"] = AnthillRuntime.EnableParallelExecution,
+                ["assigned_worker"] = task.AssignedWorker,
                 ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds, ["attempt_count"] = task.AttemptCount,
                 ["max_attempts"] = task.MaxAttempts, ["snapshot_context"] = true,
-            });
-            taskSnapshot = task.DeepCopy();
+            }));
+            taskSnapshot = AntRuntime.PrepareWorkerTaskSnapshot(task, runtimeSelection);
             missionSnapshot = mission.DeepCopy();
         }
 
-        RecordAgentMessage(mission.Id, task.Id, "queen", task.AssignedAnt, "task_dispatch",
+        RecordAgentMessage(mission.Id, task.Id, "queen", runtimeSelection.RuntimeNodeId, "task_dispatch",
             $"Dispatch task: {task.Title}\nType: {task.TaskType}\nDescription: {TextUtil.Truncate(task.Description, 900, "...[description truncated]")}",
-            new()
+            MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
             {
                 ["schema"] = AnthillRuntime.AgentMessageVersion, ["context_strategy"] = "locked_mission_snapshot+compact_context_packets",
+                ["assigned_worker"] = task.AssignedWorker,
                 ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds, ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
-            });
+            }));
 
-        if (!_ants.TryGetValue(task.AssignedAnt, out var ant))
+        if (!_ants.TryGetValue(runtimeSelection.ExecutorRoleId, out var ant))
         {
             lock (_executionLock)
             {
-                task.Result = $"No ant found for role: {task.AssignedAnt}";
+                task.Result = $"No ant found for role: {runtimeSelection.ExecutorRoleId}";
                 task.FinishedAt = AnthillTime.NowUtc();
                 task.ElapsedSeconds = Math.Round((task.FinishedAt.Value - taskStartedAt).TotalSeconds, 3);
                 if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "missing_ant", false, task.FinishedAt, task.ElapsedSeconds);
                 else { task.Status = TaskStatus.Failed; task.FailedAt = task.FinishedAt; task.FailureReason = task.Result; task.FailureType = "missing_ant"; }
                 FinalizeTaskResult(mission, task);
-                Memory.LogEvent(mission.Id, "task_failed", task.Result, task.Id, task.AssignedAnt,
-                    new() { ["reason"] = "missing_ant", ["elapsed_seconds"] = task.ElapsedSeconds });
+                Memory.LogEvent(mission.Id, "task_failed", task.Result, task.Id, runtimeSelection.RuntimeNodeId,
+                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["reason"] = "missing_ant", ["elapsed_seconds"] = task.ElapsedSeconds }));
                 Console.WriteLine(task.Result);
             }
             return;
@@ -438,8 +482,8 @@ public sealed partial class Queen : IDisposable
                 if (task.Status != TaskStatus.Running)
                 {
                     Memory.LogEvent(mission.Id, "task_late_result_ignored",
-                        $"Late result ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, task.AssignedAnt,
-                        new() { ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(result ?? "", 500) });
+                        $"Late result ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, runtimeSelection.RuntimeNodeId,
+                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(result ?? "", 500) }));
                     return;
                 }
                 task.Result = result;
@@ -451,20 +495,20 @@ public sealed partial class Queen : IDisposable
                     if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "timeout", false, finishedAt, elapsed);
                     else { task.Status = TaskStatus.Failed; task.FailedAt = finishedAt; task.FailureReason = task.Result; task.FailureType = "timeout"; }
                     FinalizeTaskResult(mission, task);
-                    Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, task.AssignedAnt,
-                        new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds });
+                    Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, runtimeSelection.RuntimeNodeId,
+                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds }));
                     Console.WriteLine(task.Result);
                     return;
                 }
                 if (scheduler is not null) scheduler.MarkComplete(task.Id, result, finishedAt, elapsed);
                 else { task.Status = TaskStatus.Complete; task.CompletedAt = finishedAt; }
                 FinalizeTaskResult(mission, task);
-                Memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, task.AssignedAnt,
-                    new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) });
+                Memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
+                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
-                RecordAgentMessage(mission.Id, task.Id, task.AssignedAnt, "queen", "task_result",
+                RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
-                    new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds });
+                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds }));
                 Console.WriteLine($"Task complete: {task.Title} ({elapsed}s)");
             }
         }
@@ -477,8 +521,8 @@ public sealed partial class Queen : IDisposable
                 if (task.Status != TaskStatus.Running)
                 {
                     Memory.LogEvent(mission.Id, "task_late_error_ignored",
-                        $"Late error ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, task.AssignedAnt,
-                        new() { ["elapsed_seconds"] = elapsed, ["error"] = error.Message });
+                        $"Late error ignored for task already in terminal/non-running state: {task.Status.Value()}", task.Id, runtimeSelection.RuntimeNodeId,
+                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["elapsed_seconds"] = elapsed, ["error"] = error.Message }));
                     return;
                 }
                 task.Result = $"Task failed with error: {error.Message}";
@@ -489,10 +533,10 @@ public sealed partial class Queen : IDisposable
                     terminalFailure = scheduler.MarkFailed(task.Id, task.Result, "execution_error", true, finishedAt, elapsed);
                 else { task.Status = TaskStatus.Failed; task.FailedAt = finishedAt; task.FailureReason = task.Result; task.FailureType = "execution_error"; }
                 FinalizeTaskResult(mission, task);
-                Memory.LogEvent(mission.Id, terminalFailure ? "task_failed" : "task_retry_scheduled", task.Result, task.Id, task.AssignedAnt,
-                    new() { ["task_type"] = task.TaskType, ["error"] = error.Message, ["elapsed_seconds"] = elapsed, ["attempt_count"] = task.AttemptCount, ["max_attempts"] = task.MaxAttempts });
-                RecordAgentMessage(mission.Id, task.Id, task.AssignedAnt, "queen", terminalFailure ? "task_error" : "task_retry",
-                    task.Result, new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["error"] = error.Message, ["elapsed_seconds"] = elapsed });
+                Memory.LogEvent(mission.Id, terminalFailure ? "task_failed" : "task_retry_scheduled", task.Result, task.Id, runtimeSelection.RuntimeNodeId,
+                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["error"] = error.Message, ["elapsed_seconds"] = elapsed, ["attempt_count"] = task.AttemptCount, ["max_attempts"] = task.MaxAttempts }));
+                RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", terminalFailure ? "task_error" : "task_retry",
+                    task.Result, MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["error"] = error.Message, ["elapsed_seconds"] = elapsed }));
                 Console.WriteLine(task.Result);
             }
         }
@@ -522,6 +566,10 @@ public sealed partial class Queen : IDisposable
         Memory.LogMessageMetric(mission.Id, task.Id, task.AssignedAnt, "task_result",
             (task.Description ?? "").Length, task.ResultChars,
             new() { ["task_type"] = task.TaskType, ["status"] = task.Status.Value(), ["summary_chars"] = (task.ResultSummary ?? "").Length, ["context_packets_enabled"] = AnthillRuntime.EnableContextPackets });
+        if (!string.IsNullOrWhiteSpace(task.AssignedWorker))
+            Memory.LogMessageMetric(mission.Id, task.Id, task.AssignedWorker, "worker_task_result",
+                (task.Description ?? "").Length, task.ResultChars,
+                new() { ["assigned_ant"] = task.AssignedAnt, ["task_type"] = task.TaskType, ["status"] = task.Status.Value(), ["summary_chars"] = (task.ResultSummary ?? "").Length });
         Memory.LogEvent(mission.Id, "task_result_summarized", $"Task result summarized for compact downstream context: {task.Title}", task.Id, task.AssignedAnt,
             new() { ["result_chars"] = task.ResultChars, ["summary_chars"] = (task.ResultSummary ?? "").Length, ["estimated_tokens"] = task.EstimatedTokens });
     }
@@ -617,5 +665,11 @@ public sealed partial class Queen : IDisposable
     {
         if (!AnthillRuntime.EnableAgentCommunicationLedger) return;
         Memory.LogAgentMessage(missionId, sender, recipient, messageType, content, taskId, metadata);
+    }
+
+    private static Dictionary<string, object?> MergeMetadata(Dictionary<string, object?> first, Dictionary<string, object?> second)
+    {
+        foreach (var (key, value) in second) first[key] = value;
+        return first;
     }
 }

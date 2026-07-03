@@ -278,7 +278,8 @@ public sealed partial class TaskScheduler
             var node = new Dictionary<string, object?>
             {
                 ["mission_id"] = MissionId, ["task_id"] = task.Id, ["title"] = task.Title, ["name"] = task.Title,
-                ["assigned_ant"] = task.AssignedAnt, ["assigned_agent"] = task.AssignedAnt, ["role"] = task.AssignedAnt,
+                ["assigned_ant"] = task.AssignedAnt, ["assigned_worker"] = task.AssignedWorker,
+                ["assigned_agent"] = task.AssignedWorker ?? task.AssignedAnt, ["role"] = task.AssignedAnt,
                 ["task_type"] = task.TaskType, ["status"] = task.Status.Value(), ["critical"] = task.Critical,
                 ["dependency_ids"] = DependencyIds(task), ["depends_on"] = DependencyIds(task),
                 ["parent_task_id"] = task.ParentTaskId, ["parent_task_ids"] = ParentIds(task),
