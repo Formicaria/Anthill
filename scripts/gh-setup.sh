@@ -12,6 +12,12 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 labels_file="$repo_root/.github/labels.yml"
 
+# Enable the release guard (pre-push hook) — blocks tagging a version before it's merged to main.
+echo "Enabling release guard (core.hooksPath=.githooks) …"
+git -C "$repo_root" config core.hooksPath .githooks
+chmod +x "$repo_root/.githooks/"* "$repo_root/scripts/"*.sh 2>/dev/null || true
+echo "  ✓ pre-push guard active; release with: bash scripts/release.sh"
+
 command -v gh >/dev/null || { echo "gh CLI not found. Install: https://cli.github.com/"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh not authenticated. Run: gh auth login"; exit 1; }
 
