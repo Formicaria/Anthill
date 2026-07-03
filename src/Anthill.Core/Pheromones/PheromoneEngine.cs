@@ -59,23 +59,29 @@ public sealed class PatchProposalParser
         foreach (var item in rawProposals.Take(AnthillRuntime.MaxPatchProposalsPerSet))
         {
             if (item is not JsonObject obj) continue;
-            var filePath = Validation.ValidateSafePatchPath((obj["file_path"]?.GetValue<string>() ?? "").Trim());
-            var changeType = (obj["change_type"]?.GetValue<string>() ?? "modify").Trim().ToLowerInvariant();
-            var reason = (obj["reason"]?.GetValue<string>() ?? "").Trim();
-            var risk = (obj["risk"]?.GetValue<string>() ?? "").Trim();
-            // GetValue<string>() throws on JSON null nodes — must check ValueKind first
-            var oldContent = JsonStrOrNull(obj["old_content"]);
-            var newContent = JsonStrOrNull(obj["new_content"]);
-            if (oldContent is not null) oldContent = TextUtil.Truncate(oldContent, AnthillRuntime.MaxPatchContentChars, "...[old_content truncated]");
-            if (newContent is not null) newContent = TextUtil.Truncate(newContent, AnthillRuntime.MaxPatchContentChars, "...[new_content truncated]");
-            if (reason.Length == 0) throw new ArgumentException("Patch proposal missing reason.");
-            if (risk.Length == 0) risk = "Unspecified risk. Human review required.";
-
-            proposals.Add(new PatchProposal
+            // Parse each proposal independently: one malformed entry (a placeholder path, a missing
+            // reason) shouldn't discard the valid proposals alongside it in the same set.
+            try
             {
-                FilePath = filePath, ChangeType = EnumExtensions.ParsePatchChangeType(changeType), Reason = reason,
-                Risk = risk, OldContent = oldContent, NewContent = newContent, RequiresApproval = true, Status = PatchStatus.Proposed,
-            });
+                var filePath = Validation.ValidateSafePatchPath((obj["file_path"]?.GetValue<string>() ?? "").Trim());
+                var changeType = (obj["change_type"]?.GetValue<string>() ?? "modify").Trim().ToLowerInvariant();
+                var reason = (obj["reason"]?.GetValue<string>() ?? "").Trim();
+                var risk = (obj["risk"]?.GetValue<string>() ?? "").Trim();
+                // GetValue<string>() throws on JSON null nodes — must check ValueKind first
+                var oldContent = JsonStrOrNull(obj["old_content"]);
+                var newContent = JsonStrOrNull(obj["new_content"]);
+                if (oldContent is not null) oldContent = TextUtil.Truncate(oldContent, AnthillRuntime.MaxPatchContentChars, "...[old_content truncated]");
+                if (newContent is not null) newContent = TextUtil.Truncate(newContent, AnthillRuntime.MaxPatchContentChars, "...[new_content truncated]");
+                if (reason.Length == 0) reason = "No reason provided by the coder.";
+                if (risk.Length == 0) risk = "Unspecified risk. Human review required.";
+
+                proposals.Add(new PatchProposal
+                {
+                    FilePath = filePath, ChangeType = EnumExtensions.ParsePatchChangeType(changeType), Reason = reason,
+                    Risk = risk, OldContent = oldContent, NewContent = newContent, RequiresApproval = true, Status = PatchStatus.Proposed,
+                });
+            }
+            catch { /* skip the malformed proposal, keep the rest */ }
         }
         return new PatchSet { MissionId = missionId, TaskId = taskId, Summary = summary, Proposals = proposals };
     }

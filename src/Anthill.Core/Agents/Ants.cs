@@ -370,7 +370,7 @@ Required format:
   ""summary"": ""Brief summary."",
   ""proposals"": [
     {{
-      ""file_path"": ""relative/path/to/file.ext"",
+      ""file_path"": ""<workspace-relative path to a REAL file, e.g. src/Foo/Bar.cs or docs/notes.md>"",
       ""change_type"": ""modify"",
       ""reason"": ""Why this change is recommended."",
       ""risk"": ""Risk level and what should be reviewed."",
@@ -390,6 +390,11 @@ Rules:
   if it shows Python (.py), propose Python. If no existing code is visible in context and the
   goal doesn't name a language, return an empty proposals list instead of guessing a language.
 - Prefer modify or add.
+- file_path MUST be a real workspace-relative path with a real filename and extension (e.g.
+  src/App/Thing.cs, docs/notes.md). NEVER output a placeholder like ""file.ext"", "".ext"", or
+  ""path/to/file"" — a proposal whose path you cannot name concretely should be omitted instead.
+- In new_content and old_content, escape every newline as \n — do NOT put raw line breaks inside a
+  JSON string value. The whole response must be a single line of valid JSON.
 - If you are unsure of the exact old_content, return an empty proposals list rather than guessing.
 - Do not wrap JSON in markdown code fences.
 - For modify, old_content must be exact and unambiguous.

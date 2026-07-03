@@ -34,9 +34,19 @@ public static class Json
     public static string Dumps(object? data, bool indented = false) =>
         JsonSerializer.Serialize(data, indented ? IndentedOptions : Options);
 
+    // Lenient parse options — small local models routinely emit trailing commas and // comments.
+    private static readonly JsonDocumentOptions LenientDoc = new()
+    {
+        AllowTrailingCommas = true,
+        CommentHandling = JsonCommentHandling.Skip,
+    };
+
     /// <summary>
-    /// Extracts the first JSON object from a model response. Tolerates markdown code
-    /// fences and surrounding prose, mirroring <c>extract_json_object</c>.
+    /// Extracts the first JSON object from a model response. Tolerates markdown code fences,
+    /// surrounding prose, trailing commas, comments, and — the big one for small local models —
+    /// raw unescaped control characters inside string values (e.g. a literal newline in a patch's
+    /// new_content, which strict JSON rejects with "'0x0A' is invalid within a JSON string").
+    /// Each parse is retried on a control-char-repaired copy before giving up.
     /// </summary>
     public static JsonObject ExtractJsonObject(string text)
     {
@@ -47,17 +57,64 @@ public static class Json
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
             cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, "```$", "").Trim();
         }
-        try
-        {
-            if (JsonNode.Parse(cleaned) is JsonObject obj) return obj;
-        }
-        catch (JsonException) { /* fall through to brace extraction */ }
 
+        if (TryParseJsonObject(cleaned, out var obj)) return obj!;
+
+        // Whole-string parse failed — narrow to the outermost {...} and try again (both raw and repaired).
         var match = System.Text.RegularExpressions.Regex.Match(cleaned, "\\{.*\\}",
             System.Text.RegularExpressions.RegexOptions.Singleline);
-        if (!match.Success) throw new FormatException("No JSON object found.");
-        return JsonNode.Parse(match.Value) as JsonObject
-               ?? throw new FormatException("No JSON object found.");
+        if (match.Success && TryParseJsonObject(match.Value, out obj)) return obj!;
+
+        throw new FormatException("No parseable JSON object found in the model response.");
+    }
+
+    /// <summary>Attempts a lenient parse, then a control-char-repaired parse. Returns false if neither yields an object.</summary>
+    private static bool TryParseJsonObject(string candidate, out JsonObject? result)
+    {
+        foreach (var attempt in new[] { candidate, RepairJsonControlChars(candidate) })
+        {
+            try
+            {
+                if (JsonNode.Parse(attempt, documentOptions: LenientDoc) is JsonObject obj) { result = obj; return true; }
+            }
+            catch (JsonException) { /* try the next form */ }
+        }
+        result = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Escapes raw control characters (newline, tab, etc.) that appear <em>inside JSON string
+    /// literals</em> — the single most common reason small models' JSON fails to parse. Characters
+    /// outside strings, and already-escaped sequences, are left untouched.
+    /// </summary>
+    internal static string RepairJsonControlChars(string s)
+    {
+        var sb = new System.Text.StringBuilder(s.Length + 16);
+        bool inString = false, escaped = false;
+        foreach (var c in s)
+        {
+            if (!inString)
+            {
+                if (c == '"') inString = true;
+                sb.Append(c);
+                continue;
+            }
+            if (escaped) { sb.Append(c); escaped = false; continue; }
+            if (c == '\\') { sb.Append(c); escaped = true; continue; }
+            if (c == '"') { sb.Append(c); inString = false; continue; }
+            if (c < 0x20)
+            {
+                sb.Append(c switch
+                {
+                    '\n' => "\\n", '\r' => "\\r", '\t' => "\\t", '\b' => "\\b", '\f' => "\\f",
+                    _ => $"\\u{(int)c:x4}",
+                });
+                continue;
+            }
+            sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     /// <summary>Tolerantly parses a stored JSON object string into a dictionary; empty on null/invalid input.</summary>

@@ -12,7 +12,28 @@
 > header status + update check = **v1.8.14.4**, auto-publish releases + hardening = **v1.8.14.5**,
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
 > intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
-> hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, and so on.
+> hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
+> JSON parse hardening = **v1.8.15.6**, and so on.
+
+## v1.8.15.6 — Coder patches actually parse now (fewer patch_proposal_parse_failed)
+
+Live diagnostics showed a steady stream of `patch_proposal_parse_failed` — coder output that never
+reached the approval queue or auto-apply. Root causes and fixes:
+
+- **Raw control chars in JSON (the big one).** Small local models emit patches with a literal
+  newline inside string values (`"new_content": "line1<newline>line2"`), which strict JSON rejects
+  with `'0x0A' is invalid within a JSON string`. `Json.ExtractJsonObject` now retries every parse on
+  a copy where control chars inside string literals are escaped, and tolerates trailing commas and
+  comments. This recovers the most common failure class.
+- **Placeholder file paths.** The v1.8.13 neutral example (`file.ext`) was being copied literally,
+  producing `file_path: .ext` — rejected as an unsupported type. The coder prompt now uses an
+  obvious `<...>` placeholder with real examples, forbids placeholder paths outright, and tells the
+  model to escape newlines as `\n` (single-line JSON).
+- **One bad proposal no longer discards the set.** `PatchProposalParser` parses each proposal in its
+  own try/catch — a malformed entry (bad path, missing reason) is skipped and the valid proposals in
+  the same set survive, instead of the whole patch set being thrown away.
+- Tests: `JsonRepairTests` (raw newline/tab/CR recovery, trailing commas, code fences, prose
+  stripping, valid-escape round-trip, control-chars-outside-strings untouched).
 
 ## v1.8.15.5 — Completed Objectives box for loop-retired objectives
 
