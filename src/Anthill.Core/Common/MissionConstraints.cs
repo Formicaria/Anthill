@@ -39,8 +39,8 @@ public sealed record MissionConstraints(bool NoPatches, bool VerificationOnly, b
 
     private static readonly string[] OneShotPhrases =
     {
-        "one-shot", "one shot", "run once", "do this once", "single run", "exactly once",
-        "one time", "one-time",
+        "one-shot", "one shot", "run once", "run this once", "this once", "do this once",
+        "single run", "exactly once", "just once", "only once", "one time", "one-time",
     };
 
     /// <summary>Parses the goal/charter text into a constraint set. Empty/null → <see cref="None"/>.</summary>
