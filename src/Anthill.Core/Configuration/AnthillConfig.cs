@@ -131,6 +131,12 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_autoapply_verify_timeout")] public int AutonomyAutoApplyVerifyTimeout { get; set; } = 900;
     // After a green verify, also `git add` + `git commit` the change locally (never pushed). Off = leave on disk.
     [JsonPropertyName("autonomy_autoapply_git_commit")] public bool AutonomyAutoApplyGitCommit { get; set; } = false;
+    // v1.8.21 fix: on deployments with no build toolchain (e.g. a published-binary LXC), the built-in
+    // `dotnet build && dotnet test` verify always fails, so every auto-applied patch is rolled back and
+    // nothing ever persists. When this is true AND no verify command is configured, auto-apply KEEPS the
+    // applied patches without a verify gate (the operator's explicit, riskier choice). Ignored when a
+    // verify command IS set — that always runs and gates keep/rollback. Default false = safe (verify).
+    [JsonPropertyName("autonomy_autoapply_keep_without_verify")] public bool AutonomyAutoApplyKeepWithoutVerify { get; set; } = false;
 
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
