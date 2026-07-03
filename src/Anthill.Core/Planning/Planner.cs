@@ -422,7 +422,7 @@ Required JSON:
     private static List<Task> FallbackTasks(string goal)
     {
         var lowered = goal.ToLowerInvariant();
-        var codeKeywords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor", "function", "class", "repo", "repository", "file", "folder", "directory", "patch", "modify", "change", "create", "add", "write", "edit", "document", "docs/", ".md", ".cs", ".json" };
+        var codeKeywords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor", "function", "class", "repo", "repository", "file", "folder", "directory", "patch", "modify", "change", "create", "add", "write", "edit", "document", "docs/", ".md", ".cs", ".json", "ui", "frontend", "canvas", "css", "html", "javascript", "visualization", "dashboard" };
         var isCodeGoal = codeKeywords.Any(lowered.Contains);
 
         // A goal that creates/edits a file must reach the coder — check it BEFORE the web branch,

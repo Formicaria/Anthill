@@ -356,6 +356,7 @@ public static class ApiHost
                         .Select(t => AntRegistry.ValidateTask(t, constraints))
                         .Where(r => !r.Allowed)
                         .Select(r => r.Reason)
+                        .Distinct()
                         .ToList(),
                     ["constraints"] = new Dictionary<string, object?>
                     {
@@ -763,6 +764,111 @@ public static class ApiHost
             var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
             int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var limit);
             return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000)));
+        });
+
+        // v1.8.23 Phase 9: one composed read model for the Memory + Pheromone Explorer.
+        app.MapGet("/memory/explorer", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_memory"); if (auth is not null) return auth;
+            var query = (ctx.Request.Query["q"].FirstOrDefault() ?? "").Trim();
+            var needle = query.ToLowerInvariant();
+            int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var rawLimit);
+            var limit = Math.Clamp(rawLimit <= 0 ? 80 : rawLimit, 10, 300);
+
+            static string S(Dictionary<string, object?> row, params string[] keys) =>
+                string.Join(" ", keys.Select(k => row.GetValueOrDefault(k)?.ToString() ?? ""));
+            bool Matches(Dictionary<string, object?> row, params string[] keys) =>
+                needle.Length == 0 || S(row, keys).ToLowerInvariant().Contains(needle);
+
+            var missions = Queen.Memory.GetRecentMissions(limit)
+                .Where(m => m.GetValueOrDefault("id")?.ToString() != AnthillRuntime.SystemApiMissionId)
+                .Where(m => Matches(m, "id", "goal", "status", "user_result", "debug_result", "final_result"))
+                .ToList();
+            var missionIds = missions.Select(m => m.GetValueOrDefault("id")?.ToString())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id!)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var tasks = missions.SelectMany(m => Queen.Memory.GetTasksForMission(m.GetValueOrDefault("id")?.ToString() ?? "", 120))
+                .Where(t => Matches(t, "id", "mission_id", "title", "description", "assigned_ant", "assigned_worker", "task_type", "status", "result_summary", "failure_reason"))
+                .Take(limit * 8)
+                .ToList();
+            var trails = Queen.Memory.ListPheromoneTrails(Math.Min(2000, limit * 12))
+                .Where(t => Matches(t, "trail_key", "trail_type"))
+                .ToList();
+            var sources = CallerHas(ctx, "read_sources")
+                ? Queen.Memory.GetRecentSources(limit * 3)
+                    .Where(s => missionIds.Count == 0 || missionIds.Contains(s.GetValueOrDefault("mission_id")?.ToString() ?? ""))
+                    .Where(s => Matches(s, "id", "mission_id", "title", "url", "domain", "summary", "notes"))
+                    .Take(limit * 3)
+                    .ToList()
+                : new List<Dictionary<string, object?>>();
+            var patches = CallerHas(ctx, "read_patches")
+                ? Queen.Memory.ListPatchProposals(limit: limit * 4)
+                    .Where(p => missionIds.Count == 0 || missionIds.Contains(p.GetValueOrDefault("mission_id")?.ToString() ?? ""))
+                    .Where(p => Matches(p, "id", "mission_id", "task_id", "file_path", "change_type", "reason", "risk", "status", "patch_set_summary", "last_error"))
+                    .Take(limit * 4)
+                    .ToList()
+                : new List<Dictionary<string, object?>>();
+            var events = CallerHas(ctx, "read_events")
+                ? Queen.Memory.GetRecentEvents(limit * 8)
+                    .Where(e => missionIds.Count == 0 || missionIds.Contains(e.GetValueOrDefault("mission_id")?.ToString() ?? ""))
+                    .Where(e => Matches(e, "id", "mission_id", "task_id", "ant_name", "event_type", "message", "level"))
+                    .Take(limit * 8)
+                    .ToList()
+                : new List<Dictionary<string, object?>>();
+
+            static long L(Dictionary<string, object?> row, string key) =>
+                row.GetValueOrDefault(key) switch
+                {
+                    long v => v,
+                    int v => v,
+                    double v => (long)v,
+                    decimal v => (long)v,
+                    string s when long.TryParse(s, out var v) => v,
+                    _ => 0,
+                };
+            static double D(Dictionary<string, object?> row, string key) =>
+                row.GetValueOrDefault(key) switch
+                {
+                    double v => v,
+                    float v => v,
+                    decimal v => (double)v,
+                    long v => v,
+                    int v => v,
+                    string s when double.TryParse(s, out var v) => v,
+                    _ => 0,
+                };
+            static bool Loopish(Dictionary<string, object?> t)
+            {
+                var s = S(t, "trail_key", "trail_type").ToLowerInvariant();
+                return s.Contains("pattern") || s.Contains("loop") || s.Contains("retry") || s.Contains("cycle") || s.Contains("dependency");
+            }
+
+            var failureDominant = trails.Count(t => L(t, "failure_count") > L(t, "success_count"));
+            var loopPatterns = trails.Count(Loopish);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["summary"] = new Dictionary<string, object?>
+                {
+                    ["missions"] = missions.Count,
+                    ["tasks"] = tasks.Count,
+                    ["sources"] = sources.Count,
+                    ["patches"] = patches.Count,
+                    ["events"] = events.Count,
+                    ["trails"] = trails.Count,
+                    ["strong_trails"] = trails.Count(t => D(t, "strength") >= 0.6),
+                    ["failure_dominant_trails"] = failureDominant,
+                    ["loop_pattern_trails"] = loopPatterns,
+                },
+                ["missions"] = missions,
+                ["tasks"] = tasks,
+                ["sources"] = sources,
+                ["patches"] = patches,
+                ["events"] = events,
+                ["trails"] = trails,
+            });
         });
 
         // v1.8.22 Ant Inspector + Performance Observatory: per-caste task stats (all history), the

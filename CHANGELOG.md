@@ -1,5 +1,13 @@
 # ANTHILL Changelog
 
+## v1.8.23 - Phase 9: Memory + Pheromone Explorer
+
+- Adds a Memory + Pheromone Explorer on the existing Pheromones page.
+- Visualizes success/failure/loop-pattern signals from mission history and pheromone trails.
+- Adds mission memory search across missions, tasks, patches, and source summaries using existing read endpoints.
+- Keeps prune controls on the same surface so weak/failure-dominant trails can be cleaned up without leaving the explorer.
+- Delivered through issue #22, branch `feat/22-memory-pheromone-explorer`, and pull request workflow.
+
 > Versioning convention: each autonomy phase or notable feature ships as a patch bump.
 > Phase 1 = **v1.8.1**, live console + operator accounts = **v1.8.2**, enterprise shell UI = **v1.8.3**,
 > model provider connections = **v1.8.4**, Phase 2 autonomy (Strategist) = **v1.8.5**, container-style
@@ -19,8 +27,7 @@ Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mi
 plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
 Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, Phase 8
 Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
-ASCII banner tweak = **v1.8.22.1**, and so on.
-
+ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, and so on.
 ## v1.8.22.1 — ASCII banner tweak
 
 Trim the boot/shell ANTHILL banner to the single large ant: removed the row of small ant figures
@@ -95,7 +102,6 @@ tasks, patch rollup) with deep links to Results and the Patch Center. Admin-gate
 Clicking a node/row opens a task detail drawer (ant, type, status, elapsed, attempts, failure
 reason). Final output stays separated in its own report section as before. Rendered on demand so the
 report stays light.
-
 
 
 ## v1.8.19 — Colony Live Canvas 2.0 (UI Phase 4)
