@@ -31,11 +31,17 @@ real pheromone drift scaled by colony trail strength, and a corrected node inspe
 task load (running/completed/failed). Pre-existing task-dependency edges, handoff animation, worker
 nodes, pan/zoom, and inspector preserved.
 
+### Phase 5 — Objective Command Board (v1.8.20)
+New admin Objectives page: seven lifecycle lanes (backlog/active/paused/completed/stopped/looping/
+failed) from `/objectives` status + end_reason; cards with runs/EMA/priority/end-reason, expandable
+to runs/missions/tasks/patch rollup with deep links. Reuses existing endpoints.
+
+### Phase 6 — Mission Timeline + Task DAG Viewer (v1.8.20)
+Lazy "Task Flow" section in the mission report: a dependency-layered DAG (status/ant colors, failure
+paths in red) and a start-ordered timeline with duration bars, both from `/missions/{id}/graph`, plus
+a click-to-open task detail drawer. Final-output separation preserved.
+
 ## Future direction (not yet built)
-- **Phase 5 — Objective Command Board:** backlog/active/paused/completed/stopped/looping/failed
-  lanes; objective cards with expandable related runs/missions/tasks/patches and clear end reasons.
-- **Phase 6 — Mission Timeline + Task DAG Viewer:** timeline + DAG, task detail drawer, patch links,
-  failure-path visibility, final-output separation.
 - **Phase 7 — Visual Patch Center 2.0:** grouping by mission/objective/file/risk/status on top of the
   existing Patch Center (shipped in v1.8.16).
 - **Phase 8 — Ant Inspector + Performance Observatory:** per-ant permissions, current tasks, history,

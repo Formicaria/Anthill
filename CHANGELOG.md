@@ -16,7 +16,31 @@
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
-plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, and so on.
+plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
+Mission Timeline/DAG = **v1.8.20**, and so on.
+
+## v1.8.20 — Objective Command Board + Mission Timeline & Task DAG (UI Phases 5–6)
+
+Two additive UI views over existing endpoints — no backend/API changes.
+
+**Phase 5 — Objective Command Board** (new admin **Objectives** page). Every autonomous objective
+laid out in seven lifecycle lanes — Backlog, Active, Paused, Completed, Stopped, Looping, Failed —
+derived from `/objectives` status + `end_reason`/`retired_code`. Each card shows title, runs, success
+EMA, priority, and end reason; expanding a card loads `/objectives/{id}/detail` (runs, missions,
+tasks, patch rollup) with deep links to Results and the Patch Center. Admin-gated.
+
+**Phase 6 — Mission Timeline + Task DAG viewer** (in the mission report / Results). A lazy-loaded
+"Task Flow" section renders the mission's task graph two ways from `/missions/{id}/graph`:
+
+- **DAG** — layered by dependency depth, nodes colored by status and ant, dependency edges drawn with
+  **failure paths highlighted in red**.
+- **Timeline** — tasks ordered by start time with duration bars.
+
+Clicking a node/row opens a task detail drawer (ant, type, status, elapsed, attempts, failure
+reason). Final output stays separated in its own report section as before. Rendered on demand so the
+report stays light.
+
+
 
 ## v1.8.19 — Colony Live Canvas 2.0 (UI Phase 4)
 

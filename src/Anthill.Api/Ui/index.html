@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.19</title>
+<title>ANTHILL v1.8.20</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -500,6 +500,50 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .pc-diff .del{background:rgba(239,68,68,.12);}
 .pc-diff .del .gutter{color:var(--red);}
 .pc-diff .ctx{color:var(--muted);}
+/* ── Objective Command Board (v1.8.20, Phase 5) ── */
+.ob-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;align-items:flex-start;}
+.ob-lane{flex:0 0 240px;min-width:240px;background:var(--hud-glass);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;max-height:calc(100vh - 180px);}
+.ob-lane-hd{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--border);position:sticky;top:0;}
+.ob-lane-hd .ln-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.ob-lane-hd .ln-name{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.ob-lane-hd .ln-count{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--dim);background:rgba(255,255,255,.05);border-radius:10px;padding:1px 7px;}
+.ob-lane-body{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;min-height:40px;}
+.ob-lane.backlog{border-top:2px solid var(--dim);} .ob-lane.active{border-top:2px solid var(--hud-cyan);}
+.ob-lane.paused{border-top:2px solid var(--amber);} .ob-lane.completed{border-top:2px solid var(--green);}
+.ob-lane.stopped{border-top:2px solid var(--blue);} .ob-lane.looping{border-top:2px solid var(--orange);}
+.ob-lane.failed{border-top:2px solid var(--red);}
+.ob-card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:9px 10px;cursor:pointer;transition:border-color .15s;}
+.ob-card:hover{border-color:var(--hud-cyan);}
+.ob-card summary{list-style:none;cursor:pointer;}
+.ob-card summary::-webkit-details-marker{display:none;}
+.ob-card .oc-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.ob-card .oc-meta{display:flex;flex-wrap:wrap;gap:5px 8px;margin-top:6px;font-size:9px;color:var(--dim);font-family:var(--mono);align-items:center;}
+.ob-card .oc-reason{font-size:10px;color:var(--muted);margin-top:5px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.ob-card .oc-detail{margin-top:8px;border-top:1px solid var(--border);padding-top:7px;font-size:10px;color:var(--muted);}
+.ob-lane-empty{font-size:10px;color:var(--dim);text-align:center;padding:12px 0;}
+.ob-chip{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--muted);}
+.ob-mini{padding:2px 0;line-height:1.4;}
+/* ── Mission Timeline + Task DAG (v1.8.20, Phase 6) ── */
+.mrflow-tabs{display:flex;gap:6px;margin-bottom:8px;}
+.mrflow-view{border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:8px;overflow:auto;max-height:340px;}
+.mrflow-dag svg{display:block;}
+.dag-node rect{rx:4;stroke-width:1.5;fill:rgba(17,29,48,.9);cursor:pointer;}
+.dag-node text{font-size:9px;fill:var(--text);pointer-events:none;font-family:var(--font);}
+.dag-node.complete rect{stroke:var(--green);} .dag-node.failed rect{stroke:var(--red);}
+.dag-node.running rect{stroke:var(--hud-cyan);} .dag-node.skipped rect{stroke:var(--dim);}
+.dag-node.pending rect,.dag-node.ready rect,.dag-node.blocked rect{stroke:var(--amber);}
+.dag-node.sel rect{stroke-width:2.5;filter:drop-shadow(0 0 5px currentColor);}
+.dag-edge{stroke:rgba(139,163,188,.35);stroke-width:1.5;fill:none;}
+.dag-edge.fail{stroke:var(--red);stroke-opacity:.7;}
+.tl-row{display:flex;align-items:center;gap:8px;padding:3px 2px;cursor:pointer;border-radius:4px;}
+.tl-row:hover{background:rgba(34,211,238,.05);}
+.tl-row .tl-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.tl-row .tl-name{font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 40%;}
+.tl-row .tl-track{flex:1;height:8px;background:rgba(255,255,255,.05);border-radius:4px;position:relative;overflow:hidden;}
+.tl-row .tl-bar{position:absolute;top:0;height:100%;border-radius:4px;min-width:3px;}
+.tl-row .tl-dur{font-size:9px;color:var(--dim);font-family:var(--mono);flex:0 0 auto;min-width:44px;text-align:right;}
+.mrflow-drawer{margin-top:8px;border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:var(--card);font-size:11px;display:none;}
+.mrflow-drawer.show{display:block;}
 .obj-prio-btn{font-size:10px;width:18px;height:18px;line-height:16px;padding:0;border-radius:3px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;}
 .obj-prio-btn:hover{color:var(--text);border-color:var(--queen);}
 .kill-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;}
@@ -779,7 +823,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.19</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.20</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -822,7 +866,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.19</span>
+      <span class="nav-logo-ver">v1.8.20</span>
     </div>
 
     <div class="nav-scroll">
@@ -855,6 +899,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M3 7.5 12 3l9 4.5"/><rect x="3" y="7.5" width="9" height="6"/><rect x="12" y="10.5" width="9" height="6"/></svg></span>
         <span class="nav-label">Patch Center</span>
         <span class="nav-badge" id="nav-patches-badge" style="display:none"></span>
+      </div>
+      <div id="nav-item-objboard" class="nav-item" data-page="objboard">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg></span>
+        <span class="nav-label">Objectives</span>
       </div>
       <div id="nav-item-pheromones" class="nav-item" data-page="pheromones">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
@@ -1297,6 +1345,20 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div id="pc-summary" class="pc-summary"></div>
         <div id="patches-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading patch proposals…</div></div>
       </div><!-- /page-patches -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: OBJECTIVE COMMAND BOARD (v1.8.20, UI Phase 5)
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-objboard">
+        <div class="page-hdr">
+          <div><h1>Objective Command Board</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="hud-hd-sub" id="ob-count"></span>
+            <button class="btn btn-ghost" id="ob-refresh">↺ Refresh</button>
+          </div>
+        </div>
+        <div id="ob-board" class="ob-board"><div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div></div>
+      </div><!-- /page-objboard -->
 
       <!-- ════════════════════════════════════════════════════════════════════
            PAGE: EVENT LOG
@@ -1952,7 +2014,7 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['nav-item-patches','nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+  ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   // nav-item-pheromones: admin only
@@ -1981,7 +2043,7 @@ function applyRoleVisibility(){
 // ── Page Routing ──────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  patches:'Patch Center', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
+  patches:'Patch Center', objboard:'Objective Command Board', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -3090,7 +3152,116 @@ async function renderMissionReport(missionId, body){
         `</details>`;
     }).join('')||'<div style="color:var(--dim)">No tasks recorded.</div>');
 
+  // v1.8.20 (Phase 6): task DAG + timeline, lazy-loaded on demand.
+  if(tasks.length){
+    const fid='mrflow-'+missionId.replace(/[^a-zA-Z0-9]/g,'');
+    html+=sec('Task Flow (DAG + timeline)',
+      `<div id="${fid}"><button class="hud-act" onclick="loadTaskFlow('${missionId}','${fid}')">◈ Show task DAG &amp; timeline</button></div>`);
+  }
+
   body.innerHTML=html;
+}
+
+// ══ Mission Timeline + Task DAG viewer (v1.8.20, UI Phase 6) ══════════════════
+async function loadTaskFlow(missionId, containerId){
+  const box=document.getElementById(containerId); if(!box) return;
+  box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Building flow…</div>';
+  try{
+    const r=await api('/missions/'+encodeURIComponent(missionId)+'/graph'); if(!r.success) throw new Error(r.message);
+    const nodes=(r.data&&r.data.nodes)||[];
+    if(!nodes.length){ box.innerHTML='<div class="hud-state">No task graph for this mission.</div>'; return; }
+    TASKFLOW[containerId]={nodes, byId:Object.fromEntries(nodes.map(n=>[n.id,n]))};
+    box.innerHTML=
+      `<div class="mrflow-tabs">
+        <button class="hud-act primary" data-v="dag" onclick="switchFlow('${containerId}','dag',this)">DAG</button>
+        <button class="hud-act" data-v="timeline" onclick="switchFlow('${containerId}','timeline',this)">Timeline</button>
+       </div>
+       <div class="mrflow-view" id="${containerId}-view"></div>
+       <div class="mrflow-drawer" id="${containerId}-drawer"></div>`;
+    renderFlowView(containerId,'dag');
+  }catch(e){ box.innerHTML=`<div class="hud-state err">Could not build flow: ${escapeHtml(e.message)}</div>`; }
+}
+const TASKFLOW={};
+function switchFlow(cid,view,btn){
+  if(btn){ btn.parentElement.querySelectorAll('.hud-act').forEach(b=>b.classList.remove('primary')); btn.classList.add('primary'); }
+  renderFlowView(cid,view);
+}
+const FLOW_STATUS_COL={complete:'var(--green)',failed:'var(--red)',running:'var(--hud-cyan)',skipped:'var(--dim)',blocked:'var(--amber)',ready:'var(--amber)',pending:'var(--amber)'};
+function renderFlowView(cid,view){
+  const v=document.getElementById(cid+'-view'), data=TASKFLOW[cid]; if(!v||!data) return;
+  v.innerHTML = view==='timeline' ? flowTimeline(cid,data) : flowDag(cid,data);
+}
+function flowDag(cid,data){
+  const {nodes,byId}=data;
+  // Longest-path level (column) per node from its dependencies (memoized, cycle-safe).
+  const lvl={}, seen={};
+  function level(id){
+    if(lvl[id]!=null) return lvl[id];
+    if(seen[id]) return 0; seen[id]=1;
+    const n=byId[id]; const deps=(n&&(n.dependency_ids||n.depends_on))||[];
+    let m=0; deps.forEach(d=>{ if(byId[d]) m=Math.max(m,level(d)+1); });
+    return lvl[id]=m;
+  }
+  nodes.forEach(n=>level(n.id));
+  const cols={}; nodes.forEach(n=>{ const L=lvl[n.id]||0; (cols[L]=cols[L]||[]).push(n); });
+  const colW=150, rowH=42, padX=14, padY=14, boxW=124, boxH=28;
+  const maxRow=Math.max(1,...Object.values(cols).map(c=>c.length));
+  const width=padX*2+ (Math.max(1,Object.keys(cols).length))*colW;
+  const height=padY*2+ maxRow*rowH;
+  const pos={};
+  Object.keys(cols).forEach(L=>{ cols[L].forEach((n,i)=>{ pos[n.id]={x:padX+L*colW, y:padY+i*rowH}; }); });
+  let edges='';
+  nodes.forEach(n=>{ ((n.dependency_ids||n.depends_on)||[]).forEach(d=>{
+    if(!pos[d]||!pos[n.id]) return;
+    const a=pos[d], b=pos[n.id];
+    const x1=a.x+boxW, y1=a.y+boxH/2, x2=b.x, y2=b.y+boxH/2;
+    const fail=(byId[d]&&byId[d].status==='failed')||n.status==='failed';
+    edges+=`<path class="dag-edge ${fail?'fail':''}" d="M${x1},${y1} C${x1+30},${y1} ${x2-30},${y2} ${x2},${y2}"/>`;
+  }); });
+  const boxes=nodes.map(n=>{
+    const p=pos[n.id], st=(n.status||'pending');
+    const label=escapeHtml((n.title||n.assigned_ant||'task').slice(0,20));
+    return `<g class="dag-node ${st}" onclick="flowSelect('${cid}','${n.id}')" style="color:${FLOW_STATUS_COL[st]||'var(--amber)'}">
+      <rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}"/>
+      <text x="${p.x+7}" y="${p.y+12}">${label}</text>
+      <text x="${p.x+7}" y="${p.y+23}" style="fill:var(--dim);font-size:8px">${escapeHtml(n.assigned_ant||'')} · ${escapeHtml(st)}</text>
+    </g>`;
+  }).join('');
+  return `<div class="mrflow-dag"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${edges}${boxes}</svg></div>`;
+}
+function flowTimeline(cid,data){
+  const {nodes}=data;
+  const withStart=nodes.map(n=>({n,ts:Date.parse(n.started_at||n.created_at||'')||0}));
+  withStart.sort((a,b)=>a.ts-b.ts);
+  const durs=nodes.map(n=>+n.elapsed_seconds||0); const maxDur=Math.max(1,...durs);
+  const t0=Math.min(...withStart.map(x=>x.ts).filter(Boolean)); const span=Math.max(1,Math.max(...withStart.map(x=>x.ts).filter(Boolean))-t0);
+  return withStart.map(({n,ts})=>{
+    const st=(n.status||'pending'), col=FLOW_STATUS_COL[st]||'var(--amber)';
+    const dur=+n.elapsed_seconds||0;
+    const offPct = ts&&t0 ? Math.max(0,Math.min(96,(ts-t0)/span*96)) : 0;
+    const wPct = Math.max(2,Math.min(100-offPct, dur/maxDur*100));
+    return `<div class="tl-row" onclick="flowSelect('${cid}','${n.id}')">
+      <span class="tl-dot" style="background:${col}"></span>
+      <span class="tl-name" title="${escapeHtml(n.title||'')}">${escapeHtml(n.title||n.assigned_ant||'task')}</span>
+      <span class="tl-track"><span class="tl-bar" style="left:${offPct}%;width:${wPct}%;background:${col}"></span></span>
+      <span class="tl-dur">${dur?dur.toFixed(1)+'s':'—'}</span>
+    </div>`;
+  }).join('');
+}
+function flowSelect(cid,taskId){
+  const data=TASKFLOW[cid]; if(!data) return;
+  const n=data.byId[taskId]; if(!n) return;
+  document.querySelectorAll('#'+cid+'-view .dag-node').forEach(g=>g.classList.remove('sel'));
+  const drawer=document.getElementById(cid+'-drawer'); if(!drawer) return;
+  const reason=n.status_message||n.failure_type||'';
+  const row=(k,val)=>val?`<div style="display:flex;gap:8px;padding:1px 0"><span style="color:var(--dim);min-width:90px">${k}</span><span>${escapeHtml(String(val))}</span></div>`:'';
+  drawer.innerHTML=
+    `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(n.title||'task')}</div>`+
+    row('Ant', n.assigned_ant)+row('Type', n.task_type)+row('Status', n.status)+
+    row('Elapsed', n.elapsed_seconds!=null?(+n.elapsed_seconds).toFixed(1)+'s':'')+
+    row('Attempts', (n.attempt_count!=null?`${n.attempt_count}/${n.max_attempts??1}`:''))+
+    (reason?`<div style="color:${n.status==='failed'?'var(--red)':'var(--muted)'};margin-top:4px">${escapeHtml(reason)}</div>`:'');
+  drawer.classList.add('show');
 }
 
 // ── Results page: expandable mission reports ─────────────────────────────────
@@ -3352,6 +3523,93 @@ async function pcApply(patchId){
   }catch(e){ pcToast('Apply failed: '+e.message,false); }
 }
 pcBind();
+
+// ══ Objective Command Board (v1.8.20, UI Phase 5) ════════════════════════════
+// Lanes by lifecycle. Each objective lands in exactly one lane (precedence top→down).
+const OB_LANES=[
+  ['backlog','Backlog','var(--dim)'],
+  ['active','Active','var(--hud-cyan)'],
+  ['paused','Paused','var(--amber)'],
+  ['completed','Completed','var(--green)'],
+  ['stopped','Stopped','var(--blue)'],
+  ['looping','Looping','var(--orange)'],
+  ['failed','Failed','var(--red)'],
+];
+PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin') loadObjBoard(); };
+function objLane(o){
+  const st=(o.status||'').toLowerCase();
+  const end=o.end_reason||(o.retired_code==='looping_goals'?'retired_looping':null);
+  if(end==='retired_looping'||o.retired_code==='looping_goals') return 'looping';
+  if(end==='failed') return 'failed';
+  if(st==='done'){
+    if(end==='stopped_no_followup_required'||end==='manually_stopped') return 'stopped';
+    return 'completed';
+  }
+  if(st==='paused') return 'paused';
+  if(st==='active') return 'active';
+  if(st==='pending') return 'backlog';
+  return 'active';
+}
+async function loadObjBoard(){
+  const board=document.getElementById('ob-board'); if(!board) return;
+  board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div>';
+  try{
+    const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
+    const objectives=Array.isArray(r.data)?r.data:[];
+    setEl('ob-count',`${objectives.length} objective${objectives.length===1?'':'s'}`);
+    const byLane={}; OB_LANES.forEach(([k])=>byLane[k]=[]);
+    objectives.forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
+    board.innerHTML=OB_LANES.map(([key,name,col])=>{
+      const items=byLane[key]||[];
+      const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">—</div>';
+      return `<div class="ob-lane ${key}">
+        <div class="ob-lane-hd"><span class="ln-dot" style="background:${col}"></span><span class="ln-name">${name}</span><span class="ln-count">${items.length}</span></div>
+        <div class="ob-lane-body">${cards}</div>
+      </div>`;
+    }).join('');
+  }catch(e){ board.innerHTML=`<div class="hud-state err">Error loading objectives: ${escapeHtml(e.message)}</div>`; }
+}
+function objCard(o){
+  const ema=o.success_ema==null?'—':Number(o.success_ema).toFixed(2);
+  const reason=o.end_detail||o.retired_reason||'';
+  return `<details class="ob-card" data-obj="${o.id}" ontoggle="onObjCardToggle(this)">
+    <summary>
+      <div class="oc-title">${escapeHtml(o.title||'(untitled)')}</div>
+      <div class="oc-meta">
+        <span class="ob-chip">runs ${o.run_count??0}${o.max_runs?'/'+o.max_runs:''}</span>
+        <span class="ob-chip" title="Success EMA">ema ${ema}</span>
+        <span class="ob-chip">prio ${o.priority??0}</span>
+      </div>
+      ${reason?`<div class="oc-reason">${escapeHtml(reason)}</div>`:''}
+    </summary>
+    <div class="oc-detail"><span style="color:var(--dim)">Expand to load runs, missions, tasks, and patches…</span></div>
+  </details>`;
+}
+async function onObjCardToggle(det){
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.oc-detail');
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    const pc=d.patch_counts||{};
+    const kv=(k,v)=>`<div class="ob-mini"><span style="color:var(--dim)">${k}:</span> ${escapeHtml(String(v??'—'))}</div>`;
+    const runs=(d.runs||[]).slice(0,6).map(x=>`<div class="ob-mini">• ${escapeHtml((x.generated_goal||'').slice(0,70))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).slice(0,6).map(x=>`<div class="ob-mini">• <a href="#" onclick="openResults('${x.id}');return false;" style="color:var(--blue);font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</a> ${escapeHtml((x.goal||'').slice(0,55))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const patchLine = pc.total
+      ? `${patchSummaryText(pc)} · <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Patch Center →</a>`
+      : 'No patches produced.';
+    box.innerHTML=
+      kv('End reason', d.end_reason_label||d.end_reason||'—')+
+      (d.end_detail?kv('Detail', d.end_detail):'')+
+      kv('Runs / Missions / Tasks', `${(d.runs||[]).length} / ${(d.missions||[]).length} / ${(d.tasks||[]).length}`)+
+      kv('Ended at', d.ended_at||d.retired_at||'—')+
+      `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Patches</div><div class="ob-mini">${patchLine}</div>`+
+      `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Recent runs</div>${runs}`+
+      `<div class="ob-mini" style="margin-top:4px;color:var(--muted);font-weight:600">Missions</div>${missions}`;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
+}
+document.getElementById('ob-refresh')?.addEventListener('click',loadObjBoard);
 
 // Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
 // the quick view for running/queued jobs and legacy jobs without a mission id.
