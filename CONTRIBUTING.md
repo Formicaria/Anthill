@@ -67,14 +67,26 @@ gh api repos/:owner/:repo/milestones -f title="v1.8.18" -f state=open
 
 5. **CI must be green** (Build & test on ubuntu + windows) before merge.
 
-6. **Merge, then release.** After the PR merges to `main`, tag `main` to trigger the Release workflow
-   (it verifies the tag equals `AnthillRuntime.Version` and publishes binaries + a GitHub Release from
-   the matching `## v<version>` CHANGELOG section):
+6. **Merge, then release.** After the PR merges to `main`, release with the guarded script — do **not**
+   tag by hand. It refuses to tag unless you're on an up-to-date `main` whose `AnthillRuntime.Version`
+   equals the tag and the CHANGELOG has the section, then tags + pushes (triggering the Release
+   workflow):
 
    ```bash
    git checkout main && git pull
-   git tag v1.8.18 && git push origin v1.8.18
+   bash scripts/release.sh          # reads Version, verifies main is synced, tags + pushes
    ```
+
+   A **pre-push git hook** (`.githooks/pre-push`) is a hard backstop: it blocks pushing any `v*` tag
+   whose commit's `AnthillRuntime.Version` ≠ the tag, or that isn't on `origin/main` yet. Enable it
+   once (also done by `scripts/gh-setup.sh`):
+
+   ```bash
+   git config core.hooksPath .githooks && chmod +x .githooks/pre-push scripts/release.sh
+   ```
+
+   This exists because tagging before the version-bump PR merged repeatedly failed the release's
+   `verify-version` job. The guard makes that mistake impossible.
 
 ## Versioning
 

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# ANTHILL release guard (pre-push).
+#
+# Blocks pushing a version tag (v*) UNLESS both are true:
+#   1. the tagged commit's AnthillRuntime.Version == the tag, and
+#   2. the tagged commit is already on origin/main (i.e. the PR is merged).
+#
+# This is the guard for the recurring "tagged before the feature PR merged"
+# release failure (release.yml's verify-version job rejecting the tag).
+#
+# Enable once:  git config core.hooksPath .githooks
+# git passes ref updates on stdin as:  <local_ref> <local_sha> <remote_ref> <remote_sha>
+# ─────────────────────────────────────────────────────────────────────────────
+remote="${1:-origin}"
+verfile="src/Anthill.Core/Configuration/AnthillRuntime.cs"
+rc=0
+
+read_version() { # $1 = commit-ish; echoes the Version constant at that commit
+  git show "$1:$verfile" 2>/dev/null \
+    | grep -o 'Version = "[^"]*"' | head -1 | sed 's/.*"\(.*\)"/\1/'
+}
+
+while read -r _localref localsha remoteref _remotesha; do
+  case "$remoteref" in
+    refs/tags/v*) : ;;
+    *) continue ;;
+  esac
+  tag="${remoteref#refs/tags/}"
+  want="${tag#v}"
+  code="$(read_version "$localsha")"
+
+  if [ "$code" != "$want" ]; then
+    echo ""                                                                    >&2
+    echo "  ✗ RELEASE GUARD blocked push of tag $tag"                          >&2
+    echo "      tag version : $want"                                           >&2
+    echo "      code Version: ${code:-<not found>}"                            >&2
+    echo "      → Merge the version-bump PR to main, then tag that commit."    >&2
+    echo "        (Tip: run  bash scripts/release.sh  instead of tagging by hand.)" >&2
+    echo ""                                                                    >&2
+    rc=1
+    continue
+  fi
+
+  # Best-effort merged check: skip silently if we can't reach the remote.
+  if git fetch -q "$remote" main 2>/dev/null; then
+    if ! git merge-base --is-ancestor "$localsha" FETCH_HEAD 2>/dev/null; then
+      echo ""                                                                  >&2
+      echo "  ✗ RELEASE GUARD blocked push of tag $tag"                        >&2
+      echo "      the tagged commit is not on origin/main yet."                >&2
+      echo "      → Merge the PR and push main first, then re-tag."            >&2
+      echo ""                                                                  >&2
+      rc=1
+      continue
+    fi
+  fi
+
+  echo "  ✓ release guard: $tag matches code Version $want and is on origin/main." >&2
+done
+
+exit $rc
