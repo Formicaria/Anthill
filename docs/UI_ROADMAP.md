@@ -19,10 +19,13 @@ cards (governor signals), terminal-style mission command node with mode helpers,
 mission/patch/objective summaries. All real-data-first with graceful fallbacks; deep-links into the
 existing pages.
 
-## Future direction (not yet built)
+### Phase 3 — Mission Composer + Plan Preview (v1.8.18)
+Dry-run planner endpoint (`POST /missions/plan`) that returns the task plan + constraint flags
+without creating a mission, and a Mission Composer on the Overview node: compose goal + mode, Preview
+Plan (ordered steps with ant badges, types, and dependencies + a constraint banner), then Approve &
+Dispatch / Edit / Reject. One-shot dispatch preserved.
 
-- **Phase 3 — Mission Composer + Plan Preview:** mission modes, patch/no-patch toggles, generated
-  task-plan preview with approve/reject.
+## Future direction (not yet built)
 - **Phase 4 — Colony Live Canvas 2.0:** Queen + ant caste nodes, task dependency edges, pheromone
   trails, handoff animation, clickable worker/task detail.
 - **Phase 5 — Objective Command Board:** backlog/active/paused/completed/stopped/looping/failed

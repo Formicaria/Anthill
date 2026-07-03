@@ -172,6 +172,33 @@ public sealed partial class Queen : IDisposable
         }
     }
 
+    /// <summary>
+    /// v1.8.18 Mission Composer plan preview: builds the task plan for a goal exactly as
+    /// <see cref="RunMission(string)"/> would (planner → task-type inference → auto-dependency
+    /// wiring), but WITHOUT creating, persisting, executing, or logging a mission. Powers
+    /// <c>POST /missions/plan</c> so an operator can review the plan (and see the effect of
+    /// verification-only / no-patch constraints) before approving dispatch. Read-only: the only
+    /// external effect is the planner's model call, exactly as a real dispatch would make.
+    /// </summary>
+    public List<Task> PlanPreview(string goal)
+    {
+        var memoryContext =
+            $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
+            $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
+        var tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
+        foreach (var task in tasks)
+            if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
+        // Mirror RunMission's auto-wiring so the preview shows the same dependency edges the
+        // scheduler would actually run. Spec-ingestion plans carry their own explicit wiring.
+        if (AnthillRuntime.EnableAutoDependencyWiring && !Planner.IsLongInput(goal))
+        {
+            var transient = new Mission { Goal = goal, Tasks = tasks };
+            AutoWireDependencies(transient);
+            tasks = transient.Tasks;
+        }
+        return tasks;
+    }
+
     private void ExecuteTasksSequential(Mission mission, DateTime missionStartedAt)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);

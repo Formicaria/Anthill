@@ -7,6 +7,7 @@ using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Planning;
 using Anthill.Core.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -296,6 +297,56 @@ public static class ApiHost
             if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
             if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
             return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+        });
+
+        // v1.8.18 Mission Composer: dry-run the planner for a goal and return the task plan WITHOUT
+        // creating or executing a mission, so the operator can review (and see how verification-only
+        // / no-patch constraints reshape the plan) before approving dispatch.
+        app.MapPost("/missions/plan", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (!MissionLimiter.IsAllowed(ClientIp(ctx)))
+                return ApiJson.Error("Plan rate limit exceeded. Try again shortly.", "rate_limited");
+            MissionRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<MissionRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var goal = (body?.Goal ?? "").Trim();
+            if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
+            if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
+            try
+            {
+                var constraints = MissionConstraints.Parse(goal);
+                var tasks = Queen.PlanPreview(goal);
+                var indexById = tasks.Select((t, i) => (t.Id, N: i + 1)).ToDictionary(x => x.Id, x => x.N);
+                var rows = tasks.Select((t, i) => new Dictionary<string, object?>
+                {
+                    ["index"] = i + 1,
+                    ["title"] = t.Title,
+                    ["ant"] = t.AssignedAnt,
+                    ["task_type"] = t.TaskType,
+                    ["description"] = TextUtil.Truncate(t.Description, 400),
+                    ["critical"] = t.Critical,
+                    // Dependencies rendered as human 1-based step numbers (task ids are GUIDs).
+                    ["depends_on"] = t.DependsOn.Select(d => indexById.GetValueOrDefault(d, 0)).Where(n => n > 0).ToList(),
+                }).ToList();
+                return ApiJson.Ok(new Dictionary<string, object?>
+                {
+                    ["goal"] = goal,
+                    ["task_count"] = tasks.Count,
+                    ["spec_ingestion"] = Planner.IsLongInput(goal),
+                    ["has_coder_task"] = tasks.Any(t => t.AssignedAnt == "coder"),
+                    ["constraints"] = new Dictionary<string, object?>
+                    {
+                        ["verification_only"] = constraints.VerificationOnly,
+                        ["read_only"] = constraints.ReadOnly,
+                        ["no_patches"] = constraints.NoPatches,
+                        ["one_shot"] = constraints.OneShot,
+                        ["blocks_patches"] = constraints.BlocksPatches,
+                    },
+                    ["tasks"] = rows,
+                }, "Plan generated (preview only — no mission was created).");
+            }
+            catch (Exception ex) { return ApiJson.Error($"Could not generate plan: {ex.Message}", "plan_error"); }
         });
 
         // Proxy Ollama /api/tags so the UI can list available models without a direct connection
