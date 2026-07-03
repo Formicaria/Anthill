@@ -374,6 +374,79 @@ public sealed partial class SqliteMemory
         }
     }
 
+    // ---- Patch Center (v1.8.16) -------------------------------------------
+
+    /// <summary>
+    /// Structured patch list for the visual Patch Center. Joins each proposal to its patch-set
+    /// summary, mission goal, driving objective/run (via autonomy_runs), and latest approval — so
+    /// the UI can render, filter, and act on patches without extra round trips. Content bodies are
+    /// intentionally NOT returned here (list view stays light + secret-free); the diff view calls
+    /// <see cref="GetPatchProposal"/> for the sealed old/new content. Filters applied in SQL:
+    /// status, mission, objective, file-path substring. Risk is normalized/filtered by the caller.
+    /// </summary>
+    public List<Dictionary<string, object?>> ListPatchesForCenter(
+        PatchStatus? status = null, string? missionId = null, string? objectiveId = null,
+        string? filePathContains = null, int limit = 200)
+    {
+        // Subqueries (not a join to autonomy_runs) so a mission with multiple runs never duplicates
+        // a patch row. Objective/run are the most recent run for the patch's mission.
+        var sql = new System.Text.StringBuilder(@"
+            SELECT pp.id, pp.patch_set_id, pp.mission_id, pp.task_id, pp.file_path, pp.change_type,
+                   pp.reason, pp.risk, pp.requires_approval, pp.status, pp.created_at, pp.applied_at,
+                   pp.backup_path, pp.last_error, ps.summary AS patch_set_summary,
+                   m.goal AS mission_goal,
+                   (SELECT r.objective_id FROM autonomy_runs r WHERE r.mission_id = pp.mission_id ORDER BY r.started_at DESC LIMIT 1) AS objective_id,
+                   (SELECT r.id           FROM autonomy_runs r WHERE r.mission_id = pp.mission_id ORDER BY r.started_at DESC LIMIT 1) AS run_id,
+                   (SELECT areq.id     FROM approval_requests areq WHERE areq.target_id = pp.id ORDER BY areq.created_at DESC LIMIT 1) AS approval_id,
+                   (SELECT areq.status FROM approval_requests areq WHERE areq.target_id = pp.id ORDER BY areq.created_at DESC LIMIT 1) AS approval_status
+            FROM patch_proposals pp
+            LEFT JOIN patch_sets ps ON pp.patch_set_id = ps.id
+            LEFT JOIN missions m ON pp.mission_id = m.id");
+        var conds = new List<string>();
+        var args = new List<(string, object?)>();
+        if (status is not null) { conds.Add("pp.status = @st"); args.Add(("@st", status.Value.Value())); }
+        if (!string.IsNullOrWhiteSpace(missionId)) { conds.Add("pp.mission_id = @mid"); args.Add(("@mid", missionId)); }
+        if (!string.IsNullOrWhiteSpace(objectiveId)) { conds.Add("pp.mission_id IN (SELECT mission_id FROM autonomy_runs WHERE objective_id = @oid AND mission_id IS NOT NULL)"); args.Add(("@oid", objectiveId)); }
+        if (!string.IsNullOrWhiteSpace(filePathContains)) { conds.Add("pp.file_path LIKE @fp"); args.Add(("@fp", $"%{filePathContains}%")); }
+        if (conds.Count > 0) sql.Append(" WHERE ").Append(string.Join(" AND ", conds));
+        sql.Append(" ORDER BY pp.created_at DESC LIMIT @lim");
+        args.Add(("@lim", Math.Clamp(limit, 1, 1000)));
+        return Query(sql.ToString(), args.ToArray());
+    }
+
+    /// <summary>Patch status counts (proposed/approved/applied/rejected/failed/superseded + total) for one mission.</summary>
+    public Dictionary<string, object?> PatchCountsForMission(string missionId) =>
+        NormalizePatchCounts(Query(
+            "SELECT status, COUNT(*) AS n FROM patch_proposals WHERE mission_id = @m GROUP BY status", ("@m", missionId)));
+
+    /// <summary>Patch status counts for every mission this objective's autonomy runs launched.</summary>
+    public Dictionary<string, object?> PatchCountsForObjective(string objectiveId) =>
+        NormalizePatchCounts(Query(
+            @"SELECT pp.status AS status, COUNT(*) AS n FROM patch_proposals pp
+              WHERE pp.mission_id IN (SELECT mission_id FROM autonomy_runs WHERE objective_id = @oid AND mission_id IS NOT NULL)
+              GROUP BY pp.status", ("@oid", objectiveId)));
+
+    private static Dictionary<string, object?> NormalizePatchCounts(List<Dictionary<string, object?>> rows)
+    {
+        var d = new Dictionary<string, object?>
+        {
+            ["total"] = 0, ["proposed"] = 0, ["approved"] = 0, ["applied"] = 0,
+            ["rejected"] = 0, ["failed"] = 0, ["superseded"] = 0,
+        };
+        var total = 0;
+        foreach (var r in rows)
+        {
+            var st = r.GetValueOrDefault("status")?.ToString() ?? "";
+            var n = (int)AsLong(r.GetValueOrDefault("n"));
+            if (d.ContainsKey(st)) d[st] = n;
+            total += n;
+        }
+        d["total"] = total;
+        // "pending" is the operator-facing label for proposed patches awaiting approval.
+        d["pending"] = d["proposed"];
+        return d;
+    }
+
     // ---- approvals --------------------------------------------------------
 
     public void SaveApprovalRequest(ApprovalRequest a)

@@ -108,6 +108,11 @@ public sealed class AnthillConfig
     // How many recent generated goals to compare for loop detection (0 = off). Uses
     // autonomy_dedupe_similarity as the overlap threshold, same metric as Strategist dedup.
     [JsonPropertyName("autonomy_loop_window")] public int AutonomyLoopWindow { get; set; } = 4;
+    // v1.8.16 lifecycle hardening: let a successful one-shot or verification-only objective end
+    // cleanly as Completed/Stopped instead of looping until loop detection retires it. Loop
+    // detection stays available for true repeated loops. On by default; disable to restore the
+    // pre-v1.8.16 "run until a rail stops it" behaviour.
+    [JsonPropertyName("autonomy_oneshot_completion")] public bool AutonomyOneShotCompletion { get; set; } = true;
     // ---- Phase 5: gated auto-apply ----
     // The Director may auto-approve + apply a coder patch WITHOUT human review, but only when the
     // patch clears a strict allowlist AND the workspace still builds + tests green afterward; a

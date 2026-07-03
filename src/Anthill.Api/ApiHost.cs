@@ -1,4 +1,5 @@
 using System.Reflection;
+using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Diagnostics;
@@ -224,6 +225,36 @@ public static class ApiHost
             RequireAuth(ctx, "read_patches") ?? Results.Text(Queen.FormatPatchDetail(id), "text/plain"));
         app.MapGet("/approvals/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "read_approvals") ?? Results.Text(Queen.FormatApprovalDetail(id), "text/plain"));
+
+        // ---- Patch Center (v1.8.16): structured JSON for the visual patch review page ----
+        // Filterable list of patch proposals (status, mission, objective, file substring, risk).
+        app.MapGet("/patches", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_patches"); if (auth is not null) return auth;
+            var q = ctx.Request.Query;
+            PatchStatus? status = null;
+            var statusQ = (q["status"].FirstOrDefault() ?? "").Trim().ToLowerInvariant();
+            // "pending" is the UI label for a proposed (awaiting-approval) patch.
+            if (statusQ is "pending") status = PatchStatus.Proposed;
+            else if (statusQ.Length > 0) status = ParsePatchStatusOrNull(statusQ);
+            var missionId = q["mission_id"].FirstOrDefault();
+            var objectiveId = q["objective_id"].FirstOrDefault();
+            var file = q["file"].FirstOrDefault();
+            var riskFilter = RiskLevel.Normalize(q["risk"].FirstOrDefault());
+            var wantRisk = !string.IsNullOrWhiteSpace(q["risk"].FirstOrDefault());
+            int.TryParse(q["limit"].FirstOrDefault(), out var limit);
+            var rows = Queen.Memory.ListPatchesForCenter(status, missionId, objectiveId, file, limit <= 0 ? 200 : limit)
+                .Select(PatchCenterRow)
+                .Where(r => !wantRisk || (r.GetValueOrDefault("risk")?.ToString() == riskFilter))
+                .ToList();
+            return ApiJson.Ok(rows);
+        });
+        // Full detail for one patch, including the sealed old/new content for the diff view.
+        app.MapGet("/patches/{id}/detail", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_patches"); if (auth is not null) return auth;
+            return PatchDetailJson(id);
+        });
 
         app.MapGet("/jobs", (HttpContext ctx) => RequireAuth(ctx, "read_status") ?? ApiJson.Ok(Jobs.ListJobs()));
         app.MapGet("/jobs/{id}", (HttpContext ctx, string id) =>
@@ -516,13 +547,27 @@ public static class ApiHost
         app.MapGet("/objectives/completed", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_objectives"); if (auth is not null) return auth;
-            var rows = Queen.Memory.ListRetiredObjectives("looping_goals").Select(o => new Dictionary<string, object?>
+            // v1.8.16: all ended objectives (completed cleanly, stopped no-followup, retired looping,
+            // failed, or manually paused/stopped) — not just the loop-retired ones.
+            var rows = Queen.Memory.ListEndedObjectives().Select(o =>
             {
-                ["id"] = o.Id, ["title"] = o.Title,
-                ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
-                ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
-                ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
-                ["run_count"] = o.RunCount,
+                var endReason = o.Metadata.GetValueOrDefault("end_reason")?.ToString()
+                    ?? (o.Metadata.GetValueOrDefault("retired_code") is not null ? ObjectiveEndReason.RetiredLooping : null);
+                return new Dictionary<string, object?>
+                {
+                    ["id"] = o.Id, ["title"] = o.Title,
+                    ["end_reason"] = endReason,
+                    ["end_reason_label"] = ObjectiveEndReason.Label(endReason),
+                    ["end_detail"] = o.Metadata.GetValueOrDefault("end_detail") ?? o.Metadata.GetValueOrDefault("retired_reason"),
+                    ["ended_at"] = o.Metadata.GetValueOrDefault("ended_at") ?? o.Metadata.GetValueOrDefault("retired_at"),
+                    // Legacy fields kept so older UI keeps working.
+                    ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
+                    ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
+                    ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
+                    ["status"] = o.Status.Value(),
+                    ["run_count"] = o.RunCount,
+                    ["patch_counts"] = Queen.Memory.PatchCountsForObjective(o.Id),
+                };
             }).ToList();
             return ApiJson.Ok(rows);
         });
@@ -746,7 +791,16 @@ public static class ApiHost
         {
             var auth = RequireAuth(ctx, "read_autonomy"); if (auth is not null) return auth;
             var objectiveId = ctx.Request.Query["objective_id"].FirstOrDefault();
-            return ApiJson.Ok(Queen.Memory.ListAutonomyRuns(string.IsNullOrEmpty(objectiveId) ? null : objectiveId));
+            var runs = Queen.Memory.ListAutonomyRuns(string.IsNullOrEmpty(objectiveId) ? null : objectiveId);
+            // v1.8.16: attach a patch rollup per run so the Autonomy page can show "Patches: 2 applied, 1 pending".
+            foreach (var run in runs)
+            {
+                var mid = run.GetValueOrDefault("mission_id")?.ToString();
+                run["patch_counts"] = string.IsNullOrEmpty(mid)
+                    ? Queen.Memory.PatchCountsForMission("")   // yields an all-zero rollup
+                    : Queen.Memory.PatchCountsForMission(mid!);
+            }
+            return ApiJson.Ok(runs);
         });
 
         // Objective backlog CRUD
@@ -794,7 +848,30 @@ public static class ApiHost
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
             if (body?.Priority is int p) Queen.Memory.SetObjectivePriority(id, p);
             if (!string.IsNullOrEmpty(body?.Status))
-                Queen.Memory.UpdateObjectiveStatus(id, EnumExtensions.ParseObjectiveStatus(body.Status));
+            {
+                var newStatus = EnumExtensions.ParseObjectiveStatus(body.Status);
+                Queen.Memory.UpdateObjectiveStatus(id, newStatus);
+                // v1.8.16: record operator-driven terminal transitions. A move to Done is a manual
+                // "stop" that belongs in Completed Objectives. A plain pause stays a resumable
+                // backlog item (no end marker). Resuming clears any prior end markers.
+                if (newStatus is ObjectiveStatus.Done && Queen.Memory.GetObjective(id) is { } stopped)
+                {
+                    stopped.Metadata["end_reason"] = ObjectiveEndReason.ManuallyStopped;
+                    stopped.Metadata["end_detail"] = "Stopped by operator from the console.";
+                    stopped.Metadata["ended_at"] = AnthillTime.NowUtc().ToIso();
+                    Queen.Memory.SaveObjective(stopped);
+                }
+                else if (newStatus is ObjectiveStatus.Active or ObjectiveStatus.Pending &&
+                    Queen.Memory.GetObjective(id) is { } resumed &&
+                    (resumed.Metadata.ContainsKey("end_reason") || resumed.Metadata.ContainsKey("retired_code")))
+                {
+                    // Resuming clears the ended/retired markers so it returns to the active backlog.
+                    resumed.Metadata.Remove("end_reason"); resumed.Metadata.Remove("end_detail");
+                    resumed.Metadata.Remove("ended_at"); resumed.Metadata.Remove("retired_code");
+                    resumed.Metadata.Remove("retired_reason"); resumed.Metadata.Remove("retired_at");
+                    Queen.Memory.SaveObjective(resumed);
+                }
+            }
             return ApiJson.Ok(ObjectiveDict(Queen.Memory.GetObjective(id)!), "Objective updated.");
         });
 
@@ -998,6 +1075,8 @@ public static class ApiHost
             },
             ["tasks"] = taskReports,
             ["patches"] = patchReports,
+            // v1.8.16: rollup of patch activity for this mission (proposed/approved/applied/rejected/failed).
+            ["patch_counts"] = includeSensitive ? Queen.Memory.PatchCountsForMission(id) : null,
             ["pending_approvals"] = approvals.Count(a => a.GetValueOrDefault("status")?.ToString() == "pending"),
             ["sources_saved"] = Queen.Memory.CountSourcesForMission(id),
             ["problems"] = problems,
@@ -1040,6 +1119,91 @@ public static class ApiHost
         return TextUtil.Truncate(result, 4000, "\n...[output truncated — full text in the mission detail]");
     }
 
+    // ---- Patch Center helpers (v1.8.16) ------------------------------------
+
+    private static readonly Dictionary<string, string> PatchStatusLabels = new()
+    {
+        ["proposed"] = "Pending", ["approved"] = "Approved", ["applied"] = "Applied",
+        ["rejected"] = "Rejected", ["failed"] = "Failed", ["superseded"] = "Superseded",
+    };
+
+    private static PatchStatus? ParsePatchStatusOrNull(string s) => s switch
+    {
+        "proposed" => PatchStatus.Proposed, "approved" => PatchStatus.Approved, "rejected" => PatchStatus.Rejected,
+        "applied" => PatchStatus.Applied, "failed" => PatchStatus.Failed, "superseded" => PatchStatus.Superseded, _ => null,
+    };
+
+    /// <summary>Shapes one Patch Center list row: normalizes risk, adds a status label, no content body.</summary>
+    private static Dictionary<string, object?> PatchCenterRow(Dictionary<string, object?> p)
+    {
+        var status = p.GetValueOrDefault("status")?.ToString() ?? "proposed";
+        var riskRaw = p.GetValueOrDefault("risk")?.ToString() ?? "";
+        return new Dictionary<string, object?>
+        {
+            ["id"] = p.GetValueOrDefault("id"),
+            ["file_path"] = p.GetValueOrDefault("file_path"),
+            ["change_type"] = p.GetValueOrDefault("change_type"),
+            ["risk"] = RiskLevel.Normalize(riskRaw),
+            ["risk_raw"] = riskRaw,
+            ["reason"] = p.GetValueOrDefault("reason"),
+            ["status"] = status,
+            ["status_label"] = PatchStatusLabels.GetValueOrDefault(status, status),
+            ["mission_id"] = p.GetValueOrDefault("mission_id"),
+            ["mission_goal"] = p.GetValueOrDefault("mission_goal"),
+            ["objective_id"] = p.GetValueOrDefault("objective_id"),
+            ["run_id"] = p.GetValueOrDefault("run_id"),
+            ["task_id"] = p.GetValueOrDefault("task_id"),
+            ["patch_set_id"] = p.GetValueOrDefault("patch_set_id"),
+            ["patch_set_summary"] = p.GetValueOrDefault("patch_set_summary"),
+            ["created_at"] = p.GetValueOrDefault("created_at"),
+            ["applied_at"] = p.GetValueOrDefault("applied_at"),
+            ["last_error"] = p.GetValueOrDefault("last_error"),
+            ["has_backup"] = !string.IsNullOrEmpty(p.GetValueOrDefault("backup_path")?.ToString()),
+            ["approval_id"] = p.GetValueOrDefault("approval_id"),
+            ["approval_status"] = p.GetValueOrDefault("approval_status"),
+        };
+    }
+
+    /// <summary>Full JSON detail for one patch (Patch Center diff view): metadata + old/new content + approval.</summary>
+    private static IResult PatchDetailJson(string patchId)
+    {
+        var p = Queen.Memory.GetPatchProposal(patchId);
+        if (p is null) return ApiJson.Error($"No patch found with id: {patchId}", "not_found");
+        var missionId = p.GetValueOrDefault("mission_id")?.ToString() ?? "";
+        var approval = Queen.Memory.GetApprovalForTarget(patchId);
+        var run = string.IsNullOrEmpty(missionId) ? null : Queen.Memory.GetAutonomyRunForMission(missionId);
+        var objectiveId = run?.GetValueOrDefault("objective_id")?.ToString();
+        var objective = string.IsNullOrEmpty(objectiveId) ? null : Queen.Memory.GetObjective(objectiveId!);
+        var status = p.GetValueOrDefault("status")?.ToString() ?? "proposed";
+        var riskRaw = p.GetValueOrDefault("risk")?.ToString() ?? "";
+        return ApiJson.Ok(new Dictionary<string, object?>
+        {
+            ["id"] = patchId,
+            ["file_path"] = p.GetValueOrDefault("file_path"),
+            ["change_type"] = p.GetValueOrDefault("change_type"),
+            ["risk"] = RiskLevel.Normalize(riskRaw),
+            ["risk_raw"] = riskRaw,
+            ["reason"] = p.GetValueOrDefault("reason"),
+            ["status"] = status,
+            ["status_label"] = PatchStatusLabels.GetValueOrDefault(status, status),
+            ["old_content"] = p.GetValueOrDefault("old_content"),
+            ["new_content"] = p.GetValueOrDefault("new_content"),
+            ["mission_id"] = missionId,
+            ["mission_goal"] = p.GetValueOrDefault("mission_goal"),
+            ["task_id"] = p.GetValueOrDefault("task_id"),
+            ["patch_set_summary"] = p.GetValueOrDefault("patch_set_summary"),
+            ["objective_id"] = objectiveId,
+            ["objective_title"] = objective?.Title,
+            ["run_id"] = run?.GetValueOrDefault("id"),
+            ["created_at"] = p.GetValueOrDefault("created_at"),
+            ["applied_at"] = p.GetValueOrDefault("applied_at"),
+            ["last_error"] = p.GetValueOrDefault("last_error"),
+            ["has_backup"] = !string.IsNullOrEmpty(p.GetValueOrDefault("backup_path")?.ToString()),
+            ["approval_id"] = approval?.GetValueOrDefault("id"),
+            ["approval_status"] = approval?.GetValueOrDefault("status"),
+        });
+    }
+
     private static Dictionary<string, object?> ObjectiveDict(Objective o) => new()
     {
         ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter, ["priority"] = o.Priority,
@@ -1052,6 +1216,10 @@ public static class ApiHost
         ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
         ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
         ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),
+        // v1.8.16 unified lifecycle end markers.
+        ["end_reason"] = o.Metadata.GetValueOrDefault("end_reason"),
+        ["end_detail"] = o.Metadata.GetValueOrDefault("end_detail"),
+        ["ended_at"] = o.Metadata.GetValueOrDefault("ended_at"),
     };
 
     /// <summary>
@@ -1081,9 +1249,16 @@ public static class ApiHost
                     ["ant"] = t.GetValueOrDefault("assigned_ant"), ["status"] = t.GetValueOrDefault("status"),
                 });
         }
+        var endReason = o.Metadata.GetValueOrDefault("end_reason")?.ToString()
+            ?? (o.Metadata.GetValueOrDefault("retired_code") is not null ? ObjectiveEndReason.RetiredLooping : null);
         return new Dictionary<string, object?>
         {
             ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter,
+            ["end_reason"] = endReason,
+            ["end_reason_label"] = ObjectiveEndReason.Label(endReason),
+            ["end_detail"] = o.Metadata.GetValueOrDefault("end_detail") ?? o.Metadata.GetValueOrDefault("retired_reason"),
+            ["ended_at"] = o.Metadata.GetValueOrDefault("ended_at") ?? o.Metadata.GetValueOrDefault("retired_at"),
+            ["patch_counts"] = Queen.Memory.PatchCountsForObjective(o.Id),
             ["retired_code"] = o.Metadata.GetValueOrDefault("retired_code"),
             ["retired_reason"] = o.Metadata.GetValueOrDefault("retired_reason"),
             ["retired_at"] = o.Metadata.GetValueOrDefault("retired_at"),

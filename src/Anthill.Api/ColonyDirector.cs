@@ -237,7 +237,7 @@ public sealed class ColonyDirector : IDisposable
                 ["success_ema"] = updated?.SuccessEma, ["in_flight"] = _inFlight.Count,
             });
 
-        if (updated is not null) CheckRetirement(updated);
+        if (updated is not null) EvaluateObjectiveLifecycle(updated, success, enqueuedFollowUps);
 
         // Phase 5: on a successful mission, try to auto-apply any allowlisted patches it produced
         // (apply → build+test verify → keep or roll back). Fail-closed and no-op unless the
@@ -256,10 +256,40 @@ public sealed class ColonyDirector : IDisposable
     }
 
     /// <summary>
-    /// Phase 4 learning loop: after an outcome lands, retire (auto-pause) the objective if it has
-    /// stopped producing value or is looping on near-identical goals. Runs on the director thread
-    /// only, after the outcome is recorded, so it never races the objective's own bookkeeping.
-    /// Retirement is a pause + <c>objective_retired</c> event — a human reviews and resumes.
+    /// v1.8.16 objective lifecycle: after an outcome lands, decide whether the objective should end,
+    /// and why. The precedence — clean completion first (one-shot / verification-only / run-budget
+    /// exhausted), then the circuit-breaker failure pause, then the Phase 4 loop/stale retirement —
+    /// ensures loop detection is NOT the normal ending path for successful maintenance work, while
+    /// still catching true autonomy loops. Runs on the director thread only, after the outcome is
+    /// recorded, so it never races the objective's own bookkeeping.
+    /// </summary>
+    private void EvaluateObjectiveLifecycle(Objective objective, bool success, int followUpsCreated)
+    {
+        var alreadyDone = objective.Status == ObjectiveStatus.Done;       // run-budget rail fired this run
+        var breakerPaused = objective.Status == ObjectiveStatus.Paused;   // consecutive-failure rail fired
+
+        // 1) Clean completion — the normal ending path for one-shot / verification-only objectives
+        //    (and for run-budget exhaustion). This deliberately runs BEFORE loop detection.
+        var completion = ObjectiveLifecycle.EvaluateCompletion(objective, success, followUpsCreated, alreadyDone);
+        if (completion is not null) { StampObjectiveEnd(objective, completion, "objective_completed"); return; }
+
+        // 2) Circuit breaker already paused it for repeated failures — record that as the end reason.
+        if (breakerPaused)
+        {
+            StampObjectiveEnd(objective, new ObjectiveEndDecision(ObjectiveStatus.Paused, ObjectiveEndReason.Failed,
+                $"Paused after {objective.ConsecutiveFailures} consecutive failures (circuit breaker)."), "objective_failed");
+            return;
+        }
+
+        // 3) Phase 4 loop/stale retirement — preserved strictly for true repeated loops.
+        CheckRetirement(objective);
+    }
+
+    /// <summary>
+    /// Phase 4 learning loop: retire (auto-pause) an objective that is looping on near-identical
+    /// goals or has gone stale (low success EMA). Retirement is a pause + <c>objective_retired</c>
+    /// event — a human reviews and resumes. Preserved from v1.8.14; the v1.8.16 lifecycle only
+    /// reaches here after clean-completion has been ruled out.
     /// </summary>
     private void CheckRetirement(Objective objective)
     {
@@ -270,12 +300,16 @@ public sealed class ColonyDirector : IDisposable
         var decision = ObjectiveLearning.EvaluateRetirement(objective, recentGoals);
         if (decision is null) return;
 
-        // Stamp the retirement onto the objective's metadata so the UI can surface it (looping-
-        // retired objectives are shown in "Completed Objectives" instead of the paused backlog).
+        // Stamp the retirement onto the objective's metadata so the UI can surface it (retired
+        // objectives are shown in "Completed Objectives" instead of the paused backlog). Keep the
+        // legacy retired_* markers for back-compat and add the unified v1.8.16 end_reason.
         objective.Status = ObjectiveStatus.Paused;
         objective.Metadata["retired_code"] = decision.Code;      // "looping_goals" | "stale_low_success"
         objective.Metadata["retired_reason"] = decision.Reason;
         objective.Metadata["retired_at"] = AnthillTime.NowUtc().ToIso();
+        objective.Metadata["end_reason"] = ObjectiveEndReason.RetiredLooping;
+        objective.Metadata["end_detail"] = decision.Reason;
+        objective.Metadata["ended_at"] = AnthillTime.NowUtc().ToIso();
         _queen.Memory.SaveObjective(objective);
         _queen.Memory.LogEvent(SystemMissionId, "objective_retired",
             $"Director retired objective \"{objective.Title}\" ({decision.Code}): {decision.Reason}",
@@ -283,9 +317,29 @@ public sealed class ColonyDirector : IDisposable
             metadata: new()
             {
                 ["objective_id"] = objective.Id, ["objective_title"] = objective.Title,
-                ["code"] = decision.Code, ["reason"] = decision.Reason,
+                ["code"] = decision.Code, ["reason"] = decision.Reason, ["end_reason"] = ObjectiveEndReason.RetiredLooping,
                 ["success_ema"] = objective.SuccessEma, ["run_count"] = objective.RunCount,
                 ["action"] = "paused_for_review",
+            });
+    }
+
+    /// <summary>Stamps a clean end-of-lifecycle decision onto the objective and logs it for the console.</summary>
+    private void StampObjectiveEnd(Objective objective, ObjectiveEndDecision decision, string eventType)
+    {
+        objective.Status = decision.Status;
+        objective.Metadata["end_reason"] = decision.EndReason;
+        objective.Metadata["end_detail"] = decision.Detail;
+        objective.Metadata["ended_at"] = AnthillTime.NowUtc().ToIso();
+        _queen.Memory.SaveObjective(objective);
+        _queen.Memory.LogEvent(SystemMissionId, eventType,
+            $"Objective \"{objective.Title}\" ended: {ObjectiveEndReason.Label(decision.EndReason)} — {decision.Detail}",
+            antName: "director",
+            metadata: new()
+            {
+                ["objective_id"] = objective.Id, ["objective_title"] = objective.Title,
+                ["end_reason"] = decision.EndReason, ["end_detail"] = decision.Detail,
+                ["status"] = decision.Status.Value(), ["run_count"] = objective.RunCount,
+                ["success_ema"] = objective.SuccessEma,
             });
     }
 

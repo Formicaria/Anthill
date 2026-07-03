@@ -22,7 +22,7 @@ public enum MissionStatus { Created, Running, Complete, Partial, Failed }
 
 public enum PatchChangeType { Add, Modify, Delete, Rename }
 
-public enum PatchStatus { Proposed, Approved, Rejected, Applied, Failed }
+public enum PatchStatus { Proposed, Approved, Rejected, Applied, Failed, Superseded }
 
 public enum ApprovalStatus { Pending, Approved, Rejected, Expired, Consumed }
 
@@ -55,7 +55,7 @@ public static class EnumExtensions
     public static string Value(this PatchStatus s) => s switch
     {
         PatchStatus.Proposed => "proposed", PatchStatus.Approved => "approved", PatchStatus.Rejected => "rejected",
-        PatchStatus.Applied => "applied", PatchStatus.Failed => "failed", _ => "proposed",
+        PatchStatus.Applied => "applied", PatchStatus.Failed => "failed", PatchStatus.Superseded => "superseded", _ => "proposed",
     };
 
     public static string Value(this ApprovalStatus s) => s switch

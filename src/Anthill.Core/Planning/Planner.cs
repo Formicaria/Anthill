@@ -35,12 +35,25 @@ public sealed class Planner
 
     public List<Task> CreateTasks(string goal, string memoryContext = "", string toolContext = "", string pheromoneContext = "")
     {
+        // v1.8.16: read explicit mission constraints up front. A verification-only / read-only /
+        // "do not modify files" mission must never have coder patch-proposal tasks planned for it.
+        var constraints = MissionConstraints.Parse(goal);
+
         // Long specification / architecture / framework documents are never sent into a single
         // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
-        // followed by a synthesis pass. This runs regardless of model availability.
+        // followed by a synthesis pass. This runs regardless of model availability. (Spec-ingestion
+        // plans are already research/synthesis/verify only — no coder tasks — so they honour the
+        // no-patch constraint by construction.)
         if (IsLongInput(goal)) return CreateSpecIngestionTasks(goal);
 
-        if (!_useOllama || _router is null) return FallbackTasks(goal);
+        if (!_useOllama || _router is null) return EnforceConstraints(FallbackTasks(goal), goal, constraints);
+
+        var constraintDirective = constraints.BlocksPatches
+            ? "\nHARD CONSTRAINT (operator requested verification / read-only / no file changes):\n" +
+              "- Do NOT include any coder task or any task_type \"patch_proposal\". Propose NO file changes.\n" +
+              "- Use only researcher, web, file (read-only), builder, and verifier ants.\n" +
+              "- The mission's job is to inspect, verify, and report — not to modify anything.\n"
+            : "";
 
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: planner | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(goal, 180)}
@@ -67,7 +80,7 @@ Pheromone trail summary. Prefer high-strength matching patterns, but do not forc
 
 Mission goal:
 {goal}
-
+{constraintDirective}
 Rules:
 - Return ONLY valid JSON.
 Do not wrap JSON in markdown code fences.
@@ -100,7 +113,7 @@ Required JSON:
         {
             Console.Error.WriteLine($"Planner failed to use Ollama: {response}");
             Console.Error.WriteLine("Using fallback static task plan.");
-            return FallbackTasks(goal);
+            return EnforceConstraints(FallbackTasks(goal), goal, constraints);
         }
         try
         {
@@ -109,15 +122,67 @@ Required JSON:
             if (tasks.Count == 0)
             {
                 Console.Error.WriteLine("Dynamic planner returned no valid task plan. Using fallback plan.");
-                return FallbackTasks(goal);
+                return EnforceConstraints(FallbackTasks(goal), goal, constraints);
             }
-            return tasks;
+            // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
+            // coder patch task on a verification-only mission. Strip them deterministically.
+            return EnforceConstraints(tasks, goal, constraints);
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"Dynamic planner parse failed: {error.Message}");
-            return FallbackTasks(goal);
+            return EnforceConstraints(FallbackTasks(goal), goal, constraints);
         }
+    }
+
+    /// <summary>
+    /// v1.8.16 planner constraint enforcement. When the mission is verification-only / read-only /
+    /// no-patch, deterministically removes every patch-producing task (coder ant or
+    /// <c>patch_proposal</c> task type) and drops now-orphaned dependencies on them. If removing the
+    /// coder task would leave nothing to inspect the workspace, a read-only file-inspection task is
+    /// substituted so verification missions still actually look at the files. A verifier is always
+    /// guaranteed. Missions without a no-patch constraint pass through unchanged.
+    /// </summary>
+    internal static List<Task> EnforceConstraints(List<Task> tasks, string goal, MissionConstraints constraints)
+    {
+        if (!constraints.BlocksPatches || tasks.Count == 0) return tasks;
+
+        bool IsPatchTask(Task t) =>
+            t.AssignedAnt == "coder" || t.TaskType is "patch_proposal" or "patch" or "code_change";
+        var removedIds = tasks.Where(IsPatchTask).Select(t => t.Id).ToHashSet();
+        var kept = tasks.Where(t => !IsPatchTask(t)).ToList();
+
+        // Drop dependencies that pointed at removed tasks so the scheduler can't deadlock.
+        foreach (var t in kept)
+            t.DependsOn = t.DependsOn.Where(d => !removedIds.Contains(d)).ToList();
+
+        // Guarantee the mission still inspects the workspace if it names files/code/paths.
+        var mentionsFiles = new[] { "file", "code", "repo", "path", "folder", "directory", ".cs", ".md", ".json", "config" }
+            .Any(k => goal.ToLowerInvariant().Contains(k));
+        if (mentionsFiles && !kept.Any(t => t.AssignedAnt == "file"))
+            kept.Insert(0, new Task
+            {
+                Title = "Inspect workspace files (read-only)",
+                Description = $"List relevant workspace files and read safe text files to verify — do NOT modify anything: {goal}",
+                AssignedAnt = "file", TaskType = "file_inspection",
+            });
+
+        if (kept.Count == 0)
+            kept.Add(new Task
+            {
+                Title = "Research and report",
+                Description = $"Investigate and report on the mission without changing any files: {goal}",
+                AssignedAnt = "researcher", TaskType = "research",
+            });
+
+        if (!kept.Any(t => t.AssignedAnt == "verifier"))
+            kept.Add(new Task
+            {
+                Title = "Verify findings",
+                Description = $"Check the inspection/verification result for accuracy and completeness: {goal}",
+                AssignedAnt = "verifier", TaskType = "verification",
+            });
+        return kept;
     }
 
     private List<Task> TasksFromJson(JsonObject parsed, string goal)

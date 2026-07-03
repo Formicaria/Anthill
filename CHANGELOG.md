@@ -13,7 +13,44 @@
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
 > intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
 > hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
-> JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, and so on.
+> JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
+lifecycle hardening + visual Patch Center = **v1.8.16**, and so on.
+
+## v1.8.16 — Objective Lifecycle Hardening + Visual Patch Review Center
+
+Two focused improvements to how the colony ends autonomous work and how the operator reviews the
+changes it proposes. See `docs/ROADMAP.md` for the 10-phase direction; Phases 1–2 ship here.
+
+**Objective lifecycle (Phase 1).** One-shot and verification-only objectives now end cleanly instead
+of regenerating near-identical missions until loop detection retires them:
+
+- New clean-completion path (`ObjectiveLifecycle.EvaluateCompletion`) runs *before* loop detection.
+  A successful one-shot objective ends `completed_successfully`; a successful verification-only /
+  read-only / no-patch objective that discovered no new work ends `stopped_no_followup_required`.
+  Broad standing objectives (no one-shot/verify wording, `max_runs` 0/>1) keep running as before.
+- Loop detection is preserved strictly for true repeated loops — it is no longer the normal ending
+  path for successful maintenance work.
+- Unified end reasons stamped on every ended objective: `completed_successfully`,
+  `stopped_no_followup_required`, `retired_looping`, `failed`, `manually_paused`, `manually_stopped`.
+- New config `autonomy_oneshot_completion` (default on) gates the behaviour.
+
+**Planner constraint enforcement (Phase 1).** The planner now reads explicit mission constraints
+(`MissionConstraints`): a `verification-only` / `read-only` / `do not modify files` mission gets a
+hard prompt directive *and* a deterministic post-plan strip of every coder patch-proposal task, with
+a read-only file-inspection task substituted so verification missions still actually inspect files.
+Normal code-change missions keep the full coder/builder/verifier workflow.
+
+**Visual Patch Center (Phase 2).** A new admin page lists every patch proposal with status and risk
+badges, filterable by status, risk, mission, objective, and file path. Each patch expands to a
+unified diff (removed/added/context) and offers Approve / Reject / Apply / View Mission — reusing the
+existing approve-then-apply safety model, with an Apply confirmation that surfaces operator safety
+checks (risk level, missing old content, no pre-apply backup). Patch links are wired into mission
+Results (per-mission counts + deep link), the Autonomy runs table (a patch summary per run), and the
+Completed Objectives detail (patch activity per objective). Additive API only: `GET /patches`,
+`GET /patches/{id}/detail`, plus patch rollups on the report/runs/objective endpoints. Storage is
+unchanged; new `PatchStatus.Superseded` completes the status model. No Python touched.
+
+
 
 ## v1.8.15.7 — System Health panel on the Overview
 

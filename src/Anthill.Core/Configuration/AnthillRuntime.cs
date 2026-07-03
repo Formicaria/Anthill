@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.15.7";
+    public const string Version = "1.8.16";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -146,6 +146,8 @@ public static class AnthillRuntime
     public static double AutonomyRetireScoreThreshold = 0.25;
     /// <summary>Recent generated goals compared for loop detection (0 = off); threshold is AutonomyDedupeSimilarity.</summary>
     public static int AutonomyLoopWindow = 4;
+    /// <summary>v1.8.16: let successful one-shot / verification-only objectives end cleanly (Completed/Stopped) instead of looping.</summary>
+    public static bool AutonomyOneShotCompletion = true;
     // ---- Phase 5: gated auto-apply -----------------------------------------
     /// <summary>Master switch: the Director may auto-approve+apply allowlisted patches that verify green. Fail-closed OFF.</summary>
     public static bool AutonomyAutoApplyEnabled = false;
@@ -421,6 +423,7 @@ public static class AnthillRuntime
         AutonomyRetireMinRuns = Math.Clamp(config.AutonomyRetireMinRuns, 1, 1000);
         AutonomyRetireScoreThreshold = Math.Clamp(config.AutonomyRetireScoreThreshold, 0.0, 1.0);
         AutonomyLoopWindow = Math.Clamp(config.AutonomyLoopWindow, 0, 20);
+        AutonomyOneShotCompletion = config.AutonomyOneShotCompletion;
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
             .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
@@ -462,6 +465,7 @@ public static class AnthillRuntime
         "autonomy_max_backlog", "autonomy_concurrency", "autonomy_aging_minutes",
         "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
+        "autonomy_oneshot_completion",
         "operator_shell_enabled", "operator_shell_dir",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
@@ -577,6 +581,7 @@ public static class AnthillRuntime
         ["autonomy_retire_min_runs"] = AutonomyRetireMinRuns,
         ["autonomy_retire_score_threshold"] = AutonomyRetireScoreThreshold,
         ["autonomy_loop_window"] = AutonomyLoopWindow,
+        ["autonomy_oneshot_completion"] = AutonomyOneShotCompletion,
         ["autonomy_autoapply_enabled"] = AutonomyAutoApplyEnabled,
         ["autonomy_autoapply_paths"] = AutonomyAutoApplyPaths.ToList(),
         ["autonomy_autoapply_max_lines"] = AutonomyAutoApplyMaxLines,

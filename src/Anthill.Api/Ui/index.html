@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.15.7</title>
+<title>ANTHILL v1.8.16</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -449,6 +449,40 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .obj-status.done{color:var(--dim);background:rgba(255,255,255,.06);}
 .obj-status.failed{color:var(--red);background:rgba(239,68,68,.12);}
 .obj-charter{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px;}
+/* ── Patch Center (v1.8.16) ── */
+.pc-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+.pc-filter{font-size:11px;padding:5px 8px;width:auto;}
+.pc-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+.pc-chip{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:12px;border:1px solid var(--border);color:var(--muted);background:var(--card);}
+.pc-chip b{color:var(--text);}
+.pc-badge{font-size:8px;font-weight:700;font-family:var(--mono);padding:2px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;letter-spacing:.04em;}
+.pc-badge.proposed{color:var(--queen);background:rgba(251,191,36,.14);}
+.pc-badge.approved{color:var(--blue);background:rgba(59,130,246,.14);}
+.pc-badge.applied{color:var(--green);background:rgba(16,185,129,.14);}
+.pc-badge.rejected{color:var(--red);background:rgba(239,68,68,.14);}
+.pc-badge.failed{color:#fff;background:rgba(239,68,68,.6);}
+.pc-badge.superseded{color:var(--dim);background:rgba(255,255,255,.06);}
+.pc-risk{font-size:8px;font-weight:700;font-family:var(--mono);padding:2px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;}
+.pc-risk.low{color:var(--green);background:rgba(16,185,129,.10);}
+.pc-risk.medium{color:var(--queen);background:rgba(251,191,36,.12);}
+.pc-risk.high{color:var(--red);background:rgba(239,68,68,.14);}
+.pc-risk.unknown{color:var(--dim);background:rgba(255,255,255,.05);}
+.pc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.pc-act{font-size:10px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;}
+.pc-act:hover{color:var(--text);border-color:var(--queen);}
+.pc-act.approve:hover{border-color:var(--green);color:var(--green);}
+.pc-act.apply{border-color:rgba(16,185,129,.4);color:var(--green);}
+.pc-act.apply:hover{background:rgba(16,185,129,.12);}
+.pc-act.reject:hover{border-color:var(--red);color:var(--red);}
+.pc-act:disabled{opacity:.4;cursor:not-allowed;}
+.pc-diff{font-family:var(--mono);font-size:11px;line-height:1.5;border:1px solid var(--border);border-radius:6px;overflow:auto;max-height:440px;margin-top:8px;background:var(--panel2,rgba(255,255,255,.02));}
+.pc-diff .dl{display:flex;white-space:pre-wrap;word-break:break-word;padding:0 8px;}
+.pc-diff .dl .gutter{color:var(--dim);min-width:26px;user-select:none;text-align:right;padding-right:8px;flex-shrink:0;}
+.pc-diff .add{background:rgba(16,185,129,.12);}
+.pc-diff .add .gutter{color:var(--green);}
+.pc-diff .del{background:rgba(239,68,68,.12);}
+.pc-diff .del .gutter{color:var(--red);}
+.pc-diff .ctx{color:var(--muted);}
 .obj-prio-btn{font-size:10px;width:18px;height:18px;line-height:16px;padding:0;border-radius:3px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;}
 .obj-prio-btn:hover{color:var(--text);border-color:var(--queen);}
 .kill-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;}
@@ -547,7 +581,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.15.7</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.16</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -590,7 +624,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.15.7</span>
+      <span class="nav-logo-ver">v1.8.16</span>
     </div>
 
     <div class="nav-scroll">
@@ -618,6 +652,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div id="nav-item-results" class="nav-item" data-page="results">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>
         <span class="nav-label">Results</span>
+      </div>
+      <div id="nav-item-patches" class="nav-item" data-page="patches">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M3 7.5 12 3l9 4.5"/><rect x="3" y="7.5" width="9" height="6"/><rect x="12" y="10.5" width="9" height="6"/></svg></span>
+        <span class="nav-label">Patch Center</span>
+        <span class="nav-badge" id="nav-patches-badge" style="display:none"></span>
       </div>
       <div id="nav-item-pheromones" class="nav-item" data-page="pheromones">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
@@ -975,6 +1014,28 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-results -->
 
       <!-- ════════════════════════════════════════════════════════════════════
+           PAGE: PATCH CENTER (v1.8.16)
+      ═════════════════════════════════════════════════════════════════════ -->
+      <div class="page page-scroll" id="page-patches">
+        <div class="page-hdr">
+          <div><h1>Patch Center</h1><div class="sub">Inspect, compare, approve, and apply every coder patch proposal — nothing touches disk until you approve <i>and</i> apply.</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-ghost" id="patches-refresh">↺ Refresh</button>
+          </div>
+        </div>
+        <div class="pc-toolbar">
+          <select id="pc-filter-status" class="form-input pc-filter"><option value="">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="applied">Applied</option><option value="rejected">Rejected</option><option value="failed">Failed</option><option value="superseded">Superseded</option></select>
+          <select id="pc-filter-risk" class="form-input pc-filter"><option value="">All risk</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="unknown">Unknown</option></select>
+          <input id="pc-filter-file" class="form-input pc-filter" placeholder="Filter by file path…" style="flex:1;min-width:140px;">
+          <input id="pc-filter-mission" class="form-input pc-filter" placeholder="Mission id…" style="width:140px;">
+          <input id="pc-filter-objective" class="form-input pc-filter" placeholder="Objective id…" style="width:140px;">
+          <button class="btn btn-ghost" id="pc-filter-clear" title="Clear all filters">Clear</button>
+        </div>
+        <div id="pc-summary" class="pc-summary"></div>
+        <div id="patches-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading patch proposals…</div></div>
+      </div><!-- /page-patches -->
+
+      <!-- ════════════════════════════════════════════════════════════════════
            PAGE: EVENT LOG
       ═════════════════════════════════════════════════════════════════════ -->
       <div class="page page-scroll" id="page-events">
@@ -1140,8 +1201,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <div id="auto-runs-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Started</th><th>Result</th></tr></thead>
-              <tbody id="auto-runs-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+              <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Patches</th><th>Started</th><th>Result</th></tr></thead>
+              <tbody id="auto-runs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1623,7 +1684,7 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  ['nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
+  ['nav-item-patches','nav-item-antconfig','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   // nav-item-pheromones: admin only
@@ -1652,7 +1713,7 @@ function applyRoleVisibility(){
 // ── Page Routing ──────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
+  patches:'Patch Center', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -2459,16 +2520,21 @@ async function renderMissionReport(missionId, body){
   // Tangible changes — the part that answers "did anything actually happen?"
   const patches=rep.patches||[];
   if(patches.length){
+    const pcnt=rep.patch_counts||{};
+    const countLine=`<div style="white-space:normal;font-size:11px;color:var(--dim);margin-bottom:6px">`+
+      `${pcnt.total||patches.length} proposed · ${pcnt.pending||0} pending · ${pcnt.approved||0} approved · ${pcnt.applied||0} applied · ${pcnt.rejected||0} rejected${pcnt.failed?` · <span style="color:var(--red)">${pcnt.failed} failed</span>`:''}`+
+      ` · <a href="#" onclick="openPatches({mission_id:'${rep.id}'});return false;" style="color:var(--blue)">Open in Patch Center →</a></div>`;
     html+=sec(`Tangible changes proposed (${patches.length})`,
+      countLine+
       patches.map(p=>{
         const [pl,pc]=MR_PATCH_STATE[p.status]||[p.status,'var(--text)'];
         return `<div style="white-space:normal;margin-bottom:6px;line-height:1.5">`+
-          `<span style="font-family:var(--mono)">${escapeHtml(p.file_path||'?')}</span> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
+          `<a href="#" onclick="openPatches({mission_id:'${rep.id}',file:'${escapeHtml(p.file_path||'')}'});return false;" style="font-family:var(--mono);color:var(--blue)">${escapeHtml(p.file_path||'?')}</a> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
           ` — <span style="color:${pc}">${pl}</span>`+
           `<div style="color:var(--dim);font-size:11px">${escapeHtml(p.reason||'')}</div>`+
           (p.last_error?`<div style="color:var(--red);font-size:11px">Apply error: ${escapeHtml(p.last_error)}</div>`:'')+`</div>`;
       }).join('')+
-      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">⚠ ${rep.pending_approvals} change(s) are waiting in <b>Approvals</b> — nothing touches disk until you approve &amp; apply.</div>`:''));
+      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">⚠ ${rep.pending_approvals} change(s) are waiting for review — open the <b>Patch Center</b> to inspect &amp; apply. Nothing touches disk until you approve &amp; apply.</div>`:''));
   } else {
     html+=sec('Tangible changes proposed',
       `<div style="white-space:normal;color:var(--dim)">None — this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
@@ -2576,6 +2642,211 @@ function openResults(missionId){
   resultsPendingExpand=missionId||null;
   showPage('results');
 }
+
+// ══ Patch Center (v1.8.16) ═══════════════════════════════════════════════════
+function pcToast(msg,ok=true){
+  let el=document.getElementById('pc-toast');
+  if(!el){ el=document.createElement('div'); el.id='pc-toast';
+    el.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;padding:10px 16px;border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:340px;';
+    document.body.appendChild(el); }
+  el.style.background=ok?'rgba(16,185,129,.95)':'rgba(239,68,68,.95)'; el.style.color='#fff';
+  el.textContent=msg; el.style.opacity='1';
+  clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0'; },3200);
+}
+let pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:''};
+let pcPending=null; // filter to apply on next entry (deep-link from Results/Autonomy/Objectives)
+
+// Compact "Patches: 2 applied, 1 pending" cell used in the Autonomy runs table and elsewhere.
+// Clicking opens the Patch Center filtered to the given mission or objective.
+function patchSummaryText(c){
+  if(!c||!c.total) return 'Patches: 0';
+  const parts=[];
+  if(c.applied) parts.push(`${c.applied} applied`);
+  if(c.pending||c.proposed) parts.push(`${c.pending||c.proposed} pending`);
+  if(c.approved) parts.push(`${c.approved} approved`);
+  if(c.rejected) parts.push(`${c.rejected} rejected`);
+  if(c.failed) parts.push(`${c.failed} failed`);
+  return 'Patches: '+(parts.join(', ')||c.total);
+}
+function patchCellHtml(counts,missionId,objectiveId){
+  const c=counts||{}; const txt=patchSummaryText(c);
+  if(!c.total) return `<span style="color:var(--dim)">${txt}</span>`;
+  const filter=objectiveId?`{objective_id:'${objectiveId}'}`:(missionId?`{mission_id:'${missionId}'}`:'{}');
+  const color=c.failed?'var(--red)':(c.applied?'var(--green)':'var(--queen)');
+  return `<a href="#" onclick="openPatches(${filter});return false;" style="color:${color};text-decoration:none;" title="Open in Patch Center">${txt}</a>`;
+}
+
+PAGE_ENTER['patches']=()=>{ if(ROLE==='admin') loadPatches(); };
+
+function pcBind(){
+  const s=document.getElementById('pc-filter-status'), rk=document.getElementById('pc-filter-risk');
+  const f=document.getElementById('pc-filter-file'), m=document.getElementById('pc-filter-mission'), o=document.getElementById('pc-filter-objective');
+  if(!s) return;
+  [s,rk].forEach(el=>el.addEventListener('change',()=>{ syncPcFilters(); loadPatches(); }));
+  let t=null;
+  [f,m,o].forEach(el=>el.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ syncPcFilters(); loadPatches(); },350); }));
+  document.getElementById('patches-refresh').addEventListener('click',loadPatches);
+  document.getElementById('pc-filter-clear').addEventListener('click',()=>{
+    pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:''}; applyPcFiltersToInputs(); loadPatches();
+  });
+}
+function syncPcFilters(){
+  pcFilters.status=document.getElementById('pc-filter-status').value;
+  pcFilters.risk=document.getElementById('pc-filter-risk').value;
+  pcFilters.file=document.getElementById('pc-filter-file').value.trim();
+  pcFilters.mission_id=document.getElementById('pc-filter-mission').value.trim();
+  pcFilters.objective_id=document.getElementById('pc-filter-objective').value.trim();
+}
+function applyPcFiltersToInputs(){
+  document.getElementById('pc-filter-status').value=pcFilters.status||'';
+  document.getElementById('pc-filter-risk').value=pcFilters.risk||'';
+  document.getElementById('pc-filter-file').value=pcFilters.file||'';
+  document.getElementById('pc-filter-mission').value=pcFilters.mission_id||'';
+  document.getElementById('pc-filter-objective').value=pcFilters.objective_id||'';
+}
+// Deep-link entry: openPatches({mission_id:'…'}) or {objective_id} or {status}.
+function openPatches(filter){
+  pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:'',...(filter||{})};
+  pcPending=true;
+  showPage('patches');
+}
+async function loadPatches(){
+  const list=document.getElementById('patches-list'); if(!list) return;
+  if(pcPending){ applyPcFiltersToInputs(); pcPending=null; } else { syncPcFilters(); }
+  const qs=new URLSearchParams();
+  if(pcFilters.status) qs.set('status',pcFilters.status);
+  if(pcFilters.risk) qs.set('risk',pcFilters.risk);
+  if(pcFilters.file) qs.set('file',pcFilters.file);
+  if(pcFilters.mission_id) qs.set('mission_id',pcFilters.mission_id);
+  if(pcFilters.objective_id) qs.set('objective_id',pcFilters.objective_id);
+  qs.set('limit','300');
+  try{
+    const r=await api('/patches?'+qs.toString()); if(!r.success) throw new Error(r.message);
+    const rows=r.data||[];
+    renderPcSummary(rows);
+    renderPatchList(rows);
+  }catch(e){ list.innerHTML=`<div style="color:var(--red);padding:20px;">Error loading patches: ${escapeHtml(e.message)}</div>`; }
+}
+function renderPcSummary(rows){
+  const box=document.getElementById('pc-summary');
+  const by={};(rows||[]).forEach(p=>{ by[p.status]=(by[p.status]||0)+1; });
+  const chip=(label,key)=>`<span class="pc-chip">${label} <b>${by[key]||0}</b></span>`;
+  box.innerHTML=`<span class="pc-chip">Total <b>${rows.length}</b></span>`+
+    chip('Pending','proposed')+chip('Approved','approved')+chip('Applied','applied')+
+    chip('Rejected','rejected')+chip('Failed','failed')+
+    (by['superseded']?chip('Superseded','superseded'):'');
+}
+function renderPatchList(rows){
+  const list=document.getElementById('patches-list');
+  if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No patch proposals match these filters.</div>'; return; }
+  list.innerHTML=rows.map(p=>{
+    const badge=`<span class="pc-badge ${p.status}">${escapeHtml(p.status_label||p.status)}</span>`;
+    const risk=`<span class="pc-risk ${p.risk||'unknown'}">${escapeHtml(p.risk||'unknown')}</span>`;
+    const src=p.objective_id?`obj ${escapeHtml(String(p.objective_id).slice(0,8))}`:(p.mission_id?`mission ${escapeHtml(String(p.mission_id).slice(0,8))}`:'manual');
+    return `<details class="card" style="margin-bottom:8px;padding:0;" data-patch="${p.id}" ontoggle="onPatchToggle(this)">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:11px 14px;user-select:none;">
+        ${badge}${risk}
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
+        <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
+        <span class="box-caret" style="color:var(--dim);font-size:11px;">▸</span>
+      </summary>
+      <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
+        <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
+        <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff…</div>
+      </div>
+    </details>`;
+  }).join('');
+}
+const pcDetailCache={}; // patchId -> detail (avoids inlining patch content into onclick handlers)
+async function onPatchToggle(det){
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.pc-detail');
+  const pid=det.dataset.patch;
+  try{
+    const r=await api('/patches/'+encodeURIComponent(pid)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    pcDetailCache[pid]=d;
+    const meta=(k,v)=>v?`<div style="display:flex;gap:8px;padding:1px 0;"><span style="color:var(--dim);min-width:110px;">${k}</span><span style="word-break:break-all;">${escapeHtml(String(v))}</span></div>`:'';
+    const canApprove=d.approval_id && d.approval_status==='pending';
+    const canApply=d.status==='approved' && d.approval_id;
+    const actions=`<div class="pc-actions">
+      ${d.mission_id?`<button class="pc-act" onclick="openResults('${d.mission_id}')">View Mission</button>`:''}
+      ${canApprove?`<button class="pc-act approve" onclick="pcApprove('${d.approval_id}','${pid}')">✓ Approve</button>`:''}
+      ${canApprove?`<button class="pc-act reject" onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
+      ${canApply?`<button class="pc-act apply" onclick="pcApply('${pid}')">▶ Apply</button>`:''}
+      ${(!d.approval_id)?`<span style="color:var(--dim);font-size:10px;align-self:center;">no approval record — duplicate/superseded or already resolved</span>`:''}
+    </div>`;
+    box.innerHTML=
+      meta('Status', (d.status_label||d.status)+(d.approval_status?` (approval ${d.approval_status})`:''))+
+      meta('Risk', (d.risk||'unknown')+(d.risk_raw&&d.risk_raw!==d.risk?` — "${d.risk_raw}"`:''))+
+      meta('Objective', d.objective_title||d.objective_id)+
+      meta('Mission goal', d.mission_goal)+
+      meta('Applied at', d.applied_at)+
+      (d.last_error?`<div style="color:var(--red);font-size:11px;margin:4px 0;">Apply error: ${escapeHtml(d.last_error)}</div>`:'')+
+      renderDiff(d.old_content, d.new_content, d.change_type)+
+      actions;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load patch: ${escapeHtml(e.message)}</span>`; }
+}
+// Minimal LCS-based unified diff — removed lines red, added lines green, context muted.
+function renderDiff(oldC, newC, changeType){
+  const a=(oldC==null?'':String(oldC)).split('\n');
+  const b=(newC==null?'':String(newC)).split('\n');
+  if(oldC==null && newC!=null){ // pure add
+    return `<div class="pc-diff">${b.map((l,i)=>diffLine('add',i+1,l)).join('')}</div>`;
+  }
+  if(newC==null){ return `<div class="pc-diff"><div class="dl ctx" style="padding:6px 8px;">(no new content — ${escapeHtml(changeType||'delete')})</div></div>`; }
+  // LCS table (bounded to keep it cheap on large files).
+  const N=Math.min(a.length,1200), M=Math.min(b.length,1200);
+  const dp=Array.from({length:N+1},()=>new Uint16Array(M+1));
+  for(let i=N-1;i>=0;i--)for(let j=M-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  let i=0,j=0,out='',ln=0;
+  while(i<N&&j<M){
+    if(a[i]===b[j]){ out+=diffLine('ctx',++ln,a[i]); i++;j++; }
+    else if(dp[i+1][j]>=dp[i][j+1]){ out+=diffLine('del','-',a[i]); i++; }
+    else { out+=diffLine('add',++ln,b[j]); j++; }
+  }
+  while(i<N){ out+=diffLine('del','-',a[i++]); }
+  while(j<M){ out+=diffLine('add',++ln,b[j++]); }
+  if(a.length>1200||b.length>1200) out+=`<div class="dl ctx" style="padding:4px 8px;color:var(--queen)">…diff truncated (large file) — full content applies on Apply.</div>`;
+  return `<div class="pc-diff">${out}</div>`;
+}
+function diffLine(cls,gutter,text){
+  const sign=cls==='add'?'+':cls==='del'?'−':' ';
+  return `<div class="dl ${cls}"><span class="gutter">${gutter}</span><span>${sign} ${escapeHtml(text)}</span></div>`;
+}
+async function pcApprove(approvalId,patchId){
+  try{ const res=await fetch(url('/approve/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch approved — apply it below to write it to disk.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+}
+async function pcReject(approvalId,patchId){
+  if(!confirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  try{ const res=await fetch(url('/reject/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+}
+async function pcApply(patchId){
+  const d=pcDetailCache[patchId]; if(!d){ pcToast('Reopen the patch and try again.',false); return; }
+  // Operator safety checks (v1.8.16): warn before writing to disk.
+  const warns=[];
+  if((d.risk==='medium'||d.risk==='high')) warns.push(`risk is ${d.risk.toUpperCase()}`);
+  if(!d.old_content && d.change_type!=='add') warns.push('old content is missing/partial (context may be incomplete)');
+  if(!d.has_backup) warns.push('no pre-apply backup recorded yet');
+  const msg='Apply this patch to '+(d.file_path||'the file')+'?\n\n'+
+    (warns.length?('⚠ '+warns.join('\n⚠ ')+'\n\n'):'')+
+    'This writes to disk. A backup is taken and a failed build auto-rolls back.';
+  if(!confirm(msg)) return;
+  try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    const txt=await res.text();
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Apply requested — see result in the patch row.'); loadPatches();
+  }catch(e){ pcToast('Apply failed: '+e.message,false); }
+}
+pcBind();
 
 // Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
 // the quick view for running/queued jobs and legacy jobs without a mission id.
@@ -3366,8 +3637,9 @@ async function reloadObjectives(){
   const tb=document.getElementById('obj-tbody');
   try{
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
-    // Loop-retired objectives move to the Completed Objectives box below — hide them here.
-    autonomyObjectives=(r.data||[]).filter(o=>o.retired_code!=='looping_goals');
+    // Terminal objectives (loop-retired, or completed/stopped as 'done') move to the Completed
+    // Objectives box below — hide them from the active backlog. Resumable pauses stay here.
+    autonomyObjectives=(r.data||[]).filter(o=>o.retired_code!=='looping_goals' && o.status!=='done');
     setEl('obj-count',`Objectives (${autonomyObjectives.length})`);
     reloadCompletedObjectives();
     tb.innerHTML=autonomyObjectives.map(o=>{
@@ -3394,27 +3666,40 @@ async function reloadObjectives(){
   }catch(e){ tb.innerHTML=`<tr><td colspan="9" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
 }
 
-// ── Completed Objectives (Director loop-retired) ──────────────────────────────
+// ── Completed Objectives (Director-ended: completed / stopped / retired / failed) ──
+// Badge styling per canonical end_reason (v1.8.16).
+const OBJ_END_BADGE={
+  completed_successfully:['Completed','rgba(16,185,129,.14)','var(--green)'],
+  stopped_no_followup_required:['Stopped','rgba(59,130,246,.14)','var(--blue)'],
+  retired_looping:['Retired · Looping','rgba(251,191,36,.14)','var(--queen)'],
+  failed:['Failed','rgba(239,68,68,.14)','var(--red)'],
+  manually_paused:['Paused','rgba(251,191,36,.14)','var(--queen)'],
+  manually_stopped:['Stopped','rgba(255,255,255,.06)','var(--dim)'],
+};
 async function reloadCompletedObjectives(){
   const list=document.getElementById('completed-obj-list'); if(!list) return;
   try{
     const r=await api('/objectives/completed'); if(!r.success) throw new Error(r.message);
     const rows=r.data||[];
     setEl('completed-obj-count',`Completed Objectives (${rows.length})`);
-    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None — objectives the Director stopped for looping will appear here.</div>'; return; }
-    list.innerHTML=rows.map(o=>`
+    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None — objectives the Director has completed, stopped, or retired will appear here.</div>'; return; }
+    list.innerHTML=rows.map(o=>{
+      const [blabel,bbg,bcol]=OBJ_END_BADGE[o.end_reason]||['Ended','rgba(255,255,255,.06)','var(--dim)'];
+      const pc=o.patch_counts||{};
+      const patchTag=pc.total?`<span class="obj-status" style="background:rgba(59,130,246,.10);color:var(--blue)" title="Patches produced">⬦ ${pc.total} patch${pc.total>1?'es':''}</span>`:'';
+      return `
       <details class="card" style="margin-bottom:6px;padding:0;" data-obj="${o.id}" ontoggle="onCompletedToggle(this)">
         <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:9px 12px;user-select:none;">
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;">${escapeHtml(o.title||'')}</span>
-          <span class="obj-status paused" style="background:rgba(239,68,68,.12);color:var(--red);">Stopped</span>
-          <span class="obj-status" style="background:rgba(251,191,36,.14);color:var(--queen);">Looping</span>
+          ${patchTag}
+          <span class="obj-status" style="background:${bbg};color:${bcol};">${blabel}</span>
           <span class="box-caret" style="color:var(--dim);font-size:11px;">▸</span>
         </summary>
         <div style="padding:2px 14px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">
-          <div style="margin:6px 0;color:var(--red);">${escapeHtml(o.retired_reason||'Stopped for looping.')}</div>
-          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, and tasks…</div>
+          <div style="margin:6px 0;color:${bcol};">${escapeHtml(o.end_detail||o.end_reason_label||'Ended.')}</div>
+          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, tasks, and patches…</div>
         </div>
-      </details>`).join('');
+      </details>`;}).join('');
   }catch(e){ list.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${escapeHtml(e.message)}</div>`; }
 }
 
@@ -3430,10 +3715,16 @@ async function onCompletedToggle(det){
     const runs=(d.runs||[]).map(x=>`<div style="padding:2px 0;">• ${escapeHtml((x.generated_goal||'').slice(0,110))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
     const missions=(d.missions||[]).map(x=>`<div style="padding:2px 0;">• <span style="font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</span> ${escapeHtml((x.goal||'').slice(0,90))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
     const tasks=(d.tasks||[]).map(x=>`<div style="padding:1px 0;">• ${escapeHtml(x.ant||'')}: ${escapeHtml((x.title||'').slice(0,80))} <span style="color:var(--dim)">(${escapeHtml(x.status||'')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const pc=d.patch_counts||{};
+    const patchBlock=pc.total
+      ? `<div>${escapeHtml(patchSummaryText(pc))} · <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Open in Patch Center →</a></div>`
+      : '<div style="color:var(--dim)">No patches produced.</div>';
     box.innerHTML=
-      kv('Objective ID', d.id)+kv('Original title', d.title)+kv('Stop reason', 'Retired by loop detection')+
-      kv('Loop detection', d.retired_reason)+kv('Runs', (d.runs||[]).length)+kv('Missions', (d.missions||[]).length)+
-      kv('Tasks', (d.tasks||[]).length)+kv('Stopped at', d.retired_at)+
+      kv('Objective ID', d.id)+kv('Original title', d.title)+
+      kv('End reason', d.end_reason_label||d.end_reason)+kv('Detail', d.end_detail||d.retired_reason)+
+      kv('Runs', (d.runs||[]).length)+kv('Missions', (d.missions||[]).length)+
+      kv('Tasks', (d.tasks||[]).length)+kv('Ended at', d.ended_at||d.retired_at)+
+      `<div style="margin-top:8px;color:var(--muted);font-weight:600;">Patch activity</div>${patchBlock}`+
       `<div style="margin-top:8px;color:var(--muted);font-weight:600;">Related runs</div>${runs}`+
       `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related missions</div>${missions}`+
       `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related tasks</div>${tasks}`;
@@ -3497,11 +3788,12 @@ async function reloadAutonomyRuns(){
         <td style="color:${statusColor}">${status}</td>
         <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
         <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
+        <td style="font-size:11px;">${patchCellHtml(run.patch_counts,run.mission_id)}</td>
         <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
         <td>${run.mission_id?`<button class="job-btn view" onclick="openResults('${run.mission_id}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
       </tr>`;
-    }).join('')||'<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
-  }catch(e){ tb.innerHTML=`<tr><td colspan="7" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+    }).join('')||'<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="8" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
 }
 
 // ── Pheromone memory page ─────────────────────────────────────────────────────

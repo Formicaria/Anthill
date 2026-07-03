@@ -109,6 +109,26 @@ public sealed partial class SqliteMemory
         return rows.Select(ObjectiveFromRow).ToList();
     }
 
+    /// <summary>
+    /// v1.8.16: every objective whose autonomous lifecycle has ended — completed cleanly, stopped
+    /// with no follow-up, retired for looping, or failed. Newest first. These carry an
+    /// <c>end_reason</c> in metadata (stamped by the Director); the legacy <c>retired_code</c> is
+    /// also matched so objectives retired before the upgrade still appear. Shown in the console's
+    /// "Completed Objectives" box rather than the active/paused backlog.
+    /// </summary>
+    public List<Objective> ListEndedObjectives(int limit = 100)
+    {
+        // Terminal objectives only: completed/stopped (status 'done') or loop-retired (retired_code).
+        // Circuit-breaker and manual pauses stay resumable in the active backlog, so they are NOT
+        // matched here even though they may carry an audit-only end_reason.
+        var rows = Query(
+            @"SELECT * FROM objectives
+              WHERE status = 'done' OR metadata_json LIKE '%""retired_code""%'
+              ORDER BY last_run_at DESC, created_at DESC LIMIT @lim",
+            ("@lim", limit));
+        return rows.Select(ObjectiveFromRow).ToList();
+    }
+
     public Objective? UpdateObjectiveStatus(string objectiveId, ObjectiveStatus status)
     {
         if (GetObjective(objectiveId) is null) return null;
