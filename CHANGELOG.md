@@ -18,7 +18,13 @@ lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
 plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
 Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, Phase 8
-Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**, and so on.
+Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
+ASCII banner tweak = **v1.8.22.1**, and so on.
+
+## v1.8.22.1 — ASCII banner tweak
+
+Trim the boot/shell ANTHILL banner to the single large ant: removed the row of small ant figures
+and the empty gap beneath the art so the banner butts directly against the following output line.
 
 ## v1.8.22 — Phase 8 + Ant Capability Profiles & Worker Runtime
 
