@@ -1,0 +1,64 @@
+name: "✨ Feature / enhancement"
+description: A new capability or improvement (backend, API, or console UI).
+title: "[feat]: "
+labels: ["type:enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the outcome you want and why. Scope it so it can ship in one revision.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "area:ui (console / HUD)"
+        - "area:api (endpoints / auth)"
+        - "area:autonomy (Director / Strategist / objectives)"
+        - "area:planner (task planning / constraints)"
+        - "area:patches (patch center / approvals / apply)"
+        - "area:memory (SQLite / storage)"
+        - "area:security"
+        - "area:build (CI / packaging / deploy)"
+        - "area:other"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What is missing or painful today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should the system do? Note UI panels, endpoints, or config involved.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist that defines "done".
+      placeholder: |
+        - [ ] …
+        - [ ] Existing behavior preserved (missions, autonomy, approvals)
+        - [ ] Tests / build green
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Target version
+      placeholder: v1.8.18
+    validations:
+      required: false
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: No Python is written, modified, or treated as active code (py.old/ is archive only)
+        - label: Additive over destructive — no existing page/route/API behavior removed
