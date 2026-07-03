@@ -231,29 +231,34 @@ public static class ApiHost
         app.MapGet("/patches", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_patches"); if (auth is not null) return auth;
-            var q = ctx.Request.Query;
-            PatchStatus? status = null;
-            var statusQ = (q["status"].FirstOrDefault() ?? "").Trim().ToLowerInvariant();
-            // "pending" is the UI label for a proposed (awaiting-approval) patch.
-            if (statusQ is "pending") status = PatchStatus.Proposed;
-            else if (statusQ.Length > 0) status = ParsePatchStatusOrNull(statusQ);
-            var missionId = q["mission_id"].FirstOrDefault();
-            var objectiveId = q["objective_id"].FirstOrDefault();
-            var file = q["file"].FirstOrDefault();
-            var riskFilter = RiskLevel.Normalize(q["risk"].FirstOrDefault());
-            var wantRisk = !string.IsNullOrWhiteSpace(q["risk"].FirstOrDefault());
-            int.TryParse(q["limit"].FirstOrDefault(), out var limit);
-            var rows = Queen.Memory.ListPatchesForCenter(status, missionId, objectiveId, file, limit <= 0 ? 200 : limit)
-                .Select(PatchCenterRow)
-                .Where(r => !wantRisk || (r.GetValueOrDefault("risk")?.ToString() == riskFilter))
-                .ToList();
-            return ApiJson.Ok(rows);
+            try
+            {
+                var q = ctx.Request.Query;
+                PatchStatus? status = null;
+                var statusQ = (q["status"].FirstOrDefault() ?? "").Trim().ToLowerInvariant();
+                // "pending" is the UI label for a proposed (awaiting-approval) patch.
+                if (statusQ is "pending") status = PatchStatus.Proposed;
+                else if (statusQ.Length > 0) status = ParsePatchStatusOrNull(statusQ);
+                var missionId = q["mission_id"].FirstOrDefault();
+                var objectiveId = q["objective_id"].FirstOrDefault();
+                var file = q["file"].FirstOrDefault();
+                var riskFilter = RiskLevel.Normalize(q["risk"].FirstOrDefault());
+                var wantRisk = !string.IsNullOrWhiteSpace(q["risk"].FirstOrDefault());
+                int.TryParse(q["limit"].FirstOrDefault(), out var limit);
+                var rows = Queen.Memory.ListPatchesForCenter(status, missionId, objectiveId, file, limit <= 0 ? 200 : limit)
+                    .Select(PatchCenterRow)
+                    .Where(r => !wantRisk || (r.GetValueOrDefault("risk")?.ToString() == riskFilter))
+                    .ToList();
+                return ApiJson.Ok(rows);
+            }
+            catch (Exception ex) { return ApiJson.Error($"Could not load patches: {ex.Message}", "patch_list_error"); }
         });
         // Full detail for one patch, including the sealed old/new content for the diff view.
         app.MapGet("/patches/{id}/detail", (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "read_patches"); if (auth is not null) return auth;
-            return PatchDetailJson(id);
+            try { return PatchDetailJson(id); }
+            catch (Exception ex) { return ApiJson.Error($"Could not load patch detail: {ex.Message}", "patch_detail_error"); }
         });
 
         app.MapGet("/jobs", (HttpContext ctx) => RequireAuth(ctx, "read_status") ?? ApiJson.Ok(Jobs.ListJobs()));

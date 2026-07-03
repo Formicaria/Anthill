@@ -14,7 +14,27 @@
 > intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
 > hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
-lifecycle hardening + visual Patch Center = **v1.8.16**, and so on.
+lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
+and so on.
+
+## v1.8.16.1 — Patch Center robustness + validation
+
+Stabilization pass on the v1.8.16 Patch Center after live testing surfaced an opaque
+"Unexpected end of JSON input" error in the console:
+
+- **`api()` never throws on an empty/non-JSON body.** The shared client helper now reads the body as
+  text and returns a structured `{success:false, message}` instead of letting `Response.json()`
+  throw a raw parse error. A 404 (e.g. a stale server missing a newly added endpoint) now reports a
+  clear "Empty response (HTTP 404) — this build may be missing the endpoint; redeploy?" message.
+- **`GET /patches` and `/patches/{id}/detail` are wrapped in try/catch**, returning a JSON error
+  payload instead of a bare 500 if anything unexpected happens while assembling the list/detail.
+- **Fixed one-shot phrase detection** so "run this once" / "do this once" are recognized (also adds
+  "just once" / "only once").
+- **New DB-backed tests** (`PatchCenterTests`) exercise `ListPatchesForCenter`, the per-mission and
+  per-objective patch rollups, and `ListEndedObjectives` against a real SQLite database, so a query
+  dialect/column error is caught in CI rather than as a runtime 500.
+
+
 
 ## v1.8.16 — Objective Lifecycle Hardening + Visual Patch Review Center
 
