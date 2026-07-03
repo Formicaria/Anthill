@@ -149,7 +149,7 @@ public static class AutoApplyRunner
     /// the verify-green path and the keep-without-verify path (v1.8.21).
     /// </summary>
     private static void KeepApplied(Queen queen, string missionId, List<Queen.AutoApplyOutcome> applied,
-        string eventType, string message, Dictionary<string, object?> extra)
+        string eventType, string message, Dictionary<string, object?>? extra = null)
     {
         foreach (var a in applied)
         {
@@ -172,7 +172,7 @@ public static class AutoApplyRunner
             ["mission_id"] = missionId, ["kept_count"] = applied.Count, ["git_commit_enabled"] = AnthillRuntime.AutonomyAutoApplyGitCommit,
             ["git_committed"] = committed, ["files"] = applied.Select(a => a.FilePath).ToList(),
         };
-        foreach (var kv in extra) meta[kv.Key] = kv.Value;
+        foreach (var kv in extra ?? new()) meta[kv.Key] = kv.Value;
         queen.Memory.LogEvent(missionId, eventType, message, antName: "director", metadata: meta);
     }
 
