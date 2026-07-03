@@ -1,0 +1,17 @@
+# ANTHILL label scheme. Apply with scripts/gh-setup.sh (uses gh label create).
+# type:*  — what kind of work        area:*  — which subsystem        priority:* — urgency
+- { name: "type:bug",          color: "d73a4a", description: "A defect or regression" }
+- { name: "type:enhancement",  color: "a2eeef", description: "New capability or improvement" }
+- { name: "type:chore",        color: "cfd3d7", description: "Tooling, CI, docs, refactor — no feature change" }
+- { name: "type:security",     color: "b60205", description: "Security-relevant fix or hardening" }
+- { name: "area:ui",           color: "1d76db", description: "Console / HUD" }
+- { name: "area:api",          color: "0e8a16", description: "Endpoints / auth" }
+- { name: "area:autonomy",     color: "5319e7", description: "Director / Strategist / objectives" }
+- { name: "area:planner",      color: "6f42c1", description: "Task planning / constraints" }
+- { name: "area:patches",      color: "fbca04", description: "Patch Center / approvals / apply" }
+- { name: "area:memory",       color: "c5def5", description: "SQLite / storage" }
+- { name: "area:security",     color: "e99695", description: "Security subsystem" }
+- { name: "area:build",        color: "bfdadc", description: "CI / packaging / deploy" }
+- { name: "priority:high",     color: "b60205", description: "Ship next" }
+- { name: "priority:medium",   color: "fbca04", description: "Normal" }
+- { name: "priority:low",      color: "0e8a16", description: "Nice to have" }
