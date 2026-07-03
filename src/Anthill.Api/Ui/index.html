@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.16.1</title>
+<title>ANTHILL v1.8.17</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -572,6 +572,168 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .scroll-body{flex:1;overflow-y:auto;}
 code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 5px;border-radius:3px;}
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   HUD DESIGN SYSTEM (v1.8.17 — Colony Command Center)
+   Reusable command-center primitives: status/risk badges, glass panels, metric
+   cards, telemetry lines, the central system core, and state components. Vanilla
+   CSS only — no new deps. All animations are CSS and respect reduced-motion.
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root{ --hud-cyan:#22d3ee; --hud-glass:rgba(17,29,48,.55); --hud-line:rgba(34,211,238,.18); }
+
+/* Status badge — one consistent label+color per state, everywhere. */
+.hud-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;font-family:var(--mono);
+  padding:2px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;line-height:1.4;
+  border:1px solid transparent;}
+.hud-badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 5px currentColor;}
+.hud-badge.running,.hud-badge.active{color:var(--hud-cyan);background:rgba(34,211,238,.10);border-color:rgba(34,211,238,.3);}
+.hud-badge.completed,.hud-badge.applied,.hud-badge.approved{color:var(--green);background:rgba(16,185,129,.10);border-color:rgba(16,185,129,.3);}
+.hud-badge.paused,.hud-badge.pending{color:var(--amber);background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.3);}
+.hud-badge.stopped{color:var(--muted);background:rgba(139,163,188,.08);border-color:rgba(139,163,188,.25);}
+.hud-badge.looping,.hud-badge.warning{color:var(--orange);background:rgba(251,146,60,.10);border-color:rgba(251,146,60,.3);}
+.hud-badge.failed,.hud-badge.rejected{color:var(--red);background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.3);}
+.hud-badge.idle{color:var(--blue);background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.25);}
+.hud-badge.unknown{color:var(--dim);background:rgba(74,98,120,.10);border-color:rgba(74,98,120,.25);}
+.hud-badge.online{color:var(--purple);background:rgba(139,92,246,.10);border-color:rgba(139,92,246,.3);}
+
+/* Risk badge */
+.hud-risk{display:inline-flex;align-items:center;font-size:9px;font-weight:700;font-family:var(--mono);padding:2px 6px;
+  border-radius:3px;text-transform:uppercase;letter-spacing:.04em;}
+.hud-risk.low{color:var(--green);background:rgba(16,185,129,.10);}
+.hud-risk.medium{color:var(--amber);background:rgba(245,158,11,.12);}
+.hud-risk.high{color:var(--red);background:rgba(239,68,68,.14);}
+.hud-risk.unknown{color:var(--dim);background:rgba(74,98,120,.10);}
+
+/* Glass HUD panel with corner brackets */
+.hud-panel{position:relative;background:var(--hud-glass);border:1px solid var(--border);border-radius:8px;padding:14px 16px;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+.hud-panel.glow-active{border-color:rgba(34,211,238,.35);box-shadow:0 0 0 1px rgba(34,211,238,.08),0 0 24px -8px rgba(34,211,238,.4);}
+.hud-panel.glow-warn{border-color:rgba(251,146,60,.4);box-shadow:0 0 24px -8px rgba(251,146,60,.45);}
+.hud-panel.glow-alert{border-color:rgba(239,68,68,.45);box-shadow:0 0 24px -8px rgba(239,68,68,.5);}
+.hud-panel::before,.hud-panel::after{content:"";position:absolute;width:10px;height:10px;pointer-events:none;opacity:.5;}
+.hud-panel::before{top:5px;left:5px;border-top:1px solid var(--hud-cyan);border-left:1px solid var(--hud-cyan);}
+.hud-panel::after{bottom:5px;right:5px;border-bottom:1px solid var(--hud-cyan);border-right:1px solid var(--hud-cyan);}
+.hud-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.hud-hd-title{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;}
+.hud-hd-sub{font-size:9px;color:var(--dim);}
+.hud-hd .hud-hd-action{margin-left:auto;}
+
+/* Metric card */
+.hud-metric{position:relative;background:var(--card);border:1px solid var(--border);border-left-width:2px;border-radius:6px;
+  padding:10px 12px;min-width:0;overflow:hidden;}
+.hud-metric .m-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px;}
+.hud-metric .m-label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hud-metric .m-value{font-size:20px;font-weight:700;font-family:var(--mono);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hud-metric .m-sub{font-size:9px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hud-metric .m-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:7px;overflow:hidden;}
+.hud-metric .m-bar>i{display:block;height:100%;border-radius:2px;background:var(--hud-cyan);transition:width .5s ease;}
+.hud-metric.clickable{cursor:pointer;transition:border-color .2s,transform .1s;}
+.hud-metric.clickable:hover{border-color:var(--hud-cyan);}
+.hud-metric.clickable:active{transform:translateY(1px);}
+
+/* Telemetry line */
+.hud-telem{display:flex;gap:8px;padding:4px 2px;font-size:11px;line-height:1.45;border-bottom:1px solid rgba(30,51,84,.4);}
+.hud-telem:last-child{border-bottom:none;}
+.hud-telem .t-time{color:var(--dim);font-family:var(--mono);font-size:9px;flex-shrink:0;padding-top:1px;min-width:38px;}
+.hud-telem .t-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+.hud-telem .t-dot.info{background:var(--blue);} .hud-telem .t-dot.success{background:var(--green);}
+.hud-telem .t-dot.warning{background:var(--orange);} .hud-telem .t-dot.error{background:var(--red);}
+.hud-telem .t-dot.debug{background:var(--dim);}
+.hud-telem .t-msg{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.hud-telem .t-src{color:var(--muted);}
+
+/* State components */
+.hud-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 12px;
+  color:var(--dim);font-size:11px;text-align:center;}
+.hud-state .hud-spinner{width:18px;height:18px;border-radius:50%;border:2px solid rgba(34,211,238,.2);border-top-color:var(--hud-cyan);
+  animation:hud-spin .8s linear infinite;}
+.hud-state.err{color:var(--red);}
+@keyframes hud-spin{to{transform:rotate(360deg);}}
+
+/* Action button group */
+.hud-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.hud-act{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:5px 11px;border-radius:5px;
+  border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;}
+.hud-act:hover:not(:disabled){color:var(--text);border-color:var(--hud-cyan);}
+.hud-act.primary{color:var(--hud-cyan);border-color:rgba(34,211,238,.35);}
+.hud-act.primary:hover:not(:disabled){background:rgba(34,211,238,.1);}
+.hud-act.danger{color:var(--red);border-color:rgba(239,68,68,.35);}
+.hud-act.danger:hover:not(:disabled){background:rgba(239,68,68,.1);}
+.hud-act:disabled{opacity:.4;cursor:not-allowed;}
+.hud-act[aria-pressed="true"]{background:rgba(34,211,238,.14);color:var(--hud-cyan);border-color:var(--hud-cyan);}
+
+/* ── Overview command dashboard layout ── */
+.hud-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-bottom:14px;}
+.hud-strip-item{background:var(--hud-glass);border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;
+  transition:border-color .2s;min-width:0;}
+.hud-strip-item:hover{border-color:var(--hud-cyan);}
+.hud-strip-item.warn{border-color:rgba(251,146,60,.5);}
+.hud-strip-item.alert{border-color:rgba(239,68,68,.55);}
+.hud-strip-item .s-label{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
+.hud-strip-item .s-val{font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hud-dash-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;margin-bottom:14px;align-items:stretch;}
+.hud-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
+.hud-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;}
+
+/* Central system core (JARVIS orb) */
+.core-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;height:100%;padding:8px 0;}
+.core-orb{position:relative;width:180px;height:180px;display:flex;align-items:center;justify-content:center;}
+.core-ring{position:absolute;border-radius:50%;border:1px solid var(--hud-line);}
+.core-ring.r1{inset:0;border-top-color:var(--hud-cyan);border-right-color:var(--hud-cyan);animation:core-spin 8s linear infinite;}
+.core-ring.r2{inset:20px;border-bottom-color:var(--blue);border-left-color:var(--blue);animation:core-spin 12s linear infinite reverse;}
+.core-ring.r3{inset:40px;border-top-color:var(--purple);animation:core-spin 20s linear infinite;}
+.core-center{position:relative;width:96px;height:96px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 40%,rgba(34,211,238,.22),rgba(17,29,48,.6));border:1px solid var(--hud-line);
+  animation:core-pulse 3.5s ease-in-out infinite;}
+.core-center .c-state{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--hud-cyan);text-align:center;padding:0 6px;line-height:1.15;}
+.core-center .c-sub{font-size:8px;color:var(--muted);margin-top:3px;text-align:center;padding:0 4px;}
+.core-orb[data-state="alert"] .core-center{background:radial-gradient(circle at 50% 40%,rgba(239,68,68,.28),rgba(17,29,48,.6));animation:core-pulse 1.6s ease-in-out infinite;}
+.core-orb[data-state="alert"] .core-center .c-state{color:var(--red);}
+.core-orb[data-state="alert"] .core-ring.r1{border-top-color:var(--red);border-right-color:var(--red);}
+.core-orb[data-state="action"] .core-center{background:radial-gradient(circle at 50% 40%,rgba(245,158,11,.26),rgba(17,29,48,.6));animation:core-pulse 2.2s ease-in-out infinite;}
+.core-orb[data-state="action"] .core-center .c-state{color:var(--amber);}
+.core-orb[data-state="autonomy"] .core-ring.r2{border-bottom-color:var(--purple);border-left-color:var(--purple);animation-duration:6s;}
+.core-orb[data-state="autonomy"] .core-center .c-state{color:var(--purple);}
+.core-orb[data-state="mission"] .core-ring{animation-duration:4s;}
+.core-bars{display:flex;align-items:flex-end;gap:3px;height:20px;}
+.core-bars i{width:3px;background:var(--hud-cyan);border-radius:1px;opacity:.7;animation:core-wave 1.1s ease-in-out infinite;}
+.core-bars i:nth-child(2){animation-delay:.15s} .core-bars i:nth-child(3){animation-delay:.3s}
+.core-bars i:nth-child(4){animation-delay:.45s} .core-bars i:nth-child(5){animation-delay:.6s}
+.core-bars i:nth-child(6){animation-delay:.75s} .core-bars i:nth-child(7){animation-delay:.9s}
+@keyframes core-spin{to{transform:rotate(360deg);}}
+@keyframes core-pulse{0%,100%{box-shadow:0 0 18px -6px rgba(34,211,238,.5);}50%{box-shadow:0 0 30px -4px rgba(34,211,238,.85);}}
+@keyframes core-wave{0%,100%{height:5px;}50%{height:18px;}}
+
+/* Mission command node */
+.mission-node .mn-prompt{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:8px 10px;transition:border-color .2s,box-shadow .2s;}
+.mission-node .mn-prompt:focus-within{border-color:var(--hud-cyan);box-shadow:0 0 0 1px rgba(34,211,238,.15),0 0 18px -8px rgba(34,211,238,.5);}
+.mission-node .mn-prefix{font-family:var(--mono);font-size:11px;color:var(--hud-cyan);font-weight:700;white-space:nowrap;user-select:none;}
+.mission-node textarea{flex:1;background:transparent;border:none;color:var(--text);font-family:var(--mono);font-size:12px;resize:none;
+  outline:none;line-height:1.4;max-height:120px;}
+.mission-node .mn-send{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.4);color:var(--hud-cyan);border-radius:5px;
+  width:30px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;}
+.mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
+.mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
+.mn-hint{font-size:9px;color:var(--dim);margin-top:8px;}
+
+/* Attention items */
+.hud-attn-item{display:flex;gap:9px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(30,51,84,.4);cursor:pointer;}
+.hud-attn-item:last-child{border-bottom:none;} .hud-attn-item:hover{background:rgba(34,211,238,.04);}
+.hud-attn-item .a-body{min-width:0;flex:1;}
+.hud-attn-item .a-title{font-size:11px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hud-attn-item .a-reason{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+@media (max-width:1100px){
+  .hud-strip{grid-template-columns:repeat(4,1fr);}
+  .hud-metrics{grid-template-columns:repeat(3,1fr);}
+  .hud-dash-grid{grid-template-columns:1fr;}
+  .hud-grid3{grid-template-columns:1fr;}
+}
+@media (prefers-reduced-motion:reduce){
+  .core-ring,.core-center,.core-bars i,.hud-spinner{animation:none !important;}
+}
 </style>
 </head>
 <body>
@@ -581,7 +743,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.16.1</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.17</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -624,7 +786,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.16.1</span>
+      <span class="nav-logo-ver">v1.8.17</span>
     </div>
 
     <div class="nav-scroll">
@@ -762,38 +924,94 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       ═════════════════════════════════════════════════════════════════════ -->
       <div class="page page-scroll active" id="page-overview">
 
-        <!-- KPI grid -->
-        <div class="kpi-grid">
-          <div class="kpi-card" style="border-left-color:var(--blue)">
-            <div class="kpi-label">Model Calls</div>
-            <div class="kpi-num" id="ov-calls" style="color:var(--blue)">—</div>
-            <div class="kpi-sub">Total LLM invocations</div>
+        <!-- ── Top colony status strip ── -->
+        <div class="hud-strip" id="hud-strip">
+          <div class="hud-strip-item" id="hs-api" title="API + backend health" onclick="document.getElementById('status-chip').click()">
+            <div class="s-label">API Link</div><div class="s-val" id="hs-api-val">—</div></div>
+          <div class="hud-strip-item" id="hs-provider" title="Model provider / route" onclick="showPage('settings')">
+            <div class="s-label">Provider</div><div class="s-val" id="hs-provider-val">—</div></div>
+          <div class="hud-strip-item" id="hs-auto" title="Autonomy state" onclick="showPage('autonomy')">
+            <div class="s-label">Autonomy</div><div class="s-val" id="hs-auto-val">—</div></div>
+          <div class="hud-strip-item" id="hs-missions" title="Active missions" onclick="showPage('missions')">
+            <div class="s-label">Active Missions</div><div class="s-val" id="hs-missions-val">—</div></div>
+          <div class="hud-strip-item" id="hs-objectives" title="Active objectives" onclick="showPage('autonomy')">
+            <div class="s-label">Objectives</div><div class="s-val" id="hs-objectives-val">—</div></div>
+          <div class="hud-strip-item" id="hs-approvals" title="Pending patch approvals" onclick="showPage('patches')">
+            <div class="s-label">Approvals</div><div class="s-val" id="hs-approvals-val">—</div></div>
+          <div class="hud-strip-item" id="hs-warn" title="Recent failures / warnings" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
+            <div class="s-label">Warnings</div><div class="s-val" id="hs-warn-val">—</div></div>
+          <div class="hud-strip-item" id="hs-pressure" title="Resource pressure (governor)" onclick="showPage('autonomy')">
+            <div class="s-label">Pressure</div><div class="s-val" id="hs-pressure-val">—</div></div>
+        </div>
+
+        <!-- ── Core + attention + mission command ── -->
+        <div class="hud-dash-grid">
+          <!-- Central system core -->
+          <div class="hud-panel" id="hud-core-panel">
+            <div class="hud-hd"><span class="hud-hd-title">System Core</span><span class="hud-hd-sub" id="core-hint"></span></div>
+            <div class="core-wrap">
+              <div class="core-orb" id="hud-core" data-state="idle">
+                <div class="core-ring r1"></div><div class="core-ring r2"></div><div class="core-ring r3"></div>
+                <div class="core-center"><div class="c-state" id="core-state">IDLE</div><div class="c-sub" id="core-sub">standby</div></div>
+              </div>
+              <div class="core-bars" id="core-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
           </div>
-          <div class="kpi-card" style="border-left-color:var(--green)">
-            <div class="kpi-label">Tasks Done</div>
-            <div class="kpi-num" id="ov-tasks" style="color:var(--green)">—</div>
-            <div class="kpi-sub">Completed task nodes</div>
-          </div>
-          <div class="kpi-card" style="border-left-color:var(--muted)">
-            <div class="kpi-label">Events</div>
-            <div class="kpi-num" id="ov-events">—</div>
-            <div class="kpi-sub">Colony event log entries</div>
-          </div>
-          <div class="kpi-card" style="border-left-color:var(--queen)">
-            <div class="kpi-label">Approvals</div>
-            <div class="kpi-num" id="ov-approvals" style="color:var(--queen)">—</div>
-            <div class="kpi-sub">Pending patch reviews</div>
+
+          <!-- Right column: operator attention + mission command -->
+          <div style="display:flex;flex-direction:column;gap:14px;min-width:0;">
+            <div class="hud-panel" id="hud-attn-panel" style="flex:1;min-height:150px;">
+              <div class="hud-hd"><span class="hud-hd-title">Operator Attention</span><span class="hud-hd-sub" id="attn-count"></span>
+                <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events')">Event Log →</button></span></div>
+              <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony…</div></div>
+            </div>
+
+            <div class="hud-panel mission-node">
+              <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
+              <div class="mn-prompt">
+                <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
+                <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
+                <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
+              </div>
+              <div class="mn-modes" id="ov-modes">
+                <button class="hud-act" data-mode="inspect" aria-pressed="false" onclick="setOvMode('inspect')" title="Inspect only. Do not modify files.">Inspect</button>
+                <button class="hud-act" data-mode="verify" aria-pressed="false" onclick="setOvMode('verify')" title="Verify only. Do not create patches.">Verify</button>
+                <button class="hud-act" data-mode="patch" aria-pressed="false" onclick="setOvMode('patch')" title="Create patch proposals only. Do not apply.">Patch Proposal</button>
+                <button class="hud-act" data-mode="build" aria-pressed="false" onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
+              </div>
+              <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
+            </div>
           </div>
         </div>
 
-        <!-- System Health -->
-        <div class="card" style="padding:14px 16px;margin-bottom:14px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">System Health</div>
-            <span id="ov-health-alert" style="font-size:10px;color:var(--queen);display:none;"></span>
-          </div>
+        <!-- ── Hardware / environment + colony metric cards ── -->
+        <div class="hud-metrics" id="hud-metrics">
+          <div class="hud-metric clickable" style="border-left-color:var(--blue)" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
+            <div class="m-top"><span class="m-label">Model Calls</span></div>
+            <div class="m-value" id="ov-calls" style="color:var(--blue)">—</div><div class="m-sub">LLM invocations</div></div>
+          <div class="hud-metric clickable" style="border-left-color:var(--green)" onclick="showPage('results')">
+            <div class="m-top"><span class="m-label">Tasks Done</span></div>
+            <div class="m-value" id="ov-tasks" style="color:var(--green)">—</div><div class="m-sub">completed nodes</div></div>
+          <div class="hud-metric" style="border-left-color:var(--hud-cyan)">
+            <div class="m-top"><span class="m-label">CPU / core</span></div>
+            <div class="m-value" id="hud-cpu">—</div><div class="m-bar"><i id="hud-cpu-bar" style="width:0%"></i></div></div>
+          <div class="hud-metric" style="border-left-color:var(--purple)">
+            <div class="m-top"><span class="m-label">Mem free</span></div>
+            <div class="m-value" id="hud-mem">—</div><div class="m-bar"><i id="hud-mem-bar" style="width:0%"></i></div></div>
+          <div class="hud-metric" style="border-left-color:var(--amber)">
+            <div class="m-top"><span class="m-label">Backend latency</span></div>
+            <div class="m-value" id="hud-lat">—</div><div class="m-sub" id="hud-lat-sub">Ollama probe</div></div>
+          <div class="hud-metric clickable" style="border-left-color:var(--orange)" onclick="showPage('autonomy')">
+            <div class="m-top"><span class="m-label">Concurrency</span></div>
+            <div class="m-value" id="hud-conc">—</div><div class="m-sub" id="hud-conc-sub">effective / configured</div></div>
+        </div>
+
+        <!-- ── Colony vitals (System Health) ── -->
+        <div class="hud-panel" style="margin-bottom:14px;">
+          <div class="hud-hd"><span class="hud-hd-title">Colony Vitals</span>
+            <span class="hud-hd-sub" id="ov-events-sub">— events logged</span>
+            <span class="hud-hd-action"><span id="ov-health-alert" style="font-size:10px;color:var(--queen);display:none;"></span></span></div>
           <div class="health-grid">
-            <!-- Autonomy -->
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-auto-dot"></span>Autonomy</div>
               <div class="health-main" id="ov-h-auto">—</div>
@@ -803,7 +1021,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <div><span>Concurrency</span><span id="ov-h-auto-conc">—</span></div>
               </div>
             </div>
-            <!-- Storage -->
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-disk-dot"></span>Storage</div>
               <div class="health-main" id="ov-h-disk">—</div>
@@ -813,7 +1030,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <div><span>Backups</span><span id="ov-h-backups">—</span></div>
               </div>
             </div>
-            <!-- Coder health -->
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-coder-dot"></span>Coder Patches</div>
               <div class="health-main" id="ov-h-coder">—</div>
@@ -826,43 +1042,42 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
 
-        <!-- Mission dispatch bar (overview) -->
-        <div class="card" style="padding:14px 16px;">
-          <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Dispatch Mission</div>
-          <div class="mission-row">
-            <textarea class="mission-input" id="ov-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
-            <button class="send-btn" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
+        <!-- ── Mission / patch / objective summaries ── -->
+        <div class="hud-grid3">
+          <div class="hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Recent Missions</span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('results')">Results →</button></span></div>
+            <div id="ov-sum-missions"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
           </div>
-          <div class="bar-hint">Enter to dispatch, Shift+Enter for a new line → Queen orchestrates the colony</div>
+          <div class="hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Patch Activity</span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('patches')">Patch Center →</button></span></div>
+            <div id="ov-sum-patches"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
+          </div>
+          <div class="hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Objectives</span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('autonomy')">Autonomy →</button></span></div>
+            <div id="ov-sum-objectives"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
+          </div>
         </div>
 
-        <!-- Two column: jobs + events -->
-        <div class="two-col" style="flex:1;min-height:0;">
-
-          <!-- Recent Jobs -->
-          <div class="card" style="display:flex;flex-direction:column;min-height:0;">
-            <div class="card-head">
-              Recent Jobs
-              <span class="badge" id="ov-jobs-badge">0</span>
-              <button class="btn btn-ghost" style="margin-left:auto;padding:2px 8px;font-size:10px;" onclick="showPage('missions')">All →</button>
-            </div>
-            <div class="card-body scroll-body" id="ov-jobs-list">
-              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">No jobs yet</div>
+        <!-- ── Recent jobs + live telemetry ── -->
+        <div class="two-col" style="min-height:220px;">
+          <div class="hud-panel" style="display:flex;flex-direction:column;min-height:0;">
+            <div class="hud-hd"><span class="hud-hd-title">Recent Jobs</span><span class="badge" id="ov-jobs-badge">0</span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('missions')">All →</button></span></div>
+            <div class="scroll-body" id="ov-jobs-list" style="max-height:260px;">
+              <div class="hud-state">No jobs yet</div>
             </div>
           </div>
-
-          <!-- Live event feed -->
-          <div class="card" style="display:flex;flex-direction:column;min-height:0;">
-            <div class="card-head">
-              Colony Events
-              <span class="badge" style="background:rgba(16,185,129,.15);color:var(--green);border-color:rgba(16,185,129,.3);">live</span>
-              <button class="btn btn-ghost" style="margin-left:auto;padding:2px 8px;font-size:10px;" onclick="showPage('events');reloadLogModal()">Log →</button>
-            </div>
-            <div class="card-body scroll-body" id="ov-feed-list">
-              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">Waiting for events...</div>
+          <div class="hud-panel" style="display:flex;flex-direction:column;min-height:0;">
+            <div class="hud-hd"><span class="hud-hd-title">Live Telemetry</span>
+              <span class="hud-badge running" style="font-size:8px">live</span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events');reloadLogModal&&reloadLogModal()">Log →</button></span></div>
+            <div class="scroll-body" id="ov-feed-list" style="max-height:260px;">
+              <div class="hud-state"><div class="hud-spinner"></div>Awaiting telemetry…</div>
             </div>
           </div>
-
         </div>
       </div><!-- /page-overview -->
 
@@ -1722,7 +1937,7 @@ const PAGE_TITLES = {
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
-PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); };
+PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); if(typeof pollHud==='function') pollHud(); };
 
 function showPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -2152,6 +2367,178 @@ async function pollHealth(){
     if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`⚠ ${humanBytes(d.backup_bytes)} of backups reclaimable — Settings → Maintenance → Flush Cache`; }
     else alert.style.display='none';
   }catch{}
+}
+
+// ══ HUD design-system helpers (v1.8.17) ══════════════════════════════════════
+function hudBadge(status,label){ const s=(status||'unknown').toString().toLowerCase();
+  return `<span class="hud-badge ${s}">${escapeHtml(label||s)}</span>`; }
+function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
+  return `<span class="hud-risk ${l}">${escapeHtml(l)}</span>`; }
+// Map a mission/objective/job status onto a canonical HUD badge state.
+function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
+  if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
+  if(['running','active','queued','complete','partial','failed','paused','pending','approved','applied','rejected','completed','stopped','looping','idle','proposed'].includes(st)) return st==='proposed'?'pending':st;
+  return 'unknown'; }
+
+// ── Mission command modes (front-end prompt helpers → v1.8.16 planner constraints) ──
+let ovMode='';
+const OV_MODE_TEXT={
+  inspect:'Inspect only. Do not modify files. ',
+  verify:'Verify only. Do not create patches. ',
+  patch:'Create patch proposals only. Do not apply changes. ',
+  build:'Create changes only if needed and run the normal build/test checks. ',
+};
+const OV_MODE_LABEL={inspect:'INSPECT',verify:'VERIFY',patch:'PATCH PROPOSAL',build:'FULL BUILD/TEST'};
+function setOvMode(mode){
+  ovMode = (ovMode===mode) ? '' : mode; // toggle
+  document.querySelectorAll('#ov-modes .hud-act').forEach(b=>b.setAttribute('aria-pressed', b.dataset.mode===ovMode ? 'true':'false'));
+  const badge=document.getElementById('ov-mode-badge');
+  if(badge) badge.innerHTML = ovMode ? hudBadge('active',OV_MODE_LABEL[ovMode]) : '';
+  const hint=document.getElementById('ov-mode-hint');
+  if(hint) hint.textContent = ovMode
+    ? `Mode active — "${OV_MODE_TEXT[ovMode].trim()}" will be prepended to your directive.`
+    : 'Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.';
+}
+
+// ══ Overview command dashboard (v1.8.17) ═════════════════════════════════════
+async function pollHud(){
+  if(!document.getElementById('page-overview')?.classList.contains('active')) return;
+  let st,au,jb,pt,ob,mn;
+  try{
+    [st,au,jb,pt,ob,mn]=await Promise.all([
+      api('/status'), api('/autonomy/status'), api('/jobs'),
+      api('/patches?limit=200'), api('/objectives'), api('/missions/json?limit=8'),
+    ]);
+  }catch{ return; } // transient; existing panels keep their last values
+  const s=(st&&st.data)||{}, a=(au&&au.data)||{};
+  const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
+  const patches=Array.isArray(pt&&pt.data)?pt.data:[];
+  const objectives=Array.isArray(ob&&ob.data)?ob.data:[];
+  const missions=Array.isArray(mn&&mn.data)?mn.data:[];
+  const sum=(typeof lastSystemSummary==='object'&&lastSystemSummary)?lastSystemSummary:{};
+
+  // ── Derived state (memoized locals) ──
+  const activeJobs=jobs.filter(j=>['running','queued'].includes((j.status||'').toLowerCase())).length;
+  const pendingApprovals=s.pending_approvals??0;
+  const highRiskPatches=patches.filter(p=>(p.risk==='high')&&(p.status==='proposed'||p.approval_status==='pending')).length;
+  const failedMissions=missions.filter(m=>(m.status||'')==='failed').length;
+  const retiredObjectives=objectives.filter(o=>o.retired_code==='looping_goals'||o.end_reason==='retired_looping').length;
+  const failedObjectives=objectives.filter(o=>o.end_reason==='failed').length;
+  const activeObjectives=objectives.filter(o=>['active','pending'].includes((o.status||'').toLowerCase()) && o.retired_code!=='looping_goals' && (o.status||'')!=='done').length;
+  const providerDown = sum.use_ollama && sum.ollama_reachable===false;
+  const autoRunning=!!a.running, autoKilled=!!a.kill_switch_engaged, autoEnabled=!!a.enabled;
+  const warnings=failedMissions+retiredObjectives+failedObjectives+highRiskPatches+(providerDown?1:0);
+
+  // ── Status strip ──
+  const stripApi=document.getElementById('hs-api');
+  setEl('hs-api-val', connected?'ONLINE':'OFFLINE');
+  stripApi&&stripApi.classList.toggle('alert', !connected);
+  document.getElementById('hs-api-val').style.color=connected?'var(--green)':'var(--red)';
+  const provTxt = providerDown ? 'OLLAMA DOWN'
+    : (sum.routing_mode==='local'?'LOCAL':sum.routing_mode==='providers'?'PROVIDERS':sum.routing_mode==='mixed'?'MIXED':'—');
+  setEl('hs-provider-val', provTxt);
+  document.getElementById('hs-provider').classList.toggle('alert', !!providerDown);
+  document.getElementById('hs-provider-val').style.color=providerDown?'var(--red)':'var(--text)';
+  const autoTxt=autoRunning?'RUNNING':autoKilled?'HALTED':autoEnabled?'IDLE':'OFF';
+  setEl('hs-auto-val',autoTxt);
+  document.getElementById('hs-auto-val').style.color=autoRunning?'var(--green)':autoKilled?'var(--red)':'var(--muted)';
+  setEl('hs-missions-val',activeJobs);
+  setEl('hs-objectives-val',activeObjectives);
+  setEl('hs-approvals-val',pendingApprovals);
+  document.getElementById('hs-approvals').classList.toggle('warn', pendingApprovals>0);
+  document.getElementById('hs-approvals-val').style.color=pendingApprovals>0?'var(--queen)':'var(--text)';
+  setEl('hs-warn-val',warnings);
+  document.getElementById('hs-warn').classList.toggle('alert', warnings>0);
+  document.getElementById('hs-warn-val').style.color=warnings>0?'var(--orange)':'var(--text)';
+  const gc=(a.governor_code||'').toLowerCase();
+  const pressure = gc.includes('critical')||gc.includes('unreachable') ? ['CRITICAL','var(--red)','alert']
+    : (gc.includes('high')||gc.includes('low')||gc.includes('slow')) ? ['ELEVATED','var(--orange)','warn']
+    : gc==='ok' ? ['NOMINAL','var(--green)',''] : ['—','var(--muted)',''];
+  setEl('hs-pressure-val',pressure[0]);
+  document.getElementById('hs-pressure-val').style.color=pressure[1];
+  const hp=document.getElementById('hs-pressure'); hp.classList.remove('warn','alert'); if(pressure[2]) hp.classList.add(pressure[2]);
+
+  // ── Central system core ──
+  let coreState='idle', coreText='IDLE', coreSub='standby';
+  if(failedMissions>0||providerDown||retiredObjectives>0||failedObjectives>0){
+    coreState='alert'; coreText='ALERT';
+    coreSub=providerDown?'provider offline':failedMissions>0?'mission failed':'objective retired';
+  } else if(pendingApprovals>0||highRiskPatches>0){
+    coreState='action'; coreText='OPERATOR ACTION';
+    coreSub=highRiskPatches>0?`${highRiskPatches} high-risk patch`:`${pendingApprovals} awaiting review`;
+  } else if(autoRunning){ coreState='autonomy'; coreText='AUTONOMY ONLINE'; coreSub=`${activeObjectives} active objective${activeObjectives===1?'':'s'}`; }
+  else if(activeJobs>0){ coreState='mission'; coreText='MISSION ACTIVE'; coreSub=`${activeJobs} in flight`; }
+  else { coreState='idle'; coreText='IDLE'; coreSub=autoEnabled?'autonomy standby':'awaiting directive'; }
+  const orb=document.getElementById('hud-core');
+  if(orb) orb.dataset.state=coreState;
+  setEl('core-state',coreText); setEl('core-sub',coreSub);
+  const corePanel=document.getElementById('hud-core-panel');
+  if(corePanel){ corePanel.classList.remove('glow-active','glow-warn','glow-alert');
+    corePanel.classList.add(coreState==='alert'?'glow-alert':coreState==='action'?'glow-warn':'glow-active'); }
+
+  // ── Hardware / environment metrics (governor signals + autonomy status) ──
+  const sig=a.governor_signals||{};
+  const load=sig.load_per_core;
+  if(load==null){ setEl('hud-cpu','—'); document.getElementById('hud-cpu-bar').style.width='0%'; }
+  else { setEl('hud-cpu',Number(load).toFixed(2)); document.getElementById('hud-cpu-bar').style.width=Math.max(0,Math.min(100,load*100))+'%'; }
+  const memFrac=sig.memory_available_fraction;
+  if(memFrac==null){ setEl('hud-mem','—'); document.getElementById('hud-mem-bar').style.width='0%'; }
+  else { setEl('hud-mem',Math.round(memFrac*100)+'% free'); document.getElementById('hud-mem-bar').style.width=Math.max(0,Math.min(100,(1-memFrac)*100))+'%'; }
+  const lat=sig.backend_latency_ms, latEl=document.getElementById('hud-lat');
+  if(sig.backend_ok===false){ setEl('hud-lat','offline'); latEl.style.color='var(--red)'; setEl('hud-lat-sub','backend unreachable'); }
+  else if(lat==null){ setEl('hud-lat','—'); latEl.style.color=''; setEl('hud-lat-sub','runs during autonomy'); }
+  else { setEl('hud-lat',Math.round(lat)+' ms'); latEl.style.color=lat>=1500?'var(--orange)':'var(--text)'; setEl('hud-lat-sub','Ollama probe'); }
+  const ce=a.concurrency_effective, cc=a.concurrency_configured;
+  setEl('hud-conc', (ce??cc??'—')+(cc!=null?' / '+cc:''));
+  setEl('core-hint', autoRunning?'live':'');
+  setEl('ov-events-sub', (s.events??0)+' events logged');
+
+  // ── Operator attention ──
+  const attn=[];
+  if(pendingApprovals>0) attn.push({sev:'warning',title:`${pendingApprovals} pending patch approval${pendingApprovals===1?'':'s'}`,reason:'Review and approve or reject in the Patch Center.',go:"showPage('patches')"});
+  if(highRiskPatches>0) attn.push({sev:'error',title:`${highRiskPatches} high-risk patch waiting`,reason:'High-risk change needs careful review before apply.',go:"openPatches({risk:'high'})"});
+  if(providerDown) attn.push({sev:'error',title:'Model backend unreachable',reason:`Ollama at ${escapeHtml(sum.ollama_host||'?')} did not respond.`,go:"showPage('settings')"});
+  if(failedMissions>0) attn.push({sev:'error',title:`${failedMissions} recent mission failed`,reason:'Open Results to see what went wrong.',go:"showPage('results')"});
+  retiredObjectives>0 && attn.push({sev:'warning',title:`${retiredObjectives} objective retired for looping`,reason:'The Director stopped a looping objective.',go:"showPage('autonomy')"});
+  failedObjectives>0 && attn.push({sev:'error',title:`${failedObjectives} objective failed`,reason:'Circuit breaker tripped after repeated failures.',go:"showPage('autonomy')"});
+  const attnList=document.getElementById('hud-attn-list');
+  setEl('attn-count', attn.length?`${attn.length} item${attn.length===1?'':'s'}`:'');
+  const attnPanel=document.getElementById('hud-attn-panel');
+  attnPanel&&attnPanel.classList.toggle('glow-warn', attn.length>0);
+  if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
+  else attnList.innerHTML=attn.slice(0,6).map(it=>
+    `<div class="hud-attn-item" onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
+    `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+
+  // ── Summaries ──
+  const msEl=document.getElementById('ov-sum-missions');
+  msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid rgba(30,51,84,.4)" onclick="openResults('${m.id}')">`+
+    hudBadge(hudStatusClass(m.status),m.status)+
+    `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
+    `<span style="color:var(--dim);font-size:9px;white-space:nowrap">${fmtTime(m.saved_at||m.created_at)||''}</span></div>`).join('')
+    : '<div class="hud-state">No missions yet.</div>';
+
+  const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
+  const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
+  document.getElementById('ov-sum-patches').innerHTML = patches.length ?
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
+      chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
+      chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
+      (highRiskPatches?`<span class="hud-risk high" style="justify-content:center">${highRiskPatches} high-risk</span>`:'')+`</div>`
+    : '<div class="hud-state">No patch proposals yet.</div>';
+
+  const oc={active:0,paused:0,done:0,looping:0,failed:0};
+  objectives.forEach(o=>{ const st=(o.status||'').toLowerCase();
+    if(o.retired_code==='looping_goals'||o.end_reason==='retired_looping') oc.looping++;
+    else if(o.end_reason==='failed') oc.failed++;
+    else if(st==='done') oc.done++; else if(st==='paused') oc.paused++;
+    else if(st==='active'||st==='pending') oc.active++; });
+  document.getElementById('ov-sum-objectives').innerHTML = objectives.length ?
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
+      chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
+      (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
+    : '<div class="hud-state">No objectives yet.</div>';
 }
 
 function renderJobList(jobs, listId, badgeId, limit){
@@ -2912,7 +3299,12 @@ function autoGrowMissionInput(el){
 async function dispatchMission(inputId){
   const input=document.getElementById(inputId||'mission-input');
   if(!input) return;
-  const val=input.value.trim(); if(!val) return;
+  let val=input.value.trim(); if(!val) return;
+  // v1.8.17: the Overview mission node supports mode helpers that prepend safe, visible wording
+  // which the v1.8.16 planner reads as constraints (verification-only / no-patch / inspect-only).
+  if(inputId==='ov-mission-input' && ovMode && typeof OV_MODE_TEXT!=='undefined' && OV_MODE_TEXT[ovMode]){
+    val = OV_MODE_TEXT[ovMode] + val;
+  }
   input.value='';
   autoGrowMissionInput(input);
   enableInput(false);
@@ -2965,13 +3357,14 @@ document.addEventListener('keydown',e=>{
 // ── Polling loop ──────────────────────────────────────────────────────────────
 function startPolling(){
   loadUiState();
-  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();pollHealth();checkForUpdate(false);
+  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();pollHealth();pollHud();checkForUpdate(false);
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
   setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollApprovals,6000);
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
+  setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
   setInterval(()=>checkForUpdate(false), 6*60*60*1000); // update check is cached server-side (30m)
 }

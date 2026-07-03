@@ -15,7 +15,47 @@
 > hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
-and so on.
+Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, and so on.
+
+## v1.8.17 — Colony Command Center HUD Upgrade (Phases 1–2)
+
+Turns the Overview into a live swarm command-center HUD, built additively on the existing
+single-file console — no new dependencies, all animations CSS-only and reduced-motion aware.
+
+**Phase 1 — HUD design system.** Reusable vanilla primitives + CSS: a canonical `hud-badge`
+(running/idle/active/paused/completed/stopped/looping/failed/pending/approved/applied/rejected/
+warning/unknown), `hud-risk` (low/medium/high/unknown), glass `hud-panel` with corner brackets and
+optional active/warn/alert glow, `hud-metric` cards, `hud-telem` lines, loading/empty/error state
+blocks, and a `hud-act` action-button group. JS helpers `hudBadge()`, `hudRisk()`, `hudStatusClass()`.
+
+**Phase 2 — Overview command dashboard.** All panels use real API data with graceful `—`/empty/error
+fallbacks (no fabricated values):
+
+- **Colony status strip** — API link, provider/model, autonomy state, active missions, active
+  objectives, pending approvals, warnings, and governor resource pressure; each deep-links to the
+  relevant page and highlights warn/alert states.
+- **Central system core** — a J.A.R.V.I.S.-style orb whose state (IDLE / MISSION ACTIVE / AUTONOMY
+  ONLINE / OPERATOR ACTION / ALERT) is derived from real counts (active jobs, autonomy, pending/high-
+  risk patches, failed missions, retired objectives, provider health). CSS rings/pulse only.
+- **Operator attention** — real action items (pending/high-risk patches, failed missions, retired/
+  failed objectives, backend-unreachable) with severity, reason, and deep link; "No operator action
+  required" when clear.
+- **Hardware/environment cards** — CPU load/core, memory-available %, backend latency, and effective/
+  configured concurrency from the ResourceGovernor signals (`/autonomy/status`); shown as `—` with a
+  "runs during autonomy" note when the governor hasn't sampled yet. Percentages clamped 0–100.
+- **Mission command node** — terminal-style `ANTHILL_CORE >` input (existing submission preserved)
+  with Inspect / Verify / Patch Proposal / Full Build-Test mode buttons that prepend visible, safe
+  wording read by the v1.8.16 planner constraints (verification-only / no-patch). Selected mode is
+  shown as a badge; nothing is changed silently.
+- **Summaries** — recent missions, patch-status rollup (+high-risk), and objective-status rollup,
+  each linking to Results / Patch Center / Autonomy. Live telemetry + recent jobs reuse the existing
+  event/job feeds.
+
+Data polling reuses the existing gated cadence (only fetches while Overview is visible); no new
+uncleaned timers. Existing pages, navigation, mission submission, autonomy, and approval/apply
+behavior are unchanged. UI-only — no API or backend changes.
+
+
 
 ## v1.8.16.1 — Patch Center robustness + validation
 
