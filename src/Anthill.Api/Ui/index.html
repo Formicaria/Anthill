@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.23</title>
+<title>ANTHILL v1.8.23.1</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -682,14 +682,14 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 5px;border-radius:3px;}
 
 /* ------------------------------------------------------------------------------
-   HUD DESIGN SYSTEM (v1.8.23 � Colony Command Center)
+   HUD DESIGN SYSTEM (v1.8.23 · Colony Command Center)
    Reusable command-center primitives: status/risk badges, glass panels, metric
    cards, telemetry lines, the central system core, and state components. Vanilla
-   CSS only � no new deps. All animations are CSS and respect reduced-motion.
+   CSS only — no new deps. All animations are CSS and respect reduced-motion.
    ------------------------------------------------------------------------------ */
 :root{ --hud-cyan:#22d3ee; --hud-glass:rgba(17,29,48,.55); --hud-line:rgba(34,211,238,.18); }
 
-/* Status badge � one consistent label+color per state, everywhere. */
+/* Status badge — one consistent label+color per state, everywhere. */
 .hud-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;font-family:var(--mono);
   padding:2px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;line-height:1.4;
   border:1px solid transparent;}
@@ -871,7 +871,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.23</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.23.1</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -881,7 +881,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <label class="auth-label">Username</label>
       <input class="auth-input" id="login-user" type="text" placeholder="admin" autocomplete="username">
       <label class="auth-label">Password</label>
-      <input class="auth-input" id="login-pass" type="password" placeholder="��������" autocomplete="current-password">
+      <input class="auth-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
       <div class="auth-err" id="auth-err"></div>
       <button class="auth-btn" id="login-btn">Sign In</button>
     </div>
@@ -889,16 +889,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     <!-- First-run setup form -->
     <div id="auth-setup" style="display:none">
       <div style="font-size:12px;color:var(--queen);margin-bottom:14px;padding:8px 10px;background:var(--queen-dim);border-radius:var(--r);border:1px solid rgba(251,191,36,.25);">
-        ? First launch � create your admin account
+        ✦ First launch — create your admin account
       </div>
       <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
       <input class="auth-input" id="setup-apibase" type="url" placeholder="http://host:8713" autocomplete="off">
       <label class="auth-label">Admin Username</label>
       <input class="auth-input" id="setup-user" type="text" placeholder="admin" value="admin" autocomplete="username">
       <label class="auth-label">Password <span style="font-weight:400;color:var(--dim)">(min 8 characters)</span></label>
-      <input class="auth-input" id="setup-pass" type="password" placeholder="��������" autocomplete="new-password">
+      <input class="auth-input" id="setup-pass" type="password" placeholder="••••••••" autocomplete="new-password">
       <label class="auth-label">Confirm Password</label>
-      <input class="auth-input" id="setup-pass2" type="password" placeholder="��������" autocomplete="new-password">
+      <input class="auth-input" id="setup-pass2" type="password" placeholder="••••••••" autocomplete="new-password">
       <div class="auth-err" id="setup-err-msg"></div>
       <button class="auth-btn" id="setup-btn">Create Admin Account</button>
     </div>
@@ -914,7 +914,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.23</span>
+      <span class="nav-logo-ver">v1.8.23.1</span>
     </div>
 
     <div class="nav-scroll">
@@ -994,8 +994,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="nav-user">
         <div class="nav-user-avatar" id="nav-user-avatar">AH</div>
         <div class="nav-user-info">
-          <div class="nav-user-name" id="nav-user-name">�</div>
-          <div class="nav-user-role" id="nav-user-role">�</div>
+          <div class="nav-user-name" id="nav-user-name">—</div>
+          <div class="nav-user-role" id="nav-user-role">—</div>
         </div>
       </div>
       <button class="nav-collapse-btn" id="nav-collapse-btn" title="Collapse sidebar">
@@ -1014,28 +1014,28 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div>
       <div class="hdr-mission">
         <div class="dot" id="mission-dot"></div>
-        <div class="hdr-goal" id="mission-goal">Idle � no active mission</div>
+        <div class="hdr-goal" id="mission-goal">Idle — no active mission</div>
       </div>
       <div class="hdr-right">
-        <div id="status-chip" title="System status � click for details">
-          <span class="sc-mode" id="sc-mode"><span class="sc-mode-icon"></span><span id="sc-mode-txt">�</span></span>
-          <span class="sc-model" id="sc-model">connecting�</span>
+        <div id="status-chip" title="System status — click for details">
+          <span class="sc-mode" id="sc-mode"><span class="sc-mode-icon"></span><span id="sc-mode-txt">—</span></span>
+          <span class="sc-model" id="sc-model">connecting…</span>
           <span class="sc-dot err" id="sc-dot"></span>
           <span class="sc-update" id="sc-update" title="Update available"></span>
         </div>
         <div id="status-pop">
           <div style="display:flex;align-items:center;justify-content:space-between;">
             <div style="font-weight:600;font-size:13px;">System Status</div>
-            <div style="font-size:9px;color:var(--dim);font-family:var(--mono);" id="sp-version">�</div>
+            <div style="font-size:9px;color:var(--dim);font-family:var(--mono);" id="sp-version">—</div>
           </div>
           <div id="sp-update-banner" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid var(--queen);font-size:11px;color:var(--queen);"></div>
           <div class="sp-head">Connectivity</div>
-          <div class="sp-row"><span class="sp-key">API server</span><span class="sp-val" id="sp-api">�</span></div>
-          <div class="sp-row"><span class="sp-key">Ollama backend</span><span class="sp-val" id="sp-ollama">�</span></div>
-          <div class="sp-row"><span class="sp-key">Ollama host</span><span class="sp-val" id="sp-ollama-host" style="font-size:10px;color:var(--dim);">�</span></div>
+          <div class="sp-row"><span class="sp-key">API server</span><span class="sp-val" id="sp-api">—</span></div>
+          <div class="sp-row"><span class="sp-key">Ollama backend</span><span class="sp-val" id="sp-ollama">—</span></div>
+          <div class="sp-row"><span class="sp-key">Ollama host</span><span class="sp-val" id="sp-ollama-host" style="font-size:10px;color:var(--dim);">—</span></div>
           <div class="sp-head">Model Routing</div>
-          <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">�</span></div>
-          <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">�</span></div>
+          <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">—</span></div>
+          <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">—</span></div>
           <div id="sp-routes" style="margin-top:6px;"></div>
           <div style="display:flex;gap:8px;margin-top:12px;">
             <div class="sp-btn" onclick="closeStatusPop();showPage('antconfig')">Change models</div>
@@ -1063,21 +1063,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- -- Top colony status strip -- -->
         <div class="hud-strip" id="hud-strip">
           <div class="hud-strip-item" id="hs-api" title="API + backend health" onclick="document.getElementById('status-chip').click()">
-            <div class="s-label">API Link</div><div class="s-val" id="hs-api-val">�</div></div>
+            <div class="s-label">API Link</div><div class="s-val" id="hs-api-val">—</div></div>
           <div class="hud-strip-item" id="hs-provider" title="Model provider / route" onclick="showPage('settings')">
-            <div class="s-label">Provider</div><div class="s-val" id="hs-provider-val">�</div></div>
+            <div class="s-label">Provider</div><div class="s-val" id="hs-provider-val">—</div></div>
           <div class="hud-strip-item" id="hs-auto" title="Autonomy state" onclick="showPage('autonomy')">
-            <div class="s-label">Autonomy</div><div class="s-val" id="hs-auto-val">�</div></div>
+            <div class="s-label">Autonomy</div><div class="s-val" id="hs-auto-val">—</div></div>
           <div class="hud-strip-item" id="hs-missions" title="Active missions" onclick="showPage('missions')">
-            <div class="s-label">Active Missions</div><div class="s-val" id="hs-missions-val">�</div></div>
+            <div class="s-label">Active Missions</div><div class="s-val" id="hs-missions-val">—</div></div>
           <div class="hud-strip-item" id="hs-objectives" title="Active objectives" onclick="showPage('autonomy')">
-            <div class="s-label">Objectives</div><div class="s-val" id="hs-objectives-val">�</div></div>
+            <div class="s-label">Objectives</div><div class="s-val" id="hs-objectives-val">—</div></div>
           <div class="hud-strip-item" id="hs-approvals" title="Pending patch approvals" onclick="showPage('patches')">
-            <div class="s-label">Approvals</div><div class="s-val" id="hs-approvals-val">�</div></div>
+            <div class="s-label">Approvals</div><div class="s-val" id="hs-approvals-val">—</div></div>
           <div class="hud-strip-item" id="hs-warn" title="Recent failures / warnings" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
-            <div class="s-label">Warnings</div><div class="s-val" id="hs-warn-val">�</div></div>
+            <div class="s-label">Warnings</div><div class="s-val" id="hs-warn-val">—</div></div>
           <div class="hud-strip-item" id="hs-pressure" title="Resource pressure (governor)" onclick="showPage('autonomy')">
-            <div class="s-label">Pressure</div><div class="s-val" id="hs-pressure-val">�</div></div>
+            <div class="s-label">Pressure</div><div class="s-val" id="hs-pressure-val">—</div></div>
         </div>
 
         <!-- -- Core + attention + mission command -- -->
@@ -1099,14 +1099,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="hud-panel" id="hud-attn-panel" style="flex:1;min-height:150px;">
               <div class="hud-hd"><span class="hud-hd-title">Operator Attention</span><span class="hud-hd-sub" id="attn-count"></span>
                 <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events')">Event Log ?</button></span></div>
-              <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony�</div></div>
+              <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony…</div></div>
             </div>
 
             <div class="hud-panel mission-node">
               <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
               <div class="mn-prompt">
                 <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
-                <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive�" autocomplete="off" rows="1" disabled></textarea>
+                <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
                 <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">?</button>
               </div>
               <div class="mn-modes" id="ov-modes">
@@ -1115,9 +1115,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <button class="hud-act" data-mode="patch" aria-pressed="false" onclick="setOvMode('patch')" title="Create patch proposals only. Do not apply.">Patch Proposal</button>
                 <button class="hud-act" data-mode="build" aria-pressed="false" onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
               </div>
-              <div class="mn-hint" id="ov-mode-hint">Enter to dispatch � Shift+Enter for a new line � a selected mode is prepended to your directive.</div>
+              <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
               <div class="mn-actions">
-                <button class="hud-act" id="ov-preview-btn" onclick="previewPlan()" title="Generate the task plan without running it">? Preview Plan</button>
+                <button class="hud-act" id="ov-preview-btn" onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
               </div>
               <div class="hud-plan" id="ov-plan" style="display:none"></div>
             </div>
@@ -1128,55 +1128,55 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="hud-metrics" id="hud-metrics">
           <div class="hud-metric clickable" style="border-left-color:var(--blue)" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
             <div class="m-top"><span class="m-label">Model Calls</span></div>
-            <div class="m-value" id="ov-calls" style="color:var(--blue)">�</div><div class="m-sub">LLM invocations</div></div>
+            <div class="m-value" id="ov-calls" style="color:var(--blue)">—</div><div class="m-sub">LLM invocations</div></div>
           <div class="hud-metric clickable" style="border-left-color:var(--green)" onclick="showPage('results')">
             <div class="m-top"><span class="m-label">Tasks Done</span></div>
-            <div class="m-value" id="ov-tasks" style="color:var(--green)">�</div><div class="m-sub">completed nodes</div></div>
+            <div class="m-value" id="ov-tasks" style="color:var(--green)">—</div><div class="m-sub">completed nodes</div></div>
           <div class="hud-metric" style="border-left-color:var(--hud-cyan)">
             <div class="m-top"><span class="m-label">CPU / core</span></div>
-            <div class="m-value" id="hud-cpu">�</div><div class="m-bar"><i id="hud-cpu-bar" style="width:0%"></i></div></div>
+            <div class="m-value" id="hud-cpu">—</div><div class="m-bar"><i id="hud-cpu-bar" style="width:0%"></i></div></div>
           <div class="hud-metric" style="border-left-color:var(--purple)">
             <div class="m-top"><span class="m-label">Mem free</span></div>
-            <div class="m-value" id="hud-mem">�</div><div class="m-bar"><i id="hud-mem-bar" style="width:0%"></i></div></div>
+            <div class="m-value" id="hud-mem">—</div><div class="m-bar"><i id="hud-mem-bar" style="width:0%"></i></div></div>
           <div class="hud-metric" style="border-left-color:var(--amber)">
             <div class="m-top"><span class="m-label">Backend latency</span></div>
-            <div class="m-value" id="hud-lat">�</div><div class="m-sub" id="hud-lat-sub">Ollama probe</div></div>
+            <div class="m-value" id="hud-lat">—</div><div class="m-sub" id="hud-lat-sub">Ollama probe</div></div>
           <div class="hud-metric clickable" style="border-left-color:var(--orange)" onclick="showPage('autonomy')">
             <div class="m-top"><span class="m-label">Concurrency</span></div>
-            <div class="m-value" id="hud-conc">�</div><div class="m-sub" id="hud-conc-sub">effective / configured</div></div>
+            <div class="m-value" id="hud-conc">—</div><div class="m-sub" id="hud-conc-sub">effective / configured</div></div>
         </div>
 
         <!-- -- Colony vitals (System Health) -- -->
         <div class="hud-panel" style="margin-bottom:14px;">
           <div class="hud-hd"><span class="hud-hd-title">Colony Vitals</span>
-            <span class="hud-hd-sub" id="ov-events-sub">� events logged</span>
+            <span class="hud-hd-sub" id="ov-events-sub">— events logged</span>
             <span class="hud-hd-action"><span id="ov-health-alert" style="font-size:10px;color:var(--queen);display:none;"></span></span></div>
           <div class="health-grid">
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-auto-dot"></span>Autonomy</div>
-              <div class="health-main" id="ov-h-auto">�</div>
+              <div class="health-main" id="ov-h-auto">—</div>
               <div class="health-rows">
-                <div><span>Missions today</span><span id="ov-h-auto-day">�</span></div>
-                <div><span>Backlog</span><span id="ov-h-auto-backlog">�</span></div>
-                <div><span>Concurrency</span><span id="ov-h-auto-conc">�</span></div>
+                <div><span>Missions today</span><span id="ov-h-auto-day">—</span></div>
+                <div><span>Backlog</span><span id="ov-h-auto-backlog">—</span></div>
+                <div><span>Concurrency</span><span id="ov-h-auto-conc">—</span></div>
               </div>
             </div>
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-disk-dot"></span>Storage</div>
-              <div class="health-main" id="ov-h-disk">�</div>
+              <div class="health-main" id="ov-h-disk">—</div>
               <div class="health-bar"><div class="health-bar-fill" id="ov-h-disk-bar" style="width:0%"></div></div>
               <div class="health-rows">
-                <div><span>Database</span><span id="ov-h-db">�</span></div>
-                <div><span>Backups</span><span id="ov-h-backups">�</span></div>
+                <div><span>Database</span><span id="ov-h-db">—</span></div>
+                <div><span>Backups</span><span id="ov-h-backups">—</span></div>
               </div>
             </div>
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-coder-dot"></span>Coder Patches</div>
-              <div class="health-main" id="ov-h-coder">�</div>
+              <div class="health-main" id="ov-h-coder">—</div>
               <div class="health-rows">
-                <div><span>Valid patch sets</span><span id="ov-h-coder-ok">�</span></div>
-                <div><span>Parse failures</span><span id="ov-h-coder-fail">�</span></div>
-                <div><span>Auto-applied</span><span id="ov-h-coder-applied">�</span></div>
+                <div><span>Valid patch sets</span><span id="ov-h-coder-ok">—</span></div>
+                <div><span>Parse failures</span><span id="ov-h-coder-fail">—</span></div>
+                <div><span>Auto-applied</span><span id="ov-h-coder-applied">—</span></div>
               </div>
             </div>
           </div>
@@ -1187,17 +1187,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="hud-panel">
             <div class="hud-hd"><span class="hud-hd-title">Recent Missions</span>
               <span class="hud-hd-action"><button class="hud-act" onclick="showPage('results')">Results ?</button></span></div>
-            <div id="ov-sum-missions"><div class="hud-state"><div class="hud-spinner"></div>Loading�</div></div>
+            <div id="ov-sum-missions"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
           </div>
           <div class="hud-panel">
             <div class="hud-hd"><span class="hud-hd-title">Patch Activity</span>
               <span class="hud-hd-action"><button class="hud-act" onclick="showPage('patches')">Patch Center ?</button></span></div>
-            <div id="ov-sum-patches"><div class="hud-state"><div class="hud-spinner"></div>Loading�</div></div>
+            <div id="ov-sum-patches"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
           </div>
           <div class="hud-panel">
             <div class="hud-hd"><span class="hud-hd-title">Objectives</span>
               <span class="hud-hd-action"><button class="hud-act" onclick="showPage('autonomy')">Autonomy ?</button></span></div>
-            <div id="ov-sum-objectives"><div class="hud-state"><div class="hud-spinner"></div>Loading�</div></div>
+            <div id="ov-sum-objectives"><div class="hud-state"><div class="hud-spinner"></div>Loading…</div></div>
           </div>
         </div>
 
@@ -1215,7 +1215,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <span class="hud-badge running" style="font-size:8px">live</span>
               <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events');reloadLogModal&&reloadLogModal()">Log ?</button></span></div>
             <div class="scroll-body" id="ov-feed-list" style="max-height:260px;">
-              <div class="hud-state"><div class="hud-spinner"></div>Awaiting telemetry�</div>
+              <div class="hud-state"><div class="hud-spinner"></div>Awaiting telemetry…</div>
             </div>
           </div>
         </div>
@@ -1236,17 +1236,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div class="card-body">
               <div class="stat-grid">
-                <div class="stat-cell"><div class="stat-label">Model Calls</div><div class="stat-num" id="s-calls" style="color:var(--blue)">�</div></div>
-                <div class="stat-cell"><div class="stat-label">Tasks Done</div><div class="stat-num" id="s-tasks" style="color:var(--green)">�</div></div>
-                <div class="stat-cell"><div class="stat-label">Events</div><div class="stat-num" id="s-events" style="color:var(--muted)">�</div></div>
-                <div class="stat-cell"><div class="stat-label">Approvals</div><div class="stat-num" id="s-approvals" style="color:var(--queen)">�</div></div>
+                <div class="stat-cell"><div class="stat-label">Model Calls</div><div class="stat-num" id="s-calls" style="color:var(--blue)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Tasks Done</div><div class="stat-num" id="s-tasks" style="color:var(--green)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Events</div><div class="stat-num" id="s-events" style="color:var(--muted)">—</div></div>
+                <div class="stat-cell"><div class="stat-label">Approvals</div><div class="stat-num" id="s-approvals" style="color:var(--queen)">—</div></div>
               </div>
             </div>
           </div>
 
           <div class="card" id="approvals-card" style="display:none">
             <div class="card-head" style="color:var(--queen)">
-              ? Approvals
+              ⚠ Approvals
               <span class="badge" id="approval-count">0</span>
               <button class="collapse-btn" data-card="approvals-card" title="Collapse">?</button>
             </div>
@@ -1275,8 +1275,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="colony-hud" class="colony-hud">
             <div class="chud-legend" id="chud-legend"></div>
             <div class="chud-phero">
-              <div class="chud-phero-hd">Colony Learning � Pheromones</div>
-              <div id="chud-phero-body"><div class="chud-empty">Loading trails�</div></div>
+              <div class="chud-phero-hd">Colony Learning · Pheromones</div>
+              <div id="chud-phero-body"><div class="chud-empty">Loading trails…</div></div>
             </div>
           </div>
           <div class="colony-viewbar" id="colony-viewbar">
@@ -1286,7 +1286,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="cv-btn" data-view="group" title="Group by colony">Groups</button>
             <button class="cv-btn on" data-toggle="handoffs" title="Show active handoff edges">Handoffs</button>
           </div>
-          <div id="zoom-hint">Scroll to zoom � Drag canvas to pan � Drag ant to move � Double-click to rename</div>
+          <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
           <!-- Mission bar overlays the bottom of the canvas -->
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">
@@ -1365,11 +1365,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-missions -->
 
       <!-- --------------------------------------------------------------------
-           PAGE: RESULTS � expandable mission reports, out of the way of the canvas
+           PAGE: RESULTS — expandable mission reports, out of the way of the canvas
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-results">
         <div class="page-hdr">
-          <div><h1>Results</h1><div class="sub">Every mission's outcome � expand a row to read the full report: final output, per-task results, tangible changes, and objectives it created</div></div>
+          <div><h1>Results</h1><div class="sub">Every mission's outcome — expand a row to read the full report: final output, per-task results, tangible changes, and objectives it created</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <select id="results-filter" class="form-input" style="width:auto;font-size:11px;padding:5px 8px;">
               <option value="">All statuses</option>
@@ -1377,7 +1377,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <option value="partial">Partial</option>
               <option value="failed">Failed / errored</option>
             </select>
-            <button class="btn btn-ghost" id="results-refresh">? Refresh</button>
+            <button class="btn btn-ghost" id="results-refresh">↺ Refresh</button>
           </div>
         </div>
         <div id="results-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading missions...</div></div>
@@ -1388,21 +1388,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-patches">
         <div class="page-hdr">
-          <div><h1>Patch Center</h1><div class="sub">Inspect, compare, approve, and apply every coder patch proposal � nothing touches disk until you approve <i>and</i> apply.</div></div>
+          <div><h1>Patch Center</h1><div class="sub">Inspect, compare, approve, and apply every coder patch proposal — nothing touches disk until you approve <i>and</i> apply.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
-            <button class="btn btn-ghost" id="patches-refresh">? Refresh</button>
+            <button class="btn btn-ghost" id="patches-refresh">↺ Refresh</button>
           </div>
         </div>
         <div class="pc-toolbar">
           <select id="pc-filter-status" class="form-input pc-filter"><option value="">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="applied">Applied</option><option value="rejected">Rejected</option><option value="failed">Failed</option><option value="superseded">Superseded</option></select>
           <select id="pc-filter-risk" class="form-input pc-filter"><option value="">All risk</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="unknown">Unknown</option></select>
-          <input id="pc-filter-file" class="form-input pc-filter" placeholder="Filter by file path�" style="flex:1;min-width:140px;">
-          <input id="pc-filter-mission" class="form-input pc-filter" placeholder="Mission id�" style="width:140px;">
-          <input id="pc-filter-objective" class="form-input pc-filter" placeholder="Objective id�" style="width:140px;">
+          <input id="pc-filter-file" class="form-input pc-filter" placeholder="Filter by file path…" style="flex:1;min-width:140px;">
+          <input id="pc-filter-mission" class="form-input pc-filter" placeholder="Mission id…" style="width:140px;">
+          <input id="pc-filter-objective" class="form-input pc-filter" placeholder="Objective id…" style="width:140px;">
           <button class="btn btn-ghost" id="pc-filter-clear" title="Clear all filters">Clear</button>
         </div>
         <div id="pc-summary" class="pc-summary"></div>
-        <div id="patches-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading patch proposals�</div></div>
+        <div id="patches-list"><div style="color:var(--dim);padding:20px;text-align:center;">Loading patch proposals…</div></div>
       </div><!-- /page-patches -->
 
       <!-- --------------------------------------------------------------------
@@ -1410,13 +1410,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-objboard">
         <div class="page-hdr">
-          <div><h1>Objective Command Board</h1><div class="sub">Every autonomous objective by lifecycle lane � expand a card for its runs, missions, tasks, and patches.</div></div>
+          <div><h1>Objective Command Board</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="hud-hd-sub" id="ob-count"></span>
-            <button class="btn btn-ghost" id="ob-refresh">? Refresh</button>
+            <button class="btn btn-ghost" id="ob-refresh">↺ Refresh</button>
           </div>
         </div>
-        <div id="ob-board" class="ob-board"><div class="hud-state"><div class="hud-spinner"></div>Loading objectives�</div></div>
+        <div id="ob-board" class="ob-board"><div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div></div>
       </div><!-- /page-objboard -->
 
       <!-- --------------------------------------------------------------------
@@ -1425,7 +1425,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page page-scroll" id="page-events">
         <div class="page-hdr">
           <div><h1>Event Log</h1><div class="sub" id="log-modal-count"></div></div>
-          <button class="btn btn-ghost" id="log-reload">? Reload</button>
+          <button class="btn btn-ghost" id="log-reload">↺ Reload</button>
         </div>
 
         <div class="filter-row">
@@ -1463,8 +1463,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="phero-msg"></span>
-            <button class="btn btn-ghost" id="phero-reload">? Reload</button>
-            <button class="btn btn-danger" id="phero-prune">? Prune Weak Trails</button>
+            <button class="btn btn-ghost" id="phero-reload">↺ Reload</button>
+            <button class="btn btn-danger" id="phero-prune">✂ Prune Weak Trails</button>
           </div>
         </div>
         <div class="memory-kpis" id="memory-kpis"></div>
@@ -1499,7 +1499,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div><h1>Ant Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="antcfg-msg"></span>
-            <button class="btn btn-ghost" id="antcfg-reset">? Reset Defaults</button>
+            <button class="btn btn-ghost" id="antcfg-reset">↺ Reset Defaults</button>
             <button class="btn btn-primary" id="antcfg-save">Save Changes</button>
           </div>
         </div>
@@ -1513,10 +1513,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-antobs">
         <div class="page-hdr">
-          <div><h1>Ant Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance � expand a card for recent activity.</div></div>
-          <button class="btn btn-ghost" id="antobs-refresh">? Refresh</button>
+          <div><h1>Ant Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance — expand a card for recent activity.</div></div>
+          <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
         </div>
-        <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry�</div></div>
+        <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div></div>
       </div><!-- /page-antobs -->
 
       <!-- --------------------------------------------------------------------
@@ -1527,7 +1527,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div><h1>Autonomy</h1><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="auto-msg"></span>
-            <button class="btn btn-ghost" id="auto-refresh">? Refresh</button>
+            <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
             <button class="btn btn-ghost" id="auto-dump" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Dump Directives</button>
           </div>
         </div>
@@ -1537,9 +1537,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
             <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">�</span></span>
-              <button class="btn btn-primary" id="auto-start-btn">? Start</button>
-              <button class="btn btn-danger" id="auto-stop-btn">� Stop</button>
+              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
+              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
+              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
             </div>
           </div>
           <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
@@ -1548,34 +1548,34 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="kpi-grid">
             <div class="kpi-card" style="border-left-color:var(--green)">
               <div class="kpi-label">Director</div>
-              <div class="kpi-num" id="auto-running" style="font-size:18px">�</div>
-              <div class="kpi-sub" id="auto-poll-sub">�</div>
+              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
+              <div class="kpi-sub" id="auto-poll-sub">—</div>
             </div>
             <div class="kpi-card" style="border-left-color:var(--blue)">
               <div class="kpi-label">Missions / Hour</div>
-              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">�</div>
+              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
               <div class="kpi-sub">used / budget</div>
             </div>
             <div class="kpi-card" style="border-left-color:var(--purple)">
               <div class="kpi-label">Missions / Day</div>
-              <div class="kpi-num" id="auto-day" style="color:var(--purple)">�</div>
+              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
               <div class="kpi-sub">used / budget</div>
             </div>
             <div class="kpi-card" style="border-left-color:var(--queen)">
               <div class="kpi-label">Backlog</div>
-              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">�</div>
+              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
               <div class="kpi-sub">pending / active</div>
             </div>
             <div class="kpi-card" style="border-left-color:var(--green)">
               <div class="kpi-label">Concurrency</div>
-              <div class="kpi-num" id="auto-conc">�</div>
+              <div class="kpi-num" id="auto-conc">—</div>
               <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
             </div>
           </div>
-          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">�</span></div>
-          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">�</span></div>
-          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">�</span></div>
-          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">�</span></div>
+          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
+          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
+          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
+          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
         </div>
 
         <!-- Add objective -->
@@ -1626,7 +1626,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
           </div>
           <div id="completed-obj-box" style="max-height:640px;overflow-y:auto;padding:6px 12px 12px;">
-            <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading�</div></div>
+            <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading…</div></div>
           </div>
         </div>
       </div><!-- /page-autonomy -->
@@ -1651,8 +1651,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="settings-pane active" id="tab-connection">
           <div class="card" style="padding:16px 18px;max-width:540px;">
             <div class="section-head" style="margin-top:0;">Operator Account</div>
-            <div class="info-row"><span class="info-key">Username</span><span class="info-val" id="si-username">�</span></div>
-            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Role</span><span class="info-val" id="si-role">�</span></div>
+            <div class="info-row"><span class="info-key">Username</span><span class="info-val" id="si-username">—</span></div>
+            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Role</span><span class="info-val" id="si-role">—</span></div>
 
             <div class="section-head">API Endpoint</div>
             <label class="set-label">API Base URL <span style="font-weight:400;color:var(--dim)">(blank = local relative)</span></label>
@@ -1660,11 +1660,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-primary" id="settings-save" style="margin-bottom:16px;">Save & Test Connection</button>
 
             <div class="section-head">Ollama Status</div>
-            <div class="info-row"><span class="info-key">Host</span><span class="info-val" id="si-ollama-host">�</span></div>
-            <div class="info-row"><span class="info-key">Active Model</span><span class="info-val" id="si-model">�</span></div>
+            <div class="info-row"><span class="info-key">Host</span><span class="info-val" id="si-ollama-host">—</span></div>
+            <div class="info-row"><span class="info-key">Active Model</span><span class="info-val" id="si-model">—</span></div>
             <div class="info-row">
               <span class="info-key">Reachability</span>
-              <span class="info-val"><span class="ollama-dot err" id="si-ollama-dot"></span><span id="si-ollama-status">�</span></span>
+              <span class="info-val"><span class="ollama-dot err" id="si-ollama-dot"></span><span id="si-ollama-status">—</span></span>
             </div>
           </div>
         </div>
@@ -1674,7 +1674,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="card" style="padding:16px 18px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
               <div class="section-head" style="margin-top:0;padding:0;">Model Provider Connections</div>
-              <button class="btn btn-ghost" id="providers-refresh" style="font-size:11px;padding:4px 10px;">? Refresh</button>
+              <button class="btn btn-ghost" id="providers-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
             </div>
             <div style="font-size:10px;color:var(--dim);margin-bottom:14px;">
               Connect API keys so ants can route to paid cloud models alongside free local Ollama.
@@ -1706,7 +1706,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
             <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
               <button class="btn btn-primary" id="colony-save">Save Colony Settings</button>
-              <button class="btn btn-ghost" id="colony-reload">? Reload</button>
+              <button class="btn btn-ghost" id="colony-reload">↺ Reload</button>
               <span class="save-msg text-green" id="colony-save-msg"></span>
             </div>
           </div>
@@ -1717,7 +1717,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="card" style="padding:16px 18px;max-width:700px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
               <div class="section-head" style="padding:0;">Active Routes</div>
-              <button class="btn btn-ghost" id="models-refresh" style="font-size:11px;padding:4px 10px;">? Refresh</button>
+              <button class="btn btn-ghost" id="models-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
             </div>
             <div id="route-grid" style="margin-bottom:20px;"></div>
 
@@ -1732,15 +1732,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="card" style="padding:16px 18px;max-width:700px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
               <div class="section-head" style="padding:0;">System Information</div>
-              <button class="btn btn-ghost" id="diag-refresh" style="font-size:11px;padding:4px 10px;">? Refresh</button>
+              <button class="btn btn-ghost" id="diag-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
             </div>
-            <div class="info-row"><span class="info-key">Version</span><span class="info-val" id="si-version">�</span></div>
-            <div class="info-row"><span class="info-key">Native Kernel</span><span class="info-val" id="si-kernel">�</span></div>
-            <div class="info-row"><span class="info-key">Safety Profile</span><span class="info-val" id="si-safety">�</span></div>
-            <div class="info-row"><span class="info-key">Job Workers</span><span class="info-val" id="si-workers">�</span></div>
-            <div class="info-row"><span class="info-key">Web Search</span><span class="info-val" id="si-web">�</span></div>
-            <div class="info-row"><span class="info-key">File Writing</span><span class="info-val" id="si-filewrite">�</span></div>
-            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Patch Application</span><span class="info-val" id="si-patch">�</span></div>
+            <div class="info-row"><span class="info-key">Version</span><span class="info-val" id="si-version">—</span></div>
+            <div class="info-row"><span class="info-key">Native Kernel</span><span class="info-val" id="si-kernel">—</span></div>
+            <div class="info-row"><span class="info-key">Safety Profile</span><span class="info-val" id="si-safety">—</span></div>
+            <div class="info-row"><span class="info-key">Job Workers</span><span class="info-val" id="si-workers">—</span></div>
+            <div class="info-row"><span class="info-key">Web Search</span><span class="info-val" id="si-web">—</span></div>
+            <div class="info-row"><span class="info-key">File Writing</span><span class="info-val" id="si-filewrite">—</span></div>
+            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Patch Application</span><span class="info-val" id="si-patch">—</span></div>
             <div class="section-head">Diagnostics</div>
             <pre id="si-diag" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-all;line-height:1.6;max-height:400px;overflow-y:auto;"></pre>
           </div>
@@ -1751,13 +1751,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <div class="section-head" style="padding:0;">Maintenance</div>
               <span class="save-msg" id="maint-msg" style="font-size:11px;"></span>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin:6px 0 10px;">A full DB backup is written before every mission; only the newest <b id="maint-keep">�</b> are kept. Flush Cache prunes old backups (and old events, if a retention window is set) and compacts the database.</div>
-            <div class="info-row"><span class="info-key">Disk free</span><span class="info-val" id="maint-disk">�</span></div>
-            <div class="info-row"><span class="info-key">Database</span><span class="info-val" id="maint-db">�</span></div>
-            <div class="info-row" style="margin-bottom:12px;"><span class="info-key">Backups</span><span class="info-val" id="maint-backups">�</span></div>
+            <div style="font-size:11px;color:var(--muted);margin:6px 0 10px;">A full DB backup is written before every mission; only the newest <b id="maint-keep">—</b> are kept. Flush Cache prunes old backups (and old events, if a retention window is set) and compacts the database.</div>
+            <div class="info-row"><span class="info-key">Disk free</span><span class="info-val" id="maint-disk">—</span></div>
+            <div class="info-row"><span class="info-key">Database</span><span class="info-val" id="maint-db">—</span></div>
+            <div class="info-row" style="margin-bottom:12px;"><span class="info-key">Backups</span><span class="info-val" id="maint-backups">—</span></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-primary" id="maint-flush">Flush Cache</button>
-              <button class="btn btn-ghost" id="maint-refresh" style="font-size:11px;">? Refresh</button>
+              <button class="btn btn-ghost" id="maint-refresh" style="font-size:11px;">↺ Refresh</button>
               <button class="btn btn-ghost" id="maint-reset" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);margin-left:auto;">Reset Config</button>
             </div>
           </div>
@@ -1766,14 +1766,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-settings -->
 
       <!-- --------------------------------------------------------------------
-           PAGE: SECURITY � app security posture + gates (admin only)
+           PAGE: SECURITY — app security posture + gates (admin only)
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-security">
         <div class="page-hdr">
           <div><h1>Security</h1><div class="sub">Application security posture, capability gates, and the workspace boundary</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="sec-msg"></span>
-            <button class="btn btn-ghost" id="sec-refresh">? Refresh</button>
+            <button class="btn btn-ghost" id="sec-refresh">↺ Refresh</button>
             <button class="btn btn-primary" id="sec-save">Save changes</button>
           </div>
         </div>
@@ -1781,16 +1781,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="padding:16px 18px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;padding:0;">Posture</div>
           <div class="kpi-grid" style="margin-top:12px;">
-            <div class="kpi-card" style="border-left-color:var(--green)"><div class="kpi-label">Auth</div><div class="kpi-num" id="sec-auth" style="font-size:16px">�</div><div class="kpi-sub">operator login</div></div>
-            <div class="kpi-card" style="border-left-color:var(--blue)"><div class="kpi-label">Safety Profile</div><div class="kpi-num" id="sec-profile" style="font-size:16px">�</div><div class="kpi-sub">shipped default</div></div>
-            <div class="kpi-card" style="border-left-color:var(--purple)"><div class="kpi-label">Bind</div><div class="kpi-num" id="sec-bind" style="font-size:16px">�</div><div class="kpi-sub">network exposure</div></div>
-            <div class="kpi-card" style="border-left-color:var(--queen)"><div class="kpi-label">Encryption</div><div class="kpi-num" id="sec-enc" style="font-size:16px">�</div><div class="kpi-sub">secrets at rest</div></div>
+            <div class="kpi-card" style="border-left-color:var(--green)"><div class="kpi-label">Auth</div><div class="kpi-num" id="sec-auth" style="font-size:16px">—</div><div class="kpi-sub">operator login</div></div>
+            <div class="kpi-card" style="border-left-color:var(--blue)"><div class="kpi-label">Safety Profile</div><div class="kpi-num" id="sec-profile" style="font-size:16px">—</div><div class="kpi-sub">shipped default</div></div>
+            <div class="kpi-card" style="border-left-color:var(--purple)"><div class="kpi-label">Bind</div><div class="kpi-num" id="sec-bind" style="font-size:16px">—</div><div class="kpi-sub">network exposure</div></div>
+            <div class="kpi-card" style="border-left-color:var(--queen)"><div class="kpi-label">Encryption</div><div class="kpi-num" id="sec-enc" style="font-size:16px">—</div><div class="kpi-sub">secrets at rest</div></div>
           </div>
         </div>
 
         <div class="card" style="padding:16px 18px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;">Capability Gates</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Each gate is off-by-default and fail-closed. Turning one on widens what the colony (or an admin) can do � review before enabling on a network-reachable install.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Each gate is off-by-default and fail-closed. Turning one on widens what the colony (or an admin) can do — review before enabling on a network-reachable install.</div>
           <div id="sec-toggles"></div>
         </div>
 
@@ -1802,15 +1802,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <div class="card" style="padding:16px 18px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;">Operator Shell</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Configuration ? Shell) � a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Configuration ? Shell) · a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
           <div id="sec-shell-toggle"></div>
           <div class="form-field" style="margin-top:10px;"><label>Default shell working directory <span style="color:var(--dim);font-weight:400">(blank = workspace root)</span></label><input class="form-input" id="sec-shell-dir" type="text" placeholder="/opt/anthill/src" style="width:100%;font-family:var(--mono);"></div>
         </div>
 
         <div class="card" style="padding:16px 18px;border-color:var(--queen);">
-          <div class="section-head" style="margin-top:0;color:var(--queen);">Autonomous Auto-Apply <span style="font-size:9px;background:rgba(251,191,36,.14);color:var(--queen);padding:1px 6px;border-radius:3px;margin-left:6px;">HIGHEST RISK � PHASE 5</span></div>
+          <div class="section-head" style="margin-top:0;color:var(--queen);">Autonomous Auto-Apply <span style="font-size:9px;background:rgba(251,191,36,.14);color:var(--queen);padding:1px 6px;border-radius:3px;margin-left:6px;">HIGHEST RISK · PHASE 5</span></div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">
-            Lets the 24/7 Director apply coder patches <b>without human review</b> � but only ones matching the allowlist below, and only if the workspace still <b>builds + tests green</b> afterward (a red verify auto-rolls-back from backup). Inert until you add at least one path glob. Also requires the File Writing + Patch Application gates above.
+            Lets the 24/7 Director apply coder patches <b>without human review</b> — but only ones matching the allowlist below, and only if the workspace still <b>builds + tests green</b> afterward (a red verify auto-rolls-back from backup). Inert until you add at least one path glob. Also requires the File Writing + Patch Application gates above.
           </div>
           <div id="sec-autoapply-toggle"></div>
           <div class="form-field" style="margin-top:10px;"><label>Allowlist path globs <span style="color:var(--dim);font-weight:400">(one per line; empty = nothing eligible)</span></label>
@@ -1825,11 +1825,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-security -->
 
       <!-- --------------------------------------------------------------------
-           PAGE: SHELL � admin-only interactive host terminal
+           PAGE: SHELL — admin-only interactive host terminal
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-shell">
         <div class="page-hdr">
-          <div><h1>Shell</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> � administrators only, every command is audit-logged</div></div>
+          <div><h1>Shell</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> — administrators only, every command is audit-logged</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg" id="sh-msg"></span>
             <button class="btn btn-ghost" id="sh-clear">Clear</button>
@@ -1846,7 +1846,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="sh-output" style="font-family:var(--mono);font-size:12px;line-height:1.55;padding:12px 14px;height:460px;overflow-y:auto;white-space:pre-wrap;color:var(--text);background:#0a121e;"></div>
           <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);">
             <span style="color:var(--green);font-family:var(--mono);">$</span>
-            <input class="form-input" id="sh-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter�" style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 8px;" disabled>
+            <input class="form-input" id="sh-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter…" style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 8px;" disabled>
             <button class="btn btn-primary" id="sh-run" disabled>Run</button>
           </div>
         </div>
@@ -1916,7 +1916,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <h1>User Management</h1>
             <div class="sub" id="users-count"></div>
           </div>
-          <button class="btn btn-ghost" id="users-reload">? Reload</button>
+          <button class="btn btn-ghost" id="users-reload">↺ Reload</button>
         </div>
 
         <!-- Add user form -->
@@ -2026,10 +2026,10 @@ async function api(path, method='GET', body=null) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(url(path), opts);
   if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
-  // Never let an empty or non-JSON body throw a raw "Unexpected end of JSON input" � turn it into a
+  // Never let an empty or non-JSON body throw a raw "Unexpected end of JSON input" — turn it into a
   // structured {success:false} so callers show a clean message (e.g. a stale server without a route).
   const text = await r.text();
-  if (!text) return { success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' � this build may be missing the endpoint; redeploy?':''}`, status:r.status };
+  if (!text) return { success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
   try { return JSON.parse(text); }
   catch { return { success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; }
 }
@@ -2073,7 +2073,7 @@ let authLost=false;
 function onUnauthorized(){
   if(authLost) return; authLost=true;
   clearSession();
-  showAuth('login','Session expired � please sign in again.');
+  showAuth('login','Session expired — please sign in again.');
 }
 
 async function bootAuth(){
@@ -2223,8 +2223,8 @@ function enableInput(on){
 let settingsModelInfo = null;
 
 function openSettings(){
-  document.getElementById('si-username').textContent = USERNAME||'�';
-  document.getElementById('si-role').textContent = ROLE==='admin'?'Administrator':(ROLE||'�');
+  document.getElementById('si-username').textContent = USERNAME||'—';
+  document.getElementById('si-role').textContent = ROLE==='admin'?'Administrator':(ROLE||'—');
   document.getElementById('settings-apibase').value = API_BASE;
   showPage('settings');
   loadSettingsInfo();
@@ -2241,8 +2241,8 @@ async function saveSettings(){
 }
 
 PAGE_ENTER['settings']=()=>{
-  document.getElementById('si-username').textContent=USERNAME||'�';
-  document.getElementById('si-role').textContent=ROLE==='admin'?'Administrator':(ROLE||'�');
+  document.getElementById('si-username').textContent=USERNAME||'—';
+  document.getElementById('si-role').textContent=ROLE==='admin'?'Administrator':(ROLE||'—');
   document.getElementById('settings-apibase').value=API_BASE;
   loadSettingsInfo();
 };
@@ -2611,7 +2611,7 @@ function showInspector(n){
   const avgElapsed=usage.avg_elapsed_seconds??usage.avgElapsedSeconds??usage.AvgElapsedSeconds??0;
   document.getElementById('agent-detail').innerHTML=`
     <div class="ad-name">${n.label}</div>
-    <div class="ad-type" style="color:${n.color}">${n.role} � ${n.worker||n.ant||'queen'}</div>
+    <div class="ad-type" style="color:${n.color}">${n.role} · ${n.worker||n.ant||'queen'}</div>
     <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
     <div class="ad-row"><span class="ad-key">Type</span><span class="ad-val">${n.nodeType||'role'}</span></div>
     ${n.parent?`<div class="ad-row"><span class="ad-key">Parent</span><span class="ad-val">${n.parent}</span></div>`:''}
@@ -2643,7 +2643,7 @@ function showInspector(n){
     })()}
     ${antTasks.slice(0,4).map(t=>`
       <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
-        <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.assigned_worker||t.assigned_ant} � ${t.task_type||'task'} � <span style="color:${statusColor(t.status)}">${t.status}</span></div>
+        <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.assigned_worker||t.assigned_ant} · ${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
         <div style="font-size:10px;color:var(--muted)">${(t.title||'').substring(0,55)}</div>
       </div>`).join('')||''}`;
 }
@@ -2660,7 +2660,7 @@ function loop(ts){
   particles=particles.filter(p=>(p.t+=p.speed)<=1);
   drawParticles();
   nodes.forEach(n=>{
-    // NB: parentheses matter � this used to parse as `colonyActivity || (0-n.activity)`,
+    // NB: parentheses matter — this used to parse as `colonyActivity || (0-n.activity)`,
     // which accumulated activity unboundedly every frame (tooltips showing >100%).
     if(n.id!=='queen'){const key=n.worker||n.ant;n.activity=Math.min(1,Math.max(0,n.activity+((colonyActivity[key]||0)-n.activity)*.06));}
     drawNode(n,ts);
@@ -2699,7 +2699,7 @@ async function pollStatus(){
 
 // -- System Health panel (Overview) --------------------------------------------
 async function pollHealth(){
-  // Only fetch when the Overview is the visible page � keeps it cheap.
+  // Only fetch when the Overview is the visible page — keeps it cheap.
   if(!document.getElementById('page-overview')?.classList.contains('active')) return;
   try{
     const [a,m,ev]=await Promise.all([api('/autonomy/status'),api('/maintenance/stats'),api('/events/json?limit=600')]);
@@ -2710,7 +2710,7 @@ async function pollHealth(){
     setEl('ov-h-auto',autoState);
     document.getElementById('ov-h-auto').style.color=running?'var(--green)':(killed?'var(--red)':'var(--muted)');
     document.getElementById('ov-h-auto-dot').className='health-dot '+(running?'ok':(killed?'err':''));
-    setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'�'}`);
+    setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
     setEl('ov-h-auto-backlog',`${(s.backlog_pending??0)+(s.backlog_active??0)}`);
     setEl('ov-h-auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
     // Storage
@@ -2722,19 +2722,19 @@ async function pollHealth(){
     bar.style.background=diskDanger?'var(--red)':(diskWarn?'var(--queen)':'var(--green)');
     document.getElementById('ov-h-disk-dot').className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
     setEl('ov-h-db',humanBytes(d.db_bytes));
-    setEl('ov-h-backups',`${d.backup_count||0} � ${humanBytes(d.backup_bytes)}`);
+    setEl('ov-h-backups',`${d.backup_count||0} · ${humanBytes(d.backup_bytes)}`);
     // Coder patch health (from recent events)
     const c={}; (ev.data?.events||[]).forEach(e=>{const t=e.event_type||'';c[t]=(c[t]||0)+1;});
     const ok=c['patch_set_created']||0, fail=c['patch_proposal_parse_failed']||0, applied=c['autonomy_autoapply_applied']||0;
     const rate=(ok+fail)>0?Math.round(ok/(ok+fail)*100):null;
-    setEl('ov-h-coder',rate==null?'�':rate+'%');
+    setEl('ov-h-coder',rate==null?'—':rate+'%');
     document.getElementById('ov-h-coder').style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
     document.getElementById('ov-h-coder-dot').className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
     setEl('ov-h-coder-ok',ok); setEl('ov-h-coder-fail',fail); setEl('ov-h-coder-applied',applied);
-    // Alert line � nudge reclaimable disk
+    // Alert line — nudge reclaimable disk
     const alert=document.getElementById('ov-health-alert');
     const reclaimable=(d.backup_count||0)>(d.max_db_backups||10);
-    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`? ${humanBytes(d.backup_bytes)} of backups reclaimable � Settings ? Maintenance ? Flush Cache`; }
+    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`? ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings ? Maintenance ? Flush Cache`; }
     else alert.style.display='none';
   }catch{}
 }
@@ -2766,8 +2766,8 @@ function setOvMode(mode){
   if(badge) badge.innerHTML = ovMode ? hudBadge('active',OV_MODE_LABEL[ovMode]) : '';
   const hint=document.getElementById('ov-mode-hint');
   if(hint) hint.textContent = ovMode
-    ? `Mode active � "${OV_MODE_TEXT[ovMode].trim()}" will be prepended to your directive.`
-    : 'Enter to dispatch � Shift+Enter for a new line � a selected mode is prepended to your directive.';
+    ? `Mode active — "${OV_MODE_TEXT[ovMode].trim()}" will be prepended to your directive.`
+    : 'Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.';
 }
 
 // -- Overview command dashboard (v1.8.23) -------------------------------------
@@ -2805,7 +2805,7 @@ async function pollHud(){
   stripApi&&stripApi.classList.toggle('alert', !connected);
   document.getElementById('hs-api-val').style.color=connected?'var(--green)':'var(--red)';
   const provTxt = providerDown ? 'OLLAMA DOWN'
-    : (sum.routing_mode==='local'?'LOCAL':sum.routing_mode==='providers'?'PROVIDERS':sum.routing_mode==='mixed'?'MIXED':'�');
+    : (sum.routing_mode==='local'?'LOCAL':sum.routing_mode==='providers'?'PROVIDERS':sum.routing_mode==='mixed'?'MIXED':'—');
   setEl('hs-provider-val', provTxt);
   document.getElementById('hs-provider').classList.toggle('alert', !!providerDown);
   document.getElementById('hs-provider-val').style.color=providerDown?'var(--red)':'var(--text)';
@@ -2823,7 +2823,7 @@ async function pollHud(){
   const gc=(a.governor_code||'').toLowerCase();
   const pressure = gc.includes('critical')||gc.includes('unreachable') ? ['CRITICAL','var(--red)','alert']
     : (gc.includes('high')||gc.includes('low')||gc.includes('slow')) ? ['ELEVATED','var(--orange)','warn']
-    : gc==='ok' ? ['NOMINAL','var(--green)',''] : ['�','var(--muted)',''];
+    : gc==='ok' ? ['NOMINAL','var(--green)',''] : ['—','var(--muted)',''];
   setEl('hs-pressure-val',pressure[0]);
   document.getElementById('hs-pressure-val').style.color=pressure[1];
   const hp=document.getElementById('hs-pressure'); hp.classList.remove('warn','alert'); if(pressure[2]) hp.classList.add(pressure[2]);
@@ -2849,17 +2849,17 @@ async function pollHud(){
   // -- Hardware / environment metrics (governor signals + autonomy status) --
   const sig=a.governor_signals||{};
   const load=sig.load_per_core;
-  if(load==null){ setEl('hud-cpu','�'); document.getElementById('hud-cpu-bar').style.width='0%'; }
+  if(load==null){ setEl('hud-cpu','—'); document.getElementById('hud-cpu-bar').style.width='0%'; }
   else { setEl('hud-cpu',Number(load).toFixed(2)); document.getElementById('hud-cpu-bar').style.width=Math.max(0,Math.min(100,load*100))+'%'; }
   const memFrac=sig.memory_available_fraction;
-  if(memFrac==null){ setEl('hud-mem','�'); document.getElementById('hud-mem-bar').style.width='0%'; }
+  if(memFrac==null){ setEl('hud-mem','—'); document.getElementById('hud-mem-bar').style.width='0%'; }
   else { setEl('hud-mem',Math.round(memFrac*100)+'% free'); document.getElementById('hud-mem-bar').style.width=Math.max(0,Math.min(100,(1-memFrac)*100))+'%'; }
   const lat=sig.backend_latency_ms, latEl=document.getElementById('hud-lat');
   if(sig.backend_ok===false){ setEl('hud-lat','offline'); latEl.style.color='var(--red)'; setEl('hud-lat-sub','backend unreachable'); }
-  else if(lat==null){ setEl('hud-lat','�'); latEl.style.color=''; setEl('hud-lat-sub','runs during autonomy'); }
+  else if(lat==null){ setEl('hud-lat','—'); latEl.style.color=''; setEl('hud-lat-sub','runs during autonomy'); }
   else { setEl('hud-lat',Math.round(lat)+' ms'); latEl.style.color=lat>=1500?'var(--orange)':'var(--text)'; setEl('hud-lat-sub','Ollama probe'); }
   const ce=a.concurrency_effective, cc=a.concurrency_configured;
-  setEl('hud-conc', (ce??cc??'�')+(cc!=null?' / '+cc:''));
+  setEl('hud-conc', (ce??cc??'—')+(cc!=null?' / '+cc:''));
   setEl('core-hint', autoRunning?'live':'');
   setEl('ov-events-sub', (s.events??0)+' events logged');
 
@@ -2875,7 +2875,7 @@ async function pollHud(){
   setEl('attn-count', attn.length?`${attn.length} item${attn.length===1?'':'s'}`:'');
   const attnPanel=document.getElementById('hud-attn-panel');
   attnPanel&&attnPanel.classList.toggle('glow-warn', attn.length>0);
-  if(!attn.length){ attnList.innerHTML='<div class="hud-state">? No operator action required.</div>'; }
+  if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
   else attnList.innerHTML=attn.slice(0,6).map(it=>
     `<div class="hud-attn-item" onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
     `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
@@ -2923,7 +2923,7 @@ function renderJobList(jobs, listId, badgeId, limit){
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" onclick="selectJob('${j.id}')">
       <div class="job-top">
         <span class="job-status ${j.status}">${j.status}</span>
-        <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'�':''}</span>
+        <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
       </div>
       <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
       <div class="job-actions">
@@ -2944,9 +2944,9 @@ async function pollJobs(){
     const current=running||queued;
     colonyRunning=!!current;
     const dot=document.getElementById('mission-dot'),goalEl=document.getElementById('mission-goal');
-    if(running){dot.className='dot running';goalEl.textContent=running.goal.substring(0,80)+(running.goal.length>80?'�':'');}
+    if(running){dot.className='dot running';goalEl.textContent=running.goal.substring(0,80)+(running.goal.length>80?'…':'');}
     else if(queued){dot.className='dot active';goalEl.textContent='Queued: '+queued.goal.substring(0,70);}
-    else{dot.className='dot';goalEl.textContent='Idle � no active mission';}
+    else{dot.className='dot';goalEl.textContent='Idle — no active mission';}
     // Render to all job list containers
     renderJobList(jobs,'jobs-list','jobs-badge',8);
     renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5);
@@ -2961,7 +2961,7 @@ async function pollGraph(){
   try{
     const r=await api('/graph'); if(!r.success) return;
     lastGraphData=r.data;
-    // True live activity from current task states � not "share of all tasks in the mission".
+    // True live activity from current task states — not "share of all tasks in the mission".
     // running task(s) = fully active (1.0); only queued work (ready/pending) = warming (0.35);
     // everything terminal = idle (0). Always in [0,1], so the tooltip can never exceed 100%.
     const live={};
@@ -3012,7 +3012,7 @@ function buildDataFlowEdges(taskNodes){
   if(!colonyRunning&&taskNodes.length===0) dataFlowEdges=[];
 }
 
-// -- Colony Live Canvas 2.0 � caste legend + real pheromone trails --
+// -- Colony Live Canvas 2.0 · caste legend + real pheromone trails --
 const CHUD_CASTES=['researcher','web','file','coder','builder','verifier'];
 let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
 
@@ -3040,9 +3040,9 @@ async function pollColonyPheromones(){
     body.innerHTML = pheromoneTrails.length ? pheromoneTrails.slice(0,4).map(t=>{
       const s=Math.max(0,Math.min(1,+t.strength||0)), pct=Math.round(s*100);
       const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
-      const key=(t.trail_key||'�').split(':').slice(-1)[0];
+      const key=(t.trail_key||'—').split(':').slice(-1)[0];
       return `<div class="chud-trail"><div class="tk" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(key)}</div><div class="tb"><i style="width:${pct}%;background:${col}"></i></div></div>`;
-    }).join('') : '<div class="chud-empty">No trails yet � run missions to build colony memory.</div>';
+    }).join('') : '<div class="chud-empty">No trails yet — run missions to build colony memory.</div>';
   }catch{}
 }
 
@@ -3112,7 +3112,7 @@ async function pollEvents(){
         const timeStr=isoTs.replace('T',' ');
         const l1=lines[1]||'';
         const antMatch=l1.match(/Ant:\s*([^\s|]+)/);
-        const ant=antMatch?antMatch[1].trim():'�';
+        const ant=antMatch?antMatch[1].trim():'—';
         const missionMatch=l1.match(/Mission:\s*([^\s|]+)/);
         const missionShort=(missionMatch?missionMatch[1].trim():'').substring(0,12);
         const taskMatch=l1.match(/Task:\s*([^\s|]+)/);
@@ -3127,8 +3127,8 @@ async function pollEvents(){
             <span class="ev-ant" style="color:${col}">${ant}</span>
             <span class="ev-time">${timeStr}</span>
           </div>
-          <div class="ev-meta">mission:${missionShort||'�'} � task:${taskShort||'�'}</div>
-          <div class="ev-msg">${msg||'�'}</div>
+          <div class="ev-meta">mission:${missionShort||'—'} · task:${taskShort||'—'}</div>
+          <div class="ev-msg">${msg||'—'}</div>
         </div>`;
       }).join('');
       if(newCount>0) list.scrollTop=0;
@@ -3169,11 +3169,11 @@ async function pollApprovals(){
       return `<div class="approval-item">
         <div class="approval-title">${(a.title||a.action_type||'Approval needed').substring(0,60)}</div>
         ${filePath?`<div style="font-size:9px;color:var(--blue);font-family:var(--mono);margin-bottom:3px;word-break:break-all">${filePath}</div>`:''}
-        <div class="approval-meta">${a.action_type||'patch_proposal'} � ${fmtTime(a.created_at)||'now'}</div>
-        <div style="font-size:8px;color:var(--dim);margin-bottom:5px;font-family:var(--mono)">${a.id.substring(0,20)}�</div>
+        <div class="approval-meta">${a.action_type||'patch_proposal'} · ${fmtTime(a.created_at)||'now'}</div>
+        <div style="font-size:8px;color:var(--dim);margin-bottom:5px;font-family:var(--mono)">${a.id.substring(0,20)}…</div>
         <div class="approval-btns">
-          <button class="approval-btn approve" onclick="doApproval('${a.id}','approve')">? Approve &amp; Queue Apply</button>
-          <button class="approval-btn reject" onclick="doApproval('${a.id}','reject')">? Reject</button>
+          <button class="approval-btn approve" onclick="doApproval('${a.id}','approve')">✓ Approve &amp; Queue Apply</button>
+          <button class="approval-btn reject" onclick="doApproval('${a.id}','reject')">✕ Reject</button>
         </div>
       </div>`;
     }).join('');
@@ -3213,26 +3213,26 @@ function renderStatusChip(){
   const modeEl=document.getElementById('sc-mode'); modeEl.style.color=modeCol;
   modeEl.querySelector('.sc-mode-icon').innerHTML=providers?CLOUD_ICON:LOCAL_ICON;
   setEl('sc-mode-txt',modeTxt);
-  setEl('sc-model',s.default_model||'�');
+  setEl('sc-model',s.default_model||'—');
   // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
   const dot=document.getElementById('sc-dot');
   const ok = connected && (s.ollama_reachable!==false);
   dot.className='sc-dot '+(ok?'ok':'err');
-  document.getElementById('status-chip').title = ok?'Online � click for details':(s.ollama_reachable===false?'Ollama unreachable � click for details':'Click for details');
+  document.getElementById('status-chip').title = ok?'Online — click for details':(s.ollama_reachable===false?'Ollama unreachable — click for details':'Click for details');
 }
 
 function renderStatusPop(){
   const s=lastSystemSummary||{};
-  setEl('sp-version','v'+(s.version||'�'));
+  setEl('sp-version','v'+(s.version||'—'));
   setEl('sp-api', connected?'? Online':'? Offline');
   document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
   const or=s.ollama_reachable;
-  const oTxt = !s.use_ollama?'not in use':(or===true?'? Reachable':or===false?'? Unreachable':'�');
+  const oTxt = !s.use_ollama?'not in use':(or===true?'? Reachable':or===false?'? Unreachable':'—');
   setEl('sp-ollama',oTxt);
   document.getElementById('sp-ollama').style.color = or===true?'var(--green)':or===false?'var(--red)':'var(--dim)';
-  setEl('sp-ollama-host',s.ollama_host||'�');
-  setEl('sp-mode',(s.routing_mode||'�')+(s.providers_configured?` � ${s.providers_configured} provider(s) connected`:''));
-  setEl('sp-default',s.default_model||'�');
+  setEl('sp-ollama-host',s.ollama_host||'—');
+  setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  setEl('sp-default',s.default_model||'—');
   const routes=s.routes||[];
   document.getElementById('sp-routes').innerHTML=routes.map(rt=>{
     const local=(rt.provider||'ollama').toLowerCase()==='ollama';
@@ -3240,7 +3240,7 @@ function renderStatusPop(){
       <span style="color:var(--dim);text-transform:capitalize;">${escapeHtml(rt.role)}</span>
       <span style="font-family:var(--mono);display:flex;align-items:center;gap:5px;">
         <span style="color:${local?'var(--green)':'var(--purple)'};font-size:8px;font-weight:700;text-transform:uppercase;">${local?'local':escapeHtml(rt.provider)}</span>
-        ${escapeHtml(rt.model||'�')}</span></div>`;
+        ${escapeHtml(rt.model||'—')}</span></div>`;
   }).join('')||'<div style="color:var(--dim);font-size:10px;">No routes configured.</div>';
   renderUpdateBanner();
 }
@@ -3251,7 +3251,7 @@ function renderUpdateBanner(){
   if(u.update_available){
     banner.style.display='block';
     banner.innerHTML=`? Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+
-      (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> � `:'')+
+      (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `:'')+
       `On the LXC: <span style="font-family:var(--mono)">cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh</span>`;
     if(dot) dot.style.display='';
   } else {
@@ -3280,7 +3280,7 @@ document.addEventListener('click',e=>{
   const pop=document.getElementById('status-pop');
   if(pop.classList.contains('show') && !pop.contains(e.target) && !document.getElementById('status-chip').contains(e.target)) pop.classList.remove('show');
 });
-document.getElementById('sp-recheck').addEventListener('click',e=>{ e.stopPropagation(); setEl('sp-update-banner','Checking�'); document.getElementById('sp-update-banner').style.display='block'; checkForUpdate(true); });
+document.getElementById('sp-recheck').addEventListener('click',e=>{ e.stopPropagation(); setEl('sp-update-banner','Checking…'); document.getElementById('sp-update-banner').style.display='block'; checkForUpdate(true); });
 
 // -- Job result ----------------------------------------------------------------
 function selectJob(id){
@@ -3293,11 +3293,11 @@ async function showJobResult(id){
   try{
     const r=await api(`/jobs/${id}`); if(!r.success) return;
     const j=r.data;
-    document.getElementById('result-title').textContent=`${j.status.toUpperCase()} � ${(j.goal||'').substring(0,55)}`;
+    document.getElementById('result-title').textContent=`${j.status.toUpperCase()} · ${(j.goal||'').substring(0,55)}`;
     const body=document.getElementById('result-body');
     if(j.status==='running'||j.status==='queued'){
       body.textContent=j.status==='running'
-        ?'Mission is running � the colony is working...\n\nWatch Colony Events for live updates.'
+        ?'Mission is running — the colony is working...\n\nWatch Colony Events for live updates.'
         :'Job is queued, waiting for a worker...';
     } else if(j.mission_id){
       await renderMissionReport(j.mission_id, body);
@@ -3309,8 +3309,8 @@ async function showJobResult(id){
       body.textContent='No result recorded.';
     }
     const statusBar=document.getElementById('result-status-bar');
-    const start=j.started_at?fmtTime(j.started_at):'�',end=j.finished_at?fmtTime(j.finished_at):'�';
-    statusBar.innerHTML=`<span>Job: <span style="font-family:var(--mono)">${id.substring(0,8)}�</span></span><span>Started: ${start}</span><span>Finished: ${end}</span>`;
+    const start=j.started_at?fmtTime(j.started_at):'—',end=j.finished_at?fmtTime(j.finished_at):'—';
+    statusBar.innerHTML=`<span>Job: <span style="font-family:var(--mono)">${id.substring(0,8)}…</span></span><span>Started: ${start}</span><span>Finished: ${end}</span>`;
     document.getElementById('result-overlay').classList.add('show');
   }catch{}
 }
@@ -3318,8 +3318,8 @@ async function showJobResult(id){
 // -- Mission report: the readable "what actually happened" view ----------------
 const MR_STATUS={complete:['? Completed','var(--green)'],partial:['? Completed with gaps','var(--queen)'],
   failed:['? Failed','var(--red)'],running:['? Running','var(--blue)']};
-const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'�',ready:'�'};
-const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved � not yet applied','var(--blue)'],
+const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'—',ready:'—'};
+const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
   applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
 
 async function renderMissionReport(missionId, body){
@@ -3330,41 +3330,41 @@ async function renderMissionReport(missionId, body){
   const sec=(title,inner)=>`<div style="margin-bottom:16px"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">${title}</div>${inner}</div>`;
   let html='';
 
-  // Mission-level outcome � separate from the tasks that produced it.
+  // Mission-level outcome — separate from the tasks that produced it.
   html+=sec('Mission',
     `<div style="white-space:normal;line-height:1.6"><span style="color:${stColor};font-weight:600">${stLabel}</span>`+
-    `<span style="color:var(--dim)"> � score ${rep.success_score!=null?Number(rep.success_score).toFixed(2):'�'}`+
-    ` � ${tc.complete||0}/${tc.total||0} tasks completed${tc.failed?` � <span style="color:var(--red)">${tc.failed} failed</span>`:''}${tc.skipped?` � ${tc.skipped} skipped`:''}</span>`+
+    `<span style="color:var(--dim)"> · score ${rep.success_score!=null?Number(rep.success_score).toFixed(2):'—'}`+
+    ` · ${tc.complete||0}/${tc.total||0} tasks completed${tc.failed?` · <span style="color:var(--red)">${tc.failed} failed</span>`:''}${tc.skipped?` · ${tc.skipped} skipped`:''}</span>`+
     `<div style="margin-top:6px;color:var(--text)">${escapeHtml(rep.goal||'')}</div></div>`);
 
   html+=sec('Final output (mission result)',
     `<div style="background:var(--panel2,rgba(255,255,255,.03));border:1px solid var(--border);border-radius:6px;padding:10px 12px;">${escapeHtml(rep.final_output||'No mission-level output was recorded.')}</div>`);
 
-  // Tangible changes � the part that answers "did anything actually happen?"
+  // Tangible changes — the part that answers "did anything actually happen?"
   const patches=rep.patches||[];
   if(patches.length){
     const pcnt=rep.patch_counts||{};
     const countLine=`<div style="white-space:normal;font-size:11px;color:var(--dim);margin-bottom:6px">`+
-      `${pcnt.total||patches.length} proposed � ${pcnt.pending||0} pending � ${pcnt.approved||0} approved � ${pcnt.applied||0} applied � ${pcnt.rejected||0} rejected${pcnt.failed?` � <span style="color:var(--red)">${pcnt.failed} failed</span>`:''}`+
-      ` � <a href="#" onclick="openPatches({mission_id:'${rep.id}'});return false;" style="color:var(--blue)">Open in Patch Center ?</a></div>`;
+      `${pcnt.total||patches.length} proposed · ${pcnt.pending||0} pending · ${pcnt.approved||0} approved · ${pcnt.applied||0} applied · ${pcnt.rejected||0} rejected${pcnt.failed?` · <span style="color:var(--red)">${pcnt.failed} failed</span>`:''}`+
+      ` · <a href="#" onclick="openPatches({mission_id:'${rep.id}'});return false;" style="color:var(--blue)">Open in Patch Center ?</a></div>`;
     html+=sec(`Tangible changes proposed (${patches.length})`,
       countLine+
       patches.map(p=>{
         const [pl,pc]=MR_PATCH_STATE[p.status]||[p.status,'var(--text)'];
         return `<div style="white-space:normal;margin-bottom:6px;line-height:1.5">`+
           `<a href="#" onclick="openPatches({mission_id:'${rep.id}',file:'${escapeHtml(p.file_path||'')}'});return false;" style="font-family:var(--mono);color:var(--blue)">${escapeHtml(p.file_path||'?')}</a> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
-          ` � <span style="color:${pc}">${pl}</span>`+
+          ` — <span style="color:${pc}">${pl}</span>`+
           `<div style="color:var(--dim);font-size:11px">${escapeHtml(p.reason||'')}</div>`+
           (p.last_error?`<div style="color:var(--red);font-size:11px">Apply error: ${escapeHtml(p.last_error)}</div>`:'')+`</div>`;
       }).join('')+
-      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">? ${rep.pending_approvals} change(s) are waiting for review � open the <b>Patch Center</b> to inspect &amp; apply. Nothing touches disk until you approve &amp; apply.</div>`:''));
+      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">? ${rep.pending_approvals} change(s) are waiting for review · open the <b>Patch Center</b> to inspect &amp; apply. Nothing touches disk until you approve &amp; apply.</div>`:''));
   } else {
     html+=sec('Tangible changes proposed',
-      `<div style="white-space:normal;color:var(--dim)">None � this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
+      `<div style="white-space:normal;color:var(--dim)">None — this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
   }
   if(rep.sources_saved) html+=sec('Research', `<div style="white-space:normal;color:var(--dim)">${rep.sources_saved} web source(s) saved.</div>`);
 
-  // v1.8.23: gated auto-apply outcome � answers "did the autonomous change actually stick?"
+  // v1.8.23: gated auto-apply outcome · answers "did the autonomous change actually stick?"
   if(rep.auto_apply){
     const aa=rep.auto_apply, kept=!!aa.kept;
     const col=kept?'var(--green)':(aa.outcome==='reverted'?'var(--red)':'var(--queen)');
@@ -3375,12 +3375,12 @@ async function renderMissionReport(missionId, body){
       `<div style="color:var(--dim);font-size:11px;margin-top:3px">${escapeHtml(aa.message||'')}</div></div>`);
   }
 
-  // Autonomy linkage � which objective drove this mission, and what it spawned.
+  // Autonomy linkage — which objective drove this mission, and what it spawned.
   if(rep.autonomy_run){
     const ar=rep.autonomy_run;
     html+=sec('Autonomous run',
       `<div style="white-space:normal;line-height:1.6;color:var(--dim)">Driven by objective <b style="color:var(--text)">${escapeHtml(ar.objective_title||ar.objective_id||'?')}</b>`+
-      `${ar.follow_ups_created?` � spawned ${ar.follow_ups_created} follow-up objective(s)`:''}</div>`);
+      `${ar.follow_ups_created?` · spawned ${ar.follow_ups_created} follow-up objective(s)`:''}</div>`);
   }
   const created=rep.created_objectives||[];
   if(created.length){
@@ -3391,29 +3391,29 @@ async function renderMissionReport(missionId, body){
       `<div style="white-space:normal;color:var(--dim);font-size:11px;margin-top:4px">These now live in the <b>Autonomy</b> backlog.</div>`);
   }
 
-  // Problems � surfaced instead of buried (incl. unparseable coder proposals).
+  // Problems — surfaced instead of buried (incl. unparseable coder proposals).
   const problems=rep.problems||[];
   if(problems.length){
     html+=sec(`Problems (${problems.length})`,
       problems.map(p=>{
         const friendly=p.type==='patch_proposal_parse_failed'
-          ?'The coder produced a change proposal the parser could not read � that work never reached the approval queue.'
+          ?'The coder produced a change proposal the parser could not read — that work never reached the approval queue.'
           :escapeHtml(p.message||p.type);
         return `<div style="white-space:normal;color:var(--red);font-size:11px;margin-bottom:4px">? [${escapeHtml(p.type)}] ${friendly}</div>`;
       }).join(''));
   }
 
-  // Per-task breakdown � each task's own readable output, expandable.
+  // Per-task breakdown — each task's own readable output, expandable.
   const tasks=rep.tasks||[];
   html+=sec(`Tasks (${tasks.length})`,
     tasks.map((t,i)=>{
-      const icon=MR_TASK_ICON[t.status]||'�';
+      const icon=MR_TASK_ICON[t.status]||'·';
       const color=t.status==='complete'?'var(--green)':t.status==='failed'?'var(--red)':t.status==='skipped'?'var(--dim)':'var(--queen)';
       const reason=t.failure_reason||t.skipped_reason||t.blocked_reason;
-      const elapsed=t.elapsed_seconds!=null?` � ${Number(t.elapsed_seconds).toFixed(1)}s`:'';
+      const elapsed=t.elapsed_seconds!=null?` · ${Number(t.elapsed_seconds).toFixed(1)}s`:'';
       return `<details style="white-space:normal;margin-bottom:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px">`+
         `<summary style="cursor:pointer;line-height:1.5"><span style="color:${color}">${icon}</span> `+
-        `<b>${i+1}. ${escapeHtml(t.title||'')}</b> <span style="color:var(--dim)">� ${escapeHtml(t.ant||'')} ant${elapsed}</span></summary>`+
+        `<b>${i+1}. ${escapeHtml(t.title||'')}</b> <span style="color:var(--dim)">— ${escapeHtml(t.ant||'')} ant${elapsed}</span></summary>`+
         `<div style="margin-top:6px;white-space:pre-wrap;font-size:11px;color:var(--text)">${escapeHtml(t.readable_output||'(no output recorded)')}</div>`+
         (reason?`<div style="margin-top:4px;color:var(--red);font-size:11px;white-space:pre-wrap">Why: ${escapeHtml(reason)}</div>`:'')+
         `</details>`;
@@ -3423,7 +3423,7 @@ async function renderMissionReport(missionId, body){
   if(tasks.length){
     const fid='mrflow-'+missionId.replace(/[^a-zA-Z0-9]/g,'');
     html+=sec('Task Flow (DAG + timeline)',
-      `<div id="${fid}"><button class="hud-act" onclick="loadTaskFlow('${missionId}','${fid}')">? Show task DAG &amp; timeline</button></div>`);
+      `<div id="${fid}"><button class="hud-act" onclick="loadTaskFlow('${missionId}','${fid}')">◈ Show task DAG &amp; timeline</button></div>`);
   }
 
   body.innerHTML=html;
@@ -3432,7 +3432,7 @@ async function renderMissionReport(missionId, body){
 // -- Mission Timeline + Task DAG viewer (v1.8.23, UI Phase 6) ------------------
 async function loadTaskFlow(missionId, containerId){
   const box=document.getElementById(containerId); if(!box) return;
-  box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Building flow�</div>';
+  box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Building flow…</div>';
   try{
     const r=await api('/missions/'+encodeURIComponent(missionId)+'/graph'); if(!r.success) throw new Error(r.message);
     const nodes=(r.data&&r.data.nodes)||[];
@@ -3491,7 +3491,7 @@ function flowDag(cid,data){
     return `<g class="dag-node ${st}" onclick="flowSelect('${cid}','${n.id}')" style="color:${FLOW_STATUS_COL[st]||'var(--amber)'}">
       <rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}"/>
       <text x="${p.x+7}" y="${p.y+12}">${label}</text>
-      <text x="${p.x+7}" y="${p.y+23}" style="fill:var(--dim);font-size:8px">${escapeHtml(n.assigned_ant||'')} � ${escapeHtml(st)}</text>
+      <text x="${p.x+7}" y="${p.y+23}" style="fill:var(--dim);font-size:8px">${escapeHtml(n.assigned_ant||'')} · ${escapeHtml(st)}</text>
     </g>`;
   }).join('');
   return `<div class="mrflow-dag"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${edges}${boxes}</svg></div>`;
@@ -3511,7 +3511,7 @@ function flowTimeline(cid,data){
       <span class="tl-dot" style="background:${col}"></span>
       <span class="tl-name" title="${escapeHtml(n.title||'')}">${escapeHtml(n.title||n.assigned_ant||'task')}</span>
       <span class="tl-track"><span class="tl-bar" style="left:${offPct}%;width:${wPct}%;background:${col}"></span></span>
-      <span class="tl-dur">${dur?dur.toFixed(1)+'s':'�'}</span>
+      <span class="tl-dur">${dur?dur.toFixed(1)+'s':'—'}</span>
     </div>`;
   }).join('');
 }
@@ -3553,16 +3553,16 @@ function renderResultsList(){
   if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No missions match.</div>'; return; }
   list.innerHTML=rows.map(m=>{
     const [stLabel,stColor]=MR_STATUS[m.status]||[m.status,'var(--text)'];
-    const score=m.success_score!=null?Number(m.success_score).toFixed(2):'�';
+    const score=m.success_score!=null?Number(m.success_score).toFixed(2):'—';
     return `<details class="card" style="margin-bottom:8px;padding:0;" data-mission="${m.id}" ontoggle="onResultToggle(this)">
       <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;user-select:none;">
         <span style="color:${stColor};font-weight:600;white-space:nowrap;font-size:11px;">${stLabel}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${escapeHtml(m.goal||'')}</span>
-        <span style="color:var(--dim);font-size:10px;font-family:var(--mono);white-space:nowrap;">score ${score} � ${fmtTime(m.saved_at||m.created_at)}</span>
+        <span style="color:var(--dim);font-size:10px;font-family:var(--mono);white-space:nowrap;">score ${score} · ${fmtTime(m.saved_at||m.created_at)}</span>
         <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
       </summary>
       <div class="mr-body" style="padding:4px 16px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;line-height:1.7;white-space:pre-wrap;">
-        <div style="color:var(--dim);padding:8px 0;">Loading report�</div>
+        <div style="color:var(--dim);padding:8px 0;">Loading report…</div>
       </div>
     </details>`;
   }).join('');
@@ -3647,7 +3647,7 @@ function applyPcFiltersToInputs(){
   document.getElementById('pc-filter-mission').value=pcFilters.mission_id||'';
   document.getElementById('pc-filter-objective').value=pcFilters.objective_id||'';
 }
-// Deep-link entry: openPatches({mission_id:'�'}) or {objective_id} or {status}.
+// Deep-link entry: openPatches({mission_id:'…'}) or {objective_id} or {status}.
 function openPatches(filter){
   pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:'',...(filter||{})};
   pcPending=true;
@@ -3690,12 +3690,12 @@ function renderPatchList(rows){
       <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:11px 14px;user-select:none;">
         ${badge}${risk}
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
-        <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} � ${escapeHtml(src)} � ${fmtTime(p.created_at)||''}</span>
+        <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
         <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
       </summary>
       <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
         <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
-        <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff�</div>
+        <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff…</div>
       </div>
     </details>`;
   }).join('');
@@ -3716,14 +3716,14 @@ async function onPatchToggle(det){
     const canApply=d.status==='approved' && d.approval_id;
     const actions=`<div class="pc-actions">
       ${d.mission_id?`<button class="pc-act" onclick="openResults('${d.mission_id}')">View Mission</button>`:''}
-      ${canApprove?`<button class="pc-act approve" onclick="pcApprove('${d.approval_id}','${pid}')">? Approve</button>`:''}
-      ${canApprove?`<button class="pc-act reject" onclick="pcReject('${d.approval_id}','${pid}')">? Reject</button>`:''}
-      ${canApply?`<button class="pc-act apply" onclick="pcApply('${pid}')">? Apply</button>`:''}
-      ${(!d.approval_id)?`<span style="color:var(--dim);font-size:10px;align-self:center;">no approval record � duplicate/superseded or already resolved</span>`:''}
+      ${canApprove?`<button class="pc-act approve" onclick="pcApprove('${d.approval_id}','${pid}')">✓ Approve</button>`:''}
+      ${canApprove?`<button class="pc-act reject" onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
+      ${canApply?`<button class="pc-act apply" onclick="pcApply('${pid}')">▶ Apply</button>`:''}
+      ${(!d.approval_id)?`<span style="color:var(--dim);font-size:10px;align-self:center;">no approval record — duplicate/superseded or already resolved</span>`:''}
     </div>`;
     box.innerHTML=
       meta('Status', (d.status_label||d.status)+(d.approval_status?` (approval ${d.approval_status})`:''))+
-      meta('Risk', (d.risk||'unknown')+(d.risk_raw&&d.risk_raw!==d.risk?` � "${d.risk_raw}"`:''))+
+      meta('Risk', (d.risk||'unknown')+(d.risk_raw&&d.risk_raw!==d.risk?` — "${d.risk_raw}"`:''))+
       meta('Objective', d.objective_title||d.objective_id)+
       meta('Mission goal', d.mission_goal)+
       meta('Applied at', d.applied_at)+
@@ -3732,14 +3732,14 @@ async function onPatchToggle(det){
       actions;
   }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load patch: ${escapeHtml(e.message)}</span>`; }
 }
-// Minimal LCS-based unified diff � removed lines red, added lines green, context muted.
+// Minimal LCS-based unified diff — removed lines red, added lines green, context muted.
 function renderDiff(oldC, newC, changeType){
   const a=(oldC==null?'':String(oldC)).split('\n');
   const b=(newC==null?'':String(newC)).split('\n');
   if(oldC==null && newC!=null){ // pure add
     return `<div class="pc-diff">${b.map((l,i)=>diffLine('add',i+1,l)).join('')}</div>`;
   }
-  if(newC==null){ return `<div class="pc-diff"><div class="dl ctx" style="padding:6px 8px;">(no new content � ${escapeHtml(changeType||'delete')})</div></div>`; }
+  if(newC==null){ return `<div class="pc-diff"><div class="dl ctx" style="padding:6px 8px;">(no new content — ${escapeHtml(changeType||'delete')})</div></div>`; }
   // LCS table (bounded to keep it cheap on large files).
   const N=Math.min(a.length,1200), M=Math.min(b.length,1200);
   const dp=Array.from({length:N+1},()=>new Uint16Array(M+1));
@@ -3752,7 +3752,7 @@ function renderDiff(oldC, newC, changeType){
   }
   while(i<N){ out+=diffLine('del','-',a[i++]); }
   while(j<M){ out+=diffLine('add',++ln,b[j++]); }
-  if(a.length>1200||b.length>1200) out+=`<div class="dl ctx" style="padding:4px 8px;color:var(--queen)">�diff truncated (large file) � full content applies on Apply.</div>`;
+  if(a.length>1200||b.length>1200) out+=`<div class="dl ctx" style="padding:4px 8px;color:var(--queen)">…diff truncated (large file) — full content applies on Apply.</div>`;
   return `<div class="pc-diff">${out}</div>`;
 }
 function diffLine(cls,gutter,text){
@@ -3762,7 +3762,7 @@ function diffLine(cls,gutter,text){
 async function pcApprove(approvalId,patchId){
   try{ const res=await fetch(url('/approve/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Patch approved � apply it below to write it to disk.'); loadPatches(); pollApprovals();
+    pcToast('Patch approved — apply it below to write it to disk.'); loadPatches(); pollApprovals();
   }catch(e){ pcToast('Approve failed: '+e.message,false); }
 }
 async function pcReject(approvalId,patchId){
@@ -3786,7 +3786,7 @@ async function pcApply(patchId){
   try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     const txt=await res.text();
     if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Apply requested � see result in the patch row.'); loadPatches();
+    pcToast('Apply requested — see result in the patch row.'); loadPatches();
   }catch(e){ pcToast('Apply failed: '+e.message,false); }
 }
 pcBind();
@@ -3819,7 +3819,7 @@ function objLane(o){
 }
 async function loadObjBoard(){
   const board=document.getElementById('ob-board'); if(!board) return;
-  board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives�</div>';
+  board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div>';
   try{
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
     const objectives=Array.isArray(r.data)?r.data:[];
@@ -3828,7 +3828,7 @@ async function loadObjBoard(){
     objectives.forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
     board.innerHTML=OB_LANES.map(([key,name,col])=>{
       const items=byLane[key]||[];
-      const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">�</div>';
+      const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">—</div>';
       return `<div class="ob-lane ${key}">
         <div class="ob-lane-hd"><span class="ln-dot" style="background:${col}"></span><span class="ln-name">${name}</span><span class="ln-count">${items.length}</span></div>
         <div class="ob-lane-body">${cards}</div>
@@ -3837,7 +3837,7 @@ async function loadObjBoard(){
   }catch(e){ board.innerHTML=`<div class="hud-state err">Error loading objectives: ${escapeHtml(e.message)}</div>`; }
 }
 function objCard(o){
-  const ema=o.success_ema==null?'�':Number(o.success_ema).toFixed(2);
+  const ema=o.success_ema==null?'—':Number(o.success_ema).toFixed(2);
   const reason=o.end_detail||o.retired_reason||'';
   return `<details class="ob-card" data-obj="${o.id}" ontoggle="onObjCardToggle(this)">
     <summary>
@@ -3849,7 +3849,7 @@ function objCard(o){
       </div>
       ${reason?`<div class="oc-reason">${escapeHtml(reason)}</div>`:''}
     </summary>
-    <div class="oc-detail"><span style="color:var(--dim)">Expand to load runs, missions, tasks, and patches�</span></div>
+    <div class="oc-detail"><span style="color:var(--dim)">Expand to load runs, missions, tasks, and patches…</span></div>
   </details>`;
 }
 async function onObjCardToggle(det){
@@ -3860,17 +3860,17 @@ async function onObjCardToggle(det){
     const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
     const d=r.data||{};
     const pc=d.patch_counts||{};
-    const kv=(k,v)=>`<div class="ob-mini"><span style="color:var(--dim)">${k}:</span> ${escapeHtml(String(v??'�'))}</div>`;
-    const runs=(d.runs||[]).slice(0,6).map(x=>`<div class="ob-mini">� ${escapeHtml((x.generated_goal||'').slice(0,70))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'�')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
-    const missions=(d.missions||[]).slice(0,6).map(x=>`<div class="ob-mini">� <a href="#" onclick="openResults('${x.id}');return false;" style="color:var(--blue);font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</a> ${escapeHtml((x.goal||'').slice(0,55))} <span style="color:var(--dim)">(${escapeHtml(x.status||'�')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const kv=(k,v)=>`<div class="ob-mini"><span style="color:var(--dim)">${k}:</span> ${escapeHtml(String(v??'—'))}</div>`;
+    const runs=(d.runs||[]).slice(0,6).map(x=>`<div class="ob-mini">• ${escapeHtml((x.generated_goal||'').slice(0,70))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).slice(0,6).map(x=>`<div class="ob-mini">• <a href="#" onclick="openResults('${x.id}');return false;" style="color:var(--blue);font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</a> ${escapeHtml((x.goal||'').slice(0,55))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
     const patchLine = pc.total
-      ? `${patchSummaryText(pc)} � <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Patch Center ?</a>`
+      ? `${patchSummaryText(pc)} · <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Patch Center ?</a>`
       : 'No patches produced.';
     box.innerHTML=
-      kv('End reason', d.end_reason_label||d.end_reason||'�')+
+      kv('End reason', d.end_reason_label||d.end_reason||'—')+
       (d.end_detail?kv('Detail', d.end_detail):'')+
       kv('Runs / Missions / Tasks', `${(d.runs||[]).length} / ${(d.missions||[]).length} / ${(d.tasks||[]).length}`)+
-      kv('Ended at', d.ended_at||d.retired_at||'�')+
+      kv('Ended at', d.ended_at||d.retired_at||'—')+
       `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Patches</div><div class="ob-mini">${patchLine}</div>`+
       `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Recent runs</div>${runs}`+
       `<div class="ob-mini" style="margin-top:4px;color:var(--muted);font-weight:600">Missions</div>${missions}`;
@@ -3891,7 +3891,7 @@ const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'fi
 PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin') loadAntObs(); };
 async function loadAntObs(){
   const grid=document.getElementById('antobs-grid'); if(!grid) return;
-  grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry�</div>';
+  grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
   try{
     const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
     const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
@@ -3910,19 +3910,19 @@ async function loadAntObs(){
       return `<div class="ant-card" style="border-left-color:${am.color}">
         <div class="ac-hd"><span class="ac-dot" style="color:${am.color};background:${am.color}"></span>
           <span class="ac-name">${label}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span></div>
-        <div class="ac-route">? ${escapeHtml(rt.provider||'ollama')} � ${escapeHtml(rt.model||'�')}</div>
+        <div class="ac-route">? ${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
         <div class="ac-gates">${gateBadges}</div>
         <div class="ac-stats">
           <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
           <div class="ac-stat"><div class="n" style="color:var(--green)">${ok}</div><div class="l">Done</div></div>
           <div class="ac-stat"><div class="n" style="color:${fail?'var(--red)':'var(--dim)'}">${fail}</div><div class="l">${ant==='verifier'?'Reject':'Failed'}</div></div>
-          <div class="ac-stat"><div class="n" style="color:${rate==null?'var(--dim)':(rate>=70?'var(--green)':rate>=40?'var(--queen)':'var(--red)')}">${rate==null?'�':rate+'%'}</div><div class="l">Success</div></div>
+          <div class="ac-stat"><div class="n" style="color:${rate==null?'var(--dim)':(rate>=70?'var(--green)':rate>=40?'var(--queen)':'var(--red)')}">${rate==null?'—':rate+'%'}</div><div class="l">Success</div></div>
         </div>
         <div class="ac-bar">
           <i style="width:${okPct}%;background:var(--green)"></i><i style="width:${failPct}%;background:var(--red)"></i><i style="width:${skipPct}%;background:var(--dim)"></i>
         </div>
-        <div class="ac-sub">avg ${s.avg_seconds?Number(s.avg_seconds).toFixed(1)+'s':'�'}/task${skip?` � ${skip} skipped`:''}${s.running?` � ${s.running} running`:''}</div>
-        <details data-ant="${ant}" ontoggle="onAntRecentToggle(this)"><summary>? recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load�</div></div></details>
+        <div class="ac-sub">avg ${s.avg_seconds?Number(s.avg_seconds).toFixed(1)+'s':'—'}/task${skip?` · ${skip} skipped`:''}${s.running?` · ${s.running} running`:''}</div>
+        <details data-ant="${ant}" ontoggle="onAntRecentToggle(this)"><summary>? recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
       </div>`;
     }).join('');
   }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
@@ -3957,7 +3957,7 @@ async function showMissionReport(missionId,label){
   body.textContent='Loading mission report...';
   document.getElementById('result-overlay').classList.add('show');
   const statusBar=document.getElementById('result-status-bar');
-  statusBar.innerHTML=`<span>Mission: <span style="font-family:var(--mono)">${escapeHtml(String(missionId)).substring(0,8)}�</span></span>`;
+  statusBar.innerHTML=`<span>Mission: <span style="font-family:var(--mono)">${escapeHtml(String(missionId)).substring(0,8)}…</span></span>`;
   try{ await renderMissionReport(missionId, body); }
   catch(e){ body.textContent='Could not load the mission report: '+e.message; }
 }
@@ -4038,7 +4038,7 @@ async function previewPlan(){
   if(!raw){ if(typeof pcToast==='function') pcToast('Enter a directive to preview.',false); return; }
   ovPreviewGoal=composeOvGoal(raw);
   const box=document.getElementById('ov-plan'); if(!box) return;
-  box.style.display=''; box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Planning� (the planner runs once; no mission is created)</div>';
+  box.style.display=''; box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Planning… (the planner runs once; no mission is created)</div>';
   const btn=document.getElementById('ov-preview-btn'); if(btn) btn.disabled=true;
   try{
     const r=await api('/missions/plan','POST',{goal:ovPreviewGoal});
@@ -4056,12 +4056,12 @@ function renderPlan(d){
   if(c.no_patches) flags.push('no file changes');
   if(c.one_shot) flags.push('one-shot');
   let banner='';
-  if(c.blocks_patches) banner=`<div class="hud-plan-banner warn">Constraint: ${flags.join(' � ')} � this plan proposes <b>no file changes</b> (coder patch steps are dropped).</div>`;
+  if(c.blocks_patches) banner=`<div class="hud-plan-banner warn">Constraint: ${flags.join(' · ')} — this plan proposes <b>no file changes</b> (coder patch steps are dropped).</div>`;
   else if(d.has_coder_task) banner=`<div class="hud-plan-banner info">This plan includes a <b>coder patch-proposal</b> step. Nothing is written to disk until you approve &amp; apply the patch in the Patch Center.</div>`;
   const steps=tasks.map(t=>{
     const ant=(t.ant||'').toLowerCase();
-    const deps=(t.depends_on||[]).length?` � after step ${(t.depends_on||[]).join(', ')}`:'';
-    const crit=t.critical===false?' � optional':'';
+    const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
+    const crit=t.critical===false?' · optional':'';
     // v1.8.23: show the resolved worker sub-caste, when the planner picked one.
     const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">? ${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
     return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
@@ -4071,15 +4071,15 @@ function renderPlan(d){
   }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
   // v1.8.23: surface any capability-contract warnings from worker validation.
   const warns=(Array.isArray(d.constraint_warnings)?d.constraint_warnings:[]).filter(Boolean);
-  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' � ')}</div>`;
+  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' · ')}</div>`;
   box.innerHTML=
     `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
-    `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' � spec-ingestion':''}</span></div>`+
+    `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+
     banner+
     `<div style="font-size:10px;color:var(--dim);margin-bottom:6px;word-break:break-word">Goal: ${escapeHtml(d.goal||ovPreviewGoal)}</div>`+
     steps+
     `<div class="hud-actions" style="margin-top:10px">`+
-      `<button class="hud-act primary" onclick="approveDispatch()">? Approve &amp; Dispatch</button>`+
+      `<button class="hud-act primary" onclick="approveDispatch()">✓ Approve &amp; Dispatch</button>`+
       `<button class="hud-act" onclick="editPlan()">Edit</button>`+
       `<button class="hud-act danger" onclick="hidePlanPreview()">Reject</button>`+
     `</div>`;
@@ -4094,7 +4094,7 @@ function approveDispatch(){
 function editPlan(){ hidePlanPreview(); document.getElementById('ov-mission-input')?.focus(); }
 function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b.style.display='none'; b.innerHTML=''; } }
 
-// Wire up all mission dispatch inputs � Enter dispatches, Shift+Enter inserts a newline.
+// Wire up all mission dispatch inputs — Enter dispatches, Shift+Enter inserts a newline.
 ['mission-input','ms-mission-input','ov-mission-input'].forEach(id=>{
   const el=document.getElementById(id);
   el.addEventListener('keydown',e=>{
@@ -4137,7 +4137,7 @@ function startPolling(){
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
-  setInterval(pollGraph,    2500); // drives the live activity view � keep it snappy
+  setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollColonyPheromones, 15000); // Canvas 2.0 pheromone HUD (only fetches when Colony is visible)
   setInterval(pollApprovals,6000);
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
@@ -4200,22 +4200,22 @@ document.getElementById('models-refresh').addEventListener('click',loadModelsTab
 document.getElementById('diag-refresh').addEventListener('click',loadInfoTab);
 
 // -- Maintenance / data hygiene ------------------------------------------------
-function humanBytes(b){ if(b==null) return '�'; const u=['B','KB','MB','GB','TB']; let v=b,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(v<10&&i>0?1:0)+' '+u[i]; }
+function humanBytes(b){ if(b==null) return '—'; const u=['B','KB','MB','GB','TB']; let v=b,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(v<10&&i>0?1:0)+' '+u[i]; }
 function maintMsg(el,t,ok){ const m=document.getElementById(el); if(!m)return; m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },5000); }
 
 async function loadMaintStats(){
   try{
     const r=await api('/maintenance/stats'); if(!r.success) return; const d=r.data||{};
     setEl('maint-keep', d.max_db_backups);
-    setEl('maint-disk', d.disk_total_bytes?`${humanBytes(d.disk_free_bytes)} free of ${humanBytes(d.disk_total_bytes)}`:'�');
+    setEl('maint-disk', d.disk_total_bytes?`${humanBytes(d.disk_free_bytes)} free of ${humanBytes(d.disk_total_bytes)}`:'—');
     setEl('maint-db', humanBytes(d.db_bytes));
-    setEl('maint-backups', `${d.backup_count||0} files � ${humanBytes(d.backup_bytes)}`);
+    setEl('maint-backups', `${d.backup_count||0} files · ${humanBytes(d.backup_bytes)}`);
   }catch{}
 }
 document.getElementById('maint-refresh').addEventListener('click',loadMaintStats);
 document.getElementById('maint-flush').addEventListener('click',async()=>{
   if(!confirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
-  maintMsg('maint-msg','Flushing�',true);
+  maintMsg('maint-msg','Flushing…',true);
   try{ const r=await api('/maintenance/flush','POST',{});
     maintMsg('maint-msg', r.success?`Freed ${humanBytes(r.data?.bytes_freed)} (${r.data?.backups_deleted} backups).`:(r.message||'Failed'), r.success);
     loadMaintStats();
@@ -4257,8 +4257,8 @@ document.getElementById('auto-dump').addEventListener('click',async()=>{
 async function loadSettingsInfo(){
   try{
     const text=await apiText('/models');
-    const ollamaHost=(text.match(/Ollama Host:\s*([^\n]+)/)||[])[1]?.trim()||'�';
-    const model=(text.match(/Active Route Targets:\s*([^\n]+)/)||[])[1]?.trim()||'�';
+    const ollamaHost=(text.match(/Ollama Host:\s*([^\n]+)/)||[])[1]?.trim()||'—';
+    const model=(text.match(/Active Route Targets:\s*([^\n]+)/)||[])[1]?.trim()||'—';
     setEl('si-ollama-host',ollamaHost);
     setEl('si-model',model);
     try{
@@ -4280,7 +4280,7 @@ async function loadSettingsInfo(){
 // -- Provider connections ------------------------------------------------------
 let providerCatalog=[];
 
-function providerKindLabel(kind){return kind==='free-local'?'Free � Local':'Paid API';}
+function providerKindLabel(kind){return kind==='free-local'?'Free · Local':'Paid API';}
 
 async function loadProvidersTab(){
   const grid=document.getElementById('providers-grid');
@@ -4303,9 +4303,9 @@ function renderProviderCard(p,conn){
   const configured=!!conn.configured;
   let statusHtml,statusColor;
   if(!configured){statusColor='var(--dim)';statusHtml='Not connected';}
-  else if(conn.last_verify_ok===true){statusColor='var(--green)';statusHtml='Connected � verified '+(conn.last_verified_at?fmtTime(conn.last_verified_at):'');}
-  else if(conn.last_verify_ok===false){statusColor='var(--red)';statusHtml='Connected � last test failed';}
-  else{statusColor='var(--queen)';statusHtml='Connected � not yet tested';}
+  else if(conn.last_verify_ok===true){statusColor='var(--green)';statusHtml='Connected · verified '+(conn.last_verified_at?fmtTime(conn.last_verified_at):'');}
+  else if(conn.last_verify_ok===false){statusColor='var(--red)';statusHtml='Connected · last test failed';}
+  else{statusColor='var(--queen)';statusHtml='Connected · not yet tested';}
   return `<div class="provider-card" data-provider="${p.provider}">
     <div class="provider-top">
       <div class="provider-name">${escapeHtml(p.name)}</div>
@@ -4315,7 +4315,7 @@ function renderProviderCard(p,conn){
     <div class="provider-status"><span class="ollama-dot ${configured?(conn.last_verify_ok===false?'err':'ok'):'err'}"></span>${statusHtml}</div>
     <div class="provider-field">
       <label>API Key</label>
-      <input type="password" class="provider-input pv-key" placeholder="${configured?'���������������� (leave blank to keep)':'Paste API key'}" autocomplete="off">
+      <input type="password" class="provider-input pv-key" placeholder="${configured?'•••••••••••••••• (leave blank to keep)':'Paste API key'}" autocomplete="off">
     </div>
     <div class="provider-field">
       <label>Base URL <span style="text-transform:none;font-weight:400;">(optional override)</span></label>
@@ -4350,7 +4350,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
   }
 
   if(e.target.classList.contains('pv-test')){
-    setMsg('Testing�',true);
+    setMsg('Testing…',true);
     try{
       const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
       setMsg(r.success?'Verified ?':(r.message||'Test failed'),r.success);
@@ -4435,13 +4435,13 @@ async function loadInfoTab(){
   try{
     const [sr,cfgText,diagText]=await Promise.all([api('/status'),apiText('/config'),apiText('/diagnostics')]);
     const d=sr.data||{};
-    setEl('si-version',d.version||'�');
-    setEl('si-kernel',d.native_kernel||'�');
-    setEl('si-safety',cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'�');
-    setEl('si-workers',cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'�');
-    setEl('si-web',cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'�');
-    setEl('si-filewrite',cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'�');
-    setEl('si-patch',cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'�');
+    setEl('si-version',d.version||'—');
+    setEl('si-kernel',d.native_kernel||'—');
+    setEl('si-safety',cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-workers',cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-web',cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-filewrite',cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-patch',cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
     const diagEl=document.getElementById('si-diag');
     if(diagEl) diagEl.textContent=diagText.substring(0,2000);
   }catch(e){
@@ -4511,7 +4511,7 @@ function renderLogModal(){
   setEl('log-modal-count',`${filtered.length} / ${allLogEvents.length} events`);
   body.innerHTML=filtered.map(ev=>{
     const evType=ev.event_type||'event';
-    const ant=ev.ant_name||'�';
+    const ant=ev.ant_name||'—';
     const ts=(ev.created_at||'').substring(0,19).replace('T',' ');
     const col=ANT_MAP[ant]?.color||'var(--dim)';
     const tc=evTypeClass(evType);
@@ -4521,8 +4521,8 @@ function renderLogModal(){
         <span class="log-ev-ant" style="color:${col}">${escapeHtml(ant)}</span>
         <span class="log-ev-ts">${ts}</span>
       </div>
-      <div class="log-ev-meta">mission:${escapeHtml((ev.mission_id||'�').substring(0,14))} � task:${escapeHtml((ev.task_id||'�').toString().substring(0,12))}</div>
-      <div class="log-ev-msg">${escapeHtml((ev.message||'�').replace(/\.\.\.\[.+?\]/g,'').trim())}</div>
+      <div class="log-ev-meta">mission:${escapeHtml((ev.mission_id||'—').substring(0,14))} · task:${escapeHtml((ev.task_id||'—').toString().substring(0,12))}</div>
+      <div class="log-ev-msg">${escapeHtml((ev.message||'—').replace(/\.\.\.\[.+?\]/g,'').trim())}</div>
     </div>`;
   }).join('');
 }
@@ -4638,7 +4638,7 @@ function antcfgModelOptions(provider,curModel){
   const models=provider==='ollama'?availableModels:((antcfgCatalog.find(p=>p.provider===provider)||{}).models||[]);
   const opts=models.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('');
   const extra=curModel&&!models.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:'';
-  return `<option value="">� default �</option>${opts}${extra}`;
+  return `<option value="">— default —</option>${opts}${extra}`;
 }
 
 function antcfgProviderOptions(curProvider){
@@ -4651,7 +4651,7 @@ function antcfgProviderOptions(curProvider){
 }
 
 async function openAntConfig(){
-  // Data-loader only � do NOT call showPage('antconfig') here. This is invoked both from
+  // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
   // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
   // from the "Reset" button below (where the page is already active). Calling showPage from in
   // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
@@ -4685,12 +4685,12 @@ async function openAntConfig(){
       const completeCount=u.complete_count??u.completeCount??u.CompleteCount??0;
       const failedCount=u.failed_count??u.failedCount??u.FailedCount??0;
       const auditCount=a.audit_count??a.auditCount??a.AuditCount??0;
-      return `<div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px"><span style="color:var(--text)">${escapeHtml(workerName(w))}</span><br><span style="font-family:var(--mono);font-size:9px">${escapeHtml(wid)}</span><br><span>${taskCount} task(s) � ${completeCount} complete � ${failedCount} failed � ${auditCount} audit(s)</span></div>`;
+      return `<div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px"><span style="color:var(--text)">${escapeHtml(workerName(w))}</span><br><span style="font-family:var(--mono);font-size:9px">${escapeHtml(wid)}</span><br><span>${taskCount} task(s) · ${completeCount} complete · ${failedCount} failed · ${auditCount} audit(s)</span></div>`;
     }).join('');
     return `<div class="antcfg-card">
       <div class="antcfg-top">
         <span class="antcfg-dot" style="background:${color}"></span>
-        <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} � ${escapeHtml(c)}${roleExecutable(reg)?'':' � visible'}</div></div>
+        <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} · ${escapeHtml(c)}${roleExecutable(reg)?'':' · visible'}</div></div>
       </div>
       <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">${escapeHtml(rolePurpose(reg))}</div>
       <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
@@ -4742,14 +4742,14 @@ let autonomyObjectives=[];
 let autoRefreshTimer=null;
 
 async function openAutonomy(){
-  // Data-loader only � do NOT call showPage('autonomy') here. This is invoked exclusively from
+  // Data-loader only — do NOT call showPage('autonomy') here. This is invoked exclusively from
   // PAGE_ENTER['autonomy'] below, which showPage() itself calls *after* switching to this page.
   // Calling showPage from in here used to re-fire PAGE_ENTER['autonomy'] -> openAutonomy() ->
   // showPage() in an unbounded mutual-recursion loop: every single visit to the Autonomy page
   // (including clicking Start/Stop, which reloads this page's status) burned the call stack down
   // to a "RangeError: Maximum call stack size exceeded" within milliseconds. Recoverable on its
   // own (the thrown error just aborts that call chain), but it froze page interaction long enough
-  // that clicks � like the kill switch's Stop button � appeared to hang or crash the app.
+  // that clicks — like the kill switch's Stop button — appeared to hang or crash the app.
   await reloadAutonomy();
   if(autoRefreshTimer) clearInterval(autoRefreshTimer);
   // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;
@@ -4794,22 +4794,22 @@ async function reloadAutonomyStatus(){
     const runEl=document.getElementById('auto-running');
     runEl.textContent=s.running?'RUNNING':(s.enabled?'IDLE':'OFF');
     runEl.style.color=s.running?'var(--green)':(s.enabled?'var(--queen)':'var(--dim)');
-    setEl('auto-poll-sub','poll every '+(s.poll_seconds??'�')+'s');
-    setEl('auto-hour',`${s.missions_last_hour??0}/${s.max_missions_per_hour??'�'}`);
-    setEl('auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'�'}`);
+    setEl('auto-poll-sub','poll every '+(s.poll_seconds??'—')+'s');
+    setEl('auto-hour',`${s.missions_last_hour??0}/${s.max_missions_per_hour??'—'}`);
+    setEl('auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
     setEl('auto-backlog',`${s.backlog_pending??0}/${s.backlog_active??0}`);
     const killEngaged=!!s.kill_switch_engaged;
     document.getElementById('auto-kill-dot').className='kill-dot '+(killEngaged?'engaged':'ok');
     setEl('auto-kill-text',killEngaged?'Kill switch engaged':'Kill switch clear');
-    setEl('auto-next',s.next_objective?`${s.next_objective.title} (priority ${s.next_objective.priority})`:'� backlog empty �');
-    setEl('auto-decision',s.budget_decision||'�');
+    setEl('auto-next',s.next_objective?`${s.next_objective.title} (priority ${s.next_objective.priority})`:'— backlog empty —');
+    setEl('auto-decision',s.budget_decision||'—');
     setEl('auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
     setEl('auto-conc-sub',(s.governor_code&&s.governor_code!=='ok')?('governed: '+s.governor_code):'effective / configured');
-    setEl('auto-governor',s.governor_reason||(s.running?'� first cycle pending �':'�'));
+    setEl('auto-governor',s.governor_reason||(s.running?'— first cycle pending —':'—'));
     const inflight=s.in_flight||[];
     setEl('auto-inflight',inflight.length
-      ?inflight.map(f=>`${f.objective_title} (${f.job_status}${f.mission_id?', mission '+String(f.mission_id).slice(0,8):''})`).join(' � ')
-      :'� none �');
+      ?inflight.map(f=>`${f.objective_title} (${f.job_status}${f.mission_id?', mission '+String(f.mission_id).slice(0,8):''})`).join(' · ')
+      :'— none —');
     const badge=document.getElementById('nav-autonomy-badge');
     if(badge){
       if(s.running){ badge.style.display=''; badge.textContent='?'; badge.style.color='var(--green)'; }
@@ -4839,7 +4839,7 @@ async function reloadObjectives(){
   try{
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
     // Terminal objectives (loop-retired, or completed/stopped as 'done') move to the Completed
-    // Objectives box below � hide them from the active backlog. Resumable pauses stay here.
+    // Objectives box below — hide them from the active backlog. Resumable pauses stay here.
     autonomyObjectives=(r.data||[]).filter(o=>o.retired_code!=='looping_goals' && o.status!=='done');
     setEl('obj-count',`Objectives (${autonomyObjectives.length})`);
     reloadCompletedObjectives();
@@ -4855,7 +4855,7 @@ async function reloadObjectives(){
         </td>
         <td><span class="obj-status ${o.status}">${o.status}</span></td>
         <td style="font-family:var(--mono);font-size:11px;">${o.run_count}${o.max_runs?'/'+o.max_runs:''}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:${o.success_ema==null?'var(--dim)':(o.success_ema>=0.5?'var(--green)':(o.success_ema>=0.25?'var(--queen)':'var(--red)'))}" title="Success score EMA � biases selection priority (Phase 4 learning)">${o.success_ema==null?'�':o.success_ema.toFixed(2)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:${o.success_ema==null?'var(--dim)':(o.success_ema>=0.5?'var(--green)':(o.success_ema>=0.25?'var(--queen)':'var(--red)'))}" title="Success score EMA — biases selection priority (Phase 4 learning)">${o.success_ema==null?'—':o.success_ema.toFixed(2)}</td>
         <td style="font-family:var(--mono);font-size:11px;color:${o.consecutive_failures>0?'var(--red)':'var(--dim)'}">${o.consecutive_failures}</td>
         <td>${o.last_run_at?fmtTime(o.last_run_at):'never'}</td>
         <td style="white-space:nowrap;">
@@ -4863,7 +4863,7 @@ async function reloadObjectives(){
           <button class="job-btn cancel" onclick="objDelete('${o.id}')">Delete</button>
         </td>
       </tr>`;
-    }).join('')||'<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet � add one above.</td></tr>';
+    }).join('')||'<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
   }catch(e){ tb.innerHTML=`<tr><td colspan="9" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
 }
 
@@ -4872,7 +4872,7 @@ async function reloadObjectives(){
 const OBJ_END_BADGE={
   completed_successfully:['Completed','rgba(16,185,129,.14)','var(--green)'],
   stopped_no_followup_required:['Stopped','rgba(59,130,246,.14)','var(--blue)'],
-  retired_looping:['Retired � Looping','rgba(251,191,36,.14)','var(--queen)'],
+  retired_looping:['Retired · Looping','rgba(251,191,36,.14)','var(--queen)'],
   failed:['Failed','rgba(239,68,68,.14)','var(--red)'],
   manually_paused:['Paused','rgba(251,191,36,.14)','var(--queen)'],
   manually_stopped:['Stopped','rgba(255,255,255,.06)','var(--dim)'],
@@ -4883,7 +4883,7 @@ async function reloadCompletedObjectives(){
     const r=await api('/objectives/completed'); if(!r.success) throw new Error(r.message);
     const rows=r.data||[];
     setEl('completed-obj-count',`Completed Objectives (${rows.length})`);
-    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None � objectives the Director has completed, stopped, or retired will appear here.</div>'; return; }
+    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None — objectives the Director has completed, stopped, or retired will appear here.</div>'; return; }
     list.innerHTML=rows.map(o=>{
       const [blabel,bbg,bcol]=OBJ_END_BADGE[o.end_reason]||['Ended','rgba(255,255,255,.06)','var(--dim)'];
       const pc=o.patch_counts||{};
@@ -4898,7 +4898,7 @@ async function reloadCompletedObjectives(){
         </summary>
         <div style="padding:2px 14px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">
           <div style="margin:6px 0;color:${bcol};">${escapeHtml(o.end_detail||o.end_reason_label||'Ended.')}</div>
-          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, tasks, and patches�</div>
+          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, tasks, and patches…</div>
         </div>
       </details>`;}).join('');
   }catch(e){ list.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${escapeHtml(e.message)}</div>`; }
@@ -4912,13 +4912,13 @@ async function onCompletedToggle(det){
   try{
     const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
     const d=r.data||{};
-    const kv=(k,v)=>`<div style="display:flex;gap:8px;padding:2px 0;"><span style="color:var(--dim);min-width:130px;">${k}</span><span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(String(v??'�'))}</span></div>`;
-    const runs=(d.runs||[]).map(x=>`<div style="padding:2px 0;">� ${escapeHtml((x.generated_goal||'').slice(0,110))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'�')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
-    const missions=(d.missions||[]).map(x=>`<div style="padding:2px 0;">� <span style="font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</span> ${escapeHtml((x.goal||'').slice(0,90))} <span style="color:var(--dim)">(${escapeHtml(x.status||'�')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
-    const tasks=(d.tasks||[]).map(x=>`<div style="padding:1px 0;">� ${escapeHtml(x.ant||'')}: ${escapeHtml((x.title||'').slice(0,80))} <span style="color:var(--dim)">(${escapeHtml(x.status||'')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const kv=(k,v)=>`<div style="display:flex;gap:8px;padding:2px 0;"><span style="color:var(--dim);min-width:130px;">${k}</span><span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(String(v??'—'))}</span></div>`;
+    const runs=(d.runs||[]).map(x=>`<div style="padding:2px 0;">• ${escapeHtml((x.generated_goal||'').slice(0,110))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).map(x=>`<div style="padding:2px 0;">• <span style="font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</span> ${escapeHtml((x.goal||'').slice(0,90))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const tasks=(d.tasks||[]).map(x=>`<div style="padding:1px 0;">• ${escapeHtml(x.ant||'')}: ${escapeHtml((x.title||'').slice(0,80))} <span style="color:var(--dim)">(${escapeHtml(x.status||'')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
     const pc=d.patch_counts||{};
     const patchBlock=pc.total
-      ? `<div>${escapeHtml(patchSummaryText(pc))} � <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Open in Patch Center ?</a></div>`
+      ? `<div>${escapeHtml(patchSummaryText(pc))} · <a href="#" onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Open in Patch Center ?</a></div>`
       : '<div style="color:var(--dim)">No patches produced.</div>';
     box.innerHTML=
       kv('Objective ID', d.id)+kv('Original title', d.title)+
@@ -4981,16 +4981,16 @@ async function reloadAutonomyRuns(){
     setEl('auto-runs-count',`Recent Autonomous Runs (${runs.length})`);
     const titleById={}; autonomyObjectives.forEach(o=>{ titleById[o.id]=o.title; });
     tb.innerHTML=runs.map(run=>{
-      const status=run.mission_status||'�';
+      const status=run.mission_status||'—';
       const statusColor=status==='complete'?'var(--green)':status==='failed'?'var(--red)':status==='partial'?'var(--orange)':'var(--dim)';
       return `<tr>
-        <td>${escapeHtml(titleById[run.objective_id]||run.objective_id||'�')}</td>
+        <td>${escapeHtml(titleById[run.objective_id]||run.objective_id||'—')}</td>
         <td class="obj-charter" title="${escapeHtml(run.generated_goal||'')}">${escapeHtml(run.generated_goal||'')}</td>
         <td style="color:${statusColor}">${status}</td>
-        <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'�'}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
         <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
         <td style="font-size:11px;">${patchCellHtml(run.patch_counts,run.mission_id)}</td>
-        <td>${run.started_at?fmtTime(run.started_at):'�'}</td>
+        <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
         <td>${run.mission_id?`<button class="job-btn view" onclick="openResults('${run.mission_id}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
       </tr>`;
     }).join('')||'<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
@@ -5023,7 +5023,7 @@ async function loadSecurity(){
   try{ const r=await api('/settings'); if(!r.success) return; secSettings=r.data; }catch{ return; }
   const bind=secSettings.api_host==='0.0.0.0'?'All interfaces':secSettings.api_host;
   setEl('sec-auth', secSettings.api_auth_enabled===false?'DISABLED':'Password login');
-  setEl('sec-profile', secSettings.safety_profile||'�');
+  setEl('sec-profile', secSettings.safety_profile||'—');
   setEl('sec-bind', bind);
   setEl('sec-enc','AES-256-GCM');
   document.getElementById('sec-auth').style.color = secSettings.api_auth_enabled===false?'var(--red)':'var(--green)';
@@ -5085,7 +5085,7 @@ function showShellBanner(){
   const art=src?src.textContent.replace(/\s+$/,''):'';
   const ver=(typeof lastSystemSummary==='object'&&lastSystemSummary&&lastSystemSummary.version)?('v'+lastSystemSummary.version):'';
   out.innerHTML=`<pre style="margin:0 0 6px;color:var(--cyan);line-height:1.05;font-size:10px;white-space:pre;overflow-x:auto">${escapeHtml(art)}</pre>`+
-    `<div style="color:var(--dim);margin-bottom:10px;">ANTHILL operator shell ${ver} � type a command and press Enter.</div>`;
+    `<div style="color:var(--dim);margin-bottom:10px;">ANTHILL operator shell ${ver} · type a command and press Enter.</div>`;
 }
 async function initShell(){
   showShellBanner();
@@ -5097,7 +5097,7 @@ async function initShell(){
     document.getElementById('sh-input').disabled=!enabled;
     document.getElementById('sh-run').disabled=!enabled;
     setEl('sh-host', info.host?`(${info.host})`:'');
-    setEl('sh-host2', (info.host||'host')+' � '+(info.os||''));
+    setEl('sh-host2', (info.host||'host')+' · '+(info.os||''));
     const dirEl=document.getElementById('sh-dir');
     if(!dirEl.value) dirEl.value=info.default_dir||'';
   }catch(e){ document.getElementById('sh-disabled-note').style.display='block'; }
@@ -5120,7 +5120,7 @@ async function runShell(){
       if(d.stdout) shAppend(`<div>${escapeHtml(d.stdout)}</div>`);
       if(d.stderr) shAppend(`<div style="color:var(--queen)">${escapeHtml(d.stderr)}</div>`);
       const ec=d.exit_code, col=ec===0?'var(--dim)':'var(--red)';
-      shAppend(`<div style="color:${col};font-size:10px">[exit ${ec}${d.timed_out?' � timed out':''} � ${d.elapsed_seconds}s � ${escapeHtml(d.dir||'')}]</div>`);
+      shAppend(`<div style="color:${col};font-size:10px">[exit ${ec}${d.timed_out?' · timed out':''} · ${d.elapsed_seconds}s · ${escapeHtml(d.dir||'')}]</div>`);
       if(d.dir) document.getElementById('sh-dir').value=d.dir;
     }
   }catch(e){ shAppend(`<div style="color:var(--red)">${escapeHtml(e.message)}</div>`); }

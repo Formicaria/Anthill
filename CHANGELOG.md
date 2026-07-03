@@ -27,7 +27,26 @@ Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mi
 plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
 Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, Phase 8
 Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
-ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, and so on.
+ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
++ API serialization hardening = **v1.8.23.1**, and so on.
+
+## v1.8.23.1 — Console UTF-8 repair + API serialization hardening
+
+Two fixes bundled on top of Phase 9.
+
+**Console encoding repair.** The v1.8.23 save round-tripped `index.html` through a non-UTF-8 encoding,
+flattening 28 button icon glyphs (`↺`, `✂`, `▶`, `⌕`, `✓`, `✕`, `◈`) to `?` and leaving 354 U+FFFD
+replacement characters (`�`) where em-dashes, ellipses, middot separators, and password-field bullets
+used to be. All glyphs are restored; the file is clean UTF-8 again and the embedded JS still parses.
+
+**Permanent Patch Center fix (empty HTTP 500).** `ApiJson.Ok`/`Error` previously handed the object
+graph to `Results.Json`, which serializes during result execution — *after* the endpoint's own
+try/catch has returned — so any serialization failure surfaced as an uncatchable empty-body 500 (the
+`/patches` list was failing this way again). Responses are now serialized up front inside a guarded
+`Envelope` helper (returning `Results.Content`), non-finite numbers are neutralized in the sanitizer,
+and an outermost middleware converts any remaining unhandled exception into a valid JSON 500. No
+endpoint can emit a silent empty 500 anymore — a failure now returns the real error message.
+
 ## v1.8.22.1 — ASCII banner tweak
 
 Trim the boot/shell ANTHILL banner to the single large ant: removed the row of small ant figures
