@@ -1445,9 +1445,42 @@ public sealed class ObjectivePatch
 public static class ApiJson
 {
     public static IResult Ok(object? data = null, string message = "ok") =>
-        Results.Json(new Dictionary<string, object?> { ["success"] = true, ["message"] = message, ["data"] = data });
+        Results.Json(new Dictionary<string, object?> { ["success"] = true, ["message"] = TextUtil.SanitizeUtf16(message), ["data"] = SanitizeJson(data) });
 
     public static IResult Error(string message, string? error = null, object? data = null) =>
-        Results.Json(new Dictionary<string, object?> { ["success"] = false, ["message"] = message, ["error"] = error, ["data"] = data },
+        Results.Json(new Dictionary<string, object?> { ["success"] = false, ["message"] = TextUtil.SanitizeUtf16(message), ["error"] = error, ["data"] = SanitizeJson(data) },
             statusCode: error switch { "unauthorized" => 401, "permission_denied" => 403, "rate_limited" => 429, "not_found" => 404, _ => 400 });
+
+    /// <summary>
+    /// Recursively replaces invalid UTF-16 (lone surrogates) in every string reachable from the
+    /// payload so <see cref="System.Text.Json"/> can never throw "Cannot transcode invalid UTF-16"
+    /// while writing the response. That failure happens during result execution — after the endpoint
+    /// handler (and its try/catch) has returned — so it would otherwise surface as an uncatchable
+    /// empty HTTP 500 (the v1.8.18 Patch Center bug: LLM-generated patch text with lone surrogates).
+    /// Dictionaries and lists are rebuilt with sanitized contents; byte[] and other scalars pass
+    /// through untouched so base64/number serialization is preserved.
+    /// </summary>
+    internal static object? SanitizeJson(object? value)
+    {
+        switch (value)
+        {
+            case null: return null;
+            case string s: return TextUtil.SanitizeUtf16(s);
+            case byte[]: return value; // keep byte[] → base64, don't expand into a number array
+            case System.Collections.IDictionary dict:
+            {
+                var result = new Dictionary<string, object?>(dict.Count);
+                foreach (System.Collections.DictionaryEntry entry in dict)
+                    result[entry.Key?.ToString() ?? ""] = SanitizeJson(entry.Value);
+                return result;
+            }
+            case System.Collections.IEnumerable seq:
+            {
+                var list = new List<object?>();
+                foreach (var item in seq) list.Add(SanitizeJson(item));
+                return list;
+            }
+            default: return value; // scalars (bool/number/DateTime/etc.) and POCOs pass through
+        }
+    }
 }

@@ -17,6 +17,35 @@ public static partial class TextUtil
         return text[..maxChars].TrimEnd() + $"\n{suffix}";
     }
 
+    /// <summary>
+    /// Replaces invalid UTF-16 (lone/unpaired surrogate chars) with U+FFFD so the string can be
+    /// serialized as JSON. <see cref="System.Text.Json"/> throws "Cannot transcode invalid UTF-16"
+    /// on a lone surrogate, which — during response serialization, after an endpoint handler has
+    /// returned — surfaces as an uncatchable empty HTTP 500. LLM-generated text (patch reasons,
+    /// summaries, goals) occasionally contains lone surrogates, so we scrub before serializing.
+    /// Fast path: strings with no surrogate chars are returned unchanged (no allocation).
+    /// </summary>
+    public static string SanitizeUtf16(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return s ?? "";
+        var needsFix = false;
+        for (var i = 0; i < s.Length; i++) if (char.IsSurrogate(s[i])) { needsFix = true; break; }
+        if (!needsFix) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        for (var i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])) { sb.Append(c).Append(s[i + 1]); i++; }
+                else sb.Append('�'); // high surrogate not followed by a low surrogate
+            }
+            else if (char.IsLowSurrogate(c)) sb.Append('�'); // low surrogate with no preceding high
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     public static int EstimateTokenCount(string? text)
     {
         if (string.IsNullOrEmpty(text)) return 0;

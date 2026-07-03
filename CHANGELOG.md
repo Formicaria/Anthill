@@ -16,7 +16,29 @@
 > JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, objective
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
-plan preview = **v1.8.18**, and so on.
+plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, and so on.
+
+## v1.8.18.1 — Fix: Patch Center empty HTTP 500 (invalid UTF-16 in JSON)
+
+Live testing surfaced `GET /patches` returning an empty HTTP 500 ("Error loading patches: Empty
+response (HTTP 500)"). Root cause: `ApiJson.Ok` returns `Results.Json`, which serializes the payload
+during response execution — **after** the endpoint's own try/catch has returned — so the failure was
+uncatchable and produced an empty 500. `System.Text.Json` throws *"Cannot transcode invalid UTF-16"*
+on a string containing a lone/unpaired surrogate, which LLM-generated patch `reason` / `summary` /
+`mission_goal` text occasionally contains (clean test data never did).
+
+Fix — scrub invalid UTF-16 at the JSON boundary so no endpoint can 500 on it:
+
+- `TextUtil.SanitizeUtf16` replaces lone surrogates with U+FFFD (fast path: strings without
+  surrogates are returned unchanged, no allocation).
+- `ApiJson.Ok` / `Error` now recursively sanitize every string reachable from the payload
+  (`ApiJson.SanitizeJson` walks dictionaries and lists; `byte[]` and scalars pass through so base64 /
+  number serialization is preserved). This makes **all** JSON endpoints fail-safe against bad
+  Unicode, not just the Patch Center.
+- Tests (`JsonSafetyTests`) cover lone high/low surrogates, valid emoji preservation, deep nested
+  scrubbing that then serializes cleanly, and `byte[]`/scalar passthrough.
+
+
 
 ## v1.8.18 — Mission Composer + Plan Preview (UI Phase 3)
 

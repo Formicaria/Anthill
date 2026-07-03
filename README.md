@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.17 
+**Current version:** v1.8.18.1 
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,7 +58,9 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
-| `v1.8.17` | Patch Center robustness and better empty/non-JSON API response handling. |
+| `v1.8.18.1` | Fix: Patch Center empty HTTP 500 — scrub invalid UTF-16 in JSON responses. |
+| `v1.8.18` | Mission Composer + plan preview (dry-run planner endpoint, approve/reject before dispatch). |
+| `v1.8.17` | Colony Command Center HUD (design system + Overview command dashboard). |
 | `v1.8.16` | Objective lifecycle hardening, planner constraint handling, and the Visual Patch Center. |
 | `v1.8.15.7` | Overview System Health panel. |
 | `v1.8.15.5` | Completed Objectives box for loop-retired objectives. |
