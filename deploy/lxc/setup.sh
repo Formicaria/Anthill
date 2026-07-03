@@ -25,6 +25,10 @@ SERVICE_USER="${ANTHILL_SERVICE_USER:-anthill}"
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# ── ANTHILL banner — shown on every install / upgrade run ──
+_anthill_banner="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/anthill-banner.txt"
+[ -f "$_anthill_banner" ] && cat "$_anthill_banner"
+
 [ "$(id -u)" -eq 0 ] || die "Run this as root (inside the container: 'pct enter <vmid>' on Proxmox, then run this script, or 'pct exec <vmid> -- bash $0')."
 command -v apt-get >/dev/null 2>&1 || die "This script targets Debian/Ubuntu-family containers (needs apt-get). For other distros, follow the manual steps in README.md 'Deploy on Linux' instead."
 

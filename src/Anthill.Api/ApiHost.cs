@@ -743,6 +743,36 @@ public static class ApiHost
             return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000)));
         });
 
+        // v1.8.22 Ant Inspector + Performance Observatory: per-caste task stats (all history), the
+        // model route each role runs on, and the capability gates that apply to each ant.
+        app.MapGet("/ants/stats", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var routes = new Dictionary<string, object?>();
+            foreach (var role in new[] { "researcher", "web", "file", "coder", "builder", "verifier", "planner", "strategist" })
+            {
+                AnthillRuntime.ModelRouting.TryGetValue(role, out var cfg);
+                routes[role] = new Dictionary<string, object?>
+                {
+                    ["provider"] = cfg?.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider,
+                    ["model"] = cfg?.GetValueOrDefault("model") ?? AnthillRuntime.OllamaModel,
+                };
+            }
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ants"] = Queen.Memory.AntTaskStats(),
+                ["routes"] = routes,
+                ["gates"] = new Dictionary<string, object?>
+                {
+                    ["web_search"] = AnthillRuntime.EnableWebSearch,
+                    ["file_tools"] = AnthillRuntime.EnableFileTools,
+                    ["file_writing"] = AnthillRuntime.EnableFileWriting,
+                    ["patch_application"] = AnthillRuntime.EnablePatchApplication,
+                    ["shell_tool"] = AnthillRuntime.EnableShellTool,
+                },
+            });
+        });
+
         app.MapPost("/pheromones/prune", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "prune_pheromones"); if (auth is not null) return auth;

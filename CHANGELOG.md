@@ -17,7 +17,25 @@
 lifecycle hardening + visual Patch Center = **v1.8.16**, Patch Center robustness = **v1.8.16.1**,
 Colony Command Center HUD (design system + Overview dashboard) = **v1.8.17**, Mission Composer +
 plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**, Colony Live Canvas 2.0 = **v1.8.19**, Objective Command Board +
-Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, and so on.
+Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**,
+Ant Inspector + boot/shell banner = **v1.8.22**, and so on.
+
+## v1.8.22 — Ant Inspector + Performance Observatory (UI Phase 8) + ANTHILL banner
+
+**Ant Inspector + Performance Observatory** (new admin **Ant Inspector** page). A per-caste roster
+(researcher / web / file / coder / builder / verifier) showing each ant's model route, the capability
+gates that apply to it (web search, file read/write, patch apply — green when enabled), and lifetime
+performance from a new `GET /ants/stats` (task totals, done/failed/skipped, success rate, average
+seconds, with a success/fail bar). For the verifier, the failed count is surfaced as "reject". Each
+card expands to that caste's recent activity (from `/events/json?ant=`). New memory aggregate
+`SqliteMemory.AntTaskStats()` groups the tasks table by ant + status.
+
+**ANTHILL banner.** The colony ASCII banner now prints at the top of every `deploy/lxc/setup.sh` run
+(install and upgrade), from `deploy/anthill-banner.txt`, and renders in the UI operator **Shell** as
+the precursor before any command output (and again on Clear).
+
+UI is admin-gated and reuses existing data; the only new backend surface is the read-only
+`/ants/stats` endpoint.
 
 ## v1.8.21 — Fix: autonomous auto-apply changes not persisting
 
