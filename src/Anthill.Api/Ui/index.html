@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.15.6</title>
+<title>ANTHILL v1.8.15.7</title>
 <style>
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -266,6 +266,23 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .kpi-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px;}
 .kpi-num{font-size:30px;font-weight:700;font-family:var(--mono);line-height:1;color:var(--text);}
 .kpi-sub{font-size:10px;color:var(--dim);margin-top:4px;}
+
+/* ── System Health panel ────────────────────────────────────────────────────── */
+.health-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media (max-width:900px){.health-grid{grid-template-columns:1fr;}}
+.health-tile{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;}
+.health-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.health-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0;}
+.health-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green);}
+.health-dot.warn{background:var(--queen);box-shadow:0 0 5px var(--queen);}
+.health-dot.err{background:var(--red);box-shadow:0 0 5px var(--red);}
+.health-main{font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text);margin-bottom:8px;}
+.health-bar{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:8px;}
+.health-bar-fill{height:100%;background:var(--green);transition:width .4s ease,background .4s ease;}
+.health-rows{display:flex;flex-direction:column;gap:3px;}
+.health-rows>div{display:flex;justify-content:space-between;font-size:11px;}
+.health-rows>div>span:first-child{color:var(--dim);}
+.health-rows>div>span:last-child{font-family:var(--mono);color:var(--muted);}
 
 /* ── Badge ─────────────────────────────────────────────────────────────────── */
 .badge{background:var(--inner);border:1px solid var(--border);color:var(--muted);font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;}
@@ -530,7 +547,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ════════════════════════════════════════════════════════════════════════════ -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.15.6</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.15.7</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -573,7 +590,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.15.6</span>
+      <span class="nav-logo-ver">v1.8.15.7</span>
     </div>
 
     <div class="nav-scroll">
@@ -727,6 +744,46 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="kpi-label">Approvals</div>
             <div class="kpi-num" id="ov-approvals" style="color:var(--queen)">—</div>
             <div class="kpi-sub">Pending patch reviews</div>
+          </div>
+        </div>
+
+        <!-- System Health -->
+        <div class="card" style="padding:14px 16px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">System Health</div>
+            <span id="ov-health-alert" style="font-size:10px;color:var(--queen);display:none;"></span>
+          </div>
+          <div class="health-grid">
+            <!-- Autonomy -->
+            <div class="health-tile">
+              <div class="health-hd"><span class="health-dot" id="ov-h-auto-dot"></span>Autonomy</div>
+              <div class="health-main" id="ov-h-auto">—</div>
+              <div class="health-rows">
+                <div><span>Missions today</span><span id="ov-h-auto-day">—</span></div>
+                <div><span>Backlog</span><span id="ov-h-auto-backlog">—</span></div>
+                <div><span>Concurrency</span><span id="ov-h-auto-conc">—</span></div>
+              </div>
+            </div>
+            <!-- Storage -->
+            <div class="health-tile">
+              <div class="health-hd"><span class="health-dot" id="ov-h-disk-dot"></span>Storage</div>
+              <div class="health-main" id="ov-h-disk">—</div>
+              <div class="health-bar"><div class="health-bar-fill" id="ov-h-disk-bar" style="width:0%"></div></div>
+              <div class="health-rows">
+                <div><span>Database</span><span id="ov-h-db">—</span></div>
+                <div><span>Backups</span><span id="ov-h-backups">—</span></div>
+              </div>
+            </div>
+            <!-- Coder health -->
+            <div class="health-tile">
+              <div class="health-hd"><span class="health-dot" id="ov-h-coder-dot"></span>Coder Patches</div>
+              <div class="health-main" id="ov-h-coder">—</div>
+              <div class="health-rows">
+                <div><span>Valid patch sets</span><span id="ov-h-coder-ok">—</span></div>
+                <div><span>Parse failures</span><span id="ov-h-coder-fail">—</span></div>
+                <div><span>Auto-applied</span><span id="ov-h-coder-applied">—</span></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1599,6 +1656,7 @@ const PAGE_TITLES = {
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
+PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); };
 
 function showPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1986,6 +2044,48 @@ async function pollStatus(){
     bc.style.display=pending>0?'block':'none';
     bc.textContent=pending;
   }catch{ setConnected(false); }
+}
+
+// ── System Health panel (Overview) ────────────────────────────────────────────
+async function pollHealth(){
+  // Only fetch when the Overview is the visible page — keeps it cheap.
+  if(!document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const [a,m,ev]=await Promise.all([api('/autonomy/status'),api('/maintenance/stats'),api('/events/json?limit=600')]);
+    const s=a.data||{}, d=m.data||{};
+    // Autonomy
+    const running=!!s.running, killed=!!s.kill_switch_engaged, enabled=!!s.enabled;
+    const autoState=running?'RUNNING':(killed?'HALTED':(enabled?'IDLE':'OFF'));
+    setEl('ov-h-auto',autoState);
+    document.getElementById('ov-h-auto').style.color=running?'var(--green)':(killed?'var(--red)':'var(--muted)');
+    document.getElementById('ov-h-auto-dot').className='health-dot '+(running?'ok':(killed?'err':''));
+    setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
+    setEl('ov-h-auto-backlog',`${(s.backlog_pending??0)+(s.backlog_active??0)}`);
+    setEl('ov-h-auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
+    // Storage
+    const free=d.disk_free_bytes||0, total=d.disk_total_bytes||1;
+    const usedPct=Math.round((1-free/total)*100);
+    setEl('ov-h-disk',`${humanBytes(free)} free`);
+    const bar=document.getElementById('ov-h-disk-bar'); bar.style.width=usedPct+'%';
+    const diskWarn=usedPct>=85, diskDanger=usedPct>=93;
+    bar.style.background=diskDanger?'var(--red)':(diskWarn?'var(--queen)':'var(--green)');
+    document.getElementById('ov-h-disk-dot').className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
+    setEl('ov-h-db',humanBytes(d.db_bytes));
+    setEl('ov-h-backups',`${d.backup_count||0} · ${humanBytes(d.backup_bytes)}`);
+    // Coder patch health (from recent events)
+    const c={}; (ev.data?.events||[]).forEach(e=>{const t=e.event_type||'';c[t]=(c[t]||0)+1;});
+    const ok=c['patch_set_created']||0, fail=c['patch_proposal_parse_failed']||0, applied=c['autonomy_autoapply_applied']||0;
+    const rate=(ok+fail)>0?Math.round(ok/(ok+fail)*100):null;
+    setEl('ov-h-coder',rate==null?'—':rate+'%');
+    document.getElementById('ov-h-coder').style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
+    document.getElementById('ov-h-coder-dot').className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
+    setEl('ov-h-coder-ok',ok); setEl('ov-h-coder-fail',fail); setEl('ov-h-coder-applied',applied);
+    // Alert line — nudge reclaimable disk
+    const alert=document.getElementById('ov-health-alert');
+    const reclaimable=(d.backup_count||0)>(d.max_db_backups||10);
+    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`⚠ ${humanBytes(d.backup_bytes)} of backups reclaimable — Settings → Maintenance → Flush Cache`; }
+    else alert.style.display='none';
+  }catch{}
 }
 
 function renderJobList(jobs, listId, badgeId, limit){
@@ -2589,12 +2689,13 @@ document.addEventListener('keydown',e=>{
 // ── Polling loop ──────────────────────────────────────────────────────────────
 function startPolling(){
   loadUiState();
-  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();checkForUpdate(false);
+  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();pollHealth();checkForUpdate(false);
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
   setInterval(pollEvents,   5000);
   setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollApprovals,6000);
+  setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
   setInterval(()=>checkForUpdate(false), 6*60*60*1000); // update check is cached server-side (30m)
 }

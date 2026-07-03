@@ -13,7 +13,23 @@
 > Phase 5 autonomy (gated auto-apply) = **v1.8.15**, live-test fixes = **v1.8.15.1**, Strategist
 > intent + shell service control = **v1.8.15.2**, native polkit install = **v1.8.15.3**, disk
 > hygiene + maintenance controls = **v1.8.15.4**, completed-objectives box = **v1.8.15.5**, coder
-> JSON parse hardening = **v1.8.15.6**, and so on.
+> JSON parse hardening = **v1.8.15.6**, Overview System Health panel = **v1.8.15.7**, and so on.
+
+## v1.8.15.7 — System Health panel on the Overview
+
+Added an enterprise-style **System Health** card to the Overview, giving an at-a-glance read on the
+three things that actually go wrong in a long-running colony, each with a green/amber/red status dot:
+
+- **Autonomy** — RUNNING / IDLE / HALTED / OFF state, missions-today vs the daily cap, live backlog
+  (pending + active objectives), and effective/configured concurrency. Sourced from `/autonomy/status`.
+- **Storage** — free disk with a usage bar that turns amber at 85% and red at 93%, plus the SQLite DB
+  size and backup count/size. Sourced from `/maintenance/stats`. When disk is tight *and* backups are
+  prunable, an alert line points straight to **Settings → Maintenance → Flush Cache** to reclaim it.
+- **Coder Patches** — recent parse success rate (`patch_set_created` vs `patch_proposal_parse_failed`)
+  with applied count, so the v1.8.15.6 parse-hardening win stays visible. Sourced from `/events/json`.
+
+The panel polls every 8s but only fetches while the Overview is the visible page (and refreshes
+immediately on navigation to it), so it adds no load elsewhere. UI-only change — no API surface added.
 
 ## v1.8.15.6 — Coder patches actually parse now (fewer patch_proposal_parse_failed)
 
