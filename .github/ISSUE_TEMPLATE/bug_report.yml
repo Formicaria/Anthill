@@ -1,0 +1,65 @@
+name: "🐛 Bug report"
+description: A defect or regression in ANTHILL (backend, API, or console UI).
+title: "[bug]: "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Keep it specific and reproducible. One bug per issue.
+  - type: input
+    id: version
+    attributes:
+      label: ANTHILL version
+      description: The `AnthillRuntime.Version` shown in the console header (e.g. v1.8.17).
+      placeholder: v1.8.17
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the system?
+      options:
+        - "area:ui (console / HUD)"
+        - "area:api (endpoints / auth)"
+        - "area:autonomy (Director / Strategist / objectives)"
+        - "area:planner (task planning / constraints)"
+        - "area:patches (patch center / approvals / apply)"
+        - "area:memory (SQLite / storage)"
+        - "area:security"
+        - "area:build (CI / packaging / deploy)"
+        - "area:other"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Actual behavior, including exact error text and where it appeared (console, logs, CI).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include the mission goal / objective / patch id if relevant.
+      placeholder: |
+        1. Open Overview → Patch Center
+        2. Click …
+        3. See error …
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Deployment (LXC / Docker / Windows / local), OS, browser, Ollama model.
+    validations:
+      required: false
