@@ -154,3 +154,51 @@ jobs:
 
       - name: bash -n syntax check (belt and suspenders)
         run: bash -n deploy/lxc/setup.sh
+
+  ui-integrity:
+    name: UI integrity (encoding + JS parse)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # An editor/tool in the pipeline has repeatedly re-saved the embedded UI as non-UTF-8,
+      # flattening icon glyphs (carets/send/close/pheromone headers) to '?' and other glyphs to the
+      # U+FFFD replacement char. Fail the build if any of that corruption is present so it can never
+      # merge again. The one legitimate literal '?' — the <kbd>?</kbd> help-shortcut key — is allowed.
+      - name: No UTF-8 glyph corruption in the console UI
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          p = "src/Anthill.Api/Ui/index.html"
+          s = open(p, encoding="utf-8").read()
+          problems = []
+          n = s.count("�")
+          if n: problems.append(f"{n} U+FFFD replacement char(s) (‘�’)")
+          bare = re.findall(r"(?<!<kbd)>\?<", s)          # bare >?< icons, excluding <kbd>?</kbd>
+          if bare: problems.append(f"{len(bare)} bare '>?<' icon glyph(s) flattened to '?'")
+          labeled = re.findall(r">\s*\?\s+[A-Z][a-z]", s)  # '>? Label' buttons
+          if labeled: problems.append(f"{len(labeled)} '>? Label' button glyph(s)")
+          t = s.count("'?':'?'")                            # caret ternaries det.open?'?':'?'
+          if t: problems.append(f"{t} \"'?':'?'\" caret ternary(ies)")
+          if problems:
+              print(f"UI encoding corruption detected in {p}:")
+              for x in problems: print("  -", x)
+              print("These are flattened glyphs — re-save index.html as UTF-8 and restore the icons.")
+              sys.exit(1)
+          print("UI encoding OK: no flattened glyphs or replacement chars.")
+          PY
+
+      - name: Setup Node (for embedded-JS parse check)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Embedded UI JavaScript parses cleanly
+        run: |
+          python3 - <<'PY'
+          import re
+          s = open("src/Anthill.Api/Ui/index.html", encoding="utf-8").read()
+          blocks = [b for b in re.findall(r"<script\b[^>]*>(.*?)</script>", s, re.S) if b.strip()]
+          open("/tmp/ui.js", "w", encoding="utf-8").write("\n;\n".join(blocks))
+          PY
+          node --check /tmp/ui.js

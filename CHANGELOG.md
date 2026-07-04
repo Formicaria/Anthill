@@ -1,5 +1,13 @@
 # ANTHILL Changelog
 
+## v1.8.25.2 — CI guard against UI glyph corruption
+
+The console UI has been re-saved as non-UTF-8 several times, flattening icon glyphs to `?` and other
+glyphs to the U+FFFD replacement char (`�`). Adds a **`ui-integrity` CI job** that fails the build on
+any `�`, bare `>?<` icon, `>? Label` button, or `'?':'?'` caret in `index.html` (the legitimate
+`<kbd>?</kbd>` help key is allowlisted), plus a `node --check` of the embedded JavaScript — so this
+recurring corruption can never merge again. CI-only; no runtime change.
+
 ## v1.8.25.1 — Console glyph-corruption repair
 
 A follow-on to the v1.8.23.1 encoding repair, which only caught labeled buttons (`>? Label`) and

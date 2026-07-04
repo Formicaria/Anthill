@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.25.1
+**Current version:** v1.8.25.2
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.25.2` | CI: new `ui-integrity` job fails the build on any UI glyph corruption (`�`, bare `>?<` icons, `>? Label` buttons, `'?':'?'` carets) + a `node --check` of the embedded JS — so the recurring corruption can never merge again. CI-only. |
 | `v1.8.25.1` | Fix: repair residual UTF-8 glyph corruption in the console — 19 icon glyphs (collapse/caret `▾`, send `▶`, close `✕`, expand `⛶`, pheromone `✓`/`✕` headers) plus 4 JS-literal carets, the apply-warning `⚠`, and the autonomy-running `●` badge had been flattened to `?`. The legitimate `?` help-shortcut key is preserved. |
 | `v1.8.25` | UI Phase 10 — Full Command Center Polish: Ctrl+K command palette with global mission-memory search, header notification center with unread badge, `g`-key page navigation + `?` shortcuts help, saved layout restore, and a first-login onboarding tour. UI roadmap complete. |
 | `v1.8.24` | UI Phase 7 — Visual Patch Center 2.0: grouping (status/risk/file/mission/objective); operator approve/reject for pending patches with no approval record; operator-edited **alternative patches** behind the normal approval gate; **unbiased verify & auto-approve** (apply-with-backup → build+test → always restore → approve only if green; apply stays manual). |
