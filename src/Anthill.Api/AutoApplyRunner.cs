@@ -207,7 +207,14 @@ public static class AutoApplyRunner
         return new VerifyResult(!timedOut && exit == 0, exit, timedOut, seconds, output);
     }
 
-    /// <summary>git add + commit the applied files locally (never pushed). Returns false on any error.</summary>
+    /// <summary>
+    /// Commits the applied files on the standalone auto-apply branch and (optionally) pushes it to the
+    /// remote via the configured SSH deploy key. NEVER touches main: it refuses to run on
+    /// main/master, only ever commits/pushes the "&lt;username&gt;-anthill" branch, never merges the
+    /// branch into main, and never force-pushes. On any git error it leaves the change on disk and
+    /// returns false (fail-closed). The SSH key is referenced by PATH via GIT_SSH_COMMAND — no key
+    /// material is read or logged. Sync direction is one-way: origin/main is merged INTO the branch.
+    /// </summary>
     private static bool GitCommit(List<Queen.AutoApplyOutcome> applied, out string note)
     {
         note = "";
@@ -215,9 +222,47 @@ public static class AutoApplyRunner
             ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : Environment.CurrentDirectory;
         var files = string.Join(" ", applied.Select(a => "\"" + (a.ResolvedPath ?? a.FilePath).Replace("\"", "") + "\""));
         var msg = $"ANTHILL auto-applied {applied.Count} verified patch(es) [autonomy]";
+        var branch = AnthillRuntime.AutonomyAutoApplyGitBranch; // "<username>-anthill" or ""
+
+        var (curExit, curOut, _, _) = RunShell("git rev-parse --abbrev-ref HEAD", dir, 20);
+        if (curExit != 0) { note = "not a git working tree: " + Tail(curOut, 200); return false; }
+        var current = curOut.Trim();
+
+        // Hard safety: never commit auto-applied changes onto main/master.
+        if (current is "main" or "master")
+        {
+            note = branch.Length == 0
+                ? "workspace is on 'main'; set a git username in Auto-Apply settings so commits land on <username>-anthill, never main."
+                : $"workspace is on 'main'; check the clone out on '{branch}' first (git checkout {branch}) — ANTHILL never commits to main.";
+            return false;
+        }
+        // If a standalone branch is configured, require the workspace to already be on it — never
+        // switch branches with a dirty working tree on the operator's live clone.
+        if (branch.Length > 0 && !string.Equals(current, branch, StringComparison.Ordinal))
+        {
+            note = $"workspace is on '{current}', not the configured branch '{branch}'. Check it out there (git checkout {branch}) so auto-apply commits land on the standalone branch.";
+            return false;
+        }
+
         var (exit, output, timedOut, _) = RunShell($"git add {files} && git commit -m \"{msg}\"", dir, 60);
-        note = Tail(output, 300);
-        return !timedOut && exit == 0;
+        if (timedOut || exit != 0) { note = "commit failed: " + Tail(output, 250); return false; }
+
+        // Optional push (+ one-way sync of origin/main into the branch) via the SSH deploy key.
+        // Best-effort: a sync/push failure never undoes the local commit.
+        if (AnthillRuntime.AutonomyAutoApplyGitPush && branch.Length > 0)
+        {
+            var remote = AnthillRuntime.AutonomyAutoApplyGitRemote;
+            var key = AnthillRuntime.AutonomyAutoApplyGitSshKeyPath;
+            var env = key.Length > 0
+                ? $"GIT_SSH_COMMAND='ssh -i \"{key.Replace("\"", "")}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' "
+                : "";
+            var (fx, fo, _, _) = RunShell($"{env}git fetch {remote} && git merge {remote}/main --no-edit", dir, 120);
+            if (fx != 0) { RunShell("git merge --abort", dir, 20); note = "kept + committed; sync with main skipped: " + Tail(fo, 150); }
+            // Push ONLY the standalone branch (never main); no force.
+            var (px, po, _, _) = RunShell($"{env}git push {remote} {branch}", dir, 120);
+            if (px != 0) note = (note.Length > 0 ? note + " | " : "") + "committed locally but push failed: " + Tail(po, 200);
+        }
+        return true;
     }
 
     private static (int Exit, string Output, bool TimedOut, double Seconds) RunShell(string command, string dir, int timeoutSeconds)
