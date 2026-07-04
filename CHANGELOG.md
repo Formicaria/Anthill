@@ -28,7 +28,22 @@ plan preview = **v1.8.18**, Patch Center invalid-UTF-16 500 fix = **v1.8.18.1**,
 Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1.8.21**, Phase 8
 Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
 ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
-+ API serialization hardening = **v1.8.23.1**, and so on.
++ API serialization hardening = **v1.8.23.1**, Patch Center duplicate-route fix = **v1.8.23.2**,
+and so on.
+
+## v1.8.23.2 — Patch Center duplicate-route fix
+
+**Root cause of the recurring Patch Center empty HTTP 500.** `GET /patches` was registered twice: a
+legacy `ProtectedText("/patches")` (the old `Queen.FormatPatchList()` text list) collided with the
+structured `app.MapGet("/patches")` that the Patch Center UI uses. Two endpoints with an identical
+method+template make ASP.NET throw `AmbiguousMatchException` during routing — *before* any handler or
+middleware runs — so it surfaced as an uncatchable empty-body 500 that neither the v1.8.18.1 UTF-16
+sanitizer nor the v1.8.23.1 serialization guard could touch (they run after routing).
+
+- Removed the duplicate legacy `ProtectedText("/patches")` registration; the structured list remains.
+- Added `AssertNoDuplicateRoutes()` at startup: enumerates every registered endpoint and throws a
+  clear error at boot if any method+template is registered more than once, so this class of bug fails
+  loudly at startup instead of silently 500ing at request time.
 
 ## v1.8.23.1 — Console UTF-8 repair + API serialization hardening
 
