@@ -175,6 +175,116 @@ public sealed partial class Queen
         return ok;
     }
 
+    // ---- Patch Center 2.0 operator surface (v1.8.24) ----------------------
+    // Some pending patches have no approval_requests row (deduped duplicates whose original was
+    // resolved, pre-v1.8.16 history, or a crash between proposal save and approval save). The
+    // operator could see them in the Patch Center but had NO way to act on them. These methods
+    // stay on the Queen/approval path: they create the missing approval record first, then run
+    // the exact same approve/reject transitions as always — never a direct status write.
+
+    /// <summary>Finds the approval record for a patch, creating one if it is missing and the patch is still pending.</summary>
+    public (bool Ok, string ApprovalId, string Message) EnsurePatchApproval(string patchId, string requestedBy = "operator")
+    {
+        var patch = Memory.GetPatchProposal(patchId);
+        if (patch is null) return (false, "", $"No patch proposal found with id: {patchId}");
+        var existing = Memory.GetApprovalForTarget(patchId);
+        if (existing is not null) return (true, Str(existing, "id"), "Existing approval record found.");
+        if (Str(patch, "status") != PatchStatus.Proposed.Value())
+            return (false, "", $"Patch is not pending (status: {Str(patch, "status")}) and has no approval record to act on.");
+        var approval = new ApprovalRequest
+        {
+            MissionId = Str(patch, "mission_id"), TaskId = Str(patch, "task_id"),
+            ActionType = ApprovalActionType.PatchProposal, TargetId = patchId,
+            Title = $"Approve patch proposal for {Str(patch, "file_path")}",
+            Description = "Approval record created from the Patch Center for a pending patch that had none " +
+                          "(deduplicated or pre-Patch-Center proposal). Approval alone does not apply the patch.",
+            RequestedBy = requestedBy,
+            Metadata = new() { ["patch_proposal_id"] = patchId, ["file_path"] = Str(patch, "file_path"), ["created_from"] = "patch_center_operator" },
+        };
+        Memory.SaveApprovalRequest(approval);
+        Memory.LogEvent(Str(patch, "mission_id"), "approval_request_created",
+            $"Operator-requested approval record created from the Patch Center: {Str(patch, "file_path")}",
+            Str(patch, "task_id"), "queen",
+            new() { ["approval_request_id"] = approval.Id, ["target_id"] = patchId, ["created_from"] = "patch_center_operator" });
+        return (true, approval.Id, "Approval record created.");
+    }
+
+    /// <summary>Approve a patch by patch id — ensures the approval record exists, then runs the normal approve transition.</summary>
+    public string ApprovePatchDirect(string patchId, string requestedBy = "operator")
+    {
+        var (ok, approvalId, message) = EnsurePatchApproval(patchId, requestedBy);
+        return ok ? ApproveRequest(approvalId) : message;
+    }
+
+    /// <summary>Reject a patch by patch id — ensures the approval record exists, then runs the normal reject transition.</summary>
+    public string RejectPatchDirect(string patchId, string? reason = null, string requestedBy = "operator")
+    {
+        var (ok, approvalId, message) = EnsurePatchApproval(patchId, requestedBy);
+        return ok ? RejectRequest(approvalId, reason) : message;
+    }
+
+    /// <summary>
+    /// v1.8.24: the operator edits a proposal's new content and offers it as an ALTERNATIVE patch.
+    /// The alternative is a brand-new proposal (same file, same base old content) that goes through
+    /// the standard approval gate like any coder proposal — editing never writes to disk directly.
+    /// The original is marked superseded (and its pending approval resolved) unless kept.
+    /// </summary>
+    public (bool Ok, string NewPatchId, string Message) ProposeAlternativePatch(
+        string originalPatchId, string newContent, string reason, string author = "operator", bool supersedeOriginal = true)
+    {
+        var orig = Memory.GetPatchProposal(originalPatchId);
+        if (orig is null) return (false, "", $"No patch proposal found with id: {originalPatchId}");
+        if (newContent is null || newContent.Length == 0) return (false, "", "Alternative patch content is empty.");
+        if (string.Equals(orig.GetValueOrDefault("new_content") as string, newContent, StringComparison.Ordinal))
+            return (false, "", "Alternative content is identical to the original proposal.");
+
+        var missionId = Str(orig, "mission_id");
+        var taskId = Str(orig, "task_id");
+        var proposal = new PatchProposal
+        {
+            FilePath = Str(orig, "file_path"),
+            ChangeType = EnumExtensions.ParsePatchChangeType(Str(orig, "change_type", "modify")),
+            Reason = string.IsNullOrWhiteSpace(reason)
+                ? $"Operator alternative to patch {originalPatchId}"
+                : $"{reason.Trim()} (operator alternative to patch {originalPatchId})",
+            Risk = Str(orig, "risk", "unknown"),
+            OldContent = orig.GetValueOrDefault("old_content") as string,
+            NewContent = newContent,
+            RequiresApproval = true,
+            Status = PatchStatus.Proposed,
+        };
+        Memory.SavePatchSet(new PatchSet
+        {
+            MissionId = missionId, TaskId = taskId,
+            Summary = $"Operator alternative for {proposal.FilePath} (edited from {originalPatchId})",
+            Proposals = new() { proposal },
+        });
+        var approval = new ApprovalRequest
+        {
+            MissionId = missionId, TaskId = taskId, ActionType = ApprovalActionType.PatchProposal, TargetId = proposal.Id,
+            Title = $"Approve operator alternative patch for {proposal.FilePath}",
+            Description = $"Operator-edited alternative to patch {originalPatchId}.\nFile: {proposal.FilePath}\nReason: {proposal.Reason}\n\n" +
+                          "Approval alone does not apply the patch.",
+            RequestedBy = author,
+            Metadata = new() { ["patch_proposal_id"] = proposal.Id, ["alternative_to"] = originalPatchId, ["file_path"] = proposal.FilePath },
+        };
+        Memory.SaveApprovalRequest(approval);
+        Memory.LogEvent(missionId, "patch_alternative_created",
+            $"Operator proposed an alternative patch for {proposal.FilePath} (edited from {originalPatchId}).", taskId, "queen",
+            new() { ["original_patch_id"] = originalPatchId, ["new_patch_id"] = proposal.Id, ["approval_request_id"] = approval.Id });
+
+        if (supersedeOriginal && Str(orig, "status") == PatchStatus.Proposed.Value())
+        {
+            Memory.UpdatePatchStatus(originalPatchId, PatchStatus.Superseded,
+                lastError: $"Superseded by operator alternative {proposal.Id}.");
+            var origApproval = Memory.GetApprovalForTarget(originalPatchId);
+            if (origApproval is not null && Str(origApproval, "status") == ApprovalStatus.Pending.Value())
+                Memory.UpdateApprovalStatus(Str(origApproval, "id"), ApprovalStatus.Rejected,
+                    $"Superseded by operator alternative patch {proposal.Id}.");
+        }
+        return (true, proposal.Id, $"Alternative patch created: {proposal.Id}");
+    }
+
     public string FormatPendingApprovals(int limit = 20) => FormatApprovals(limit, ApprovalStatus.Pending);
 
     public string FormatApprovals(int limit = 20, ApprovalStatus? status = ApprovalStatus.Pending)

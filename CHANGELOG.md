@@ -1,5 +1,37 @@
 # ANTHILL Changelog
 
+## v1.8.24 — UI Phase 7: Visual Patch Center 2.0
+
+Finishes UI Roadmap Phase 7 — grouping — and closes the operator gaps around pending patches.
+
+**Grouping**
+- New "Group by" control (status / risk / file / mission / objective); choice persists.
+- Collapsible group sections with patch counts and per-status mini-chips; status/risk groups sort
+  logically, the rest by size. Pure client-side re-render — filters, diffs, and actions unchanged.
+
+**Operator approval for orphaned pending patches**
+- Some pending patches had no approval record (deduped duplicates, pre-v1.8.16 history), so they
+  were visible but impossible to act on. New `POST /patches/{id}/approve` and
+  `POST /patches/{id}/reject` create the missing approval record first, then run the exact same
+  Queen approve/reject transition — never a direct status write. Approve/Reject buttons now appear
+  for these patches in the Patch Center.
+
+**Operator-edited alternative patches**
+- "✎ Edit as alternative" opens the proposal's content in an editor; submitting creates a NEW
+  proposal (same file, same base content) behind the standard approval gate via
+  `POST /patches/{id}/alternative`. Nothing is written to disk by editing. The original is marked
+  superseded (optional) and its pending approval resolved.
+
+**Unbiased verification with auto-approve**
+- "⚖ Verify & Auto-approve" (`POST /patches/{id}/verify`): the patch is applied with a backup, the
+  verify command runs (`autonomy_autoapply_verify_cmd` or built-in `dotnet build && dotnet test`),
+  and the workspace is ALWAYS restored — green or red. The toolchain judges the change, not the
+  ant that proposed it. Green ⇒ the patch is auto-APPROVED through the normal Queen/approval path;
+  applying to disk still requires the operator. Red ⇒ stays pending with the failure tail recorded.
+  Requires the same write gates as Apply (the temporary staging honors them).
+- Tests: `PatchOperatorActionTests` covers orphan approve/reject, alternative creation/supersede,
+  and edge cases against a real SQLite database.
+
 ## v1.8.23.3 — CI linux-x64 artifact packaging
 
 Roadmap item "CI release packaging foundation": every successful CI run now produces a
@@ -42,7 +74,8 @@ Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1
 Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
 ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
 + API serialization hardening = **v1.8.23.1**, Patch Center duplicate-route fix = **v1.8.23.2**,
-CI linux-x64 artifact packaging = **v1.8.23.3**, and so on.
+CI linux-x64 artifact packaging = **v1.8.23.3**, Visual Patch Center 2.0 grouping (UI Phase 7)
+= **v1.8.24**, and so on.
 
 ## v1.8.23.2 — Patch Center duplicate-route fix
 

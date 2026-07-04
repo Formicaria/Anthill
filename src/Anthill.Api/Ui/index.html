@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.23.3</title>
+<title>ANTHILL v1.8.24</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -495,6 +495,14 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* -- Patch Center (v1.8.23) -- */
 .pc-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
 .pc-filter{font-size:11px;padding:5px 8px;width:auto;}
+/* UI Phase 7 (v1.8.24): Patch Center grouping */
+.pc-group-sec{margin-bottom:10px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:rgba(255,255,255,0.015);}
+.pc-group-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:9px 13px;user-select:none;font-size:12px;background:rgba(255,255,255,0.03);}
+.pc-group-sec>summary::-webkit-details-marker{display:none;}
+.pc-group-sec .pc-group-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);}
+.pc-group-sec .pc-group-count{color:var(--dim);font-size:10px;white-space:nowrap;}
+.pc-group-sec .pc-group-body{padding:8px 10px 4px;}
+.pc-verifytail{background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:var(--mono);font-size:10px;max-height:220px;overflow:auto;white-space:pre-wrap;color:var(--muted);margin:4px 0 0;}
 .pc-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
 .pc-chip{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:12px;border:1px solid var(--border);color:var(--muted);background:var(--card);}
 .pc-chip b{color:var(--text);}
@@ -871,7 +879,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.23.3</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.24</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -914,7 +922,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.23.3</span>
+      <span class="nav-logo-ver">v1.8.24</span>
     </div>
 
     <div class="nav-scroll">
@@ -1399,6 +1407,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <input id="pc-filter-file" class="form-input pc-filter" placeholder="Filter by file path…" style="flex:1;min-width:140px;">
           <input id="pc-filter-mission" class="form-input pc-filter" placeholder="Mission id…" style="width:140px;">
           <input id="pc-filter-objective" class="form-input pc-filter" placeholder="Objective id…" style="width:140px;">
+          <select id="pc-group" class="form-input pc-filter" title="Group patches (UI Phase 7)"><option value="">No grouping</option><option value="status">Group: Status</option><option value="risk">Group: Risk</option><option value="file">Group: File</option><option value="mission">Group: Mission</option><option value="objective">Group: Objective</option></select>
           <button class="btn btn-ghost" id="pc-filter-clear" title="Clear all filters">Clear</button>
         </div>
         <div id="pc-summary" class="pc-summary"></div>
@@ -3632,6 +3641,12 @@ function pcBind(){
   document.getElementById('pc-filter-clear').addEventListener('click',()=>{
     pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:''}; applyPcFiltersToInputs(); loadPatches();
   });
+  const grp=document.getElementById('pc-group');
+  if(grp){
+    grp.value=pcGroup;
+    if(grp.value!==pcGroup){ pcGroup=''; localStorage.removeItem('pc-group'); } // stale stored value
+    grp.addEventListener('change',()=>{ pcGroup=grp.value; localStorage.setItem('pc-group',pcGroup); loadPatches(); });
+  }
 }
 function syncPcFilters(){
   pcFilters.status=document.getElementById('pc-filter-status').value;
@@ -3679,24 +3694,51 @@ function renderPcSummary(rows){
     chip('Rejected','rejected')+chip('Failed','failed')+
     (by['superseded']?chip('Superseded','superseded'):'');
 }
+function renderPatchCard(p){
+  const badge=`<span class="pc-badge ${p.status}">${escapeHtml(p.status_label||p.status)}</span>`;
+  const risk=`<span class="pc-risk ${p.risk||'unknown'}">${escapeHtml(p.risk||'unknown')}</span>`;
+  const src=p.objective_id?`obj ${escapeHtml(String(p.objective_id).slice(0,8))}`:(p.mission_id?`mission ${escapeHtml(String(p.mission_id).slice(0,8))}`:'manual');
+  return `<details class="card" style="margin-bottom:8px;padding:0;" data-patch="${p.id}" ontoggle="onPatchToggle(this)">
+    <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:11px 14px;user-select:none;">
+      ${badge}${risk}
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
+      <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
+      <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+    </summary>
+    <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
+      <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
+      <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff…</div>
+    </div>
+  </details>`;
+}
+// UI Phase 7 (v1.8.24): optional grouping by status / risk / file / mission / objective.
+// Grouping is a pure client-side re-render of the same fetched rows — filters, cards,
+// diffs, and approve/reject/apply behavior are unchanged.
+let pcGroup=localStorage.getItem('pc-group')||'';
+const PC_GROUPERS={
+  status:{ key:p=>p.status||'unknown', label:k=>k, order:['proposed','pending','approved','applied','rejected','failed','superseded','unknown'] },
+  risk:{ key:p=>p.risk||'unknown', label:k=>`${k} risk`, order:['high','medium','low','unknown'] },
+  file:{ key:p=>p.file_path||'(no file)', label:k=>k, order:null },
+  mission:{ key:p=>p.mission_id||'(manual)', label:k=>k==='(manual)'?k:`mission ${k.slice(0,12)}`, order:null },
+  objective:{ key:p=>p.objective_id||'(no objective)', label:k=>k==='(no objective)'?k:`objective ${String(k).slice(0,12)}`, order:null },
+};
 function renderPatchList(rows){
   const list=document.getElementById('patches-list');
   if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No patch proposals match these filters.</div>'; return; }
-  list.innerHTML=rows.map(p=>{
-    const badge=`<span class="pc-badge ${p.status}">${escapeHtml(p.status_label||p.status)}</span>`;
-    const risk=`<span class="pc-risk ${p.risk||'unknown'}">${escapeHtml(p.risk||'unknown')}</span>`;
-    const src=p.objective_id?`obj ${escapeHtml(String(p.objective_id).slice(0,8))}`:(p.mission_id?`mission ${escapeHtml(String(p.mission_id).slice(0,8))}`:'manual');
-    return `<details class="card" style="margin-bottom:8px;padding:0;" data-patch="${p.id}" ontoggle="onPatchToggle(this)">
-      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:11px 14px;user-select:none;">
-        ${badge}${risk}
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
-        <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
-        <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
-      </summary>
-      <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
-        <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
-        <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff…</div>
-      </div>
+  const g=PC_GROUPERS[pcGroup];
+  if(!g){ list.innerHTML=rows.map(renderPatchCard).join(''); return; }
+  const groups=new Map();
+  rows.forEach(p=>{ const k=g.key(p); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); });
+  let keys=[...groups.keys()];
+  if(g.order) keys.sort((a,b)=>{ const ia=g.order.indexOf(a), ib=g.order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
+  else keys.sort((a,b)=>groups.get(b).length-groups.get(a).length || String(a).localeCompare(String(b)));
+  list.innerHTML=keys.map(k=>{
+    const items=groups.get(k);
+    const by={}; items.forEach(p=>{ by[p.status]=(by[p.status]||0)+1; });
+    const chips=Object.keys(by).map(s=>`<span class="pc-chip">${escapeHtml(s)} <b>${by[s]}</b></span>`).join('');
+    return `<details class="pc-group-sec" open>
+      <summary><span class="pc-group-name" title="${escapeHtml(String(k))}">${escapeHtml(g.label(String(k)))}</span><span class="pc-group-count">${items.length} patch${items.length===1?'':'es'}</span><span style="flex:1"></span>${chips}</summary>
+      <div class="pc-group-body">${items.map(renderPatchCard).join('')}</div>
     </details>`;
   }).join('');
 }
@@ -3713,14 +3755,24 @@ async function onPatchToggle(det){
     pcDetailCache[pid]=d;
     const meta=(k,v)=>v?`<div style="display:flex;gap:8px;padding:1px 0;"><span style="color:var(--dim);min-width:110px;">${k}</span><span style="word-break:break-all;">${escapeHtml(String(v))}</span></div>`:'';
     const canApprove=d.approval_id && d.approval_status==='pending';
+    // v1.8.24: a pending patch with NO approval record can now be acted on — the backend
+    // creates the missing approval record first, then runs the normal approve/reject path.
+    const orphanPending=d.status==='proposed' && !d.approval_id;
     const canApply=d.status==='approved' && d.approval_id;
+    const canVerify=d.status==='proposed';
+    const canEdit=d.status==='proposed'||d.status==='approved';
     const actions=`<div class="pc-actions">
       ${d.mission_id?`<button class="pc-act" onclick="openResults('${d.mission_id}')">View Mission</button>`:''}
       ${canApprove?`<button class="pc-act approve" onclick="pcApprove('${d.approval_id}','${pid}')">✓ Approve</button>`:''}
+      ${orphanPending?`<button class="pc-act approve" onclick="pcApproveDirect('${pid}')" title="Creates the missing approval record, then approves">✓ Approve</button>`:''}
       ${canApprove?`<button class="pc-act reject" onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
+      ${orphanPending?`<button class="pc-act reject" onclick="pcRejectDirect('${pid}')">✕ Reject</button>`:''}
+      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">⚖ Verify &amp; Auto-approve</button>`:''}
+      ${canEdit?`<button class="pc-act" onclick="pcOpenEdit('${pid}')" title="Edit this patch's content and offer it as an alternative proposal (goes through the same approval gate)">✎ Edit as alternative</button>`:''}
       ${canApply?`<button class="pc-act apply" onclick="pcApply('${pid}')">▶ Apply</button>`:''}
-      ${(!d.approval_id)?`<span style="color:var(--dim);font-size:10px;align-self:center;">no approval record — duplicate/superseded or already resolved</span>`:''}
-    </div>`;
+    </div>
+    <div class="pc-editbox" id="pc-edit-${pid}" style="display:none;"></div>
+    <div class="pc-verifyout" id="pc-verifyout-${pid}" style="display:none;"></div>`;
     box.innerHTML=
       meta('Status', (d.status_label||d.status)+(d.approval_status?` (approval ${d.approval_status})`:''))+
       meta('Risk', (d.risk||'unknown')+(d.risk_raw&&d.risk_raw!==d.risk?` — "${d.risk_raw}"`:''))+
@@ -3788,6 +3840,78 @@ async function pcApply(patchId){
     if(!res.ok) throw new Error('HTTP '+res.status);
     pcToast('Apply requested — see result in the patch row.'); loadPatches();
   }catch(e){ pcToast('Apply failed: '+e.message,false); }
+}
+// -- Patch Center 2.0 (v1.8.24): approve/reject by patch id, verify, edit-as-alternative --------
+async function pcApproveDirect(patchId){
+  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/approve'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Approval record created and patch approved — apply it to write to disk.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+}
+async function pcRejectDirect(patchId){
+  if(!confirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/reject'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+}
+async function pcVerify(patchId){
+  const btn=document.getElementById('pc-verify-'+patchId);
+  const out=document.getElementById('pc-verifyout-'+patchId);
+  if(btn){ btn.disabled=true; btn.textContent='⚖ Verifying… (build+test)'; }
+  if(out){ out.style.display='block'; out.innerHTML='<div style="color:var(--dim);font-size:11px;padding:6px 0;">Running unbiased verification — the patch is applied with a backup, the verify command runs, and the workspace is always restored. This can take a few minutes.</div>'; }
+  try{
+    const r=await api('/patches/'+encodeURIComponent(patchId)+'/verify','POST');
+    if(!r.success) throw new Error(r.message||'verify endpoint error');
+    const d=r.data||{};
+    const tail=(d.output_tail||'').trim();
+    if(d.verified){
+      pcToast('Verification PASSED — patch auto-approved. Apply is still manual.');
+      if(out) out.innerHTML=`<div style="color:var(--green);font-size:11px;padding:4px 0;">✓ Verify green (exit ${d.exit_code}, ${d.seconds}s) — auto-approved.</div>`+(tail?`<pre class="pc-verifytail">${escapeHtml(tail)}</pre>`:'');
+    }else{
+      pcToast('Verification FAILED — patch stays pending. Workspace restored.',false);
+      if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;padding:4px 0;">✕ Verify failed (${d.timed_out?'timed out':'exit '+d.exit_code}${d.seconds?', '+d.seconds+'s':''})${d.error?' — '+escapeHtml(d.error):''}. Patch left pending; workspace restored.</div>`+(tail?`<pre class="pc-verifytail">${escapeHtml(tail)}</pre>`:'');
+    }
+    loadPatches._dirty=true;
+  }catch(e){
+    pcToast('Verify failed: '+e.message,false);
+    if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;">Verify error: ${escapeHtml(e.message)}</div>`;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='⚖ Verify & Auto-approve'; }
+  }
+}
+function pcOpenEdit(patchId){
+  const box=document.getElementById('pc-edit-'+patchId); if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; return; }
+  const d=pcDetailCache[patchId]||{};
+  box.style.display='block';
+  box.innerHTML=`
+    <div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:8px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Edit the proposed content and submit it as an <b>alternative patch</b>. It becomes a new proposal behind the normal approval gate — nothing is written to disk here. The original is marked superseded.</div>
+      <textarea id="pc-edit-content-${patchId}" class="form-input" spellcheck="false" style="width:100%;min-height:220px;font-family:var(--mono);font-size:11px;white-space:pre;overflow:auto;"></textarea>
+      <input id="pc-edit-reason-${patchId}" class="form-input" placeholder="Why this alternative? (optional)" style="width:100%;margin-top:6px;font-size:11px;">
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+        <button class="pc-act approve" onclick="pcSubmitAlternative('${patchId}')">Submit alternative</button>
+        <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="pc-edit-supersede-${patchId}" checked> supersede original</label>
+        <button class="pc-act" onclick="pcOpenEdit('${patchId}')">Cancel</button>
+      </div>
+    </div>`;
+  const ta=document.getElementById('pc-edit-content-'+patchId);
+  ta.value=(d.new_content!=null?String(d.new_content):'');
+  ta.focus();
+}
+async function pcSubmitAlternative(patchId){
+  const ta=document.getElementById('pc-edit-content-'+patchId); if(!ta) return;
+  const content=ta.value;
+  if(!content.trim()){ pcToast('Alternative content is empty.',false); return; }
+  const reason=(document.getElementById('pc-edit-reason-'+patchId)?.value||'').trim();
+  const supersede=!!document.getElementById('pc-edit-supersede-'+patchId)?.checked;
+  try{
+    const r=await api('/patches/'+encodeURIComponent(patchId)+'/alternative','POST',{new_content:content,reason:reason,supersede_original:supersede});
+    if(!r.success) throw new Error(r.message||'alternative endpoint error');
+    pcToast('Alternative patch proposed — it appears in the list as a new pending patch.');
+    loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Alternative failed: '+e.message,false); }
 }
 pcBind();
 
