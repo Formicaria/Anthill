@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.25</title>
+<title>ANTHILL v1.8.25.1</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.25</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.25.1</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.25</span>
+      <span class="nav-logo-ver">v1.8.25.1</span>
     </div>
 
     <div class="nav-scroll">
@@ -1167,7 +1167,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <div class="mn-prompt">
                 <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
                 <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
-                <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">?</button>
+                <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
               </div>
               <div class="mn-modes" id="ov-modes">
                 <button class="hud-act" data-mode="inspect" aria-pressed="false" onclick="setOvMode('inspect')" title="Inspect only. Do not modify files.">Inspect</button>
@@ -1292,7 +1292,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="card" id="card-status">
             <div class="card-head">
               Colony Status
-              <button class="collapse-btn" data-card="card-status" title="Collapse">?</button>
+              <button class="collapse-btn" data-card="card-status" title="Collapse">▾</button>
             </div>
             <div class="card-body">
               <div class="stat-grid">
@@ -1308,7 +1308,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="card-head" style="color:var(--queen)">
               ⚠ Approvals
               <span class="badge" id="approval-count">0</span>
-              <button class="collapse-btn" data-card="approvals-card" title="Collapse">?</button>
+              <button class="collapse-btn" data-card="approvals-card" title="Collapse">▾</button>
             </div>
             <div class="card-body">
               <div id="approvals-list"></div>
@@ -1319,7 +1319,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="card-head">
               Jobs
               <span class="badge" id="jobs-badge">0</span>
-              <button class="collapse-btn" data-card="card-jobs" title="Collapse">?</button>
+              <button class="collapse-btn" data-card="card-jobs" title="Collapse">▾</button>
             </div>
             <div class="card-body">
               <div id="jobs-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:10px 0;">No jobs yet</div></div>
@@ -1351,7 +1351,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">
               <textarea class="mission-input" id="mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled></textarea>
-              <button class="send-btn" id="send-btn" disabled title="Dispatch mission (Enter)">?</button>
+              <button class="send-btn" id="send-btn" disabled title="Dispatch mission (Enter)">▶</button>
             </div>
             <div class="bar-hint">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
           </div>
@@ -1363,7 +1363,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="card" id="card-inspector">
             <div class="card-head">
               Agent Inspector
-              <button class="collapse-btn" data-card="card-inspector" title="Collapse">?</button>
+              <button class="collapse-btn" data-card="card-inspector" title="Collapse">▾</button>
             </div>
             <div class="card-body">
               <div id="agent-detail"><div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div></div>
@@ -1375,8 +1375,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               Colony Events
               <span class="badge" style="background:rgba(16,185,129,.15);color:var(--green);border-color:rgba(16,185,129,.3);" id="feed-badge">live</span>
               <span style="font-size:8px;color:var(--dim);font-weight:400;margin-left:3px;" id="ev-count"></span>
-              <button class="collapse-btn" data-card="events-card" title="Collapse" style="margin-left:auto;">?</button>
-              <button style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 3px;margin-left:3px;" title="Full event log" onclick="showPage('events');reloadLogModal()">?</button>
+              <button class="collapse-btn" data-card="events-card" title="Collapse" style="margin-left:auto;">▾</button>
+              <button style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 3px;margin-left:3px;" title="Full event log" onclick="showPage('events');reloadLogModal()">⛶</button>
             </div>
             <div class="card-body scroll-body" id="events-card-body" style="flex:1;">
               <div id="feed-list"><div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">Waiting for events...</div></div>
@@ -1405,7 +1405,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="section-head">New Mission</div>
           <div class="mission-row" style="gap:8px;">
             <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
-            <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">?</button>
+            <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">▶</button>
           </div>
           <div class="bar-hint" style="margin-top:4px;">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
         </div>
@@ -1656,7 +1656,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="margin-bottom:16px;">
           <div class="box-toggle-head" onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
             <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
           <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
             <table class="data-table">
@@ -1670,7 +1670,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card">
           <div class="box-toggle-head" onclick="toggleBoxBody('auto-runs-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
             <div class="section-head" style="margin:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
           <div id="auto-runs-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
             <table class="data-table">
@@ -1684,7 +1684,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="margin-top:16px;">
           <div class="box-toggle-head" onclick="toggleBoxBody('completed-obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
             <div class="section-head" style="margin:0;padding:0;" id="completed-obj-count">Completed Objectives</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
           <div id="completed-obj-box" style="max-height:640px;overflow-y:auto;padding:6px 12px 12px;">
             <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading…</div></div>
@@ -2040,7 +2040,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <button class="result-action-btn" id="copy-btn">Copy</button>
       <button class="result-action-btn" id="result-refresh-btn">Refresh</button>
     </div>
-    <button class="result-close" id="result-close">?</button>
+    <button class="result-close" id="result-close">✕</button>
   </div>
   <div id="result-body"></div>
   <div class="result-status-bar" id="result-status-bar"></div>
@@ -3677,7 +3677,7 @@ function renderResultsList(){
         <span style="color:${stColor};font-weight:600;white-space:nowrap;font-size:11px;">${stLabel}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${escapeHtml(m.goal||'')}</span>
         <span style="color:var(--dim);font-size:10px;font-family:var(--mono);white-space:nowrap;">score ${score} · ${fmtTime(m.saved_at||m.created_at)}</span>
-        <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+        <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
       </summary>
       <div class="mr-body" style="padding:4px 16px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;line-height:1.7;white-space:pre-wrap;">
         <div style="color:var(--dim);padding:8px 0;">Loading report…</div>
@@ -3692,7 +3692,7 @@ function renderResultsList(){
 }
 
 async function onResultToggle(det){
-  const caret=det.querySelector('.box-caret'); if(caret) caret.textContent=det.open?'?':'?';
+  const caret=det.querySelector('.box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
   if(!det.open||det.dataset.loaded) return;
   det.dataset.loaded='1';
   await renderMissionReport(det.dataset.mission, det.querySelector('.mr-body'));
@@ -3812,7 +3812,7 @@ function renderPatchCard(p){
       ${badge}${risk}
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
       <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
-      <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+      <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
     </summary>
     <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
       <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
@@ -3853,7 +3853,7 @@ function renderPatchList(rows){
 }
 const pcDetailCache={}; // patchId -> detail (avoids inlining patch content into onclick handlers)
 async function onPatchToggle(det){
-  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'?':'?';
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
   if(!det.open || det.dataset.loaded) return;
   det.dataset.loaded='1';
   const box=det.querySelector('.pc-detail');
@@ -3941,7 +3941,7 @@ async function pcApply(patchId){
   if(!d.old_content && d.change_type!=='add') warns.push('old content is missing/partial (context may be incomplete)');
   if(!d.has_backup) warns.push('no pre-apply backup recorded yet');
   const msg='Apply this patch to '+(d.file_path||'the file')+'?\n\n'+
-    (warns.length?('? '+warns.join('\n? ')+'\n\n'):'')+
+    (warns.length?('⚠ '+warns.join('\n⚠ ')+'\n\n'):'')+
     'This writes to disk. A backup is taken and a failed build auto-rolls back.';
   if(!confirm(msg)) return;
   try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
@@ -5257,7 +5257,7 @@ function toggleBoxBody(id,hdr){
   const box=document.getElementById(id); if(!box) return;
   const hidden=box.style.display==='none';
   box.style.display=hidden?'':'none';
-  const caret=hdr.querySelector('.box-caret'); if(caret) caret.textContent=hidden?'?':'?';
+  const caret=hdr.querySelector('.box-caret'); if(caret) caret.textContent=hidden?'▸':'▾';
 }
 
 function autoMsg(t,ok){
@@ -5294,7 +5294,7 @@ async function reloadAutonomyStatus(){
       :'— none —');
     const badge=document.getElementById('nav-autonomy-badge');
     if(badge){
-      if(s.running){ badge.style.display=''; badge.textContent='?'; badge.style.color='var(--green)'; }
+      if(s.running){ badge.style.display=''; badge.textContent='●'; badge.style.color='var(--green)'; }
       else badge.style.display='none';
     }
   }catch(e){ setEl('auto-decision','Error: '+e.message); }
@@ -5376,7 +5376,7 @@ async function reloadCompletedObjectives(){
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;">${escapeHtml(o.title||'')}</span>
           ${patchTag}
           <span class="obj-status" style="background:${bbg};color:${bcol};">${blabel}</span>
-          <span class="box-caret" style="color:var(--dim);font-size:11px;">?</span>
+          <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
         </summary>
         <div style="padding:2px 14px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">
           <div style="margin:6px 0;color:${bcol};">${escapeHtml(o.end_detail||o.end_reason_label||'Ended.')}</div>
@@ -5387,7 +5387,7 @@ async function reloadCompletedObjectives(){
 }
 
 async function onCompletedToggle(det){
-  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'?':'?';
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
   if(!det.open || det.dataset.loaded) return;
   det.dataset.loaded='1';
   const box=det.querySelector('.co-detail');
@@ -5670,7 +5670,7 @@ function renderMemoryResults(data,box){
 function renderPheromoneTable(trails,body){
   if(!trails.length){body.innerHTML='<div style="color:var(--dim)">No pheromone trails recorded yet. Run a few missions to build colony memory.</div>';return;}
   body.innerHTML=`<table class="phero-table"><thead><tr>
-      <th>Trail</th><th>Type</th><th>Strength</th><th>?</th><th>?</th><th>Net</th><th>Updated</th></tr></thead><tbody>${
+      <th>Trail</th><th>Type</th><th>Strength</th><th>✓</th><th>✕</th><th>Net</th><th>Updated</th></tr></thead><tbody>${
       trails.map(t=>{
         const s=+t.strength||0,pct=Math.round(s*100),net=t.net_count||0;
         const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
