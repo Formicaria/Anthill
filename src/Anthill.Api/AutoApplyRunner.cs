@@ -192,10 +192,11 @@ public static class AutoApplyRunner
         catch (Exception e) { reason = e.GetType().Name; return false; }
     }
 
-    private sealed record VerifyResult(bool Green, int ExitCode, bool TimedOut, double Seconds, string Output);
+    internal sealed record VerifyResult(bool Green, int ExitCode, bool TimedOut, double Seconds, string Output);
 
-    /// <summary>Runs the verify step in the workspace root: the operator command, or built-in dotnet build+test.</summary>
-    private static VerifyResult RunVerify()
+    /// <summary>Runs the verify step in the workspace root: the operator command, or built-in dotnet build+test.
+    /// Shared with the operator-triggered patch verification (v1.8.24, <see cref="PatchVerifyRunner"/>).</summary>
+    internal static VerifyResult RunVerify()
     {
         var cmd = string.IsNullOrWhiteSpace(AnthillRuntime.AutonomyAutoApplyVerifyCmd)
             ? "dotnet build && dotnet test"
@@ -250,6 +251,6 @@ public static class AutoApplyRunner
         lock (output) return (proc.ExitCode, output.ToString(), false, Math.Round(sw.Elapsed.TotalSeconds, 1));
     }
 
-    private static string Tail(string s, int max) =>
+    internal static string Tail(string s, int max) =>
         s.Length <= max ? s.TrimEnd() : "…" + s[^max..].TrimEnd();
 }

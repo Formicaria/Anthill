@@ -46,11 +46,18 @@ New admin Ant Inspector page: per-caste model route, applicable capability gates
 stats (totals, done/failed/skipped, success rate, avg seconds) from `GET /ants/stats`, plus a
 recent-activity expander. Bundled with the ANTHILL boot/shell ASCII banner.
 
+### Phase 9 — Memory + Pheromone Explorer (v1.8.23)
+Success/failure and loop-pattern visualization, mission memory + task/source/patch search, and
+prune controls on the Pheromones page.
+
+### Phase 7 — Visual Patch Center 2.0 (v1.8.24)
+Grouping on top of the existing Patch Center filters (status/risk/file/mission/objective —
+collapsible sections with counts and per-status chips, persisted choice), plus the operator
+action surface: approve/reject for pending patches that had no approval record, operator-edited
+alternative patches through the standard approval gate, and unbiased verify-&-auto-approve
+(apply with backup → build+test → always restore → approve only on green; Apply stays manual).
+
 ## Future direction (not yet built)
-- **Phase 7 — Visual Patch Center 2.0:** grouping by mission/objective/file/risk/status on top of the
-  existing Patch Center (shipped in v1.8.16).
-- **Phase 9 — Memory + Pheromone Explorer:** success/failure and loop-pattern visualization, mission
-  memory + task/source/patch search, prune/archive controls.
 - **Phase 10 — Full Command Center Polish:** command palette, global search, notification center,
   saved layouts, keyboard shortcuts, onboarding tour.
 

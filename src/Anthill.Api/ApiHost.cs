@@ -453,6 +453,42 @@ public static class ApiHost
         app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
 
+        // ---- Patch Center 2.0 (v1.8.24): operator actions by PATCH id ----
+        // Approve/reject pending patches that have no approval record (the record is created
+        // first, then the normal approve/reject transition runs — never a direct status write).
+        app.MapPost("/patches/{id}/approve", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "approve") ?? Results.Text(Queen.ApprovePatchDirect(id, CurrentUsername(ctx) ?? "operator"), "text/plain"));
+        app.MapPost("/patches/{id}/reject", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "reject"); if (auth is not null) return auth;
+            RejectBody? body = null;
+            try { body = await ctx.Request.ReadFromJsonAsync<RejectBody>(); } catch { /* optional */ }
+            return Results.Text(Queen.RejectPatchDirect(id, body?.Reason, CurrentUsername(ctx) ?? "operator"), "text/plain");
+        });
+        // Operator edits a proposal's content and offers it as an alternative patch. The
+        // alternative is a new proposal behind the standard approval gate; nothing touches disk.
+        app.MapPost("/patches/{id}/alternative", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "approve"); if (auth is not null) return auth;
+            AlternativePatchBody? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AlternativePatchBody>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrEmpty(body?.NewContent)) return ApiJson.Error("new_content is required.", "bad_request");
+            var (ok, newId, message) = Queen.ProposeAlternativePatch(
+                id, body.NewContent, body.Reason ?? "", CurrentUsername(ctx) ?? "operator", body.SupersedeOriginal ?? true);
+            return ok
+                ? ApiJson.Ok(new Dictionary<string, object?> { ["new_patch_id"] = newId, ["superseded_original"] = body.SupersedeOriginal ?? true }, message)
+                : ApiJson.Error(message, "alternative_failed");
+        });
+        // Unbiased verification: apply-with-backup → run verify (build+test or operator cmd) →
+        // ALWAYS restore. Green ⇒ auto-approve (never auto-apply); red ⇒ stays pending with notes.
+        app.MapPost("/patches/{id}/verify", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "approve"); if (auth is not null) return auth;
+            try { return ApiJson.Ok(PatchVerifyRunner.VerifyAndMaybeApprove(Queen, id)); }
+            catch (Exception ex) { return ApiJson.Error($"Verification error: {ex.Message}", "verify_error"); }
+        });
+
         MapAuthEndpoints(app);
         MapAutonomyEndpoints(app);
         MapDashboardEndpoints(app);
@@ -1625,6 +1661,9 @@ public static class ApiHost
         return null;
     }
 
+    /// <summary>Acting operator's username for audit trails (v1.8.24 Patch Center actions); null when unauthenticated.</summary>
+    private static string? CurrentUsername(HttpContext ctx) => ResolveIdentity(ctx)?.Username;
+
     /// <summary>True when a strong, non-placeholder static API token is configured for programmatic use.</summary>
     private static bool HasStaticToken() =>
         !string.IsNullOrEmpty(AnthillRuntime.ApiAuthToken)
@@ -1659,6 +1698,13 @@ public sealed class LoginRequest { public string? Username { get; set; } public 
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
 public sealed class RejectBody { public string? Reason { get; set; } }
+/// <summary>v1.8.24: operator-edited alternative patch content (Patch Center 2.0).</summary>
+public sealed class AlternativePatchBody
+{
+    [System.Text.Json.Serialization.JsonPropertyName("new_content")] public string? NewContent { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("reason")] public string? Reason { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("supersede_original")] public bool? SupersedeOriginal { get; set; }
+}
 public sealed class ProviderUpsertRequest
 {
     public string? Provider { get; set; }

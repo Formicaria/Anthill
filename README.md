@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.23.3
+**Current version:** v1.8.24
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.24` | UI Phase 7 — Visual Patch Center 2.0: grouping (status/risk/file/mission/objective); operator approve/reject for pending patches with no approval record; operator-edited **alternative patches** behind the normal approval gate; **unbiased verify & auto-approve** (apply-with-backup → build+test → always restore → approve only if green; apply stays manual). |
 | `v1.8.23.3` | CI now uploads a release-ready `anthill-linux-x64-v<version>.tar.gz` artifact from every successful run (after publish + selftest pass) — find it under the run's **Artifacts** on the Actions tab. |
 | `v1.8.23.2` | Fix: Patch Center empty HTTP 500 — `GET /patches` was registered twice (legacy text list + structured list), throwing `AmbiguousMatchException` in routing. Removed the duplicate and added a boot-time duplicate-route guard that fails loudly instead of silently 500ing. |
 | `v1.8.23.1` | Fix: repair UTF-8 corruption in the console (28 button icons + 354 replacement chars from the v1.8.23 save); harden API responses so serialization failures return a real error instead of an empty HTTP 500. |
