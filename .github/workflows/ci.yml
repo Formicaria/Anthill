@@ -73,6 +73,27 @@ jobs:
           chmod +x ./publish/linux-x64/anthill
           ANTHILL_API_TOKEN="ci-$(openssl rand -hex 24)" ./publish/linux-x64/anthill --selftest
 
+      # Everything below only runs if publish + selftest succeeded (steps are sequential),
+      # so a broken build can never produce a downloadable package.
+      - name: Read version for artifact naming
+        id: version
+        run: |
+          VERSION=$(grep -oP '(?<=public const string Version = ")[^"]+' src/Anthill.Core/Configuration/AnthillRuntime.cs)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Packaging as anthill-linux-x64-v$VERSION"
+
+      - name: Package linux-x64 publish output
+        run: |
+          cp config.example.json README.md CHANGELOG.md ./publish/linux-x64/
+          tar -czf "anthill-linux-x64-v${{ steps.version.outputs.version }}.tar.gz" -C ./publish/linux-x64 .
+
+      - name: Upload linux-x64 package (CI artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: anthill-linux-x64-v${{ steps.version.outputs.version }}
+          path: anthill-linux-x64-v*.tar.gz
+          if-no-files-found: error
+
   docker:
     name: Docker build + boot smoke test
     runs-on: ubuntu-latest
