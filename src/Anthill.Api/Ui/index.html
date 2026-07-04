@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.25.3</title>
+<title>ANTHILL v1.8.25.4</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.25.3</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.25.4</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.25.3</span>
+      <span class="nav-logo-ver">v1.8.25.4</span>
     </div>
 
     <div class="nav-scroll">
@@ -5528,7 +5528,10 @@ async function loadSecurity(){
 
 async function saveSecurity(){
   const payload={};
-  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
+  // Include the Autonomous Auto-Apply toggles — they live in their own containers, so they were
+  // previously never collected here and toggling "Enable auto-apply" / "Git-commit verified changes"
+  // had no effect on save.
+  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw,#sec-autoapply-toggle .toggle-sw,#sec-autoapply-git .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
   const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
   payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
   payload.autonomy_autoapply_paths=document.getElementById('sec-autoapply-paths').value.split('\n').map(s=>s.trim()).filter(Boolean);

@@ -1,4 +1,4 @@
-// ANTHILL secured local API + colony UI (v1.8.25.3) entry point.
+// ANTHILL secured local API + colony UI (v1.8.25.4) entry point.
 // The host is built in ApiHost so the CLI's `--api` path can launch the identical
 // server without duplicating the security bootstrap.
 return Anthill.Api.ApiHost.Run(args);

@@ -1,5 +1,13 @@
 # ANTHILL Changelog
 
+## v1.8.25.4 — Auto-Apply Security toggles never saved
+
+The two Autonomous Auto-Apply toggles — "Enable auto-apply" (`autonomy_autoapply_enabled`) and
+"Git-commit verified changes" (`autonomy_autoapply_git_commit`) — render in their own containers
+(`#sec-autoapply-toggle`, `#sec-autoapply-git`), but `saveSecurity()` only harvested toggle state
+from `#sec-toggles` and `#sec-shell-toggle`. So both toggles flipped visually and then silently
+dropped out of the save payload. Added their containers to the collector; both persist now.
+
 ## v1.8.25.3 — Approved patches were un-appliable
 
 Found during live V&V of the Patch Center. Approving a patch flipped only the *approval record* to
