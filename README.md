@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.25.4
+**Current version:** v1.8.26
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.26` | Auto-apply **git integration**: commit verified changes to a standalone branch `<github-username>-anthill` and (optionally) push it via an **SSH deploy key** (referenced by path — never stored). One-way sync only (origin/main → branch); **main is never committed to, pushed, or merged into**. New Security → Auto-Apply fields (username → branch, remote, key path, push toggle). |
 | `v1.8.25.4` | Fix: the **Autonomous Auto-Apply** toggles ("Enable auto-apply" and "Git-commit verified changes") never saved — `saveSecurity()` collected toggle state only from other containers, so these two flipped visually but were dropped from the payload. Both now persist. |
 | `v1.8.25.3` | Fix: approved patches were un-appliable — `ApproveRequest` flipped only the approval record, never the patch, so the Patch Center's Apply button (gated on patch status `approved`) never appeared. Approving now flips the patch to `approved`, and the UI also honors `approval_status`. |
 | `v1.8.25.2` | CI: new `ui-integrity` job fails the build on any UI glyph corruption (`�`, bare `>?<` icons, `>? Label` buttons, `'?':'?'` carets) + a `node --check` of the embedded JS — so the recurring corruption can never merge again. CI-only. |

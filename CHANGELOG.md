@@ -1,5 +1,30 @@
 # ANTHILL Changelog
 
+## v1.8.26 — Auto-apply git integration (standalone branch, never main)
+
+Expands the "Git-commit verified changes" toggle into a real, safety-gated git workflow for the
+Director's auto-apply. After a green verify, ANTHILL commits the applied files to a standalone branch
+and can push it for review — **without ever touching main**.
+
+- New config: `autonomy_autoapply_git_username` (→ branch `<username>-anthill`),
+  `autonomy_autoapply_git_remote` (default `origin`), `autonomy_autoapply_git_ssh_key_path`,
+  `autonomy_autoapply_git_push`. Surfaced in **Security → Autonomous Auto-Apply** (username field shows
+  the resulting branch; remote; SSH key path; "Push branch to origin" toggle).
+- **SSH deploy key by reference:** the key is used via `GIT_SSH_COMMAND="ssh -i <path> …"`. Only the
+  *path* is stored/shown; no key material is ever read into config, DB, UI, logs, or events.
+- **Flow (per kept auto-apply):** verify the workspace is on `<username>-anthill` (create/checkout is
+  a one-time operator step) → `git add`/`commit` the applied files → if push is on, `git fetch` +
+  merge `origin/main` **into** the branch (one-way sync) → `git push <remote> <branch>` via the key.
+- **Hard main-safety:** refuses to commit if the workspace is on `main`/`master`; only ever commits
+  and pushes the standalone branch; never merges the branch into main; never force-pushes;
+  fail-closed (a git error keeps the change on disk and logs `autonomy_autoapply_git_failed`).
+- Open PRs from the pushed branch on GitHub; filing PRs/issues from ANTHILL needs the GitHub API
+  (a token) and is a separate follow-up, out of scope for an SSH deploy key.
+
+**Operator setup (one-time, on the host clone):** create the deploy key, add its public half to the
+repo (Settings → Deploy keys, allow write), then `cd <workspace> && git checkout -b <username>-anthill
+origin/main`. Point the SSH key path setting at the private key.
+
 ## v1.8.25.4 — Auto-Apply Security toggles never saved
 
 The two Autonomous Auto-Apply toggles — "Enable auto-apply" (`autonomy_autoapply_enabled`) and

@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.25.4";
+    public const string Version = "1.8.26";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -159,8 +159,19 @@ public static class AnthillRuntime
     public static string AutonomyAutoApplyVerifyCmd = "";
     /// <summary>Hard timeout (seconds) for the verify step.</summary>
     public static int AutonomyAutoApplyVerifyTimeout = 900;
-    /// <summary>After a green verify, also git add + commit locally (never pushed).</summary>
+    /// <summary>After a green verify, also git add + commit on the standalone branch (never main).</summary>
     public static bool AutonomyAutoApplyGitCommit = false;
+    /// <summary>v1.8.26: after commit, push the standalone branch to the remote via the SSH deploy key.</summary>
+    public static bool AutonomyAutoApplyGitPush = false;
+    /// <summary>v1.8.26: git remote name for pull/push (default "origin").</summary>
+    public static string AutonomyAutoApplyGitRemote = "origin";
+    /// <summary>v1.8.26: GitHub username — the standalone branch is "&lt;username&gt;-anthill".</summary>
+    public static string AutonomyAutoApplyGitUsername = "";
+    /// <summary>v1.8.26: PATH to the SSH deploy key on the host (never the key material itself).</summary>
+    public static string AutonomyAutoApplyGitSshKeyPath = "";
+    /// <summary>The standalone branch name derived from the configured username, or "" when unset.</summary>
+    public static string AutonomyAutoApplyGitBranch =>
+        string.IsNullOrWhiteSpace(AutonomyAutoApplyGitUsername) ? "" : $"{AutonomyAutoApplyGitUsername}-anthill";
     /// <summary>v1.8.21: keep auto-applied patches without a verify gate when no verify command is set (opt-in; default off = verify).</summary>
     public static bool AutonomyAutoApplyKeepWithoutVerify = false;
 
@@ -433,6 +444,10 @@ public static class AnthillRuntime
         AutonomyAutoApplyVerifyCmd = (config.AutonomyAutoApplyVerifyCmd ?? "").Trim();
         AutonomyAutoApplyVerifyTimeout = Math.Clamp(config.AutonomyAutoApplyVerifyTimeout, 30, 7200);
         AutonomyAutoApplyGitCommit = config.AutonomyAutoApplyGitCommit;
+        AutonomyAutoApplyGitPush = config.AutonomyAutoApplyGitPush;
+        AutonomyAutoApplyGitRemote = string.IsNullOrWhiteSpace(config.AutonomyAutoApplyGitRemote) ? "origin" : config.AutonomyAutoApplyGitRemote.Trim();
+        AutonomyAutoApplyGitUsername = (config.AutonomyAutoApplyGitUsername ?? "").Trim();
+        AutonomyAutoApplyGitSshKeyPath = (config.AutonomyAutoApplyGitSshKeyPath ?? "").Trim();
         AutonomyAutoApplyKeepWithoutVerify = config.AutonomyAutoApplyKeepWithoutVerify;
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
@@ -472,6 +487,8 @@ public static class AnthillRuntime
         "operator_shell_enabled", "operator_shell_dir",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
+        "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
+        "autonomy_autoapply_git_ssh_key_path",
         "autonomy_autoapply_keep_without_verify",
     };
 
@@ -592,6 +609,11 @@ public static class AnthillRuntime
         ["autonomy_autoapply_verify_cmd"] = AutonomyAutoApplyVerifyCmd,
         ["autonomy_autoapply_verify_timeout"] = AutonomyAutoApplyVerifyTimeout,
         ["autonomy_autoapply_git_commit"] = AutonomyAutoApplyGitCommit,
+        ["autonomy_autoapply_git_push"] = AutonomyAutoApplyGitPush,
+        ["autonomy_autoapply_git_remote"] = AutonomyAutoApplyGitRemote,
+        ["autonomy_autoapply_git_username"] = AutonomyAutoApplyGitUsername,
+        ["autonomy_autoapply_git_ssh_key_path"] = AutonomyAutoApplyGitSshKeyPath,
+        ["autonomy_autoapply_git_branch"] = AutonomyAutoApplyGitBranch,
         ["autonomy_autoapply_keep_without_verify"] = AutonomyAutoApplyKeepWithoutVerify,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,

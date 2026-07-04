@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.25.4</title>
+<title>ANTHILL v1.8.26</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.25.4</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.26</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.25.4</span>
+      <span class="nav-logo-ver">v1.8.26</span>
     </div>
 
     <div class="nav-scroll">
@@ -1882,6 +1882,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field" style="flex:1;min-width:220px;"><label>Verify command <span style="color:var(--dim);font-weight:400">(blank = dotnet build &amp;&amp; dotnet test)</span></label><input class="form-input" id="sec-autoapply-verify" type="text" placeholder="dotnet build && dotnet test" style="width:100%;font-family:var(--mono);"></div>
           </div>
           <div id="sec-autoapply-git" style="margin-top:8px;"></div>
+          <div id="sec-autoapply-gitcfg" style="margin-top:8px;border-top:1px solid var(--border);padding-top:10px;">
+            <div style="font-size:10px;color:var(--dim);margin-bottom:8px;">Git integration commits verified changes to a <b>standalone branch — never main</b>, and can push it via an <b>SSH deploy key</b> (referenced by path on the host; the key is never stored, shown, or logged). Keep the workspace clone checked out on the branch below; ANTHILL refuses to commit if it is on main.</div>
+            <div class="form-row">
+              <div class="form-field"><label>GitHub username <span style="color:var(--dim);font-weight:400">(→ branch)</span></label><input class="form-input" id="sec-autoapply-git-user" type="text" placeholder="your-username" oninput="secSyncGitBranch()" style="width:150px"></div>
+              <div class="form-field"><label>Standalone branch</label><input class="form-input" id="sec-autoapply-git-branch" type="text" readonly style="width:180px;font-family:var(--mono);color:var(--dim);" placeholder="&lt;username&gt;-anthill"></div>
+              <div class="form-field"><label>Remote</label><input class="form-input" id="sec-autoapply-git-remote" type="text" placeholder="origin" style="width:90px"></div>
+            </div>
+            <div class="form-field" style="margin-top:8px;"><label>SSH deploy key path <span style="color:var(--dim);font-weight:400">(on the host; write-scoped to this repo)</span></label><input class="form-input" id="sec-autoapply-git-key" type="text" placeholder="/opt/anthill/.ssh/anthill_deploy" style="width:100%;font-family:var(--mono);font-size:11px;"></div>
+            <div id="sec-autoapply-git-push" style="margin-top:8px;"></div>
+          </div>
         </div>
       </div><!-- /page-security -->
 
@@ -5517,7 +5527,12 @@ async function loadSecurity(){
   document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
   document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
   document.getElementById('sec-autoapply-toggle').innerHTML=tog('autonomy_autoapply_enabled','Enable auto-apply','Director applies allowlisted patches that verify green, without review.');
-  document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, also commit locally (never pushed).');
+  document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, commit the change on the standalone branch (never main).');
+  document.getElementById('sec-autoapply-git-push').innerHTML=tog('autonomy_autoapply_git_push','Push branch to origin','After commit, push the standalone branch via the SSH deploy key. Never pushes or merges main.');
+  document.getElementById('sec-autoapply-git-user').value=secSettings.autonomy_autoapply_git_username||'';
+  document.getElementById('sec-autoapply-git-remote').value=secSettings.autonomy_autoapply_git_remote||'origin';
+  document.getElementById('sec-autoapply-git-key').value=secSettings.autonomy_autoapply_git_ssh_key_path||'';
+  secSyncGitBranch();
   document.getElementById('sec-workspace').value=secSettings.agent_workspace_dir||'';
   document.getElementById('sec-shell-dir').value=secSettings.operator_shell_dir||'';
   document.getElementById('sec-autoapply-paths').value=(secSettings.autonomy_autoapply_paths||[]).join('\n');
@@ -5526,18 +5541,26 @@ async function loadSecurity(){
   document.getElementById('sec-autoapply-verify').value=secSettings.autonomy_autoapply_verify_cmd||'';
 }
 
+function secSyncGitBranch(){
+  const u=(document.getElementById('sec-autoapply-git-user').value||'').trim();
+  const el=document.getElementById('sec-autoapply-git-branch');
+  if(el) el.value=u?`${u}-anthill`:'';
+}
 async function saveSecurity(){
   const payload={};
   // Include the Autonomous Auto-Apply toggles — they live in their own containers, so they were
   // previously never collected here and toggling "Enable auto-apply" / "Git-commit verified changes"
   // had no effect on save.
-  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw,#sec-autoapply-toggle .toggle-sw,#sec-autoapply-git .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
+  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw,#sec-autoapply-toggle .toggle-sw,#sec-autoapply-git .toggle-sw,#sec-autoapply-git-push .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
   const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
   payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
   payload.autonomy_autoapply_paths=document.getElementById('sec-autoapply-paths').value.split('\n').map(s=>s.trim()).filter(Boolean);
   payload.autonomy_autoapply_max_lines=parseInt(document.getElementById('sec-autoapply-maxlines').value,10)||40;
   payload.autonomy_autoapply_verify_timeout=parseInt(document.getElementById('sec-autoapply-timeout').value,10)||900;
   payload.autonomy_autoapply_verify_cmd=document.getElementById('sec-autoapply-verify').value.trim();
+  payload.autonomy_autoapply_git_username=document.getElementById('sec-autoapply-git-user').value.trim();
+  payload.autonomy_autoapply_git_remote=document.getElementById('sec-autoapply-git-remote').value.trim()||'origin';
+  payload.autonomy_autoapply_git_ssh_key_path=document.getElementById('sec-autoapply-git-key').value.trim();
   const msg=document.getElementById('sec-msg');
   try{
     const r=await api('/settings','POST',payload);

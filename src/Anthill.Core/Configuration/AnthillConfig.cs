@@ -129,8 +129,15 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_autoapply_verify_cmd")] public string AutonomyAutoApplyVerifyCmd { get; set; } = "";
     // Hard timeout (seconds) for the verify step.
     [JsonPropertyName("autonomy_autoapply_verify_timeout")] public int AutonomyAutoApplyVerifyTimeout { get; set; } = 900;
-    // After a green verify, also `git add` + `git commit` the change locally (never pushed). Off = leave on disk.
+    // After a green verify, also `git add` + `git commit` the change locally on the standalone branch. Off = leave on disk.
     [JsonPropertyName("autonomy_autoapply_git_commit")] public bool AutonomyAutoApplyGitCommit { get; set; } = false;
+    // v1.8.26: git integration for auto-apply. Commits (and optionally pushes) verified changes to a
+    // dedicated standalone branch — NEVER main. The SSH deploy key is referenced by PATH on the host,
+    // never stored as key material. Branch name is derived as "<git_username>-anthill".
+    [JsonPropertyName("autonomy_autoapply_git_push")] public bool AutonomyAutoApplyGitPush { get; set; } = false;
+    [JsonPropertyName("autonomy_autoapply_git_remote")] public string AutonomyAutoApplyGitRemote { get; set; } = "origin";
+    [JsonPropertyName("autonomy_autoapply_git_username")] public string AutonomyAutoApplyGitUsername { get; set; } = "";
+    [JsonPropertyName("autonomy_autoapply_git_ssh_key_path")] public string AutonomyAutoApplyGitSshKeyPath { get; set; } = "";
     // v1.8.21 fix: on deployments with no build toolchain (e.g. a published-binary LXC), the built-in
     // `dotnet build && dotnet test` verify always fails, so every auto-applied patch is rolled back and
     // nothing ever persists. When this is true AND no verify command is configured, auto-apply KEEPS the
