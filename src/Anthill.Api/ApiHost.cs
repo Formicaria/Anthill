@@ -95,6 +95,7 @@ public static class ApiHost
         });
 
         MapEndpoints(app);
+        AssertNoDuplicateRoutes(app);
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
         if (NetworkUtil.IsWildcardBindHost(AnthillRuntime.ApiHost))
@@ -118,6 +119,37 @@ public static class ApiHost
 
         app.Run();
         return 0;
+    }
+
+    /// <summary>
+    /// Boot-time guard: two endpoints sharing an identical method+template throw
+    /// <c>AmbiguousMatchException</c> during routing on every matching request — before any handler
+    /// or middleware runs — which surfaces as an uncatchable empty HTTP 500 (the Patch Center bug:
+    /// a legacy <c>ProtectedText("/patches")</c> collided with the structured <c>GET /patches</c>).
+    /// Fail loudly at startup instead of silently at request time.
+    /// </summary>
+    private static void AssertNoDuplicateRoutes(WebApplication app)
+    {
+        if (app.Services.GetService(typeof(Microsoft.AspNetCore.Routing.EndpointDataSource))
+            is not Microsoft.AspNetCore.Routing.EndpointDataSource source) return;
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ep in source.Endpoints)
+        {
+            if (ep is not Microsoft.AspNetCore.Routing.RouteEndpoint re) continue;
+            var methods = re.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()?.HttpMethods
+                          ?? new[] { "*" };
+            var template = re.RoutePattern.RawText ?? "";
+            foreach (var m in methods)
+            {
+                var key = $"{m} {template}";
+                seen[key] = seen.GetValueOrDefault(key) + 1;
+            }
+        }
+        var dupes = seen.Where(kv => kv.Value > 1).Select(kv => kv.Key).ToList();
+        if (dupes.Count > 0)
+            throw new InvalidOperationException(
+                "Duplicate route registrations (would throw AmbiguousMatchException at request time): "
+                + string.Join(", ", dupes));
     }
 
     private static void MapEndpoints(WebApplication app)
@@ -196,7 +228,10 @@ public static class ApiHost
         });
         ProtectedText(app, "/sources", "read_sources", () => Queen.FormatSources());
         ProtectedText(app, "/source-quality", "read_sources", () => Queen.FormatSourceQuality());
-        ProtectedText(app, "/patches", "read_patches", () => Queen.FormatPatchList());
+        // NOTE: GET /patches is the structured Patch Center list (app.MapGet below). The legacy
+        // ProtectedText "/patches" (Queen.FormatPatchList) was a DUPLICATE registration of the same
+        // route template — two endpoints matching /patches threw AmbiguousMatchException in routing
+        // (before any handler/middleware), surfacing as an uncatchable empty HTTP 500. Removed.
         ProtectedText(app, "/approvals", "read_approvals", () => Queen.FormatApprovals());
         ProtectedText(app, "/missions", "read_status", () => Queen.FormatMissionHistory());
 
