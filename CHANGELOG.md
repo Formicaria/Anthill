@@ -1,5 +1,20 @@
 # ANTHILL Changelog
 
+## v1.8.25.1 — Console glyph-corruption repair
+
+A follow-on to the v1.8.23.1 encoding repair, which only caught labeled buttons (`>? Label`) and
+U+FFFD (`�`) characters. This pass fixes the icon-only glyphs that were also flattened to `?` and had
+survived into the mainline:
+
+- 19 `>?<` markup icons restored from the last clean revision: collapse buttons and expand carets
+  (`▾`), mission-dispatch buttons (`▶`), the results-close button (`✕`), the full-event-log button
+  (`⛶`), and the pheromone-table success/failure headers (`✓` / `✕`).
+- 4 JS-literal expand/collapse carets (`det.open?'?':'?'` / `hidden?'?':'?'`) → `▾` / `▸`.
+- The apply-warning prefix (`⚠`) and the nav "autonomy running" badge (`●`).
+- The legitimate `?` help-shortcut key (`<kbd>?</kbd>`, from the v1.8.25 Command Center) is preserved.
+
+No behavior change; embedded UI JavaScript still parses cleanly.
+
 ## v1.8.25 — UI Phase 10: Full Command Center Polish
 
 Finishes the UI roadmap (all 10 phases now shipped). Everything is additive vanilla JS/CSS inside
@@ -96,7 +111,8 @@ Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime
 ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
 + API serialization hardening = **v1.8.23.1**, Patch Center duplicate-route fix = **v1.8.23.2**,
 CI linux-x64 artifact packaging = **v1.8.23.3**, Visual Patch Center 2.0 grouping (UI Phase 7)
-= **v1.8.24**, Full Command Center Polish (UI Phase 10) = **v1.8.25**, and so on.
+= **v1.8.24**, Full Command Center Polish (UI Phase 10) = **v1.8.25**, console glyph-corruption
+repair = **v1.8.25.1**, and so on.
 
 ## v1.8.23.2 — Patch Center duplicate-route fix
 

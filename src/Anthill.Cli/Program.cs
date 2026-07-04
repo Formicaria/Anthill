@@ -4,7 +4,7 @@ using Anthill.Core.Diagnostics;
 using Anthill.Core.Orchestration;
 
 // ----------------------------------------------------------------------------
-// ANTHILL command-line entry point (v1.8.25).
+// ANTHILL command-line entry point (v1.8.25.1).
 // Successor to `python -m anthill`: runs missions, the self-test harness, status
 // views, or launches the secured API/UI host — all over the same Anthill.Core engine.
 // ----------------------------------------------------------------------------
