@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.24</title>
+<title>ANTHILL v1.8.25</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -503,6 +503,53 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .pc-group-sec .pc-group-count{color:var(--dim);font-size:10px;white-space:nowrap;}
 .pc-group-sec .pc-group-body{padding:8px 10px 4px;}
 .pc-verifytail{background:rgba(0,0,0,0.35);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:var(--mono);font-size:10px;max-height:220px;overflow:auto;white-space:pre-wrap;color:var(--muted);margin:4px 0 0;}
+/* ---- v1.8.25 UI Phase 10: Command Center Polish -------------------------- */
+kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;background:rgba(255,255,255,0.05);font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;}
+#palette-overlay{display:none;position:fixed;inset:0;z-index:300;background:rgba(3,7,18,0.6);backdrop-filter:blur(2px);}
+#palette-overlay.show{display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;}
+.palette-box{width:min(640px,92vw);background:var(--panel,#0b1220);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,0.55);overflow:hidden;animation:paletteIn .12s ease-out;}
+@keyframes paletteIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+#palette-input{width:100%;border:none;outline:none;background:transparent;color:var(--text,#e5e7eb);font-size:14px;padding:14px 16px;border-bottom:1px solid var(--border);font-family:inherit;}
+#palette-results{max-height:46vh;overflow:auto;}
+.palette-sect{padding:6px 14px 2px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);}
+.palette-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;font-size:12px;}
+.palette-item .pi-kind{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);min-width:52px;}
+.palette-item .pi-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.palette-item .pi-meta{font-size:10px;color:var(--dim);white-space:nowrap;}
+.palette-item.sel,.palette-item:hover{background:rgba(251,191,36,0.08);}
+.palette-item.sel .pi-title{color:var(--queen,#fbbf24);}
+.palette-foot{display:flex;gap:14px;align-items:center;padding:8px 14px;border-top:1px solid var(--border);font-size:10px;color:var(--dim);}
+.palette-empty{padding:16px;color:var(--dim);font-size:11px;text-align:center;}
+#notif-panel{display:none;position:fixed;top:52px;right:56px;z-index:290;width:min(380px,92vw);background:var(--panel,#0b1220);border:1px solid var(--border);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,0.5);overflow:hidden;}
+#notif-panel.show{display:block;}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;}
+#notif-list{max-height:50vh;overflow:auto;}
+.notif-item{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;font-size:11px;align-items:flex-start;}
+.notif-item:hover{background:rgba(255,255,255,0.03);}
+.notif-item.unread{background:rgba(251,191,36,0.05);}
+.notif-item .ni-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex:none;background:var(--dim);}
+.notif-item.good .ni-dot{background:var(--green,#34d399);}
+.notif-item.bad .ni-dot{background:var(--red,#f87171);}
+.notif-item.warn .ni-dot{background:var(--queen,#fbbf24);}
+.notif-item .ni-msg{flex:1;color:var(--muted);line-height:1.4;}
+.notif-item .ni-msg b{color:var(--text,#e5e7eb);font-weight:600;}
+.notif-item .ni-time{font-size:9px;color:var(--dim);white-space:nowrap;margin-top:2px;}
+.notif-empty{padding:18px;text-align:center;color:var(--dim);font-size:11px;}
+#notif-count{position:absolute;top:2px;right:2px;min-width:14px;height:14px;border-radius:7px;background:var(--red,#f87171);color:#0b1220;font-size:9px;font-weight:700;line-height:14px;text-align:center;padding:0 3px;display:none;}
+#notif-bell{position:relative;}
+#shortcut-overlay{display:none;position:fixed;inset:0;z-index:300;background:rgba(3,7,18,0.6);}
+#shortcut-overlay.show{display:flex;align-items:center;justify-content:center;}
+.shortcut-box{width:min(440px,92vw);background:var(--panel,#0b1220);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 18px 60px rgba(0,0,0,0.55);}
+.shortcut-title{font-size:13px;font-weight:600;margin-bottom:12px;}
+.shortcut-grid{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:11px;color:var(--muted);align-items:center;}
+#tour-overlay{display:none;position:fixed;inset:0;z-index:310;background:rgba(3,7,18,0.7);}
+#tour-overlay.show{display:flex;align-items:center;justify-content:center;}
+.tour-box{width:min(460px,92vw);background:var(--panel,#0b1220);border:1px solid var(--queen,#fbbf24);border-radius:12px;padding:18px;box-shadow:0 18px 60px rgba(0,0,0,0.6);}
+.tour-step-label{font-size:9px;letter-spacing:.14em;color:var(--dim);margin-bottom:6px;}
+.tour-title{font-size:15px;font-weight:700;margin-bottom:8px;color:var(--queen,#fbbf24);}
+.tour-body{font-size:12px;color:var(--muted);line-height:1.6;min-height:64px;}
+.tour-actions{display:flex;gap:8px;margin-top:14px;align-items:center;}
+@media (prefers-reduced-motion: reduce){.palette-box{animation:none;}}
 .pc-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
 .pc-chip{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:12px;border:1px solid var(--border);color:var(--muted);background:var(--card);}
 .pc-chip b{color:var(--text);}
@@ -879,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.24</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.25</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -922,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.24</span>
+      <span class="nav-logo-ver">v1.8.25</span>
     </div>
 
     <div class="nav-scroll">
@@ -1051,6 +1098,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="sp-btn" id="sp-recheck">Re-check update</div>
           </div>
         </div>
+        <!-- v1.8.25 UI Phase 10: notification center -->
+        <button class="hdr-btn" id="notif-bell" title="Notifications (recent colony activity)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+          <span id="notif-count"></span>
+        </button>
         <button class="hdr-btn" id="approval-bell" title="Pending Approvals" style="display:none">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span id="bell-count"></span>
@@ -2016,6 +2068,61 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <div class="tt-row"><span>Activity</span><span class="tt-val" id="tt-activity"></span></div>
 </div>
 
+<!-- ---------------------------------------------------------------------------
+     v1.8.25 UI Phase 10: COMMAND PALETTE + GLOBAL SEARCH (Ctrl+K)
+---------------------------------------------------------------------------- -->
+<div id="palette-overlay" role="dialog" aria-label="Command palette">
+  <div class="palette-box">
+    <input id="palette-input" type="text" placeholder="Type a command, page, or search mission memory…" autocomplete="off" spellcheck="false">
+    <div id="palette-results"></div>
+    <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span><span style="flex:1"></span><span>memory search runs for 2+ characters</span></div>
+  </div>
+</div>
+
+<!-- v1.8.25: NOTIFICATION CENTER dropdown -->
+<div id="notif-panel">
+  <div class="notif-head">
+    <span>Notifications</span>
+    <button class="btn btn-ghost" id="notif-clear" style="font-size:10px;padding:2px 8px;">Mark all read</button>
+  </div>
+  <div id="notif-list"><div class="notif-empty">No notable activity yet.</div></div>
+</div>
+
+<!-- v1.8.25: KEYBOARD SHORTCUTS help (?) -->
+<div id="shortcut-overlay" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="shortcut-box">
+    <div class="shortcut-title">Keyboard shortcuts <button class="btn btn-ghost" style="float:right;font-size:10px;" onclick="closeShortcuts()">Close (Esc)</button></div>
+    <div class="shortcut-grid">
+      <div><kbd>Ctrl</kbd>+<kbd>K</kbd></div><div>Command palette + global search</div>
+      <div><kbd>Ctrl</kbd>+<kbd>L</kbd></div><div>Event log</div>
+      <div><kbd>?</kbd></div><div>This help</div>
+      <div><kbd>g</kbd> <kbd>o</kbd></div><div>Overview</div>
+      <div><kbd>g</kbd> <kbd>c</kbd></div><div>Colony</div>
+      <div><kbd>g</kbd> <kbd>m</kbd></div><div>Missions</div>
+      <div><kbd>g</kbd> <kbd>r</kbd></div><div>Results</div>
+      <div><kbd>g</kbd> <kbd>p</kbd></div><div>Patch Center (admin)</div>
+      <div><kbd>g</kbd> <kbd>e</kbd></div><div>Event Log</div>
+      <div><kbd>g</kbd> <kbd>s</kbd></div><div>Settings (admin)</div>
+      <div><kbd>Esc</kbd></div><div>Close overlays</div>
+    </div>
+  </div>
+</div>
+
+<!-- v1.8.25: ONBOARDING TOUR (first login) -->
+<div id="tour-overlay" role="dialog" aria-label="Welcome tour">
+  <div class="tour-box">
+    <div class="tour-step-label" id="tour-step-label">1 / 5</div>
+    <div class="tour-title" id="tour-title"></div>
+    <div class="tour-body" id="tour-body"></div>
+    <div class="tour-actions">
+      <button class="btn btn-ghost" id="tour-skip">Skip tour</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost" id="tour-back">Back</button>
+      <button class="btn btn-primary" id="tour-next">Next</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -2193,6 +2300,7 @@ const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in s
 PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); if(typeof pollHud==='function') pollHud(); };
 
 function showPage(id){
+  try{ localStorage.setItem('last-page',id); }catch{} // v1.8.25 saved layout: reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
   if(pg) pg.classList.add('active');
@@ -3109,6 +3217,7 @@ async function pollEvents(){
     evTotalSeen=allBlocks.length;
     const newCount=evTotalSeen-prevCount;
     setEl('ev-count',`${evTotalSeen} events`);
+    if(typeof notifIngest==='function') notifIngest(allBlocks); // v1.8.25 notification center feed
     function renderFeed(blocks, containerId, maxItems){
       const list=document.getElementById(containerId); if(!list) return;
       const wasAtBottom=list.scrollHeight-list.scrollTop-list.clientHeight<40;
@@ -4237,19 +4346,33 @@ function fmtTime(iso){
   catch{return iso.substring(11,16);}
 }
 
-// -- Keyboard shortcuts --------------------------------------------------------
+// -- Keyboard shortcuts (v1.8.25 UI Phase 10) -----------------------------------
+// Ctrl+K now opens the command palette (it previously jumped to the mission input —
+// "New mission" is the top palette action, one Enter away). Ctrl+L unchanged.
+let gSeqAt=0; // "g then <key>" two-key page navigation
+function typingInField(){
+  const el=document.activeElement;
+  return el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.tagName==='SELECT'||el.isContentEditable);
+}
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     document.getElementById('result-overlay').classList.remove('show');
     document.getElementById('rename-pop').classList.remove('show');
+    closePalette(); closeShortcuts(); closeNotifPanel();
   }
-  if((e.ctrlKey||e.metaKey)&&e.key==='k'){
-    e.preventDefault();
-    const mi=document.getElementById('mission-input');
-    if(mi){showPage('colony');setTimeout(()=>mi.focus(),60);}
-  }
-  if((e.ctrlKey||e.metaKey)&&e.key==='l'){
-    e.preventDefault();showPage('events');reloadLogModal();
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){ e.preventDefault(); togglePalette(); return; }
+  if((e.ctrlKey||e.metaKey)&&e.key==='l'){ e.preventDefault(); showPage('events'); reloadLogModal(); return; }
+  if(typingInField()||e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.key==='?'){ e.preventDefault(); openShortcuts(); return; }
+  const now=Date.now();
+  if(e.key==='g'){ gSeqAt=now; return; }
+  if(gSeqAt && now-gSeqAt<900){
+    const admin=ROLE==='admin';
+    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',
+      p:admin?'patches':null,b:admin?'objboard':null,s:admin?'settings':null,u:admin?'users':null,a:admin?'autonomy':null};
+    const dest=map[e.key.toLowerCase()];
+    if(dest){ e.preventDefault(); showPage(dest); }
+    gSeqAt=0;
   }
 });
 
@@ -4257,6 +4380,8 @@ document.addEventListener('keydown',e=>{
 function startPolling(){
   loadUiState();
   loadColonyRegistry();
+  restoreLayout();          // v1.8.25 saved layout: reopen the last page you were on
+  setTimeout(()=>startTour(false),600); // v1.8.25 onboarding tour on first login only
   pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();pollHealth();pollHud();checkForUpdate(false);
   setInterval(pollStatus,   4000);
   setInterval(pollJobs,     3000);
@@ -4279,6 +4404,239 @@ document.getElementById('approval-bell').addEventListener('click',()=>{
   },120);
   pollApprovals();
 });
+
+// ============================================================================
+// v1.8.25 — UI Phase 10: Full Command Center Polish
+// Command palette + global memory search, notification center, saved layout
+// restore, keyboard shortcuts help, onboarding tour. All additive; no page,
+// route, or behavior removed (Ctrl+K reassigned to the palette, see keydown).
+// ============================================================================
+
+// ---- Command palette --------------------------------------------------------
+const PALETTE_PAGES=[
+  ['overview','Overview',false],['colony','Colony',false],['missions','Missions',false],
+  ['results','Results',false],['events','Event Log',false],
+  ['patches','Patch Center',true],['objboard','Objective Command Board',true],
+  ['pheromones','Pheromones & Memory Explorer',true],['antconfig','Ant Config',true],
+  ['antobs','Ant Inspector',true],['autonomy','Autonomy',true],['security','Security',true],
+  ['shell','Shell',true],['settings','Settings',true],['users','Users',true],
+];
+const PALETTE_ACTIONS=[
+  ['new-mission','New mission (compose)',()=>{ showPage('overview'); setTimeout(()=>document.getElementById('ov-mission-input')?.focus(),80); },false],
+  ['toggle-nav','Toggle navigation sidebar',()=>document.getElementById('nav-collapse-btn')?.click(),false],
+  ['shortcuts','Show keyboard shortcuts',()=>openShortcuts(),false],
+  ['tour','Restart onboarding tour',()=>startTour(true),false],
+  ['approvals','Open pending approvals',()=>document.getElementById('approval-bell')?.click(),true],
+  ['refresh-events','Refresh event feed',()=>pollEvents(),false],
+];
+let palSel=0, palItems=[], palSearchTimer=null, palSearchRows=[], palLastQ='';
+function paletteRecent(){ try{ return JSON.parse(localStorage.getItem('palette-recent')||'[]'); }catch{ return []; } }
+function paletteRemember(key){
+  try{
+    const r=paletteRecent().filter(k=>k!==key); r.unshift(key);
+    localStorage.setItem('palette-recent',JSON.stringify(r.slice(0,8)));
+  }catch{}
+}
+function fuzzyScore(q,text){
+  q=q.toLowerCase(); text=text.toLowerCase();
+  if(!q) return 1;
+  if(text.includes(q)) return 100-text.indexOf(q);
+  let qi=0;
+  for(let i=0;i<text.length&&qi<q.length;i++) if(text[i]===q[qi]) qi++;
+  return qi===q.length?10:0;
+}
+function paletteBuild(q){
+  const admin=ROLE==='admin';
+  const recents=paletteRecent();
+  const rank=k=>{ const i=recents.indexOf(k); return i<0?0:(50-i); };
+  const items=[];
+  PALETTE_PAGES.filter(([,,adm])=>!adm||admin).forEach(([id,title])=>{
+    const s=fuzzyScore(q,'go to '+title)+rank('page:'+id);
+    if(s>0||!q) items.push({kind:'page',key:'page:'+id,title,meta:'g '+({overview:'o',colony:'c',missions:'m',results:'r',events:'e',patches:'p',objboard:'b',settings:'s',users:'u',autonomy:'a'}[id]||''),score:s,run:()=>showPage(id)});
+  });
+  PALETTE_ACTIONS.filter(([,,,adm])=>!adm||admin).forEach(([key,title,run])=>{
+    const s=fuzzyScore(q,title)+rank('act:'+key);
+    if(s>0||!q) items.push({kind:'action',key:'act:'+key,title,meta:'',score:s,run});
+  });
+  items.sort((a,b)=>b.score-a.score);
+  return items.slice(0,12);
+}
+function paletteRender(){
+  const box=document.getElementById('palette-results');
+  const rows=[];
+  if(palItems.length){
+    rows.push('<div class="palette-sect">Commands</div>');
+    palItems.forEach((it,i)=>rows.push(
+      `<div class="palette-item${i===palSel?' sel':''}" data-pi="${i}" onclick="paletteRun(${i})">`+
+      `<span class="pi-kind">${it.kind}</span><span class="pi-title">${escapeHtml(it.title)}</span><span class="pi-meta">${escapeHtml(it.meta||'')}</span></div>`));
+  }
+  if(palSearchRows.length){
+    rows.push('<div class="palette-sect">Mission memory</div>');
+    palSearchRows.forEach((r,j)=>{
+      const i=palItems.length+j;
+      rows.push(`<div class="palette-item${i===palSel?' sel':''}" data-pi="${i}" onclick="paletteRun(${i})">`+
+        `<span class="pi-kind">${r.kind}</span><span class="pi-title">${escapeHtml(r.title)}</span><span class="pi-meta">${escapeHtml(r.meta||'')}</span></div>`);
+    });
+  }
+  box.innerHTML=rows.length?rows.join(''):'<div class="palette-empty">No matches — try fewer letters, or 2+ characters to search mission memory.</div>';
+  const sel=box.querySelector('.palette-item.sel'); if(sel) sel.scrollIntoView({block:'nearest'});
+}
+function paletteAll(){ return palItems.concat(palSearchRows); }
+function paletteRun(i){
+  const it=paletteAll()[i]; if(!it) return;
+  if(it.key) paletteRemember(it.key);
+  closePalette();
+  try{ it.run(); }catch(e){ console.error('palette action failed',e); }
+}
+async function paletteSearch(q){
+  if(ROLE!=='admin'||q.length<2){ palSearchRows=[]; paletteRender(); return; }
+  try{
+    const r=await api('/memory/explorer?limit=20&q='+encodeURIComponent(q));
+    if(!r.success||q!==palLastQ) return;
+    const d=r.data||{}; const rows=[];
+    (d.missions||[]).slice(0,5).forEach(m=>rows.push({kind:'mission',title:m.goal||'(mission)',meta:m.status||'',run:()=>openResults(m.id)}));
+    (d.tasks||[]).slice(0,4).forEach(t=>rows.push({kind:'task',title:t.title||'(task)',meta:t.status||'',run:()=>{ if(t.mission_id) openResults(t.mission_id); }}));
+    (d.patches||[]).slice(0,4).forEach(p=>rows.push({kind:'patch',title:p.file_path||'(patch)',meta:p.status||'',run:()=>openPatches(p.mission_id?{mission_id:p.mission_id}:{})}));
+    (d.sources||[]).slice(0,3).forEach(s=>rows.push({kind:'source',title:s.title||s.url||'(source)',meta:s.domain||'',run:()=>{ if(s.mission_id) openResults(s.mission_id); }}));
+    palSearchRows=rows;
+    if(palSel>=paletteAll().length) palSel=0;
+    paletteRender();
+  }catch{ /* memory search is best-effort inside the palette */ }
+}
+function togglePalette(){ document.getElementById('palette-overlay').classList.contains('show')?closePalette():openPalette(); }
+function openPalette(){
+  closeNotifPanel();
+  const ov=document.getElementById('palette-overlay'); ov.classList.add('show');
+  const inp=document.getElementById('palette-input');
+  inp.value=''; palSel=0; palLastQ=''; palSearchRows=[]; palItems=paletteBuild('');
+  paletteRender(); setTimeout(()=>inp.focus(),30);
+}
+function closePalette(){ document.getElementById('palette-overlay')?.classList.remove('show'); }
+document.getElementById('palette-overlay').addEventListener('click',e=>{ if(e.target.id==='palette-overlay') closePalette(); });
+document.getElementById('palette-input').addEventListener('input',e=>{
+  const q=e.target.value.trim(); palLastQ=q; palSel=0;
+  palItems=paletteBuild(q); paletteRender();
+  clearTimeout(palSearchTimer); palSearchTimer=setTimeout(()=>paletteSearch(q),300);
+});
+document.getElementById('palette-input').addEventListener('keydown',e=>{
+  const total=paletteAll().length;
+  if(e.key==='ArrowDown'){ e.preventDefault(); palSel=Math.min(total-1,palSel+1); paletteRender(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); palSel=Math.max(0,palSel-1); paletteRender(); }
+  else if(e.key==='Enter'){ e.preventDefault(); paletteRun(palSel); }
+  else if(e.key==='Escape'){ closePalette(); }
+});
+
+// ---- Notification center ----------------------------------------------------
+const NOTIF_NOTABLE=/^(mission_complete|mission_failed|patch_applied|patch_apply_failed|patch_alternative_created|patch_verified_approved|patch_verify_failed|approval_request_created|approval_request_approved|approval_request_rejected|autonomy_autoapply_\w+|jobs_cancel_all)$/;
+const NOTIF_BAD=/failed|reverted|rejected|cancel/;
+const NOTIF_GOOD=/complete|applied|approved|verified|kept/;
+let notifStore=[];
+function notifSeen(){ return localStorage.getItem('notif-seen')||''; }
+function notifIngest(blocks){
+  const out=[];
+  for(const block of blocks.slice(0,120)){
+    const lines=block.trim().split('\n');
+    const l0=lines[0]||'';
+    const m=l0.match(/^\[([^\]]+)\]\s*(.*)$/); if(!m) continue;
+    const type=m[1], ts=(m[2]||'').substring(0,19);
+    if(!NOTIF_NOTABLE.test(type)) continue;
+    const msg=lines.slice(2).join(' ').trim().substring(0,140)||lines.slice(1).join(' ').trim().substring(0,140);
+    out.push({type,ts,msg});
+    if(out.length>=30) break;
+  }
+  notifStore=out;
+  notifRenderBadge();
+}
+function notifUnreadCount(){ const seen=notifSeen(); return notifStore.filter(n=>n.ts>seen).length; }
+function notifRenderBadge(){
+  const b=document.getElementById('notif-count'); if(!b) return;
+  const n=notifUnreadCount();
+  b.style.display=n>0?'block':'none';
+  b.textContent=n>9?'9+':String(n);
+}
+function notifClass(t){ return NOTIF_BAD.test(t)?'bad':(NOTIF_GOOD.test(t)?'good':'warn'); }
+function notifTarget(t){
+  if(/^patch|^approval/.test(t)) return ()=>{ if(ROLE==='admin') showPage('patches'); else showPage('events'); };
+  if(/^mission/.test(t)) return ()=>showPage('results');
+  return ()=>showPage('events');
+}
+function notifRenderPanel(){
+  const list=document.getElementById('notif-list');
+  const seen=notifSeen();
+  if(!notifStore.length){ list.innerHTML='<div class="notif-empty">No notable activity yet.</div>'; return; }
+  list.innerHTML=notifStore.map((n,i)=>
+    `<div class="notif-item ${notifClass(n.type)}${n.ts>seen?' unread':''}" onclick="notifOpen(${i})">`+
+    `<span class="ni-dot"></span><span class="ni-msg"><b>${escapeHtml(n.type)}</b><br>${escapeHtml(n.msg)}</span>`+
+    `<span class="ni-time">${escapeHtml((n.ts||'').replace('T',' ').substring(5))}</span></div>`).join('');
+}
+function notifOpen(i){ const n=notifStore[i]; closeNotifPanel(); if(n) notifTarget(n.type)(); }
+function notifMarkAllRead(){
+  if(notifStore.length) localStorage.setItem('notif-seen',notifStore[0].ts);
+  notifRenderBadge(); notifRenderPanel();
+}
+function closeNotifPanel(){ document.getElementById('notif-panel')?.classList.remove('show'); }
+document.getElementById('notif-bell').addEventListener('click',e=>{
+  e.stopPropagation();
+  const p=document.getElementById('notif-panel');
+  if(p.classList.contains('show')){ closeNotifPanel(); return; }
+  closePalette(); notifRenderPanel(); p.classList.add('show');
+  setTimeout(notifMarkAllRead,1200); // brief delay so "unread" highlights are visible before clearing
+});
+document.getElementById('notif-clear').addEventListener('click',e=>{ e.stopPropagation(); notifMarkAllRead(); });
+document.addEventListener('click',e=>{
+  const p=document.getElementById('notif-panel');
+  if(p?.classList.contains('show')&&!p.contains(e.target)&&e.target.id!=='notif-bell'&&!document.getElementById('notif-bell').contains(e.target)) closeNotifPanel();
+});
+
+// ---- Keyboard shortcuts help --------------------------------------------------
+function openShortcuts(){ document.getElementById('shortcut-overlay').classList.add('show'); }
+function closeShortcuts(){ document.getElementById('shortcut-overlay')?.classList.remove('show'); }
+document.getElementById('shortcut-overlay').addEventListener('click',e=>{ if(e.target.id==='shortcut-overlay') closeShortcuts(); });
+
+// ---- Onboarding tour ----------------------------------------------------------
+const TOUR_STEPS=[
+  ['Welcome to the colony','ANTHILL turns one request into a coordinated mission: the Queen plans, specialised ants execute, and everything they do is observable here. This 60-second tour shows you where things live.'],
+  ['Dispatch missions','The Overview page is your command node — compose a goal, Preview Plan to see the task DAG the planner builds (with constraint warnings), then approve and dispatch. The Colony page shows the live canvas while it runs.'],
+  ['Review every change','Nothing touches disk without you. Patch proposals land in the Patch Center: filter, group, diff, edit an alternative, run an unbiased verify (build+test with auto-restore), approve, and only then apply.'],
+  ['Memory that learns','The Pheromones page is the colony\'s memory explorer — successful paths strengthen, failures decay, and mission history is searchable. The same search is one Ctrl+K away from anywhere.'],
+  ['Fast hands','Press Ctrl+K for the command palette, ? for shortcuts, and g then a letter to jump between pages (g o, g m, g p…). The bell tracks notable activity. That\'s it — the colony is yours.'],
+];
+let tourStep=0;
+function tourRender(){
+  const [t,b]=TOUR_STEPS[tourStep];
+  setEl('tour-step-label',`${tourStep+1} / ${TOUR_STEPS.length}`);
+  setEl('tour-title',t); setEl('tour-body',b);
+  document.getElementById('tour-back').style.visibility=tourStep===0?'hidden':'visible';
+  document.getElementById('tour-next').textContent=tourStep===TOUR_STEPS.length-1?'Finish':'Next';
+}
+function startTour(force){
+  if(!force&&localStorage.getItem('tour-done')==='1') return;
+  tourStep=0; tourRender();
+  document.getElementById('tour-overlay').classList.add('show');
+}
+function endTour(){
+  localStorage.setItem('tour-done','1');
+  document.getElementById('tour-overlay').classList.remove('show');
+}
+document.getElementById('tour-skip').addEventListener('click',endTour);
+document.getElementById('tour-back').addEventListener('click',()=>{ if(tourStep>0){ tourStep--; tourRender(); } });
+document.getElementById('tour-next').addEventListener('click',()=>{
+  if(tourStep<TOUR_STEPS.length-1){ tourStep++; tourRender(); } else endTour();
+});
+
+// ---- Saved layout restore ------------------------------------------------------
+// nav-collapsed, per-card collapse, and Patch Center grouping already persist.
+// This restores the last active page after login (admin pages only for admins).
+function restoreLayout(){
+  try{
+    const last=localStorage.getItem('last-page');
+    if(!last||last==='overview') return;
+    const entry=PALETTE_PAGES.find(([id])=>id===last);
+    if(!entry) return;
+    if(entry[2]&&ROLE!=='admin') return;
+    showPage(last);
+  }catch{}
+}
 
 // -- Card collapse --------------------------------------------------------------
 function initCollapse(){
