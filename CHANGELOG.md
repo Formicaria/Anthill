@@ -1,5 +1,18 @@
 # ANTHILL Changelog
 
+## v1.8.23.3 — CI linux-x64 artifact packaging
+
+Roadmap item "CI release packaging foundation": every successful CI run now produces a
+release-ready, downloadable package — not just tagged releases.
+
+- `publish-and-selftest` job now packages `./publish/linux-x64` (binary + `config.example.json`,
+  README, CHANGELOG) as `anthill-linux-x64-v<version>.tar.gz` and uploads it as a CI artifact.
+- Artifact name is read from `AnthillRuntime.Version` at build time, so it always matches the code.
+- Packaging steps run strictly after publish + `--selftest` succeed; a broken build can never
+  produce a downloadable package (`if-no-files-found: error` guards the upload).
+- No runtime behavior changes; existing build/test/selftest/Docker/shellcheck jobs untouched.
+- Documented where CI artifacts appear in `docs/DEPLOYMENT.md` §4.
+
 ## v1.8.23 - Phase 9: Memory + Pheromone Explorer
 
 - Adds a Memory + Pheromone Explorer on the existing Pheromones page.
@@ -29,7 +42,7 @@ Mission Timeline/DAG = **v1.8.20**, autonomous auto-apply persistence fix = **v1
 Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime = **v1.8.22**,
 ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
 + API serialization hardening = **v1.8.23.1**, Patch Center duplicate-route fix = **v1.8.23.2**,
-and so on.
+CI linux-x64 artifact packaging = **v1.8.23.3**, and so on.
 
 ## v1.8.23.2 — Patch Center duplicate-route fix
 

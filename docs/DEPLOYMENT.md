@@ -281,6 +281,15 @@ First run only: GHCR creates the container package as **private** by default. Ma
 at `github.com/users/<you>/packages/container/operation-anthill/settings → Change visibility` so
 `docker pull` works without a login.
 
+### CI artifacts (every run, no tag needed)
+
+Since v1.8.23.3, plain CI (`.github/workflows/ci.yml`) also produces a package: after the
+linux-x64 publish + `--selftest` job succeeds, the publish output is archived as
+`anthill-linux-x64-v<version>.tar.gz` and uploaded as a workflow artifact. Grab it from
+**Actions → (the run) → Artifacts**. This gives every green PR/main run a downloadable,
+release-ready build without cutting a tag; artifacts expire per GitHub's retention policy
+(default 90 days), so tagged Releases remain the permanent distribution channel.
+
 ### Operator-shell service control (polkit)
 
 The systemd unit runs with `NoNewPrivileges=true`, which blocks `sudo`/setuid escalation — so the
