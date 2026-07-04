@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.25.2</title>
+<title>ANTHILL v1.8.25.3</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.25.2</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.25.3</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.25.2</span>
+      <span class="nav-logo-ver">v1.8.25.3</span>
     </div>
 
     <div class="nav-scroll">
@@ -3867,7 +3867,10 @@ async function onPatchToggle(det){
     // v1.8.24: a pending patch with NO approval record can now be acted on — the backend
     // creates the missing approval record first, then runs the normal approve/reject path.
     const orphanPending=d.status==='proposed' && !d.approval_id;
-    const canApply=d.status==='approved' && d.approval_id;
+    // Apply is available once the patch OR its approval record is approved (and not yet applied).
+    // Honoring approval_status also covers patches approved before the backend started flipping the
+    // patch status, so already-approved-but-still-"proposed" rows are appliable too.
+    const canApply=(d.status==='approved'||d.approval_status==='approved') && d.approval_id && d.status!=='applied';
     const canVerify=d.status==='proposed';
     const canEdit=d.status==='proposed'||d.status==='approved';
     const actions=`<div class="pc-actions">

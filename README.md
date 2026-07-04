@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.25.2
+**Current version:** v1.8.25.3
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.25.3` | Fix: approved patches were un-appliable — `ApproveRequest` flipped only the approval record, never the patch, so the Patch Center's Apply button (gated on patch status `approved`) never appeared. Approving now flips the patch to `approved`, and the UI also honors `approval_status`. |
 | `v1.8.25.2` | CI: new `ui-integrity` job fails the build on any UI glyph corruption (`�`, bare `>?<` icons, `>? Label` buttons, `'?':'?'` carets) + a `node --check` of the embedded JS — so the recurring corruption can never merge again. CI-only. |
 | `v1.8.25.1` | Fix: repair residual UTF-8 glyph corruption in the console — 19 icon glyphs (collapse/caret `▾`, send `▶`, close `✕`, expand `⛶`, pheromone `✓`/`✕` headers) plus 4 JS-literal carets, the apply-warning `⚠`, and the autonomy-running `●` badge had been flattened to `?`. The legitimate `?` help-shortcut key is preserved. |
 | `v1.8.25` | UI Phase 10 — Full Command Center Polish: Ctrl+K command palette with global mission-memory search, header notification center with unread badge, `g`-key page navigation + `?` shortcuts help, saved layout restore, and a first-login onboarding tour. UI roadmap complete. |

@@ -30,9 +30,17 @@ public sealed partial class Queen
         var updated = Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Approved,
             "Approved by user. Patch can only be applied through /apply if write gates are enabled.");
         if (updated is not null)
+        {
+            // Flip the patch itself to "approved" for a patch_proposal approval, mirroring the reject
+            // path. Without this the patch stays "proposed" after approval and the Patch Center's
+            // Apply action (gated on patch status "approved") never appears — approved patches were
+            // un-appliable through the UI.
+            if (Str(updated, "action_type") == ApprovalActionType.PatchProposal.Value())
+                Memory.UpdatePatchStatus(Str(updated, "target_id"), PatchStatus.Approved);
             Memory.LogEvent(Str(updated, "mission_id"), "approval_request_approved", $"Approval request approved: {approvalId}",
                 Str(updated, "task_id"), "queen",
                 new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting });
+        }
         return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {Str(updated!, "target_id")}.\n" +
                $"To apply later: /apply {approvalId}\n\nPatch application requires both write gates enabled.";
     }

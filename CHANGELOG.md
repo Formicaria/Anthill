@@ -1,5 +1,20 @@
 # ANTHILL Changelog
 
+## v1.8.25.3 — Approved patches were un-appliable
+
+Found during live V&V of the Patch Center. Approving a patch flipped only the *approval record* to
+`approved` — nothing ever set the patch itself to `PatchStatus.Approved`. The Patch Center gates its
+Apply action on the patch status being `approved`, so **Apply never appeared after approval** and
+approved patches could not be applied through the UI (true for both the normal flow and the operator
+approve-by-patch-id path).
+
+- `ApproveRequest` now flips the patch to `approved` for a `patch_proposal` approval, mirroring the
+  reject path (which already set the patch to `rejected`).
+- The Patch Center's `canApply` also honors `approval_status === 'approved'`, so patches approved
+  before this fix (approval approved but patch still `proposed`) are appliable too.
+
+Apply still respects the write gates (`patch_application_enabled` / `file_writing_enabled`).
+
 ## v1.8.25.2 — CI guard against UI glyph corruption
 
 The console UI has been re-saved as non-UTF-8 several times, flattening icon glyphs to `?` and other
