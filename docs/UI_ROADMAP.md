@@ -57,9 +57,14 @@ action surface: approve/reject for pending patches that had no approval record, 
 alternative patches through the standard approval gate, and unbiased verify-&-auto-approve
 (apply with backup → build+test → always restore → approve only on green; Apply stays manual).
 
-## Future direction (not yet built)
-- **Phase 10 — Full Command Center Polish:** command palette, global search, notification center,
-  saved layouts, keyboard shortcuts, onboarding tour.
+### Phase 10 — Full Command Center Polish (v1.8.25)
+Command palette (Ctrl+K) with fuzzy pages/actions and global mission-memory search, header
+notification center fed from the existing event stream (unread badge, deep links), `g`-key page
+navigation with a `?` shortcuts reference, saved layout restore (last page + existing persisted
+nav/card/grouping state), and a skippable five-step onboarding tour on first login.
+
+**All ten phases of this roadmap are now shipped.** Future console work continues against
+docs/ROADMAP.md and the infrastructure command-center direction.
 
 ## Guardrails
 Additive over destructive; preserve every existing page, route, and behavior (mission submission,

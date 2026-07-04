@@ -1,5 +1,26 @@
 # ANTHILL Changelog
 
+## v1.8.25 — UI Phase 10: Full Command Center Polish
+
+Finishes the UI roadmap (all 10 phases now shipped). Everything is additive vanilla JS/CSS inside
+the embedded console; no backend changes.
+
+- **Command palette (Ctrl+K):** fuzzy-matched pages and actions (new mission, toggle nav, pending
+  approvals, shortcuts, tour), recents boosted, arrow-key navigation. Ctrl+K previously jumped to
+  the mission input — "New mission" is now the top palette action, one Enter away.
+- **Global search:** typing 2+ characters in the palette also searches mission memory
+  (`/memory/explorer`) — missions, tasks, patches, and sources deep-link to Results / Patch Center.
+- **Notification center:** a header bell collects notable colony activity (mission complete/failed,
+  patch applied/verified/failed, approvals, auto-apply outcomes) from the existing event feed, with
+  an unread badge and per-item deep links. No new polling.
+- **Keyboard shortcuts:** `g` then a letter jumps between pages (g o / g c / g m / g r / g e, plus
+  admin g p / g b / g s / g u / g a), `?` opens a shortcuts reference, Esc closes overlays.
+- **Saved layouts:** the console reopens on the page you left, alongside the existing persisted nav
+  collapse, card collapse, and Patch Center grouping state.
+- **Onboarding tour:** a five-step first-login walkthrough (dispatch → patch review → memory →
+  shortcuts); skippable, never auto-shows again, restartable from the palette.
+- Reduced-motion aware; role-gated (coordinators see no admin pages in palette, search, or g-nav).
+
 ## v1.8.24 — UI Phase 7: Visual Patch Center 2.0
 
 Finishes UI Roadmap Phase 7 — grouping — and closes the operator gaps around pending patches.
@@ -75,7 +96,7 @@ Ant Inspector/Performance Observatory + Ant Capability Profiles & Worker Runtime
 ASCII banner tweak = **v1.8.22.1**, Memory + Pheromone Explorer = **v1.8.23**, console UTF-8 repair
 + API serialization hardening = **v1.8.23.1**, Patch Center duplicate-route fix = **v1.8.23.2**,
 CI linux-x64 artifact packaging = **v1.8.23.3**, Visual Patch Center 2.0 grouping (UI Phase 7)
-= **v1.8.24**, and so on.
+= **v1.8.24**, Full Command Center Polish (UI Phase 10) = **v1.8.25**, and so on.
 
 ## v1.8.23.2 — Patch Center duplicate-route fix
 
