@@ -244,7 +244,10 @@ public static class AutoApplyRunner
             return false;
         }
 
-        var (exit, output, timedOut, _) = RunShell($"git add {files} && git commit -m \"{msg}\"", dir, 60);
+        // Set the author/committer identity inline (-c) so a commit never fails with "Please tell me
+        // who you are" on a host where the service user has no global git identity configured.
+        var (exit, output, timedOut, _) = RunShell(
+            $"git add {files} && git -c user.name=\"ANTHILL Auto-Apply\" -c user.email=\"anthill@localhost\" commit -m \"{msg}\"", dir, 60);
         if (timedOut || exit != 0) { note = "commit failed: " + Tail(output, 250); return false; }
 
         // Optional push (+ one-way sync of origin/main into the branch) via the SSH deploy key.
@@ -253,8 +256,12 @@ public static class AutoApplyRunner
         {
             var remote = AnthillRuntime.AutonomyAutoApplyGitRemote;
             var key = AnthillRuntime.AutonomyAutoApplyGitSshKeyPath;
+            // UserKnownHostsFile=/tmp/... : ssh records the remote host key on first connect. Under the
+            // systemd sandbox (ProtectSystem=strict) the service user's ~/.ssh is read-only, so writing
+            // known_hosts there fails; /tmp is writable (PrivateTmp) and per-service, so the push works
+            // without needing .ssh in ReadWritePaths.
             var env = key.Length > 0
-                ? $"GIT_SSH_COMMAND='ssh -i \"{key.Replace("\"", "")}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' "
+                ? $"GIT_SSH_COMMAND='ssh -i \"{key.Replace("\"", "")}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/anthill_known_hosts' "
                 : "";
             var (fx, fo, _, _) = RunShell($"{env}git fetch {remote} && git merge {remote}/main --no-edit", dir, 120);
             if (fx != 0) { RunShell("git merge --abort", dir, 20); note = "kept + committed; sync with main skipped: " + Tail(fo, 150); }
