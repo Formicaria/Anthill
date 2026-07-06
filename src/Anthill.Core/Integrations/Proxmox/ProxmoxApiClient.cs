@@ -21,9 +21,17 @@ public sealed class ProxmoxApiClient
     // TLS trust: homelab Proxmox nodes almost always run self-signed certs. Verification is
     // config-controlled (homelab_proxmox_insecure_tls, default false = verify). Two shared
     // handlers/clients — never per-request clients (socket exhaustion).
-    private static readonly HttpClient Verified = new(new HttpClientHandler()) { Timeout = Timeout.InfiniteTimeSpan };
+    //
+    // AllowAutoRedirect=false: the allowlist gate in GetAsync() validates the configured Host, but
+    // HttpClient follows 3xx redirects by default — a compromised or misconfigured node could bounce
+    // this authenticated GET to a Location that was NEVER allowlist-checked (an SSRF hole straight
+    // through the "safety by construction" premise). The PVE API never legitimately redirects, so a
+    // redirect now surfaces as a clean non-success status instead of being chased off-allowlist.
+    private static readonly HttpClient Verified = new(new HttpClientHandler { AllowAutoRedirect = false })
+        { Timeout = Timeout.InfiniteTimeSpan };
     private static readonly HttpClient Insecure = new(new HttpClientHandler
     {
+        AllowAutoRedirect = false,
         ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
     }) { Timeout = Timeout.InfiniteTimeSpan };
 

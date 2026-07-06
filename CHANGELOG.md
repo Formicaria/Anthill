@@ -1,5 +1,21 @@
 # ANTHILL Changelog
 
+## v1.12.0.1 — Proxmox client: don't follow redirects (SSRF hardening)
+
+Bug-finder/tester pass over the v1.12.0 Proxmox integration. The rest of it holds up well —
+GET-only by construction, target-allowlist gate before every request, token pulled from the
+credential store per call and never logged, defensive JSON parsing, `INSERT OR IGNORE` event dedup.
+One defense-in-depth gap:
+
+- **`ProxmoxApiClient` followed HTTP redirects** (`AllowAutoRedirect` left at the .NET default of
+  `true` on both the verified and insecure handlers). The allowlist gate validates the configured
+  host, but a `3xx` from a compromised or misconfigured node would bounce the authenticated GET to a
+  `Location` that was never allowlist-checked — an SSRF hole straight through the integration's
+  "safety by construction" premise. Both handlers now set `AllowAutoRedirect = false`; the PVE API
+  never legitimately redirects, so a redirect surfaces as a clean non-success status instead of being
+  chased off-allowlist. Added a wire-level regression test (mock 302 → `Location` to a dead off-host
+  port; asserts the client fails clean with `HTTP 302` and never requests the redirect target).
+
 ## v1.12.0 — Proxmox read-only integration (NORTH_STAR Phase 8)
 
 Phase 8 of the master roadmap: ANTHILL connects to Proxmox safely, in read-only mode. There is no
