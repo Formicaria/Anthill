@@ -159,13 +159,26 @@ public static class AutoApplyRunner
                     ApprovalStatus.Consumed, "Auto-applied by the Director and kept.");
         }
         var committed = false;
+        var gitNote = "";
         if (AnthillRuntime.AutonomyAutoApplyGitCommit)
         {
-            committed = GitCommit(applied, out var commitNote);
+            committed = GitCommit(applied, out gitNote);
             if (!committed)
                 queen.Memory.LogEvent(missionId, "autonomy_autoapply_git_failed",
-                    $"Kept the applied patch(es) on disk but the local git commit failed: {commitNote}", antName: "director",
-                    metadata: new() { ["mission_id"] = missionId, ["note"] = commitNote });
+                    $"Kept the applied patch(es) on disk but the local git commit failed: {gitNote}", antName: "director",
+                    metadata: new() { ["mission_id"] = missionId, ["note"] = gitNote });
+            else
+                // Success path now emits its own event so the Event Log reflects the git step — previously
+                // only the failure path logged, so a successful commit/push was invisible in the UI.
+                queen.Memory.LogEvent(missionId, "autonomy_autoapply_committed",
+                    $"Auto-applied patch(es) committed to the standalone branch — {gitNote}.", antName: "director",
+                    metadata: new()
+                    {
+                        ["mission_id"] = missionId, ["note"] = gitNote,
+                        ["pushed"] = AnthillRuntime.AutonomyAutoApplyGitPush && gitNote.Contains("pushed to"),
+                        ["branch"] = AnthillRuntime.AutonomyAutoApplyGitBranch,
+                        ["files"] = applied.Select(a => a.FilePath).ToList(),
+                    });
         }
         var meta = new Dictionary<string, object?>
         {
@@ -250,6 +263,12 @@ public static class AutoApplyRunner
             $"git add {files} && git -c user.name=\"ANTHILL Auto-Apply\" -c user.email=\"anthill@localhost\" commit -m \"{msg}\"", dir, 60);
         if (timedOut || exit != 0) { note = "commit failed: " + Tail(output, 250); return false; }
 
+        // Capture the commit sha so the success event names the exact commit an operator can inspect.
+        var (shExit, shOut, _, _) = RunShell("git rev-parse --short HEAD", dir, 20);
+        var sha = shExit == 0 ? shOut.Trim() : "(unknown)";
+        var pushMsg = AnthillRuntime.AutonomyAutoApplyGitPush ? "" : "push disabled";
+        var warn = "";
+
         // Optional push (+ one-way sync of origin/main into the branch) via the SSH deploy key.
         // Best-effort: a sync/push failure never undoes the local commit.
         if (AnthillRuntime.AutonomyAutoApplyGitPush && branch.Length > 0)
@@ -264,11 +283,14 @@ public static class AutoApplyRunner
                 ? $"GIT_SSH_COMMAND='ssh -i \"{key.Replace("\"", "")}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/anthill_known_hosts' "
                 : "";
             var (fx, fo, _, _) = RunShell($"{env}git fetch {remote} && git merge {remote}/main --no-edit", dir, 120);
-            if (fx != 0) { RunShell("git merge --abort", dir, 20); note = "kept + committed; sync with main skipped: " + Tail(fo, 150); }
+            if (fx != 0) { RunShell("git merge --abort", dir, 20); warn = "sync with main skipped: " + Tail(fo, 150); }
             // Push ONLY the standalone branch (never main); no force.
             var (px, po, _, _) = RunShell($"{env}git push {remote} {branch}", dir, 120);
-            if (px != 0) note = (note.Length > 0 ? note + " | " : "") + "committed locally but push failed: " + Tail(po, 200);
+            pushMsg = px == 0 ? $"pushed to {remote}/{branch}" : "push failed: " + Tail(po, 200);
         }
+        note = $"committed {sha} on {current}"
+             + (pushMsg.Length > 0 ? $"; {pushMsg}" : "")
+             + (warn.Length > 0 ? $" ({warn})" : "");
         return true;
     }
 
