@@ -100,6 +100,11 @@ public static partial class ApiHost
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabProxmoxSyncIntervalSeconds), HomelabProxmox.SyncInventoryAsync));
         }
 
+        // v2.1.0: the other read-only virtualization integrations (ESXi/vSphere, Docker, Hyper-V) ride the
+        // same scheduler. Providers are built on demand from current config so a UI-edited connection works
+        // without a restart; each client is read-only by construction.
+        RegisterVirtJobs();
+
         if (AnthillRuntime.EnableHomelabScheduler && HomelabJobs.Jobs.Count > 0)
         {
             HomelabJobs.Start();
@@ -115,6 +120,9 @@ public static partial class ApiHost
 
     private static void MapHomelabEndpoints(WebApplication app)
     {
+        // v2.1.0: unified read-only virtualization endpoints (Proxmox/ESXi/Docker/Hyper-V status + sync).
+        MapVirtualizationEndpoints(app);
+
         // ---- Summary (read_homelab) ---------------------------------------------------------
 
         app.MapGet("/homelab/summary", (HttpContext ctx) =>
