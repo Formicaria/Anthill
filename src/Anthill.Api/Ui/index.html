@@ -95,6 +95,23 @@
 .ov2-chamber{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--anthill-border);border-radius:8px;padding:4px 8px;font-size:9px;color:var(--anthill-muted);margin:2px;}
 .ov2-chamber i{width:7px;height:7px;border-radius:50%;}
 .ov2-core-mini{display:flex;align-items:center;justify-content:center;position:relative;height:110px;}
+/* V2.2 Pass C — Living Colony Map */
+#cmap2 .cm-chamber{cursor:pointer;}
+#cmap2 .cm-chamber circle.cm-ring{fill:var(--anthill-panel);stroke-width:1.5;}
+#cmap2 .cm-chamber:hover circle.cm-ring{stroke-width:3;filter:brightness(1.4);}
+#cmap2 .cm-chamber.cm-selected circle.cm-ring{stroke-width:3;}
+#cmap2 text{font-family:var(--mono,monospace);fill:var(--anthill-muted);}
+@keyframes cmBreath{0%,100%{opacity:1;}50%{opacity:.72;}}
+@keyframes cmQueen{0%,100%{r:26;}50%{r:29;}}
+@keyframes pheromoneFlow{to{stroke-dashoffset:-48;}}
+.cmap2-motion-normal .cm-chamber.cm-active circle.cm-ring,.cmap2-motion-high .cm-chamber.cm-active circle.cm-ring{animation:cmBreath 3s ease-in-out infinite;}
+.cmap2-motion-low .pheromone-path,.cmap2-motion-normal .pheromone-path,.cmap2-motion-high .pheromone-path{
+  stroke-dasharray:8 16;animation:pheromoneFlow 1.8s linear infinite;}
+.cmap2-motion-off .pheromone-path{stroke-dasharray:none;animation:none;}
+.pheromone-path{fill:none;filter:drop-shadow(0 0 6px currentColor);}
+@media (prefers-reduced-motion: reduce){
+  #cmap2 *{animation:none !important;transition:none !important;}
+}
 </style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
@@ -1415,6 +1432,36 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page" id="page-colony">
         <!-- V2.2 Pass A: shared top telemetry bar -->
         <div id="tb-colony"></div>
+
+        <!-- V2.2 Pass C: Living Colony Map (Chamber/Expanded) — Raw Graph keeps the old canvas -->
+        <div id="cmap2-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;position:relative;z-index:2;">
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">VIEW</span>
+          <button class="hud-act" id="cmap2-v-chamber" onclick="cmapSetView('chamber')">Chamber</button>
+          <button class="hud-act" id="cmap2-v-expanded" onclick="cmapSetView('expanded')">Expanded</button>
+          <button class="hud-act" id="cmap2-v-raw" onclick="cmapSetView('raw')">Raw Graph</button>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;margin-left:10px;">MOTION</span>
+          <select class="form-select" id="cmap2-motion" style="width:auto;font-size:9px;" onchange="cmapSetPref('motion',this.value)">
+            <option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option>
+          </select>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">LABELS</span>
+          <select class="form-select" id="cmap2-labels" style="width:auto;font-size:9px;" onchange="cmapSetPref('labels',this.value)">
+            <option value="minimal">Minimal</option><option value="active">Active Only</option><option value="all" selected>All</option>
+          </select>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">PHEROMONES</span>
+          <select class="form-select" id="cmap2-pher" style="width:auto;font-size:9px;" onchange="cmapSetPref('pheromones',this.value)">
+            <option value="off">Off</option><option value="active">Active</option><option value="all" selected>All</option>
+          </select>
+          <label style="font-size:9px;color:var(--anthill-muted);"><input type="checkbox" id="cmap2-idle" checked onchange="cmapSetPref('showIdle',this.checked?'1':'0')"> idle ants</label>
+        </div>
+        <div id="cmap2-wrap" style="display:flex;gap:10px;padding:0 8px 8px;min-height:420px;position:relative;z-index:1;">
+          <div class="ath-card" style="flex:1;padding:6px;overflow:hidden;">
+            <svg id="cmap2" width="100%" height="480" style="display:block;min-height:420px;"></svg>
+          </div>
+          <div class="ath-card" id="cmap2-inspector" style="width:270px;flex-shrink:0;overflow-y:auto;max-height:520px;">
+            <div class="ath-card-title">Inspector</div>
+            <div id="cmap2-insp-body"><div class="ov2-empty">Select a chamber, ant, or trail.</div></div>
+          </div>
+        </div>
 
         <!-- Left sidebar: status + approvals + jobs -->
         <div id="colony-left">
@@ -7301,7 +7348,7 @@ function renderOv2Core(roles){
   shown.forEach((role,i)=>{
     const a=(i/shown.length)*Math.PI*2, x=cx+Math.cos(a)*r, y=cy+Math.sin(a)*r*0.8;
     svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="var(--anthill-border)" stroke-width="1"/>'+
-      '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(role.role_id||role.id||role.display_name)+'"/>';
+      '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(antRoleId(role))+'"/>';
   });
   svg+='<circle cx="'+cx+'" cy="'+cy+'" r="10" fill="var(--role-queen)" opacity="0.9"><title>Queen</title></circle></svg>';
   el.innerHTML='<div class="ov2-core-mini">'+svg+'</div>'+
@@ -7320,7 +7367,7 @@ function renderOv2Chambers(roles,events){
     if(who) counts[getRoleLabel(who)]=(counts[getRoleLabel(who)]||0)+1;
   });
   const chambers={};
-  roles.forEach(r=>{ const label=getRoleLabel(r.role_id||r.id||r.display_name); chambers[label]=(chambers[label]||0)+1+((r.workers&&r.workers.length)||0); });
+  roles.forEach(r=>{ const label=getRoleLabel(antRoleId(r)); chambers[label]=(chambers[label]||0)+1+((r.workers&&r.workers.length)||0); });
   el.innerHTML=Object.keys(chambers).map(label=>{
     const act=counts[label]||0;
     const lvl=act>=10?'High':(act>=3?'Medium':(act>0?'Low':'Idle'));
@@ -7381,6 +7428,197 @@ function renderOv2Queue(jobs){
       '<div class="ov2-gauge"><i style="width:'+(running?60:10)+'%;'+(running?'':'background:var(--status-warning)')+'" title="'+(running?'in progress':'waiting')+'"></i></div></div>';
   }).join('');
 }
+
+// -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
+function antRoleId(r){ return r.roleId||r.role_id||r.id||r.displayName||r.display_name||''; }
+const CMAP={view:'chamber',motion:'normal',labels:'all',pheromones:'all',showIdle:true,
+  selected:null,selectedKind:null,chambers:{},trails:[],events:[]};
+const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Researchers':{x:.28,y:.23},
+  'Coders':{x:.74,y:.70},'Builders':{x:.30,y:.72},'Testers':{x:.20,y:.58},'Verifiers':{x:.50,y:.78},
+  'Scouts':{x:.78,y:.36},'Archivists':{x:.20,y:.38},'Security':{x:.72,y:.50},'Sources':{x:.86,y:.58},
+  'UI':{x:.42,y:.68},'Memory':{x:.36,y:.40},'Operators':{x:.48,y:.28},'Other':{x:.64,y:.82} };
+
+function cmapLoadPrefs(){
+  try{
+    CMAP.view=localStorage.getItem('anthill.colony.viewMode')||'chamber';
+    CMAP.motion=localStorage.getItem('anthill.colony.motion')||'normal';
+    CMAP.labels=localStorage.getItem('anthill.colony.labels')||'all';
+    CMAP.pheromones=localStorage.getItem('anthill.colony.pheromones')||'all';
+    CMAP.showIdle=localStorage.getItem('anthill.colony.showIdleAnts')!=='0';
+  }catch(e){}
+  const m=document.getElementById('cmap2-motion'); if(m)m.value=CMAP.motion;
+  const l=document.getElementById('cmap2-labels'); if(l)l.value=CMAP.labels;
+  const p=document.getElementById('cmap2-pher'); if(p)p.value=CMAP.pheromones;
+  const i=document.getElementById('cmap2-idle'); if(i)i.checked=CMAP.showIdle;
+}
+function cmapSetPref(key,val){
+  if(key==='motion'){CMAP.motion=val;try{localStorage.setItem('anthill.colony.motion',val);}catch(e){}}
+  if(key==='labels'){CMAP.labels=val;try{localStorage.setItem('anthill.colony.labels',val);}catch(e){}}
+  if(key==='pheromones'){CMAP.pheromones=val;try{localStorage.setItem('anthill.colony.pheromones',val);}catch(e){}}
+  if(key==='showIdle'){CMAP.showIdle=val==='1';try{localStorage.setItem('anthill.colony.showIdleAnts',val);}catch(e){}}
+  renderColonyMap();
+}
+function cmapSetView(v){
+  CMAP.view=v; try{localStorage.setItem('anthill.colony.viewMode',v);}catch(e){}
+  const wrap=document.getElementById('cmap2-wrap');
+  const canvasArea=document.getElementById('colony-canvas-area');
+  const raw=v==='raw';
+  if(wrap)wrap.style.display=raw?'none':'flex';
+  if(canvasArea)canvasArea.style.display=raw?'':'none';
+  ['chamber','expanded','raw'].forEach(x=>{
+    const b=document.getElementById('cmap2-v-'+x); if(b)b.setAttribute('aria-pressed',x===v?'true':'false');
+  });
+  if(raw){ if(typeof resize==='function'){resize(); buildNodes&&buildNodes();} }
+  else renderColonyMap();
+}
+
+async function loadColonyMap(){
+  try{
+    const [reg,ph,ev]=await Promise.all([api('/colony/registry'),api('/pheromones/json?limit=200'),api('/events/json?limit=150')]);
+    const roles=(reg&&reg.success&&reg.data&&Array.isArray(reg.data.roles))?reg.data.roles:[];
+    CMAP.events=Array.isArray(ev&&ev.data)?ev.data:[];
+    const cutoff=Date.now()-15*60000;
+    const activeNames=new Set();
+    CMAP.events.forEach(e=>{ const t=Date.parse(e.created_at||''); if(!isNaN(t)&&t>=cutoff){ const w=String(e.ant||e.ant_name||e.source||''); if(w)activeNames.add(w.toLowerCase()); }});
+    CMAP.chambers={};
+    roles.forEach(r=>{
+      const rid=antRoleId(r);
+      const label=rid.toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
+      const ch=CMAP.chambers[label]=CMAP.chambers[label]||{label, color:getRoleColor(rid), ants:[]};
+      const mk=(id,name)=>({id, name, active:activeNames.has(String(name||id).toLowerCase())||activeNames.has(String(id).toLowerCase())});
+      ch.ants.push(mk(rid, r.displayName||r.display_name||rid));
+      (r.workers||[]).forEach(w=>ch.ants.push(mk(w.workerId||w.worker_id||w.id, w.displayName||w.display_name||w.workerId)));
+    });
+    // Pheromone display strength: real trail scores when the rows carry them; otherwise derived
+    // from recent event frequency per chamber (mapping isolated here, per the design rules).
+    const rows=Array.isArray(ph&&ph.data)?ph.data:[];
+    const byChamber={};
+    rows.forEach(row=>{
+      const who=String(row.ant||row.ant_name||row.role||row.name||'');
+      if(!who)return;
+      const label=getRoleLabel(who);
+      const score=Number(row.score??row.strength??row.value);
+      if(!isNaN(score)) byChamber[label]=Math.max(byChamber[label]||0,Math.min(1,Math.abs(score)));
+    });
+    if(!Object.keys(byChamber).length){
+      const counts={};
+      CMAP.events.forEach(e=>{ const w=String(e.ant||e.ant_name||e.source||''); if(w)counts[getRoleLabel(w)]=(counts[getRoleLabel(w)]||0)+1; });
+      const max=Math.max.apply(null,Object.keys(counts).map(k=>counts[k]).concat([1]));
+      Object.keys(counts).forEach(k=>byChamber[k]=counts[k]/max);
+    }
+    CMAP.trails=Object.keys(byChamber).map(label=>({chamber:label,strength:byChamber[label]}));
+    renderColonyMap();
+  }catch(e){ /* keep last render */ }
+}
+
+function renderColonyMap(){
+  const svg=document.getElementById('cmap2'); if(!svg||CMAP.view==='raw') return;
+  svg.setAttribute('viewBox','0 0 1000 600');
+  const parent=svg.parentElement; if(parent) parent.className=parent.className.replace(/cmap2-motion-\S+/g,'').trim()+' cmap2-motion-'+CMAP.motion;
+  const labels=Object.keys(CMAP.chambers);
+  if(!labels.length){ svg.innerHTML='<text x="40" y="60" font-size="13">Colony registry unavailable — no chambers to draw.</text>'; return; }
+  const P=l=>{ const p=CMAP_LAYOUT[l]||CMAP_LAYOUT['Other']; return {x:p.x*1000,y:p.y*600}; };
+  const q=P('Queen');
+  let out='';
+  // Trails chamber → queen (pheromone layer)
+  if(CMAP.pheromones!=='off'){
+    CMAP.trails.forEach(t=>{
+      if(t.chamber==='Queen')return;
+      if(CMAP.pheromones==='active'&&t.strength<0.3)return;
+      const c=P(t.chamber);
+      const color=(CMAP.chambers[t.chamber]||{}).color||'var(--role-other)';
+      out+='<path class="pheromone-path" d="M'+c.x+' '+c.y+' Q '+((c.x+q.x)/2+30)+' '+((c.y+q.y)/2-30)+' '+q.x+' '+q.y+'"'+
+        ' stroke="'+color+'" stroke-width="'+(1+t.strength*5).toFixed(1)+'" opacity="'+(0.2+t.strength*0.8).toFixed(2)+'"'+
+        ' onclick="cmapSelect(\'path\',\''+escapeHtml(t.chamber)+'\')" style="cursor:pointer;pointer-events:stroke;"/>';
+    });
+  }
+  // Chambers
+  labels.forEach(label=>{
+    const ch=CMAP.chambers[label], p=P(label);
+    const isQueen=label==='Queen';
+    const shown=CMAP.showIdle?ch.ants:ch.ants.filter(a=>a.active);
+    const activeCount=ch.ants.filter(a=>a.active).length;
+    const r=isQueen?26:Math.min(40,20+ch.ants.length*1.5);
+    const sel=CMAP.selected===label&&CMAP.selectedKind!=='path';
+    out+='<g class="cm-chamber'+(activeCount>0?' cm-active':'')+(sel?' cm-selected':'')+'" onclick="cmapSelect(\'chamber\',\''+escapeHtml(label)+'\')" '+
+      (isQueen?'':'ondblclick="cmapExpand(\''+escapeHtml(label)+'\')"')+'>'+
+      '<circle class="cm-ring" cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" stroke="'+ch.color+'"/>';
+    // Ant dots: representative in chamber view; all when this chamber is expanded.
+    const expandedHere=CMAP.view==='expanded'&&CMAP.selected===label;
+    const dots=expandedHere?shown:shown.slice(0,8);
+    dots.forEach((a,i)=>{
+      const n=dots.length, ang=(i/Math.max(1,n))*Math.PI*2;
+      const rr=expandedHere?(r*0.75):(r*0.55);
+      const ax=p.x+Math.cos(ang)*rr, ay=p.y+Math.sin(ang)*rr;
+      out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.35)+'"'+
+        (expandedHere?' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"':'')+
+        '><title>'+escapeHtml(a.name)+(a.active?' (active)':' (idle)')+'</title></circle>';
+    });
+    const showLabel=CMAP.labels==='all'||(CMAP.labels==='active'&&activeCount>0)||isQueen;
+    if(showLabel) out+='<text x="'+p.x+'" y="'+(p.y+r+13)+'" font-size="11" text-anchor="middle">'+escapeHtml(label)+' · '+ch.ants.length+(activeCount?' · '+activeCount+' active':'')+'</text>';
+    out+='</g>';
+  });
+  svg.innerHTML=out;
+}
+
+function cmapExpand(label){ CMAP.view='expanded'; CMAP.selected=label; CMAP.selectedKind='chamber'; cmapSetView('expanded'); cmapInspect(); }
+function cmapSelect(kind,id){ CMAP.selectedKind=kind; CMAP.selected=kind==='ant'?CMAP.selected:id; if(kind==='ant')CMAP.selectedAnt=id; renderColonyMap(); cmapInspect(kind,id); }
+
+function cmapInspect(kind,id){
+  const el=document.getElementById('cmap2-insp-body'); if(!el)return;
+  kind=kind||CMAP.selectedKind; id=id||(kind==='ant'?CMAP.selectedAnt:CMAP.selected);
+  if(!kind||!id){ el.innerHTML='<div class="ov2-empty">Select a chamber, ant, or trail.</div>'; return; }
+  const evFor=n=>CMAP.events.filter(e=>String(e.ant||e.ant_name||e.source||'').toLowerCase().includes(String(n).toLowerCase())).slice(0,5);
+  if(kind==='chamber'){
+    const ch=CMAP.chambers[id]; if(!ch){el.innerHTML='<div class="ov2-empty">Unknown chamber.</div>';return;}
+    const act=ch.ants.filter(a=>a.active);
+    el.innerHTML='<div class="ath-role"><i style="background:'+ch.color+'"></i><b>'+escapeHtml(id)+'</b></div>'+
+      '<div class="ov2-row"><span>Ants</span><b>'+ch.ants.length+'</b></div>'+
+      '<div class="ov2-row"><span>Active (15m)</span><b>'+act.length+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">TOP ANTS</div>'+
+      ch.ants.slice(0,6).map(a=>'<div class="ov2-list-item">'+escapeHtml(a.name)+(a.active?' '+athPill('ok','active'):'')+'</div>').join('')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" onclick="cmapExpand(\''+escapeHtml(id)+'\')">Expand</button>'+
+      '<button class="hud-act" onclick="showPage(\'antconfig\')">Ant Config</button>'+
+      '<button class="hud-act" onclick="showPage(\'antobs\')">Inspector</button></div>';
+  }else if(kind==='ant'){
+    let found=null,chLabel='';
+    Object.keys(CMAP.chambers).forEach(l=>{ const a=CMAP.chambers[l].ants.find(x=>x.id===id); if(a){found=a;chLabel=l;} });
+    if(!found){el.innerHTML='<div class="ov2-empty">Unknown ant.</div>';return;}
+    const evs=evFor(found.name);
+    el.innerHTML='<div class="ath-role"><i style="background:'+getRoleColor(id)+'"></i><b>'+escapeHtml(found.name)+'</b></div>'+
+      '<div class="ov2-row"><span>Chamber</span><b>'+escapeHtml(chLabel)+'</b></div>'+
+      '<div class="ov2-row"><span>Status</span><b>'+(found.active?'active':'idle')+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT EVENTS</div>'+
+      (evs.length?evs.map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join(''):'<div class="ov2-empty">No recent events.</div>')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" onclick="showPage(\'antobs\')">Inspect Ant</button>'+
+      '<button class="hud-act" onclick="showPage(\'events\')">Open Logs</button></div>';
+  }else{
+    const t=CMAP.trails.find(x=>x.chamber===id);
+    el.innerHTML='<div class="ath-role"><i style="background:'+((CMAP.chambers[id]||{}).color||'var(--role-other)')+'"></i><b>Trail: '+escapeHtml(id)+' → Queen</b></div>'+
+      '<div class="ov2-row"><span>Strength</span><b>'+(t?Math.round(t.strength*100)+'%':'—')+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT FLOW</div>'+
+      evFor(id).map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join('')||'<div class="ov2-empty">No recent events.</div>';
+  }
+}
+
+function colonySearchHook(q){
+  if(!q||CMAP.view==='raw')return;
+  const needle=q.toLowerCase();
+  for(const label of Object.keys(CMAP.chambers)){
+    const hit=CMAP.chambers[label].ants.find(a=>String(a.name).toLowerCase().includes(needle)||String(a.id).toLowerCase().includes(needle));
+    if(hit){ CMAP.selected=label; CMAP.selectedKind='chamber'; CMAP.selectedAnt=hit.id;
+      if(CMAP.view!=='expanded')cmapSetView('expanded'); else renderColonyMap();
+      cmapInspect('ant',hit.id); return; }
+  }
+}
+
+(function(){
+  const prev=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prev)prev(); cmapLoadPrefs(); cmapSetView(CMAP.view); loadColonyMap(); };
+  setInterval(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')&&CMAP.view!=='raw') loadColonyMap(); },20000);
+})();
 
 // -- Boot ----------------------------------------------------------------------
 // v1.9.1.1: the header/title version comes from the API (single source of truth:
