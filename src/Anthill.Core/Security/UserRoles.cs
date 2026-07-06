@@ -1,7 +1,7 @@
 namespace Anthill.Core.Security;
 
 /// <summary>
-/// Operator roles and the permissions each one grants. There are two roles:
+/// Operator roles and the permissions each one grants. There are three roles:
 ///
 /// - <b>admin</b> — full administrative control over the software: every API permission, plus
 ///   user management. The first account created on a fresh install is always an admin.
@@ -9,16 +9,22 @@ namespace Anthill.Core.Security;
 ///   Queen and watch the colony: send a mission, see live status, and read the event logs from
 ///   the Queen and ants. Everything else (settings, patches, approvals, autonomy control, user
 ///   management, pheromone pruning, ant configuration) is denied.
+/// - <b>homelab_operator</b> — the NORTH_STAR D3 homelab tier (v1.9.0): may view everything the
+///   coordinator can, read the homelab (inventory, health, events, allowlist, secret-free
+///   credential statuses), and approve homelab action proposals once V2.1 ships. May NOT manage
+///   integrations/credentials, execute actions, touch providers, settings, users, or the shell.
 ///
 /// Role checks compose with the capability gates in <c>AnthillRuntime.ApiPermissions</c>: an
-/// action is allowed only if the user's role permits it AND the capability is enabled at all.
+/// action is allowed only if the user's role permits it AND the capability is enabled at all
+/// (execute/approve homelab gates ship disabled until V2.1).
 /// </summary>
 public static class UserRoles
 {
     public const string Admin = "admin";
     public const string Coordinator = "coordinator";
+    public const string HomelabOperator = "homelab_operator";
 
-    public static readonly string[] All = { Admin, Coordinator };
+    public static readonly string[] All = { Admin, Coordinator, HomelabOperator };
 
     public static bool IsValid(string? role) => role is not null && Array.Exists(All, r => r == role);
 
@@ -27,7 +33,9 @@ public static class UserRoles
         {
             Admin => Admin,
             Coordinator => Coordinator,
+            HomelabOperator => HomelabOperator,
             "viewer" or "mission_coordinator" or "mission-coordinator" => Coordinator,
+            "homelab-operator" or "homelab" => HomelabOperator,
             _ => "",
         };
 
@@ -40,10 +48,24 @@ public static class UserRoles
         "read_ui_state",   // load the saved colony layout so the map renders
     };
 
+    // Homelab Operator (NORTH_STAR D3): view + approve, never manage or execute.
+    // Includes the coordinator view set so the console works, plus homelab read/approve.
+    private static readonly HashSet<string> HomelabOperatorPermissions = new()
+    {
+        "run_mission", "read_status", "read_events", "read_ui_state",
+        "read_homelab",            // inventory, health, events, allowlist, credential statuses
+        "approve_homelab_actions", // approve V2.1 action proposals (capability-gated off until then)
+        // Deliberately absent: manage_homelab_integrations (credentials/allowlist writes),
+        // execute_homelab_actions, and every provider/settings/user/shell permission.
+    };
+
     /// <summary>True if the given role is permitted to use the named API permission.</summary>
     public static bool RoleAllows(string role, string permission) =>
-        role == Admin || (role == Coordinator && CoordinatorPermissions.Contains(permission));
+        role == Admin
+        || (role == Coordinator && CoordinatorPermissions.Contains(permission))
+        || (role == HomelabOperator && HomelabOperatorPermissions.Contains(permission));
 
     /// <summary>True for permissions only an admin may use — used to label the UI.</summary>
-    public static bool IsAdminOnly(string permission) => !CoordinatorPermissions.Contains(permission);
+    public static bool IsAdminOnly(string permission) =>
+        !CoordinatorPermissions.Contains(permission) && !HomelabOperatorPermissions.Contains(permission);
 }

@@ -6,9 +6,10 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- Let the test suite exercise internal helpers (e.g. AutoApplyPolicy.GlobMatches). -->
+  <!-- Let the test suites exercise internal helpers (e.g. AutoApplyPolicy.GlobMatches). -->
   <ItemGroup>
     <InternalsVisibleTo Include="Anthill.Tests" />
+    <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
   </ItemGroup>
 
   <ItemGroup>

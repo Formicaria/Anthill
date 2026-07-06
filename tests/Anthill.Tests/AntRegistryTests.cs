@@ -11,12 +11,22 @@ public class AntRegistryTests
     [Fact]
     public void Registry_HasExpectedVisibleColonyShape()
     {
-        Assert.Equal(17, AntRegistry.Roles.Count); // Queen + Director + 15 main hubs
+        Assert.Equal(25, AntRegistry.Roles.Count); // Queen + Director + 15 main hubs + 8 homelab ants (v1.9.0)
         Assert.Equal(31, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
         Assert.Empty(AntRegistry.ValidateRegistry());
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "queen");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "director");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "ui_cartographer");
+        // v1.9.0 homelab ants: present, visible-only, never executable, never patch-capable.
+        var homelabRoles = new[] { "inventory", "network_scout", "health", "proxmox", "storage", "backup", "security_scout", "change_archivist" };
+        foreach (var roleId in homelabRoles)
+        {
+            var role = Assert.Single(AntRegistry.Roles, r => r.RoleId == roleId);
+            Assert.False(role.Executable, $"Homelab ant '{roleId}' must not be executable in v1.9.0.");
+            Assert.False(role.Permissions.ProposePatches, $"Homelab ant '{roleId}' must not propose patches.");
+            Assert.Equal("Homelab", role.Colony);
+        }
+        Assert.DoesNotContain(AntRegistry.ExecutableRoleIds, id => homelabRoles.Contains(id));
     }
 
     [Fact]
