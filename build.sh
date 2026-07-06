@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ANTHILL v1.8.27 build — native C++ kernel first, then the .NET solution.
+# ANTHILL v1.8.29.1 build — native C++ kernel first, then the .NET solution.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

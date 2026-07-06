@@ -1,5 +1,30 @@
 # ANTHILL Changelog
 
+## v1.8.29.1 — Auto-apply: coder add-vs-modify, default paths, and LXC provisioning
+
+Makes the autonomous auto-apply → git loop work end-to-end on a fresh LXC install, removing the
+manual steps and the last blockers hit during live testing.
+
+- **Coder add-vs-modify** (`Ants.cs` + `Tools.cs`): the loop stalled whenever the coder proposed
+  `change_type: add` for a file that already exists (a common LLM slip) — `ApplyPatchTool`
+  hard-refused, so the patch never applied. The coder prompt now chooses `add`/`modify` by whether
+  the target already exists, and an `add` to an existing path is applied as a backed-up full-file
+  overwrite (`add_overwrite`) instead of failing. Fully reversible: the pre-apply backup, verify +
+  rollback, and standalone-branch-never-main gate all still apply.
+- **Default auto-apply paths** (`AnthillRuntime.cs` + UI): enabling auto-apply with an empty path
+  allowlist was a silent no-op (empty allowlist = nothing eligible). Turning it on now seeds a
+  starter allowlist of `docs/**` and `src/**`, persisted to config so it shows up pre-filled in
+  Settings → Security and can be edited or removed like any operator entry. Never overrides paths
+  the operator already set; never seeded while auto-apply is off. The UI also pre-fills the box the
+  moment the toggle is switched on.
+- **LXC provisioning** (`deploy/lxc/setup.sh` + service template): setup.sh now provisions the
+  agent workspace as a git checkout under `.anthill/workspace` (already writable via the unit's
+  `ReadWritePaths=.anthill`), sets the service user's git identity + `safe.directory`, checks out
+  the standalone `<username>-anthill` branch on re-runs where a username is configured, and creates
+  a private `.ssh` deploy-key slot (700; the key is provided by the operator and referenced by path,
+  never generated or stored). Idempotent, so it doubles as the upgrade path. End users no longer do
+  any of this by hand.
+
 ## v1.8.29 — Fresh-install training + pheromone bootstrap missions (NORTH_STAR Phase 3)
 
 Phase 3 of the master roadmap: give fresh installs a repeatable, read-only way to learn the repo,

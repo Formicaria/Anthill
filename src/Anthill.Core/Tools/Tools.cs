@@ -345,7 +345,18 @@ public sealed class ApplyPatchTool : ITool
 
     private ToolResult ApplyAdd(string safePath, string newContent)
     {
-        if (File.Exists(safePath)) return new ToolResult(Name, false, "", $"ADD refused because file already exists: {safePath}");
+        // A coder that proposes ADD for a file that already exists (a common LLM slip) previously
+        // hard-failed here, stalling auto-apply. Instead treat it as a full-file overwrite: back up
+        // the current file first so it is fully reversible, then write the proposed content. This stays
+        // inside the safety model — the pre-apply backup, auto-apply verify+rollback, and the
+        // standalone-branch-never-main review gate all still apply, and the Patch Center shows the diff
+        // before any manual apply. New files still take the plain add path below.
+        if (File.Exists(safePath))
+        {
+            var existingBackup = BackupFile(safePath);
+            File.WriteAllText(safePath, newContent, new UTF8Encoding(false));
+            return new ToolResult(Name, true, Json.Dumps(new { action = "add_overwrite", file_path = safePath, backup_path = existingBackup }, indented: true));
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
         File.WriteAllText(safePath, newContent, new UTF8Encoding(false));
         return new ToolResult(Name, true, Json.Dumps(new { action = "add", file_path = safePath, backup_path = (string?)null }, indented: true));
