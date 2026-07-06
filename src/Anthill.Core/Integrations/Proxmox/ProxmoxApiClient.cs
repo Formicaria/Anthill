@@ -44,10 +44,15 @@ public sealed class ProxmoxApiClient
     public string Host { get; }
 
     public ProxmoxApiClient(string host, int port, IHomelabTargetGuard targetGuard,
-        Func<string?> tokenProvider, bool insecureTls = false, TimeSpan? timeout = null)
+        Func<string?> tokenProvider, bool insecureTls = false, TimeSpan? timeout = null, string protocol = "https")
     {
         Host = (host ?? "").Trim();
-        BaseUrl = $"https://{Host}:{(port > 0 ? port : 8006)}/api2/json";
+        // v2.2.0 fix (no-TLS 401): protocol selection is separate from TLS verification. A PVE
+        // fronted by plain http was previously always addressed as https://, so requests never
+        // reached it correctly. http mode still attaches the PVEAPIToken header exactly like
+        // https; insecureTls only controls certificate verification and only matters for https.
+        var scheme = string.Equals(protocol?.Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
+        BaseUrl = $"{scheme}://{Host}:{(port > 0 ? port : 8006)}/api2/json";
         _targetGuard = targetGuard;
         _tokenProvider = tokenProvider;
         _insecureTls = insecureTls;
