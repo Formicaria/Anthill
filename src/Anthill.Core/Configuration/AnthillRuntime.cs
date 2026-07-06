@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.0.0";
+    public const string Version = "2.1.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -155,6 +155,27 @@ public static class AnthillRuntime
     /// <summary>Skip TLS verification for self-signed PVE certs. Keep false when real certs exist.</summary>
     public static bool HomelabProxmoxInsecureTls = false;
     public static int HomelabProxmoxSyncIntervalSeconds = 300;
+    // ---- Read-only virtualization integrations (v2.1.0) --------------------
+    // ESXi/vCenter (vSphere REST), Docker (Engine API), Hyper-V (WinRM WMI read-only). Each mirrors
+    // Proxmox: no write path in the client, secret in the credential store (by id), host on the allowlist.
+    public static bool EnableHomelabEsxi = false;
+    public static string HomelabEsxiHost = "";
+    public static int HomelabEsxiPort = 443;
+    public static string HomelabEsxiCredentialId = "esxi-main";
+    public static bool HomelabEsxiInsecureTls = false;
+    public static int HomelabEsxiSyncIntervalSeconds = 300;
+    public static bool EnableHomelabDocker = false;
+    public static string HomelabDockerHost = "";
+    public static int HomelabDockerPort = 2376;
+    public static string HomelabDockerCredentialId = "docker-main";
+    public static bool HomelabDockerInsecureTls = false;
+    public static int HomelabDockerSyncIntervalSeconds = 300;
+    public static bool EnableHomelabHyperv = false;
+    public static string HomelabHypervHost = "";
+    public static int HomelabHypervPort = 5986;
+    public static string HomelabHypervCredentialId = "hyperv-main";
+    public static bool HomelabHypervInsecureTls = false;
+    public static int HomelabHypervSyncIntervalSeconds = 300;
     // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) --------
     /// <summary>Cadence of the deterministic risk analysis (repo-only, zero network I/O).</summary>
     public static int HomelabRiskIntervalSeconds = 3600;
@@ -490,6 +511,24 @@ public static class AnthillRuntime
         HomelabProxmoxCredentialId = string.IsNullOrWhiteSpace(config.HomelabProxmoxCredentialId) ? "proxmox-main" : config.HomelabProxmoxCredentialId.Trim();
         HomelabProxmoxInsecureTls = config.HomelabProxmoxInsecureTls;
         HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
+        EnableHomelabEsxi = config.HomelabEsxiEnabled;
+        HomelabEsxiHost = (config.HomelabEsxiHost ?? "").Trim();
+        HomelabEsxiPort = Math.Clamp(config.HomelabEsxiPort, 1, 65535);
+        HomelabEsxiCredentialId = string.IsNullOrWhiteSpace(config.HomelabEsxiCredentialId) ? "esxi-main" : config.HomelabEsxiCredentialId.Trim();
+        HomelabEsxiInsecureTls = config.HomelabEsxiInsecureTls;
+        HomelabEsxiSyncIntervalSeconds = Math.Clamp(config.HomelabEsxiSyncIntervalSeconds, 30, 86400);
+        EnableHomelabDocker = config.HomelabDockerEnabled;
+        HomelabDockerHost = (config.HomelabDockerHost ?? "").Trim();
+        HomelabDockerPort = Math.Clamp(config.HomelabDockerPort, 1, 65535);
+        HomelabDockerCredentialId = string.IsNullOrWhiteSpace(config.HomelabDockerCredentialId) ? "docker-main" : config.HomelabDockerCredentialId.Trim();
+        HomelabDockerInsecureTls = config.HomelabDockerInsecureTls;
+        HomelabDockerSyncIntervalSeconds = Math.Clamp(config.HomelabDockerSyncIntervalSeconds, 30, 86400);
+        EnableHomelabHyperv = config.HomelabHypervEnabled;
+        HomelabHypervHost = (config.HomelabHypervHost ?? "").Trim();
+        HomelabHypervPort = Math.Clamp(config.HomelabHypervPort, 1, 65535);
+        HomelabHypervCredentialId = string.IsNullOrWhiteSpace(config.HomelabHypervCredentialId) ? "hyperv-main" : config.HomelabHypervCredentialId.Trim();
+        HomelabHypervInsecureTls = config.HomelabHypervInsecureTls;
+        HomelabHypervSyncIntervalSeconds = Math.Clamp(config.HomelabHypervSyncIntervalSeconds, 30, 86400);
         HomelabRiskIntervalSeconds = Math.Clamp(config.HomelabRiskIntervalSeconds, 60, 86400);
         HomelabIncidentSweepSeconds = Math.Clamp(config.HomelabIncidentSweepSeconds, 30, 86400);
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
@@ -575,6 +614,12 @@ public static class AnthillRuntime
         "homelab_proxmox_enabled", "homelab_proxmox_host", "homelab_proxmox_port",
         "homelab_proxmox_credential_id", "homelab_proxmox_insecure_tls",
         "homelab_proxmox_sync_interval_seconds",
+        "homelab_esxi_enabled", "homelab_esxi_host", "homelab_esxi_port",
+        "homelab_esxi_credential_id", "homelab_esxi_insecure_tls", "homelab_esxi_sync_interval_seconds",
+        "homelab_docker_enabled", "homelab_docker_host", "homelab_docker_port",
+        "homelab_docker_credential_id", "homelab_docker_insecure_tls", "homelab_docker_sync_interval_seconds",
+        "homelab_hyperv_enabled", "homelab_hyperv_host", "homelab_hyperv_port",
+        "homelab_hyperv_credential_id", "homelab_hyperv_insecure_tls", "homelab_hyperv_sync_interval_seconds",
         "homelab_risk_interval_seconds", "homelab_incident_sweep_seconds",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
@@ -675,6 +720,24 @@ public static class AnthillRuntime
         ["homelab_proxmox_credential_id"] = HomelabProxmoxCredentialId,
         ["homelab_proxmox_insecure_tls"] = HomelabProxmoxInsecureTls,
         ["homelab_proxmox_sync_interval_seconds"] = HomelabProxmoxSyncIntervalSeconds,
+        ["homelab_esxi_enabled"] = EnableHomelabEsxi,
+        ["homelab_esxi_host"] = HomelabEsxiHost,
+        ["homelab_esxi_port"] = HomelabEsxiPort,
+        ["homelab_esxi_credential_id"] = HomelabEsxiCredentialId,
+        ["homelab_esxi_insecure_tls"] = HomelabEsxiInsecureTls,
+        ["homelab_esxi_sync_interval_seconds"] = HomelabEsxiSyncIntervalSeconds,
+        ["homelab_docker_enabled"] = EnableHomelabDocker,
+        ["homelab_docker_host"] = HomelabDockerHost,
+        ["homelab_docker_port"] = HomelabDockerPort,
+        ["homelab_docker_credential_id"] = HomelabDockerCredentialId,
+        ["homelab_docker_insecure_tls"] = HomelabDockerInsecureTls,
+        ["homelab_docker_sync_interval_seconds"] = HomelabDockerSyncIntervalSeconds,
+        ["homelab_hyperv_enabled"] = EnableHomelabHyperv,
+        ["homelab_hyperv_host"] = HomelabHypervHost,
+        ["homelab_hyperv_port"] = HomelabHypervPort,
+        ["homelab_hyperv_credential_id"] = HomelabHypervCredentialId,
+        ["homelab_hyperv_insecure_tls"] = HomelabHypervInsecureTls,
+        ["homelab_hyperv_sync_interval_seconds"] = HomelabHypervSyncIntervalSeconds,
         ["homelab_risk_interval_seconds"] = HomelabRiskIntervalSeconds,
         ["homelab_incident_sweep_seconds"] = HomelabIncidentSweepSeconds,
         ["file_writing_enabled"] = EnableFileWriting,
