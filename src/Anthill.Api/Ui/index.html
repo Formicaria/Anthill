@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.27</title>
+<title>ANTHILL v1.8.29.1</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.27</span></div>
+    <div class="auth-logo">ANTHILL <span>v1.8.29.1</span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.27</span>
+      <span class="nav-logo-ver">v1.8.29.1</span>
     </div>
 
     <div class="nav-scroll">
@@ -5527,6 +5527,7 @@ async function loadSecurity(){
   document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
   document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
   document.getElementById('sec-autoapply-toggle').innerHTML=tog('autonomy_autoapply_enabled','Enable auto-apply','Director applies allowlisted patches that verify green, without review.');
+  (function(){var sw=document.querySelector('#sec-autoapply-toggle .toggle-sw');if(sw)sw.addEventListener('click',function(){var pa=document.getElementById('sec-autoapply-paths');if(sw.classList.contains('on')&&pa&&!pa.value.trim())pa.value='docs/**\nsrc/**';});})();
   document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, commit the change on the standalone branch (never main).');
   document.getElementById('sec-autoapply-git-push').innerHTML=tog('autonomy_autoapply_git_push','Push branch to origin','After commit, push the standalone branch via the SSH deploy key. Never pushes or merges main.');
   document.getElementById('sec-autoapply-git-user').value=secSettings.autonomy_autoapply_git_username||'';
