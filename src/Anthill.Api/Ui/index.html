@@ -6377,18 +6377,28 @@ async function loadHlVirt(){
   try{
     const [st,vms,cts,pools]=await Promise.all([
       api('/homelab/virtualization/status'),api('/homelab/vms'),api('/homelab/containers'),api('/homelab/storage')]);
-    renderHlVirtConns(st.success?((st.data||{}).integrations||[]):[]);
+    renderHlVirtConns(st.success?(st.data||{}):{});
     renderHlVms(vms.success?(vms.data||[]):[]);
     renderHlCts(cts.success?(cts.data||[]):[]);
     renderHlStorage(pools.success?(pools.data||[]):[]);
   }catch(e){ hlMsg('Virtualization load failed: '+e.message,false); }
 }
 
-function renderHlVirtConns(list){
+function renderHlVirtConns(data){
   const wrap=document.getElementById('hl-virt-conns'); if(!wrap) return;
   const admin=ROLE==='admin';
-  if(!list.length){ wrap.innerHTML='<div style="color:var(--dim);font-size:11px;">No integrations available.</div>'; return; }
-  wrap.innerHTML=list.map(d=>{
+  const list=(data&&data.integrations)||[];
+  // Master-gate bar. Read-only inventory still syncs manually with the subsystem off, but scheduled
+  // sync + the health/risk/incident jobs need it enabled (and a restart to (de)register the jobs).
+  let bar='<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:11px;">'+
+    '<span>Homelab subsystem: <b style="color:'+(data.homelab_enabled?'var(--green)':'var(--red)')+'">'+(data.homelab_enabled?'enabled':'disabled')+'</b></span>'+
+    '<span>· Scheduler: <b style="color:'+(data.scheduler_enabled?'var(--green)':'var(--dim)')+'">'+(data.scheduler_enabled?'enabled':'disabled')+'</b></span>'+
+    (admin?('<span style="flex:1"></span>'+
+      '<button class="btn btn-ghost" onclick="hlSetHomelabGate(\'homelab_enabled\','+(!data.homelab_enabled)+')">'+(data.homelab_enabled?'Disable subsystem':'Enable subsystem')+'</button>'+
+      '<button class="btn btn-ghost" onclick="hlSetHomelabGate(\'homelab_scheduler_enabled\','+(!data.scheduler_enabled)+')">'+(data.scheduler_enabled?'Disable scheduler':'Enable scheduler')+'</button>'+
+      '<span style="color:var(--dim)">(restart to (de)register scheduled syncs)</span>'):'')+'</div>';
+  if(!list.length){ wrap.innerHTML=bar+'<div style="color:var(--dim);font-size:11px;">No integrations available.</div>'; return; }
+  wrap.innerHTML=bar+list.map(d=>{
     const k=d.kind, m=HL_VIRT_META[k]||{title:k,defPort:0,secretHint:'secret'};
     const dis=admin?'':' disabled';
     return '<div class="card" style="padding:10px 12px;border:1px solid var(--border);">'+
@@ -6411,8 +6421,28 @@ function renderHlVirtConns(list){
         '<button class="btn btn-ghost" onclick="hlSyncVirt(\''+k+'\')">⟳ Sync now</button></div>'):'')+
       '<div style="font-size:10px;color:var(--muted);margin-top:6px;">credential <b>'+escapeHtml(d.credential_id||'—')+'</b>: '+
         (d.credential_configured?'<span style="color:var(--green)">configured</span>':'<span style="color:var(--red)">missing</span>')+
-        ' · '+(d.active?'<span style="color:var(--green)">active</span>':'inactive')+'</div></div>';
+        ' · '+(d.active?'<span style="color:var(--green)">active</span>':'inactive')+
+        (d.host?(' · host: '+(d.host_allowlisted
+          ?'<span style="color:var(--green)">allowlisted</span>'
+          :'<span style="color:var(--red)">NOT allowlisted — requests are blocked</span>'+(admin?' <button class="btn btn-ghost" style="padding:1px 6px;font-size:9px;" onclick="hlAllowVirtHost(\''+k+'\')">Allow this host</button>':''))):'')+
+        '</div></div>';
   }).join('');
+}
+
+async function hlAllowVirtHost(k){
+  const h=document.getElementById('hl-vc-'+k+'-host');
+  const host=h?h.value.trim():'';
+  if(!host){ hlMsg('Set the host first.',false); return; }
+  const r=await api('/homelab/allowlist','POST',{target:host,note:k+' virtualization'});
+  hlMsg(r.success?('Host '+host+' allowlisted — now Sync now to pull inventory.'):(r.message||'Failed'),r.success);
+  if(r.success) loadHlVirt();
+}
+
+async function hlSetHomelabGate(key,val){
+  const payload={}; payload[key]=val;
+  const r=await api('/settings','POST',payload);
+  hlMsg(r.success?(key+' → '+val+'. Restart the service so scheduled syncs (de)register.'):(r.message||'Failed'),r.success);
+  if(r.success) loadHlVirt();
 }
 
 async function hlSaveVirtConn(k){

@@ -1,5 +1,22 @@
 # ANTHILL Changelog
 
+## v2.1.0.1 — Allowlist + subsystem gates surfaced on the Virtualization Connections panel
+
+Field fix: a real operator hit "Proxmox connected, credential configured, but no VMs/containers/storage."
+Root cause was the **target allowlist** — a hard gate in front of every homelab request — and the v2.1.0
+connection panel gave no way to see or fix it, so following the form (enable → host → credential → save
+→ sync) failed silently once the sync hit the allowlist. Also the homelab **subsystem/scheduler master
+gates** were "edit config.json" only.
+
+- Each connection card now shows **host allowlist status** ("allowlisted" / "NOT allowlisted — requests
+  are blocked") with a one-click **"Allow this host"** button (`POST /homelab/allowlist`). `VirtStatus`
+  gained `host_allowlisted`.
+- A **subsystem bar** at the top of the panel shows `homelab_enabled` / `scheduler_enabled` and lets an
+  admin flip them (with a restart note, since scheduled syncs (de)register at startup). The unified
+  status endpoint now returns those two gates.
+- Result: hooking up a hypervisor is now type host → save cred → **Allow this host** → Sync — entirely in
+  the panel, no config.json or curl. (The integrations themselves are unchanged and still read-only.)
+
 ## v2.1.0 — Multi-hypervisor read-only inventory + Virtualization Connections UI
 
 Extends the read-only virtualization layer beyond Proxmox to **VMware ESXi/vCenter, Docker, and
