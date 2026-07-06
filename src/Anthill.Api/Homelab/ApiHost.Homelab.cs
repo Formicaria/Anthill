@@ -1,6 +1,8 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Health;
 using Anthill.Core.Homelab;
+using Anthill.Core.Homelab.Approvals;
+using Anthill.Core.Incidents;
 using Anthill.Core.Homelab.Notifications;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Homelab.Security;
@@ -31,12 +33,15 @@ public static partial class ApiHost
     private sealed record DependencyUpsertRequest(string? Id, string? FromKind, string? FromId, string? ToKind, string? ToId, string? DependencyKind, string? Notes);
     private sealed record HealthScheduleUpsertRequest(string? Id, string? CheckKind, string? Target, string? ServiceId, string? NodeId, bool? Enabled, int? TimeoutMs);
     private sealed record DeviceUpsertRequest(string? Id, string? Name, string? Kind, string? Mac, string? Ip, string? Vlan, bool? Known, string? Notes);
+    private sealed record IncidentOpenRequest(string? Title, string? SubjectKind, string? SubjectId, string? Severity);
+    private sealed record IncidentStatusRequest(string? Status, string? RootCause);
 
     public static IReadOnlyList<FakeHomelabProvider> HomelabProviders { get; private set; } = Array.Empty<FakeHomelabProvider>();
     public static NotificationService HomelabNotifier { get; private set; } = null!;
     public static HealthCheckRunner HomelabHealth { get; private set; } = null!;
     public static ProxmoxInventoryProvider? HomelabProxmox { get; private set; }
     public static RiskAnalyzer HomelabRisks { get; private set; } = null!;
+    public static IncidentManager HomelabIncidents { get; private set; } = null!;
 
     private static void InitHomelab()
     {
@@ -47,6 +52,7 @@ public static partial class ApiHost
         HomelabNotifier = new NotificationService(Homelab);
         HomelabHealth = new HealthCheckRunner(Homelab, HomelabTargets, HomelabNotifier);
         HomelabRisks = new RiskAnalyzer(Homelab);
+        HomelabIncidents = new IncidentManager(Homelab);
 
         // v1.9.1: the mock-provider harness — the shared execution pattern every real provider
         // follows. Mocks are deterministic and network-free; registered only when the mock gate
@@ -75,6 +81,9 @@ public static partial class ApiHost
             // v1.13.0: deterministic risk analysis over existing inventory — zero network I/O.
             HomelabJobs.Register(new HomelabScheduledJob("risk-analysis",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabRiskIntervalSeconds), HomelabRisks.RunAsync));
+            // v1.14.0: incident sweep — turns incident_candidate events into deduped incidents.
+            HomelabJobs.Register(new HomelabScheduledJob("incident-sweep",
+                TimeSpan.FromSeconds(AnthillRuntime.HomelabIncidentSweepSeconds), HomelabIncidents.SweepAsync));
         }
 
         // v1.12.0: Proxmox read-only sync. GET-only client; token pulled from the credential
@@ -296,6 +305,58 @@ public static partial class ApiHost
             return result.Ok
                 ? ApiJson.Ok(new Dictionary<string, object?> { ["items"] = result.ItemCount }, result.Message)
                 : ApiJson.Error("Proxmox sync failed: " + result.Message, "sync_failed");
+        });
+
+        // ---- Incident + change memory (v1.14.0, NORTH_STAR Phase 10) ------------------------------
+
+        app.MapGet("/homelab/incidents", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListIncidents()));
+
+        app.MapPost("/homelab/incidents", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            IncidentOpenRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<IncidentOpenRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Title)) return ApiJson.Error("Incident title is required.", "bad_request");
+            var incident = HomelabIncidents.Open(body.Title!.Trim(), (body.SubjectKind ?? "manual").Trim(),
+                (body.SubjectId ?? body.Title!).Trim(), (body.Severity ?? "warning").Trim(), CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(incident, $"Incident '{incident.Title}' is {incident.Status}.");
+        });
+
+        app.MapGet("/homelab/incidents/{id}/timeline", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabIncidents.Timeline(id)));
+
+        app.MapGet("/homelab/incidents/{id}/similar", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabIncidents.Similar(id)));
+
+        app.MapPost("/homelab/incidents/{id}/status", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            IncidentStatusRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<IncidentStatusRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var ok = HomelabIncidents.SetStatus(id, (body?.Status ?? "").Trim().ToLowerInvariant(),
+                (body?.RootCause ?? "").Trim(), CurrentUsername(ctx) ?? "operator");
+            return ok
+                ? ApiJson.Ok(Homelab.ListIncidents(), "Incident updated." +
+                    (string.IsNullOrWhiteSpace(body?.RootCause) ? "" : " Root cause recorded — similar future incidents will surface it as a suggested fix."))
+                : ApiJson.Error("Unknown incident or invalid status (open|investigating|resolved).", "bad_request");
+        });
+
+        // v1.14.0: the ONE pending-approvals view (IApprovable). Today it projects patch
+        // approvals; V2.1 action proposals and V2.4 network changes join the same queue.
+        app.MapGet("/homelab/approvals/unified", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_approvals"); if (auth is not null) return auth;
+            var views = Queen.Memory.ListApprovalRequests(null, 100)
+                .Select(row => ApprovableProjections.FromPatchApproval(row));
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["items"] = ApprovableProjections.DedupePending(views),
+                ["kinds"] = new[] { "patch" }, // "homelab_action" arrives in V2.1, "network_change" in V2.4
+                ["design"] = "docs/APPROVALS.md",
+            });
         });
 
         // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------

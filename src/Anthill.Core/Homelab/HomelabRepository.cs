@@ -359,6 +359,79 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
+    // ---- Incidents (v1.14.0) -----------------------------------------------------------------------
+
+    public void OpenIncident(IncidentRecord incident, string openedBy)
+    {
+        if (string.IsNullOrWhiteSpace(incident.OpenedAt)) incident.OpenedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO incidents (id, title, status, severity, subject_kind, subject_id, root_cause, opened_at, resolved_at)
+                VALUES ($id, $title, $status, $sev, $skind, $sid, $root, $opened, NULL)
+                ON CONFLICT(id) DO NOTHING";
+            Bind(cmd, "$id", incident.Id); Bind(cmd, "$title", incident.Title); Bind(cmd, "$status", incident.Status);
+            Bind(cmd, "$sev", incident.Severity); Bind(cmd, "$skind", incident.SubjectKind); Bind(cmd, "$sid", incident.SubjectId);
+            Bind(cmd, "$root", incident.RootCause); Bind(cmd, "$opened", incident.OpenedAt);
+            cmd.ExecuteNonQuery();
+        }
+        RecordEvent(new HomelabEvent
+        {
+            EventType = "incident_opened", SubjectKind = "incident", SubjectId = incident.Id,
+            Severity = incident.Severity, Message = $"{incident.Title} (subject: {incident.SubjectId}, by {openedBy})",
+        });
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "incident", SubjectId = incident.Id, ChangeKind = "created",
+            Summary = $"Incident opened: {incident.Title}", ChangedBy = openedBy,
+        });
+    }
+
+    public IncidentRecord? GetIncident(string id) => ListIncidents().FirstOrDefault(i => i.Id == id);
+
+    public void SetIncidentStatus(string id, string status, string rootCause, string changedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"UPDATE incidents SET status = $status,
+                root_cause = CASE WHEN $root != '' THEN $root ELSE root_cause END,
+                resolved_at = CASE WHEN $status = 'resolved' THEN $now ELSE NULL END
+                WHERE id = $id";
+            Bind(cmd, "$id", id); Bind(cmd, "$status", status); Bind(cmd, "$root", rootCause ?? "");
+            Bind(cmd, "$now", AnthillTime.NowUtc().ToIso());
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "incident", SubjectId = id, ChangeKind = "updated",
+            Summary = $"Incident marked {status}" + (string.IsNullOrWhiteSpace(rootCause) ? "" : $" — {rootCause}"),
+            ChangedBy = changedBy,
+        });
+    }
+
+    public IReadOnlyList<IncidentRecord> ListIncidents()
+    {
+        var list = new List<IncidentRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, title, status, severity, subject_kind, subject_id, root_cause, opened_at, resolved_at FROM incidents ORDER BY opened_at DESC";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new IncidentRecord
+            {
+                Id = r.GetString(0), Title = r.GetString(1), Status = r.GetString(2), Severity = r.GetString(3),
+                SubjectKind = r.IsDBNull(4) ? "" : r.GetString(4), SubjectId = r.IsDBNull(5) ? "" : r.GetString(5),
+                RootCause = r.IsDBNull(6) ? "" : r.GetString(6),
+                OpenedAt = r.GetString(7), ResolvedAt = r.IsDBNull(8) ? "" : r.GetString(8),
+            });
+        }
+        return list;
+    }
+
     // ---- Network devices + risk findings (v1.13.0) ------------------------------------------------
 
     public void UpsertNetworkDevice(NetworkDevice device, string changedBy)
