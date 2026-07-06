@@ -399,6 +399,10 @@ Rules:
 - Do not wrap JSON in markdown code fences.
 - For modify, old_content must be exact and unambiguous.
 - For add, old_content should be null.
+- Choose change_type by whether the target file ALREADY EXISTS: use modify (with exact old_content)
+  to change a file that exists; use add ONLY for a file that does not exist yet. Never propose add
+  for a path that already exists in the context or workspace — to append to or edit an existing file,
+  use modify with the exact surrounding old_content you are replacing.
 - Do not propose database, .git, venv, cache, or absolute paths.
 - Do not propose paths containing ..
 - Every proposal requires approval.

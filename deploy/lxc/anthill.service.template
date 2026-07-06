@@ -24,6 +24,11 @@ EnvironmentFile=-/etc/anthill/token.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+# ProtectSystem=strict makes the whole filesystem read-only except the paths below. .anthill holds
+# the config, database, backups AND the agent workspace (.anthill/workspace) that autonomous
+# auto-apply writes and git-commits into — so it must be writable. setup.sh provisions the workspace
+# as a git checkout here. If you relocate agent_workspace_dir OUTSIDE .anthill, add a matching
+# ReadWritePaths line for it too, or auto-apply will fail with a read-only filesystem error.
 ReadWritePaths=__INSTALL_DIR__/.anthill
 
 [Install]
