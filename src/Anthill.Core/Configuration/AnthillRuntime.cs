@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.1.0.1";
+    public const string Version = "2.2.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -154,6 +154,8 @@ public static class AnthillRuntime
     public static string HomelabProxmoxCredentialId = "proxmox-main";
     /// <summary>Skip TLS verification for self-signed PVE certs. Keep false when real certs exist.</summary>
     public static bool HomelabProxmoxInsecureTls = false;
+    /// <summary>v2.2.0: "https" (default) or "http" — protocol selection, separate from TLS verification.</summary>
+    public static string HomelabProxmoxProtocol = "https";
     public static int HomelabProxmoxSyncIntervalSeconds = 300;
     // ---- Read-only virtualization integrations (v2.1.0) --------------------
     // ESXi/vCenter (vSphere REST), Docker (Engine API), Hyper-V (WinRM WMI read-only). Each mirrors
@@ -510,6 +512,7 @@ public static class AnthillRuntime
         HomelabProxmoxPort = Math.Clamp(config.HomelabProxmoxPort, 1, 65535);
         HomelabProxmoxCredentialId = string.IsNullOrWhiteSpace(config.HomelabProxmoxCredentialId) ? "proxmox-main" : config.HomelabProxmoxCredentialId.Trim();
         HomelabProxmoxInsecureTls = config.HomelabProxmoxInsecureTls;
+        HomelabProxmoxProtocol = string.Equals((config.HomelabProxmoxProtocol ?? "").Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
         HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
         EnableHomelabEsxi = config.HomelabEsxiEnabled;
         HomelabEsxiHost = (config.HomelabEsxiHost ?? "").Trim();
@@ -612,7 +615,7 @@ public static class AnthillRuntime
         "homelab_notifications_enabled", "homelab_slack_webhook", "homelab_discord_webhook",
         "homelab_generic_webhook",
         "homelab_proxmox_enabled", "homelab_proxmox_host", "homelab_proxmox_port",
-        "homelab_proxmox_credential_id", "homelab_proxmox_insecure_tls",
+        "homelab_proxmox_credential_id", "homelab_proxmox_insecure_tls", "homelab_proxmox_protocol",
         "homelab_proxmox_sync_interval_seconds",
         "homelab_esxi_enabled", "homelab_esxi_host", "homelab_esxi_port",
         "homelab_esxi_credential_id", "homelab_esxi_insecure_tls", "homelab_esxi_sync_interval_seconds",
@@ -719,6 +722,7 @@ public static class AnthillRuntime
         ["homelab_proxmox_port"] = HomelabProxmoxPort,
         ["homelab_proxmox_credential_id"] = HomelabProxmoxCredentialId,
         ["homelab_proxmox_insecure_tls"] = HomelabProxmoxInsecureTls,
+        ["homelab_proxmox_protocol"] = HomelabProxmoxProtocol,
         ["homelab_proxmox_sync_interval_seconds"] = HomelabProxmoxSyncIntervalSeconds,
         ["homelab_esxi_enabled"] = EnableHomelabEsxi,
         ["homelab_esxi_host"] = HomelabEsxiHost,

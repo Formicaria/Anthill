@@ -181,13 +181,19 @@ V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
 V1.13.0  Network and security awareness                       [SHIPPED v1.13.0]
 V1.14.0  Incident and change memory + IApprovable design      [SHIPPED v1.14.0 — V1.x line complete]
 V2.0.0   Homelab Command Center launch                        [SHIPPED v2.0.0]
-V2.1.0   Approval-gated homelab actions
-V2.2.0   Backup and restore intelligence
-V2.3.0   Automation rules
-V2.4.0   DNS/DHCP/firewall control layer
-V2.5.0   Full homelab operations layer
+V2.1.0   Multi-hypervisor virtualization inventory (ESXi/Docker/Hyper-V, read-only)  [SHIPPED v2.1.0 — unplanned insertion]
+V2.2.0   Overview + Colony living-console revision + performance/auth/Proxmox stability pass  [SHIPPED v2.2.0 — unplanned insertion]
+V2.3.0   Approval-gated homelab actions                       (was V2.1.0)
+V2.4.0   Backup and restore intelligence                      (was V2.2.0)
+V2.5.0   Automation rules                                     (was V2.3.0)
+V2.6.0   DNS/DHCP/firewall control layer                      (was V2.4.0)
+V2.7.0   Full homelab operations layer                        (was V2.5.0)
 V3.0.0   Bounded autonomous homelab operator
 ```
+
+> Renumbering note (v2.2.0): two unplanned-but-valuable releases consumed v2.1.0 and v2.2.0, so
+> the remaining planned phases shift by two minor versions. Phase headings below retain their
+> original numbering with their NEW target versions noted — the scope of each phase is unchanged.
 
 ---
 
