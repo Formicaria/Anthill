@@ -44,6 +44,9 @@
   "homelab_proxmox_insecure_tls":          false,
   "homelab_proxmox_sync_interval_seconds": 300,
 
+  "_comment_homelab_risk": "Network + security awareness (v1.13.0). Deterministic risk findings computed from the inventory you have registered/synced - risky open ports, unknown devices, ownerless services, un-backed-up hosts, exposed dashboards, duplicate IPs, missing DNS names, unwatched services, unverified credentials. Zero network I/O: there is NO active scanning in this phase. Findings reconcile on every run (fixed problems auto-resolve; acknowledgements stick).",
+  "homelab_risk_interval_seconds": 3600,
+
   "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.",
   "use_ollama":    true,
   "ollama_host":   "http://YOUR_OLLAMA_HOST_IP:11434",

@@ -230,6 +230,8 @@ public sealed class HomelabInventoryExport
     [JsonPropertyName("nodes")] public List<HomelabNode> Nodes { get; set; } = new();
     [JsonPropertyName("services")] public List<ServiceRecord> Services { get; set; } = new();
     [JsonPropertyName("dependencies")] public List<DependencyRecord> Dependencies { get; set; } = new();
+    /// <summary>v1.13.0: network devices ride the same bundle (subnet/VLAN/IP inventory).</summary>
+    [JsonPropertyName("devices")] public List<NetworkDevice> Devices { get; set; } = new();
 }
 
 /// <summary>Secret-free status of one integration/provider, for the summary endpoint and UI.</summary>

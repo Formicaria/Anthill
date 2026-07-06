@@ -81,6 +81,14 @@ public interface IHomelabRepository : IHomelabEventSink
     IReadOnlyList<ContainerRecord> ListContainers();
     void UpsertStoragePool(StoragePoolRecord pool);
     IReadOnlyList<StoragePoolRecord> ListStoragePools();
+
+    // Network devices + risk findings (v1.13.0, NORTH_STAR Phase 9 — awareness only, no scanning)
+    void UpsertNetworkDevice(NetworkDevice device, string changedBy);
+    void RemoveNetworkDevice(string id, string removedBy);
+    IReadOnlyList<NetworkDevice> ListNetworkDevices();
+    void UpsertRiskRecord(RiskRecord record);
+    void SetRiskStatus(string id, string status, string changedBy);
+    IReadOnlyList<RiskRecord> ListRiskRecords();
     IReadOnlyList<HomelabEvent> RecentEvents(int limit = 50);
     void RecordChange(ChangeRecord change);
     IReadOnlyList<ChangeRecord> RecentChanges(int limit = 50);

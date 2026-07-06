@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v1.13.0 — Network + security awareness (NORTH_STAR Phase 9)
+
+Phase 9 of the master roadmap: understand the network shape and the obvious risks. Awareness and
+reporting only — no firewall/DNS/DHCP writes, and stronger: **zero network I/O**. Active scanning
+does not exist in this phase; if it ever arrives it ships disabled-by-default behind the target
+allowlist like every other prober.
+
+- **`RiskAnalyzer`** — deterministic rules over inventory ANTHILL already knows, producing all nine
+  NORTH_STAR findings: `risky_open_port` (legacy/cleartext ports; severity upgrades to error when
+  internet-exposed), `unknown_device`, `ownerless_service`, `un_backed_up_host` (workloads with no
+  backup-capable storage anywhere), `exposed_dashboard` (admin surfaces reachable from the
+  internet), `duplicate_ip` (across hosts AND network devices), `missing_dns_name`,
+  `service_without_health_check`, and `credential_never_verified`.
+- **Stable-id reconciliation**: findings upsert by `risk:{kind}:{subject}`, so re-analysis never
+  duplicates, **fixed problems auto-resolve**, and operator **acknowledgements survive re-runs**
+  (and still auto-resolve when the underlying issue is actually fixed).
+- **Network-device registry** (manual/import only): name/kind/MAC/IP/VLAN/known-flag/notes with
+  first/last-seen stamps; unknown devices become findings; devices ride the inventory
+  import/export bundle.
+- **Scheduler**: `risk-analysis` job on the shared scheduler (`homelab_risk_interval_seconds`,
+  default hourly) — repo-only work, safe at any cadence.
+- **API**: `GET|POST|DELETE /homelab/devices`, `GET /homelab/risks`,
+  `POST /homelab/risks/analyze` (run now), `POST /homelab/risks/{id}/ack`.
+- **UI**: Network & Risk section on the Homelab page — device registration + table with unknown
+  flagging, findings table with severity coloring/KPI counts, Analyze Now, and per-finding Ack.
+- **Tests** (`RiskAwarenessTests`, socket-free by construction): every finding rule, exposure
+  classification, duplicate-IP detection, watched-service suppression, un-backed-up-host
+  resolve-on-fix, stable reconciliation with sticky acks, the scheduler adapter, and device
+  import/export round-trip.
+
 ## v1.12.0.1 — Proxmox client: don't follow redirects (SSRF hardening)
 
 Bug-finder/tester pass over the v1.12.0 Proxmox integration. The rest of it holds up well —
@@ -1499,53 +1529,4 @@ Added:
   `PrivateTmp`, `ProtectSystem=strict`, scoped `ReadWritePaths`), plus `Environment=ANTHILL_HOME`
   for unambiguous workspace resolution and a generated `/etc/anthill/token.env` for an optional
   static API token.
-- No special LXC features (nesting, privileged mode) are required — this is a plain systemd
-  service, not Docker-in-LXC, so `NetworkUtil`'s auto-detected reachable IP works with zero extra
-  networking config (LXC containers get a real interface directly, unlike Docker's bridge
-  default).
-- **README**: new "Option E — LXC" under Deploy on Linux, quick-start + pointer to the full guide.
-- **`docs/DEPLOYMENT.md`**: §3 filled in — creating the container (Proxmox `pct` commands +
-  generic LXD/incus note), installing, upgrading, customizing install location/service user,
-  uninstalling. Roadmap table updated (LXC done, Windows Service next).
-- **CI**: new `lint-lxc-installer` job — `shellcheck` (GitHub-hosted runners have it preinstalled)
-  plus a `bash -n` syntax check on `deploy/lxc/setup.sh`.
-- **Releases** (`.github/workflows/release.yml`, added after this version shipped): triggered by
-  pushing a `vX.Y.Z` tag. A `verify-version` job fails loudly if the tag doesn't match
-  `AnthillRuntime.Version` in the tagged commit, guarding against tagging before a version bump
-  actually landed. Builds self-contained `linux-x64`/`win-x64` binaries and a versioned Docker
-  image pushed to `ghcr.io/thexonexone/operation-anthill`, then opens a **draft** GitHub Release
-  (never auto-published) with notes pulled from the matching `## vX.Y.Z` CHANGELOG section and
-  the binaries/image attached. Also fixed the stray `YOUR_ORG`/`anthill-dotnet` placeholder repo
-  references across `README.md` to the real `thexonexone/operation-anthill` URL and directory
-  name. See [docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases).
-
-Validation:
-
-- `bash -n deploy/lxc/setup.sh` passes (checked manually — no shellcheck available in the
-  authoring environment, hence the new CI job to actually run it). Not run against a real LXC
-  container; no LXC/Proxmox host available in the environment this was authored in. Try it on an
-  actual container before trusting it in production, and watch the first CI run for the new
-  shellcheck job.
-
-## v1.8.6 — Container-style deployment: Docker, all-interfaces binding, env var config
-
-No schema change. First step of ongoing work to make ANTHILL deployable like a normal home-lab
-appliance — standalone Docker container today, LXC and Windows Service to follow (see
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
-
-Added:
-
-- **Docker packaging** — `Dockerfile` (multi-stage: SDK build stage, framework-dependent publish
-  onto the `aspnet:9.0` runtime image, non-root user, unauthenticated `/health`-backed
-  `HEALTHCHECK`), `docker-compose.yml` (defaults to `network_mode: host` on Linux so the
-  container is reachable at the host's real LAN IP, with a bridge-mode alternative documented for
-  Windows/macOS Docker Desktop), and `.dockerignore`. No config file or token required to start —
-  ANTHILL self-seeds a container-safe default `config.json` into the mounted `.anthill` volume on
-  first boot.
-- **All-interfaces binding by default** — `api_host` now defaults to `0.0.0.0` (was `127.0.0.1`)
-  in both `AnthillConfig`'s default and every safety profile's forced override. The operator login
-  was already the real security boundary (auth is forced on in every profile regardless of bind
-  host), so this changes what a fresh container/LXC/service install looks like on first boot, not
-  the actual security posture. Set `api_host` to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`)
-  explicitly for a localhost-only install.
-- **`ANTHILL_HOST` / `ANTHILL_PORT` / `A
+- No special LXC features 

@@ -178,7 +178,7 @@ V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
 V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
 V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
 V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
-V1.13.0  Network and security awareness
+V1.13.0  Network and security awareness                       [SHIPPED v1.13.0]
 V1.14.0  Incident and change memory + IApprovable design
 V2.0.0   Homelab Command Center launch
 V2.1.0   Approval-gated homelab actions
@@ -442,6 +442,12 @@ mock Proxmox API; config validation; no-write permission; credential redaction; 
 ---
 
 # PHASE 9 — V1.13.0 NETWORK + SECURITY AWARENESS
+
+**Status: SHIPPED in v1.13.0** — `RiskAnalyzer` with all nine finding kinds and stable-id
+reconciliation (auto-resolve on fix, sticky acknowledgements), the manual/import network-device
+registry (in the export bundle), the `risk-analysis` shared-scheduler job, `/homelab/devices` +
+`/homelab/risks` endpoints, Network & Risk console panels, and socket-free `RiskAwarenessTests`.
+No active scanning exists; the phase is zero-network-I/O by construction.
 
 ## Goal
 Understand the network shape and obvious risks. Awareness/reporting only; no firewall/DNS/DHCP writes.

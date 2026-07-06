@@ -1641,6 +1641,38 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
+        <!-- Network & Risk (v1.13.0) -->
+        <div class="card" style="padding:14px 16px;" id="hl-dev-form">
+          <div class="section-head" style="margin-top:0;">Register Network Device <span style="font-weight:400;color:var(--dim)">(manual/import only — no scanning; mark unfamiliar devices as unknown to flag them)</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input class="form-input" id="hl-n-name" type="text" placeholder="office-switch" autocomplete="off"></div>
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-n-kind"><option value="switch">switch</option><option value="ap">ap</option><option value="firewall">firewall</option><option value="printer">printer</option><option value="iot">iot</option><option value="unknown" selected>unknown</option></select>
+            </div>
+            <div class="form-field"><label>MAC</label><input class="form-input" id="hl-n-mac" type="text" placeholder="aa:bb:cc:dd:ee:ff" autocomplete="off"></div>
+            <div class="form-field"><label>IP</label><input class="form-input" id="hl-n-ip" type="text" placeholder="192.168.1.20" autocomplete="off"></div>
+            <div class="form-field"><label>VLAN</label><input class="form-input" id="hl-n-vlan" type="text" placeholder="10" autocomplete="off"></div>
+            <div class="form-field"><label>Known?</label><select class="form-select" id="hl-n-known"><option value="yes" selected>yes</option><option value="no">no (flag it)</option></select></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDevice()">Add Device</button></div>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Network Devices</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Known</th><th>Last Seen</th><th>Actions</th></tr></thead>
+            <tbody id="hl-devs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Security &amp; Risk Findings <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <button class="btn btn-ghost" id="hl-risk-analyze" style="float:right;" onclick="hlAnalyzeRisks()" title="Re-run the deterministic risk rules over current inventory (no network I/O)">⚠ Analyze Now</button>
+          </div>
+          <table class="users-table">
+            <thead><tr><th>Severity</th><th>Finding</th><th>Summary</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+            <tbody id="hl-risks-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
         <!-- Hosts -->
         <div class="card" style="padding:14px 16px;" id="hl-host-form">
           <div class="section-head" style="margin-top:0;">Register Host</div>
@@ -2509,7 +2541,7 @@ function applyRoleVisibility(){
   const homelab = admin || ROLE==='homelab_operator';
   const hlNav=document.getElementById('nav-item-homelab');
   if(hlNav) hlNav.style.display=homelab?'':'none';
-  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync'].forEach(id=>{
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
@@ -6117,6 +6149,7 @@ async function loadHomelab(){
     renderHlChanges(chg.success?(chg.data||[]):[]);
     loadHlHealth();
     loadHlVirt();
+    loadHlRisks();
     const c=document.getElementById('hl-count');
     if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
   }catch(e){ hlMsg('Load failed: '+e.message,false); }
@@ -6252,6 +6285,70 @@ async function hlPveSync(){
   const r=await api('/homelab/proxmox/sync','POST',{});
   hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
   if(r.success){ loadHomelab(); }
+}
+
+// -- Network & risk awareness (v1.13.0) --------------------------------------------
+async function loadHlRisks(){
+  try{
+    const [devs,risks]=await Promise.all([api('/homelab/devices'),api('/homelab/risks')]);
+    renderHlDevices(devs.success?(devs.data||[]):[]);
+    renderHlRisks(risks.success?(risks.data||[]):[]);
+  }catch(e){ hlMsg('Risk load failed: '+e.message,false); }
+}
+
+function renderHlDevices(devs){
+  const tb=document.getElementById('hl-devs-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!devs.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No devices registered yet.</td></tr>'; return; }
+  tb.innerHTML=devs.map(d=>'<tr><td>'+escapeHtml(d.name||'—')+'</td><td>'+escapeHtml(d.kind||'unknown')+'</td><td>'+escapeHtml(d.mac||'—')+
+    '</td><td>'+escapeHtml(d.ip||'—')+'</td><td>'+escapeHtml(d.vlan||'—')+
+    '</td><td>'+(d.known?'yes':'<span style="color:var(--red)">NO</span>')+'</td><td>'+hlDate(d.last_seen)+'</td>'+
+    '<td>'+(admin?('<button class="btn btn-ghost" onclick="hlDelDevice(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+}
+
+function renderHlRisks(risks){
+  const tb=document.getElementById('hl-risks-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  const open=risks.filter(r=>r.status==='open');
+  const kpi=document.getElementById('hl-risk-kpi');
+  if(kpi) kpi.textContent='· '+open.filter(r=>r.severity==='error').length+' error · '+open.filter(r=>r.severity==='warning').length+' warning · '+open.filter(r=>r.severity==='info').length+' info open';
+  const visible=risks.filter(r=>r.status!=='resolved');
+  if(!visible.length){ tb.innerHTML='<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No open findings — register inventory and hit Analyze Now.</td></tr>'; return; }
+  tb.innerHTML=visible.map(r=>{
+    const col=r.severity==='error'?'var(--red)':(r.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
+    return '<tr><td style="color:'+col+'">'+escapeHtml(r.severity)+'</td><td>'+escapeHtml(r.finding_kind)+'</td><td>'+escapeHtml(r.summary||'')+
+      '</td><td>'+escapeHtml(r.status)+'</td><td>'+hlDate(r.updated_at)+'</td>'+
+      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" onclick="hlAckRisk(\''+escapeHtml(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
+  }).join('');
+}
+
+async function hlAddDevice(){
+  const name=document.getElementById('hl-n-name').value.trim(), mac=document.getElementById('hl-n-mac').value.trim();
+  if(!name&&!mac){ hlMsg('Device needs a name or MAC',false); return; }
+  const r=await api('/homelab/devices','POST',{name, kind:document.getElementById('hl-n-kind').value, mac,
+    ip:document.getElementById('hl-n-ip').value.trim(), vlan:document.getElementById('hl-n-vlan').value.trim(),
+    known:document.getElementById('hl-n-known').value==='yes'});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-n-name','hl-n-mac','hl-n-ip','hl-n-vlan'].forEach(id=>document.getElementById(id).value=''); loadHlRisks(); }
+}
+
+async function hlDelDevice(id){
+  const r=await api('/homelab/devices/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHlRisks();
+}
+
+async function hlAnalyzeRisks(){
+  hlMsg('Analyzing risks...',true);
+  const r=await api('/homelab/risks/analyze','POST',{});
+  hlMsg(r.message||(r.success?'Done':'Failed'),r.success);
+  if(r.success) loadHlRisks();
+}
+
+async function hlAckRisk(id){
+  const r=await api('/homelab/risks/'+encodeURIComponent(id)+'/ack','POST',{});
+  hlMsg(r.message||(r.success?'Acknowledged':'Failed'),r.success);
+  if(r.success) loadHlRisks();
 }
 
 // -- Health checks (v1.11.0) -----------------------------------------------------

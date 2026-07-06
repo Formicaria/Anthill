@@ -13,7 +13,7 @@ across phases.
 | Inventory + service registry | V1.10.0 | **SHIPPED** | Manual registration, JSON import/export (idempotent upsert), dependency mapping, Homelab console page (hosts/services/ports/dependencies/changes) |
 | Health checks + notifications | V1.11.0 | **SHIPPED** | Ping/HTTP/TCP/service-URL checks (allowlist-gated, strict timeouts), incident candidates at 3 consecutive failures, Slack/Discord/generic webhooks (off by default), Health panel on the Homelab page |
 | Proxmox read-only | V1.12.0 | **SHIPPED** | GET-only client (no write path exists), nodes/VMs/LXCs/storage/failed-task sync on the shared scheduler, credential + allowlist discipline, Virtualization UI panels |
-| Network + security awareness | V1.13.0 | Future | Subnets/VLANs/ports/exposure, risk findings, no writes |
+| Network + security awareness | V1.13.0 | **SHIPPED** | Nine deterministic risk findings with reconciliation (auto-resolve + sticky acks), network-device registry, exposure classification, Network & Risk UI — zero network I/O, no scanning |
 | Incident + change memory | V1.14.0 | Future | Incident timelines, similar-incident matching, IApprovable design |
 | Command Center launch | V2.0.0 | Future | The homelab dashboard (read-mostly) |
 | Approval-gated actions | V2.1.0 | Future | First controlled actions behind IApprovable + approvals |
