@@ -1,5 +1,18 @@
 # ANTHILL Changelog
 
+## v1.11.0.2 — Replace blocking native dialogs with an in-app modal
+
+Fix: the console used native `window.confirm()`/`prompt()` for every destructive action (Stop the
+Director, reject/apply patches, flush cache, reset settings, delete objectives/users, restart the
+service, prune pheromones, etc.). Native dialogs **block the renderer's main thread** until
+dismissed — which is what hung the Autonomy **Stop** button (the click froze the page until the
+modal was cleared), and they also look out of place in the custom HUD and break automated testing.
+
+- New promise-based `uiConfirm()` / `uiPrompt()` — themed, non-blocking, keyboard-navigable
+  (Enter = confirm, Esc / backdrop = cancel), with an optional danger style for destructive actions.
+- All 18 native `confirm()`/`prompt()` call sites migrated (handlers made `async` where needed).
+  Behavior is unchanged (default is still cancel); only the blocking + styling changed.
+
 ## v1.11.0.1 — Auto-apply observability + auth-redirect hardening
 
 Two fixes surfaced while live-verifying the autonomous auto-apply → git loop end-to-end on the LXC
