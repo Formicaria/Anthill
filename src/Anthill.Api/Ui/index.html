@@ -65,10 +65,18 @@
 }
 /* V2.2 Pass B — Overview command-center grid */
 .overview-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;margin-bottom:14px;position:relative;z-index:1;}
-.ov2-health{grid-column:span 3;} .ov2-active{grid-column:span 4;} .ov2-tasks{grid-column:span 5;}
-.ov2-approvals{grid-column:span 3;} .ov2-core{grid-column:span 4;} .ov2-chambers{grid-column:span 5;}
-.ov2-resources{grid-column:span 3;} .ov2-events{grid-column:span 4;} .ov2-actions{grid-column:span 5;}
-.ov2-timeline{grid-column:span 8;} .ov2-queue{grid-column:span 4;}
+/* v2.2.2: condensed two-row layout — 6 cards, nothing duplicated from other tabs. */
+.ov2-health{grid-column:span 3;} .ov2-core{grid-column:span 5;} .ov2-active{grid-column:span 4;}
+.ov2-approvals{grid-column:span 4;} .ov2-resources{grid-column:span 3;} .ov2-actions{grid-column:span 5;}
+.ov2-orb{width:54px;height:54px;border-radius:50%;flex-shrink:0;position:relative;
+  background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.25),transparent 55%),var(--role-queen);}
+.ov2-orb[data-state=idle]{background-color:#3a4a5a;box-shadow:0 0 12px rgba(120,150,180,.35);}
+.ov2-orb[data-state=mission]{background-color:#2a7de1;box-shadow:0 0 18px rgba(42,125,225,.55);animation:ov2pulse 2.2s infinite;}
+.ov2-orb[data-state=autonomy]{background-color:#7a4de1;box-shadow:0 0 18px rgba(122,77,225,.55);animation:ov2pulse 2.2s infinite;}
+.ov2-orb[data-state=action]{background-color:#e1a12a;box-shadow:0 0 18px rgba(225,161,42,.55);animation:ov2pulse 1.4s infinite;}
+.ov2-orb[data-state=alert]{background-color:#e12a4d;box-shadow:0 0 20px rgba(225,42,77,.6);animation:ov2pulse .9s infinite;}
+@keyframes ov2pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
+@media (prefers-reduced-motion:reduce){.ov2-orb{animation:none !important;}}
 @media (max-width:1200px){.overview-grid>*{grid-column:span 6;}}
 @media (max-width:760px){.overview-grid>*{grid-column:span 12;}}
 .ov2-big{font-size:26px;font-weight:800;color:var(--anthill-text);line-height:1.1;}
@@ -117,7 +125,18 @@
    column with the map big and front-and-center; Raw Graph restores the original row untouched. */
 #page-colony.cmap-mode{flex-direction:column !important;overflow-y:auto;}
 #page-colony.cmap-mode>*:not(#tb-colony):not(#cmap2-bar):not(#cmap2-wrap){display:none !important;}
-#page-colony #cmap2-bar,#page-colony #cmap2-wrap,#page-colony #tb-colony{width:100%;flex-shrink:0;}
+/* v2.2.2 ROOT-CAUSE FIX for the "Raw Graph shows nothing" bug: these width:100%;flex-shrink:0
+   bars were applied UNCONDITIONALLY, so in the classic row layout they consumed the whole row and
+   pushed the canvas + panels past the overflow:hidden edge. Scoped to .cmap-mode only. */
+#page-colony.cmap-mode #cmap2-bar,#page-colony.cmap-mode #cmap2-wrap,#page-colony.cmap-mode #tb-colony{width:100%;flex-shrink:0;}
+/* Classic (Live Colony) mode: the original row layout must be byte-for-byte untouched — the
+   telemetry bar hides (it would break the row) and the view-switch bar floats over the canvas. */
+#page-colony{position:relative;}
+#page-colony:not(.cmap-mode) #tb-colony{display:none;}
+#page-colony:not(.cmap-mode) #cmap2-bar{position:absolute;top:10px;right:14px;width:auto;z-index:6;
+  background:rgba(10,14,22,.88);border:1px solid var(--anthill-border);border-radius:10px;padding:5px 9px;}
+/* In classic mode only the VIEW switcher floats; motion/label/pheromone selects are map-only. */
+#page-colony:not(.cmap-mode) #cmap2-bar>*:nth-child(n+5){display:none;}
 #page-colony.cmap-mode #cmap2-wrap{flex:1;min-height:0;}
 #page-colony.cmap-mode #cmap2{height:calc(100vh - 250px);min-height:480px;cursor:grab;}
 #page-colony.cmap-mode #cmap2:active{cursor:grabbing;}
@@ -1257,26 +1276,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <!-- V2.2 Pass B: command-center summary grid (System Core stays compact in the HUD below) -->
         <div class="overview-grid" id="ov2-grid">
+          <!-- v2.2.2: condensed to 6 cards. Anything visible in another tab (event feed, chamber
+               activity, mission timeline) was cut — this page shows only cross-cutting status. -->
           <div class="ath-card ov2-health"><div class="ath-card-title">Colony Health</div><div id="ov2-health-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-active" style="cursor:pointer" onclick="showPage('missions')"><div class="ath-card-title">Active Mission</div><div id="ov2-active-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-tasks"><div class="ath-card-title">Tasks Today</div><div id="ov2-tasks-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-core" style="cursor:pointer" onclick="showPage('colony')"><div class="ath-card-title">System Core <span style="float:right;color:var(--anthill-dim)">colony →</span></div><div id="ov2-core-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-active" style="cursor:pointer" onclick="showPage('missions')"><div class="ath-card-title">Missions <span style="float:right;color:var(--anthill-dim)">all →</span></div><div id="ov2-active-body"><div class="ov2-empty">Connecting...</div></div></div>
           <div class="ath-card ov2-approvals"><div class="ath-card-title">Pending Approvals <a href="javascript:void(0)" onclick="showPage('patches')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-approvals-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-core" style="cursor:pointer" onclick="showPage('colony')"><div class="ath-card-title">System Core <span style="float:right;color:var(--anthill-dim)">expand →</span></div><div id="ov2-core-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-chambers"><div class="ath-card-title">Chamber Activity</div><div id="ov2-chambers-body"><div class="ov2-empty">Connecting...</div></div></div>
           <div class="ath-card ov2-resources"><div class="ath-card-title">Resource Usage</div><div id="ov2-resources-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
           <div class="ath-card ov2-actions"><div class="ath-card-title">Quick Actions</div>
             <div class="ov2-qa">
               <button onclick="ov2FocusMission()">🎯 Create Mission</button>
-              <button onclick="showPage('patches')">📦 Deploy Artifact</button>
-              <button onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
               <button onclick="showPage('patches')">🩹 Patch Colony</button>
+              <button onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
               <button onclick="showPage('pheromones')">🧪 View Pheromones</button>
+              <button onclick="showPage('events')">📜 Event Log</button>
               <button onclick="showPage('settings')">⚙ Colony Settings</button>
             </div>
           </div>
-          <div class="ath-card ov2-timeline"><div class="ath-card-title">Mission Timeline</div><div id="ov2-timeline-body"><div class="ov2-empty">Connecting...</div></div></div>
-          <div class="ath-card ov2-queue"><div class="ath-card-title">Mission Queue</div><div id="ov2-queue-body"><div class="ov2-empty">Connecting...</div></div></div>
         </div>
 
         <!-- -- Top colony status strip -- -->
@@ -1450,9 +1466,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- V2.2 Pass C: Living Colony Map (Chamber/Expanded) — Raw Graph keeps the old canvas -->
         <div id="cmap2-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;position:relative;z-index:2;">
           <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">VIEW</span>
-          <button class="hud-act" id="cmap2-v-chamber" onclick="cmapSetView('chamber')">Chamber</button>
-          <button class="hud-act" id="cmap2-v-expanded" onclick="cmapSetView('expanded')">Expanded</button>
-          <button class="hud-act" id="cmap2-v-raw" onclick="cmapSetView('raw')">Raw Graph</button>
+          <button class="hud-act" id="cmap2-v-raw" onclick="cmapSetView('raw')" title="The classic live colony: every ant visible, draggable, pulsing, with the pheromone canvas">🐜 Live Colony</button>
+          <button class="hud-act" id="cmap2-v-chamber" onclick="cmapSetView('chamber')" title="Role-grouped chamber overview">Chamber</button>
+          <button class="hud-act" id="cmap2-v-expanded" onclick="cmapSetView('expanded')" title="Chamber view with every ant in the selected chamber">Expanded</button>
           <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;margin-left:10px;">MOTION</span>
           <select class="form-select" id="cmap2-motion" style="width:auto;font-size:9px;" onchange="cmapSetPref('motion',this.value)">
             <option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option>
@@ -7353,9 +7369,9 @@ async function pollOv2(){
   const events=Array.isArray(ev&&ev.data)?ev.data:[];
   const approvals=(ap&&ap.success&&ap.data&&Array.isArray(ap.data.items))?ap.data.items:[];
   const roles=(reg&&reg.success&&reg.data)?(Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[])):[];
-  renderOv2Health(); renderOv2Active(jobs,missions); renderOv2Tasks(events);
-  renderOv2Approvals(approvals); renderOv2Core(roles); renderOv2Chambers(roles,events);
-  renderOv2Resources(); renderOv2Events(events); renderOv2Timeline(jobs,missions); renderOv2Queue(jobs);
+  renderOv2Health(); renderOv2Active(jobs,missions);
+  renderOv2Approvals(approvals); renderOv2Core(roles,jobs,missions,approvals);
+  renderOv2Resources();
 }
 
 function renderOv2Health(){
@@ -7372,28 +7388,28 @@ function renderOv2Health(){
 }
 
 function renderOv2Active(jobs,missions){
+  // v2.2.2: single Missions card — active mission plus the queue folded in (queue card removed).
   const el=document.getElementById('ov2-active-body'); if(!el) return;
   const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
-  if(!running){ el.innerHTML='<div class="ov2-empty">Idle — no active mission.<br>Enter a mission directive to begin.</div>'; return; }
-  const started=running.created_at||running.started_at||'';
-  const mins=started?Math.max(0,Math.round((Date.now()-Date.parse(started))/60000)):null;
-  el.innerHTML='<div style="font-size:12px;color:var(--anthill-text);font-weight:700;margin-bottom:6px;">'+escapeHtml((running.goal||running.title||'Mission').substring(0,90))+'</div>'+
-    '<div class="ov2-row"><span>Status</span><b style="color:var(--status-info)">running</b></div>'+
-    (mins!==null?'<div class="ov2-row"><span>Elapsed</span><b>'+mins+'m</b></div>':'')+
-    '<div class="ov2-row"><span>Queued behind</span><b>'+jobs.filter(j=>(j.status||'').toLowerCase()==='queued').length+'</b></div>';
+  const queued=jobs.filter(j=>(j.status||'').toLowerCase()==='queued');
+  if(!running&&!queued.length){ el.innerHTML='<div class="ov2-empty">Idle — no active mission.<br>Enter a mission directive to begin.</div>'; return; }
+  let html='';
+  if(running){
+    const started=running.created_at||running.started_at||'';
+    const mins=started?Math.max(0,Math.round((Date.now()-Date.parse(started))/60000)):null;
+    html+='<div style="font-size:12px;color:var(--anthill-text);font-weight:700;margin-bottom:6px;">'+escapeHtml((running.goal||running.title||'Mission').substring(0,90))+'</div>'+
+      '<div class="ov2-row"><span>Status</span><b style="color:var(--status-info)">running'+(mins!==null?' · '+mins+'m':'')+'</b></div>';
+  }
+  if(queued.length){
+    html+='<div class="ov2-row"><span>Queued</span><b>'+queued.length+'</b></div>'+
+      queued.slice(0,2).map(j=>'<div class="ov2-list-item">'+escapeHtml((j.goal||j.id||'Mission').substring(0,55))+'</div>').join('');
+  }
+  el.innerHTML=html;
 }
 
-function renderOv2Tasks(events){
-  const el=document.getElementById('ov2-tasks-body'); if(!el) return;
-  const today=new Date().toISOString().slice(0,10);
-  const taskEvts=events.filter(e=>String(e.event_type||e.type||'').toLowerCase().includes('task')&&String(e.created_at||'').startsWith(today));
-  if(!taskEvts.length){ el.innerHTML='<div class="ov2-empty">No task activity recorded today yet.</div>'; return; }
-  const byHour={}; taskEvts.forEach(e=>{ const h=(e.created_at||'').substring(11,13); if(h)byHour[h]=(byHour[h]||0)+1; });
-  const hours=Object.keys(byHour).sort();
-  const max=Math.max.apply(null,hours.map(h=>byHour[h]));
-  el.innerHTML='<div class="ov2-big">'+taskEvts.length+'</div><div style="font-size:9px;color:var(--anthill-dim);">task events today (from the event stream)</div>'+
-    '<div class="ov2-spark">'+hours.map(h=>'<i title="'+h+':00 — '+byHour[h]+'" style="height:'+Math.max(4,(byHour[h]/max)*24)+'px"></i>').join('')+'</div>';
-}
+// v2.2.2: Tasks Today, Chamber Activity, Recent Events, Mission Timeline, and Mission Queue cards
+// removed — all of that lives in the Events / Colony / Missions tabs. Overview shows only
+// cross-cutting status not visible elsewhere.
 
 function renderOv2Approvals(items){
   const el=document.getElementById('ov2-approvals-body'); if(!el) return;
@@ -7408,43 +7424,31 @@ function renderOv2Approvals(items){
   }).join('');
 }
 
-function renderOv2Core(roles){
+function renderOv2Core(roles,jobs,missions,approvals){
+  // v2.2.2 fix: the card previously scraped state from the HIDDEN legacy HUD panel's DOM, so it
+  // sat on a stale "idle" forever. State is now computed here from the same live data pollOv2
+  // just fetched — identical rules to the original core logic, no fabricated values.
   const el=document.getElementById('ov2-core-body'); if(!el) return;
-  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
-  const shown=roles.slice(0,8);
-  const cx=90,cy=55,r=40;
-  let svg='<svg viewBox="0 0 180 110" style="width:100%;max-height:110px;">';
-  shown.forEach((role,i)=>{
-    const a=(i/shown.length)*Math.PI*2, x=cx+Math.cos(a)*r, y=cy+Math.sin(a)*r*0.8;
-    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="var(--anthill-border)" stroke-width="1"/>'+
-      '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(antRoleId(role))+'"/>';
-  });
-  svg+='<circle cx="'+cx+'" cy="'+cy+'" r="10" fill="var(--role-queen)" opacity="0.9"><title>Queen</title></circle></svg>';
-  // v2.2.1: this is now THE System Core (the old HUD core panel is retired) — carry its state.
-  const coreState=(document.getElementById('hud-core')||{}).dataset?document.getElementById('hud-core').dataset.state:'';
-  el.innerHTML='<div class="ov2-core-mini">'+svg+'</div>'+
-    '<div class="ov2-row"><span>Core state</span><b>'+escapeHtml(coreState||'—')+'</b></div>'+
-    '<div class="ov2-row"><span>Roles / connections</span><b>'+roles.length+' / '+Math.min(roles.length,8)+'</b></div>'+
-    '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(TB.activeAnts??'—')+'</b></div>';
-}
-
-function renderOv2Chambers(roles,events){
-  const el=document.getElementById('ov2-chambers-body'); if(!el) return;
-  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
-  const hourAgo=Date.now()-3600000;
-  const counts={};
-  events.forEach(e=>{
-    const t=Date.parse(e.created_at||''); if(isNaN(t)||t<hourAgo) return;
-    const who=String(e.ant||e.ant_name||e.source||'');
-    if(who) counts[getRoleLabel(who)]=(counts[getRoleLabel(who)]||0)+1;
-  });
-  const chambers={};
-  roles.forEach(r=>{ const label=getRoleLabel(antRoleId(r)); chambers[label]=(chambers[label]||0)+1+((r.workers&&r.workers.length)||0); });
-  el.innerHTML=Object.keys(chambers).map(label=>{
-    const act=counts[label]||0;
-    const lvl=act>=10?'High':(act>=3?'Medium':(act>0?'Low':'Idle'));
-    return '<span class="ov2-chamber" style="cursor:pointer" onclick="showPage(\'colony\')"><i style="background:'+getRoleColor(label)+'"></i>'+escapeHtml(label)+' <b>'+chambers[label]+'</b> · '+lvl+'</span>';
-  }).join('');
+  jobs=jobs||[]; missions=missions||[]; approvals=approvals||[];
+  const activeJobs=jobs.filter(j=>(j.status||'').toLowerCase()==='running').length;
+  const pending=approvals.filter(a=>a.state==='pending');
+  const highRisk=pending.filter(a=>a.risk_level==='high'||a.risk_level==='critical').length;
+  const lastFailed=missions.length&&(missions[0].status||'')==='failed';
+  const offline=TB.online===false;
+  let state='idle',text='IDLE',sub='awaiting directive';
+  if(offline||lastFailed){ state='alert'; text='ALERT'; sub=offline?'backend offline':'last mission failed'; }
+  else if(pending.length){ state='action'; text='OPERATOR ACTION'; sub=highRisk?highRisk+' high-risk patch':pending.length+' awaiting review'; }
+  else if(activeJobs){ state='mission'; text='MISSION ACTIVE'; sub=activeJobs+' in flight'; }
+  const col=state==='alert'?'var(--status-danger)':state==='action'?'var(--status-warning)':state==='mission'?'var(--status-info)':'var(--anthill-muted)';
+  const workers=roles.reduce((n,r)=>n+1+((r.workers&&r.workers.length)||0),0);
+  el.innerHTML='<div style="display:flex;align-items:center;gap:14px;">'+
+    '<div class="ov2-orb" data-state="'+state+'"></div>'+
+    '<div style="flex:1;min-width:0;">'+
+      '<div class="ov2-big" style="font-size:16px;color:'+col+'">'+text+'</div>'+
+      '<div style="font-size:10px;color:var(--anthill-dim);margin-bottom:4px;">'+escapeHtml(sub)+'</div>'+
+      '<div class="ov2-row"><span>Roles</span><b>'+roles.length+'</b></div>'+
+      '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(roles.length?workers:(TB.activeAnts??'—'))+'</b></div>'+
+    '</div></div>';
 }
 
 function renderOv2Resources(){
@@ -7455,50 +7459,6 @@ function renderOv2Resources(){
   if(!metrics.length){ el.innerHTML='<div class="ov2-empty">Metrics unavailable.</div>'; return; }
   el.innerHTML=metrics.map(m=>'<div class="ov2-row"><span>'+m[0]+'</span><b>'+Math.round(m[1])+'%</b></div>'+
     '<div class="ov2-gauge"><i style="width:'+Math.min(100,m[1])+'%;background:'+(m[1]>=90?'var(--status-danger)':(m[1]>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>').join('');
-}
-
-function renderOv2Events(events){
-  const el=document.getElementById('ov2-events-body'); if(!el) return;
-  const recent=events.slice(0,5);
-  if(!recent.length){ el.innerHTML='<div class="ov2-empty">No recent events yet.</div>'; return; }
-  el.innerHTML=recent.map(e=>{
-    const who=String(e.ant||e.ant_name||e.source||'');
-    return '<div class="ov2-list-item"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+getRoleColor(who||e.event_type)+';margin-right:6px;"></span>'+
-      '<span style="color:var(--anthill-dim)">'+escapeHtml((e.created_at||'').substring(11,16))+'</span> '+
-      (who?'<b style="color:var(--anthill-text)">'+escapeHtml(who)+'</b> ':'')+
-      escapeHtml(String(e.message||e.event_type||'').substring(0,70))+'</div>';
-  }).join('');
-}
-
-function renderOv2Timeline(jobs,missions){
-  const el=document.getElementById('ov2-timeline-body'); if(!el) return;
-  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
-  const last=missions[0];
-  if(!running&&!last){ el.innerHTML='<div class="ov2-empty">No mission activity yet.</div>'; return; }
-  const failed=!running&&last&&(last.status||'')==='failed';
-  const complete=!running&&last&&(last.status||'')!=='failed';
-  const phases=[['Started',true],['Research',running||complete],['Build',running||complete],['Verify',running||complete],['Complete',complete]];
-  el.innerHTML='<div class="ov2-phase">'+phases.map((p,i)=>{
-    let cls='';
-    if(failed&&i===phases.length-1)cls='fail';
-    else if(p[1]&&(complete||i<phases.length-1))cls=complete?'done':(running&&i===1?'now':(p[1]?'done':''));
-    if(running&&i>=1&&i<=3)cls=i===1?'now':'';
-    if(!running&&complete)cls='done';
-    return '<span class="'+cls+'">'+p[0]+'</span>';
-  }).join('<span style="border:none;color:var(--anthill-dim)">→</span>')+'</div>'+
-    '<div style="font-size:9px;color:var(--anthill-dim);margin-top:6px;">'+(running?('Running: '+escapeHtml((running.goal||'').substring(0,80))):('Last mission '+escapeHtml(last.status||'')+(failed?' — check the report':'')))+'</div>';
-}
-
-function renderOv2Queue(jobs){
-  const el=document.getElementById('ov2-queue-body'); if(!el) return;
-  const queue=jobs.filter(j=>['running','queued'].includes((j.status||'').toLowerCase())).slice(0,3);
-  if(!queue.length){ el.innerHTML='<div class="ov2-empty">No queued missions.</div>'; return; }
-  el.innerHTML=queue.map(j=>{
-    const running=(j.status||'').toLowerCase()==='running';
-    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((j.goal||j.id||'Mission').substring(0,55))+'</b>'+
-      '<div class="ov2-row"><span>'+athPill(running?'info':'warn',j.status||'?')+'</span></div>'+
-      '<div class="ov2-gauge"><i style="width:'+(running?60:10)+'%;'+(running?'':'background:var(--status-warning)')+'" title="'+(running?'in progress':'waiting')+'"></i></div></div>';
-  }).join('');
 }
 
 // -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
@@ -7512,7 +7472,15 @@ const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Resea
 
 function cmapLoadPrefs(){
   try{
-    CMAP.view=localStorage.getItem('anthill.colony.viewMode')||'chamber';
+    // v2.2.2: the CLASSIC live colony (individual ants, dragging, pulses, pheromone canvas) is
+    // the default view; chamber/expanded are optional overlays the operator opts into.
+    // One-time migration: v2.2.0/1 persisted 'chamber' as the default for everyone — reset to
+    // the classic view once, then respect whatever the operator picks from here on.
+    if(!localStorage.getItem('anthill.colony.v222migrated')){
+      localStorage.setItem('anthill.colony.viewMode','raw');
+      localStorage.setItem('anthill.colony.v222migrated','1');
+    }
+    CMAP.view=localStorage.getItem('anthill.colony.viewMode')||'raw';
     CMAP.motion=localStorage.getItem('anthill.colony.motion')||'normal';
     CMAP.labels=localStorage.getItem('anthill.colony.labels')||'all';
     CMAP.pheromones=localStorage.getItem('anthill.colony.pheromones')||'all';
@@ -7544,7 +7512,17 @@ function cmapSetView(v){
   ['chamber','expanded','raw'].forEach(x=>{
     const b=document.getElementById('cmap2-v-'+x); if(b)b.setAttribute('aria-pressed',x===v?'true':'false');
   });
-  if(raw){ if(typeof resize==='function'){resize(); buildNodes&&buildNodes();} }
+  if(raw){
+    // v2.2.2 fix: the classic canvas must be FULLY re-initialized after being unhidden — the
+    // original page boots it with a delayed resize→buildNodes→legend→pheromones sequence
+    // (see showPage('colony')); doing only a synchronous resize left a blank canvas.
+    setTimeout(()=>{
+      if(typeof resize==='function')resize();
+      if(typeof buildNodes==='function')buildNodes();
+      if(typeof renderColonyLegend==='function')renderColonyLegend();
+      if(typeof pollColonyPheromones==='function')pollColonyPheromones();
+    },60);
+  }
   else renderColonyMap();
 }
 
