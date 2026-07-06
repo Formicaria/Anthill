@@ -307,6 +307,30 @@ public static partial class ApiHost
                 : ApiJson.Error("Proxmox sync failed: " + result.Message, "sync_failed");
         });
 
+        // ---- Command Center (v2.0.0, NORTH_STAR Phase 11) -----------------------------------------
+        // ONE aggregation endpoint: everything the dashboard needs, assembled by the testable
+        // CommandCenter builder. No fabricated values — missing data arrives as 0/empty and the UI
+        // labels it ("no data yet" / "not configured").
+
+        app.MapGet("/homelab/dashboard", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            var pending = -1;
+            try { pending = Queen.Memory.CountPendingApprovals(); } catch { /* stays -1 = unavailable */ }
+            return ApiJson.Ok(CommandCenter.Build(Homelab, HomelabHealth, pending));
+        });
+
+        app.MapGet("/homelab/graph/dependents/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            var dashboard = CommandCenter.Build(Homelab, HomelabHealth);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["node"] = id,
+                ["dependents"] = CommandCenter.Dependents(id, dashboard.GraphEdges),
+            });
+        });
+
         // ---- Incident + change memory (v1.14.0, NORTH_STAR Phase 10) ------------------------------
 
         app.MapGet("/homelab/incidents", (HttpContext ctx) =>
