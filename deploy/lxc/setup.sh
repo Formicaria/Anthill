@@ -73,14 +73,24 @@ else
     command -v git >/dev/null 2>&1 || apt-get install -y git
     mkdir -p "$INSTALL_DIR"
     if [ -d "$INSTALL_DIR/src/.git" ]; then
-        log "Existing checkout found — pulling latest"
-        git -C "$INSTALL_DIR/src" pull --ff-only
+        # v1.10.0 upgrade-path fix: `git pull --ff-only` upgraded whatever branch the build
+        # checkout happened to be sitting on. Since the auto-apply git integration (v1.8.26), a
+        # checkout can end up parked on the standalone '<username>-anthill' branch (or with local
+        # drift), so every re-run silently rebuilt STALE code and the deployed version froze while
+        # releases moved on. The build checkout must always build origin/main — force it.
+        log "Existing checkout found — resetting build checkout to origin/main"
+        git -C "$INSTALL_DIR/src" fetch origin
+        git -C "$INSTALL_DIR/src" checkout -B main origin/main
     else
         log "Cloning $REPO_URL"
         git clone "$REPO_URL" "$INSTALL_DIR/src"
     fi
     SRC_DIR="$INSTALL_DIR/src"
 fi
+
+# Say exactly which version this run is about to build, so a stale checkout can never hide again.
+BUILD_VERSION="$(grep -oE 'Version = "[^"]+"' "$SRC_DIR/src/Anthill.Core/Configuration/AnthillRuntime.cs" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+log "Building ANTHILL v${BUILD_VERSION:-unknown} ($(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo 'no-git'))"
 
 # ---------------------------------------------------------------------------
 log "Publishing self-contained linux-x64 binary"
@@ -260,6 +270,31 @@ fi
 systemctl daemon-reload
 systemctl enable anthill >/dev/null
 systemctl restart anthill
+
+# ---------------------------------------------------------------------------
+# v1.10.0: prove the RUNNING version matches what was just built. The UI header renders the
+# /health version, so this check is exactly "what the operator will see in the browser". A
+# mismatch means an old binary or a second instance is still serving — the failure mode that
+# silently pinned deployments to stale versions before the origin/main checkout fix above.
+# ---------------------------------------------------------------------------
+API_PORT="8713"
+if [ -f "$CONFIG_JSON" ]; then
+    P="$(grep -oE '"api_port"[[:space:]]*:[[:space:]]*[0-9]+' "$CONFIG_JSON" | grep -oE '[0-9]+$' || true)"
+    [ -n "$P" ] && API_PORT="$P"
+fi
+RUNNING=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    RUNNING="$(curl -fsS "http://127.0.0.1:${API_PORT}/health" 2>/dev/null | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/' || true)"
+    [ -n "$RUNNING" ] && break
+    sleep 2
+done
+if [ -n "$RUNNING" ] && [ "$RUNNING" = "${BUILD_VERSION:-}" ]; then
+    log "Running version verified: v$RUNNING (matches the build — the UI header will show this)"
+elif [ -n "$RUNNING" ]; then
+    die "VERSION MISMATCH: built v${BUILD_VERSION:-unknown} but port $API_PORT is serving v$RUNNING — an old binary or another instance is still running."
+else
+    echo "    WARNING: could not read http://127.0.0.1:${API_PORT}/health after 30s — verify manually: curl -s http://127.0.0.1:${API_PORT}/health"
+fi
 
 sleep 2
 echo

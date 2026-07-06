@@ -219,6 +219,19 @@ public sealed class TargetAllowlistRecord
     [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
 }
 
+/// <summary>
+/// v1.10.0: the import/export envelope for the manual inventory (NORTH_STAR Phase 6).
+/// Deliberately excludes credentials, allowlist entries, and events — inventory only.
+/// </summary>
+public sealed class HomelabInventoryExport
+{
+    [JsonPropertyName("exported_at")] public string ExportedAt { get; set; } = "";
+    [JsonPropertyName("anthill_version")] public string AnthillVersion { get; set; } = "";
+    [JsonPropertyName("nodes")] public List<HomelabNode> Nodes { get; set; } = new();
+    [JsonPropertyName("services")] public List<ServiceRecord> Services { get; set; } = new();
+    [JsonPropertyName("dependencies")] public List<DependencyRecord> Dependencies { get; set; } = new();
+}
+
 /// <summary>Secret-free status of one integration/provider, for the summary endpoint and UI.</summary>
 public sealed class IntegrationStatus
 {

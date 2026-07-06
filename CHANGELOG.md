@@ -1,5 +1,49 @@
 # ANTHILL Changelog
 
+## v1.10.0 — Inventory + service registry with Homelab console page (NORTH_STAR Phase 6)
+
+Phase 6 of the master roadmap: ANTHILL knows what exists. Manual/import-based only — no active
+scanning. Plus two operator-facing fixes found in live testing.
+
+### Inventory + service registry
+- **Dependency mapping**: `dependencies` CRUD in `HomelabRepository` with ChangeRecords, answering
+  "what runs where?" and "what depends on this?" (service→host `runs_on`, `needs`, `stores_on`).
+- **Import/export**: `GET /homelab/export` / `POST /homelab/import` round-trip nodes + services +
+  dependencies as one JSON bundle. Import is upsert-by-id, so re-importing an export is idempotent;
+  invalid records are skipped; credentials and allowlist entries are never part of the bundle.
+- **API completion** (per NORTH_STAR): `PUT /homelab/hosts/{id}`, `PUT /homelab/services/{id}`,
+  `GET|POST|DELETE /homelab/dependencies`. Reads = `read_homelab`; writes = `manage_homelab_integrations`.
+- **New console page: Homelab Inventory** (visible to admins and homelab operators; write forms
+  admin-only): Subsystem Status, Hosts, Services, Open Ports (derived from services), Dependencies,
+  Recent Changes panels, host/service/dependency registration forms, and JSON export/import buttons.
+- Homelab gates (`homelab_enabled`, `homelab_scheduler_enabled`, `homelab_mock_providers_enabled`,
+  `homelab_max_concurrent_checks`) are now operator-editable settings and appear in the settings
+  snapshot — no more hand-editing config.json.
+
+### Fixes
+- **LXC deployments silently froze on old versions (the "header says v1.8.26" bug).** The
+  `setup.sh` upgrade path ran `git pull --ff-only` on whatever branch the build checkout was on;
+  since the auto-apply git integration (v1.8.26) that checkout can end up parked on the standalone
+  `<username>-anthill` branch, so every upgrade re-run rebuilt stale code while releases moved on.
+  The upgrade path now forces the build checkout to `origin/main`
+  (`git fetch` + `git checkout -B main origin/main`), logs exactly which version+commit it is
+  building, and after the service restarts it polls `/health` and **fails loudly on a
+  built-vs-running version mismatch** — a stale deployment can never look healthy again. (The UI
+  header renders the `/health` version since v1.9.1.1, so header == running binary, always.)
+- **Patch Center "Apply" always returned 403.** The API capability gate `apply_patch` shipped as a
+  static `false` and was never projected from `patch_application_enabled`, so `POST /apply/{id}`
+  answered `permission_denied` even after the operator enabled patch application in Settings. The
+  gate now follows the setting at boot and on live settings updates (`PatchApplyGateTests`), and the
+  Patch Center error toast now surfaces the server's actual reason plus the fix
+  ("enable Patch application in Settings") instead of a bare HTTP code.
+- The `homelab_operator` role now renders correctly in the nav footer and sees the Homelab page.
+
+### Tests
+- `PatchApplyGateTests` (gate follows setting, homelab keys editable/snapshotted),
+  `InventoryRegistryTests` (dependency CRUD + change records, export/import round-trip into an
+  empty DB, idempotent re-import, invalid-record skipping, exports never contain credential or
+  allowlist material).
+
 ## v1.9.1.1 — Fix: UI header/title version drift (hardcoded markup)
 
 The console title, login logo, and nav header displayed a hardcoded version (`v1.8.29.1`) that had

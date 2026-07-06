@@ -353,6 +353,109 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
+    // ---- Dependencies (v1.10.0) --------------------------------------------------------------------
+
+    public void UpsertDependency(DependencyRecord dependency, string changedBy)
+    {
+        if (string.IsNullOrWhiteSpace(dependency.CreatedAt)) dependency.CreatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO dependencies (id, from_kind, from_id, to_kind, to_id, dependency_kind, notes, created_at)
+                VALUES ($id, $fkind, $fid, $tkind, $tid, $dkind, $notes, $created)
+                ON CONFLICT(id) DO UPDATE SET from_kind=$fkind, from_id=$fid, to_kind=$tkind,
+                    to_id=$tid, dependency_kind=$dkind, notes=$notes";
+            Bind(cmd, "$id", dependency.Id); Bind(cmd, "$fkind", dependency.FromKind); Bind(cmd, "$fid", dependency.FromId);
+            Bind(cmd, "$tkind", dependency.ToKind); Bind(cmd, "$tid", dependency.ToId);
+            Bind(cmd, "$dkind", dependency.DependencyKind); Bind(cmd, "$notes", dependency.Notes);
+            Bind(cmd, "$created", dependency.CreatedAt);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "dependency", SubjectId = dependency.Id, ChangeKind = "updated",
+            Summary = $"Dependency {dependency.FromKind}:{dependency.FromId} -{dependency.DependencyKind}-> {dependency.ToKind}:{dependency.ToId}",
+            ChangedBy = changedBy,
+        });
+    }
+
+    public void RemoveDependency(string id, string removedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM dependencies WHERE id = $id";
+            Bind(cmd, "$id", id);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "dependency", SubjectId = id, ChangeKind = "removed",
+            Summary = "Dependency removed", ChangedBy = removedBy,
+        });
+    }
+
+    public IReadOnlyList<DependencyRecord> ListDependencies()
+    {
+        var list = new List<DependencyRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, from_kind, from_id, to_kind, to_id, dependency_kind, notes, created_at FROM dependencies ORDER BY created_at";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new DependencyRecord
+            {
+                Id = r.GetString(0), FromKind = r.GetString(1), FromId = r.GetString(2),
+                ToKind = r.GetString(3), ToId = r.GetString(4), DependencyKind = r.GetString(5),
+                Notes = r.IsDBNull(6) ? "" : r.GetString(6), CreatedAt = r.GetString(7),
+            });
+        }
+        return list;
+    }
+
+    // ---- Inventory import/export (v1.10.0) --------------------------------------------------------
+
+    public HomelabInventoryExport ExportInventory() => new()
+    {
+        ExportedAt = AnthillTime.NowUtc().ToIso(),
+        AnthillVersion = AnthillRuntime.Version,
+        Nodes = ListNodes().ToList(),
+        Services = ListServices().ToList(),
+        Dependencies = ListDependencies().ToList(),
+    };
+
+    /// <summary>
+    /// Imports an inventory bundle by upserting every record (same id = update, new id = insert),
+    /// so re-importing an export is idempotent. Each upsert writes its own ChangeRecord; a summary
+    /// "imported" ChangeRecord closes the batch. Never touches credentials or the allowlist.
+    /// </summary>
+    public (int Nodes, int Services, int Dependencies) ImportInventory(HomelabInventoryExport bundle, string importedBy)
+    {
+        var nodes = 0; var services = 0; var deps = 0;
+        foreach (var node in bundle.Nodes.Where(n => !string.IsNullOrWhiteSpace(n.Name)))
+        {
+            UpsertNode(node, importedBy); nodes++;
+        }
+        foreach (var service in bundle.Services.Where(s => !string.IsNullOrWhiteSpace(s.Name)))
+        {
+            UpsertService(service, importedBy); services++;
+        }
+        foreach (var dependency in bundle.Dependencies.Where(d => !string.IsNullOrWhiteSpace(d.FromId) && !string.IsNullOrWhiteSpace(d.ToId)))
+        {
+            UpsertDependency(dependency, importedBy); deps++;
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "inventory", SubjectId = "import", ChangeKind = "imported",
+            Summary = $"Inventory import: {nodes} node(s), {services} service(s), {deps} dependency(ies)",
+            ChangedBy = importedBy,
+        });
+        return (nodes, services, deps);
+    }
+
     // ---- Target allowlist (D1) -------------------------------------------------------------------
 
     public void AddAllowlistEntry(TargetAllowlistRecord entry)
