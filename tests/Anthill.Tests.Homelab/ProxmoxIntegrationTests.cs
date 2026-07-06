@@ -101,7 +101,11 @@ public class ProxmoxIntegrationTests : IDisposable
                 var (status, body) = path.Contains("hang") ? (-1, "") : Route(path);
                 if (status < 0) { await System.Threading.Tasks.Task.Delay(30000, _cts.Token).ConfigureAwait(false); return; }
                 var bytes = Encoding.UTF8.GetBytes(body);
-                var head = $"HTTP/1.1 {status} S\r\nContent-Type: application/json\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n";
+                // For a 3xx, emit a Location pointing off-host (a dead port) so a client that WRONGLY
+                // followed redirects would chase it there and fail with a connection error — letting the
+                // redirect-hardening test distinguish "not followed" (clean HTTP 302) from "followed".
+                var location = status is >= 300 and < 400 ? "Location: http://127.0.0.1:1/off-allowlist\r\n" : "";
+                var head = $"HTTP/1.1 {status} S\r\nContent-Type: application/json\r\n{location}Content-Length: {bytes.Length}\r\nConnection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(head).AsMemory(), _cts.Token).ConfigureAwait(false);
                 await stream.WriteAsync(bytes.AsMemory(), _cts.Token).ConfigureAwait(false);
             }
@@ -139,6 +143,23 @@ public class ProxmoxIntegrationTests : IDisposable
         Assert.True((await provider.SyncInventoryAsync(CancellationToken.None)).Ok);
         Assert.NotEmpty(server.RequestLines);
         Assert.All(server.RequestLines, line => Assert.StartsWith("GET ", line));
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Redirect_NotFollowedOffAllowlist_SurfacesCleanFailure()
+    {
+        // Regression (v1.12.0.1): the client must NOT follow 3xx redirects — otherwise a compromised or
+        // misconfigured node could bounce the authenticated GET to a Location the target-allowlist never
+        // vetted (SSRF). The mock returns a 302 whose Location points off-host to a dead port; with
+        // AllowAutoRedirect=false the client returns the 302 as a clean InvalidOperationException("HTTP
+        // 302"). If it followed, it would instead throw a connection-error (wrong type) — so the strict
+        // exception-type + "302" assertions fail closed if the hardening ever regresses.
+        AllowLoopback();
+        using var server = new MockPveServer(path => path.Contains("/version") ? (302, "") : (200, "{\"data\":{}}"));
+        var client = Client(server);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetVersionAsync(CancellationToken.None));
+        Assert.Contains("302", ex.Message);
+        Assert.All(server.RequestLines, line => Assert.Contains("/version", line)); // never chased the Location
     }
 
     // ---- Config validation / guard / credential --------------------------------------------------
