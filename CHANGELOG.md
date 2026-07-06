@@ -1,5 +1,52 @@
 # ANTHILL Changelog
 
+## v2.0.0 — 🐜 Homelab Command Center launch (NORTH_STAR Phase 11)
+
+The V2 era begins: everything the V1.9–V1.14 line taught ANTHILL to know, in one living console
+view. Built in two deliberate passes (functional data layer first, identity layer second), still
+read-mostly: visibility, not control. Answers the eight NORTH_STAR questions at a glance — what is
+broken, where it runs, what it depends on, what changed, what to do next, what is not backed up,
+what is exposed, what is unknown.
+
+### Pass 1 — functional data layout & routing
+- **One aggregation endpoint** `GET /homelab/dashboard`, assembled by the pure, testable
+  `CommandCenter` builder: entity counts, latest-per-target health rollup, active incidents, open
+  risk errors/warnings + top findings, storage used/total + backup-capable pool count, last
+  health/proxmox/risk job stamps, pending-approvals count, failed checks, recent changes, the full
+  dependency graph, and deterministic **"What Should I Do Next"** recommendations (derived only
+  from real signals: failing targets, error incidents/findings, pending approvals, missing checks).
+- **Dependency graph as a first-class feature**: nodes for every host and service (status from
+  health data — `unknown` when unchecked, never assumed healthy), edges from implicit `runs_on`
+  placement plus the mapped dependency table, **failure impact propagation** (a failed service
+  marks its host worst-of and every touching edge impacted), exposure and open-incident flags per
+  node, click-to-select highlighting connected paths and listing **transitive dependents** —
+  "what depends on this?", answered visually and via `GET /homelab/graph/dependents/{id}`.
+- **Host & service detail drawers**: facts, status, uses/depended-on-by, related active incidents
+  and recent changes — opened by clicking any Hosts/Services row.
+- Tests (`CommandCenterTests`): empty state fabricates nothing (stamps stay empty, approvals stay
+  -1), aggregation faithfulness, graph edge construction, impact propagation through hosts and
+  dependent paths, node flags, transitive dependents, recommendation determinism.
+
+### Pass 2 — the ANTHILL identity layer
+- **Centralized semantic tokens** (`#hl-theme` CSS variables): health `--hl-health`, compute
+  `--hl-compute`, storage `--hl-storage`, security `--hl-security`, incidents `--hl-incident`,
+  memory/history `--hl-memory` — applied as card spines + section-head dots via one decoration
+  helper, consistent across chips, cards, and graph nodes.
+- **Colony-mesh background**: a pure-CSS low-contrast node/tunnel lattice behind the dashboard
+  (opacity ≤ .05, pointer-events none) — colony identity without touching readability.
+- **Command summary strip**: KPI chips (hosts, services, healthy/degraded/failed, incidents,
+  risks, VMs/CTs, storage+backup, pending approvals) with a **colony-link dot** derived strictly
+  from real job stamps (green pulse = a scheduler job ran in the last 15 minutes; amber = idle;
+  gray = never — labeled, never fabricated).
+- **Purposeful motion only**: pulse on failed/incident graph nodes and the live dot, row-flash
+  **connection cues** (click a failed check → related incidents flash; click a risk finding → the
+  services it names flash), hover emphasis on graph nodes — all disabled under
+  `prefers-reduced-motion`.
+- Every new visual degrades to labeled empty states ("no data yet", "not configured", "no graph
+  yet") — no value is ever invented for visual completeness.
+- Page renamed **Homelab Command Center**; no framework migration, single embedded vanilla
+  HTML/CSS/JS preserved, all existing routes/pages stable.
+
 ## v1.14.0.1 — Unified approvals dedupe: collapse older pendings even when the newest is resolved
 
 Bug-finder/tester pass over the v1.14.0 code (last stop before V2.0). The incident/change-memory and

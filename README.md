@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.14.0.1
+**Current version:** v2.0.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -52,13 +52,14 @@ The active codebase is .NET-first. The optional native C++ kernel is used for so
 
 ## Current Version Notes
 
-The repo currently uses the v1.14.x line.
+The repo currently uses the v2.x line — the Homelab Command Center era.
 
 Recent important changes:
 
 | Version | What changed |
 |---|---|
 | `v1.14.0.1` | Bug-finder pass on v1.14.0: `ApprovableProjections.DedupePending` (behind `GET /homelab/approvals/unified`) only superseded older pending duplicates when the *newest* item in a dedupe group was itself pending — so if the newest was already approved/executed, two older pendings both stayed live, breaking "at most one pending per key". Now keeps the newest still-pending item and supersedes all older pendings regardless; regression test added. Rest of v1.14.0 reviewed clean (structural + security sweeps). |
+| `v2.0.0` | **🐜 Homelab Command Center launch** (NORTH_STAR Phase 11). Pass 1 — the data layer: one `GET /homelab/dashboard` aggregation (counts, health rollup, incidents, risks, storage/backup totals, job stamps, failed checks, recent changes) built by the testable `CommandCenter`; an **interactive dependency graph** (implicit runs_on + mapped dependencies, failure **impact propagation**, click-to-highlight paths, transitive "what depends on this"); host/service **detail drawers**; deterministic **"What Should I Do Next"**. Pass 2 — the ANTHILL identity: centralized semantic subsystem tokens (health/compute/storage/security/incident/memory) accenting every card, a low-contrast **colony-mesh background**, KPI command strip with a data-derived colony-link pulse, purposeful motion only (failed-node pulse, connection-cue row flashes, hover path emphasis — all `prefers-reduced-motion` aware), and labeled empty states everywhere. No framework migration; vanilla HTML/CSS/JS preserved. |
 | `v1.14.0` | **Incident + change memory + the IApprovable design** (NORTH_STAR Phase 10, closing the V1.x line): health-failure streaks **auto-open deduped incidents**; every incident reconstructs a **timeline** (changes in the 24h before it broke are flagged SUSPECT, plus correlated events and health results); **similar-incident matching** surfaces past root causes as *"this fixed it last time"* (durable fix memory); repeat offenders get **pattern-flagged** and open at error severity. Plus **`IApprovable`** — the one approval abstraction (one queue, one lifecycle, one dedupe rule, per-kind renderers) with today's patch approvals projected into `GET /homelab/approvals/unified`, the inert V2.1 `ActionProposal` skeleton carrying the blast-radius rubric fields, and the full design in [docs/APPROVALS.md](docs/APPROVALS.md). Incidents panel with timeline drawer + fix suggestions in the console. Tracking and recommendations only — nothing remediates. |
 | `v1.13.0` | **Network + security awareness** (NORTH_STAR Phase 9): deterministic **risk findings** computed from registered/synced inventory — risky open ports, unknown devices, ownerless services, un-backed-up hosts, internet-exposed dashboards, duplicate IPs, missing DNS names, unwatched services, never-verified credentials — with **stable-id reconciliation** (fixed problems auto-resolve, acknowledgements stick), a manual/import **network-device registry** (MAC/IP/VLAN/known-flag, in the export bundle), `risk-analysis` on the shared scheduler, `/homelab/devices` + `/homelab/risks` endpoints, and Network & Risk panels in the console. **Zero network I/O — no scanning exists in this phase.** |
 | `v1.12.0.1` | Security hardening (bug-finder pass on v1.12.0): the Proxmox `ProxmoxApiClient` left `AllowAutoRedirect` at the .NET default (`true`), so a `3xx` from a compromised/misconfigured node could bounce the authenticated GET to a `Location` the target-allowlist never vetted (SSRF). Both handlers now set `AllowAutoRedirect = false` (PVE never legitimately redirects), plus a wire-level regression test asserting a 302 fails clean and is not followed off-host. |

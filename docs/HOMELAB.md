@@ -15,7 +15,7 @@ across phases.
 | Proxmox read-only | V1.12.0 | **SHIPPED** | GET-only client (no write path exists), nodes/VMs/LXCs/storage/failed-task sync on the shared scheduler, credential + allowlist discipline, Virtualization UI panels |
 | Network + security awareness | V1.13.0 | **SHIPPED** | Nine deterministic risk findings with reconciliation (auto-resolve + sticky acks), network-device registry, exposure classification, Network & Risk UI — zero network I/O, no scanning |
 | Incident + change memory | V1.14.0 | **SHIPPED** | Auto-opened deduped incidents, suspect-flagged timelines, similar-incident fix memory, repeat patterns, IApprovable design + unified approvals view (docs/APPROVALS.md) — V1.x line complete |
-| Command Center launch | V2.0.0 | Future | The homelab dashboard (read-mostly) |
+| Command Center launch | V2.0.0 | **SHIPPED** | One dashboard aggregation, impact-propagating dependency graph, entity drawers, next-checks, ANTHILL identity layer (semantic tokens, colony mesh, purposeful motion, reduced-motion aware) |
 | Approval-gated actions | V2.1.0 | Future | First controlled actions behind IApprovable + approvals |
 
 ## What v1.9.0 actually is
