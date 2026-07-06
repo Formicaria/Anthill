@@ -1,4 +1,4 @@
-# ANTHILL v1.12.0.1 build (Windows) — native C++ kernel first, then .NET 9 solution + publish.
+# ANTHILL v1.14.0.1 build (Windows) — native C++ kernel first, then .NET 9 solution + publish.
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $kernel = Join-Path $root "native\anthill_kernel"
