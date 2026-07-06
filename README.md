@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.12.0.1
+**Current version:** v1.13.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -52,12 +52,13 @@ The active codebase is .NET-first. The optional native C++ kernel is used for so
 
 ## Current Version Notes
 
-The repo currently uses the v1.12.x line.
+The repo currently uses the v1.13.x line.
 
 Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.13.0` | **Network + security awareness** (NORTH_STAR Phase 9): deterministic **risk findings** computed from registered/synced inventory — risky open ports, unknown devices, ownerless services, un-backed-up hosts, internet-exposed dashboards, duplicate IPs, missing DNS names, unwatched services, never-verified credentials — with **stable-id reconciliation** (fixed problems auto-resolve, acknowledgements stick), a manual/import **network-device registry** (MAC/IP/VLAN/known-flag, in the export bundle), `risk-analysis` on the shared scheduler, `/homelab/devices` + `/homelab/risks` endpoints, and Network & Risk panels in the console. **Zero network I/O — no scanning exists in this phase.** |
 | `v1.12.0.1` | Security hardening (bug-finder pass on v1.12.0): the Proxmox `ProxmoxApiClient` left `AllowAutoRedirect` at the .NET default (`true`), so a `3xx` from a compromised/misconfigured node could bounce the authenticated GET to a `Location` the target-allowlist never vetted (SSRF). Both handlers now set `AllowAutoRedirect = false` (PVE never legitimately redirects), plus a wire-level regression test asserting a 302 fails clean and is not followed off-host. |
 | `v1.12.0` | **Proxmox read-only integration** (NORTH_STAR Phase 8): a **GET-only** PVE API client (write operations are structurally impossible — proven by type-surface and wire-traffic tests), inventory sync (nodes → hypervisor hosts, QEMU VMs, LXC containers, storage pools incl. backup-capable, failed tasks as dedup'd events) riding the shared scheduler, API-token via the credential store (PVEAuditor role recommended), target-allowlist discipline, `/homelab/vms|containers|storage|proxmox/*` endpoints, and Virtualization panels (VMs/containers/storage with usage coloring) on the Homelab page. |
 | `v1.11.0.2` | Fix: replace the blocking native `window.confirm()`/`prompt()` used for every destructive action with a promise-based in-app modal (`uiConfirm`/`uiPrompt`). Native dialogs freeze the renderer's main thread until dismissed — which hung the Autonomy **Stop** button — and clash with the HUD. New modal is non-blocking, themed, and keyboard-navigable; all 18 call sites migrated with unchanged confirm/cancel behavior. |

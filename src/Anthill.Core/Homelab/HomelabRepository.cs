@@ -359,6 +359,130 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
+    // ---- Network devices + risk findings (v1.13.0) ------------------------------------------------
+
+    public void UpsertNetworkDevice(NetworkDevice device, string changedBy)
+    {
+        var now = AnthillTime.NowUtc().ToIso();
+        if (string.IsNullOrWhiteSpace(device.FirstSeen)) device.FirstSeen = now;
+        device.LastSeen = now;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO network_devices (id, name, kind, mac, ip, vlan, known, notes, first_seen, last_seen)
+                VALUES ($id, $name, $kind, $mac, $ip, $vlan, $known, $notes, $first, $last)
+                ON CONFLICT(id) DO UPDATE SET name=$name, kind=$kind, mac=$mac, ip=$ip, vlan=$vlan,
+                    known=$known, notes=$notes, last_seen=$last";
+            Bind(cmd, "$id", device.Id); Bind(cmd, "$name", device.Name); Bind(cmd, "$kind", device.Kind);
+            Bind(cmd, "$mac", device.Mac); Bind(cmd, "$ip", device.Ip); Bind(cmd, "$vlan", device.Vlan);
+            Bind(cmd, "$known", device.Known ? 1 : 0); Bind(cmd, "$notes", device.Notes);
+            Bind(cmd, "$first", device.FirstSeen); Bind(cmd, "$last", device.LastSeen);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "network_device", SubjectId = device.Id, ChangeKind = "updated",
+            Summary = $"Device '{(device.Name.Length > 0 ? device.Name : device.Mac)}' saved (known={device.Known})",
+            ChangedBy = changedBy,
+        });
+    }
+
+    public void RemoveNetworkDevice(string id, string removedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM network_devices WHERE id = $id";
+            Bind(cmd, "$id", id);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "network_device", SubjectId = id, ChangeKind = "removed",
+            Summary = "Network device removed", ChangedBy = removedBy,
+        });
+    }
+
+    public IReadOnlyList<NetworkDevice> ListNetworkDevices()
+    {
+        var list = new List<NetworkDevice>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, name, kind, mac, ip, vlan, known, notes, first_seen, last_seen FROM network_devices ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new NetworkDevice
+            {
+                Id = r.GetString(0), Name = r.IsDBNull(1) ? "" : r.GetString(1), Kind = r.GetString(2),
+                Mac = r.IsDBNull(3) ? "" : r.GetString(3), Ip = r.IsDBNull(4) ? "" : r.GetString(4),
+                Vlan = r.IsDBNull(5) ? "" : r.GetString(5), Known = r.GetInt64(6) != 0,
+                Notes = r.IsDBNull(7) ? "" : r.GetString(7),
+                FirstSeen = r.IsDBNull(8) ? "" : r.GetString(8), LastSeen = r.IsDBNull(9) ? "" : r.GetString(9),
+            });
+        }
+        return list;
+    }
+
+    public void UpsertRiskRecord(RiskRecord record)
+    {
+        var now = AnthillTime.NowUtc().ToIso();
+        if (string.IsNullOrWhiteSpace(record.CreatedAt)) record.CreatedAt = now;
+        record.UpdatedAt = now;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO risk_records (id, finding_kind, subject_kind, subject_id, severity, summary, status, created_at, updated_at)
+                VALUES ($id, $kind, $skind, $sid, $sev, $summary, $status, $created, $updated)
+                ON CONFLICT(id) DO UPDATE SET finding_kind=$kind, subject_kind=$skind, subject_id=$sid,
+                    severity=$sev, summary=$summary, status=$status, updated_at=$updated";
+            Bind(cmd, "$id", record.Id); Bind(cmd, "$kind", record.FindingKind); Bind(cmd, "$skind", record.SubjectKind);
+            Bind(cmd, "$sid", record.SubjectId); Bind(cmd, "$sev", record.Severity); Bind(cmd, "$summary", record.Summary);
+            Bind(cmd, "$status", record.Status); Bind(cmd, "$created", record.CreatedAt); Bind(cmd, "$updated", record.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public void SetRiskStatus(string id, string status, string changedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE risk_records SET status = $status, updated_at = $now WHERE id = $id";
+            Bind(cmd, "$id", id); Bind(cmd, "$status", status); Bind(cmd, "$now", AnthillTime.NowUtc().ToIso());
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "risk", SubjectId = id, ChangeKind = "updated",
+            Summary = $"Risk finding marked {status}", ChangedBy = changedBy,
+        });
+    }
+
+    public IReadOnlyList<RiskRecord> ListRiskRecords()
+    {
+        var list = new List<RiskRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, finding_kind, subject_kind, subject_id, severity, summary, status, created_at, updated_at FROM risk_records ORDER BY severity, updated_at DESC";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new RiskRecord
+            {
+                Id = r.GetString(0), FindingKind = r.GetString(1),
+                SubjectKind = r.IsDBNull(2) ? "" : r.GetString(2), SubjectId = r.IsDBNull(3) ? "" : r.GetString(3),
+                Severity = r.GetString(4), Summary = r.IsDBNull(5) ? "" : r.GetString(5),
+                Status = r.GetString(6), CreatedAt = r.GetString(7), UpdatedAt = r.GetString(8),
+            });
+        }
+        return list;
+    }
+
     // ---- Events / changes / health -------------------------------------------------------------
 
     public void RecordEvent(HomelabEvent evt)
@@ -630,6 +754,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         Nodes = ListNodes().ToList(),
         Services = ListServices().ToList(),
         Dependencies = ListDependencies().ToList(),
+        Devices = ListNetworkDevices().ToList(),
     };
 
     /// <summary>
@@ -652,10 +777,15 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         {
             UpsertDependency(dependency, importedBy); deps++;
         }
+        var devices = 0;
+        foreach (var device in bundle.Devices.Where(d => !string.IsNullOrWhiteSpace(d.Name) || !string.IsNullOrWhiteSpace(d.Mac)))
+        {
+            UpsertNetworkDevice(device, importedBy); devices++;
+        }
         RecordChange(new ChangeRecord
         {
             SubjectKind = "inventory", SubjectId = "import", ChangeKind = "imported",
-            Summary = $"Inventory import: {nodes} node(s), {services} service(s), {deps} dependency(ies)",
+            Summary = $"Inventory import: {nodes} node(s), {services} service(s), {deps} dependency(ies), {devices} device(s)",
             ChangedBy = importedBy,
         });
         return (nodes, services, deps);

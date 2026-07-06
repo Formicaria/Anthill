@@ -71,6 +71,8 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_proxmox_credential_id")] public string HomelabProxmoxCredentialId { get; set; } = "proxmox-main";
     [JsonPropertyName("homelab_proxmox_insecure_tls")] public bool HomelabProxmoxInsecureTls { get; set; } = false;
     [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
+    // Network + security awareness (v1.13.0, NORTH_STAR Phase 9): deterministic findings, no scanning.
+    [JsonPropertyName("homelab_risk_interval_seconds")] public int HomelabRiskIntervalSeconds { get; set; } = 3600;
 
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
     [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;
