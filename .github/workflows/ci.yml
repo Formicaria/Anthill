@@ -203,8 +203,9 @@ jobs:
           PY
           node --check /tmp/ui.js
 
-      # Roadmap/version consistency (v1.8.27): the canonical roadmap must exist, and the version the
-      # README advertises must match the runtime version, so docs never drift from the code.
+      # Roadmap/version consistency (v1.8.27, extended v1.8.28): the canonical roadmap must exist,
+      # and every version marker must agree — runtime const, Directory.Build.props assembly version,
+      # README, and CHANGELOG — so docs and binaries never drift from the code.
       - name: Docs + version consistency
         run: |
           python3 - <<'PY'
@@ -220,9 +221,49 @@ jobs:
           rver = rm.group(1) if rm else None
           if ver and rver and ver != rver:
               problems.append(f"README 'Current version: v{rver}' != runtime Version '{ver}'")
+          props = open("Directory.Build.props", encoding="utf-8").read()
+          pm = re.search(r"<AnthillVersion>([^<]+)</AnthillVersion>", props)
+          pver = pm.group(1).strip() if pm else None
+          if ver and pver and ver != pver:
+              problems.append(f"Directory.Build.props AnthillVersion '{pver}' != runtime Version '{ver}'")
+          changelog = open("CHANGELOG.md", encoding="utf-8").read()
+          if ver and not re.search(r"^##\s+v" + re.escape(ver) + r"\b", changelog, re.M):
+              problems.append(f"CHANGELOG.md has no '## v{ver}' entry for the runtime version")
           if problems:
               print("Docs/version consistency problems:")
               for x in problems: print("  -", x)
               sys.exit(1)
-          print(f"Docs/version OK: NORTH_STAR present, README == runtime == v{ver}.")
+          print(f"Docs/version OK: NORTH_STAR present, README == props == CHANGELOG == runtime == v{ver}.")
           PY
+
+  repo-guards:
+    name: Repo guards (py.old immutable, no stray Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # NORTH_STAR §3.1 rule 13 / §4 guard 11: py.old/ is archived history and must never change;
+      # no active Python may exist anywhere else in the repo.
+      - name: py.old is immutable on pull requests
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'py.old/' || true)
+          if [ -n "$changed" ]; then
+            echo "::error::This PR modifies archived py.old/ content (forbidden by docs/NORTH_STAR.md):"
+            echo "$changed"
+            exit 1
+          fi
+          echo "py.old untouched."
+
+      - name: No Python files outside py.old
+        run: |
+          stray=$(find . -name '*.py' -not -path './py.old/*' -not -path './.git/*' -not -path '*/bin/*' -not -path '*/obj/*' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::Active Python files found outside py.old/ (forbidden by docs/NORTH_STAR.md):"
+            echo "$stray"
+            exit 1
+          fi
+          echo "No stray Python files."

@@ -1,5 +1,29 @@
 # ANTHILL Changelog
 
+## v1.8.28 — Validation / regression harness hardening (NORTH_STAR Phase 2)
+
+Phase 2 of the master roadmap: lock in regression protection for every bug class that has already
+shipped once, before homelab complexity lands. Validation/CI/test changes only — no product
+behavior change.
+
+- **Centralized validation commands**: new `scripts/validate.sh` and `scripts/validate.ps1` run the
+  full required validation set (restore → Release build → Release test, `--full`/`-Full` adds
+  self-contained publish + `--selftest`, plus `node --check` on the embedded UI JS when node is
+  available). CI runs the same steps.
+- **New `RegressionGuardTests`** (run in plain `dotnet test`, so local work and CI gate identically):
+  - *Version-marker consistency*: `AnthillRuntime.Version` must match `Directory.Build.props`
+    `<AnthillVersion>`, the README "Current version" line, and a matching `## vX.Y.Z` CHANGELOG
+    entry. (Directory.Build.props had silently drifted to 1.8.15.6 since v1.8.15.6 — fixed.)
+  - *Migration idempotence*: fresh DB, reopen of an existing DB, and repeated re-runs of schema
+    init all pass with an identical table set.
+  - *UI glyph/encoding integrity*: the CI-only corruption checks (U+FFFD, flattened `?` icons,
+    `'?':'?'` caret ternaries) now also run as unit tests.
+  - *No-Python guard*: no `.py` file may exist outside archived `py.old/`.
+- **CI hardening**: `Docs + version consistency` step extended to cover Directory.Build.props and
+  the CHANGELOG entry; new `repo-guards` job fails any PR that touches `py.old/` and any commit
+  that adds Python outside it.
+- Assembly/package version now correctly stamps as the real release version (was 1.8.15.6).
+
 ## v1.8.27 — Roadmap / documentation consolidation (NORTH_STAR)
 
 Phase 1 of the master roadmap: stop roadmap drift by making one canonical direction document.

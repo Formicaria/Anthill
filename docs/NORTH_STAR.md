@@ -148,19 +148,21 @@ dotnet build Anthill.sln -c Release --no-restore
 dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
+*(Centralized in `scripts/validate.sh` / `scripts/validate.ps1` — shipped v1.8.28.)*
+
 ### Required CI / test guards
 
 1. **Duplicate route guard** — fail boot/tests if two endpoints register the same route/method (prevents ambiguous-route HTTP 500s). *(Shipped: `AssertNoDuplicateRoutes` at boot, v1.8.23.2.)*
 2. **UI JS syntax check** — `node --check` on embedded UI JavaScript. *(Shipped: `ui-integrity` CI job, v1.8.25.2.)*
 3. **UI glyph/encoding integrity check** — fail on `�`, fail if known icon glyphs collapse to `?`, preserve the legitimate help-shortcut `?`. *(Shipped: `ui-integrity` CI job, v1.8.25.2.)*
-4. **Planner routing tests** — UI/frontend/canvas/CSS goals route to `coder.ui_coder`; verification-only/read-only goals never route to coder patch tasks; file/code goals reach file/coder when appropriate.
+4. **Planner routing tests** — UI/frontend/canvas/CSS goals route to `coder.ui_coder`; verification-only/read-only goals never route to coder patch tasks; file/code goals reach file/coder when appropriate. *(Shipped: `AntRegistryTests` + `LifecycleAndConstraintTests`, confirmed covered in the v1.8.28 audit.)*
 5. **Serialization error guard** — API errors return meaningful JSON, not empty HTTP 500s. *(Shipped: `ApiJson.Envelope` + exception middleware, v1.8.23.1.)*
-6. **Migration idempotence tests** — fresh DB, existing DB, and re-run all pass.
+6. **Migration idempotence tests** — fresh DB, existing DB, and re-run all pass. *(Shipped: `RegressionGuardTests`, v1.8.28.)*
 7. **Permission boundary tests** — Mission Coordinator denied where appropriate; Homelab Operator allowed only where appropriate; Administrator allowed where appropriate; no role gains dangerous permissions accidentally.
 8. **Secret redaction tests** — credentials never appear in logs, API responses, UI snapshots, events, or test output.
 9. **Approval gate tests** — patch/action cannot execute without approval; rejected cannot execute; superseded/duplicate handled deterministically.
 10. **Kill-switch tests** — `.anthill/STOP` halts autonomy; `.anthill/HOMELAB_STOP` halts homelab actions; each is scoped correctly.
-11. **No-Python guard** — no changes under `py.old/`; no new active Python files unless explicitly approved as non-runtime tooling.
+11. **No-Python guard** — no changes under `py.old/`; no new active Python files unless explicitly approved as non-runtime tooling. *(Shipped: CI `repo-guards` job + `RegressionGuardTests`, v1.8.28.)*
 12. **Release artifact guard** — artifact uploads only after publish + selftest pass; the release workflow must not publish failed builds. *(Shipped: v1.8.23.3.)*
 
 ---
@@ -168,8 +170,8 @@ dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r linux-x64 --self
 ## 5. Consolidated Build Order
 
 ```text
-V1.8.27  Roadmap/documentation consolidation
-V1.8.28  Validation and regression harness hardening
+V1.8.27  Roadmap/documentation consolidation                 [SHIPPED v1.8.27]
+V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
 V1.8.29  Fresh-install training and pheromone bootstrap missions
 V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions
 V1.9.1   Homelab scheduler skeleton and mock-provider harness
@@ -190,6 +192,8 @@ V3.0.0   Bounded autonomous homelab operator
 ---
 
 # PHASE 1 — V1.8.27 ROADMAP / DOC CONSOLIDATION
+
+**Status: SHIPPED in v1.8.27.**
 
 ## Goal
 Create one canonical roadmap/north-star document and stop roadmap drift.
@@ -215,6 +219,11 @@ Documentation and tests only. No product behavior changes.
 ---
 
 # PHASE 2 — V1.8.28 VALIDATION / REGRESSION HARNESS HARDENING
+
+**Status: SHIPPED in v1.8.28** — `scripts/validate.sh` / `scripts/validate.ps1` centralize the
+validation commands; `RegressionGuardTests` add version-marker consistency, migration idempotence,
+UI glyph integrity, and no-Python guards to `dotnet test`; CI gains the `repo-guards` job
+(py.old immutability + stray-Python scan) and an extended docs/version consistency check.
 
 ## Goal
 Prevent repeated breakages before adding homelab complexity.
