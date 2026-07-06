@@ -1,5 +1,22 @@
 # ANTHILL Changelog
 
+## v1.8.26.1 — Harden auto-apply git for the systemd sandbox
+
+Two fixes found while bringing the v1.8.26 loop up on a hardened LXC (`ProtectSystem=strict`):
+
+- **Commit identity inline.** The service user (`anthill`) has no global git identity, so `git commit`
+  failed with "Please tell me who you are." The commit now sets it inline —
+  `git -c user.name="ANTHILL Auto-Apply" -c user.email="anthill@localhost" commit` — so it never
+  depends on host git config.
+- **Writable `known_hosts`.** `ssh` records the remote host key on first connect, but the service
+  user's `~/.ssh` is read-only under `ProtectSystem=strict`. `GIT_SSH_COMMAND` now points
+  `UserKnownHostsFile` at `/tmp/anthill_known_hosts` (writable via `PrivateTmp`, per-service), so the
+  push succeeds without adding `.ssh` to `ReadWritePaths`.
+
+Note: a non-`.anthill` auto-apply workspace still needs a systemd drop-in adding it to
+`ReadWritePaths` (the sandbox mounts everything else read-only), and the workspace must be a clone
+owned by the service user, checked out on the `<username>-anthill` branch.
+
 ## v1.8.26 — Auto-apply git integration (standalone branch, never main)
 
 Expands the "Git-commit verified changes" toggle into a real, safety-gated git workflow for the
