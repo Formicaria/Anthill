@@ -1,6 +1,6 @@
 # ANTHILL — 24/7 Autonomy Design
 
-> Status: **Phase 0–5 IMPLEMENTED — the autonomy roadmap is complete.** Rails, Director loop,
+> Status: **Phase 0–5 IMPLEMENTED — the autonomy roadmap is complete.** For the current ordered build order across the whole project, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap. Rails, Director loop,
 > Strategist, Concurrency, Learning loop, and now Phase 5 gated auto-apply. The colony can now run autonomously:
 > the Director works the objective backlog — up to `autonomy_concurrency` missions at once,
 > sized down live by the ResourceGovernor under host/backend pressure — under budgets and the

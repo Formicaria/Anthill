@@ -202,3 +202,27 @@ jobs:
           open("/tmp/ui.js", "w", encoding="utf-8").write("\n;\n".join(blocks))
           PY
           node --check /tmp/ui.js
+
+      # Roadmap/version consistency (v1.8.27): the canonical roadmap must exist, and the version the
+      # README advertises must match the runtime version, so docs never drift from the code.
+      - name: Docs + version consistency
+        run: |
+          python3 - <<'PY'
+          import re, sys, os
+          problems = []
+          if not os.path.exists("docs/NORTH_STAR.md"):
+              problems.append("docs/NORTH_STAR.md (canonical roadmap) is missing")
+          code = open("src/Anthill.Core/Configuration/AnthillRuntime.cs", encoding="utf-8").read()
+          m = re.search(r'Version\s*=\s*"([^"]+)"', code)
+          ver = m.group(1) if m else None
+          readme = open("README.md", encoding="utf-8").read()
+          rm = re.search(r"\*\*Current version:\*\*\s*v([0-9][0-9A-Za-z.\-]*)", readme)
+          rver = rm.group(1) if rm else None
+          if ver and rver and ver != rver:
+              problems.append(f"README 'Current version: v{rver}' != runtime Version '{ver}'")
+          if problems:
+              print("Docs/version consistency problems:")
+              for x in problems: print("  -", x)
+              sys.exit(1)
+          print(f"Docs/version OK: NORTH_STAR present, README == runtime == v{ver}.")
+          PY
