@@ -4,6 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ANTHILL</title>
+<style id="anthill-tokens">
+/* V2.2 Pass A — ANTHILL global design system (Overview + Colony revision).
+   Centralized theme tokens + shared component classes. Additive: existing styles untouched;
+   pages opt in by using these classes. Role colors are THE single source for nodes, chambers,
+   event dots, badges, pheromone paths, and legends. */
+:root{
+  --anthill-bg:#050914;
+  --anthill-panel:rgba(12,22,40,.78);
+  --anthill-panel-strong:rgba(16,31,55,.92);
+  --anthill-border:rgba(140,180,255,.14);
+  --anthill-border-strong:rgba(140,180,255,.28);
+  --anthill-text:#eaf2ff;
+  --anthill-muted:#7f91aa;
+  --anthill-dim:#4f6078;
+  --role-queen:#ffd76a; --role-mission-control:#9b6cff; --role-research:#36c8ff;
+  --role-coder:#ff9a3d; --role-builder:#3a8bff; --role-verifier:#9b6cff;
+  --role-tester:#ff5fa8; --role-scout:#45e36f; --role-forager:#45e36f;
+  --role-archivist:#e6e85d; --role-security:#ff416c; --role-source:#20dbc7;
+  --role-memory:#b9ff5a; --role-ui:#46e1ff; --role-operator:#c4a1ff; --role-other:#8a98ad;
+  --status-success:#45e36f; --status-warning:#ffd76a; --status-danger:#ff416c; --status-info:#36c8ff;
+  --glow-green:0 0 18px rgba(69,227,111,.45);
+  --glow-blue:0 0 18px rgba(54,200,255,.45);
+  --glow-purple:0 0 18px rgba(155,108,255,.45);
+  --glow-gold:0 0 22px rgba(255,215,106,.55);
+}
+/* Glassy panel + card primitives */
+.ath-card{background:var(--anthill-panel);border:1px solid var(--anthill-border);border-radius:10px;
+  backdrop-filter:blur(6px);padding:12px 14px;}
+.ath-card:hover{border-color:var(--anthill-border-strong);}
+.ath-card-title{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--anthill-muted);margin-bottom:8px;}
+/* Status pill */
+.ath-pill{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.05em;
+  border:1px solid var(--anthill-border);}
+.ath-pill.ok{color:var(--status-success);border-color:rgba(69,227,111,.35);}
+.ath-pill.warn{color:var(--status-warning);border-color:rgba(255,215,106,.35);}
+.ath-pill.danger{color:var(--status-danger);border-color:rgba(255,65,108,.35);}
+.ath-pill.info{color:var(--status-info);border-color:rgba(54,200,255,.35);}
+/* Role badge (dot + label) */
+.ath-role{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--anthill-text);}
+.ath-role i{width:8px;height:8px;border-radius:50%;display:inline-block;}
+/* Top telemetry bar */
+.tb-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-family:var(--mono, monospace);font-size:10px;
+  color:var(--anthill-muted);background:var(--anthill-panel-strong);border:1px solid var(--anthill-border);
+  border-radius:10px;padding:8px 14px;margin-bottom:12px;position:relative;z-index:2;}
+.tb-brand{font-weight:800;letter-spacing:.14em;color:var(--anthill-text);}
+.tb-seg b{color:var(--anthill-text);font-size:12px;}
+.tb-seg .up{color:var(--status-success);} .tb-seg .down{color:var(--status-danger);}
+.tb-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px;}
+.tb-dot.on{background:var(--status-success);box-shadow:var(--glow-green);animation:tbBreath 3s ease-in-out infinite;}
+.tb-dot.off{background:var(--anthill-dim);}
+.tb-search{margin-left:auto;background:rgba(255,255,255,.04);border:1px solid var(--anthill-border);
+  border-radius:6px;color:var(--anthill-text);font-size:10px;padding:4px 10px;min-width:170px;outline:none;}
+.tb-search:focus{border-color:var(--anthill-border-strong);box-shadow:var(--glow-blue);}
+@keyframes tbBreath{0%,100%{opacity:1;}50%{opacity:.55;}}
+/* Accessibility: honor reduced motion globally for the new system */
+@media (prefers-reduced-motion: reduce){
+  .tb-dot.on{animation:none;}
+  .ath-card,.tb-search{transition:none;}
+}
+/* V2.2 Pass B — Overview command-center grid */
+.overview-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;margin-bottom:14px;position:relative;z-index:1;}
+.ov2-health{grid-column:span 3;} .ov2-active{grid-column:span 4;} .ov2-tasks{grid-column:span 5;}
+.ov2-approvals{grid-column:span 3;} .ov2-core{grid-column:span 4;} .ov2-chambers{grid-column:span 5;}
+.ov2-resources{grid-column:span 3;} .ov2-events{grid-column:span 4;} .ov2-actions{grid-column:span 5;}
+.ov2-timeline{grid-column:span 8;} .ov2-queue{grid-column:span 4;}
+@media (max-width:1200px){.overview-grid>*{grid-column:span 6;}}
+@media (max-width:760px){.overview-grid>*{grid-column:span 12;}}
+.ov2-big{font-size:26px;font-weight:800;color:var(--anthill-text);line-height:1.1;}
+.ov2-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--anthill-muted);padding:2px 0;}
+.ov2-row b{color:var(--anthill-text);}
+.ov2-list-item{padding:5px 0;border-bottom:1px dotted var(--anthill-border);font-size:10px;color:var(--anthill-muted);}
+.ov2-list-item:last-child{border-bottom:none;}
+.ov2-empty{font-size:10px;color:var(--anthill-dim);padding:8px 0;}
+.ov2-spark{display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:6px;}
+.ov2-spark i{flex:1;background:var(--status-info);opacity:.55;border-radius:1px;min-height:2px;}
+.ov2-gauge{height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;margin:3px 0 8px;}
+.ov2-gauge i{display:block;height:100%;border-radius:3px;background:var(--status-info);}
+.ov2-phase{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:9px;font-family:var(--mono,monospace);}
+.ov2-phase span{padding:3px 9px;border-radius:10px;border:1px solid var(--anthill-border);color:var(--anthill-dim);}
+.ov2-phase span.done{color:var(--status-success);border-color:rgba(69,227,111,.4);}
+.ov2-phase span.now{color:var(--anthill-text);border-color:var(--role-mission-control);box-shadow:var(--glow-purple);}
+.ov2-phase span.fail{color:var(--status-danger);border-color:rgba(255,65,108,.5);}
+.ov2-qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.ov2-qa button{background:rgba(255,255,255,.03);border:1px solid var(--anthill-border);border-radius:8px;color:var(--anthill-text);
+  font-size:10px;padding:10px 6px;cursor:pointer;text-align:center;}
+.ov2-qa button:hover{border-color:var(--anthill-border-strong);box-shadow:var(--glow-blue);}
+.ov2-approve{background:rgba(69,227,111,.12);border:1px solid rgba(69,227,111,.4);color:var(--status-success);border-radius:5px;font-size:9px;padding:2px 8px;cursor:pointer;}
+.ov2-reject{background:rgba(255,65,108,.10);border:1px solid rgba(255,65,108,.4);color:var(--status-danger);border-radius:5px;font-size:9px;padding:2px 8px;cursor:pointer;}
+.ov2-chamber{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--anthill-border);border-radius:8px;padding:4px 8px;font-size:9px;color:var(--anthill-muted);margin:2px;}
+.ov2-chamber i{width:7px;height:7px;border-radius:50%;}
+.ov2-core-mini{display:flex;align-items:center;justify-content:center;position:relative;height:110px;}
+/* V2.2 Pass C — Living Colony Map */
+#cmap2 .cm-chamber{cursor:pointer;}
+#cmap2 .cm-chamber circle.cm-ring{fill:var(--anthill-panel);stroke-width:1.5;}
+#cmap2 .cm-chamber:hover circle.cm-ring{stroke-width:3;filter:brightness(1.4);}
+#cmap2 .cm-chamber.cm-selected circle.cm-ring{stroke-width:3;}
+#cmap2 text{font-family:var(--mono,monospace);fill:var(--anthill-muted);}
+@keyframes cmBreath{0%,100%{opacity:1;}50%{opacity:.72;}}
+@keyframes cmQueen{0%,100%{r:26;}50%{r:29;}}
+@keyframes pheromoneFlow{to{stroke-dashoffset:-48;}}
+.cmap2-motion-normal .cm-chamber.cm-active circle.cm-ring,.cmap2-motion-high .cm-chamber.cm-active circle.cm-ring{animation:cmBreath 3s ease-in-out infinite;}
+.cmap2-motion-low .pheromone-path,.cmap2-motion-normal .pheromone-path,.cmap2-motion-high .pheromone-path{
+  stroke-dasharray:8 16;animation:pheromoneFlow 1.8s linear infinite;}
+.cmap2-motion-off .pheromone-path{stroke-dasharray:none;animation:none;}
+.pheromone-path{fill:none;filter:drop-shadow(0 0 6px currentColor);}
+@media (prefers-reduced-motion: reduce){
+  #cmap2 *{animation:none !important;transition:none !important;}
+}
+</style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -1129,6 +1238,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: OVERVIEW
       --------------------------------------------------------------------- -->
       <div class="page page-scroll active" id="page-overview">
+        <!-- V2.2 Pass A: shared top telemetry bar (real data only; '—' when unavailable) -->
+        <div id="tb-overview"></div>
+
+        <!-- V2.2 Pass B: command-center summary grid (System Core stays compact in the HUD below) -->
+        <div class="overview-grid" id="ov2-grid">
+          <div class="ath-card ov2-health"><div class="ath-card-title">Colony Health</div><div id="ov2-health-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-active" style="cursor:pointer" onclick="showPage('missions')"><div class="ath-card-title">Active Mission</div><div id="ov2-active-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-tasks"><div class="ath-card-title">Tasks Today</div><div id="ov2-tasks-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-approvals"><div class="ath-card-title">Pending Approvals <a href="javascript:void(0)" onclick="showPage('patches')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-approvals-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-core" style="cursor:pointer" onclick="showPage('colony')"><div class="ath-card-title">System Core <span style="float:right;color:var(--anthill-dim)">expand →</span></div><div id="ov2-core-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-chambers"><div class="ath-card-title">Chamber Activity</div><div id="ov2-chambers-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-resources"><div class="ath-card-title">Resource Usage</div><div id="ov2-resources-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-actions"><div class="ath-card-title">Quick Actions</div>
+            <div class="ov2-qa">
+              <button onclick="ov2FocusMission()">🎯 Create Mission</button>
+              <button onclick="showPage('patches')">📦 Deploy Artifact</button>
+              <button onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
+              <button onclick="showPage('patches')">🩹 Patch Colony</button>
+              <button onclick="showPage('pheromones')">🧪 View Pheromones</button>
+              <button onclick="showPage('settings')">⚙ Colony Settings</button>
+            </div>
+          </div>
+          <div class="ath-card ov2-timeline"><div class="ath-card-title">Mission Timeline</div><div id="ov2-timeline-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-queue"><div class="ath-card-title">Mission Queue</div><div id="ov2-queue-body"><div class="ov2-empty">Connecting...</div></div></div>
+        </div>
 
         <!-- -- Top colony status strip -- -->
         <div class="hud-strip" id="hud-strip">
@@ -1295,6 +1430,38 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: COLONY  (canvas visualization)
       --------------------------------------------------------------------- -->
       <div class="page" id="page-colony">
+        <!-- V2.2 Pass A: shared top telemetry bar -->
+        <div id="tb-colony"></div>
+
+        <!-- V2.2 Pass C: Living Colony Map (Chamber/Expanded) — Raw Graph keeps the old canvas -->
+        <div id="cmap2-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;position:relative;z-index:2;">
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">VIEW</span>
+          <button class="hud-act" id="cmap2-v-chamber" onclick="cmapSetView('chamber')">Chamber</button>
+          <button class="hud-act" id="cmap2-v-expanded" onclick="cmapSetView('expanded')">Expanded</button>
+          <button class="hud-act" id="cmap2-v-raw" onclick="cmapSetView('raw')">Raw Graph</button>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;margin-left:10px;">MOTION</span>
+          <select class="form-select" id="cmap2-motion" style="width:auto;font-size:9px;" onchange="cmapSetPref('motion',this.value)">
+            <option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option>
+          </select>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">LABELS</span>
+          <select class="form-select" id="cmap2-labels" style="width:auto;font-size:9px;" onchange="cmapSetPref('labels',this.value)">
+            <option value="minimal">Minimal</option><option value="active">Active Only</option><option value="all" selected>All</option>
+          </select>
+          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">PHEROMONES</span>
+          <select class="form-select" id="cmap2-pher" style="width:auto;font-size:9px;" onchange="cmapSetPref('pheromones',this.value)">
+            <option value="off">Off</option><option value="active">Active</option><option value="all" selected>All</option>
+          </select>
+          <label style="font-size:9px;color:var(--anthill-muted);"><input type="checkbox" id="cmap2-idle" checked onchange="cmapSetPref('showIdle',this.checked?'1':'0')"> idle ants</label>
+        </div>
+        <div id="cmap2-wrap" style="display:flex;gap:10px;padding:0 8px 8px;min-height:420px;position:relative;z-index:1;">
+          <div class="ath-card" style="flex:1;padding:6px;overflow:hidden;">
+            <svg id="cmap2" width="100%" height="480" style="display:block;min-height:420px;"></svg>
+          </div>
+          <div class="ath-card" id="cmap2-inspector" style="width:270px;flex-shrink:0;overflow-y:auto;max-height:520px;">
+            <div class="ath-card-title">Inspector</div>
+            <div id="cmap2-insp-body"><div class="ov2-empty">Select a chamber, ant, or trail.</div></div>
+          </div>
+        </div>
 
         <!-- Left sidebar: status + approvals + jobs -->
         <div id="colony-left">
@@ -2484,18 +2651,71 @@ function setApiBase(u){ API_BASE = u; localStorage.setItem('anthill_apibase', u)
 
 function url(path){ return API_BASE ? API_BASE.replace(/\/$/,'') + path : path; }
 
+// V2.2 Pass D — centralized API layer: auth-flood gate, in-flight GET deduplication, TTL cache
+// with stale-while-revalidate, request timeouts, and 429 backoff. Root-cause fixes:
+// - "Too many attempts": ~7 pollers each retried through a dead session; every 401 fed the
+//   server's AuthLimiter. Now the FIRST 401 flips the auth-lost gate and every later call
+//   short-circuits locally (zero network) until re-login clears it (enterApp sets authLost=false).
+// - Slow Overview/Patch Center: identical GETs from parallel pollers now share one in-flight
+//   promise and a per-path TTL cache; hidden tabs serve cache instead of hitting the API.
+const API_TTL={'/status':10000,'/events/json':3000,'/jobs':5000,'/missions/json':10000,
+  '/colony/registry':30000,'/pheromones/json':20000,'/autonomy/status':10000,'/objectives':15000,
+  '/patches':30000,'/homelab/dashboard':10000,'/homelab/summary':10000,'/homelab/approvals/unified':10000,
+  '/system/summary':15000,'/update/check':300000};
+const _apiCache=new Map(), _apiInflight=new Map(); let _api429Until=0;
+function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
+  for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
+function apiCacheBust(prefix){ for(const k of Array.from(_apiCache.keys())) if(!prefix||k.startsWith(prefix)) _apiCache.delete(k); }
+
 async function api(path, method='GET', body=null) {
-  const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(url(path), opts);
-  if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
-  // Never let an empty or non-JSON body throw a raw "Unexpected end of JSON input" — turn it into a
-  // structured {success:false} so callers show a clean message (e.g. a stale server without a route).
-  const text = await r.text();
-  if (!text) return { success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
-  try { return JSON.parse(text); }
-  catch { return { success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; }
+  const isGet=method==='GET'&&!body;
+  // Auth gate: while logged out, only auth endpoints may touch the network.
+  if(typeof authLost!=='undefined'&&authLost&&!path.startsWith('/auth'))
+    return { success:false, message:'Not signed in.', status:401 };
+  const now=Date.now();
+  if(isGet){
+    const hit=_apiCache.get(path);
+    if(hit&&(now-hit.at<_ttlFor(path)||document.hidden||now<_api429Until)) return hit.data; // fresh, hidden-tab, or backoff → cached
+    if(_apiInflight.has(path)) return _apiInflight.get(path); // dedupe identical in-flight GETs
+    if(now<_api429Until&&hit) return hit.data;
+    if(now<_api429Until) return { success:false, message:'Rate limited — backing off.', status:429 };
+  }
+  const run=(async()=>{
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),10000);
+    try{
+      const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(url(path), opts);
+      if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
+      if (r.status === 429) {
+        const ra=parseInt(r.headers.get('Retry-After')||'15',10);
+        _api429Until=Date.now()+Math.min(Math.max(ra,5),120)*1000; // respect Retry-After, clamp 5-120s
+      }
+      const text = await r.text();
+      let out;
+      if (!text) out={ success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
+      else { try { out=JSON.parse(text); } catch { out={ success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; } }
+      if(isGet&&out&&out.success!==false) _apiCache.set(path,{at:Date.now(),data:out});
+      return out;
+    }catch(e){
+      if(e&&e.message==='unauthorized') throw e;
+      const stale=isGet?_apiCache.get(path):null;
+      if(stale) return stale.data; // stale-while-error: keep the UI alive, refresh next poll
+      return { success:false, message:(e&&e.name==='AbortError')?'Request timed out (10s).':('Request failed: '+((e&&e.message)||'network error')), status:0 };
+    }finally{ clearTimeout(timer); if(isGet)_apiInflight.delete(path); }
+  })();
+  if(isGet)_apiInflight.set(path,run);
+  return run;
 }
+// Mutations must show fresh data next read: bust the GET cache after any successful POST/PUT/DELETE.
+(function(){ const _m=api; window.api=async function(p,method='GET',body=null){
+  const out=await _m(p,method,body);
+  if(method!=='GET'&&out&&out.success!==false) apiCacheBust('');
+  return out; };})();
+// Same auth gate for text endpoints (approvals/events text views) — no network while logged out.
+(function(){ const _t=apiText; window.apiText=async function(p){
+  if(typeof authLost!=='undefined'&&authLost) throw new Error('unauthenticated');
+  return _t(p); };})();
 async function apiText(path) {
   const r = await fetch(url(path), { headers: { 'Authorization': 'Bearer '+TOKEN } });
   if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
@@ -6988,6 +7208,470 @@ async function hlImportFile(ev){
   }catch(e){ hlMsg('Import failed: '+e.message,false); }
   ev.target.value='';
 }
+
+// -- V2.2 Pass A: ANTHILL design-system helpers + TopTelemetryBar --------------------
+// Role colors: THE single mapping for chambers, nodes, dots, badges, trails, legends.
+function getRoleColor(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'var(--role-queen)';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'var(--role-mission-control)';
+  if(n.includes('research'))return 'var(--role-research)';
+  if(n.includes('coder')||n.includes('code'))return 'var(--role-coder)';
+  if(n.includes('builder')||n.includes('build'))return 'var(--role-builder)';
+  if(n.includes('verifier')||n.includes('verify'))return 'var(--role-verifier)';
+  if(n.includes('tester')||n.includes('test'))return 'var(--role-tester)';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'var(--role-scout)';
+  if(n.includes('archivist'))return 'var(--role-archivist)';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'var(--role-memory)';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('guard')||n.includes('soldier')||n.includes('medic'))return 'var(--role-security)';
+  if(n.includes('source')||n.includes('file'))return 'var(--role-source)';
+  if(n.includes('ui')||n.includes('cartographer'))return 'var(--role-ui)';
+  if(n.includes('operator')||n.includes('scribe'))return 'var(--role-operator)';
+  return 'var(--role-other)';
+}
+function getRoleLabel(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'Queen';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'Mission Control';
+  if(n.includes('research'))return 'Researchers';
+  if(n.includes('coder'))return 'Coders';
+  if(n.includes('builder'))return 'Builders';
+  if(n.includes('verifier'))return 'Verifiers';
+  if(n.includes('tester'))return 'Testers';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'Scouts';
+  if(n.includes('archivist'))return 'Archivists';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'Memory';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('soldier')||n.includes('medic'))return 'Security';
+  if(n.includes('source')||n.includes('file'))return 'Sources';
+  if(n.includes('ui')||n.includes('cartographer'))return 'UI';
+  if(n.includes('operator')||n.includes('scribe'))return 'Operators';
+  return 'Other';
+}
+function athPill(state,text){ return '<span class="ath-pill '+state+'">'+escapeHtml(text)+'</span>'; }
+
+// Central telemetry store — every value is real or null (rendered as em dash, never invented).
+const TB={online:null,tasks:null,tasksPerSec:null,successRate:null,activeAnts:null,approvals:null,
+  health:null,healthLabel:'',search:'',_prevTasks:null,_prevAt:0};
+
+async function pollTelemetry(){
+  const ovActive=document.getElementById('page-overview')?.classList.contains('active');
+  const coActive=document.getElementById('page-colony')?.classList.contains('active');
+  if(!ovActive&&!coActive) return;
+  try{
+    const [st,reg]=await Promise.all([api('/status'), TB.activeAnts===null?api('/colony/registry'):Promise.resolve(null)]);
+    const s=(st&&st.success&&st.data)||null;
+    TB.online=!!s;
+    if(s){
+      const now=Date.now();
+      const tasks=(typeof s.tasks==='number')?s.tasks:null;
+      if(tasks!==null&&TB._prevTasks!==null&&now>TB._prevAt)
+        TB.tasksPerSec=Math.max(0,(tasks-TB._prevTasks)/((now-TB._prevAt)/1000));
+      TB._prevTasks=tasks; TB._prevAt=now;
+      TB.tasks=tasks;
+      TB.approvals=(typeof s.pending_approvals==='number')?s.pending_approvals:null;
+      // Success rate derived from the real event stream: 1 - failures/events (when events exist).
+      TB.successRate=(typeof s.events==='number'&&s.events>0&&typeof s.failures==='number')
+        ? Math.max(0,Math.min(100,(1-(s.failures/s.events))*100)) : null;
+      // Health: simple real-signal score — start 100, -4 per failure share point, -5 if approvals pile up.
+      if(TB.successRate!==null){
+        let h=Math.round(TB.successRate);
+        if((TB.approvals??0)>5)h-=5;
+        TB.health=Math.max(0,Math.min(100,h));
+        TB.healthLabel=TB.health>=90?'STABLE':(TB.health>=75?'WATCH':(TB.health>=50?'DEGRADED':'CRITICAL'));
+      }
+    }
+    if(reg&&reg.success&&reg.data){
+      const roles=Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[]);
+      let ants=0; roles.forEach(r=>{ ants+=1+((r.workers&&r.workers.length)||0); });
+      if(ants>0)TB.activeAnts=ants;
+    }
+  }catch(e){ TB.online=false; }
+  renderTelemetryBar('tb-overview'); renderTelemetryBar('tb-colony');
+}
+
+function renderTelemetryBar(containerId){
+  const el=document.getElementById(containerId); if(!el) return;
+  // Never re-render while the operator is typing in this bar's search box.
+  const focused=el.querySelector('.tb-search');
+  if(focused&&focused===document.activeElement) return;
+  const v=(x,f)=>x===null||x===undefined?'—':(f?f(x):x);
+  const hs=TB.health===null?'':(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'));
+  el.innerHTML='<div class="tb-bar">'+
+    '<span class="tb-brand">ANTHILL</span>'+
+    '<span class="tb-seg"><span class="tb-dot '+(TB.online?'on':'off')+'"></span>'+(TB.online===null?'CONNECTING':(TB.online?'COLONY ONLINE':'COLONY OFFLINE'))+'</span>'+
+    '<span class="tb-seg">TASKS <b>'+v(TB.tasks)+'</b>'+(TB.tasksPerSec!==null?' <span class="up">'+TB.tasksPerSec.toFixed(2)+'/s</span>':'')+'</span>'+
+    '<span class="tb-seg">SUCCESS <b>'+v(TB.successRate,x=>x.toFixed(1)+'%')+'</b></span>'+
+    '<span class="tb-seg">ACTIVE ANTS <b>'+v(TB.activeAnts)+'</b></span>'+
+    '<span class="tb-seg">APPROVALS <b'+((TB.approvals??0)>0?' style="color:var(--status-warning)"':'')+'>'+v(TB.approvals)+'</b></span>'+
+    '<span class="tb-seg">HEALTH '+(TB.health===null?'<b>—</b>':athPill(hs,TB.health+'% '+TB.healthLabel))+'</span>'+
+    '<input class="tb-search" placeholder="Search colony..." value="'+escapeHtml(TB.search)+'" '+
+      'oninput="TB.search=this.value; if(typeof colonySearchHook===\'function\')colonySearchHook(TB.search);">'+
+    '</div>';
+}
+
+// Wire into page lifecycle without touching existing enter handlers.
+(function(){
+  const prevOv=PAGE_ENTER['overview'];
+  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2(); };
+  const prevCo=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
+  setInterval(pollTelemetry,15000);
+  setInterval(()=>{ if(document.getElementById('page-overview')?.classList.contains('active')) pollOv2(); },20000);
+})();
+
+// -- V2.2 Pass B: Overview command-center cards (real data + labeled empty states) ----
+const OV2={healthTrend:[]};
+function ov2FocusMission(){ const el=document.getElementById('ov-mission-input'); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus(); } }
+function ov2Empty(id,msg){ const el=document.getElementById(id); if(el) el.innerHTML='<div class="ov2-empty">'+escapeHtml(msg)+'</div>'; }
+
+async function pollOv2(){
+  let jb,mn,ev,ap,reg;
+  try{
+    [jb,mn,ev,ap,reg]=await Promise.all([
+      api('/jobs'), api('/missions/json?limit=6'), api('/events/json?limit=200'),
+      api('/homelab/approvals/unified'), api('/colony/registry'),
+    ]);
+  }catch(e){ return; }
+  const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
+  const missions=Array.isArray(mn&&mn.data)?mn.data:[];
+  const events=Array.isArray(ev&&ev.data)?ev.data:[];
+  const approvals=(ap&&ap.success&&ap.data&&Array.isArray(ap.data.items))?ap.data.items:[];
+  const roles=(reg&&reg.success&&reg.data)?(Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[])):[];
+  renderOv2Health(); renderOv2Active(jobs,missions); renderOv2Tasks(events);
+  renderOv2Approvals(approvals); renderOv2Core(roles); renderOv2Chambers(roles,events);
+  renderOv2Resources(); renderOv2Events(events); renderOv2Timeline(jobs,missions); renderOv2Queue(jobs);
+}
+
+function renderOv2Health(){
+  const el=document.getElementById('ov2-health-body'); if(!el) return;
+  if(TB.health===null){ el.innerHTML='<div class="ov2-empty">No health signal yet — waiting for event data.</div>'; return; }
+  OV2.healthTrend.push(TB.health); if(OV2.healthTrend.length>48)OV2.healthTrend.shift();
+  const col=TB.health>=90?'var(--status-success)':(TB.health>=75?'var(--status-warning)':'var(--status-danger)');
+  el.innerHTML='<div class="ov2-big" style="color:'+col+'">'+TB.health+'%</div>'+
+    '<div style="margin:4px 0">'+athPill(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'),TB.healthLabel)+'</div>'+
+    '<div class="ov2-row"><span>Systems</span><b>'+(TB.online?'online':'offline')+'</b></div>'+
+    '<div class="ov2-row"><span>Ant network</span><b>'+(TB.activeAnts??'—')+' ants</b></div>'+
+    '<div class="ov2-row"><span>Approvals</span><b>'+(TB.approvals??'—')+' pending</b></div>'+
+    '<div class="ov2-spark" title="session trend">'+OV2.healthTrend.map(h=>'<i style="height:'+Math.max(6,h*0.26)+'px;background:'+col+'"></i>').join('')+'</div>';
+}
+
+function renderOv2Active(jobs,missions){
+  const el=document.getElementById('ov2-active-body'); if(!el) return;
+  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
+  if(!running){ el.innerHTML='<div class="ov2-empty">Idle — no active mission.<br>Enter a mission directive to begin.</div>'; return; }
+  const started=running.created_at||running.started_at||'';
+  const mins=started?Math.max(0,Math.round((Date.now()-Date.parse(started))/60000)):null;
+  el.innerHTML='<div style="font-size:12px;color:var(--anthill-text);font-weight:700;margin-bottom:6px;">'+escapeHtml((running.goal||running.title||'Mission').substring(0,90))+'</div>'+
+    '<div class="ov2-row"><span>Status</span><b style="color:var(--status-info)">running</b></div>'+
+    (mins!==null?'<div class="ov2-row"><span>Elapsed</span><b>'+mins+'m</b></div>':'')+
+    '<div class="ov2-row"><span>Queued behind</span><b>'+jobs.filter(j=>(j.status||'').toLowerCase()==='queued').length+'</b></div>';
+}
+
+function renderOv2Tasks(events){
+  const el=document.getElementById('ov2-tasks-body'); if(!el) return;
+  const today=new Date().toISOString().slice(0,10);
+  const taskEvts=events.filter(e=>String(e.event_type||e.type||'').toLowerCase().includes('task')&&String(e.created_at||'').startsWith(today));
+  if(!taskEvts.length){ el.innerHTML='<div class="ov2-empty">No task activity recorded today yet.</div>'; return; }
+  const byHour={}; taskEvts.forEach(e=>{ const h=(e.created_at||'').substring(11,13); if(h)byHour[h]=(byHour[h]||0)+1; });
+  const hours=Object.keys(byHour).sort();
+  const max=Math.max.apply(null,hours.map(h=>byHour[h]));
+  el.innerHTML='<div class="ov2-big">'+taskEvts.length+'</div><div style="font-size:9px;color:var(--anthill-dim);">task events today (from the event stream)</div>'+
+    '<div class="ov2-spark">'+hours.map(h=>'<i title="'+h+':00 — '+byHour[h]+'" style="height:'+Math.max(4,(byHour[h]/max)*24)+'px"></i>').join('')+'</div>';
+}
+
+function renderOv2Approvals(items){
+  const el=document.getElementById('ov2-approvals-body'); if(!el) return;
+  const pending=items.filter(i=>i.state==='pending').slice(0,3);
+  if(!pending.length){ el.innerHTML='<div class="ov2-empty">No approvals pending.</div>'; return; }
+  el.innerHTML=pending.map(a=>{
+    const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'info');
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+
+      '<div style="margin-top:4px;display:flex;gap:6px;">'+
+      '<button class="ov2-approve" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\')">✓ Approve</button>'+
+      '<button class="ov2-reject" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\')">✕ Reject</button></div></div>';
+  }).join('');
+}
+
+function renderOv2Core(roles){
+  const el=document.getElementById('ov2-core-body'); if(!el) return;
+  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
+  const shown=roles.slice(0,8);
+  const cx=90,cy=55,r=40;
+  let svg='<svg viewBox="0 0 180 110" style="width:100%;max-height:110px;">';
+  shown.forEach((role,i)=>{
+    const a=(i/shown.length)*Math.PI*2, x=cx+Math.cos(a)*r, y=cy+Math.sin(a)*r*0.8;
+    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="var(--anthill-border)" stroke-width="1"/>'+
+      '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(antRoleId(role))+'"/>';
+  });
+  svg+='<circle cx="'+cx+'" cy="'+cy+'" r="10" fill="var(--role-queen)" opacity="0.9"><title>Queen</title></circle></svg>';
+  el.innerHTML='<div class="ov2-core-mini">'+svg+'</div>'+
+    '<div class="ov2-row"><span>Roles</span><b>'+roles.length+'</b></div>'+
+    '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(TB.activeAnts??'—')+'</b></div>';
+}
+
+function renderOv2Chambers(roles,events){
+  const el=document.getElementById('ov2-chambers-body'); if(!el) return;
+  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
+  const hourAgo=Date.now()-3600000;
+  const counts={};
+  events.forEach(e=>{
+    const t=Date.parse(e.created_at||''); if(isNaN(t)||t<hourAgo) return;
+    const who=String(e.ant||e.ant_name||e.source||'');
+    if(who) counts[getRoleLabel(who)]=(counts[getRoleLabel(who)]||0)+1;
+  });
+  const chambers={};
+  roles.forEach(r=>{ const label=getRoleLabel(antRoleId(r)); chambers[label]=(chambers[label]||0)+1+((r.workers&&r.workers.length)||0); });
+  el.innerHTML=Object.keys(chambers).map(label=>{
+    const act=counts[label]||0;
+    const lvl=act>=10?'High':(act>=3?'Medium':(act>0?'Low':'Idle'));
+    return '<span class="ov2-chamber" style="cursor:pointer" onclick="showPage(\'colony\')"><i style="background:'+getRoleColor(label)+'"></i>'+escapeHtml(label)+' <b>'+chambers[label]+'</b> · '+lvl+'</span>';
+  }).join('');
+}
+
+function renderOv2Resources(){
+  const el=document.getElementById('ov2-resources-body'); if(!el) return;
+  const sum=(typeof lastSystemSummary==='object'&&lastSystemSummary)?lastSystemSummary:{};
+  const metrics=[['CPU',sum.cpu_percent],['Memory',sum.memory_percent??sum.mem_percent],['Disk',sum.disk_percent],['Network',sum.network_percent]]
+    .filter(m=>typeof m[1]==='number');
+  if(!metrics.length){ el.innerHTML='<div class="ov2-empty">Metrics unavailable.</div>'; return; }
+  el.innerHTML=metrics.map(m=>'<div class="ov2-row"><span>'+m[0]+'</span><b>'+Math.round(m[1])+'%</b></div>'+
+    '<div class="ov2-gauge"><i style="width:'+Math.min(100,m[1])+'%;background:'+(m[1]>=90?'var(--status-danger)':(m[1]>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>').join('');
+}
+
+function renderOv2Events(events){
+  const el=document.getElementById('ov2-events-body'); if(!el) return;
+  const recent=events.slice(0,5);
+  if(!recent.length){ el.innerHTML='<div class="ov2-empty">No recent events yet.</div>'; return; }
+  el.innerHTML=recent.map(e=>{
+    const who=String(e.ant||e.ant_name||e.source||'');
+    return '<div class="ov2-list-item"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+getRoleColor(who||e.event_type)+';margin-right:6px;"></span>'+
+      '<span style="color:var(--anthill-dim)">'+escapeHtml((e.created_at||'').substring(11,16))+'</span> '+
+      (who?'<b style="color:var(--anthill-text)">'+escapeHtml(who)+'</b> ':'')+
+      escapeHtml(String(e.message||e.event_type||'').substring(0,70))+'</div>';
+  }).join('');
+}
+
+function renderOv2Timeline(jobs,missions){
+  const el=document.getElementById('ov2-timeline-body'); if(!el) return;
+  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
+  const last=missions[0];
+  if(!running&&!last){ el.innerHTML='<div class="ov2-empty">No mission activity yet.</div>'; return; }
+  const failed=!running&&last&&(last.status||'')==='failed';
+  const complete=!running&&last&&(last.status||'')!=='failed';
+  const phases=[['Started',true],['Research',running||complete],['Build',running||complete],['Verify',running||complete],['Complete',complete]];
+  el.innerHTML='<div class="ov2-phase">'+phases.map((p,i)=>{
+    let cls='';
+    if(failed&&i===phases.length-1)cls='fail';
+    else if(p[1]&&(complete||i<phases.length-1))cls=complete?'done':(running&&i===1?'now':(p[1]?'done':''));
+    if(running&&i>=1&&i<=3)cls=i===1?'now':'';
+    if(!running&&complete)cls='done';
+    return '<span class="'+cls+'">'+p[0]+'</span>';
+  }).join('<span style="border:none;color:var(--anthill-dim)">→</span>')+'</div>'+
+    '<div style="font-size:9px;color:var(--anthill-dim);margin-top:6px;">'+(running?('Running: '+escapeHtml((running.goal||'').substring(0,80))):('Last mission '+escapeHtml(last.status||'')+(failed?' — check the report':'')))+'</div>';
+}
+
+function renderOv2Queue(jobs){
+  const el=document.getElementById('ov2-queue-body'); if(!el) return;
+  const queue=jobs.filter(j=>['running','queued'].includes((j.status||'').toLowerCase())).slice(0,3);
+  if(!queue.length){ el.innerHTML='<div class="ov2-empty">No queued missions.</div>'; return; }
+  el.innerHTML=queue.map(j=>{
+    const running=(j.status||'').toLowerCase()==='running';
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((j.goal||j.id||'Mission').substring(0,55))+'</b>'+
+      '<div class="ov2-row"><span>'+athPill(running?'info':'warn',j.status||'?')+'</span></div>'+
+      '<div class="ov2-gauge"><i style="width:'+(running?60:10)+'%;'+(running?'':'background:var(--status-warning)')+'" title="'+(running?'in progress':'waiting')+'"></i></div></div>';
+  }).join('');
+}
+
+// -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
+function antRoleId(r){ return r.roleId||r.role_id||r.id||r.displayName||r.display_name||''; }
+const CMAP={view:'chamber',motion:'normal',labels:'all',pheromones:'all',showIdle:true,
+  selected:null,selectedKind:null,chambers:{},trails:[],events:[]};
+const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Researchers':{x:.28,y:.23},
+  'Coders':{x:.74,y:.70},'Builders':{x:.30,y:.72},'Testers':{x:.20,y:.58},'Verifiers':{x:.50,y:.78},
+  'Scouts':{x:.78,y:.36},'Archivists':{x:.20,y:.38},'Security':{x:.72,y:.50},'Sources':{x:.86,y:.58},
+  'UI':{x:.42,y:.68},'Memory':{x:.36,y:.40},'Operators':{x:.48,y:.28},'Other':{x:.64,y:.82} };
+
+function cmapLoadPrefs(){
+  try{
+    CMAP.view=localStorage.getItem('anthill.colony.viewMode')||'chamber';
+    CMAP.motion=localStorage.getItem('anthill.colony.motion')||'normal';
+    CMAP.labels=localStorage.getItem('anthill.colony.labels')||'all';
+    CMAP.pheromones=localStorage.getItem('anthill.colony.pheromones')||'all';
+    CMAP.showIdle=localStorage.getItem('anthill.colony.showIdleAnts')!=='0';
+  }catch(e){}
+  const m=document.getElementById('cmap2-motion'); if(m)m.value=CMAP.motion;
+  const l=document.getElementById('cmap2-labels'); if(l)l.value=CMAP.labels;
+  const p=document.getElementById('cmap2-pher'); if(p)p.value=CMAP.pheromones;
+  const i=document.getElementById('cmap2-idle'); if(i)i.checked=CMAP.showIdle;
+}
+function cmapSetPref(key,val){
+  if(key==='motion'){CMAP.motion=val;try{localStorage.setItem('anthill.colony.motion',val);}catch(e){}}
+  if(key==='labels'){CMAP.labels=val;try{localStorage.setItem('anthill.colony.labels',val);}catch(e){}}
+  if(key==='pheromones'){CMAP.pheromones=val;try{localStorage.setItem('anthill.colony.pheromones',val);}catch(e){}}
+  if(key==='showIdle'){CMAP.showIdle=val==='1';try{localStorage.setItem('anthill.colony.showIdleAnts',val);}catch(e){}}
+  renderColonyMap();
+}
+function cmapSetView(v){
+  CMAP.view=v; try{localStorage.setItem('anthill.colony.viewMode',v);}catch(e){}
+  const wrap=document.getElementById('cmap2-wrap');
+  const canvasArea=document.getElementById('colony-canvas-area');
+  const raw=v==='raw';
+  if(wrap)wrap.style.display=raw?'none':'flex';
+  if(canvasArea)canvasArea.style.display=raw?'':'none';
+  ['chamber','expanded','raw'].forEach(x=>{
+    const b=document.getElementById('cmap2-v-'+x); if(b)b.setAttribute('aria-pressed',x===v?'true':'false');
+  });
+  if(raw){ if(typeof resize==='function'){resize(); buildNodes&&buildNodes();} }
+  else renderColonyMap();
+}
+
+async function loadColonyMap(){
+  try{
+    const [reg,ph,ev]=await Promise.all([api('/colony/registry'),api('/pheromones/json?limit=200'),api('/events/json?limit=150')]);
+    const roles=(reg&&reg.success&&reg.data&&Array.isArray(reg.data.roles))?reg.data.roles:[];
+    CMAP.events=Array.isArray(ev&&ev.data)?ev.data:[];
+    const cutoff=Date.now()-15*60000;
+    const activeNames=new Set();
+    CMAP.events.forEach(e=>{ const t=Date.parse(e.created_at||''); if(!isNaN(t)&&t>=cutoff){ const w=String(e.ant||e.ant_name||e.source||''); if(w)activeNames.add(w.toLowerCase()); }});
+    CMAP.chambers={};
+    roles.forEach(r=>{
+      const rid=antRoleId(r);
+      const label=rid.toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
+      const ch=CMAP.chambers[label]=CMAP.chambers[label]||{label, color:getRoleColor(rid), ants:[]};
+      const mk=(id,name)=>({id, name, active:activeNames.has(String(name||id).toLowerCase())||activeNames.has(String(id).toLowerCase())});
+      ch.ants.push(mk(rid, r.displayName||r.display_name||rid));
+      (r.workers||[]).forEach(w=>ch.ants.push(mk(w.workerId||w.worker_id||w.id, w.displayName||w.display_name||w.workerId)));
+    });
+    // Pheromone display strength: real trail scores when the rows carry them; otherwise derived
+    // from recent event frequency per chamber (mapping isolated here, per the design rules).
+    const rows=Array.isArray(ph&&ph.data)?ph.data:[];
+    const byChamber={};
+    rows.forEach(row=>{
+      const who=String(row.ant||row.ant_name||row.role||row.name||'');
+      if(!who)return;
+      const label=getRoleLabel(who);
+      const score=Number(row.score??row.strength??row.value);
+      if(!isNaN(score)) byChamber[label]=Math.max(byChamber[label]||0,Math.min(1,Math.abs(score)));
+    });
+    if(!Object.keys(byChamber).length){
+      const counts={};
+      CMAP.events.forEach(e=>{ const w=String(e.ant||e.ant_name||e.source||''); if(w)counts[getRoleLabel(w)]=(counts[getRoleLabel(w)]||0)+1; });
+      const max=Math.max.apply(null,Object.keys(counts).map(k=>counts[k]).concat([1]));
+      Object.keys(counts).forEach(k=>byChamber[k]=counts[k]/max);
+    }
+    CMAP.trails=Object.keys(byChamber).map(label=>({chamber:label,strength:byChamber[label]}));
+    renderColonyMap();
+  }catch(e){ /* keep last render */ }
+}
+
+function renderColonyMap(){
+  const svg=document.getElementById('cmap2'); if(!svg||CMAP.view==='raw') return;
+  svg.setAttribute('viewBox','0 0 1000 600');
+  const parent=svg.parentElement; if(parent) parent.className=parent.className.replace(/cmap2-motion-\S+/g,'').trim()+' cmap2-motion-'+CMAP.motion;
+  const labels=Object.keys(CMAP.chambers);
+  if(!labels.length){ svg.innerHTML='<text x="40" y="60" font-size="13">Colony registry unavailable — no chambers to draw.</text>'; return; }
+  const P=l=>{ const p=CMAP_LAYOUT[l]||CMAP_LAYOUT['Other']; return {x:p.x*1000,y:p.y*600}; };
+  const q=P('Queen');
+  let out='';
+  // Trails chamber → queen (pheromone layer)
+  if(CMAP.pheromones!=='off'){
+    CMAP.trails.forEach(t=>{
+      if(t.chamber==='Queen')return;
+      if(CMAP.pheromones==='active'&&t.strength<0.3)return;
+      const c=P(t.chamber);
+      const color=(CMAP.chambers[t.chamber]||{}).color||'var(--role-other)';
+      out+='<path class="pheromone-path" d="M'+c.x+' '+c.y+' Q '+((c.x+q.x)/2+30)+' '+((c.y+q.y)/2-30)+' '+q.x+' '+q.y+'"'+
+        ' stroke="'+color+'" stroke-width="'+(1+t.strength*5).toFixed(1)+'" opacity="'+(0.2+t.strength*0.8).toFixed(2)+'"'+
+        ' onclick="cmapSelect(\'path\',\''+escapeHtml(t.chamber)+'\')" style="cursor:pointer;pointer-events:stroke;"/>';
+    });
+  }
+  // Chambers
+  labels.forEach(label=>{
+    const ch=CMAP.chambers[label], p=P(label);
+    const isQueen=label==='Queen';
+    const shown=CMAP.showIdle?ch.ants:ch.ants.filter(a=>a.active);
+    const activeCount=ch.ants.filter(a=>a.active).length;
+    const r=isQueen?26:Math.min(40,20+ch.ants.length*1.5);
+    const sel=CMAP.selected===label&&CMAP.selectedKind!=='path';
+    out+='<g class="cm-chamber'+(activeCount>0?' cm-active':'')+(sel?' cm-selected':'')+'" onclick="cmapSelect(\'chamber\',\''+escapeHtml(label)+'\')" '+
+      (isQueen?'':'ondblclick="cmapExpand(\''+escapeHtml(label)+'\')"')+'>'+
+      '<circle class="cm-ring" cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" stroke="'+ch.color+'"/>';
+    // Ant dots: representative in chamber view; all when this chamber is expanded.
+    const expandedHere=CMAP.view==='expanded'&&CMAP.selected===label;
+    const dots=expandedHere?shown:shown.slice(0,8);
+    dots.forEach((a,i)=>{
+      const n=dots.length, ang=(i/Math.max(1,n))*Math.PI*2;
+      const rr=expandedHere?(r*0.75):(r*0.55);
+      const ax=p.x+Math.cos(ang)*rr, ay=p.y+Math.sin(ang)*rr;
+      out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.35)+'"'+
+        (expandedHere?' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"':'')+
+        '><title>'+escapeHtml(a.name)+(a.active?' (active)':' (idle)')+'</title></circle>';
+    });
+    const showLabel=CMAP.labels==='all'||(CMAP.labels==='active'&&activeCount>0)||isQueen;
+    if(showLabel) out+='<text x="'+p.x+'" y="'+(p.y+r+13)+'" font-size="11" text-anchor="middle">'+escapeHtml(label)+' · '+ch.ants.length+(activeCount?' · '+activeCount+' active':'')+'</text>';
+    out+='</g>';
+  });
+  svg.innerHTML=out;
+}
+
+function cmapExpand(label){ CMAP.view='expanded'; CMAP.selected=label; CMAP.selectedKind='chamber'; cmapSetView('expanded'); cmapInspect(); }
+function cmapSelect(kind,id){ CMAP.selectedKind=kind; CMAP.selected=kind==='ant'?CMAP.selected:id; if(kind==='ant')CMAP.selectedAnt=id; renderColonyMap(); cmapInspect(kind,id); }
+
+function cmapInspect(kind,id){
+  const el=document.getElementById('cmap2-insp-body'); if(!el)return;
+  kind=kind||CMAP.selectedKind; id=id||(kind==='ant'?CMAP.selectedAnt:CMAP.selected);
+  if(!kind||!id){ el.innerHTML='<div class="ov2-empty">Select a chamber, ant, or trail.</div>'; return; }
+  const evFor=n=>CMAP.events.filter(e=>String(e.ant||e.ant_name||e.source||'').toLowerCase().includes(String(n).toLowerCase())).slice(0,5);
+  if(kind==='chamber'){
+    const ch=CMAP.chambers[id]; if(!ch){el.innerHTML='<div class="ov2-empty">Unknown chamber.</div>';return;}
+    const act=ch.ants.filter(a=>a.active);
+    el.innerHTML='<div class="ath-role"><i style="background:'+ch.color+'"></i><b>'+escapeHtml(id)+'</b></div>'+
+      '<div class="ov2-row"><span>Ants</span><b>'+ch.ants.length+'</b></div>'+
+      '<div class="ov2-row"><span>Active (15m)</span><b>'+act.length+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">TOP ANTS</div>'+
+      ch.ants.slice(0,6).map(a=>'<div class="ov2-list-item">'+escapeHtml(a.name)+(a.active?' '+athPill('ok','active'):'')+'</div>').join('')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" onclick="cmapExpand(\''+escapeHtml(id)+'\')">Expand</button>'+
+      '<button class="hud-act" onclick="showPage(\'antconfig\')">Ant Config</button>'+
+      '<button class="hud-act" onclick="showPage(\'antobs\')">Inspector</button></div>';
+  }else if(kind==='ant'){
+    let found=null,chLabel='';
+    Object.keys(CMAP.chambers).forEach(l=>{ const a=CMAP.chambers[l].ants.find(x=>x.id===id); if(a){found=a;chLabel=l;} });
+    if(!found){el.innerHTML='<div class="ov2-empty">Unknown ant.</div>';return;}
+    const evs=evFor(found.name);
+    el.innerHTML='<div class="ath-role"><i style="background:'+getRoleColor(id)+'"></i><b>'+escapeHtml(found.name)+'</b></div>'+
+      '<div class="ov2-row"><span>Chamber</span><b>'+escapeHtml(chLabel)+'</b></div>'+
+      '<div class="ov2-row"><span>Status</span><b>'+(found.active?'active':'idle')+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT EVENTS</div>'+
+      (evs.length?evs.map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join(''):'<div class="ov2-empty">No recent events.</div>')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" onclick="showPage(\'antobs\')">Inspect Ant</button>'+
+      '<button class="hud-act" onclick="showPage(\'events\')">Open Logs</button></div>';
+  }else{
+    const t=CMAP.trails.find(x=>x.chamber===id);
+    el.innerHTML='<div class="ath-role"><i style="background:'+((CMAP.chambers[id]||{}).color||'var(--role-other)')+'"></i><b>Trail: '+escapeHtml(id)+' → Queen</b></div>'+
+      '<div class="ov2-row"><span>Strength</span><b>'+(t?Math.round(t.strength*100)+'%':'—')+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT FLOW</div>'+
+      evFor(id).map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join('')||'<div class="ov2-empty">No recent events.</div>';
+  }
+}
+
+function colonySearchHook(q){
+  if(!q||CMAP.view==='raw')return;
+  const needle=q.toLowerCase();
+  for(const label of Object.keys(CMAP.chambers)){
+    const hit=CMAP.chambers[label].ants.find(a=>String(a.name).toLowerCase().includes(needle)||String(a.id).toLowerCase().includes(needle));
+    if(hit){ CMAP.selected=label; CMAP.selectedKind='chamber'; CMAP.selectedAnt=hit.id;
+      if(CMAP.view!=='expanded')cmapSetView('expanded'); else renderColonyMap();
+      cmapInspect('ant',hit.id); return; }
+  }
+}
+
+(function(){
+  const prev=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prev)prev(); cmapLoadPrefs(); cmapSetView(CMAP.view); loadColonyMap(); };
+  setInterval(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')&&CMAP.view!=='raw') loadColonyMap(); },20000);
+})();
 
 // -- Boot ----------------------------------------------------------------------
 // v1.9.1.1: the header/title version comes from the API (single source of truth:

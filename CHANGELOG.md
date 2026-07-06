@@ -1,5 +1,68 @@
 # ANTHILL Changelog
 
+## v2.2.0 — 🐜 Overview + Colony living console + performance/auth/Proxmox stability pass
+
+Four passes in one release. A/B/C deliver the Overview command center and the Living Colony Map;
+D is the production-stability pass (auth floods, load times, Proxmox no-TLS, caching/polling).
+Also renumbers the NORTH_STAR build order: the two unplanned insertions (v2.1.0 multi-hypervisor,
+this release) shift the remaining planned phases by two minors (approval-gated actions → V2.3.0).
+
+### Pass A — ANTHILL design system
+- `:root` theme tokens (colony palette, full role-color system, status colors, glows) + glassy
+  card/pill/role-badge primitives. `getRoleColor`/`getRoleLabel` are THE single role mapping for
+  chambers, nodes, event dots, badges, trails, and legends.
+- **TopTelemetryBar** on Overview and Colony: colony online state, task count with real
+  delta-derived tasks/sec, success rate derived from the live event stream (1 − failures/events),
+  active ant count from the registry, pending approvals, health pill, colony search. Every value
+  is real or an em dash — nothing invented.
+
+### Pass B — Overview command center
+- 12-column responsive grid with all eleven required cards: Colony Health (real-signal scoring +
+  session trend), Active Mission, Tasks Today (hourly bars from event timestamps), Pending
+  Approvals (top 3 from the unified IApprovable queue, wired to the EXISTING doApproval
+  handlers — approval security untouched), compact System Core (registry roles orbiting the
+  Queen; click → Colony), Chamber Activity, Resource Usage ("Metrics unavailable" until real
+  metrics exist), Recent Events, Quick Actions, Mission Timeline, Mission Queue.
+- The existing HUD (core orb, attention panel, mission command node) is fully preserved below —
+  every element id and handler intact. Clear empty states on every card.
+
+### Pass C — Living Colony Map
+- Chamber-based, Queen-centered SVG map over the deterministic normalized layout; chambers show
+  role color, ant counts, active counts, representative ant dots (all ants when expanded).
+- Three view modes: **Chamber / Expanded / Raw Graph** — Raw Graph is the untouched original
+  canvas, so every ant remains reachable the old way too.
+- Animated **pheromone trails**: width/opacity from real trail scores when present, otherwise
+  derived from recent event frequency (mapping isolated in the loader, labeled as derived).
+- **Inspector panel** for chambers (counts, active ants, top ants, Expand/Ant Config/Inspector),
+  ants (chamber, status, recent events, Inspect/Logs), and trails (strength + recent flow).
+- **ColonyMapControls** persisted in localStorage (`anthill.colony.*`): view mode, motion
+  (Off/Low/Normal/High), labels, pheromone visibility, idle-ant toggle. Telemetry search finds any
+  ant and jumps to its chamber. All motion honors `prefers-reduced-motion`.
+
+### Pass D — performance, auth, Proxmox, stability
+#### Fixed
+- **Auth request floods / "Too many attempts; try again later"**: the first 401 now flips a
+  global auth-lost gate — every poller short-circuits locally (zero network traffic) until
+  re-login clears it. Text endpoints share the same gate.
+- **Slow Overview / Patch Center loads + duplicate traffic**: identical in-flight GETs are
+  deduplicated into one request; per-path TTL caching (events 3s, jobs 5s, summaries 10s,
+  registry/pheromones 20–30s, patches 30s) with stale-while-error keeps cards rendering from
+  cache while refreshing in the background.
+- **Proxmox GET /nodes 401 in no-TLS/http mode**: the client hardcoded `https://`. New
+  `homelab_proxmox_protocol` (http|https) is separate from TLS verification; auth headers attach
+  identically in every mode; unknown protocols fall back to https.
+#### Improved
+- Hidden browser tabs serve cached data instead of polling; 429 responses trigger a respected
+  Retry-After backoff (clamped 5–120s) instead of immediate retries; every request carries a 10s
+  AbortController timeout with a structured error.
+- Mutations (POST/PUT/DELETE) bust the GET cache so the UI never shows stale state after actions.
+#### Added
+- `POST /homelab/proxmox/test`: connection test with actionable diagnostics — distinguishes
+  unreachable host / protocol mismatch / TLS-certificate issue / invalid credentials / permission
+  denied / success (PVE version) — and never prints token material.
+- `ProxmoxIntegrationTests`: protocol-selection tests (http BaseUrl, https default, junk-protocol
+  fallback) and an explicit auth-header-over-http assertion.
+
 ## v2.1.0.1 — Allowlist + subsystem gates surfaced on the Virtualization Connections panel
 
 Field fix: a real operator hit "Proxmox connected, credential configured, but no VMs/containers/storage."

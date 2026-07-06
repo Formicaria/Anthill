@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.1.0.1
+**Current version:** v2.2.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -52,7 +52,8 @@ The active codebase is .NET-first. The optional native C++ kernel is used for so
 
 ## Current Version Notes
 
-The repo currently uses the v2.x line — the Homelab Command Center era.
+The repo currently uses the v2.x line — the Homelab Command Center era. (NORTH_STAR planned
+phases were renumbered in v2.2.0: approval-gated actions are now V2.3.0.)
 
 Recent important changes:
 

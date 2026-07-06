@@ -94,7 +94,8 @@ public static partial class ApiHost
             var pveClient = new ProxmoxApiClient(
                 AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
                 () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxInventoryProvider"),
-                AnthillRuntime.HomelabProxmoxInsecureTls);
+                AnthillRuntime.HomelabProxmoxInsecureTls,
+                protocol: AnthillRuntime.HomelabProxmoxProtocol);
             HomelabProxmox = new ProxmoxInventoryProvider(pveClient, Homelab);
             HomelabJobs.Register(new HomelabScheduledJob("proxmox-sync",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabProxmoxSyncIntervalSeconds), HomelabProxmox.SyncInventoryAsync));
@@ -302,6 +303,43 @@ public static partial class ApiHost
                 ["storage_pools"] = Homelab.ListStoragePools().Count,
                 ["read_only"] = true, // structural: the client has no write methods
             });
+        });
+
+        // v2.2.0: connection test with actionable diagnostics — never prints token material.
+        app.MapPost("/homelab/proxmox/test", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            if (string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
+                return ApiJson.Error("Proxmox host is not configured (homelab_proxmox_host).", "not_configured");
+            var testClient = new ProxmoxApiClient(
+                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
+                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "proxmox-connection-test"),
+                AnthillRuntime.HomelabProxmoxInsecureTls,
+                protocol: AnthillRuntime.HomelabProxmoxProtocol);
+            try
+            {
+                var version = await testClient.GetVersionAsync(ctx.RequestAborted);
+                var pve = version.ValueKind == System.Text.Json.JsonValueKind.Object && version.TryGetProperty("version", out var v) ? v.GetString() : "?";
+                HomelabCredentials.MarkVerified(AnthillRuntime.HomelabProxmoxCredentialId);
+                return ApiJson.Ok(new Dictionary<string, object?>
+                {
+                    ["reachable"] = true, ["pve_version"] = pve,
+                    ["protocol"] = AnthillRuntime.HomelabProxmoxProtocol,
+                    ["tls_verified"] = AnthillRuntime.HomelabProxmoxProtocol == "https" && !AnthillRuntime.HomelabProxmoxInsecureTls,
+                }, $"Connected — Proxmox VE {pve} over {AnthillRuntime.HomelabProxmoxProtocol}.");
+            }
+            catch (Exception ex)
+            {
+                var msg = ex.GetBaseException().Message;
+                var hint =
+                    msg.Contains("401") ? "Invalid credentials or the API token lacks permissions (PVEAuditor role is enough for read-only)." :
+                    msg.Contains("403") ? "Permission denied — the token authenticated but lacks the required role." :
+                    msg.Contains("allowlist") ? msg :
+                    (msg.Contains("SSL") || msg.Contains("certificate") || msg.Contains("TLS")) ? "TLS/certificate issue — set homelab_proxmox_insecure_tls=true for self-signed certs, or homelab_proxmox_protocol=http if PVE has no TLS." :
+                    (msg.Contains("refused") || msg.Contains("timed out") || msg.Contains("No such host") || msg.Contains("unreachable")) ? "Host unreachable on this protocol/port — check homelab_proxmox_host/port and whether PVE expects http vs https." :
+                    "Connection failed — check protocol (http vs https), port, and credentials.";
+                return ApiJson.Error($"Proxmox test failed: {hint}", "test_failed");
+            }
         });
 
         app.MapPost("/homelab/proxmox/sync", async (HttpContext ctx) =>
