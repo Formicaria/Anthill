@@ -1,5 +1,22 @@
 # ANTHILL Changelog
 
+## v2.2.1 — Fix: Colony map layout/pan-zoom + Overview de-duplication (live feedback on v2.2.0)
+
+- **Colony map was crushed and immovable**: `#page-colony` is a flex ROW (for the original canvas
+  layout), so the v2.2.0 map/toolbar/inspector were squeezed in as row items — tiny map, scattered
+  controls. Chamber/Expanded views now switch the page to an immersive column layout: the map is
+  big and front-and-center (`calc(100vh - 250px)`), the view toolbar is one compact row, the
+  inspector is narrower and collapsible (⇤), and the original row panels hide. **Raw Graph
+  restores the untouched original page exactly as before.**
+- **Pan/zoom added**: scroll to zoom (cursor-anchored, clamped), drag the background to pan,
+  Reset-view button; chamber clicks/double-clicks unaffected; no animation involved so
+  reduced-motion is unaffected.
+- **Overview had two System Cores and duplicated metrics**: the old HUD strip, HUD System Core
+  panel, and HUD metric row are retired (their data lives on in the grid: telemetry bar, System
+  Core card — which now also carries the live core state — Tasks Today, and Colony Health).
+  Mission Command and Operator Attention remain below the grid; every handler and poller is
+  untouched, only the duplicate presentation is hidden.
+
 ## v2.2.0 — 🐜 Overview + Colony living console + performance/auth/Proxmox stability pass
 
 Four passes in one release. A/B/C deliver the Overview command center and the Living Colony Map;

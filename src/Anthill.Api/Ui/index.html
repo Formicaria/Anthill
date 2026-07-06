@@ -112,6 +112,20 @@
 @media (prefers-reduced-motion: reduce){
   #cmap2 *{animation:none !important;transition:none !important;}
 }
+/* V2.2.1 — Colony layout fix: page-colony is a flex ROW for the original canvas layout, which
+   crushed the map elements into row items. In Chamber/Expanded mode the page switches to a
+   column with the map big and front-and-center; Raw Graph restores the original row untouched. */
+#page-colony.cmap-mode{flex-direction:column !important;overflow-y:auto;}
+#page-colony.cmap-mode>*:not(#tb-colony):not(#cmap2-bar):not(#cmap2-wrap){display:none !important;}
+#page-colony #cmap2-bar,#page-colony #cmap2-wrap,#page-colony #tb-colony{width:100%;flex-shrink:0;}
+#page-colony.cmap-mode #cmap2-wrap{flex:1;min-height:0;}
+#page-colony.cmap-mode #cmap2{height:calc(100vh - 250px);min-height:480px;cursor:grab;}
+#page-colony.cmap-mode #cmap2:active{cursor:grabbing;}
+#cmap2-inspector.collapsed{width:34px !important;overflow:hidden;}
+#cmap2-inspector.collapsed>*:not(#cmap2-insp-toggle){display:none;}
+/* V2.2.1 — Overview de-duplication: the grid now owns telemetry, core, and metrics; the old HUD
+   strip/core/metrics are retired (Mission Command + Operator Attention remain below the grid). */
+#hud-strip,#hud-core-panel,#hud-metrics{display:none !important;}
 </style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
@@ -1452,13 +1466,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <option value="off">Off</option><option value="active">Active</option><option value="all" selected>All</option>
           </select>
           <label style="font-size:9px;color:var(--anthill-muted);"><input type="checkbox" id="cmap2-idle" checked onchange="cmapSetPref('showIdle',this.checked?'1':'0')"> idle ants</label>
+          <button class="hud-act" onclick="cmapResetZoom()" title="Reset pan/zoom">⤾ Reset view</button>
+          <span style="font-size:8px;color:var(--anthill-dim);">scroll = zoom · drag = pan · dbl-click chamber = expand</span>
         </div>
         <div id="cmap2-wrap" style="display:flex;gap:10px;padding:0 8px 8px;min-height:420px;position:relative;z-index:1;">
           <div class="ath-card" style="flex:1;padding:6px;overflow:hidden;">
             <svg id="cmap2" width="100%" height="480" style="display:block;min-height:420px;"></svg>
           </div>
-          <div class="ath-card" id="cmap2-inspector" style="width:270px;flex-shrink:0;overflow-y:auto;max-height:520px;">
-            <div class="ath-card-title">Inspector</div>
+          <div class="ath-card" id="cmap2-inspector" style="width:230px;flex-shrink:0;overflow-y:auto;">
+            <div class="ath-card-title"><a href="javascript:void(0)" id="cmap2-insp-toggle" onclick="cmapToggleInspector()" style="float:right;color:var(--anthill-dim)">⇤</a>Inspector</div>
             <div id="cmap2-insp-body"><div class="ov2-empty">Select a chamber, ant, or trail.</div></div>
           </div>
         </div>
@@ -7404,8 +7420,11 @@ function renderOv2Core(roles){
       '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(antRoleId(role))+'"/>';
   });
   svg+='<circle cx="'+cx+'" cy="'+cy+'" r="10" fill="var(--role-queen)" opacity="0.9"><title>Queen</title></circle></svg>';
+  // v2.2.1: this is now THE System Core (the old HUD core panel is retired) — carry its state.
+  const coreState=(document.getElementById('hud-core')||{}).dataset?document.getElementById('hud-core').dataset.state:'';
   el.innerHTML='<div class="ov2-core-mini">'+svg+'</div>'+
-    '<div class="ov2-row"><span>Roles</span><b>'+roles.length+'</b></div>'+
+    '<div class="ov2-row"><span>Core state</span><b>'+escapeHtml(coreState||'—')+'</b></div>'+
+    '<div class="ov2-row"><span>Roles / connections</span><b>'+roles.length+' / '+Math.min(roles.length,8)+'</b></div>'+
     '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(TB.activeAnts??'—')+'</b></div>';
 }
 
@@ -7516,6 +7535,10 @@ function cmapSetView(v){
   const wrap=document.getElementById('cmap2-wrap');
   const canvasArea=document.getElementById('colony-canvas-area');
   const raw=v==='raw';
+  // v2.2.1: chamber/expanded switch the page to an immersive column layout (map big, original
+  // row panels hidden); raw restores the untouched original colony page.
+  const page=document.getElementById('page-colony');
+  if(page)page.classList.toggle('cmap-mode',!raw);
   if(wrap)wrap.style.display=raw?'none':'flex';
   if(canvasArea)canvasArea.style.display=raw?'':'none';
   ['chamber','expanded','raw'].forEach(x=>{
@@ -7564,9 +7587,39 @@ async function loadColonyMap(){
   }catch(e){ /* keep last render */ }
 }
 
+// v2.2.1: pan/zoom on the living map (viewBox-based; reduced-motion unaffected — no animation).
+function cmapResetZoom(){ CMAP.vb={x:0,y:0,w:1000,h:600}; renderColonyMap(); }
+function cmapToggleInspector(){ const i=document.getElementById('cmap2-inspector'); if(i)i.classList.toggle('collapsed'); }
+let CMAP_PANZOOM_WIRED=false;
+function cmapWirePanZoom(){
+  if(CMAP_PANZOOM_WIRED)return; CMAP_PANZOOM_WIRED=true;
+  const svg=document.getElementById('cmap2'); if(!svg)return;
+  let drag=null;
+  svg.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const vb=CMAP.vb||{x:0,y:0,w:1000,h:600};
+    const f=e.deltaY>0?1.15:0.87;
+    const nw=Math.min(3000,Math.max(200,vb.w*f)), nh=nw*0.6;
+    const r=svg.getBoundingClientRect();
+    const mx=vb.x+(e.clientX-r.left)/r.width*vb.w, my=vb.y+(e.clientY-r.top)/r.height*vb.h;
+    CMAP.vb={x:mx-(mx-vb.x)*(nw/vb.w), y:my-(my-vb.y)*(nh/vb.h), w:nw, h:nh};
+    renderColonyMap();
+  },{passive:false});
+  svg.addEventListener('mousedown',e=>{ if(e.target===svg)drag={x:e.clientX,y:e.clientY,vb:Object.assign({},CMAP.vb||{x:0,y:0,w:1000,h:600})}; });
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    const r=svg.getBoundingClientRect();
+    CMAP.vb={x:drag.vb.x-(e.clientX-drag.x)/r.width*drag.vb.w, y:drag.vb.y-(e.clientY-drag.y)/r.height*drag.vb.h, w:drag.vb.w, h:drag.vb.h};
+    renderColonyMap();
+  });
+  window.addEventListener('mouseup',()=>{drag=null;});
+}
+
 function renderColonyMap(){
   const svg=document.getElementById('cmap2'); if(!svg||CMAP.view==='raw') return;
-  svg.setAttribute('viewBox','0 0 1000 600');
+  cmapWirePanZoom();
+  const vb=CMAP.vb||{x:0,y:0,w:1000,h:600};
+  svg.setAttribute('viewBox',vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
   const parent=svg.parentElement; if(parent) parent.className=parent.className.replace(/cmap2-motion-\S+/g,'').trim()+' cmap2-motion-'+CMAP.motion;
   const labels=Object.keys(CMAP.chambers);
   if(!labels.length){ svg.innerHTML='<text x="40" y="60" font-size="13">Colony registry unavailable — no chambers to draw.</text>'; return; }
