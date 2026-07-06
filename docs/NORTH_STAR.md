@@ -180,7 +180,7 @@ V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
 V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
 V1.13.0  Network and security awareness                       [SHIPPED v1.13.0]
 V1.14.0  Incident and change memory + IApprovable design      [SHIPPED v1.14.0 — V1.x line complete]
-V2.0.0   Homelab Command Center launch
+V2.0.0   Homelab Command Center launch                        [SHIPPED v2.0.0]
 V2.1.0   Approval-gated homelab actions
 V2.2.0   Backup and restore intelligence
 V2.3.0   Automation rules
@@ -488,6 +488,14 @@ incident timeline; similar incident; memory search integration; UI smoke; IAppro
 ---
 
 # PHASE 11 — V2.0.0 HOMELAB COMMAND CENTER LAUNCH
+
+**Status: SHIPPED in v2.0.0** (two passes: functional data layer, then the ANTHILL identity
+layer). `CommandCenter` builder + `GET /homelab/dashboard` aggregation, impact-propagating
+dependency graph with transitive dependents, host/service detail drawers, deterministic
+next-checks, semantic subsystem tokens, colony-mesh background, command summary strip with
+data-derived colony-link pulse, connection cues, reduced-motion support, labeled empty states,
+and `CommandCenterTests`. The console answers all eight questions below. Next: PHASE 12 —
+approval-gated actions (V2.1.0), building on the shipped IApprovable design.
 
 ## Goal
 Turn V1 backend foundations into the main homelab dashboard. Mostly read-only — visibility, not full control.
