@@ -1011,6 +1011,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
         <span class="nav-label">Pheromones</span>
       </div>
+      <div id="nav-item-homelab" class="nav-item" data-page="homelab">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg></span>
+        <span class="nav-label">Homelab</span>
+      </div>
 
       <!-- Configuration (admin only) -->
       <div class="nav-section" id="nav-section-admin">Configuration</div>
@@ -1551,6 +1555,116 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
       </div><!-- /page-pheromones -->
+
+      <!-- --------------------------------------------------------------------
+           PAGE: HOMELAB INVENTORY (v1.10.0, NORTH_STAR Phase 6)
+      --------------------------------------------------------------------- -->
+      <div class="page page-scroll" id="page-homelab">
+        <div class="page-hdr">
+          <div>
+            <h1>Homelab Inventory</h1>
+            <div class="sub" id="hl-count"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg" id="hl-msg"></span>
+            <button class="btn btn-ghost" onclick="hlExport()" title="Download nodes, services, and dependencies as JSON (never secrets)">⬇ Export JSON</button>
+            <button class="btn btn-ghost" id="hl-import-btn" onclick="hlImportPick()" title="Import an inventory JSON bundle (upsert by id — re-import is safe)">⬆ Import JSON</button>
+            <input type="file" id="hl-import-file" accept="application/json" style="display:none" onchange="hlImportFile(event)">
+            <button class="btn btn-ghost" onclick="loadHomelab()">↺ Reload</button>
+          </div>
+        </div>
+
+        <!-- Subsystem status -->
+        <div class="card" style="padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">Subsystem Status</div>
+          <div id="hl-summary" style="font-size:11px;color:var(--muted);">Loading...</div>
+        </div>
+
+        <!-- Hosts -->
+        <div class="card" style="padding:14px 16px;" id="hl-host-form">
+          <div class="section-head" style="margin-top:0;">Register Host</div>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input class="form-input" id="hl-h-name" type="text" placeholder="pve1" autocomplete="off"></div>
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-h-kind">
+                <option value="host">host</option><option value="hypervisor">hypervisor</option><option value="nas">nas</option>
+                <option value="router">router</option><option value="iot">iot</option><option value="other">other</option>
+              </select>
+            </div>
+            <div class="form-field"><label>Address</label><input class="form-input" id="hl-h-addr" type="text" placeholder="192.168.1.5" autocomplete="off"></div>
+            <div class="form-field"><label>OS</label><input class="form-input" id="hl-h-os" type="text" placeholder="Proxmox VE 8" autocomplete="off"></div>
+            <div class="form-field"><label>Role tags (comma-sep)</label><input class="form-input" id="hl-h-tags" type="text" placeholder="hypervisor, storage" autocomplete="off"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddHost()">Add Host</button></div>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Hosts</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th>OS</th><th>Role Tags</th><th>Services</th><th>Updated</th></tr></thead>
+            <tbody id="hl-hosts-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Services -->
+        <div class="card" style="padding:14px 16px;" id="hl-svc-form">
+          <div class="section-head" style="margin-top:0;">Register Service</div>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input class="form-input" id="hl-s-name" type="text" placeholder="jellyfin" autocomplete="off"></div>
+            <div class="form-field"><label>Runs on</label><select class="form-select" id="hl-s-node"><option value="">— unassigned —</option></select></div>
+            <div class="form-field"><label>URL</label><input class="form-input" id="hl-s-url" type="text" placeholder="http://192.168.1.5:8096" autocomplete="off"></div>
+            <div class="form-field"><label>Ports (comma-sep)</label><input class="form-input" id="hl-s-ports" type="text" placeholder="8096, 8920" autocomplete="off"></div>
+            <div class="form-field"><label>Owner</label><input class="form-input" id="hl-s-owner" type="text" placeholder="operator" autocomplete="off"></div>
+            <div class="form-field"><label>Criticality</label>
+              <select class="form-select" id="hl-s-crit"><option value="low">low</option><option value="normal" selected>normal</option><option value="high">high</option><option value="critical">critical</option></select>
+            </div>
+            <div class="form-field"><label>Internet exposed</label><select class="form-select" id="hl-s-exposed"><option value="no" selected>no</option><option value="yes">yes</option></select></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddService()">Add Service</button></div>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Services</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Runs on</th><th>URL</th><th>Ports</th><th>Owner</th><th>Criticality</th><th>Exposed</th><th>Updated</th></tr></thead>
+            <tbody id="hl-svcs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Ports -->
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Open Ports (from registered services)</div>
+          <table class="users-table">
+            <thead><tr><th>Port</th><th>Service</th><th>Host</th><th>Protocol</th><th>Internet Exposed</th></tr></thead>
+            <tbody id="hl-ports-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Dependencies -->
+        <div class="card" style="padding:14px 16px;" id="hl-dep-form">
+          <div class="section-head" style="margin-top:0;">Map Dependency <span style="font-weight:400;color:var(--dim)">(answers "what runs where?" and "what depends on this?")</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Service / source</label><select class="form-select" id="hl-d-from"></select></div>
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-d-kind"><option value="runs_on" selected>runs_on</option><option value="needs">needs</option><option value="stores_on">stores_on</option></select>
+            </div>
+            <div class="form-field"><label>Target</label><select class="form-select" id="hl-d-to"></select></div>
+            <div class="form-field"><label>Notes</label><input class="form-input" id="hl-d-notes" type="text" placeholder="optional" autocomplete="off"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDep()">Add Dependency</button></div>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Dependencies</div>
+          <table class="users-table">
+            <thead><tr><th>From</th><th>Kind</th><th>To</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="hl-deps-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Recent changes -->
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Recent Changes</div>
+          <div id="hl-changes" style="padding:8px 16px 14px;font-size:10px;color:var(--muted);">Loading...</div>
+        </div>
+      </div><!-- /page-homelab -->
 
       <!-- --------------------------------------------------------------------
            PAGE: ANT CONFIG
@@ -2274,6 +2388,14 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
+  // v1.10.0: the Homelab page is visible to admins and homelab operators; write forms are admin-only
+  // (manage_homelab_integrations is not granted to the homelab_operator role).
+  const homelab = admin || ROLE==='homelab_operator';
+  const hlNav=document.getElementById('nav-item-homelab');
+  if(hlNav) hlNav.style.display=homelab?'':'none';
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
+  });
   ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
@@ -2289,7 +2411,7 @@ function applyRoleVisibility(){
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   if(nameEl) nameEl.textContent=USERNAME||'?';
-  if(roleEl) roleEl.textContent=admin?'Administrator':'Coordinator';
+  if(roleEl) roleEl.textContent=admin?'Administrator':(ROLE==='homelab_operator'?'Homelab Operator':'Coordinator');
   const avatarEl=document.getElementById('nav-user-avatar');
   if(avatarEl){
     const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
@@ -2303,7 +2425,7 @@ function applyRoleVisibility(){
 // -- Page Routing --------------------------------------------------------------
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', antconfig:'Ant Config',
+  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', homelab:'Homelab Inventory', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -3959,7 +4081,14 @@ async function pcApply(patchId){
   if(!confirm(msg)) return;
   try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     const txt=await res.text();
-    if(!res.ok) throw new Error('HTTP '+res.status);
+    if(!res.ok){
+      // v1.10.0: surface the server's reason instead of a bare HTTP code, and give the operator
+      // the actual next step when the apply capability gate is off.
+      let msg='HTTP '+res.status;
+      try{ const j=JSON.parse(txt); if(j&&j.message) msg=j.message; }catch(e2){}
+      if(res.status===403&&/apply_patch|disabled/i.test(msg)) msg+=' → enable "Patch application" in Settings, then retry.';
+      throw new Error(msg);
+    }
     pcToast('Apply requested — see result in the patch row.'); loadPatches();
   }catch(e){ pcToast('Apply failed: '+e.message,false); }
 }
@@ -5851,6 +5980,158 @@ async function userDelete(u){
     const r=await api('/users/'+encodeURIComponent(u),'DELETE');
     if(r.success){usersMsg('Deleted '+u,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
   }catch(e){usersMsg('Failed: '+e.message,false);}
+}
+
+// -- Homelab Inventory (v1.10.0, NORTH_STAR Phase 6) ----------------------------
+let HL_HOSTS=[], HL_SVCS=[], HL_DEPS=[];
+PAGE_ENTER['homelab']=()=>loadHomelab();
+
+function hlMsg(m,ok){ const el=document.getElementById('hl-msg'); if(!el) return;
+  el.textContent=m; el.style.color=ok?'var(--green)':'var(--red)';
+  setTimeout(()=>{ if(el.textContent===m) el.textContent=''; },6000); }
+
+async function loadHomelab(){
+  try{
+    const [sum,hosts,svcs,deps,chg]=await Promise.all([
+      api('/homelab/summary'),api('/homelab/hosts'),api('/homelab/services'),
+      api('/homelab/dependencies'),api('/homelab/changes')]);
+    HL_HOSTS=(hosts.data||[]); HL_SVCS=(svcs.data||[]); HL_DEPS=(deps.data||[]);
+    renderHlSummary(sum.success?(sum.data||{}):{});
+    renderHlHosts(); renderHlServices(); renderHlPorts(); renderHlDeps();
+    renderHlChanges(chg.success?(chg.data||[]):[]);
+    const c=document.getElementById('hl-count');
+    if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
+  }catch(e){ hlMsg('Load failed: '+e.message,false); }
+}
+
+function hlNodeName(id){ const n=HL_HOSTS.find(x=>x.id===id); return n?n.name:(id?id.slice(0,8)+'…':'—'); }
+function hlRefName(kind,id){
+  if(kind==='service'){ const s=HL_SVCS.find(x=>x.id===id); if(s) return s.name; }
+  if(kind==='host'){ return hlNodeName(id); }
+  const any=HL_SVCS.find(x=>x.id===id)||HL_HOSTS.find(x=>x.id===id);
+  return any?any.name:(id?id.slice(0,8)+'…':'—');
+}
+function hlDate(s){ return s?String(s).slice(0,16).replace('T',' '):'—'; }
+
+function renderHlSummary(d){
+  const el=document.getElementById('hl-summary'); if(!el) return;
+  const provs=(d.providers||[]).map(p=>escapeHtml(p.name)+': '+escapeHtml(p.state||'idle')).join(' · ')||'none registered';
+  el.innerHTML=
+    'Subsystem: <b>'+(d.enabled?'enabled':'disabled')+'</b> · Scheduler: <b>'+(d.scheduler_enabled?'enabled':'disabled')+
+    (d.scheduler_running?' (running)':'')+'</b> · Allowlist entries: <b>'+(d.allowlist_entries??0)+'</b>'+
+    '<br>Providers: '+provs+
+    '<br><span style="color:var(--dim)">Read-only foundation - actions arrive approval-gated in V2.1. Toggles live in config (homelab_enabled, homelab_scheduler_enabled, homelab_mock_providers_enabled).</span>';
+}
+
+function renderHlHosts(){
+  const tb=document.getElementById('hl-hosts-tbody'); if(!tb) return;
+  if(!HL_HOSTS.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No hosts registered yet.</td></tr>'; return; }
+  tb.innerHTML=HL_HOSTS.map(n=>{
+    const svcCount=HL_SVCS.filter(s=>s.node_id===n.id).length;
+    return '<tr><td>'+escapeHtml(n.name)+'</td><td>'+escapeHtml(n.kind||'')+'</td><td>'+escapeHtml(n.address||'—')+'</td><td>'+escapeHtml(n.os||'—')+
+      '</td><td>'+escapeHtml((n.role_tags||[]).join(', ')||'—')+'</td><td>'+svcCount+'</td><td>'+hlDate(n.updated_at)+'</td></tr>';
+  }).join('');
+  // Keep the service + dependency selectors in sync with registered hosts/services.
+  const sel=document.getElementById('hl-s-node');
+  if(sel) sel.innerHTML='<option value="">— unassigned —</option>'+HL_HOSTS.map(n=>'<option value="'+escapeHtml(n.id)+'">'+escapeHtml(n.name)+'</option>').join('');
+  const from=document.getElementById('hl-d-from'), to=document.getElementById('hl-d-to');
+  if(from) from.innerHTML=HL_SVCS.map(s=>'<option value="service:'+escapeHtml(s.id)+'">service: '+escapeHtml(s.name)+'</option>').join('')
+    +HL_HOSTS.map(n=>'<option value="host:'+escapeHtml(n.id)+'">host: '+escapeHtml(n.name)+'</option>').join('');
+  if(to) to.innerHTML=HL_HOSTS.map(n=>'<option value="host:'+escapeHtml(n.id)+'">host: '+escapeHtml(n.name)+'</option>').join('')
+    +HL_SVCS.map(s=>'<option value="service:'+escapeHtml(s.id)+'">service: '+escapeHtml(s.name)+'</option>').join('');
+}
+
+function renderHlServices(){
+  const tb=document.getElementById('hl-svcs-tbody'); if(!tb) return;
+  if(!HL_SVCS.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No services registered yet.</td></tr>'; return; }
+  tb.innerHTML=HL_SVCS.map(s=>'<tr><td>'+escapeHtml(s.name)+'</td><td>'+escapeHtml(hlNodeName(s.node_id))+'</td><td>'+escapeHtml(s.url||'—')+
+    '</td><td>'+escapeHtml((s.ports||[]).join(', ')||'—')+'</td><td>'+escapeHtml(s.owner||'—')+'</td><td>'+escapeHtml(s.criticality||'normal')+
+    '</td><td>'+(s.internet_exposed?'<span style="color:var(--red)">yes</span>':'no')+'</td><td>'+hlDate(s.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlPorts(){
+  const tb=document.getElementById('hl-ports-tbody'); if(!tb) return;
+  const rows=[];
+  HL_SVCS.forEach(s=>(s.ports||[]).forEach(p=>rows.push({port:p,svc:s})));
+  rows.sort((a,b)=>a.port-b.port);
+  tb.innerHTML=rows.length?rows.map(r=>'<tr><td>'+r.port+'</td><td>'+escapeHtml(r.svc.name)+'</td><td>'+escapeHtml(hlNodeName(r.svc.node_id))+
+    '</td><td>'+escapeHtml(r.svc.protocol||'—')+'</td><td>'+(r.svc.internet_exposed?'<span style="color:var(--red)">yes</span>':'no')+'</td></tr>').join('')
+    :'<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No ports (register services with ports).</td></tr>';
+}
+
+function renderHlDeps(){
+  const tb=document.getElementById('hl-deps-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!HL_DEPS.length){ tb.innerHTML='<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No dependencies mapped yet.</td></tr>'; return; }
+  tb.innerHTML=HL_DEPS.map(d=>'<tr><td>'+escapeHtml(d.from_kind)+': '+escapeHtml(hlRefName(d.from_kind,d.from_id))+'</td><td>'+escapeHtml(d.dependency_kind)+
+    '</td><td>'+escapeHtml(d.to_kind)+': '+escapeHtml(hlRefName(d.to_kind,d.to_id))+'</td><td>'+escapeHtml(d.notes||'—')+
+    '</td><td>'+(admin?('<button class="btn btn-ghost" onclick="hlDelDep(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+}
+
+function renderHlChanges(list){
+  const el=document.getElementById('hl-changes'); if(!el) return;
+  el.innerHTML=list.length?list.map(c=>'<div style="padding:2px 0;">'+hlDate(c.created_at)+' — <b>'+escapeHtml(c.change_kind)+'</b> '+escapeHtml(c.subject_kind)+
+    ' · '+escapeHtml(c.summary||'')+(c.changed_by?(' <span style="color:var(--dim)">by '+escapeHtml(c.changed_by)+'</span>'):'')+'</div>').join('')
+    :'No changes recorded yet.';
+}
+
+async function hlAddHost(){
+  const name=document.getElementById('hl-h-name').value.trim();
+  if(!name){ hlMsg('Host name is required',false); return; }
+  const tags=document.getElementById('hl-h-tags').value.split(',').map(t=>t.trim()).filter(t=>t);
+  const r=await api('/homelab/hosts','POST',{name, kind:document.getElementById('hl-h-kind').value,
+    address:document.getElementById('hl-h-addr').value.trim(), os:document.getElementById('hl-h-os').value.trim(), roleTags:tags});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-h-name','hl-h-addr','hl-h-os','hl-h-tags'].forEach(id=>document.getElementById(id).value=''); loadHomelab(); }
+}
+
+async function hlAddService(){
+  const name=document.getElementById('hl-s-name').value.trim();
+  if(!name){ hlMsg('Service name is required',false); return; }
+  const ports=document.getElementById('hl-s-ports').value.split(',').map(p=>parseInt(p.trim(),10)).filter(p=>!isNaN(p)&&p>0);
+  const r=await api('/homelab/services','POST',{name, nodeId:document.getElementById('hl-s-node').value,
+    url:document.getElementById('hl-s-url').value.trim(), ports, owner:document.getElementById('hl-s-owner').value.trim(),
+    criticality:document.getElementById('hl-s-crit').value, internetExposed:document.getElementById('hl-s-exposed').value==='yes'});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-s-name','hl-s-url','hl-s-ports','hl-s-owner'].forEach(id=>document.getElementById(id).value=''); loadHomelab(); }
+}
+
+async function hlAddDep(){
+  const from=document.getElementById('hl-d-from').value, to=document.getElementById('hl-d-to').value;
+  if(!from||!to){ hlMsg('Register a host and a service first',false); return; }
+  const [fk,fid]=from.split(':'), [tk,tid]=to.split(':');
+  const r=await api('/homelab/dependencies','POST',{fromKind:fk, fromId:fid, toKind:tk, toId:tid,
+    dependencyKind:document.getElementById('hl-d-kind').value, notes:document.getElementById('hl-d-notes').value.trim()});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-d-notes').value=''; loadHomelab(); }
+}
+
+async function hlDelDep(id){
+  const r=await api('/homelab/dependencies/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHomelab();
+}
+
+async function hlExport(){
+  const r=await api('/homelab/export');
+  if(!r.success){ hlMsg(r.message||'Export failed',false); return; }
+  const blob=new Blob([JSON.stringify(r.data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='anthill-inventory-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  hlMsg('Inventory exported',true);
+}
+
+function hlImportPick(){ const f=document.getElementById('hl-import-file'); if(f) f.click(); }
+async function hlImportFile(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  try{
+    const bundle=JSON.parse(await f.text());
+    const r=await api('/homelab/import','POST',bundle);
+    hlMsg(r.message||(r.success?'Imported':'Import failed'),r.success);
+    if(r.success) loadHomelab();
+  }catch(e){ hlMsg('Import failed: '+e.message,false); }
+  ev.target.value='';
 }
 
 // -- Boot ----------------------------------------------------------------------

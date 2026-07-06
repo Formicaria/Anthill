@@ -25,6 +25,7 @@ public static partial class ApiHost
     private sealed record CredentialUpsertRequest(string? Id, string? Kind, string? TargetHost, string? Secret);
     private sealed record NodeUpsertRequest(string? Id, string? Name, string? Kind, string? Address, string? Os, List<string>? RoleTags, string? Notes);
     private sealed record ServiceUpsertRequest(string? Id, string? Name, string? NodeId, string? Url, List<int>? Ports, string? Protocol, string? Owner, string? Criticality, bool? InternetExposed, string? Notes);
+    private sealed record DependencyUpsertRequest(string? Id, string? FromKind, string? FromId, string? ToKind, string? ToId, string? DependencyKind, string? Notes);
 
     public static IReadOnlyList<FakeHomelabProvider> HomelabProviders { get; private set; } = Array.Empty<FakeHomelabProvider>();
 
@@ -124,6 +125,87 @@ public static partial class ApiHost
             };
             Homelab.UpsertService(service, CurrentUsername(ctx) ?? "operator");
             return ApiJson.Ok(service, $"Service '{service.Name}' saved.");
+        });
+
+        // v1.10.0 (NORTH_STAR Phase 6): explicit-id updates, dependency mapping, import/export.
+
+        app.MapPut("/homelab/hosts/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            NodeUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<NodeUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Name)) return ApiJson.Error("Node name is required.", "bad_request");
+            var node = new HomelabNode
+            {
+                Id = id.Trim(), Name = body.Name!.Trim(), Kind = (body.Kind ?? "host").Trim(),
+                Address = (body.Address ?? "").Trim(), Os = (body.Os ?? "").Trim(),
+                RoleTags = body.RoleTags ?? new(), Notes = (body.Notes ?? "").Trim(),
+            };
+            Homelab.UpsertNode(node, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(node, $"Node '{node.Name}' updated.");
+        });
+
+        app.MapPut("/homelab/services/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            ServiceUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ServiceUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Name)) return ApiJson.Error("Service name is required.", "bad_request");
+            var service = new ServiceRecord
+            {
+                Id = id.Trim(), Name = body.Name!.Trim(), NodeId = (body.NodeId ?? "").Trim(),
+                Url = (body.Url ?? "").Trim(), Ports = body.Ports ?? new(), Protocol = (body.Protocol ?? "").Trim(),
+                Owner = (body.Owner ?? "").Trim(), Criticality = (body.Criticality ?? "normal").Trim(),
+                InternetExposed = body.InternetExposed ?? false, Notes = (body.Notes ?? "").Trim(),
+            };
+            Homelab.UpsertService(service, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(service, $"Service '{service.Name}' updated.");
+        });
+
+        app.MapGet("/homelab/dependencies", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListDependencies()));
+
+        app.MapPost("/homelab/dependencies", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            DependencyUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<DependencyUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.FromId) || string.IsNullOrWhiteSpace(body?.ToId))
+                return ApiJson.Error("FromId and ToId are required.", "bad_request");
+            var dependency = new DependencyRecord
+            {
+                Id = string.IsNullOrWhiteSpace(body.Id) ? Guid.NewGuid().ToString() : body.Id!.Trim(),
+                FromKind = (body.FromKind ?? "service").Trim(), FromId = body.FromId!.Trim(),
+                ToKind = (body.ToKind ?? "host").Trim(), ToId = body.ToId!.Trim(),
+                DependencyKind = (body.DependencyKind ?? "runs_on").Trim(), Notes = (body.Notes ?? "").Trim(),
+            };
+            Homelab.UpsertDependency(dependency, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListDependencies(), "Dependency saved.");
+        });
+
+        app.MapDelete("/homelab/dependencies/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            Homelab.RemoveDependency(id, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListDependencies(), "Dependency removed.");
+        });
+
+        app.MapGet("/homelab/export", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ExportInventory(), "Inventory export (nodes, services, dependencies — never secrets)."));
+
+        app.MapPost("/homelab/import", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            HomelabInventoryExport? bundle;
+            try { bundle = await ctx.Request.ReadFromJsonAsync<HomelabInventoryExport>(); }
+            catch { return ApiJson.Error("Invalid inventory bundle.", "bad_request"); }
+            if (bundle is null) return ApiJson.Error("Invalid inventory bundle.", "bad_request");
+            var (nodes, services, deps) = Homelab.ImportInventory(bundle, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["nodes"] = nodes, ["services"] = services, ["dependencies"] = deps },
+                $"Imported {nodes} node(s), {services} service(s), {deps} dependency(ies).");
         });
 
         app.MapGet("/homelab/events", (HttpContext ctx) =>

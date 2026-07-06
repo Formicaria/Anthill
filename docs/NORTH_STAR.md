@@ -175,7 +175,7 @@ V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
 V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.29]
 V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions  [SHIPPED v1.9.0]
 V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
-V1.10.0  Inventory and service registry
+V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
 V1.11.0  Health checks and notifications
 V1.12.0  Proxmox read-only integration
 V1.13.0  Network and security awareness
@@ -359,6 +359,12 @@ scheduler run; backoff; concurrency cap; persistence; fake-provider fixture.
 ---
 
 # PHASE 6 — V1.10.0 INVENTORY + SERVICE REGISTRY
+
+**Status: SHIPPED in v1.10.0** — dependency mapping + import/export in `HomelabRepository`, the
+full Phase 6 API surface (hosts/services PUT, dependencies GET/POST/DELETE, import/export), the
+Homelab Inventory console page (hosts, services, ports, dependencies, recent changes, JSON
+import/export), operator-editable homelab gates, and `InventoryRegistryTests`. Also fixed in this
+release: the Patch Center apply 403 (apply_patch gate now follows patch_application_enabled).
 
 ## Goal
 ANTHILL knows what exists (manual/import-based only; no active scanning required).

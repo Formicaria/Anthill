@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.9.1.1";
+    public const string Version = "1.10.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -425,6 +425,11 @@ public static class AnthillRuntime
         OllamaHost = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
         EnableWebSearch = config.WebSearchEnabled;
         EnablePatchApplication = config.PatchApplicationEnabled;
+        // v1.10.0 fix: the API capability gate for POST /apply/{id} must follow the operator's
+        // patch_application_enabled setting. It shipped as a static false and was never projected,
+        // so Patch Center "Apply" always returned 403 permission_denied ("apply_patch is disabled")
+        // even after the operator enabled patch application in Settings → Security.
+        ApiPermissions["apply_patch"] = EnablePatchApplication;
         EnableFileWriting = config.FileWritingEnabled;
         EnableShellTool = config.ShellToolEnabled;
         EnableOperatorShell = config.OperatorShellEnabled;
@@ -522,6 +527,8 @@ public static class AnthillRuntime
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
         "autonomy_oneshot_completion",
         "operator_shell_enabled", "operator_shell_dir",
+        "homelab_enabled", "homelab_scheduler_enabled", "homelab_mock_providers_enabled",
+        "homelab_max_concurrent_checks",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
         "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
@@ -605,6 +612,10 @@ public static class AnthillRuntime
         ["model_routes"] = ModelRouting.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
+        ["homelab_enabled"] = EnableHomelab,
+        ["homelab_scheduler_enabled"] = EnableHomelabScheduler,
+        ["homelab_mock_providers_enabled"] = EnableHomelabMockProviders,
+        ["homelab_max_concurrent_checks"] = HomelabMaxConcurrentChecks,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
         ["operator_shell_enabled"] = EnableOperatorShell,

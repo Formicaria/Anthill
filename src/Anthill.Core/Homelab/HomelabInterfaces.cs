@@ -79,6 +79,15 @@ public interface IHomelabRepository : IHomelabEventSink
     void SaveHealthResult(HealthCheckResult result);
     IReadOnlyList<HealthCheckResult> RecentHealthResults(int limit = 50);
 
+    // Dependency mapping (v1.10.0): "what runs where?" / "what depends on this?"
+    void UpsertDependency(DependencyRecord dependency, string changedBy);
+    void RemoveDependency(string id, string removedBy);
+    IReadOnlyList<DependencyRecord> ListDependencies();
+
+    // Inventory import/export (v1.10.0) — nodes + services + dependencies, never secrets.
+    HomelabInventoryExport ExportInventory();
+    (int Nodes, int Services, int Dependencies) ImportInventory(HomelabInventoryExport bundle, string importedBy);
+
     // Target allowlist (D1)
     void AddAllowlistEntry(TargetAllowlistRecord entry);
     void RemoveAllowlistEntry(string id, string removedBy);
