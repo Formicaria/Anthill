@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v2.2.2 — Fix: classic live colony default + Raw blank-canvas; Overview condensed, System Core functional
+
+Live feedback on v2.2.1: the original colony experience — every individual ant visible and
+draggable, live pulses on activation, the pheromone canvas — is the heart of the page and must be
+the default, and switching to it was broken (blank screen).
+
+- **Blank "Raw Graph" root cause fixed**: the v2.2.1 `width:100%;flex-shrink:0` rule on the
+  telemetry/view bars applied unconditionally — in the classic flex-ROW layout those full-width
+  bars consumed the entire row and pushed the canvas and panels past the `overflow:hidden` edge.
+  Rule is now scoped to `.cmap-mode`; in classic mode the telemetry bar hides and a compact VIEW
+  switcher floats over the canvas instead.
+- Additionally, the classic canvas now gets its full delayed boot sequence (resize → buildNodes →
+  legend → pheromone poll) after being unhidden, mirroring the original page-enter path — the
+  v2.2.1 toggle ran only a synchronous resize against a hidden canvas.
+- **Classic view is the default** (renamed **🐜 Live Colony** and listed first): all original
+  behavior — per-ant dots, drag-to-move, rename, pan/zoom, activation pulses, pheromone trails —
+  untouched and primary. Chamber/Expanded remain as opt-in overview modes.
+- One-time preference migration: v2.2.0/1 had persisted 'chamber' as everyone's stored default;
+  reset once to the classic view, after which the operator's choice sticks.
+- **System Core card fixed**: it was scraping state from the hidden legacy HUD panel's DOM and sat
+  on a stale "idle" forever. It now computes state (IDLE / MISSION ACTIVE / OPERATOR ACTION /
+  ALERT) from the live jobs/missions/approvals data each poll — same rules as the original core —
+  and shows a state-colored pulsing orb (reduced-motion safe).
+- **Overview condensed to 6 cards**: removed Tasks Today, Chamber Activity, Recent Events, and
+  Mission Timeline (all visible in the Events / Colony / Missions tabs); Mission Queue folded into
+  the Missions card. Overview now shows only cross-cutting status not duplicated elsewhere.
+- Adopted phased colony evolution plan: classic graph is canonical (Phase 1); Living Colony map is
+  an optional mode (Phase 2) fed by an adapter over live data (Phase 3); it becomes default only
+  after functional parity (Phase 4).
+
 ## v2.2.1 — Fix: Colony map layout/pan-zoom + Overview de-duplication (live feedback on v2.2.0)
 
 - **Colony map was crushed and immovable**: `#page-colony` is a flex ROW (for the original canvas
