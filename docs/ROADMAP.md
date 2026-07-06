@@ -1,5 +1,8 @@
 # ANTHILL Roadmap — Objective Lifecycle & Visual Patch Review
 
+> **Status:** Retained as subsystem history. Phases 1–2 (and the direction that followed) are shipped.
+> For the current ordered build order, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap.
+
 This is a forward-direction roadmap for the revision line that begins with **v1.8.16**. Phase 1 and
 Phase 2 are implemented in v1.8.16; Phases 3–10 are documented direction, **not yet built**. The
 intent is to keep the colony's autonomous work correct (objectives that end cleanly, planners that

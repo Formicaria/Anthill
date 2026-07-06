@@ -1,5 +1,17 @@
 # ANTHILL Changelog
 
+## v1.8.27 — Roadmap / documentation consolidation (NORTH_STAR)
+
+Phase 1 of the master roadmap: stop roadmap drift by making one canonical direction document.
+
+- New **`docs/NORTH_STAR.md`** — the single, ordered build order from the current baseline (v1.8.26)
+  through the V2 Homelab Command Center and V3 bounded autonomous operator, plus the non-negotiable
+  safety/architecture rules, the global bug-prevention gates, and the version-completion template.
+- `docs/ROADMAP.md`, `docs/UI_ROADMAP.md`, and `docs/AUTONOMY.md` now carry a status block marking them
+  as retained subsystem history and pointing to `NORTH_STAR.md`.
+- README links `NORTH_STAR.md` from the version notes and adds a v1.8.27 changelog row.
+- Docs only; no runtime behavior change.
+
 ## v1.8.26.1 — Harden auto-apply git for the systemd sandbox
 
 Two fixes found while bringing the v1.8.26 loop up on a hardened LXC (`ProtectSystem=strict`):

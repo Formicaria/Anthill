@@ -1,5 +1,8 @@
 # ANTHILL UI Roadmap — Colony Command Center
 
+> **Status:** Retained as subsystem history — the UI roadmap (Phases 1–10) is **complete** as of v1.8.25.
+> For the current ordered build order, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap.
+
 Forward direction for the console HUD. **v1.8.17 ships Phases 1–2**; Phases 3–10 are documented
 direction, not yet built. The console is a single embedded `Ui/index.html` (vanilla HTML/CSS/JS,
 CSS variables, inline SVG) — no React/Tailwind — so "components" are reusable CSS classes + JS
