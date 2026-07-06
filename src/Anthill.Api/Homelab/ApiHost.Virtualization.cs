@@ -66,13 +66,17 @@ public static partial class ApiHost
         var (enabled, host, port, credId, insecure, _) = VirtConfig(kind);
         var configured = HomelabCredentials.ListStatuses()
             .Any(c => c.Id == (credId ?? "").Trim().ToLowerInvariant() && c.Configured);
+        var hostSet = !string.IsNullOrWhiteSpace(host);
         return new Dictionary<string, object?>
         {
             ["kind"] = kind, ["enabled"] = enabled, ["host"] = host, ["port"] = port,
             ["credential_id"] = credId,             // id only — never the secret
             ["credential_configured"] = configured,
             ["insecure_tls"] = insecure,
-            ["active"] = enabled && !string.IsNullOrWhiteSpace(host),
+            // The allowlist is a hard gate in front of every request: an active connection whose host is
+            // not allowlisted fails before it reaches the target. Surfacing it lets the UI offer a fix.
+            ["host_allowlisted"] = hostSet && HomelabTargets.IsAllowed(host.Trim()),
+            ["active"] = enabled && hostSet,
             ["read_only"] = true,                   // structural: no write methods in any client
         };
     }
@@ -108,6 +112,9 @@ public static partial class ApiHost
                 ["vms"] = Homelab.ListVms().Count,
                 ["containers"] = Homelab.ListContainers().Count,
                 ["storage_pools"] = Homelab.ListStoragePools().Count,
+                // Master gates so the connections panel can show/flip them without editing config.json.
+                ["homelab_enabled"] = AnthillRuntime.EnableHomelab,
+                ["scheduler_enabled"] = AnthillRuntime.EnableHomelabScheduler,
                 ["read_only"] = true,
             }));
 
