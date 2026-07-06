@@ -1,5 +1,29 @@
 # ANTHILL Changelog
 
+## v1.9.1 — Homelab scheduler + mock-provider harness (NORTH_STAR Phase 5)
+
+Phase 5 of the master roadmap: one shared execution/testing pattern for every future homelab
+provider. Still read-only, still zero real network calls, still disabled by default.
+
+- **Five mock providers** (`FakeProxmoxProvider`, `FakeDnsProvider`, `FakeDhcpProvider`,
+  `FakeFirewallProvider`, `FakeHealthProvider`) built on a shared `FakeHomelabProvider` base:
+  deterministic item counts, simulated latency, scriptable failure injection, thread-safe
+  secret-free `HomelabProviderStatus`, and an audit `provider_run` event per run.
+- **Target-allowlist discipline baked into the base class**: a provider with a target host
+  consults `IHomelabTargetGuard` before doing anything and fails cleanly when the host is not
+  allowlisted — the exact D1 wiring real providers inherit.
+- **Scheduler wiring**: the five mocks register as `HomelabScheduler` jobs at boot but only run
+  when BOTH `homelab_scheduler_enabled` AND the new `homelab_mock_providers_enabled` gate are true
+  (both default false). Jitter, per-failure exponential backoff, the global concurrency cap, and
+  restart-surviving job state all exercised end-to-end.
+- **API**: new `GET /homelab/providers` (secret-free statuses, `read_homelab`); `/homelab/summary`
+  now includes the provider list.
+- **Shared mock-provider test harness** (`MockProviderHarnessTests`): one `[MemberData]` fixture
+  runs every provider through identical assertions — success/status consistency, failure streak +
+  recovery, allowlist gating, disabled-provider behavior — plus scheduler proofs for the Phase 5
+  validation list: run-all, backoff growth/reset, concurrency cap (no stampede), background
+  start/stop, and job-state persistence. Real providers from v1.10+ join by adding a factory line.
+
 ## v1.9.0 — Homelab foundation (NORTH_STAR Phase 4)
 
 Phase 4 of the master roadmap and the start of the V1.9.x homelab line: the read-only backend

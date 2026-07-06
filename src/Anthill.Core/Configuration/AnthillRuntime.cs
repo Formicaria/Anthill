@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.9.0";
+    public const string Version = "1.9.1";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -129,6 +129,8 @@ public static class AnthillRuntime
     public static bool EnableHomelab = false;
     /// <summary>Gate for the HomelabScheduler background runner. Off by default; v1.9.0 registers no jobs.</summary>
     public static bool EnableHomelabScheduler = false;
+    /// <summary>v1.9.1: gate for the network-free mock providers. Both this AND the scheduler gate must be on for mocks to run.</summary>
+    public static bool EnableHomelabMockProviders = false;
     /// <summary>Global cap on concurrent homelab checks/syncs (the scheduler's semaphore width).</summary>
     public static int HomelabMaxConcurrentChecks = 2;
     /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
@@ -443,6 +445,7 @@ public static class AnthillRuntime
         EnableAutonomy = config.AutonomyEnabled;
         EnableHomelab = config.HomelabEnabled;
         EnableHomelabScheduler = config.HomelabSchedulerEnabled;
+        EnableHomelabMockProviders = config.HomelabMockProvidersEnabled;
         HomelabMaxConcurrentChecks = Math.Clamp(config.HomelabMaxConcurrentChecks, 1, 16);
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);

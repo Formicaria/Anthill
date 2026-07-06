@@ -2,6 +2,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Homelab;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Homelab.Security;
+using Anthill.Core.Integrations;
 
 namespace Anthill.Api;
 
@@ -25,16 +26,38 @@ public static partial class ApiHost
     private sealed record NodeUpsertRequest(string? Id, string? Name, string? Kind, string? Address, string? Os, List<string>? RoleTags, string? Notes);
     private sealed record ServiceUpsertRequest(string? Id, string? Name, string? NodeId, string? Url, List<int>? Ports, string? Protocol, string? Owner, string? Criticality, bool? InternetExposed, string? Notes);
 
+    public static IReadOnlyList<FakeHomelabProvider> HomelabProviders { get; private set; } = Array.Empty<FakeHomelabProvider>();
+
     private static void InitHomelab()
     {
         Homelab = new HomelabRepository();
         HomelabCredentials = new HomelabCredentialStore(Homelab);
         HomelabTargets = new HomelabTargetGuard(Homelab);
-        // v1.9.0: scheduler skeleton only — created, never started, no jobs registered here.
-        // v1.9.1 registers mock providers; real providers arrive with their integration phases.
         HomelabJobs = new HomelabScheduler(Homelab, AnthillRuntime.HomelabMaxConcurrentChecks);
-        if (AnthillRuntime.EnableHomelabScheduler)
-            Console.WriteLine("Homelab scheduler gate is enabled (no jobs are registered in v1.9.0).");
+
+        // v1.9.1: the mock-provider harness — the shared execution pattern every real provider
+        // (v1.10+) follows. Mocks are deterministic and network-free; they only run when BOTH
+        // homelab_scheduler_enabled AND homelab_mock_providers_enabled are true (off by default).
+        HomelabProviders = new FakeHomelabProvider[]
+        {
+            new FakeProxmoxProvider(Homelab, HomelabTargets),
+            new FakeDnsProvider(Homelab, HomelabTargets),
+            new FakeDhcpProvider(Homelab, HomelabTargets),
+            new FakeFirewallProvider(Homelab, HomelabTargets),
+            new FakeHealthProvider(Homelab, HomelabTargets),
+        };
+        foreach (var provider in HomelabProviders)
+            HomelabJobs.Register(new HomelabScheduledJob(provider.Name, TimeSpan.FromMinutes(5), provider.RunAsync));
+
+        if (AnthillRuntime.EnableHomelabScheduler && AnthillRuntime.EnableHomelabMockProviders)
+        {
+            HomelabJobs.Start();
+            Console.WriteLine($"Homelab scheduler started with {HomelabProviders.Count} mock providers (no real network calls).");
+        }
+        else if (AnthillRuntime.EnableHomelabScheduler)
+        {
+            Console.WriteLine("Homelab scheduler gate is enabled but mock providers are off (homelab_mock_providers_enabled=false); no jobs running.");
+        }
     }
 
     private static void MapHomelabEndpoints(WebApplication app)
@@ -49,6 +72,7 @@ public static partial class ApiHost
                 ["enabled"] = AnthillRuntime.EnableHomelab,
                 ["scheduler_enabled"] = AnthillRuntime.EnableHomelabScheduler,
                 ["scheduler_running"] = HomelabJobs.Running,
+                ["providers"] = HomelabProviders.Select(p => p.Status()).ToList(),
                 ["table_counts"] = Homelab.TableCounts(),
                 ["allowlist_entries"] = Homelab.ListAllowlist().Count,
                 ["credentials"] = HomelabCredentials.ListStatuses(), // secret-free by construction
@@ -104,6 +128,10 @@ public static partial class ApiHost
 
         app.MapGet("/homelab/events", (HttpContext ctx) =>
             RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.RecentEvents(50)));
+
+        // v1.9.1: secret-free provider statuses (mock harness now; real providers from v1.10+).
+        app.MapGet("/homelab/providers", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabProviders.Select(p => p.Status()).ToList()));
 
         app.MapGet("/homelab/changes", (HttpContext ctx) =>
             RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.RecentChanges(50)));

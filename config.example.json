@@ -25,6 +25,7 @@
   "_comment_homelab": "Homelab foundation (v1.9.0, NORTH_STAR Phase 4). Read-only in the V1.9.x line and everything ships OFF: homelab_enabled gates the subsystem, homelab_scheduler_enabled gates the background runner (no jobs are registered in v1.9.0), and a .anthill/HOMELAB_STOP file halts all homelab actions once actions exist (V2.1). Deterministic providers may only reach hosts on the operator-maintained target allowlist (POST /homelab/allowlist) - the general SSRF guard for AI tools is unaffected. See docs/HOMELAB.md.",
   "homelab_enabled":               false,
   "homelab_scheduler_enabled":     false,
+  "homelab_mock_providers_enabled": false,
   "homelab_max_concurrent_checks": 2,
 
   "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.",

@@ -54,6 +54,7 @@ public sealed class AnthillConfig
     // Homelab foundation (v1.9.0, NORTH_STAR Phase 4): read-only subsystem, everything off by default.
     [JsonPropertyName("homelab_enabled")] public bool HomelabEnabled { get; set; } = false;
     [JsonPropertyName("homelab_scheduler_enabled")] public bool HomelabSchedulerEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_mock_providers_enabled")] public bool HomelabMockProvidersEnabled { get; set; } = false;
     [JsonPropertyName("homelab_max_concurrent_checks")] public int HomelabMaxConcurrentChecks { get; set; } = 2;
 
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
