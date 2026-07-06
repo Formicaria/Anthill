@@ -144,12 +144,21 @@ public static class ApprovableProjections
         var result = new List<ApprovableView>();
         foreach (var group in items.GroupBy(i => $"{i.Kind}|{i.DedupeKey}", StringComparer.OrdinalIgnoreCase))
         {
+            // Newest first; the newest still-pending item wins and EVERY older pending duplicate is
+            // superseded. Track pending-kept rather than gating on index 0: if the newest item in the
+            // group is already approved/rejected/executed, older pending duplicates must STILL collapse
+            // to a single pending — otherwise "at most one pending per key" breaks and the unified queue
+            // shows two live pending items for the same target. Non-pending items are left untouched.
             var ordered = group.OrderByDescending(i => i.CreatedAt, StringComparer.Ordinal).ToList();
-            for (var i = 0; i < ordered.Count; i++)
+            var keptPending = false;
+            foreach (var item in ordered)
             {
-                if (i > 0 && ordered[i].State == "pending" && ordered[0].State == "pending")
-                    ordered[i].State = "superseded";
-                result.Add(ordered[i]);
+                if (item.State == "pending")
+                {
+                    if (keptPending) item.State = "superseded";
+                    else keptPending = true;
+                }
+                result.Add(item);
             }
         }
         return result.OrderByDescending(i => i.CreatedAt, StringComparer.Ordinal).ToList();
