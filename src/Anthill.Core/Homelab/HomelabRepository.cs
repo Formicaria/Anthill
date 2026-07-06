@@ -245,6 +245,120 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
+    // ---- Virtualization + storage inventory (v1.12.0, Proxmox read-only sync) --------------------
+
+    public void UpsertVm(VmRecord vm)
+    {
+        vm.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO vm_inventory (id, vm_id, name, node_id, status, cpu_cores, memory_mb, uptime_seconds, updated_at)
+                VALUES ($id, $vmid, $name, $node, $status, $cpu, $mem, $uptime, $updated)
+                ON CONFLICT(id) DO UPDATE SET vm_id=$vmid, name=$name, node_id=$node, status=$status,
+                    cpu_cores=$cpu, memory_mb=$mem, uptime_seconds=$uptime, updated_at=$updated";
+            Bind(cmd, "$id", vm.Id); Bind(cmd, "$vmid", vm.VmId); Bind(cmd, "$name", vm.Name);
+            Bind(cmd, "$node", vm.NodeId); Bind(cmd, "$status", vm.Status); Bind(cmd, "$cpu", vm.CpuCores);
+            Bind(cmd, "$mem", vm.MemoryMb); Bind(cmd, "$uptime", vm.UptimeSeconds); Bind(cmd, "$updated", vm.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<VmRecord> ListVms()
+    {
+        var list = new List<VmRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, vm_id, name, node_id, status, cpu_cores, memory_mb, uptime_seconds, updated_at FROM vm_inventory ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new VmRecord
+            {
+                Id = r.GetString(0), VmId = r.IsDBNull(1) ? "" : r.GetString(1), Name = r.GetString(2),
+                NodeId = r.IsDBNull(3) ? "" : r.GetString(3), Status = r.IsDBNull(4) ? "" : r.GetString(4),
+                CpuCores = (int)r.GetInt64(5), MemoryMb = r.GetInt64(6), UptimeSeconds = r.GetInt64(7),
+                UpdatedAt = r.GetString(8),
+            });
+        }
+        return list;
+    }
+
+    public void UpsertContainer(ContainerRecord container)
+    {
+        container.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO container_inventory (id, container_id, kind, name, node_id, status, updated_at)
+                VALUES ($id, $cid, $kind, $name, $node, $status, $updated)
+                ON CONFLICT(id) DO UPDATE SET container_id=$cid, kind=$kind, name=$name, node_id=$node,
+                    status=$status, updated_at=$updated";
+            Bind(cmd, "$id", container.Id); Bind(cmd, "$cid", container.ContainerId); Bind(cmd, "$kind", container.Kind);
+            Bind(cmd, "$name", container.Name); Bind(cmd, "$node", container.NodeId);
+            Bind(cmd, "$status", container.Status); Bind(cmd, "$updated", container.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<ContainerRecord> ListContainers()
+    {
+        var list = new List<ContainerRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, container_id, kind, name, node_id, status, updated_at FROM container_inventory ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new ContainerRecord
+            {
+                Id = r.GetString(0), ContainerId = r.IsDBNull(1) ? "" : r.GetString(1), Kind = r.GetString(2),
+                Name = r.GetString(3), NodeId = r.IsDBNull(4) ? "" : r.GetString(4),
+                Status = r.IsDBNull(5) ? "" : r.GetString(5), UpdatedAt = r.GetString(6),
+            });
+        }
+        return list;
+    }
+
+    public void UpsertStoragePool(StoragePoolRecord pool)
+    {
+        pool.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO storage_inventory (id, entry_kind, name, node_id, kind, total_bytes, used_bytes, updated_at)
+                VALUES ($id, 'pool', $name, $node, $kind, $total, $used, $updated)
+                ON CONFLICT(id) DO UPDATE SET name=$name, node_id=$node, kind=$kind,
+                    total_bytes=$total, used_bytes=$used, updated_at=$updated";
+            Bind(cmd, "$id", pool.Id); Bind(cmd, "$name", pool.Name); Bind(cmd, "$node", pool.NodeId);
+            Bind(cmd, "$kind", pool.Kind); Bind(cmd, "$total", pool.TotalBytes); Bind(cmd, "$used", pool.UsedBytes);
+            Bind(cmd, "$updated", pool.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<StoragePoolRecord> ListStoragePools()
+    {
+        var list = new List<StoragePoolRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, name, node_id, kind, total_bytes, used_bytes, updated_at FROM storage_inventory WHERE entry_kind = 'pool' ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new StoragePoolRecord
+            {
+                Id = r.GetString(0), Name = r.GetString(1), NodeId = r.IsDBNull(2) ? "" : r.GetString(2),
+                Kind = r.IsDBNull(3) ? "" : r.GetString(3), TotalBytes = r.GetInt64(4), UsedBytes = r.GetInt64(5),
+                UpdatedAt = r.GetString(6),
+            });
+        }
+        return list;
+    }
+
     // ---- Events / changes / health -------------------------------------------------------------
 
     public void RecordEvent(HomelabEvent evt)
@@ -254,7 +368,9 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         {
             using var conn = Connect();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT INTO homelab_events (id, event_type, subject_kind, subject_id, severity, message, mission_id, created_at)
+            // OR IGNORE: providers use stable ids (e.g. pve-task:<UPID>) so a re-sync can never
+            // duplicate an already-recorded event — and never crashes the sync on a PK collision.
+            cmd.CommandText = @"INSERT OR IGNORE INTO homelab_events (id, event_type, subject_kind, subject_id, severity, message, mission_id, created_at)
                 VALUES ($id, $type, $skind, $sid, $sev, $msg, $mission, $created)";
             Bind(cmd, "$id", evt.Id); Bind(cmd, "$type", evt.EventType); Bind(cmd, "$skind", evt.SubjectKind);
             Bind(cmd, "$sid", evt.SubjectId); Bind(cmd, "$sev", evt.Severity); Bind(cmd, "$msg", evt.Message);

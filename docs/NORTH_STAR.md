@@ -177,7 +177,7 @@ V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials,
 V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
 V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
 V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
-V1.12.0  Proxmox read-only integration
+V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
 V1.13.0  Network and security awareness
 V1.14.0  Incident and change memory + IApprovable design
 V2.0.0   Homelab Command Center launch
@@ -418,6 +418,14 @@ health classification; mock HTTP/TCP; timeout; notification; UI smoke.
 ---
 
 # PHASE 8 — V1.12.0 PROXMOX READ-ONLY INTEGRATION
+
+**Status: SHIPPED in v1.12.0** — GET-only `ProxmoxApiClient` (write operations structurally
+impossible; proven by type-surface and wire-traffic tests), `ProxmoxInventoryProvider` (nodes,
+QEMU VMs, LXCs, storage incl. backup-capable pools, failed tasks as stable-id events) +
+`ProxmoxHealthProvider` on the shared scheduler, credential-store + target-allowlist discipline,
+`/homelab/vms|containers|storage|proxmox/*` endpoints, Virtualization panels on the Homelab page,
+and `ProxmoxIntegrationTests` against a mock PVE API. Per-VM snapshot detail and deep backup
+inspection are deferred to V2.2 (backup intelligence).
 
 ## Goal
 Connect ANTHILL to Proxmox safely in read-only mode. No start/stop/reboot/migrate/delete/clone/resize/config writes.
