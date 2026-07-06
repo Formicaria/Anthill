@@ -1,5 +1,17 @@
 # ANTHILL Changelog
 
+## v1.9.1.1 — Fix: UI header/title version drift (hardcoded markup)
+
+The console title, login logo, and nav header displayed a hardcoded version (`v1.8.29.1`) that had
+silently drifted from the runtime version — release bumps only covered the four canonical markers
+(runtime const, Directory.Build.props, README, CHANGELOG), not markup literals.
+
+- The UI now fetches the version from the public `/health` endpoint at boot (`bootVersion()`) and
+  renders it into the title, login logo, and nav header — `AnthillRuntime.Version` is the single
+  source of truth; the markup carries no literal version anywhere.
+- New regression guard (`UiIntegrity_NoHardcodedVersionInMarkup`): fails `dotnet test`/CI if any
+  `>vX.Y.Z<` literal or versioned `<title>` ever reappears in `index.html`.
+
 ## v1.9.1 — Homelab scheduler + mock-provider harness (NORTH_STAR Phase 5)
 
 Phase 5 of the master roadmap: one shared execution/testing pattern for every future homelab
