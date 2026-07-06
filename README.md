@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.12.0
+**Current version:** v1.12.0.1
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.12.0.1` | Security hardening (bug-finder pass on v1.12.0): the Proxmox `ProxmoxApiClient` left `AllowAutoRedirect` at the .NET default (`true`), so a `3xx` from a compromised/misconfigured node could bounce the authenticated GET to a `Location` the target-allowlist never vetted (SSRF). Both handlers now set `AllowAutoRedirect = false` (PVE never legitimately redirects), plus a wire-level regression test asserting a 302 fails clean and is not followed off-host. |
 | `v1.12.0` | **Proxmox read-only integration** (NORTH_STAR Phase 8): a **GET-only** PVE API client (write operations are structurally impossible — proven by type-surface and wire-traffic tests), inventory sync (nodes → hypervisor hosts, QEMU VMs, LXC containers, storage pools incl. backup-capable, failed tasks as dedup'd events) riding the shared scheduler, API-token via the credential store (PVEAuditor role recommended), target-allowlist discipline, `/homelab/vms|containers|storage|proxmox/*` endpoints, and Virtualization panels (VMs/containers/storage with usage coloring) on the Homelab page. |
 | `v1.11.0.2` | Fix: replace the blocking native `window.confirm()`/`prompt()` used for every destructive action with a promise-based in-app modal (`uiConfirm`/`uiPrompt`). Native dialogs freeze the renderer's main thread until dismissed — which hung the Autonomy **Stop** button — and clash with the HUD. New modal is non-blocking, themed, and keyboard-navigable; all 18 call sites migrated with unchanged confirm/cancel behavior. |
 | `v1.11.0.1` | Fixes from live-verifying the auto-apply → git loop on the LXC: (1) **auto-apply now logs the git step** — `AutoApplyRunner` emits `autonomy_autoapply_committed` on a successful commit/push (sha, branch, files, push result), so a working commit is no longer invisible in the Event Log; (2) **UI reliably bounces to login on a 401** — `onUnauthorized` re-asserts the login screen on any 401 while the shell is visible, instead of getting stuck half-loaded after a mid-session token invalidation (e.g. a redeploy). |
