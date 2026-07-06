@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.9.0
+**Current version:** v1.9.1
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.9.1` | **Homelab scheduler + mock-provider harness** (NORTH_STAR Phase 5): five deterministic, network-free fake providers (Proxmox/DNS/DHCP/firewall/health) run through the shared `HomelabScheduler` pattern — jittered intervals, failure backoff, global concurrency cap, persisted job state, target-allowlist discipline — plus a reusable test harness every real provider (v1.10+) must pass, `GET /homelab/providers` statuses, and a `homelab_mock_providers_enabled` gate (off by default). Still zero real network calls. |
 | `v1.9.0` | **Homelab foundation** (NORTH_STAR Phase 4): read-only backend groundwork for the V2 Homelab Command Center — `HomelabRepository` (15 new SQLite tables), provider interfaces, operator-managed **target allowlist** (isolated from the general SSRF guard), **write-only credential store** with audit events, new `homelab_operator` role + homelab permissions (action gates OFF until V2.1), disabled-by-default `HomelabScheduler` skeleton, 8 visible-only homelab ants, permission-scoped `/homelab/*` endpoints, [docs/HOMELAB.md](docs/HOMELAB.md), and the `Anthill.Tests.Homelab` suite. No infrastructure control of any kind. |
 | `v1.8.29.1` | Auto-apply end-to-end on a fresh LXC install: (1) coder **add-vs-modify** — an `add` for a file that already exists is applied as a backed-up overwrite (`add_overwrite`) instead of hard-refusing, and the coder prompt now picks `add`/`modify` by existence; (2) **default paths** — enabling auto-apply seeds an editable `docs/**` + `src/**` allowlist so it's never a silent no-op; (3) **LXC provisioning** in `setup.sh` — git-checkout workspace, service-user git identity + `safe.directory`, standalone-branch checkout, and a private deploy-key slot, all idempotent. |
 | `v1.8.27` | Docs: added **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** as the single canonical roadmap / build order (v1.8.27 → V3.0), and marked the older roadmap docs (`ROADMAP.md`, `UI_ROADMAP.md`, `AUTONOMY.md`) as subsystem history pointing to it. No runtime change. |

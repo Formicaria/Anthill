@@ -1,5 +1,7 @@
-# Reserved — external integrations (Proxmox, DNS, DHCP, firewall providers)
+# Integrations — external providers (Proxmox, DNS, DHCP, firewall, health)
 
-Scaffolding reserved by the v1.9.0 homelab foundation (NORTH_STAR Phase 4).
-This folder is filled in V1.9.1 (mock harness) and V1.12.0+ (real providers). Do not add unrelated code here; see docs/NORTH_STAR.md
-for the canonical build order and docs/HOMELAB.md for the homelab design.
+v1.9.1 ships the mock-provider harness here: `FakeProviders.cs` (shared `FakeHomelabProvider`
+base + five deterministic, network-free mocks and `HomelabProviderStatus`). Real providers arrive
+read-only from V1.12.0 (Proxmox) and must follow the same pattern: deterministic C# (never routed
+through the model router), target-allowlist discipline, secret-free statuses, audit events, and
+passing the shared `MockProviderHarnessTests` fixture. See docs/NORTH_STAR.md and docs/HOMELAB.md.

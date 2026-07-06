@@ -174,7 +174,7 @@ V1.8.27  Roadmap/documentation consolidation                 [SHIPPED v1.8.27]
 V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
 V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.29]
 V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions  [SHIPPED v1.9.0]
-V1.9.1   Homelab scheduler skeleton and mock-provider harness
+V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
 V1.10.0  Inventory and service registry
 V1.11.0  Health checks and notifications
 V1.12.0  Proxmox read-only integration
@@ -338,6 +338,11 @@ migration; ant-registry validation; homelab-summary API; allowlist isolation; cr
 ---
 
 # PHASE 5 — V1.9.1 HOMELAB SCHEDULER + MOCK PROVIDER HARNESS
+
+**Status: SHIPPED in v1.9.1** — `FakeHomelabProvider` base + five mocks (Proxmox/DNS/DHCP/
+firewall/health) with `HomelabProviderStatus`, scheduler wiring behind the
+`homelab_mock_providers_enabled` gate (off by default), `GET /homelab/providers`, and the shared
+`MockProviderHarnessTests` fixture covering run/backoff/concurrency-cap/persistence/allowlist.
 
 ## Goal
 One shared execution/testing pattern for future homelab providers.

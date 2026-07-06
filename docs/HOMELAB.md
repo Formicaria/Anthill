@@ -9,7 +9,7 @@ across phases.
 | Phase | Version | Status | Scope |
 |---|---|---|---|
 | Foundation | V1.9.0 | **SHIPPED** | Models, tables, interfaces, target allowlist, credential store, permission tier, scheduler skeleton, read-only ants, docs, tests |
-| Scheduler + mock harness | V1.9.1 | Future | Mock providers, shared provider test fixture, backoff/persistence proofs |
+| Scheduler + mock harness | V1.9.1 | **SHIPPED** | Five network-free mock providers, shared harness fixture, backoff/concurrency/persistence proofs, `/homelab/providers`, `homelab_mock_providers_enabled` gate |
 | Inventory + service registry | V1.10.0 | Future | Manual registration, import/export, dependencies, UI panels |
 | Health checks + notifications | V1.11.0 | Future | Ping/HTTP/TCP checks, alerting webhooks (disabled by default) |
 | Proxmox read-only | V1.12.0 | Future | Nodes/VMs/LXCs/status/snapshots/backups, no write path |
