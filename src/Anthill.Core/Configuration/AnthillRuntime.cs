@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.29";
+    public const string Version = "1.8.29.1";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -153,6 +153,13 @@ public static class AnthillRuntime
     public static bool AutonomyAutoApplyEnabled = false;
     /// <summary>Workspace-relative globs a patch file_path must match to be auto-appliable. Empty = nothing eligible.</summary>
     public static List<string> AutonomyAutoApplyPaths = new();
+    /// <summary>
+    /// v1.8.29.1: sensible starter allowlist injected the first time auto-apply is enabled with no
+    /// paths set — so the operator does not silently enable a no-op (empty allowlist = nothing
+    /// eligible). Pre-filled and fully editable/removable from Settings → Security; only applied when
+    /// the list is empty, never overriding an operator's own entries.
+    /// </summary>
+    public static readonly string[] AutonomyAutoApplyDefaultPaths = { "docs/**", "src/**" };
     /// <summary>Max changed lines a single patch may have to auto-apply.</summary>
     public static int AutonomyAutoApplyMaxLines = 40;
     /// <summary>Verify command run after apply; empty = built-in dotnet build + test.</summary>
@@ -440,6 +447,16 @@ public static class AnthillRuntime
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
             .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
+        // v1.8.29.1: when auto-apply is turned on but the operator has not set any path globs, seed the
+        // starter allowlist (docs/**, src/**) so enabling the feature is not a silent no-op. These are
+        // written back into the persisted config below, so they show up pre-filled in the UI and can be
+        // edited or removed like any operator entry. Never seeded while auto-apply is off, and never
+        // overrides paths the operator already set.
+        if (AutonomyAutoApplyEnabled && AutonomyAutoApplyPaths.Count == 0)
+        {
+            AutonomyAutoApplyPaths = AutonomyAutoApplyDefaultPaths.ToList();
+            config.AutonomyAutoApplyPaths = AutonomyAutoApplyPaths.ToList();
+        }
         AutonomyAutoApplyMaxLines = Math.Clamp(config.AutonomyAutoApplyMaxLines, 1, 100000);
         AutonomyAutoApplyVerifyCmd = (config.AutonomyAutoApplyVerifyCmd ?? "").Trim();
         AutonomyAutoApplyVerifyTimeout = Math.Clamp(config.AutonomyAutoApplyVerifyTimeout, 30, 7200);
