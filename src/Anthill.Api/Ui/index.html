@@ -1563,8 +1563,70 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-pheromones -->
 
       <!-- --------------------------------------------------------------------
-           PAGE: HOMELAB INVENTORY (v1.10.0, NORTH_STAR Phase 6)
+           PAGE: HOMELAB COMMAND CENTER (v1.10.0 inventory → v2.0.0 command center)
       --------------------------------------------------------------------- -->
+      <style id="hl-theme">
+      /* V2.0 Pass 2 — ANTHILL Command Center identity layer. Centralized semantic tokens for the
+         homelab subsystems; every card/chip/graph node reads these, never hardcoded colors. */
+      #page-homelab{
+        --hl-health:#3ddc97;   /* health & checks      */
+        --hl-compute:#56b6f5;  /* Proxmox / compute    */
+        --hl-storage:#b18cf0;  /* storage & backups    */
+        --hl-security:#ff9e64; /* security & exposure  */
+        --hl-incident:#ff5d6c; /* incidents            */
+        --hl-memory:#e0c568;   /* change history / memory */
+        position:relative;
+      }
+      /* Colony mesh: a low-contrast tunnel/node lattice behind the dashboard. Pure CSS, no
+         assets, opacity capped so text contrast is untouched. */
+      #page-homelab::before{
+        content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.045;color:#8fa3b8;
+        background-image:
+          radial-gradient(circle, currentColor 1.2px, transparent 1.7px),
+          radial-gradient(circle, currentColor 1px, transparent 1.5px),
+          repeating-linear-gradient(60deg, transparent 0 47px, currentColor 47px 48px),
+          repeating-linear-gradient(-60deg, transparent 0 47px, currentColor 47px 48px);
+        background-size:96px 84px,96px 84px,auto,auto;
+        background-position:0 0,48px 42px,0 0,0 0;
+      }
+      #page-homelab>.card,#page-homelab>.page-hdr{position:relative;z-index:1;}
+      /* Subsystem accents: colored spine + dot before each section head. */
+      #page-homelab .hl-sec-health{border-left:2px solid var(--hl-health);}
+      #page-homelab .hl-sec-compute{border-left:2px solid var(--hl-compute);}
+      #page-homelab .hl-sec-storage{border-left:2px solid var(--hl-storage);}
+      #page-homelab .hl-sec-security{border-left:2px solid var(--hl-security);}
+      #page-homelab .hl-sec-incident{border-left:2px solid var(--hl-incident);}
+      #page-homelab .hl-sec-memory{border-left:2px solid var(--hl-memory);}
+      #page-homelab .hl-sec-health .section-head::before,#page-homelab .hl-sec-compute .section-head::before,
+      #page-homelab .hl-sec-storage .section-head::before,#page-homelab .hl-sec-security .section-head::before,
+      #page-homelab .hl-sec-incident .section-head::before,#page-homelab .hl-sec-memory .section-head::before{
+        content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px;}
+      #page-homelab .hl-sec-health .section-head::before{background:var(--hl-health);}
+      #page-homelab .hl-sec-compute .section-head::before{background:var(--hl-compute);}
+      #page-homelab .hl-sec-storage .section-head::before{background:var(--hl-storage);}
+      #page-homelab .hl-sec-security .section-head::before{background:var(--hl-security);}
+      #page-homelab .hl-sec-incident .section-head::before{background:var(--hl-incident);}
+      #page-homelab .hl-sec-memory .section-head::before{background:var(--hl-memory);}
+      /* Command strip KPI chips. */
+      #page-homelab .hl-kpi{background:rgba(255,255,255,.025);border-radius:4px;white-space:nowrap;}
+      #page-homelab .hl-kpi b{font-size:13px;}
+      /* Colony-link dot: green pulse only when scheduler jobs have run recently (data-derived). */
+      #page-homelab .hl-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
+      /* Purposeful motion only: pulse on failed/incident graph nodes + the live dot; row flash for
+         connection cues; hover emphasis on graph nodes. All disabled under reduced motion. */
+      @keyframes hlPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+      #page-homelab .hl-pulse{animation:hlPulse 2s ease-in-out infinite;}
+      @keyframes hlFlash{0%{background:rgba(255,93,108,.22);}100%{background:transparent;}}
+      #page-homelab tr.hl-flash>td{animation:hlFlash 1.3s ease-out 2;}
+      #page-homelab .hl-node{transition:filter .15s ease;}
+      #page-homelab .hl-node:hover{filter:brightness(1.5);}
+      #page-homelab .users-table tr{cursor:default;}
+      #page-homelab #hl-hosts-tbody tr,#page-homelab #hl-svcs-tbody tr{cursor:pointer;}
+      @media (prefers-reduced-motion: reduce){
+        #page-homelab .hl-pulse,#page-homelab tr.hl-flash>td{animation:none;}
+        #page-homelab .hl-node{transition:none;}
+      }
+      </style>
       <div class="page page-scroll" id="page-homelab">
         <div class="page-hdr">
           <div>
@@ -1577,6 +1639,39 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-ghost" id="hl-import-btn" onclick="hlImportPick()" title="Import an inventory JSON bundle (upsert by id — re-import is safe)">⬆ Import JSON</button>
             <input type="file" id="hl-import-file" accept="application/json" style="display:none" onchange="hlImportFile(event)">
             <button class="btn btn-ghost" onclick="loadHomelab()">↺ Reload</button>
+          </div>
+        </div>
+
+        <!-- V2.0 Command Summary strip (Pass 1: functional; Pass 2 styles it) -->
+        <div class="card hl-sec-memory" id="hl-cmd-strip" style="padding:10px 16px;">
+          <div id="hl-cmd-kpis" style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;">Loading command summary...</div>
+          <div id="hl-cmd-stamps" style="font-size:9px;color:var(--dim);margin-top:6px;"></div>
+        </div>
+
+        <!-- V2.0 What should I do next -->
+        <div class="card hl-sec-incident" id="hl-next-card" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">What Should I Do Next</div>
+          <div id="hl-next" style="font-size:11px;color:var(--muted);">Loading...</div>
+        </div>
+
+        <!-- V2.0 Dependency graph -->
+        <div class="card hl-sec-compute" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Dependency Graph <span style="font-weight:400;color:var(--dim)">(click a node: highlight its paths + list what depends on it; red = impacted path)</span></div>
+          <div id="hl-graph-wrap" style="overflow-x:auto;">
+            <svg id="hl-graph" width="100%" height="230" style="min-width:600px;display:block;"></svg>
+          </div>
+          <div id="hl-graph-info" style="font-size:10px;color:var(--muted);padding-top:4px;"></div>
+        </div>
+
+        <!-- V2.0 Entity detail drawer (host/service) -->
+        <div class="card" id="hl-entity-detail" style="display:none;padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Detail — <span id="hl-ent-title"></span>
+            <button class="btn btn-ghost" style="float:right;" onclick="hlCloseEntity()">✕ Close</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:10px;">
+            <div><div style="color:var(--dim);margin-bottom:4px;">FACTS</div><div id="hl-ent-facts"></div></div>
+            <div><div style="color:var(--dim);margin-bottom:4px;">DEPENDENCIES / DEPENDENTS</div><div id="hl-ent-deps"></div></div>
+            <div><div style="color:var(--dim);margin-bottom:4px;">RELATED INCIDENTS &amp; CHANGES</div><div id="hl-ent-related"></div></div>
           </div>
         </div>
 
@@ -2609,7 +2704,7 @@ function applyRoleVisibility(){
 // -- Page Routing --------------------------------------------------------------
 const PAGE_TITLES = {
   overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', homelab:'Homelab Inventory', antconfig:'Ant Config',
+  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', homelab:'Homelab Command Center', antconfig:'Ant Config',
   autonomy:'Autonomy', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -6187,6 +6282,9 @@ async function loadHomelab(){
     loadHlVirt();
     loadHlRisks();
     loadHlIncidents();
+    loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
+    hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
+    decorateHlSections(); // V2.0 pass 2: subsystem theming + connection cues
     const c=document.getElementById('hl-count');
     if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
   }catch(e){ hlMsg('Load failed: '+e.message,false); }
@@ -6322,6 +6420,229 @@ async function hlPveSync(){
   const r=await api('/homelab/proxmox/sync','POST',{});
   hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
   if(r.success){ loadHomelab(); }
+}
+
+// -- V2.0 Command Center: dashboard, graph, entity detail (Pass 1: functional) -------
+let HL_DASH=null, HL_GRAPH_SEL=null;
+
+function hlStatusColor(st){ return st==='healthy'?'var(--green)':(st==='degraded'?'var(--yellow, orange)':(st==='failed'?'var(--red)':'var(--dim)')); }
+
+async function loadHlDashboard(){
+  try{
+    const r=await api('/homelab/dashboard');
+    if(!r.success){ hlMsg(r.message||'Dashboard load failed',false); return; }
+    HL_DASH=r.data||{};
+    renderHlCmdStrip(HL_DASH);
+    renderHlNext(HL_DASH);
+    renderHlGraph(HL_DASH);
+  }catch(e){ hlMsg('Dashboard load failed: '+e.message,false); }
+}
+
+function hlKpi(label,value,color){
+  return '<span class="hl-kpi" style="border:1px solid var(--line, #223);border-radius:4px;padding:3px 8px;">'+
+    '<b style="color:'+(color||'var(--muted)')+'">'+value+'</b> <span style="color:var(--dim)">'+escapeHtml(label)+'</span></span>';
+}
+
+function renderHlCmdStrip(d){
+  const el=document.getElementById('hl-cmd-kpis'); if(!el) return;
+  const h=d.health||{};
+  const parts=[
+    hlKpi('hosts', d.hosts??0),
+    hlKpi('services', d.services??0),
+    hlKpi('healthy', h.healthy??0, 'var(--green)'),
+    hlKpi('degraded', h.degraded??0, (h.degraded>0?'var(--yellow, orange)':undefined)),
+    hlKpi('failed', h.failed??0, (h.failed>0?'var(--red)':undefined)),
+    hlKpi('active incidents', (d.active_incidents||[]).length, ((d.active_incidents||[]).length>0?'var(--red)':undefined)),
+    hlKpi('risk errors', d.open_risk_errors??0, (d.open_risk_errors>0?'var(--red)':undefined)),
+    hlKpi('risk warnings', d.open_risk_warnings??0),
+    hlKpi('VMs/CTs', (d.vms??0)+'/'+(d.containers??0)),
+  ];
+  if((d.storage_total_bytes??0)>0)
+    parts.push(hlKpi('storage', hlBytes(d.storage_used_bytes)+' / '+hlBytes(d.storage_total_bytes)+(d.backup_capable_pools>0?(' · '+d.backup_capable_pools+' backup pool(s)'):' · no backup pools')));
+  else parts.push(hlKpi('storage', 'no data yet'));
+  if((d.pending_approvals??-1)>=0) parts.push(hlKpi('pending approvals', d.pending_approvals, (d.pending_approvals>0?'var(--yellow, orange)':undefined)));
+  el.innerHTML=parts.join('');
+  const st=document.getElementById('hl-cmd-stamps');
+  if(st){
+    // Colony-link dot: derived strictly from real job stamps — green+pulse if any scheduler job
+    // ran in the last 15 minutes, amber if ever, gray if never. Never fabricated.
+    const stamps=[d.last_health_run,d.last_proxmox_sync,d.last_risk_analysis].filter(x=>x);
+    const fresh=stamps.some(x=>{ const t=Date.parse(x); return !isNaN(t)&&(Date.now()-t)<15*60*1000; });
+    const dot='<span class="hl-live-dot'+(fresh?' hl-pulse':'')+'" style="background:'+(fresh?'var(--hl-health)':(stamps.length?'var(--hl-memory)':'var(--dim)'))+'" title="'+(fresh?'colony link: scheduler active in the last 15m':(stamps.length?'colony link: idle (no recent job runs)':'colony link: no jobs have run yet'))+'"></span>';
+    st.innerHTML=dot+
+      'last health run: '+(d.last_health_run?hlDate(d.last_health_run):'no data yet')+
+      ' · last proxmox sync: '+(d.last_proxmox_sync?hlDate(d.last_proxmox_sync):'not configured')+
+      ' · last risk analysis: '+(d.last_risk_analysis?hlDate(d.last_risk_analysis):'no data yet')+
+      ' · generated '+hlDate(d.generated_at);
+  }
+}
+
+function renderHlNext(d){
+  const el=document.getElementById('hl-next'); if(!el) return;
+  const items=d.next_checks||[];
+  el.innerHTML=items.length?('<ol style="margin:0 0 0 16px;padding:0;">'+items.map(n=>'<li style="padding:2px 0;">'+escapeHtml(n)+'</li>').join('')+'</ol>')
+    :'<span style="color:var(--green)">Nothing urgent — no failing checks, error incidents, or error findings right now.</span>';
+}
+
+function renderHlGraph(d){
+  const svg=document.getElementById('hl-graph'); if(!svg) return;
+  const nodes=d.graph_nodes||[], edges=d.graph_edges||[];
+  if(!nodes.length){
+    svg.innerHTML='<text x="20" y="40" fill="var(--dim)" font-size="11">No graph yet — register hosts and services (with "runs on") to map dependencies.</text>';
+    const info=document.getElementById('hl-graph-info'); if(info) info.textContent='';
+    return;
+  }
+  const hosts=nodes.filter(n=>n.kind==='host'), svcs=nodes.filter(n=>n.kind!=='host');
+  const W=Math.max(600,(Math.max(hosts.length,svcs.length))*130+60);
+  svg.setAttribute('viewBox','0 0 '+W+' 230'); svg.style.minWidth=W+'px';
+  const pos={};
+  svcs.forEach((n,i)=>pos[n.id]={x:60+i*130+((svcs.length<hosts.length)?65:0), y:55});
+  hosts.forEach((n,i)=>pos[n.id]={x:60+i*130+((hosts.length<svcs.length)?65:0), y:175});
+  const sel=HL_GRAPH_SEL;
+  const connected=new Set();
+  if(sel){ connected.add(sel); edges.forEach(e=>{ if(e.from===sel||e.to===sel){ connected.add(e.from); connected.add(e.to); } }); }
+  let out='';
+  edges.forEach(e=>{
+    const a=pos[e.from], b=pos[e.to]; if(!a||!b) return;
+    const hot=sel&&(e.from===sel||e.to===sel);
+    out+='<line class="hl-edge'+(e.impacted?' hl-edge-bad':'')+(hot?' hl-edge-hot':'')+'" x1="'+a.x+'" y1="'+(a.y+14)+'" x2="'+b.x+'" y2="'+(b.y-16)+'"'+
+      ' stroke="'+(e.impacted?'var(--red)':(hot?'var(--acc, #6cf)':'var(--line, #334)'))+'" stroke-width="'+(hot||e.impacted?2:1)+'"'+(e.impacted?' stroke-dasharray="4 3"':'')+'/>';
+  });
+  nodes.forEach(n=>{
+    const p=pos[n.id]; if(!p) return;
+    const dim=sel&&!connected.has(n.id);
+    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" onclick="hlGraphSelect(\''+escapeHtml(n.id)+'\')">'+
+      '<circle cx="'+p.x+'" cy="'+p.y+'" r="13" fill="none" stroke="'+hlStatusColor(n.status)+'" stroke-width="2"'+((n.status==='failed'||n.open_incident)?' class="hl-pulse"':'')+'/>'+
+      (n.kind==='host'?'<rect x="'+(p.x-5)+'" y="'+(p.y-5)+'" width="10" height="10" fill="'+hlStatusColor(n.status)+'"/>'
+                      :'<circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="'+hlStatusColor(n.status)+'"/>')+
+      (n.internet_exposed?'<text x="'+(p.x+14)+'" y="'+(p.y-12)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
+      (n.open_incident?'<text x="'+(p.x-13)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
+      '<text x="'+p.x+'" y="'+(p.y+(n.kind==='host'?30:-22))+'" font-size="10" fill="var(--muted)" text-anchor="middle">'+escapeHtml(n.label)+'</text></g>';
+  });
+  svg.innerHTML=out;
+  const info=document.getElementById('hl-graph-info');
+  if(info){
+    if(sel){
+      const me=nodes.find(n=>n.id===sel);
+      const dependents=hlDependents(sel,edges).map(id=>{const n=nodes.find(x=>x.id===id);return n?n.label:id;});
+      info.innerHTML='<b>'+escapeHtml(me?me.label:sel)+'</b> — status <span style="color:'+hlStatusColor(me?me.status:'unknown')+'">'+escapeHtml(me?me.status:'?')+'</span>'+
+        ' · depends-on-this: '+(dependents.length?escapeHtml(dependents.join(', ')):'nothing recorded')+
+        ' · <a href="javascript:void(0)" onclick="hlGraphSelect(null)" style="color:var(--dim)">clear selection</a>';
+    } else info.textContent=nodes.length+' node(s), '+edges.length+' edge(s), '+edges.filter(e=>e.impacted).length+' impacted path(s).';
+  }
+}
+
+function hlDependents(id,edges){
+  const incoming={}; edges.forEach(e=>{ (incoming[e.to]=incoming[e.to]||[]).push(e.from); });
+  const seen=new Set([id]), out=[], q=[id];
+  while(q.length){ (incoming[q.shift()]||[]).forEach(p=>{ if(!seen.has(p)){ seen.add(p); out.push(p); q.push(p); } }); }
+  return out;
+}
+
+function hlGraphSelect(id){ HL_GRAPH_SEL=(HL_GRAPH_SEL===id)?null:id; if(HL_DASH) renderHlGraph(HL_DASH); }
+
+// Entity detail drawer (host/service) — click a name row in the Hosts/Services tables.
+function hlEntity(kind,id){
+  const box=document.getElementById('hl-entity-detail'); if(!box) return;
+  const ent=(kind==='host'?HL_HOSTS:HL_SVCS).find(x=>x.id===id); if(!ent) return;
+  box.style.display='';
+  const t=document.getElementById('hl-ent-title'); if(t) t.textContent=(kind==='host'?'Host: ':'Service: ')+(ent.name||id);
+  const node=(HL_DASH&&HL_DASH.graph_nodes||[]).find(n=>n.id===id);
+  const facts=document.getElementById('hl-ent-facts');
+  if(facts) facts.innerHTML=(kind==='host'
+    ? 'Kind: '+escapeHtml(ent.kind||'host')+'<br>Address: '+escapeHtml(ent.address||'—')+'<br>OS: '+escapeHtml(ent.os||'—')+'<br>Tags: '+escapeHtml((ent.role_tags||[]).join(', ')||'—')
+    : 'Runs on: '+escapeHtml(hlNodeName(ent.node_id))+'<br>URL: '+escapeHtml(ent.url||'—')+'<br>Ports: '+escapeHtml((ent.ports||[]).join(', ')||'—')+'<br>Owner: '+escapeHtml(ent.owner||'—')+'<br>Criticality: '+escapeHtml(ent.criticality||'normal')+'<br>Exposed: '+(ent.internet_exposed?'<span style="color:var(--red)">yes</span>':'no'))
+    +'<br>Status: <span style="color:'+hlStatusColor(node?node.status:'unknown')+'">'+escapeHtml(node?node.status:'unknown (no checks)')+'</span>';
+  const depsEl=document.getElementById('hl-ent-deps');
+  if(depsEl){
+    const edges=(HL_DASH&&HL_DASH.graph_edges)||[];
+    const uses=edges.filter(e=>e.from===id).map(e=>hlRefName('any',e.to)+' ('+e.kind+')');
+    const dependents=hlDependents(id,edges).map(x=>hlRefName('any',x));
+    depsEl.innerHTML='Uses: '+(uses.length?escapeHtml(uses.join(', ')):'nothing recorded')+
+      '<br>Depended on by: '+(dependents.length?escapeHtml(dependents.join(', ')):'nothing recorded');
+  }
+  const rel=document.getElementById('hl-ent-related');
+  if(rel){
+    const needle=(ent.name||'')+'|'+(ent.address||ent.url||'')+'|'+id;
+    const toks=needle.split('|').filter(x=>x&&x.length>2);
+    const match=s=>toks.some(t=>String(s||'').toLowerCase().includes(t.toLowerCase()));
+    const incs=(HL_DASH&&HL_DASH.active_incidents||[]).filter(i=>match(i.subject_id)||match(i.title));
+    const chgs=(HL_DASH&&HL_DASH.recent_changes||[]).filter(c=>match(c.summary)||c.subject_id===id);
+    rel.innerHTML=(incs.length?incs.map(i=>'⚠ <b>'+escapeHtml(i.title)+'</b> ('+escapeHtml(i.status)+')').join('<br>'):'No active incidents')+
+      '<br><span style="color:var(--dim)">Recent changes:</span><br>'+
+      (chgs.length?chgs.slice(0,5).map(c=>hlDate(c.created_at)+' — '+escapeHtml(c.summary)).join('<br>'):'none recorded');
+  }
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function hlCloseEntity(){ const box=document.getElementById('hl-entity-detail'); if(box) box.style.display='none'; }
+
+// Row-click delegation for Hosts/Services tables (additive: no renderer changes needed).
+let HL_DELEGATED=false;
+function hlDelegateRows(){
+  if(HL_DELEGATED) return; HL_DELEGATED=true;
+  const wire=(tbodyId,kind,arr)=>{
+    const tb=document.getElementById(tbodyId); if(!tb) return;
+    tb.addEventListener('click',ev=>{
+      if(ev.target.closest('button')) return; // let action buttons win
+      const tr=ev.target.closest('tr'); if(!tr||!tr.parentNode) return;
+      const idx=Array.prototype.indexOf.call(tr.parentNode.children,tr);
+      const list=arr(); if(idx>=0&&idx<list.length) hlEntity(kind,list[idx].id);
+    });
+  };
+  wire('hl-hosts-tbody','host',()=>HL_HOSTS);
+  wire('hl-svcs-tbody','service',()=>HL_SVCS);
+}
+
+// -- V2.0 Pass 2: identity layer (subsystem theming + connection cues) ----------------
+// Tags each card with its subsystem class so the centralized #hl-theme tokens color it.
+// Pure decoration: reads the DOM, changes no data or behavior.
+let HL_DECORATED=false;
+function decorateHlSections(){
+  if(HL_DECORATED) return; HL_DECORATED=true;
+  const map={
+    'hl-checks-tbody':'hl-sec-health','hl-check-form':'hl-sec-health',
+    'hl-pve-status':'hl-sec-compute','hl-vms-tbody':'hl-sec-compute','hl-cts-tbody':'hl-sec-compute',
+    'hl-storage-tbody':'hl-sec-storage',
+    'hl-dev-form':'hl-sec-security','hl-devs-tbody':'hl-sec-security','hl-risks-tbody':'hl-sec-security',
+    'hl-inc-tbody':'hl-sec-incident','hl-inc-detail':'hl-sec-incident',
+    'hl-changes':'hl-sec-memory','hl-hosts-tbody':'hl-sec-memory','hl-svcs-tbody':'hl-sec-memory',
+    'hl-ports-tbody':'hl-sec-memory','hl-deps-tbody':'hl-sec-memory',
+    'hl-graph':'hl-sec-compute','hl-summary':'hl-sec-memory','hl-host-form':'hl-sec-memory','hl-svc-form':'hl-sec-memory','hl-dep-form':'hl-sec-memory'
+  };
+  Object.keys(map).forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    const card=el.closest('.card'); if(card) card.classList.add(map[id]);
+  });
+  // Connection cues: clicking a failed check flashes its related incidents; clicking a risk
+  // finding flashes the services it points at. Subtle, purposeful, no diagrams.
+  const cue=(tbodyId,getNeedle,targetTbodies)=>{
+    const tb=document.getElementById(tbodyId); if(!tb) return;
+    tb.addEventListener('click',ev=>{
+      if(ev.target.closest('button')) return;
+      const tr=ev.target.closest('tr'); if(!tr) return;
+      const needle=getNeedle(tr); if(!needle) return;
+      hlFlashRows(targetTbodies,needle);
+    });
+  };
+  cue('hl-checks-tbody',tr=>(tr.cells[1]?tr.cells[1].textContent:'').trim(),['hl-inc-tbody']);
+  cue('hl-risks-tbody',tr=>{
+    const m=(tr.cells[2]?tr.cells[2].textContent:'').match(/'([^']+)'/); return m?m[1]:'';
+  },['hl-svcs-tbody','hl-hosts-tbody','hl-devs-tbody']);
+}
+
+function hlFlashRows(tbodyIds,needle){
+  const n=String(needle).toLowerCase(); let hits=0;
+  tbodyIds.forEach(id=>{
+    const tb=document.getElementById(id); if(!tb) return;
+    Array.prototype.forEach.call(tb.rows,row=>{
+      if(row.textContent.toLowerCase().includes(n)){
+        row.classList.remove('hl-flash'); void row.offsetWidth; // restart animation
+        row.classList.add('hl-flash'); hits++;
+        if(hits===1) row.scrollIntoView({behavior:'smooth',block:'nearest'});
+      }
+    });
+  });
+  if(!hits) hlMsg('No related rows found for "'+needle+'"',true);
 }
 
 // -- Incidents + change memory (v1.14.0) --------------------------------------------
