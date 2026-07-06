@@ -2651,18 +2651,71 @@ function setApiBase(u){ API_BASE = u; localStorage.setItem('anthill_apibase', u)
 
 function url(path){ return API_BASE ? API_BASE.replace(/\/$/,'') + path : path; }
 
+// V2.2 Pass D — centralized API layer: auth-flood gate, in-flight GET deduplication, TTL cache
+// with stale-while-revalidate, request timeouts, and 429 backoff. Root-cause fixes:
+// - "Too many attempts": ~7 pollers each retried through a dead session; every 401 fed the
+//   server's AuthLimiter. Now the FIRST 401 flips the auth-lost gate and every later call
+//   short-circuits locally (zero network) until re-login clears it (enterApp sets authLost=false).
+// - Slow Overview/Patch Center: identical GETs from parallel pollers now share one in-flight
+//   promise and a per-path TTL cache; hidden tabs serve cache instead of hitting the API.
+const API_TTL={'/status':10000,'/events/json':3000,'/jobs':5000,'/missions/json':10000,
+  '/colony/registry':30000,'/pheromones/json':20000,'/autonomy/status':10000,'/objectives':15000,
+  '/patches':30000,'/homelab/dashboard':10000,'/homelab/summary':10000,'/homelab/approvals/unified':10000,
+  '/system/summary':15000,'/update/check':300000};
+const _apiCache=new Map(), _apiInflight=new Map(); let _api429Until=0;
+function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
+  for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
+function apiCacheBust(prefix){ for(const k of Array.from(_apiCache.keys())) if(!prefix||k.startsWith(prefix)) _apiCache.delete(k); }
+
 async function api(path, method='GET', body=null) {
-  const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(url(path), opts);
-  if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
-  // Never let an empty or non-JSON body throw a raw "Unexpected end of JSON input" — turn it into a
-  // structured {success:false} so callers show a clean message (e.g. a stale server without a route).
-  const text = await r.text();
-  if (!text) return { success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
-  try { return JSON.parse(text); }
-  catch { return { success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; }
+  const isGet=method==='GET'&&!body;
+  // Auth gate: while logged out, only auth endpoints may touch the network.
+  if(typeof authLost!=='undefined'&&authLost&&!path.startsWith('/auth'))
+    return { success:false, message:'Not signed in.', status:401 };
+  const now=Date.now();
+  if(isGet){
+    const hit=_apiCache.get(path);
+    if(hit&&(now-hit.at<_ttlFor(path)||document.hidden||now<_api429Until)) return hit.data; // fresh, hidden-tab, or backoff → cached
+    if(_apiInflight.has(path)) return _apiInflight.get(path); // dedupe identical in-flight GETs
+    if(now<_api429Until&&hit) return hit.data;
+    if(now<_api429Until) return { success:false, message:'Rate limited — backing off.', status:429 };
+  }
+  const run=(async()=>{
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),10000);
+    try{
+      const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(url(path), opts);
+      if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
+      if (r.status === 429) {
+        const ra=parseInt(r.headers.get('Retry-After')||'15',10);
+        _api429Until=Date.now()+Math.min(Math.max(ra,5),120)*1000; // respect Retry-After, clamp 5-120s
+      }
+      const text = await r.text();
+      let out;
+      if (!text) out={ success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
+      else { try { out=JSON.parse(text); } catch { out={ success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; } }
+      if(isGet&&out&&out.success!==false) _apiCache.set(path,{at:Date.now(),data:out});
+      return out;
+    }catch(e){
+      if(e&&e.message==='unauthorized') throw e;
+      const stale=isGet?_apiCache.get(path):null;
+      if(stale) return stale.data; // stale-while-error: keep the UI alive, refresh next poll
+      return { success:false, message:(e&&e.name==='AbortError')?'Request timed out (10s).':('Request failed: '+((e&&e.message)||'network error')), status:0 };
+    }finally{ clearTimeout(timer); if(isGet)_apiInflight.delete(path); }
+  })();
+  if(isGet)_apiInflight.set(path,run);
+  return run;
 }
+// Mutations must show fresh data next read: bust the GET cache after any successful POST/PUT/DELETE.
+(function(){ const _m=api; window.api=async function(p,method='GET',body=null){
+  const out=await _m(p,method,body);
+  if(method!=='GET'&&out&&out.success!==false) apiCacheBust('');
+  return out; };})();
+// Same auth gate for text endpoints (approvals/events text views) — no network while logged out.
+(function(){ const _t=apiText; window.apiText=async function(p){
+  if(typeof authLost!=='undefined'&&authLost) throw new Error('unauthenticated');
+  return _t(p); };})();
 async function apiText(path) {
   const r = await fetch(url(path), { headers: { 'Authorization': 'Bearer '+TOKEN } });
   if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }

@@ -118,6 +118,32 @@ public class ProxmoxIntegrationTests : IDisposable
     private ProxmoxApiClient Client(MockPveServer server, string? token = Token, int timeoutMs = 5000) =>
         new($"http://127.0.0.1:{server.Port}/api2/json", _guard, () => token, TimeSpan.FromMilliseconds(timeoutMs));
 
+    // ---- Protocol selection (v2.2.0 no-TLS fix) ----------------------------------------------------
+
+    [Fact]
+    public void Protocol_HttpModeBuildsHttpBaseUrl_HttpsRemainsDefault()
+    {
+        var https = new ProxmoxApiClient("pve.lan", 8006, _guard, () => Token);
+        Assert.StartsWith("https://pve.lan:8006", https.BaseUrl);
+        var http = new ProxmoxApiClient("pve.lan", 8006, _guard, () => Token, insecureTls: false, timeout: null, protocol: "http");
+        Assert.StartsWith("http://pve.lan:8006", http.BaseUrl);
+        var junk = new ProxmoxApiClient("pve.lan", 8006, _guard, () => Token, insecureTls: false, timeout: null, protocol: "gopher");
+        Assert.StartsWith("https://", junk.BaseUrl); // unknown protocol falls back to https, never breaks
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Protocol_HttpMode_StillAttachesAuthHeader()
+    {
+        // The whole test suite runs the client over plain http against the loopback mock — the
+        // Redaction test already proves the PVEAPIToken header rides http requests. This asserts
+        // it explicitly for the no-TLS fix.
+        AllowLoopback();
+        using var server = new MockPveServer();
+        var provider = new ProxmoxInventoryProvider(Client(server), _repo);
+        Assert.True((await provider.SyncInventoryAsync(CancellationToken.None)).Ok);
+        Assert.Contains(server.AuthHeaders, h => h.StartsWith("Authorization: PVEAPIToken=", StringComparison.OrdinalIgnoreCase));
+    }
+
     // ---- No-write permission (structural + wire) --------------------------------------------------
 
     [Fact]
