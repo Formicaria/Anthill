@@ -173,7 +173,7 @@ dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r linux-x64 --self
 V1.8.27  Roadmap/documentation consolidation                 [SHIPPED v1.8.27]
 V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
 V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.29]
-V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions
+V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions  [SHIPPED v1.9.0]
 V1.9.1   Homelab scheduler skeleton and mock-provider harness
 V1.10.0  Inventory and service registry
 V1.11.0  Health checks and notifications
@@ -282,6 +282,13 @@ All training missions are read-only, must not modify files, and must not create 
 ---
 
 # PHASE 4 — V1.9.0 HOMELAB FOUNDATION
+
+**Status: SHIPPED in v1.9.0** — `HomelabRepository` (15 tables in the colony DB), the seven
+provider interfaces, `HomelabTargetGuard` (D1, SSRF-isolated), `HomelabCredentialStore` (D2,
+write-only secrets + audit), the homelab permission tier + `homelab_operator` role (D3, action
+gates OFF until V2.1), the `HomelabScheduler` skeleton (D4, disabled by default), eight
+visible-only read-only homelab ants, permission-scoped `/homelab/*` endpoints, `docs/HOMELAB.md`
+(D10), and the `Anthill.Tests.Homelab` suite.
 
 ## Goal
 Introduce the homelab backend foundation without controlling infrastructure.

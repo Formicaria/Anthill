@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.29.1";
+    public const string Version = "1.9.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -67,6 +67,10 @@ public static class AnthillRuntime
         // Operator shell console: admin-only interactive host terminal. Gated a second time by
         // operator_shell_enabled at runtime; never granted to coordinators (see UserRoles).
         ["operator_shell"] = true,
+        // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled; the two
+        // action permissions stay OFF until V2.1 ships approval-gated actions — fail closed.
+        ["read_homelab"] = true, ["manage_homelab_integrations"] = true,
+        ["approve_homelab_actions"] = false, ["execute_homelab_actions"] = false,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -119,6 +123,16 @@ public static class AnthillRuntime
     public static int AutonomyMaxConsecutiveFailures = 3;
     /// <summary>Sentinel file whose presence halts the autonomous Director. Lives under the workspace root.</summary>
     public static string AutonomyStopFileName = "STOP";
+
+    // ---- Homelab foundation (v1.9.0, NORTH_STAR Phase 4) -------------------
+    /// <summary>Master gate for the homelab subsystem. Off by default; read-only in the V1.9.x line.</summary>
+    public static bool EnableHomelab = false;
+    /// <summary>Gate for the HomelabScheduler background runner. Off by default; v1.9.0 registers no jobs.</summary>
+    public static bool EnableHomelabScheduler = false;
+    /// <summary>Global cap on concurrent homelab checks/syncs (the scheduler's semaphore width).</summary>
+    public static int HomelabMaxConcurrentChecks = 2;
+    /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
+    public static string HomelabStopFileName = "HOMELAB_STOP";
     // ---- Phase 2: Strategist (self-generated missions) --------------------
     /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
@@ -427,6 +441,9 @@ public static class AnthillRuntime
         MaxDbBackups = Math.Clamp(config.MaxDbBackups, 0, 1000);
         EventRetentionDays = Math.Clamp(config.EventRetentionDays, 0, 3650);
         EnableAutonomy = config.AutonomyEnabled;
+        EnableHomelab = config.HomelabEnabled;
+        EnableHomelabScheduler = config.HomelabSchedulerEnabled;
+        HomelabMaxConcurrentChecks = Math.Clamp(config.HomelabMaxConcurrentChecks, 1, 16);
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);

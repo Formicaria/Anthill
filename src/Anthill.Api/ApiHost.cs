@@ -21,7 +21,7 @@ namespace Anthill.Api;
 /// build: constant-time token auth, failed-auth + mission rate limiting, hardened response
 /// headers, no public docs endpoints, permission-gated reads, and the embedded colony UI.
 /// </summary>
-public static class ApiHost
+public static partial class ApiHost
 {
     public static Queen Queen { get; private set; } = null!;
     public static ApiJobRegistry Jobs { get; private set; } = null!;
@@ -61,6 +61,7 @@ public static class ApiHost
         MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
         UiHtml = LoadUi();
+        InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
         var app = builder.Build();
 
@@ -95,6 +96,7 @@ public static class ApiHost
         });
 
         MapEndpoints(app);
+        MapHomelabEndpoints(app);
         AssertNoDuplicateRoutes(app);
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");

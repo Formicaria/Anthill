@@ -199,6 +199,20 @@ public static class AntRegistry
             R("scribe", "ScribeAnt", "Communication / Docs", "Operator reports, changelogs, release notes, and summaries.", false, ReadWorkspace with { ReadMemory = true, WriteMemory = true, ProposePatches = true }, new[] { "read_changed_files_summary", "create_docs_patch_proposal_when_allowed" }, noApply,
                 W("scribe", "changelog_scribe", "ChangelogScribe", "Draft changelog and release note entries.", ReadWorkspace with { ReadMemory = true, WriteMemory = true, ProposePatches = true }, new[] { "read_changed_files_summary", "create_docs_patch_proposal_when_allowed" }, noApply),
                 W("scribe", "operator_scribe", "OperatorScribe", "Create concise operator-facing summaries.", WriteMemory, new[] { "read_mission_result", "read_test_summary" }, noApply)),
+
+            // ---- Homelab colony (v1.9.0, NORTH_STAR Phase 4) --------------------------------------
+            // Read-only, visible-only (Executable: false — the planner can never assign them tasks in
+            // v1.9.0). Their deterministic data collection is plain C# service code (HomelabScheduler +
+            // providers), never routed through the model router; LLM behavior arrives later strictly
+            // for explanation/summarization/recommendation (NORTH_STAR §3.2 rules 5-6).
+            R("inventory", "InventoryAnt", "Homelab", "Knows what exists: hosts, VMs, containers, storage, and services.", false, ReadMemory, new[] { "read_homelab_inventory" }, noApply),
+            R("network_scout", "NetworkScoutAnt", "Homelab", "Knows the network shape: devices, subnets, VLANs, and unknown arrivals.", false, ReadMemory, new[] { "read_network_inventory" }, noApply),
+            R("health", "HealthAnt", "Homelab", "Knows what is alive, degraded, or broken from health-check history.", false, ReadMemory, new[] { "read_health_results" }, noApply),
+            R("proxmox", "ProxmoxAnt", "Homelab", "Knows the Proxmox cluster read-only: nodes, VMs, LXCs, and their state.", false, ReadMemory, new[] { "read_proxmox_inventory" }, noApply),
+            R("storage", "StorageAnt", "Homelab", "Knows pools, disks, capacity, and SMART state.", false, ReadMemory, new[] { "read_storage_inventory" }, noApply),
+            R("backup", "BackupAnt", "Homelab", "Knows what is protected, what is stale, and what is not backed up.", false, ReadMemory, new[] { "read_backup_inventory" }, noApply),
+            R("security_scout", "SecurityScoutAnt", "Homelab", "Knows exposure and risk findings: open ports, unknown devices, exposed services.", false, ReadMemory, new[] { "read_risk_findings" }, noApply),
+            R("change_archivist", "ChangeArchivistAnt", "Homelab", "Keeps the homelab change log and links changes to incidents and missions.", false, WriteMemory, new[] { "read_change_log", "write_change_summary" }, noApply),
         };
     }
 }
