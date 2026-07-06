@@ -89,6 +89,12 @@ public interface IHomelabRepository : IHomelabEventSink
     void UpsertRiskRecord(RiskRecord record);
     void SetRiskStatus(string id, string status, string changedBy);
     IReadOnlyList<RiskRecord> ListRiskRecords();
+
+    // Incident + change memory (v1.14.0, NORTH_STAR Phase 10)
+    void OpenIncident(IncidentRecord incident, string openedBy);
+    IncidentRecord? GetIncident(string id);
+    void SetIncidentStatus(string id, string status, string rootCause, string changedBy);
+    IReadOnlyList<IncidentRecord> ListIncidents();
     IReadOnlyList<HomelabEvent> RecentEvents(int limit = 50);
     void RecordChange(ChangeRecord change);
     IReadOnlyList<ChangeRecord> RecentChanges(int limit = 50);

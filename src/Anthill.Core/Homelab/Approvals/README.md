@@ -1,5 +1,7 @@
-# Reserved — homelab action approvals (IApprovable)
+# Approvals — the one approval system (IApprovable)
 
-Scaffolding reserved by the v1.9.0 homelab foundation (NORTH_STAR Phase 4).
-This folder is filled in V1.14.0 (design) and V2.1.0 (implementation). Do not add unrelated code here; see docs/NORTH_STAR.md
-for the canonical build order and docs/HOMELAB.md for the homelab design.
+v1.14.0 ships the design here: `IApprovable.cs` — the shared interface, the `ApprovableView`
+projection behind `GET /homelab/approvals/unified` (today's patch approvals mapped by
+`ApprovableProjections`), the single dedupe rule, and the deliberately inert V2.1
+`ActionProposal` skeleton carrying the blast-radius rubric fields. Canonical design doc:
+docs/APPROVALS.md. V2.1 adds the ActionExecutor against this contract without changing it.

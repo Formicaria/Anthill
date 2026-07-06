@@ -1641,6 +1641,42 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
+        <!-- Incidents (v1.14.0) -->
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Incidents <span id="hl-inc-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="float:right;display:flex;gap:8px;" id="hl-inc-form">
+              <input class="form-input" id="hl-i-title" type="text" placeholder="Open incident manually: title" style="width:260px;" autocomplete="off">
+              <button class="btn btn-primary" onclick="hlOpenIncident()">+ Open</button>
+            </span>
+          </div>
+          <table class="users-table">
+            <thead><tr><th>Severity</th><th>Title</th><th>Subject</th><th>Status</th><th>Opened</th><th>Root Cause / Fix</th><th>Actions</th></tr></thead>
+            <tbody id="hl-inc-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+          <div id="hl-inc-detail" style="display:none;padding:10px 16px;border-top:1px solid var(--line, #223);">
+            <div class="section-head" style="margin-top:0;">Incident Detail — <span id="hl-inc-detail-title"></span>
+              <button class="btn btn-ghost" style="float:right;" onclick="hlCloseIncDetail()">✕ Close</button>
+            </div>
+            <div style="display:grid;grid-template-columns:3fr 2fr;gap:14px;">
+              <div>
+                <div style="font-size:10px;color:var(--dim);margin-bottom:4px;">TIMELINE (suspect = changed in the 24h before it broke)</div>
+                <div id="hl-inc-timeline" style="font-size:10px;max-height:260px;overflow-y:auto;"></div>
+              </div>
+              <div>
+                <div style="font-size:10px;color:var(--dim);margin-bottom:4px;">SIMILAR INCIDENTS — "this fixed it last time"</div>
+                <div id="hl-inc-similar" style="font-size:10px;max-height:170px;overflow-y:auto;"></div>
+                <div id="hl-inc-resolve" style="margin-top:10px;">
+                  <input class="form-input" id="hl-inc-root" type="text" placeholder="Root cause / what fixed it" style="width:100%;" autocomplete="off">
+                  <div style="display:flex;gap:8px;margin-top:6px;">
+                    <button class="btn btn-ghost" onclick="hlIncStatus('investigating')">Investigating</button>
+                    <button class="btn btn-primary" onclick="hlIncStatus('resolved')">✓ Resolve (records the fix)</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Network & Risk (v1.13.0) -->
         <div class="card" style="padding:14px 16px;" id="hl-dev-form">
           <div class="section-head" style="margin-top:0;">Register Network Device <span style="font-weight:400;color:var(--dim)">(manual/import only — no scanning; mark unfamiliar devices as unknown to flag them)</span></div>
@@ -2541,7 +2577,7 @@ function applyRoleVisibility(){
   const homelab = admin || ROLE==='homelab_operator';
   const hlNav=document.getElementById('nav-item-homelab');
   if(hlNav) hlNav.style.display=homelab?'':'none';
-  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze'].forEach(id=>{
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze','hl-inc-form','hl-inc-resolve'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
@@ -6150,6 +6186,7 @@ async function loadHomelab(){
     loadHlHealth();
     loadHlVirt();
     loadHlRisks();
+    loadHlIncidents();
     const c=document.getElementById('hl-count');
     if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
   }catch(e){ hlMsg('Load failed: '+e.message,false); }
@@ -6285,6 +6322,76 @@ async function hlPveSync(){
   const r=await api('/homelab/proxmox/sync','POST',{});
   hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
   if(r.success){ loadHomelab(); }
+}
+
+// -- Incidents + change memory (v1.14.0) --------------------------------------------
+let HL_INC_OPEN=null; // id of the incident open in the detail drawer
+
+async function loadHlIncidents(){
+  try{
+    const r=await api('/homelab/incidents');
+    renderHlIncidents(r.success?(r.data||[]):[]);
+  }catch(e){ hlMsg('Incident load failed: '+e.message,false); }
+}
+
+function renderHlIncidents(list){
+  const tb=document.getElementById('hl-inc-tbody'); if(!tb) return;
+  const open=list.filter(i=>i.status!=='resolved');
+  const kpi=document.getElementById('hl-inc-kpi');
+  if(kpi) kpi.textContent='· '+open.length+' active · '+(list.length-open.length)+' resolved';
+  if(!list.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No incidents — health-failure streaks open them automatically.</td></tr>'; return; }
+  tb.innerHTML=list.slice(0,50).map(i=>{
+    const col=i.severity==='error'?'var(--red)':(i.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
+    const stCol=i.status==='resolved'?'var(--green)':(i.status==='investigating'?'var(--yellow, orange)':'var(--red)');
+    return '<tr><td style="color:'+col+'">'+escapeHtml(i.severity)+'</td><td>'+escapeHtml(i.title)+'</td><td>'+escapeHtml(i.subject_id||'—')+
+      '</td><td style="color:'+stCol+'">'+escapeHtml(i.status)+'</td><td>'+hlDate(i.opened_at)+'</td><td>'+escapeHtml(i.root_cause||'—')+
+      '</td><td><button class="btn btn-ghost" onclick="hlIncDetail(\''+escapeHtml(i.id)+'\',\''+escapeHtml((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
+  }).join('');
+}
+
+async function hlIncDetail(id,title){
+  HL_INC_OPEN=id;
+  const box=document.getElementById('hl-inc-detail'); if(box) box.style.display='';
+  const t=document.getElementById('hl-inc-detail-title'); if(t) t.textContent=title;
+  try{
+    const [tl,sim]=await Promise.all([
+      api('/homelab/incidents/'+encodeURIComponent(id)+'/timeline'),
+      api('/homelab/incidents/'+encodeURIComponent(id)+'/similar')]);
+    const tlEl=document.getElementById('hl-inc-timeline');
+    const entries=tl.success?(tl.data||[]):[];
+    if(tlEl) tlEl.innerHTML=entries.length?entries.map(e=>{
+      const col=e.severity==='error'?'var(--red)':(e.severity==='warning'?'var(--yellow, orange)':'var(--muted)');
+      return '<div style="padding:2px 0;border-left:2px solid '+(e.suspect?'var(--red)':'var(--line, #223)')+';padding-left:8px;margin:2px 0;">'+
+        '<span style="color:var(--dim)">'+hlDate(e.at)+'</span> <b style="color:'+col+'">'+escapeHtml(e.kind)+'</b>'+
+        (e.suspect?' <span style="color:var(--red);font-weight:700">SUSPECT</span>':'')+' — '+escapeHtml(e.summary)+'</div>';
+    }).join(''):'<div style="color:var(--dim)">No correlated activity found.</div>';
+    const simEl=document.getElementById('hl-inc-similar');
+    const matches=sim.success?(sim.data||[]):[];
+    if(simEl) simEl.innerHTML=matches.length?matches.map(m=>
+      '<div style="padding:4px 0;border-bottom:1px dotted var(--line, #223);">'+
+      '<b>'+escapeHtml(m.incident.title)+'</b> <span style="color:var(--dim)">(score '+m.score+', '+escapeHtml(m.incident.status)+')</span>'+
+      (m.fixed_by?('<br><span style="color:var(--green)">Fixed last time by:</span> '+escapeHtml(m.fixed_by)):'')+'</div>').join('')
+      :'<div style="color:var(--dim)">No similar incidents in memory yet.</div>';
+  }catch(e){ hlMsg('Detail load failed: '+e.message,false); }
+}
+
+function hlCloseIncDetail(){ HL_INC_OPEN=null; const box=document.getElementById('hl-inc-detail'); if(box) box.style.display='none'; }
+
+async function hlOpenIncident(){
+  const title=document.getElementById('hl-i-title').value.trim();
+  if(!title){ hlMsg('Incident title required',false); return; }
+  const r=await api('/homelab/incidents','POST',{title, subjectKind:'manual', subjectId:title, severity:'warning'});
+  hlMsg(r.message||(r.success?'Opened':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-i-title').value=''; loadHlIncidents(); }
+}
+
+async function hlIncStatus(status){
+  if(!HL_INC_OPEN){ hlMsg('Open an incident detail first',false); return; }
+  const root=document.getElementById('hl-inc-root').value.trim();
+  if(status==='resolved'&&!root){ hlMsg('Record the root cause so future incidents can suggest the fix',false); return; }
+  const r=await api('/homelab/incidents/'+encodeURIComponent(HL_INC_OPEN)+'/status','POST',{status, rootCause:root});
+  hlMsg(r.message||(r.success?'Updated':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-inc-root').value=''; hlCloseIncDetail(); loadHlIncidents(); }
 }
 
 // -- Network & risk awareness (v1.13.0) --------------------------------------------

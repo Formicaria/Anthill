@@ -1,5 +1,56 @@
 # ANTHILL Changelog
 
+## v1.14.0 — Incident + change memory + the IApprovable design (NORTH_STAR Phase 10)
+
+Phase 10 of the master roadmap — the final phase of the V1.x line. ANTHILL now connects failures
+to recent changes and past fixes, and the unified approval abstraction that V2.1's actions build
+on is designed, shipped, and test-reviewed. Incident tracking, timelines, and recommendations
+only — nothing here can remediate anything.
+
+### Incident + change memory
+- **Auto-opened incidents**: the `incident-sweep` scheduler job turns the health system's
+  `incident_candidate` events (3 consecutive failures) into incidents, deduped per subject —
+  one open incident per failing thing, re-sweeps never duplicate. Manual opening via API/UI too.
+- **Incident timeline**: reconstructs everything around an incident — `change_log` entries from
+  the 24h lookback window before it opened are flagged **SUSPECT** ("what changed right before it
+  broke"), plus correlated homelab events and per-target health results through resolution,
+  chronologically ordered.
+- **Similar incidents + fix memory**: deterministic scoring (token overlap + same-subject/kind
+  bonuses) over past incidents; resolved matches carry their root cause verbatim as
+  *"this fixed it last time"*. Resolving with a root cause writes an `incident_fix_recorded`
+  event — the durable memory future incidents draw on.
+- **Repeated-failure patterns**: a subject producing 3+ incidents in 14 days is pattern-flagged
+  (`incident_pattern` event) and its new incidents open at error severity.
+- **API**: `GET|POST /homelab/incidents`, `GET /homelab/incidents/{id}/timeline`,
+  `GET /homelab/incidents/{id}/similar`, `POST /homelab/incidents/{id}/status`
+  (open|investigating|resolved + root cause).
+- **UI**: Incidents panel on the Homelab page — severity/status tables, a detail drawer with the
+  suspect-flagged timeline and similar-incident fix suggestions, resolve-with-root-cause flow,
+  and manual incident opening.
+
+### IApprovable (designed before V2.1, per the roadmap)
+- **`IApprovable`** interface + `ApprovableView` projection: ONE pending queue, ONE lifecycle
+  (pending → approved → executed / rejected / superseded; execution never from pending), ONE
+  dedupe rule (equal DedupeKeys can't both be pending; newer supersedes), per-kind renderers
+  (`patch_diff` today; `action_proposal` V2.1; `network_preview` V2.4).
+- **`GET /homelab/approvals/unified`**: today's patch approvals projected into the unified queue
+  via a read adapter over `approval_requests` — no new table, no migration, existing decision
+  endpoints untouched.
+- **`ActionProposal` skeleton** (deliberately inert: no executor exists, nothing constructs one,
+  risk defaults `high`): carries the Phase 12 blast-radius rubric inputs (dependency fan-out,
+  criticality, backup coverage, exposure, rollback note, dry-run availability) so V2.1 implements
+  against reviewed fields.
+- **`docs/APPROVALS.md`**: the canonical design doc — lifecycle, dedupe, renderer table, and the
+  five execution requirements V2.1 is bound to (separate approve/execute permissions, state
+  re-checks, HOMELAB_STOP, audit events, forbidden-actions enforcement in the executor).
+
+### Tests
+- `IncidentMemoryTests`: per-subject dedupe across resolve cycles, idempotent candidate sweep,
+  repeat-offender severity upgrade + pattern event, timeline suspect flagging + chronological
+  order + subject correlation, similar-incident ranking with verbatim fix surfacing, resolve
+  validation + fix-memory event, and the IApprovable design review (faithful patch projection,
+  supersede-on-dedupe, inert fail-safe ActionProposal).
+
 ## v1.13.0 — Network + security awareness (NORTH_STAR Phase 9)
 
 Phase 9 of the master roadmap: understand the network shape and the obvious risks. Awareness and
