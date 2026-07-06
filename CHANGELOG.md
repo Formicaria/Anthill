@@ -1,5 +1,24 @@
 # ANTHILL Changelog
 
+## v1.14.0.1 — Unified approvals dedupe: collapse older pendings even when the newest is resolved
+
+Bug-finder/tester pass over the v1.14.0 code (last stop before V2.0). The incident/change-memory and
+`IApprovable` design hold up well — deterministic, repo-only, correct SQL, well-tested. One real
+logic bug in the unified-queue dedupe:
+
+- **`ApprovableProjections.DedupePending`** (behind `GET /homelab/approvals/unified`) only superseded
+  older pending duplicates when the *absolute newest* item in a dedupe group was itself pending
+  (`ordered[0].State == "pending"`). If the newest item was already approved/rejected/executed while
+  two older duplicates were still pending, **both** older items stayed pending — the unified queue
+  would show two live pending approvals for the same target, violating the stated "at most one pending
+  per key" invariant. Now it keeps the newest still-pending item and supersedes every older pending
+  one regardless of the newest item's state. Added a regression test for the newest-non-pending case
+  (the existing test only covered the newest-is-pending happy path).
+
+Nothing else found: structural sweep clean (version consistency, all `.cs` balance, `node --check`,
+ui-integrity), security sweep clean (TLS-bypass is Proxmox-only and config-gated, no secret logging,
+SQL interpolation is table-names/constants only, all 116 endpoints auth-gated).
+
 ## v1.14.0 — Incident + change memory + the IApprovable design (NORTH_STAR Phase 10)
 
 Phase 10 of the master roadmap — the final phase of the V1.x line. ANTHILL now connects failures

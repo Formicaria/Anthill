@@ -176,6 +176,30 @@ public class IncidentMemoryTests : IDisposable
     }
 
     [Fact]
+    public void Approvable_OneDedupeRule_NewestNonPending_StillCollapsesOlderPendings()
+    {
+        // Regression (v1.14.0.1): when the newest item in a dedupe group is already approved/executed
+        // but two OLDER duplicates are still pending, exactly one pending must survive — otherwise the
+        // unified queue shows two live pending items for the same target. The old rule only superseded
+        // when the absolute-newest item was itself pending, so this case leaked two pendings.
+        ApprovableView Make(string id, string createdAt, string state) => new()
+        {
+            ApprovableId = "patch:" + id, Kind = "patch", State = state,
+            DedupeKey = "patch_proposal:same-target", CreatedAt = createdAt, SourceId = id,
+        };
+        var deduped = ApprovableProjections.DedupePending(new[]
+        {
+            Make("a-oldest", "2026-07-01T00:00:00Z", "pending"),
+            Make("b-middle", "2026-07-03T00:00:00Z", "pending"),
+            Make("c-newest", "2026-07-05T00:00:00Z", "approved"),
+        });
+        Assert.Equal("approved", Assert.Single(deduped, v => v.SourceId == "c-newest").State);
+        Assert.Equal("pending", Assert.Single(deduped, v => v.SourceId == "b-middle").State);   // newest pending kept
+        Assert.Equal("superseded", Assert.Single(deduped, v => v.SourceId == "a-oldest").State); // older pending collapsed
+        Assert.Single(deduped, v => v.State == "pending"); // exactly one pending survives
+    }
+
+    [Fact]
     public void Approvable_ActionProposal_IsInertAndFailsTowardCaution()
     {
         var proposal = new ActionProposal { Title = "Restart jellyfin", ActionType = "restart_service" };
