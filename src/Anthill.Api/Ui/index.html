@@ -63,6 +63,38 @@
   .tb-dot.on{animation:none;}
   .ath-card,.tb-search{transition:none;}
 }
+/* V2.2 Pass B — Overview command-center grid */
+.overview-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;margin-bottom:14px;position:relative;z-index:1;}
+.ov2-health{grid-column:span 3;} .ov2-active{grid-column:span 4;} .ov2-tasks{grid-column:span 5;}
+.ov2-approvals{grid-column:span 3;} .ov2-core{grid-column:span 4;} .ov2-chambers{grid-column:span 5;}
+.ov2-resources{grid-column:span 3;} .ov2-events{grid-column:span 4;} .ov2-actions{grid-column:span 5;}
+.ov2-timeline{grid-column:span 8;} .ov2-queue{grid-column:span 4;}
+@media (max-width:1200px){.overview-grid>*{grid-column:span 6;}}
+@media (max-width:760px){.overview-grid>*{grid-column:span 12;}}
+.ov2-big{font-size:26px;font-weight:800;color:var(--anthill-text);line-height:1.1;}
+.ov2-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--anthill-muted);padding:2px 0;}
+.ov2-row b{color:var(--anthill-text);}
+.ov2-list-item{padding:5px 0;border-bottom:1px dotted var(--anthill-border);font-size:10px;color:var(--anthill-muted);}
+.ov2-list-item:last-child{border-bottom:none;}
+.ov2-empty{font-size:10px;color:var(--anthill-dim);padding:8px 0;}
+.ov2-spark{display:flex;align-items:flex-end;gap:2px;height:26px;margin-top:6px;}
+.ov2-spark i{flex:1;background:var(--status-info);opacity:.55;border-radius:1px;min-height:2px;}
+.ov2-gauge{height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;margin:3px 0 8px;}
+.ov2-gauge i{display:block;height:100%;border-radius:3px;background:var(--status-info);}
+.ov2-phase{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:9px;font-family:var(--mono,monospace);}
+.ov2-phase span{padding:3px 9px;border-radius:10px;border:1px solid var(--anthill-border);color:var(--anthill-dim);}
+.ov2-phase span.done{color:var(--status-success);border-color:rgba(69,227,111,.4);}
+.ov2-phase span.now{color:var(--anthill-text);border-color:var(--role-mission-control);box-shadow:var(--glow-purple);}
+.ov2-phase span.fail{color:var(--status-danger);border-color:rgba(255,65,108,.5);}
+.ov2-qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.ov2-qa button{background:rgba(255,255,255,.03);border:1px solid var(--anthill-border);border-radius:8px;color:var(--anthill-text);
+  font-size:10px;padding:10px 6px;cursor:pointer;text-align:center;}
+.ov2-qa button:hover{border-color:var(--anthill-border-strong);box-shadow:var(--glow-blue);}
+.ov2-approve{background:rgba(69,227,111,.12);border:1px solid rgba(69,227,111,.4);color:var(--status-success);border-radius:5px;font-size:9px;padding:2px 8px;cursor:pointer;}
+.ov2-reject{background:rgba(255,65,108,.10);border:1px solid rgba(255,65,108,.4);color:var(--status-danger);border-radius:5px;font-size:9px;padding:2px 8px;cursor:pointer;}
+.ov2-chamber{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--anthill-border);border-radius:8px;padding:4px 8px;font-size:9px;color:var(--anthill-muted);margin:2px;}
+.ov2-chamber i{width:7px;height:7px;border-radius:50%;}
+.ov2-core-mini{display:flex;align-items:center;justify-content:center;position:relative;height:110px;}
 </style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
@@ -1191,6 +1223,30 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page page-scroll active" id="page-overview">
         <!-- V2.2 Pass A: shared top telemetry bar (real data only; '—' when unavailable) -->
         <div id="tb-overview"></div>
+
+        <!-- V2.2 Pass B: command-center summary grid (System Core stays compact in the HUD below) -->
+        <div class="overview-grid" id="ov2-grid">
+          <div class="ath-card ov2-health"><div class="ath-card-title">Colony Health</div><div id="ov2-health-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-active" style="cursor:pointer" onclick="showPage('missions')"><div class="ath-card-title">Active Mission</div><div id="ov2-active-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-tasks"><div class="ath-card-title">Tasks Today</div><div id="ov2-tasks-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-approvals"><div class="ath-card-title">Pending Approvals <a href="javascript:void(0)" onclick="showPage('patches')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-approvals-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-core" style="cursor:pointer" onclick="showPage('colony')"><div class="ath-card-title">System Core <span style="float:right;color:var(--anthill-dim)">expand →</span></div><div id="ov2-core-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-chambers"><div class="ath-card-title">Chamber Activity</div><div id="ov2-chambers-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-resources"><div class="ath-card-title">Resource Usage</div><div id="ov2-resources-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-actions"><div class="ath-card-title">Quick Actions</div>
+            <div class="ov2-qa">
+              <button onclick="ov2FocusMission()">🎯 Create Mission</button>
+              <button onclick="showPage('patches')">📦 Deploy Artifact</button>
+              <button onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
+              <button onclick="showPage('patches')">🩹 Patch Colony</button>
+              <button onclick="showPage('pheromones')">🧪 View Pheromones</button>
+              <button onclick="showPage('settings')">⚙ Colony Settings</button>
+            </div>
+          </div>
+          <div class="ath-card ov2-timeline"><div class="ath-card-title">Mission Timeline</div><div id="ov2-timeline-body"><div class="ov2-empty">Connecting...</div></div></div>
+          <div class="ath-card ov2-queue"><div class="ath-card-title">Mission Queue</div><div id="ov2-queue-body"><div class="ov2-empty">Connecting...</div></div></div>
+        </div>
 
         <!-- -- Top colony status strip -- -->
         <div class="hud-strip" id="hud-strip">
@@ -7156,11 +7212,175 @@ function renderTelemetryBar(containerId){
 // Wire into page lifecycle without touching existing enter handlers.
 (function(){
   const prevOv=PAGE_ENTER['overview'];
-  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); };
+  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2(); };
   const prevCo=PAGE_ENTER['colony'];
   PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
   setInterval(pollTelemetry,15000);
+  setInterval(()=>{ if(document.getElementById('page-overview')?.classList.contains('active')) pollOv2(); },20000);
 })();
+
+// -- V2.2 Pass B: Overview command-center cards (real data + labeled empty states) ----
+const OV2={healthTrend:[]};
+function ov2FocusMission(){ const el=document.getElementById('ov-mission-input'); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus(); } }
+function ov2Empty(id,msg){ const el=document.getElementById(id); if(el) el.innerHTML='<div class="ov2-empty">'+escapeHtml(msg)+'</div>'; }
+
+async function pollOv2(){
+  let jb,mn,ev,ap,reg;
+  try{
+    [jb,mn,ev,ap,reg]=await Promise.all([
+      api('/jobs'), api('/missions/json?limit=6'), api('/events/json?limit=200'),
+      api('/homelab/approvals/unified'), api('/colony/registry'),
+    ]);
+  }catch(e){ return; }
+  const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
+  const missions=Array.isArray(mn&&mn.data)?mn.data:[];
+  const events=Array.isArray(ev&&ev.data)?ev.data:[];
+  const approvals=(ap&&ap.success&&ap.data&&Array.isArray(ap.data.items))?ap.data.items:[];
+  const roles=(reg&&reg.success&&reg.data)?(Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[])):[];
+  renderOv2Health(); renderOv2Active(jobs,missions); renderOv2Tasks(events);
+  renderOv2Approvals(approvals); renderOv2Core(roles); renderOv2Chambers(roles,events);
+  renderOv2Resources(); renderOv2Events(events); renderOv2Timeline(jobs,missions); renderOv2Queue(jobs);
+}
+
+function renderOv2Health(){
+  const el=document.getElementById('ov2-health-body'); if(!el) return;
+  if(TB.health===null){ el.innerHTML='<div class="ov2-empty">No health signal yet — waiting for event data.</div>'; return; }
+  OV2.healthTrend.push(TB.health); if(OV2.healthTrend.length>48)OV2.healthTrend.shift();
+  const col=TB.health>=90?'var(--status-success)':(TB.health>=75?'var(--status-warning)':'var(--status-danger)');
+  el.innerHTML='<div class="ov2-big" style="color:'+col+'">'+TB.health+'%</div>'+
+    '<div style="margin:4px 0">'+athPill(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'),TB.healthLabel)+'</div>'+
+    '<div class="ov2-row"><span>Systems</span><b>'+(TB.online?'online':'offline')+'</b></div>'+
+    '<div class="ov2-row"><span>Ant network</span><b>'+(TB.activeAnts??'—')+' ants</b></div>'+
+    '<div class="ov2-row"><span>Approvals</span><b>'+(TB.approvals??'—')+' pending</b></div>'+
+    '<div class="ov2-spark" title="session trend">'+OV2.healthTrend.map(h=>'<i style="height:'+Math.max(6,h*0.26)+'px;background:'+col+'"></i>').join('')+'</div>';
+}
+
+function renderOv2Active(jobs,missions){
+  const el=document.getElementById('ov2-active-body'); if(!el) return;
+  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
+  if(!running){ el.innerHTML='<div class="ov2-empty">Idle — no active mission.<br>Enter a mission directive to begin.</div>'; return; }
+  const started=running.created_at||running.started_at||'';
+  const mins=started?Math.max(0,Math.round((Date.now()-Date.parse(started))/60000)):null;
+  el.innerHTML='<div style="font-size:12px;color:var(--anthill-text);font-weight:700;margin-bottom:6px;">'+escapeHtml((running.goal||running.title||'Mission').substring(0,90))+'</div>'+
+    '<div class="ov2-row"><span>Status</span><b style="color:var(--status-info)">running</b></div>'+
+    (mins!==null?'<div class="ov2-row"><span>Elapsed</span><b>'+mins+'m</b></div>':'')+
+    '<div class="ov2-row"><span>Queued behind</span><b>'+jobs.filter(j=>(j.status||'').toLowerCase()==='queued').length+'</b></div>';
+}
+
+function renderOv2Tasks(events){
+  const el=document.getElementById('ov2-tasks-body'); if(!el) return;
+  const today=new Date().toISOString().slice(0,10);
+  const taskEvts=events.filter(e=>String(e.event_type||e.type||'').toLowerCase().includes('task')&&String(e.created_at||'').startsWith(today));
+  if(!taskEvts.length){ el.innerHTML='<div class="ov2-empty">No task activity recorded today yet.</div>'; return; }
+  const byHour={}; taskEvts.forEach(e=>{ const h=(e.created_at||'').substring(11,13); if(h)byHour[h]=(byHour[h]||0)+1; });
+  const hours=Object.keys(byHour).sort();
+  const max=Math.max.apply(null,hours.map(h=>byHour[h]));
+  el.innerHTML='<div class="ov2-big">'+taskEvts.length+'</div><div style="font-size:9px;color:var(--anthill-dim);">task events today (from the event stream)</div>'+
+    '<div class="ov2-spark">'+hours.map(h=>'<i title="'+h+':00 — '+byHour[h]+'" style="height:'+Math.max(4,(byHour[h]/max)*24)+'px"></i>').join('')+'</div>';
+}
+
+function renderOv2Approvals(items){
+  const el=document.getElementById('ov2-approvals-body'); if(!el) return;
+  const pending=items.filter(i=>i.state==='pending').slice(0,3);
+  if(!pending.length){ el.innerHTML='<div class="ov2-empty">No approvals pending.</div>'; return; }
+  el.innerHTML=pending.map(a=>{
+    const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'info');
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+
+      '<div style="margin-top:4px;display:flex;gap:6px;">'+
+      '<button class="ov2-approve" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\')">✓ Approve</button>'+
+      '<button class="ov2-reject" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\')">✕ Reject</button></div></div>';
+  }).join('');
+}
+
+function renderOv2Core(roles){
+  const el=document.getElementById('ov2-core-body'); if(!el) return;
+  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
+  const shown=roles.slice(0,8);
+  const cx=90,cy=55,r=40;
+  let svg='<svg viewBox="0 0 180 110" style="width:100%;max-height:110px;">';
+  shown.forEach((role,i)=>{
+    const a=(i/shown.length)*Math.PI*2, x=cx+Math.cos(a)*r, y=cy+Math.sin(a)*r*0.8;
+    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="var(--anthill-border)" stroke-width="1"/>'+
+      '<circle cx="'+x+'" cy="'+y+'" r="5" fill="'+getRoleColor(role.role_id||role.id||role.display_name)+'"/>';
+  });
+  svg+='<circle cx="'+cx+'" cy="'+cy+'" r="10" fill="var(--role-queen)" opacity="0.9"><title>Queen</title></circle></svg>';
+  el.innerHTML='<div class="ov2-core-mini">'+svg+'</div>'+
+    '<div class="ov2-row"><span>Roles</span><b>'+roles.length+'</b></div>'+
+    '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(TB.activeAnts??'—')+'</b></div>';
+}
+
+function renderOv2Chambers(roles,events){
+  const el=document.getElementById('ov2-chambers-body'); if(!el) return;
+  if(!roles.length){ el.innerHTML='<div class="ov2-empty">Registry unavailable.</div>'; return; }
+  const hourAgo=Date.now()-3600000;
+  const counts={};
+  events.forEach(e=>{
+    const t=Date.parse(e.created_at||''); if(isNaN(t)||t<hourAgo) return;
+    const who=String(e.ant||e.ant_name||e.source||'');
+    if(who) counts[getRoleLabel(who)]=(counts[getRoleLabel(who)]||0)+1;
+  });
+  const chambers={};
+  roles.forEach(r=>{ const label=getRoleLabel(r.role_id||r.id||r.display_name); chambers[label]=(chambers[label]||0)+1+((r.workers&&r.workers.length)||0); });
+  el.innerHTML=Object.keys(chambers).map(label=>{
+    const act=counts[label]||0;
+    const lvl=act>=10?'High':(act>=3?'Medium':(act>0?'Low':'Idle'));
+    return '<span class="ov2-chamber" style="cursor:pointer" onclick="showPage(\'colony\')"><i style="background:'+getRoleColor(label)+'"></i>'+escapeHtml(label)+' <b>'+chambers[label]+'</b> · '+lvl+'</span>';
+  }).join('');
+}
+
+function renderOv2Resources(){
+  const el=document.getElementById('ov2-resources-body'); if(!el) return;
+  const sum=(typeof lastSystemSummary==='object'&&lastSystemSummary)?lastSystemSummary:{};
+  const metrics=[['CPU',sum.cpu_percent],['Memory',sum.memory_percent??sum.mem_percent],['Disk',sum.disk_percent],['Network',sum.network_percent]]
+    .filter(m=>typeof m[1]==='number');
+  if(!metrics.length){ el.innerHTML='<div class="ov2-empty">Metrics unavailable.</div>'; return; }
+  el.innerHTML=metrics.map(m=>'<div class="ov2-row"><span>'+m[0]+'</span><b>'+Math.round(m[1])+'%</b></div>'+
+    '<div class="ov2-gauge"><i style="width:'+Math.min(100,m[1])+'%;background:'+(m[1]>=90?'var(--status-danger)':(m[1]>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>').join('');
+}
+
+function renderOv2Events(events){
+  const el=document.getElementById('ov2-events-body'); if(!el) return;
+  const recent=events.slice(0,5);
+  if(!recent.length){ el.innerHTML='<div class="ov2-empty">No recent events yet.</div>'; return; }
+  el.innerHTML=recent.map(e=>{
+    const who=String(e.ant||e.ant_name||e.source||'');
+    return '<div class="ov2-list-item"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+getRoleColor(who||e.event_type)+';margin-right:6px;"></span>'+
+      '<span style="color:var(--anthill-dim)">'+escapeHtml((e.created_at||'').substring(11,16))+'</span> '+
+      (who?'<b style="color:var(--anthill-text)">'+escapeHtml(who)+'</b> ':'')+
+      escapeHtml(String(e.message||e.event_type||'').substring(0,70))+'</div>';
+  }).join('');
+}
+
+function renderOv2Timeline(jobs,missions){
+  const el=document.getElementById('ov2-timeline-body'); if(!el) return;
+  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
+  const last=missions[0];
+  if(!running&&!last){ el.innerHTML='<div class="ov2-empty">No mission activity yet.</div>'; return; }
+  const failed=!running&&last&&(last.status||'')==='failed';
+  const complete=!running&&last&&(last.status||'')!=='failed';
+  const phases=[['Started',true],['Research',running||complete],['Build',running||complete],['Verify',running||complete],['Complete',complete]];
+  el.innerHTML='<div class="ov2-phase">'+phases.map((p,i)=>{
+    let cls='';
+    if(failed&&i===phases.length-1)cls='fail';
+    else if(p[1]&&(complete||i<phases.length-1))cls=complete?'done':(running&&i===1?'now':(p[1]?'done':''));
+    if(running&&i>=1&&i<=3)cls=i===1?'now':'';
+    if(!running&&complete)cls='done';
+    return '<span class="'+cls+'">'+p[0]+'</span>';
+  }).join('<span style="border:none;color:var(--anthill-dim)">→</span>')+'</div>'+
+    '<div style="font-size:9px;color:var(--anthill-dim);margin-top:6px;">'+(running?('Running: '+escapeHtml((running.goal||'').substring(0,80))):('Last mission '+escapeHtml(last.status||'')+(failed?' — check the report':'')))+'</div>';
+}
+
+function renderOv2Queue(jobs){
+  const el=document.getElementById('ov2-queue-body'); if(!el) return;
+  const queue=jobs.filter(j=>['running','queued'].includes((j.status||'').toLowerCase())).slice(0,3);
+  if(!queue.length){ el.innerHTML='<div class="ov2-empty">No queued missions.</div>'; return; }
+  el.innerHTML=queue.map(j=>{
+    const running=(j.status||'').toLowerCase()==='running';
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((j.goal||j.id||'Mission').substring(0,55))+'</b>'+
+      '<div class="ov2-row"><span>'+athPill(running?'info':'warn',j.status||'?')+'</span></div>'+
+      '<div class="ov2-gauge"><i style="width:'+(running?60:10)+'%;'+(running?'':'background:var(--status-warning)')+'" title="'+(running?'in progress':'waiting')+'"></i></div></div>';
+  }).join('');
+}
 
 // -- Boot ----------------------------------------------------------------------
 // v1.9.1.1: the header/title version comes from the API (single source of truth:
