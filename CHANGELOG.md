@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v1.11.0.1 — Auto-apply observability + auth-redirect hardening
+
+Two fixes surfaced while live-verifying the autonomous auto-apply → git loop end-to-end on the LXC
+(the loop itself works: a verified patch applied, committed to the standalone `<username>-anthill`
+branch, synced origin/main into it, and pushed — never touching main).
+
+- **Auto-apply git step is now logged.** Previously only the *failure* path emitted an event, so a
+  successful commit/push was invisible in the Event Log — from the UI it looked like the loop applied
+  and verified but never committed (it had). `AutoApplyRunner` now emits
+  `autonomy_autoapply_committed` on success, naming the commit sha, branch, files, and push result
+  (`pushed to <remote>/<branch>` / `push failed …` / `push disabled`), so the git step is visible and
+  searchable.
+- **UI reliably bounces to login on a 401.** `onUnauthorized` early-returned after the first 401, so
+  if a session went invalid mid-flight (e.g. the server rotating its session secret during a
+  redeploy) the console could stay stuck half-loaded behind failing background polls instead of
+  redirecting. It now re-asserts the login screen on any 401 while the app shell is still visible,
+  without re-running once already on login.
+
 ## v1.11.0 — Health checks + notifications (NORTH_STAR Phase 7)
 
 Phase 7 of the master roadmap: ANTHILL can tell what is alive, degraded, or broken. Awareness and

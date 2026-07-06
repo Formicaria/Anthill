@@ -2337,9 +2337,15 @@ function showAuth(mode, err){
 
 let authLost=false;
 function onUnauthorized(){
-  if(authLost) return; authLost=true;
+  authLost=true;
   clearSession();
-  showAuth('login','Session expired — please sign in again.');
+  // Re-assert the login screen on ANY 401 while the app shell is still showing — not just the first.
+  // The old early-return meant that if a session went invalid mid-flight (e.g. the server rotating its
+  // session secret during a redeploy), the page could stay stuck half-loaded behind failing background
+  // polls instead of bouncing to login. Guarding on the shell's visibility redirects reliably without
+  // re-running showAuth once we're already on the login view.
+  const shell=document.getElementById('app-shell');
+  if(shell && !shell.classList.contains('hidden')) showAuth('login','Session expired — please sign in again.');
 }
 
 async function bootAuth(){
