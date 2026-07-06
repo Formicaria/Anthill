@@ -36,6 +36,14 @@
   "homelab_discord_webhook":         "",
   "homelab_generic_webhook":         "",
 
+  "_comment_homelab_proxmox": "Proxmox read-only integration (v1.12.0). GET-only by construction: no start/stop/reboot/migrate/delete/clone/resize/config writes exist anywhere in the client. Setup: (1) create an API token in Proxmox (Datacenter -> Permissions -> API Tokens, PVEAuditor role is enough - read-only on purpose), (2) save it as a credential with id matching homelab_proxmox_credential_id via POST /homelab/credentials with secret 'user@realm!tokenid=SECRET', (3) add the Proxmox host to the homelab allowlist, (4) set the host below and enable. Sync rides the shared homelab scheduler. Self-signed certs: set homelab_proxmox_insecure_tls=true to skip TLS verification (homelab default reality; keep false when you have real certs).",
+  "homelab_proxmox_enabled":               false,
+  "homelab_proxmox_host":                  "",
+  "homelab_proxmox_port":                  8006,
+  "homelab_proxmox_credential_id":         "proxmox-main",
+  "homelab_proxmox_insecure_tls":          false,
+  "homelab_proxmox_sync_interval_seconds": 300,
+
   "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.",
   "use_ollama":    true,
   "ollama_host":   "http://YOUR_OLLAMA_HOST_IP:11434",

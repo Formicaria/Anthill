@@ -5,6 +5,7 @@ using Anthill.Core.Homelab.Notifications;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Homelab.Security;
 using Anthill.Core.Integrations;
+using Anthill.Core.Integrations.Proxmox;
 
 namespace Anthill.Api;
 
@@ -33,6 +34,7 @@ public static partial class ApiHost
     public static IReadOnlyList<FakeHomelabProvider> HomelabProviders { get; private set; } = Array.Empty<FakeHomelabProvider>();
     public static NotificationService HomelabNotifier { get; private set; } = null!;
     public static HealthCheckRunner HomelabHealth { get; private set; } = null!;
+    public static ProxmoxInventoryProvider? HomelabProxmox { get; private set; }
 
     private static void InitHomelab()
     {
@@ -66,6 +68,20 @@ public static partial class ApiHost
         if (AnthillRuntime.EnableHomelab)
             HomelabJobs.Register(new HomelabScheduledJob("health-checks",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabHealthIntervalSeconds), HomelabHealth.RunAllAsync));
+
+        // v1.12.0: Proxmox read-only sync. GET-only client; token pulled from the credential
+        // store per run (never cached in config); host must be on the target allowlist.
+        if (AnthillRuntime.EnableHomelab && AnthillRuntime.EnableHomelabProxmox
+            && !string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
+        {
+            var pveClient = new ProxmoxApiClient(
+                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
+                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxInventoryProvider"),
+                AnthillRuntime.HomelabProxmoxInsecureTls);
+            HomelabProxmox = new ProxmoxInventoryProvider(pveClient, Homelab);
+            HomelabJobs.Register(new HomelabScheduledJob("proxmox-sync",
+                TimeSpan.FromSeconds(AnthillRuntime.HomelabProxmoxSyncIntervalSeconds), HomelabProxmox.SyncInventoryAsync));
+        }
 
         if (AnthillRuntime.EnableHomelabScheduler && HomelabJobs.Jobs.Count > 0)
         {
@@ -233,6 +249,46 @@ public static partial class ApiHost
         // v1.9.1: secret-free provider statuses (mock harness now; real providers from v1.10+).
         app.MapGet("/homelab/providers", (HttpContext ctx) =>
             RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabProviders.Select(p => p.Status()).ToList()));
+
+        // ---- Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8) --------------------------
+
+        app.MapGet("/homelab/vms", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListVms()));
+
+        app.MapGet("/homelab/containers", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListContainers()));
+
+        app.MapGet("/homelab/storage", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListStoragePools()));
+
+        app.MapGet("/homelab/proxmox/status", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["enabled"] = AnthillRuntime.EnableHomelabProxmox,
+                ["host"] = AnthillRuntime.HomelabProxmoxHost,
+                ["credential_id"] = AnthillRuntime.HomelabProxmoxCredentialId, // id only — never the token
+                ["credential_configured"] = HomelabCredentials.ListStatuses()
+                    .Any(c => c.Id == AnthillRuntime.HomelabProxmoxCredentialId.Trim().ToLowerInvariant() && c.Configured),
+                ["status"] = HomelabProxmox?.GetStatus(),
+                ["vms"] = Homelab.ListVms().Count,
+                ["containers"] = Homelab.ListContainers().Count,
+                ["storage_pools"] = Homelab.ListStoragePools().Count,
+                ["read_only"] = true, // structural: the client has no write methods
+            });
+        });
+
+        app.MapPost("/homelab/proxmox/sync", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            if (HomelabProxmox is null)
+                return ApiJson.Error("Proxmox integration is not active — set homelab_enabled, homelab_proxmox_enabled, and homelab_proxmox_host, then restart.", "disabled");
+            var result = await HomelabProxmox.SyncInventoryAsync(ctx.RequestAborted);
+            return result.Ok
+                ? ApiJson.Ok(new Dictionary<string, object?> { ["items"] = result.ItemCount }, result.Message)
+                : ApiJson.Error("Proxmox sync failed: " + result.Message, "sync_failed");
+        });
 
         // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) --------------------------
 

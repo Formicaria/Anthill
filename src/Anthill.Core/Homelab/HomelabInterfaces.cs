@@ -73,6 +73,14 @@ public interface IHomelabRepository : IHomelabEventSink
     IReadOnlyList<HomelabNode> ListNodes();
     void UpsertService(ServiceRecord service, string changedBy);
     IReadOnlyList<ServiceRecord> ListServices();
+
+    // Virtualization + storage inventory (v1.12.0, filled by the Proxmox read-only sync)
+    void UpsertVm(VmRecord vm);
+    IReadOnlyList<VmRecord> ListVms();
+    void UpsertContainer(ContainerRecord container);
+    IReadOnlyList<ContainerRecord> ListContainers();
+    void UpsertStoragePool(StoragePoolRecord pool);
+    IReadOnlyList<StoragePoolRecord> ListStoragePools();
     IReadOnlyList<HomelabEvent> RecentEvents(int limit = 50);
     void RecordChange(ChangeRecord change);
     IReadOnlyList<ChangeRecord> RecentChanges(int limit = 50);

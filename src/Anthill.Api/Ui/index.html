@@ -1612,6 +1612,35 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
+        <!-- Virtualization (v1.12.0, Proxmox read-only) -->
+        <div class="card" style="padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">Virtualization <span style="font-weight:400;color:var(--dim)">(Proxmox read-only — no control actions exist until V2.1)</span>
+            <button class="btn btn-ghost" id="hl-pve-sync" style="float:right;" onclick="hlPveSync()" title="Pull nodes, VMs, containers, storage, and failed tasks now">⟳ Sync Proxmox Now</button>
+          </div>
+          <div id="hl-pve-status" style="font-size:11px;color:var(--muted);">Loading...</div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Virtual Machines</div>
+          <table class="users-table">
+            <thead><tr><th>VMID</th><th>Name</th><th>Node</th><th>Status</th><th>vCPU</th><th>RAM</th><th>Uptime</th><th>Updated</th></tr></thead>
+            <tbody id="hl-vms-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Containers</div>
+          <table class="users-table">
+            <thead><tr><th>CTID</th><th>Name</th><th>Kind</th><th>Node</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody id="hl-cts-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Storage Pools</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Node</th><th>Type</th><th>Used</th><th>Total</th><th>Usage</th><th>Updated</th></tr></thead>
+            <tbody id="hl-storage-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
         <!-- Hosts -->
         <div class="card" style="padding:14px 16px;" id="hl-host-form">
           <div class="section-head" style="margin-top:0;">Register Host</div>
@@ -2480,7 +2509,7 @@ function applyRoleVisibility(){
   const homelab = admin || ROLE==='homelab_operator';
   const hlNav=document.getElementById('nav-item-homelab');
   if(hlNav) hlNav.style.display=homelab?'':'none';
-  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form'].forEach(id=>{
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
@@ -6087,6 +6116,7 @@ async function loadHomelab(){
     renderHlHosts(); renderHlServices(); renderHlPorts(); renderHlDeps();
     renderHlChanges(chg.success?(chg.data||[]):[]);
     loadHlHealth();
+    loadHlVirt();
     const c=document.getElementById('hl-count');
     if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
   }catch(e){ hlMsg('Load failed: '+e.message,false); }
@@ -6161,6 +6191,67 @@ function renderHlChanges(list){
   el.innerHTML=list.length?list.map(c=>'<div style="padding:2px 0;">'+hlDate(c.created_at)+' — <b>'+escapeHtml(c.change_kind)+'</b> '+escapeHtml(c.subject_kind)+
     ' · '+escapeHtml(c.summary||'')+(c.changed_by?(' <span style="color:var(--dim)">by '+escapeHtml(c.changed_by)+'</span>'):'')+'</div>').join('')
     :'No changes recorded yet.';
+}
+
+// -- Virtualization: Proxmox read-only (v1.12.0) ----------------------------------
+function hlBytes(n){ if(!n) return '0'; const u=['B','KB','MB','GB','TB','PB']; let i=0; let v=n;
+  while(v>=1024&&i<u.length-1){ v/=1024; i++; } return v.toFixed(v>=100?0:1)+' '+u[i]; }
+function hlUptime(s){ if(!s) return '—'; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600);
+  return d>0?(d+'d '+h+'h'):(h+'h '+Math.floor(s%3600/60)+'m'); }
+
+async function loadHlVirt(){
+  try{
+    const [st,vms,cts,pools]=await Promise.all([
+      api('/homelab/proxmox/status'),api('/homelab/vms'),api('/homelab/containers'),api('/homelab/storage')]);
+    renderHlPve(st.success?(st.data||{}):{});
+    renderHlVms(vms.success?(vms.data||[]):[]);
+    renderHlCts(cts.success?(cts.data||[]):[]);
+    renderHlStorage(pools.success?(pools.data||[]):[]);
+  }catch(e){ hlMsg('Virtualization load failed: '+e.message,false); }
+}
+
+function renderHlPve(d){
+  const el=document.getElementById('hl-pve-status'); if(!el) return;
+  const s=d.status||null;
+  el.innerHTML='Proxmox: <b>'+(d.enabled?'enabled':'disabled')+'</b>'+
+    (d.host?(' · host: <b>'+escapeHtml(d.host)+'</b>'):' · host not set')+
+    ' · credential <b>'+escapeHtml(d.credential_id||'—')+'</b>: '+(d.credential_configured?'configured':'<span style="color:var(--red)">missing</span>')+
+    ' · <b>'+(d.vms??0)+'</b> VM(s), <b>'+(d.containers??0)+'</b> container(s), <b>'+(d.storage_pools??0)+'</b> pool(s)'+
+    (s?('<br>Last sync: '+escapeHtml(s.state||'idle')+(s.last_run?(' at '+hlDate(s.last_run)):'')+(s.last_result?(' — '+escapeHtml(s.last_result)):'')):'')+
+    '<br><span style="color:var(--dim)">Read-only by construction: the client has no write methods. Setup: save a PVEAuditor API token as credential, allowlist the host, set homelab_proxmox_host + homelab_proxmox_enabled, restart.</span>';
+}
+
+function renderHlVms(vms){
+  const tb=document.getElementById('hl-vms-tbody'); if(!tb) return;
+  if(!vms.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No VMs synced yet.</td></tr>'; return; }
+  tb.innerHTML=vms.map(v=>'<tr><td>'+escapeHtml(v.vm_id||'—')+'</td><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(hlNodeName(v.node_id))+
+    '</td><td style="color:'+(v.status==='running'?'var(--green)':'var(--dim)')+'">'+escapeHtml(v.status||'—')+'</td>'+
+    '<td>'+(v.cpu_cores||0)+'</td><td>'+hlBytes((v.memory_mb||0)*1048576)+'</td><td>'+hlUptime(v.uptime_seconds)+'</td><td>'+hlDate(v.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlCts(cts){
+  const tb=document.getElementById('hl-cts-tbody'); if(!tb) return;
+  if(!cts.length){ tb.innerHTML='<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No containers synced yet.</td></tr>'; return; }
+  tb.innerHTML=cts.map(c=>'<tr><td>'+escapeHtml(c.container_id||'—')+'</td><td>'+escapeHtml(c.name)+'</td><td>'+escapeHtml(c.kind||'lxc')+
+    '</td><td>'+escapeHtml(hlNodeName(c.node_id))+'</td><td style="color:'+(c.status==='running'?'var(--green)':'var(--dim)')+'">'+escapeHtml(c.status||'—')+'</td><td>'+hlDate(c.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlStorage(pools){
+  const tb=document.getElementById('hl-storage-tbody'); if(!tb) return;
+  if(!pools.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No storage synced yet.</td></tr>'; return; }
+  tb.innerHTML=pools.map(p=>{
+    const pct=p.total_bytes>0?Math.round(p.used_bytes*100/p.total_bytes):0;
+    const col=pct>=90?'var(--red)':(pct>=75?'var(--yellow, orange)':'var(--green)');
+    return '<tr><td>'+escapeHtml(p.name)+'</td><td>'+escapeHtml(hlNodeName(p.node_id))+'</td><td>'+escapeHtml(p.kind||'—')+
+      '</td><td>'+hlBytes(p.used_bytes)+'</td><td>'+hlBytes(p.total_bytes)+'</td><td style="color:'+col+'">'+pct+'%</td><td>'+hlDate(p.updated_at)+'</td></tr>';
+  }).join('');
+}
+
+async function hlPveSync(){
+  hlMsg('Syncing Proxmox...',true);
+  const r=await api('/homelab/proxmox/sync','POST',{});
+  hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
+  if(r.success){ loadHomelab(); }
 }
 
 // -- Health checks (v1.11.0) -----------------------------------------------------

@@ -1,5 +1,44 @@
 # ANTHILL Changelog
 
+## v1.12.0 — Proxmox read-only integration (NORTH_STAR Phase 8)
+
+Phase 8 of the master roadmap: ANTHILL connects to Proxmox safely, in read-only mode. There is no
+start/stop/reboot/migrate/delete/clone/resize/config-write path anywhere in this integration.
+
+- **GET-only `ProxmoxApiClient`** — write operations are *structurally impossible*: the class has
+  no POST/PUT/DELETE code at all. Proven twice in tests: the public type surface exposes only
+  `Get*` methods, and a mock PVE server asserts every wire request is a GET. Allowlist check (D1)
+  and credential lookup happen before any request; strict per-request timeout; TLS verification is
+  config-controlled (`homelab_proxmox_insecure_tls` for self-signed homelab certs, default verify).
+- **`ProxmoxInventoryProvider`** (riding the shared scheduler as `proxmox-sync`): syncs nodes (as
+  `hypervisor` hosts tagged `proxmox` with status/CPU/RAM/uptime), QEMU VMs (vmid, status, vCPU,
+  RAM, uptime), LXC containers, storage pools (with backup-capable flagging + used/total bytes),
+  and failed Proxmox tasks — recorded as `proxmox_task_failed` events with stable UPID ids so
+  re-syncs never duplicate (RecordEvent is now INSERT OR IGNORE). All upserts use stable ids —
+  re-sync is idempotent.
+- **`ProxmoxHealthProvider`**: GET /version reachability check for the health system.
+- **Credentials**: the API token lives in the homelab credential store
+  (`homelab_proxmox_credential_id`, default `proxmox-main`; save as `user@realm!tokenid=SECRET`),
+  is fetched per sync with an audited use, flows only into the PVE Authorization header, and is
+  proven absent from events, changes, inventory, statuses, and export bundles. A read-only
+  PVEAuditor token is all it needs — matching the integration's own permissions.
+- **Repository**: `UpsertVm/ListVms`, `UpsertContainer/ListContainers`,
+  `UpsertStoragePool/ListStoragePools` fill the v1.9.0 `vm_inventory`, `container_inventory`, and
+  `storage_inventory` tables for the first time.
+- **API**: `GET /homelab/vms`, `GET /homelab/containers`, `GET /homelab/storage`,
+  `GET /homelab/proxmox/status` (secret-free), `POST /homelab/proxmox/sync` (manage-gated run-now).
+- **UI**: Virtualization section on the Homelab page — Proxmox status card with setup hints and
+  Sync Now, VM/container tables with running-state coloring, storage pools with usage-percent
+  coloring (green/amber/red at 75/90%).
+- **Config**: `homelab_proxmox_enabled` (off), `homelab_proxmox_host`, `homelab_proxmox_port`,
+  `homelab_proxmox_credential_id`, `homelab_proxmox_insecure_tls`,
+  `homelab_proxmox_sync_interval_seconds` — all operator-editable and in the settings snapshot.
+- **Tests** (`ProxmoxIntegrationTests`, mock PVE API on loopback): no-write type-surface + wire
+  proofs, allowlist blocks with zero requests, missing-credential clean failure, full sync
+  population, idempotent re-sync, HTTP-500 soft failure, hung-server timeout bound, credential
+  redaction sweep, and health-provider healthy/failed paths.
+- Deferred to V2.2 (backup intelligence): per-VM snapshot detail and deep backup inspection.
+
 ## v1.11.0.2 — Replace blocking native dialogs with an in-app modal
 
 Fix: the console used native `window.confirm()`/`prompt()` for every destructive action (Stop the
@@ -1493,216 +1532,4 @@ Added:
   host), so this changes what a fresh container/LXC/service install looks like on first boot, not
   the actual security posture. Set `api_host` to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`)
   explicitly for a localhost-only install.
-- **`ANTHILL_HOST` / `ANTHILL_PORT` / `ANTHILL_OLLAMA_HOST` / `ANTHILL_OLLAMA_MODEL` env vars** —
-  new highest-precedence overrides (win over `config.json`) in `AnthillRuntime.ProjectConfig`,
-  so container/LXC/service deployments can be configured entirely from the outside. This also
-  fixes a latent bug: the CLI's `--host`/`--port`/`--ollama-host`/`--ollama-model` flags
-  previously wrote a static field that `AnthillRuntime.Initialize()` immediately overwrote from
-  `config.json` a moment later inside `ApiHost.Run()`, silently ignoring the flags; they now set
-  these same env vars instead, which survive.
-- **`NetworkUtil.GetLikelyLanIPv4()`** (`Anthill.Core/Common/NetworkUtil.cs`) — cross-platform,
-  no-network-traffic LAN IP auto-detection (local UDP "connect", no packet sent), used to print a
-  real, clickable URL in the startup console banner and in `GET /status` (`reachable_ip` field)
-  instead of the unusable `0.0.0.0` bind address, on both Linux and Windows.
-- **Config hygiene**: `config.example.json` had a trailing comma making it invalid JSON — copying
-  it verbatim per the documented Quick Start steps would silently fall back to all-default config
-  with just a console warning easy to miss in a container. Fixed, and added the three Phase 2
-  Strategist knobs (`autonomy_dedupe_similarity`, `autonomy_max_followups_per_run`,
-  `autonomy_max_objective_depth`) that were missing from the example file.
-- **`Anthill.sln` fix**: the solution file only registered `Anthill.Tests`; `Anthill.Cli`,
-  `Anthill.Api`, and `Anthill.Core` were never top-level entries, so `dotnet build Anthill.sln`
-  (as documented in the README) silently never built the actual CLI/API projects — only
-  `build.sh`/`build.ps1`'s explicit direct-publish step did. Added all three so the documented
-  build/IDE-open workflow matches what actually ships.
-- **README**: Docker section expanded to include the full `docker-compose.yml` walkthrough (field
-  table, bridge-mode alternative for Windows/macOS Docker Desktop, plain `docker build`/`docker
-  run` commands, Dockerfile summary, upgrade steps) instead of just pointing at
-  `docs/DEPLOYMENT.md`; Security Model table gained a network-binding row; Windows Service section
-  flagged as pending proper SCM integration (planned next, see `docs/DEPLOYMENT.md` §4); CI badge
-  added.
-- **CI** (`.github/workflows/ci.yml`, previously an empty placeholder): now runs on every push/PR
-  to `main` (and manually via `workflow_dispatch`) — `dotnet build`/`dotnet test` on Linux and
-  Windows, a self-contained `linux-x64` publish + `--selftest` run, and a Docker build + container
-  boot smoke test that polls the `HEALTHCHECK` status and hits `GET /health` directly. This is the
-  actual "does this work" signal going forward, since neither a .NET SDK nor a Docker daemon is
-  available in the environment these changes were authored in.
-
-Validation:
-
-- Manual review only — no `dotnet` SDK or Docker daemon was available in the environment this
-  change was authored in, so `docker build`/`docker compose up` and `dotnet build`/`dotnet test`
-  have **not** been run against this change. Brace/paren balance checked by hand on every edited
-  `.cs` file; `config.example.json` re-validated as parseable JSON. Run `dotnet build && dotnet
-  test`, then `docker compose up -d --build` and confirm the console banner prints a real LAN IP,
-  before relying on this in production.
-
-## v1.8.5 — Autonomy Phase 2: Strategist
-
-No schema change. Mission goals for the 24/7 Colony Director are now LLM-generated per objective
-instead of charter-as-goal, with dedup against recent mission history and capped self-enqueued
-follow-up objectives. See [docs/AUTONOMY.md](docs/AUTONOMY.md) for the full design.
-
-Added:
-
-- **`Anthill.Core.Autonomy.Strategist`** — turns an objective + recent `autonomy_runs` history +
-  top pheromone trails into a concrete mission goal via a new `strategist` model-router role.
-  Always computes the deterministic charter-as-goal fallback first; any router failure, missing
-  router, or unparseable response falls back to it — never blocks or throws. `StrategistResult`
-  reports `Source` (`"strategist"` or `"fallback"`) for auditability.
-- **Dedup** — rejects a generated goal that's a near-duplicate of a recent completed/partial run
-  for the same objective (`TextUtil.ExtractKeywords` containment-ratio overlap, threshold
-  `autonomy_dedupe_similarity`, default `0.8`); a rejected goal falls back to the charter goal.
-- **Follow-up objectives** — the Strategist can propose follow-ups in its JSON response;
-  `ColonyDirector` saves them only after a successful mission, capped by
-  `autonomy_max_followups_per_run` (default `1`) and `autonomy_max_objective_depth` (default `3`,
-  walked via new `SqliteMemory.ObjectiveDepth`). Follow-ups inherit `ParentObjectiveId` and run at
-  `Priority - 1`.
-- **New config knobs** (all fail-closed): `autonomy_dedupe_similarity`,
-  `autonomy_max_followups_per_run`, `autonomy_max_objective_depth`.
-- **`ColonyDirector.RunObjectiveOnce`** rewritten to call `Strategist.GenerateGoal`; logs
-  `goal_source`/`strategist_notes` on `autonomy_mission_started` and `follow_ups_created` on
-  `autonomy_mission_finished`. Writes remain queue-only — the Strategist only chooses the next
-  mission, never applies patches.
-- **UI: Autonomy page** *(admin only)* — Director status card (start/stop, budgets, kill switch),
-  objectives backlog editor (add/pause-resume/reprioritize/delete), and a recent-runs table
-  showing goal source and outcome per run.
-
-Validation:
-
-- Offline `StrategistTests` cover the no-router fallback path (never blocks/throws) and
-  `ObjectiveDepth` walking/edge cases. The LLM-driven generation/dedup paths require a live
-  provider and aren't testable offline.
-- Manual review only — no `dotnet` SDK was available in the environment this change was authored
-  in, so this release has **not** been compiled or run. Run `dotnet build`/`dotnet test`, then
-  exercise the Autonomy page end-to-end (add an objective, start the Director, confirm a run
-  appears with a goal source) before shipping.
-
-## v1.8.4 — Model provider connections
-
-Schema bumped to **v10** (new `provider_credentials` table, migration `model_provider_connections`).
-Ants can now be routed to paid cloud model providers — OpenAI (ChatGPT), Anthropic (Claude),
-Perplexity, and OpenRouter — alongside free local Ollama, with API keys managed from the console.
-
-Added:
-
-- **`provider_credentials` table** — one row per external provider. The API key is sealed at rest
-  with the existing AES-256-GCM `FieldCipher` (same key resolution as other encrypted columns:
-  `ANTHILL_ENCRYPTION_KEY` env var, else an auto-generated 0600 workspace key file) and is never
-  read back over the API; only a `configured` boolean, `enabled` flag, optional base-URL override,
-  and last-verification status are ever exposed.
-- **Real provider clients** (`Anthill.Core.Models.ProviderClients`) — `OpenAiCompatibleClient`
-  (shared by OpenAI, Perplexity, and OpenRouter, which all speak the same `{model, messages}` →
-  `choices[0].message.content` contract) and `AnthropicClient` (Messages API, `x-api-key` header,
-  `content[]` block array). Both fail closed with `ERROR:` sentinel strings on missing keys,
-  auth failures, timeouts, or transport errors, matching `OllamaClient`'s existing contract so the
-  rest of the colony (retries, pheromone scoring, event logging) needs no changes.
-- **`ProviderCatalog`** — static metadata (display name, free/paid kind, curated model list, key
-  help URL, default endpoint) for every known provider, driving both the API's `/providers/catalog`
-  response and the console's dropdowns.
-- **`ModelRouter` keyed-client routing** — OpenAI/Anthropic/Perplexity/OpenRouter clients are built
-  fresh on every call (not cached like Ollama's) so a rotated or removed key takes effect
-  immediately without a process restart.
-- **New endpoints**: `GET /providers/catalog`, `GET /providers`, `POST /providers` (upsert — a
-  blank `api_key` on update leaves the stored key untouched), `DELETE /providers/{provider}`,
-  `POST /providers/{provider}/test` (fires one live probe call through the real routing path and
-  records the verification result). Gated by two new permissions, `read_providers` and
-  `manage_providers`, both admin-only like `manage_settings`/`manage_users`.
-- **Settings → Providers tab** — a card per provider with API-key input, optional base-URL
-  override, Save / Test Connection / Remove actions, and a status pill (not connected / connected /
-  verified / verification failed).
-- **Ant Config provider + model routing** — each caste's model route editor now has a Provider
-  selector (Ollama or any connected external provider) in addition to the existing model picker;
-  saving writes `{provider, model}` into `model_routes` exactly as before.
-
-Validation:
-
-- Manual review only — no `dotnet` SDK was available in the environment this change was authored
-  in, so this release has **not** been compiled or run. Run `dotnet build` and exercise
-  `POST /providers`, `POST /providers/{provider}/test`, and an Ant Config route change before
-  shipping.
-
-## v1.8.3 — Enterprise shell UI
-
-No schema change. The web console is rebuilt as a full enterprise-grade shell; all existing API
-endpoints, auth, and backend behaviour are unchanged.
-
-Added:
-
-- **Left navigation rail** — 240 px expanded / 60 px icon-only collapsed, toggled by the **‹**
-  button; collapse state persisted in `localStorage`. Eight nav items with icons: Overview, Colony,
-  Missions, Event Log, Pheromones, Ant Config, Settings, Users.
-- **8 routed pages** — `showPage(id)` swaps the active page, updates the nav active state, updates
-  the header title, and fires a per-page `PAGE_ENTER` callback. All former modal overlays are now
-  full pages:
-
-  | Page | Replaces |
-  |------|---------|
-  | **Overview** | *(new)* — KPI grid, mission dispatch, recent jobs, live event feed |
-  | **Colony** | Canvas page (unchanged layout; canvas now fills `#colony-canvas-area`) |
-  | **Missions** | *(new)* — dedicated dispatch + full job history |
-  | **Event Log** | `log-modal` overlay |
-  | **Pheromones** | `phero-modal` overlay |
-  | **Ant Config** | `antcfg-modal` overlay |
-  | **Settings** | `settings-overlay` |
-  | **Users** | `users-modal` overlay |
-
-- **Fixed top header (50 px)** containing: page title (left), active mission goal + status dot
-  (centre), model badge / connection badge / approval bell / logout button (right). The approval
-  bell is always visible regardless of active page; clicking it navigates to Colony and scrolls
-  to the Approvals card.
-- **KPI cards on Overview** — Model Calls, Tasks Done, Events, Approvals; updated by the same
-  `pollStatus()` that drives the Colony sidebar (both sets of stat elements are kept in sync).
-- **Three mission dispatch inputs** — Colony canvas bar (`mission-input`), Missions page
-  (`ms-mission-input`), Overview page (`ov-mission-input`); all feed the same `dispatchMission()`
-  function and `enableInput()` locks/unlocks all three simultaneously.
-- **Canvas mouse coordinate fix** — `mousedown`, `mousemove`, `mouseup`, `dblclick`, and `wheel`
-  handlers now derive canvas-local coordinates via `canvas.getBoundingClientRect()` instead of the
-  former `e.clientY - 50` hardcode. Hit-testing and zoom-pivot are accurate at every zoom level and
-  nav-rail state.
-- **Canvas resize fix** — `resize()` reads from `document.getElementById('colony-canvas-area')`
-  (the flex container) instead of the former `#cw` element, so the canvas fills its area exactly
-  regardless of sidebar widths.
-- **Keyboard shortcuts** — `Ctrl+K` focuses the mission input on Colony; `Ctrl+L` navigates to
-  Event Log; `Escape` closes the result overlay and rename popover.
-- **`ov-jobs-list` / `ov-feed-list`** — the Overview page renders job lists and the live event
-  feed (capped at 20 entries) from the same poll functions (`pollJobs`, `pollEvents`) that drive
-  the Colony sidebar; no additional polling.
-- **Card collapse** — every card in the Colony sidebars has a **▾** toggle; collapsed state is
-  persisted in `localStorage` keyed by card id.
-- **Result overlay** — position-fixed over the entire shell, shown when viewing a job result;
-  includes Copy, Refresh, and Close controls.
-
-Changed:
-
-- All event IDs and API calls are **unchanged** — only the surrounding layout changed.
-- `pollJobs()` now renders to three containers: `jobs-list` (colony left), `ov-jobs-list`
-  (overview), `ms-jobs-list` (missions page).
-- `pollEvents()` renders to `feed-list` (colony right) and `ov-feed-list` (overview, capped at 20).
-- `pollStatus()` updates both `s-calls/tasks/events/approvals` (colony) and the `ov-*` equivalents.
-- `applyRoleVisibility()` now also hides/shows nav items and the approval bell per role, not just
-  page-level controls.
-
-Validation:
-
-- ID audit: all 143 required element IDs verified present in the final `index.html` (automated
-  check with PowerShell regex pass).
-- JS balance: brace count delta = 0; backtick count even (no unclosed template literals).
-- No unreplaced CSS/JS/HTML placeholder markers; single `<style>` and `<script>` block.
-- All original API endpoints and auth flow verified unchanged (no backend edits in this release).
-
-## v1.8.2 — Live colony console + operator accounts
-
-Schema bumped to **v9**. The web console becomes a fully operable control plane, and the shared
-API token is replaced by real password-based operator accounts with roles.
-
-Added:
-
-- **Operator accounts + roles (replaces token-only web auth)**: the console is now secured by
-  password login, not a shared API key. First run shows a one-time setup screen that creates the
-  initial **administrator**; thereafter everyone signs in with a username/password and receives an
-  in-memory **session** (12-hour sliding expiry, dropped on restart). Two roles:
-  - **Administrator** — full control, including user management.
-  - **Mission Coordinator** — may *only* send missions to the Queen and read the event logs (plus
-    live status to watch them); everything else is denied at the API and hidden in the UI.
-
-  Passwords are salted
+- **`ANTHILL_HOST` / `ANTHILL_PORT` / `A

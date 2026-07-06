@@ -63,6 +63,14 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
     [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
     [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";
+    // Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8). GET-only by construction; the
+    // API token lives in the homelab credential store (never here), referenced by credential id.
+    [JsonPropertyName("homelab_proxmox_enabled")] public bool HomelabProxmoxEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_proxmox_host")] public string HomelabProxmoxHost { get; set; } = "";
+    [JsonPropertyName("homelab_proxmox_port")] public int HomelabProxmoxPort { get; set; } = 8006;
+    [JsonPropertyName("homelab_proxmox_credential_id")] public string HomelabProxmoxCredentialId { get; set; } = "proxmox-main";
+    [JsonPropertyName("homelab_proxmox_insecure_tls")] public bool HomelabProxmoxInsecureTls { get; set; } = false;
+    [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
 
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
     [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;
