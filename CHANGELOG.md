@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v1.8.29 — Fresh-install training + pheromone bootstrap missions (NORTH_STAR Phase 3)
+
+Phase 3 of the master roadmap: give fresh installs a repeatable, read-only way to learn the repo,
+roles, workflow, UI, memory system, and V2 roadmap before doing real patch missions. Docs only —
+no runtime behavior change.
+
+- New **`docs/TRAINING_MISSIONS.md`** — a nine-mission training pack (Repo Orientation, Ant Role
+  Training, Build/Test Workflow, UI Structure, Memory + Pheromone System, Patch Proposal
+  Discipline, Failure Drill, V2 Homelab Roadmap, Daily Memory Compression) with copy-paste goal
+  text for each.
+- Every goal embeds the exact `MissionConstraints` phrases (`read-only`, `do not modify files`,
+  `one-shot`) so the v1.8.16 constraint enforcement strips coder patch tasks at planning time —
+  training can never produce patch proposals.
+- Operator instructions: run order, Preview Plan verification, memory/pheromone checks afterward,
+  and when to re-run the pack (fresh install, major version jump, after Clear Missions).
+- Documents the recurring **memory-compression pattern**: mission 9 doubles as a daily/periodic
+  compression template, runnable manually or as a low-priority recurring objective.
+
 ## v1.8.28 — Validation / regression harness hardening (NORTH_STAR Phase 2)
 
 Phase 2 of the master roadmap: lock in regression protection for every bug class that has already

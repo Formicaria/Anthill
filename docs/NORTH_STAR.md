@@ -172,7 +172,7 @@ dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r linux-x64 --self
 ```text
 V1.8.27  Roadmap/documentation consolidation                 [SHIPPED v1.8.27]
 V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
-V1.8.29  Fresh-install training and pheromone bootstrap missions
+V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.29]
 V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions
 V1.9.1   Homelab scheduler skeleton and mock-provider harness
 V1.10.0  Inventory and service registry
@@ -244,6 +244,10 @@ Validation, CI, and test hardening only.
 ---
 
 # PHASE 3 — V1.8.29 FRESH-INSTALL TRAINING + PHEROMONE BOOTSTRAP
+
+**Status: SHIPPED in v1.8.29** — `docs/TRAINING_MISSIONS.md` documents the nine-mission read-only
+training pack with copy-paste goals wired to the `MissionConstraints` phrases, operator run
+instructions, and the recurring memory-compression pattern.
 
 ## Goal
 Give fresh ANTHILL installs a repeatable way to learn the repo, roles, workflow, UI, memory, and V2 roadmap before doing real patch missions.
