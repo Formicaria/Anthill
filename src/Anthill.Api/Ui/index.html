@@ -1580,6 +1580,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="hl-summary" style="font-size:11px;color:var(--muted);">Loading...</div>
         </div>
 
+        <!-- Health checks (v1.11.0) -->
+        <div class="card" style="padding:14px 16px;" id="hl-check-form">
+          <div class="section-head" style="margin-top:0;">Add Health Check <span style="font-weight:400;color:var(--dim)">(target host must be on the allowlist; strict timeouts; no auto-remediation)</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-c-kind">
+                <option value="http" selected>http (URL)</option><option value="service_url">service_url (URL)</option>
+                <option value="ping">ping (host)</option><option value="tcp">tcp (host:port)</option>
+                <option value="disk">disk (placeholder)</option><option value="uptime">uptime (placeholder)</option>
+              </select>
+            </div>
+            <div class="form-field"><label>Target</label><input class="form-input" id="hl-c-target" type="text" placeholder="http://192.168.1.5:8096 or nas.lan:445" autocomplete="off"></div>
+            <div class="form-field"><label>Timeout ms (0 = default)</label><input class="form-input" id="hl-c-timeout" type="number" value="0" min="0" max="60000"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddCheck()">Add Check</button></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" onclick="hlRunChecks()" title="Run every enabled check now">▶ Run All Now</button></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" onclick="hlTestNotify()" title="Send a test alert to the configured webhooks (requires homelab_notifications_enabled)">🔔 Test Notify</button></div>
+          </div>
+        </div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Health <span id="hl-health-kpi" style="font-weight:400;color:var(--dim)"></span></div>
+          <table class="users-table">
+            <thead><tr><th>Kind</th><th>Target</th><th>Last Status</th><th>Latency</th><th>Detail</th><th>Checked</th><th>Actions</th></tr></thead>
+            <tbody id="hl-checks-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
         <!-- Hosts -->
         <div class="card" style="padding:14px 16px;" id="hl-host-form">
           <div class="section-head" style="margin-top:0;">Register Host</div>
@@ -2393,7 +2419,7 @@ function applyRoleVisibility(){
   const homelab = admin || ROLE==='homelab_operator';
   const hlNav=document.getElementById('nav-item-homelab');
   if(hlNav) hlNav.style.display=homelab?'':'none';
-  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn'].forEach(id=>{
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
   ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
@@ -5999,6 +6025,7 @@ async function loadHomelab(){
     renderHlSummary(sum.success?(sum.data||{}):{});
     renderHlHosts(); renderHlServices(); renderHlPorts(); renderHlDeps();
     renderHlChanges(chg.success?(chg.data||[]):[]);
+    loadHlHealth();
     const c=document.getElementById('hl-count');
     if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
   }catch(e){ hlMsg('Load failed: '+e.message,false); }
@@ -6073,6 +6100,61 @@ function renderHlChanges(list){
   el.innerHTML=list.length?list.map(c=>'<div style="padding:2px 0;">'+hlDate(c.created_at)+' — <b>'+escapeHtml(c.change_kind)+'</b> '+escapeHtml(c.subject_kind)+
     ' · '+escapeHtml(c.summary||'')+(c.changed_by?(' <span style="color:var(--dim)">by '+escapeHtml(c.changed_by)+'</span>'):'')+'</div>').join('')
     :'No changes recorded yet.';
+}
+
+// -- Health checks (v1.11.0) -----------------------------------------------------
+async function loadHlHealth(){
+  try{
+    const [sum,sch,res]=await Promise.all([
+      api('/homelab/health/summary'),api('/homelab/health/schedules'),api('/homelab/health/results')]);
+    const s=sum.success?(sum.data||{}):{};
+    const kpi=document.getElementById('hl-health-kpi');
+    if(kpi) kpi.textContent='· '+(s.healthy||0)+' healthy · '+(s.degraded||0)+' degraded · '+(s.failed||0)+' failed · '+(s.unknown||0)+' unknown';
+    renderHlChecks(sch.success?(sch.data||[]):[], res.success?(res.data||[]):[]);
+  }catch(e){ hlMsg('Health load failed: '+e.message,false); }
+}
+
+function renderHlChecks(schedules,results){
+  const tb=document.getElementById('hl-checks-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!schedules.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No health checks scheduled yet.</td></tr>'; return; }
+  tb.innerHTML=schedules.map(sc=>{
+    const last=results.find(r=>r.target===sc.target&&r.check_kind===sc.check_kind);
+    const st=last?last.status:'—';
+    const col=st==='healthy'?'var(--green)':(st==='degraded'?'var(--yellow, orange)':(st==='failed'?'var(--red)':'var(--dim)'));
+    return '<tr><td>'+escapeHtml(sc.check_kind)+'</td><td>'+escapeHtml(sc.target)+'</td>'+
+      '<td style="color:'+col+'">'+escapeHtml(st)+(sc.enabled?'':' (disabled)')+'</td>'+
+      '<td>'+(last?last.latency_ms+'ms':'—')+'</td><td>'+escapeHtml(last?(last.detail||''):'not run yet')+'</td>'+
+      '<td>'+(last?hlDate(last.checked_at):'—')+'</td>'+
+      '<td>'+(admin?('<button class="btn btn-ghost" onclick="hlDelCheck(\''+escapeHtml(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
+  }).join('');
+}
+
+async function hlAddCheck(){
+  const target=document.getElementById('hl-c-target').value.trim();
+  if(!target){ hlMsg('Check target is required',false); return; }
+  const r=await api('/homelab/health/schedules','POST',{checkKind:document.getElementById('hl-c-kind').value,
+    target, timeoutMs:parseInt(document.getElementById('hl-c-timeout').value,10)||0});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-c-target').value=''; loadHlHealth(); }
+}
+
+async function hlDelCheck(id){
+  const r=await api('/homelab/health/schedules/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHlHealth();
+}
+
+async function hlRunChecks(){
+  hlMsg('Running health checks...',true);
+  const r=await api('/homelab/health/run','POST',{});
+  hlMsg(r.message||(r.success?'Done':'Failed'),r.success);
+  loadHlHealth();
+}
+
+async function hlTestNotify(){
+  const r=await api('/homelab/notifications/test','POST',{});
+  hlMsg(r.message||(r.success?'Sent':'Failed'),r.success);
 }
 
 async function hlAddHost(){

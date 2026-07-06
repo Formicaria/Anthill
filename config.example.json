@@ -28,6 +28,14 @@
   "homelab_mock_providers_enabled": false,
   "homelab_max_concurrent_checks": 2,
 
+  "_comment_homelab_health": "Health checks + notifications (v1.11.0). Checks run on the shared homelab scheduler (homelab_enabled + homelab_scheduler_enabled both true), only against allowlisted targets, under strict timeouts, and never auto-remediate. Notifications are OFF by default; set homelab_notifications_enabled=true and one or more webhook URLs to get alerts on health-check failures and incident candidates (3 consecutive failures). Webhook URLs never appear in logs or events.",
+  "homelab_health_interval_seconds": 60,
+  "homelab_health_timeout_ms":       5000,
+  "homelab_notifications_enabled":   false,
+  "homelab_slack_webhook":           "",
+  "homelab_discord_webhook":         "",
+  "homelab_generic_webhook":         "",
+
   "_comment_ollama": "Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.",
   "use_ollama":    true,
   "ollama_host":   "http://YOUR_OLLAMA_HOST_IP:11434",

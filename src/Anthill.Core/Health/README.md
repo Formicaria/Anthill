@@ -1,5 +1,7 @@
-# Reserved — health check runner and classification
+# Health — checks, classification, and alerts
 
-Scaffolding reserved by the v1.9.0 homelab foundation (NORTH_STAR Phase 4).
-This folder is filled in V1.11.0. Do not add unrelated code here; see docs/NORTH_STAR.md
-for the canonical build order and docs/HOMELAB.md for the homelab design.
+Filled in v1.11.0 (NORTH_STAR Phase 7): `HealthModels.cs` (HealthStatus, HealthCheckSchedule,
+HealthSummary, AlertRecord) and `HealthCheckRunner.cs` (ping/HTTP/TCP/service-URL checks +
+disk/uptime placeholders). Rules that hold here: allowlist before any I/O, strict timeouts,
+deterministic C# only, no auto-remediation — remediation arrives approval-gated in V2.1+.
+See docs/NORTH_STAR.md and docs/HOMELAB.md.

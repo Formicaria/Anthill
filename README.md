@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.10.0
+**Current version:** v1.11.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.11.0` | **Health checks + notifications** (NORTH_STAR Phase 7): ping/HTTP/TCP/service-URL checks (plus disk/uptime placeholders) run on the shared homelab scheduler against **allowlisted targets only**, under strict timeouts, with per-target failure streaks promoting to **incident candidates** at 3 consecutive failures. Config-gated **Slack/Discord/generic webhook notifications** (off by default; URLs never logged). Health panel on the Homelab page: add/run/delete checks, live summary, test-notify. No auto-remediation anywhere. |
 | `v1.10.0` | **Inventory + service registry** (NORTH_STAR Phase 6) with a new **Homelab page in the console** (hosts, services, ports, dependencies, recent changes, JSON import/export) — plus two operator-facing fixes: **Patch Center "Apply" no longer 403s** (the `apply_patch` capability gate now follows `patch_application_enabled`; error toasts surface the server's reason), and homelab gates are editable from Settings. |
 | `v1.9.1` | **Homelab scheduler + mock-provider harness** (NORTH_STAR Phase 5): five deterministic, network-free fake providers (Proxmox/DNS/DHCP/firewall/health) run through the shared `HomelabScheduler` pattern — jittered intervals, failure backoff, global concurrency cap, persisted job state, target-allowlist discipline — plus a reusable test harness every real provider (v1.10+) must pass, `GET /homelab/providers` statuses, and a `homelab_mock_providers_enabled` gate (off by default). Still zero real network calls. |
 | `v1.9.0` | **Homelab foundation** (NORTH_STAR Phase 4): read-only backend groundwork for the V2 Homelab Command Center — `HomelabRepository` (15 new SQLite tables), provider interfaces, operator-managed **target allowlist** (isolated from the general SSRF guard), **write-only credential store** with audit events, new `homelab_operator` role + homelab permissions (action gates OFF until V2.1), disabled-by-default `HomelabScheduler` skeleton, 8 visible-only homelab ants, permission-scoped `/homelab/*` endpoints, [docs/HOMELAB.md](docs/HOMELAB.md), and the `Anthill.Tests.Homelab` suite. No infrastructure control of any kind. |

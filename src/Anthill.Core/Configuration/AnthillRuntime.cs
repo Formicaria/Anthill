@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.10.0";
+    public const string Version = "1.11.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -135,6 +135,16 @@ public static class AnthillRuntime
     public static int HomelabMaxConcurrentChecks = 2;
     /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
     public static string HomelabStopFileName = "HOMELAB_STOP";
+    // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) -------
+    /// <summary>Cadence of the scheduler's health-check job.</summary>
+    public static int HomelabHealthIntervalSeconds = 60;
+    /// <summary>Global per-check timeout so a hung host can never hang the app.</summary>
+    public static int HomelabHealthTimeoutMs = 5000;
+    /// <summary>Master gate for webhook notifications. Off by default.</summary>
+    public static bool EnableHomelabNotifications = false;
+    public static string HomelabSlackWebhook = "";
+    public static string HomelabDiscordWebhook = "";
+    public static string HomelabGenericWebhook = "";
     // ---- Phase 2: Strategist (self-generated missions) --------------------
     /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
@@ -452,6 +462,12 @@ public static class AnthillRuntime
         EnableHomelabScheduler = config.HomelabSchedulerEnabled;
         EnableHomelabMockProviders = config.HomelabMockProvidersEnabled;
         HomelabMaxConcurrentChecks = Math.Clamp(config.HomelabMaxConcurrentChecks, 1, 16);
+        HomelabHealthIntervalSeconds = Math.Clamp(config.HomelabHealthIntervalSeconds, 10, 86400);
+        HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
+        EnableHomelabNotifications = config.HomelabNotificationsEnabled;
+        HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
+        HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
+        HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
@@ -529,6 +545,9 @@ public static class AnthillRuntime
         "operator_shell_enabled", "operator_shell_dir",
         "homelab_enabled", "homelab_scheduler_enabled", "homelab_mock_providers_enabled",
         "homelab_max_concurrent_checks",
+        "homelab_health_interval_seconds", "homelab_health_timeout_ms",
+        "homelab_notifications_enabled", "homelab_slack_webhook", "homelab_discord_webhook",
+        "homelab_generic_webhook",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
         "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
@@ -616,6 +635,12 @@ public static class AnthillRuntime
         ["homelab_scheduler_enabled"] = EnableHomelabScheduler,
         ["homelab_mock_providers_enabled"] = EnableHomelabMockProviders,
         ["homelab_max_concurrent_checks"] = HomelabMaxConcurrentChecks,
+        ["homelab_health_interval_seconds"] = HomelabHealthIntervalSeconds,
+        ["homelab_health_timeout_ms"] = HomelabHealthTimeoutMs,
+        ["homelab_notifications_enabled"] = EnableHomelabNotifications,
+        ["homelab_slack_webhook"] = HomelabSlackWebhook,
+        ["homelab_discord_webhook"] = HomelabDiscordWebhook,
+        ["homelab_generic_webhook"] = HomelabGenericWebhook,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
         ["operator_shell_enabled"] = EnableOperatorShell,
