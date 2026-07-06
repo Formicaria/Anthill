@@ -79,6 +79,12 @@ public interface IHomelabRepository : IHomelabEventSink
     void SaveHealthResult(HealthCheckResult result);
     IReadOnlyList<HealthCheckResult> RecentHealthResults(int limit = 50);
 
+    // Health-check schedules + per-target history (v1.11.0, NORTH_STAR Phase 7)
+    IReadOnlyList<HealthCheckResult> RecentHealthResultsForTarget(string target, int limit = 10);
+    void UpsertHealthSchedule(Anthill.Core.Health.HealthCheckSchedule schedule, string changedBy);
+    void RemoveHealthSchedule(string id, string removedBy);
+    IReadOnlyList<Anthill.Core.Health.HealthCheckSchedule> ListHealthSchedules();
+
     // Dependency mapping (v1.10.0): "what runs where?" / "what depends on this?"
     void UpsertDependency(DependencyRecord dependency, string changedBy);
     void RemoveDependency(string id, string removedBy);

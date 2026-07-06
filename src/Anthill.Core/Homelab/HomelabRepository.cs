@@ -51,6 +51,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         "homelab_nodes", "network_devices", "services", "vm_inventory", "container_inventory",
         "storage_inventory", "backup_inventory", "health_checks", "homelab_events", "change_log",
         "incidents", "dependencies", "risk_records", "homelab_credentials", "homelab_target_allowlist",
+        "health_check_schedules",
     };
 
     private static readonly string[] SchemaStatements =
@@ -114,6 +115,10 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             enabled INTEGER NOT NULL DEFAULT 1, added_by TEXT, created_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS homelab_meta (
             key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS health_check_schedules (
+            id TEXT PRIMARY KEY, check_kind TEXT NOT NULL, target TEXT NOT NULL,
+            service_id TEXT, node_id TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+            timeout_ms INTEGER DEFAULT 0, created_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_homelab_events_created ON homelab_events(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_health_checks_checked ON health_checks(checked_at)",
@@ -348,6 +353,90 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
                 ServiceId = r.IsDBNull(3) ? "" : r.GetString(3), NodeId = r.IsDBNull(4) ? "" : r.GetString(4),
                 Status = r.GetString(5), LatencyMs = r.GetDouble(6),
                 Detail = r.IsDBNull(7) ? "" : r.GetString(7), CheckedAt = r.GetString(8),
+            });
+        }
+        return list;
+    }
+
+    // ---- Health-check schedules + per-target history (v1.11.0) ------------------------------------
+
+    public IReadOnlyList<HealthCheckResult> RecentHealthResultsForTarget(string target, int limit = 10)
+    {
+        var list = new List<HealthCheckResult>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"SELECT id, check_kind, target, service_id, node_id, status, latency_ms, detail, checked_at
+            FROM health_checks WHERE target = $target ORDER BY checked_at DESC LIMIT $limit";
+        Bind(cmd, "$target", target); Bind(cmd, "$limit", Math.Clamp(limit, 1, 200));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new HealthCheckResult
+            {
+                Id = r.GetString(0), CheckKind = r.GetString(1), Target = r.GetString(2),
+                ServiceId = r.IsDBNull(3) ? "" : r.GetString(3), NodeId = r.IsDBNull(4) ? "" : r.GetString(4),
+                Status = r.GetString(5), LatencyMs = r.GetDouble(6),
+                Detail = r.IsDBNull(7) ? "" : r.GetString(7), CheckedAt = r.GetString(8),
+            });
+        }
+        return list;
+    }
+
+    public void UpsertHealthSchedule(Anthill.Core.Health.HealthCheckSchedule schedule, string changedBy)
+    {
+        if (string.IsNullOrWhiteSpace(schedule.CreatedAt)) schedule.CreatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO health_check_schedules (id, check_kind, target, service_id, node_id, enabled, timeout_ms, created_at)
+                VALUES ($id, $kind, $target, $service, $node, $enabled, $timeout, $created)
+                ON CONFLICT(id) DO UPDATE SET check_kind=$kind, target=$target, service_id=$service,
+                    node_id=$node, enabled=$enabled, timeout_ms=$timeout";
+            Bind(cmd, "$id", schedule.Id); Bind(cmd, "$kind", schedule.CheckKind); Bind(cmd, "$target", schedule.Target);
+            Bind(cmd, "$service", schedule.ServiceId); Bind(cmd, "$node", schedule.NodeId);
+            Bind(cmd, "$enabled", schedule.Enabled ? 1 : 0); Bind(cmd, "$timeout", schedule.TimeoutMs);
+            Bind(cmd, "$created", schedule.CreatedAt);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "health_check", SubjectId = schedule.Id, ChangeKind = "updated",
+            Summary = $"Health check '{schedule.CheckKind} {schedule.Target}' saved", ChangedBy = changedBy,
+        });
+    }
+
+    public void RemoveHealthSchedule(string id, string removedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM health_check_schedules WHERE id = $id";
+            Bind(cmd, "$id", id);
+            cmd.ExecuteNonQuery();
+        }
+        RecordChange(new ChangeRecord
+        {
+            SubjectKind = "health_check", SubjectId = id, ChangeKind = "removed",
+            Summary = "Health check schedule removed", ChangedBy = removedBy,
+        });
+    }
+
+    public IReadOnlyList<Anthill.Core.Health.HealthCheckSchedule> ListHealthSchedules()
+    {
+        var list = new List<Anthill.Core.Health.HealthCheckSchedule>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, check_kind, target, service_id, node_id, enabled, timeout_ms, created_at FROM health_check_schedules ORDER BY created_at";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new Anthill.Core.Health.HealthCheckSchedule
+            {
+                Id = r.GetString(0), CheckKind = r.GetString(1), Target = r.GetString(2),
+                ServiceId = r.IsDBNull(3) ? "" : r.GetString(3), NodeId = r.IsDBNull(4) ? "" : r.GetString(4),
+                Enabled = r.GetInt64(5) != 0, TimeoutMs = (int)r.GetInt64(6), CreatedAt = r.GetString(7),
             });
         }
         return list;

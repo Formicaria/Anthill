@@ -56,6 +56,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_scheduler_enabled")] public bool HomelabSchedulerEnabled { get; set; } = false;
     [JsonPropertyName("homelab_mock_providers_enabled")] public bool HomelabMockProvidersEnabled { get; set; } = false;
     [JsonPropertyName("homelab_max_concurrent_checks")] public int HomelabMaxConcurrentChecks { get; set; } = 2;
+    // Health checks + notifications (v1.11.0, NORTH_STAR Phase 7): awareness only, no auto-remediation.
+    [JsonPropertyName("homelab_health_interval_seconds")] public int HomelabHealthIntervalSeconds { get; set; } = 60;
+    [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
+    [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
+    [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
+    [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";
 
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
     [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;

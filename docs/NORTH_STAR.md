@@ -176,7 +176,7 @@ V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.
 V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions  [SHIPPED v1.9.0]
 V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
 V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
-V1.11.0  Health checks and notifications
+V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
 V1.12.0  Proxmox read-only integration
 V1.13.0  Network and security awareness
 V1.14.0  Incident and change memory + IApprovable design
@@ -389,6 +389,13 @@ repository; API; import/export round-trip; permission; UI smoke.
 ---
 
 # PHASE 7 — V1.11.0 HEALTH CHECKS + NOTIFICATIONS
+
+**Status: SHIPPED in v1.11.0** — `HealthCheckRunner` (ping/HTTP/TCP/service-URL + disk/uptime
+placeholders; allowlist-gated before any I/O; strict timeouts), `health_check_schedules` CRUD,
+incident-candidate promotion at 3 consecutive failures, config-gated `NotificationService`
+(Slack/Discord/generic, off by default, URL-free audits), the shared-scheduler `health-checks`
+job, `/homelab/health/*` + `/homelab/notifications/test` endpoints, the Homelab-page Health
+panel, and `HealthAndNotificationTests` on loopback sockets.
 
 ## Goal
 ANTHILL can tell what is alive, degraded, or broken. No auto-remediation.

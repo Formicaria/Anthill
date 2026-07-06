@@ -1,5 +1,41 @@
 # ANTHILL Changelog
 
+## v1.11.0 — Health checks + notifications (NORTH_STAR Phase 7)
+
+Phase 7 of the master roadmap: ANTHILL can tell what is alive, degraded, or broken. Awareness and
+reporting only — there is no auto-remediation anywhere in this subsystem.
+
+- **`HealthCheckRunner`** (deterministic C#, never routed through the model router): ping, HTTP
+  status (200s healthy / 4xx degraded / 5xx failed), TCP port, service-URL checks, plus disk and
+  uptime placeholders that report `unknown` until agent support lands. Every check must pass the
+  Homelab Target Allowlist (D1) **before any I/O**, runs under a strict per-check timeout
+  (`homelab_health_timeout_ms`, per-schedule override) so a hung host can never hang the app, and
+  persists a `HealthCheckResult` with latency + detail.
+- **Failure alerting**: each failed check writes a `health_check_failed` event; 3 consecutive
+  failures of one target promote it to a single **`incident_candidate`** event (fires once per
+  streak) — groundwork for V1.14's incident memory.
+- **`NotificationService`** (config-gated, OFF by default): Slack, Discord, and generic JSON
+  webhooks; fires on health-check failures, incident candidates, and operator tests. Strict
+  timeouts, soft failure, and every send attempt audited as a homelab event that never contains a
+  webhook URL or any secret.
+- **Scheduler wiring**: one `health-checks` job on the shared `HomelabScheduler`
+  (`homelab_health_interval_seconds`, default 60s) — no per-subsystem timers. Mock providers now
+  register only when their own gate is on; the scheduler starts whenever it has jobs.
+- **Operator-managed schedules**: new `health_check_schedules` table with CRUD + ChangeRecords.
+- **API**: `GET /homelab/health/summary` (latest-per-target rollup), `GET /homelab/health/results`,
+  `GET|POST|DELETE /homelab/health/schedules`, `POST /homelab/health/run` (run everything now),
+  `POST /homelab/notifications/test`. Reads = `read_homelab`, writes = `manage_homelab_integrations`.
+- **UI**: Health panel on the Homelab page — add/run/delete checks, healthy/degraded/failed/unknown
+  KPI line, last status/latency/detail per check, and a Test Notify button.
+- **Config**: `homelab_health_interval_seconds`, `homelab_health_timeout_ms`,
+  `homelab_notifications_enabled`, `homelab_slack_webhook`, `homelab_discord_webhook`,
+  `homelab_generic_webhook` — all operator-editable, all conservative/off by default.
+- **Tests** (`HealthAndNotificationTests`, all on loopback sockets — zero external network):
+  host extraction, allowlist-blocks-before-I/O, HTTP 200/404/500 classification, TCP open/closed/
+  malformed, hung-server timeout bound, placeholder kinds, incident-candidate streak, notifications
+  disabled-by-default / delivery + URL-free audit / unreachable-webhook soft-fail, latest-per-target
+  summary, and schedule CRUD persistence across reopen.
+
 ## v1.10.0 — Inventory + service registry with Homelab console page (NORTH_STAR Phase 6)
 
 Phase 6 of the master roadmap: ANTHILL knows what exists. Manual/import-based only — no active
