@@ -1570,7 +1570,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
          homelab subsystems; every card/chip/graph node reads these, never hardcoded colors. */
       #page-homelab{
         --hl-health:#3ddc97;   /* health & checks      */
-        --hl-compute:#56b6f5;  /* Proxmox / compute    */
+        --hl-compute:#56b6f5;  /* hosts / hypervisors  */
+        --hl-service:#5fd7a7;  /* services             */
         --hl-storage:#b18cf0;  /* storage & backups    */
         --hl-security:#ff9e64; /* security & exposure  */
         --hl-incident:#ff5d6c; /* incidents            */
@@ -1707,12 +1708,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
-        <!-- Virtualization (v1.12.0, Proxmox read-only) -->
+        <!-- Virtualization connections (v2.1.0: Proxmox / ESXi / Docker / Hyper-V — all read-only) -->
         <div class="card" style="padding:12px 16px;">
-          <div class="section-head" style="margin-top:0;">Virtualization <span style="font-weight:400;color:var(--dim)">(Proxmox read-only — no control actions exist until V2.1)</span>
-            <button class="btn btn-ghost" id="hl-pve-sync" style="float:right;" onclick="hlPveSync()" title="Pull nodes, VMs, containers, storage, and failed tasks now">⟳ Sync Proxmox Now</button>
-          </div>
-          <div id="hl-pve-status" style="font-size:11px;color:var(--muted);">Loading...</div>
+          <div class="section-head" style="margin-top:0;">Virtualization Connections <span style="font-weight:400;color:var(--dim)">(read-only inventory — enable, set host + credential, Save, then Sync. No control actions exist in any client.)</span></div>
+          <div id="hl-virt-conns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:10px;margin-top:8px;"><div style="color:var(--dim);font-size:11px;">Loading...</div></div>
         </div>
         <div class="card" style="overflow-x:auto;">
           <div class="section-head" style="margin:10px 16px 0;">Virtual Machines</div>
@@ -6367,26 +6366,86 @@ function hlBytes(n){ if(!n) return '0'; const u=['B','KB','MB','GB','TB','PB']; 
 function hlUptime(s){ if(!s) return '—'; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600);
   return d>0?(d+'d '+h+'h'):(h+'h '+Math.floor(s%3600/60)+'m'); }
 
+// v2.1.0: unified read-only virtualization connections (Proxmox / ESXi / Docker / Hyper-V).
+const HL_VIRT_META={
+  proxmox:{title:'Proxmox VE',   defPort:8006,secretHint:'user@realm!tokenid=SECRET (PVEAuditor role)'},
+  esxi:   {title:'VMware ESXi / vCenter',defPort:443, secretHint:'user:password (built-in Read-only role)'},
+  docker: {title:'Docker Engine',defPort:2376,secretHint:'optional bearer — leave blank for none'},
+  hyperv: {title:'Microsoft Hyper-V',defPort:5986,secretHint:'DOMAIN\\user:password (read-only account)'},
+};
 async function loadHlVirt(){
   try{
     const [st,vms,cts,pools]=await Promise.all([
-      api('/homelab/proxmox/status'),api('/homelab/vms'),api('/homelab/containers'),api('/homelab/storage')]);
-    renderHlPve(st.success?(st.data||{}):{});
+      api('/homelab/virtualization/status'),api('/homelab/vms'),api('/homelab/containers'),api('/homelab/storage')]);
+    renderHlVirtConns(st.success?((st.data||{}).integrations||[]):[]);
     renderHlVms(vms.success?(vms.data||[]):[]);
     renderHlCts(cts.success?(cts.data||[]):[]);
     renderHlStorage(pools.success?(pools.data||[]):[]);
   }catch(e){ hlMsg('Virtualization load failed: '+e.message,false); }
 }
 
-function renderHlPve(d){
-  const el=document.getElementById('hl-pve-status'); if(!el) return;
-  const s=d.status||null;
-  el.innerHTML='Proxmox: <b>'+(d.enabled?'enabled':'disabled')+'</b>'+
-    (d.host?(' · host: <b>'+escapeHtml(d.host)+'</b>'):' · host not set')+
-    ' · credential <b>'+escapeHtml(d.credential_id||'—')+'</b>: '+(d.credential_configured?'configured':'<span style="color:var(--red)">missing</span>')+
-    ' · <b>'+(d.vms??0)+'</b> VM(s), <b>'+(d.containers??0)+'</b> container(s), <b>'+(d.storage_pools??0)+'</b> pool(s)'+
-    (s?('<br>Last sync: '+escapeHtml(s.state||'idle')+(s.last_run?(' at '+hlDate(s.last_run)):'')+(s.last_result?(' — '+escapeHtml(s.last_result)):'')):'')+
-    '<br><span style="color:var(--dim)">Read-only by construction: the client has no write methods. Setup: save a PVEAuditor API token as credential, allowlist the host, set homelab_proxmox_host + homelab_proxmox_enabled, restart.</span>';
+function renderHlVirtConns(list){
+  const wrap=document.getElementById('hl-virt-conns'); if(!wrap) return;
+  const admin=ROLE==='admin';
+  if(!list.length){ wrap.innerHTML='<div style="color:var(--dim);font-size:11px;">No integrations available.</div>'; return; }
+  wrap.innerHTML=list.map(d=>{
+    const k=d.kind, m=HL_VIRT_META[k]||{title:k,defPort:0,secretHint:'secret'};
+    const dis=admin?'':' disabled';
+    return '<div class="card" style="padding:10px 12px;border:1px solid var(--border);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+        '<b>'+escapeHtml(m.title)+'</b>'+
+        '<span class="hud-risk low" title="No write methods exist in the client — read-only by construction">read-only</span></div>'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin:7px 0;">'+
+        '<input type="checkbox" id="hl-vc-'+k+'-enabled"'+(d.enabled?' checked':'')+dis+'> Enabled'+
+        '<span style="flex:1"></span>'+
+        '<input type="checkbox" id="hl-vc-'+k+'-insecure"'+(d.insecure_tls?' checked':'')+dis+'> Skip TLS verify</label>'+
+      '<div style="display:flex;gap:6px;margin-bottom:6px;">'+
+        '<input class="form-input" id="hl-vc-'+k+'-host" value="'+escapeHtml(d.host||'')+'" placeholder="host / ip" style="flex:2;font-size:11px;" autocomplete="off"'+dis+'>'+
+        '<input class="form-input" id="hl-vc-'+k+'-port" value="'+(d.port||m.defPort||'')+'" type="number" placeholder="port" style="width:66px;font-size:11px;"'+dis+'></div>'+
+      '<input class="form-input" id="hl-vc-'+k+'-credid" value="'+escapeHtml(d.credential_id||'')+'" placeholder="credential id" style="width:100%;font-size:11px;margin-bottom:6px;" autocomplete="off"'+dis+'>'+
+      (admin?('<div style="display:flex;gap:6px;margin-bottom:6px;">'+
+        '<input class="form-input" id="hl-vc-'+k+'-secret" type="password" placeholder="'+escapeHtml(m.secretHint)+'" style="flex:1;font-size:11px;" autocomplete="new-password">'+
+        '<button class="btn btn-ghost" onclick="hlSaveVirtCred(\''+k+'\')" title="Store the secret in the write-only credential vault">Save cred</button></div>'+
+        '<div style="display:flex;gap:6px;">'+
+        '<button class="btn btn-primary" onclick="hlSaveVirtConn(\''+k+'\')">Save</button>'+
+        '<button class="btn btn-ghost" onclick="hlSyncVirt(\''+k+'\')">⟳ Sync now</button></div>'):'')+
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;">credential <b>'+escapeHtml(d.credential_id||'—')+'</b>: '+
+        (d.credential_configured?'<span style="color:var(--green)">configured</span>':'<span style="color:var(--red)">missing</span>')+
+        ' · '+(d.active?'<span style="color:var(--green)">active</span>':'inactive')+'</div></div>';
+  }).join('');
+}
+
+async function hlSaveVirtConn(k){
+  const g=id=>document.getElementById('hl-vc-'+k+'-'+id);
+  if(!g('host')) return;
+  const payload={};
+  payload['homelab_'+k+'_enabled']=g('enabled').checked;
+  payload['homelab_'+k+'_host']=g('host').value.trim();
+  const port=parseInt(g('port').value,10); if(port>0) payload['homelab_'+k+'_port']=port;
+  payload['homelab_'+k+'_credential_id']=g('credid').value.trim();
+  payload['homelab_'+k+'_insecure_tls']=g('insecure').checked;
+  const r=await api('/settings','POST',payload);
+  hlMsg(r.success?(k+' connection saved — Sync now to pull inventory (scheduled sync starts after next restart).'):(r.message||'Save failed'),r.success);
+  if(r.success) loadHlVirt();
+}
+
+async function hlSaveVirtCred(k){
+  const g=id=>document.getElementById('hl-vc-'+k+'-'+id);
+  const secret=(g('secret')?g('secret').value:'').trim();
+  const id=(g('credid')?g('credid').value:'').trim();
+  if(!id){ hlMsg('Set a credential id first.',false); return; }
+  if(!secret){ hlMsg('Enter the secret to store.',false); return; }
+  const r=await api('/homelab/credentials','POST',{id:id,kind:k,target_host:(g('host')?g('host').value.trim():''),secret:secret});
+  hlMsg(r.success?('Credential "'+id+'" stored (write-only).'):(r.message||'Save failed'),r.success);
+  if(g('secret')) g('secret').value='';
+  if(r.success) loadHlVirt();
+}
+
+async function hlSyncVirt(k){
+  hlMsg('Syncing '+k+'...',true);
+  const r=await api('/homelab/virtualization/'+encodeURIComponent(k)+'/sync','POST',{});
+  hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
+  if(r.success) loadHomelab();
 }
 
 function renderHlVms(vms){
@@ -6511,13 +6570,20 @@ function renderHlGraph(d){
   nodes.forEach(n=>{
     const p=pos[n.id]; if(!p) return;
     const dim=sel&&!connected.has(n.id);
+    const sc=hlStatusColor(n.status), isHost=n.kind==='host';
+    const kindFill=isHost?'var(--hl-compute,#56b6f5)':'var(--hl-service,#5fd7a7)';
+    const pulse=(n.status==='failed'||n.open_incident)?' class="hl-pulse"':'';
+    // Host = square box; Service = rounded pill. Fill by KIND, border by STATUS — so shape+colour make
+    // "is this a host or a service?" obvious at a glance, while the ring still shows health.
+    const shape=isHost
+      ? '<rect x="'+(p.x-17)+'" y="'+(p.y-13)+'" width="34" height="26" rx="4" fill="'+kindFill+'" fill-opacity="0.18" stroke="'+sc+'" stroke-width="2"'+pulse+'/>'
+      : '<rect x="'+(p.x-16)+'" y="'+(p.y-9)+'" width="32" height="18" rx="9" fill="'+kindFill+'" fill-opacity="0.22" stroke="'+sc+'" stroke-width="2"'+pulse+'/>';
+    const glyph='<text x="'+p.x+'" y="'+(p.y+4)+'" font-size="11" fill="'+kindFill+'" text-anchor="middle" style="font-weight:700;">'+(isHost?'▣':'●')+'</text>';
     out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" onclick="hlGraphSelect(\''+escapeHtml(n.id)+'\')">'+
-      '<circle cx="'+p.x+'" cy="'+p.y+'" r="13" fill="none" stroke="'+hlStatusColor(n.status)+'" stroke-width="2"'+((n.status==='failed'||n.open_incident)?' class="hl-pulse"':'')+'/>'+
-      (n.kind==='host'?'<rect x="'+(p.x-5)+'" y="'+(p.y-5)+'" width="10" height="10" fill="'+hlStatusColor(n.status)+'"/>'
-                      :'<circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="'+hlStatusColor(n.status)+'"/>')+
-      (n.internet_exposed?'<text x="'+(p.x+14)+'" y="'+(p.y-12)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
-      (n.open_incident?'<text x="'+(p.x-13)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
-      '<text x="'+p.x+'" y="'+(p.y+(n.kind==='host'?30:-22))+'" font-size="10" fill="var(--muted)" text-anchor="middle">'+escapeHtml(n.label)+'</text></g>';
+      shape+glyph+
+      (n.internet_exposed?'<text x="'+(p.x+19)+'" y="'+(p.y-14)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
+      (n.open_incident?'<text x="'+(p.x-17)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
+      '<text x="'+p.x+'" y="'+(p.y+(isHost?33:-16))+'" font-size="10" fill="var(--muted)" text-anchor="middle">'+escapeHtml(n.label)+'</text></g>';
   });
   svg.innerHTML=out;
   const info=document.getElementById('hl-graph-info');
@@ -6528,7 +6594,7 @@ function renderHlGraph(d){
       info.innerHTML='<b>'+escapeHtml(me?me.label:sel)+'</b> — status <span style="color:'+hlStatusColor(me?me.status:'unknown')+'">'+escapeHtml(me?me.status:'?')+'</span>'+
         ' · depends-on-this: '+(dependents.length?escapeHtml(dependents.join(', ')):'nothing recorded')+
         ' · <a href="javascript:void(0)" onclick="hlGraphSelect(null)" style="color:var(--dim)">clear selection</a>';
-    } else info.textContent=nodes.length+' node(s), '+edges.length+' edge(s), '+edges.filter(e=>e.impacted).length+' impacted path(s).';
+    } else info.innerHTML='<span style="color:var(--hl-compute,#56b6f5);font-weight:700">▣ host</span> &nbsp; <span style="color:var(--hl-service,#5fd7a7);font-weight:700">● service</span> &nbsp; <span style="color:var(--red)">--- impacted path</span> &nbsp;·&nbsp; '+nodes.length+' node(s), '+edges.length+' edge(s), '+edges.filter(e=>e.impacted).length+' impacted.';
   }
 }
 
