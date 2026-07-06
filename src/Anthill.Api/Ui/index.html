@@ -4,6 +4,66 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ANTHILL</title>
+<style id="anthill-tokens">
+/* V2.2 Pass A — ANTHILL global design system (Overview + Colony revision).
+   Centralized theme tokens + shared component classes. Additive: existing styles untouched;
+   pages opt in by using these classes. Role colors are THE single source for nodes, chambers,
+   event dots, badges, pheromone paths, and legends. */
+:root{
+  --anthill-bg:#050914;
+  --anthill-panel:rgba(12,22,40,.78);
+  --anthill-panel-strong:rgba(16,31,55,.92);
+  --anthill-border:rgba(140,180,255,.14);
+  --anthill-border-strong:rgba(140,180,255,.28);
+  --anthill-text:#eaf2ff;
+  --anthill-muted:#7f91aa;
+  --anthill-dim:#4f6078;
+  --role-queen:#ffd76a; --role-mission-control:#9b6cff; --role-research:#36c8ff;
+  --role-coder:#ff9a3d; --role-builder:#3a8bff; --role-verifier:#9b6cff;
+  --role-tester:#ff5fa8; --role-scout:#45e36f; --role-forager:#45e36f;
+  --role-archivist:#e6e85d; --role-security:#ff416c; --role-source:#20dbc7;
+  --role-memory:#b9ff5a; --role-ui:#46e1ff; --role-operator:#c4a1ff; --role-other:#8a98ad;
+  --status-success:#45e36f; --status-warning:#ffd76a; --status-danger:#ff416c; --status-info:#36c8ff;
+  --glow-green:0 0 18px rgba(69,227,111,.45);
+  --glow-blue:0 0 18px rgba(54,200,255,.45);
+  --glow-purple:0 0 18px rgba(155,108,255,.45);
+  --glow-gold:0 0 22px rgba(255,215,106,.55);
+}
+/* Glassy panel + card primitives */
+.ath-card{background:var(--anthill-panel);border:1px solid var(--anthill-border);border-radius:10px;
+  backdrop-filter:blur(6px);padding:12px 14px;}
+.ath-card:hover{border-color:var(--anthill-border-strong);}
+.ath-card-title{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--anthill-muted);margin-bottom:8px;}
+/* Status pill */
+.ath-pill{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.05em;
+  border:1px solid var(--anthill-border);}
+.ath-pill.ok{color:var(--status-success);border-color:rgba(69,227,111,.35);}
+.ath-pill.warn{color:var(--status-warning);border-color:rgba(255,215,106,.35);}
+.ath-pill.danger{color:var(--status-danger);border-color:rgba(255,65,108,.35);}
+.ath-pill.info{color:var(--status-info);border-color:rgba(54,200,255,.35);}
+/* Role badge (dot + label) */
+.ath-role{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--anthill-text);}
+.ath-role i{width:8px;height:8px;border-radius:50%;display:inline-block;}
+/* Top telemetry bar */
+.tb-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-family:var(--mono, monospace);font-size:10px;
+  color:var(--anthill-muted);background:var(--anthill-panel-strong);border:1px solid var(--anthill-border);
+  border-radius:10px;padding:8px 14px;margin-bottom:12px;position:relative;z-index:2;}
+.tb-brand{font-weight:800;letter-spacing:.14em;color:var(--anthill-text);}
+.tb-seg b{color:var(--anthill-text);font-size:12px;}
+.tb-seg .up{color:var(--status-success);} .tb-seg .down{color:var(--status-danger);}
+.tb-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px;}
+.tb-dot.on{background:var(--status-success);box-shadow:var(--glow-green);animation:tbBreath 3s ease-in-out infinite;}
+.tb-dot.off{background:var(--anthill-dim);}
+.tb-search{margin-left:auto;background:rgba(255,255,255,.04);border:1px solid var(--anthill-border);
+  border-radius:6px;color:var(--anthill-text);font-size:10px;padding:4px 10px;min-width:170px;outline:none;}
+.tb-search:focus{border-color:var(--anthill-border-strong);box-shadow:var(--glow-blue);}
+@keyframes tbBreath{0%,100%{opacity:1;}50%{opacity:.55;}}
+/* Accessibility: honor reduced motion globally for the new system */
+@media (prefers-reduced-motion: reduce){
+  .tb-dot.on{animation:none;}
+  .ath-card,.tb-search{transition:none;}
+}
+</style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -1129,6 +1189,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: OVERVIEW
       --------------------------------------------------------------------- -->
       <div class="page page-scroll active" id="page-overview">
+        <!-- V2.2 Pass A: shared top telemetry bar (real data only; '—' when unavailable) -->
+        <div id="tb-overview"></div>
 
         <!-- -- Top colony status strip -- -->
         <div class="hud-strip" id="hud-strip">
@@ -1295,6 +1357,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: COLONY  (canvas visualization)
       --------------------------------------------------------------------- -->
       <div class="page" id="page-colony">
+        <!-- V2.2 Pass A: shared top telemetry bar -->
+        <div id="tb-colony"></div>
 
         <!-- Left sidebar: status + approvals + jobs -->
         <div id="colony-left">
@@ -6988,6 +7052,115 @@ async function hlImportFile(ev){
   }catch(e){ hlMsg('Import failed: '+e.message,false); }
   ev.target.value='';
 }
+
+// -- V2.2 Pass A: ANTHILL design-system helpers + TopTelemetryBar --------------------
+// Role colors: THE single mapping for chambers, nodes, dots, badges, trails, legends.
+function getRoleColor(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'var(--role-queen)';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'var(--role-mission-control)';
+  if(n.includes('research'))return 'var(--role-research)';
+  if(n.includes('coder')||n.includes('code'))return 'var(--role-coder)';
+  if(n.includes('builder')||n.includes('build'))return 'var(--role-builder)';
+  if(n.includes('verifier')||n.includes('verify'))return 'var(--role-verifier)';
+  if(n.includes('tester')||n.includes('test'))return 'var(--role-tester)';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'var(--role-scout)';
+  if(n.includes('archivist'))return 'var(--role-archivist)';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'var(--role-memory)';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('guard')||n.includes('soldier')||n.includes('medic'))return 'var(--role-security)';
+  if(n.includes('source')||n.includes('file'))return 'var(--role-source)';
+  if(n.includes('ui')||n.includes('cartographer'))return 'var(--role-ui)';
+  if(n.includes('operator')||n.includes('scribe'))return 'var(--role-operator)';
+  return 'var(--role-other)';
+}
+function getRoleLabel(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'Queen';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'Mission Control';
+  if(n.includes('research'))return 'Researchers';
+  if(n.includes('coder'))return 'Coders';
+  if(n.includes('builder'))return 'Builders';
+  if(n.includes('verifier'))return 'Verifiers';
+  if(n.includes('tester'))return 'Testers';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'Scouts';
+  if(n.includes('archivist'))return 'Archivists';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'Memory';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('soldier')||n.includes('medic'))return 'Security';
+  if(n.includes('source')||n.includes('file'))return 'Sources';
+  if(n.includes('ui')||n.includes('cartographer'))return 'UI';
+  if(n.includes('operator')||n.includes('scribe'))return 'Operators';
+  return 'Other';
+}
+function athPill(state,text){ return '<span class="ath-pill '+state+'">'+escapeHtml(text)+'</span>'; }
+
+// Central telemetry store — every value is real or null (rendered as em dash, never invented).
+const TB={online:null,tasks:null,tasksPerSec:null,successRate:null,activeAnts:null,approvals:null,
+  health:null,healthLabel:'',search:'',_prevTasks:null,_prevAt:0};
+
+async function pollTelemetry(){
+  const ovActive=document.getElementById('page-overview')?.classList.contains('active');
+  const coActive=document.getElementById('page-colony')?.classList.contains('active');
+  if(!ovActive&&!coActive) return;
+  try{
+    const [st,reg]=await Promise.all([api('/status'), TB.activeAnts===null?api('/colony/registry'):Promise.resolve(null)]);
+    const s=(st&&st.success&&st.data)||null;
+    TB.online=!!s;
+    if(s){
+      const now=Date.now();
+      const tasks=(typeof s.tasks==='number')?s.tasks:null;
+      if(tasks!==null&&TB._prevTasks!==null&&now>TB._prevAt)
+        TB.tasksPerSec=Math.max(0,(tasks-TB._prevTasks)/((now-TB._prevAt)/1000));
+      TB._prevTasks=tasks; TB._prevAt=now;
+      TB.tasks=tasks;
+      TB.approvals=(typeof s.pending_approvals==='number')?s.pending_approvals:null;
+      // Success rate derived from the real event stream: 1 - failures/events (when events exist).
+      TB.successRate=(typeof s.events==='number'&&s.events>0&&typeof s.failures==='number')
+        ? Math.max(0,Math.min(100,(1-(s.failures/s.events))*100)) : null;
+      // Health: simple real-signal score — start 100, -4 per failure share point, -5 if approvals pile up.
+      if(TB.successRate!==null){
+        let h=Math.round(TB.successRate);
+        if((TB.approvals??0)>5)h-=5;
+        TB.health=Math.max(0,Math.min(100,h));
+        TB.healthLabel=TB.health>=90?'STABLE':(TB.health>=75?'WATCH':(TB.health>=50?'DEGRADED':'CRITICAL'));
+      }
+    }
+    if(reg&&reg.success&&reg.data){
+      const roles=Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[]);
+      let ants=0; roles.forEach(r=>{ ants+=1+((r.workers&&r.workers.length)||0); });
+      if(ants>0)TB.activeAnts=ants;
+    }
+  }catch(e){ TB.online=false; }
+  renderTelemetryBar('tb-overview'); renderTelemetryBar('tb-colony');
+}
+
+function renderTelemetryBar(containerId){
+  const el=document.getElementById(containerId); if(!el) return;
+  // Never re-render while the operator is typing in this bar's search box.
+  const focused=el.querySelector('.tb-search');
+  if(focused&&focused===document.activeElement) return;
+  const v=(x,f)=>x===null||x===undefined?'—':(f?f(x):x);
+  const hs=TB.health===null?'':(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'));
+  el.innerHTML='<div class="tb-bar">'+
+    '<span class="tb-brand">ANTHILL</span>'+
+    '<span class="tb-seg"><span class="tb-dot '+(TB.online?'on':'off')+'"></span>'+(TB.online===null?'CONNECTING':(TB.online?'COLONY ONLINE':'COLONY OFFLINE'))+'</span>'+
+    '<span class="tb-seg">TASKS <b>'+v(TB.tasks)+'</b>'+(TB.tasksPerSec!==null?' <span class="up">'+TB.tasksPerSec.toFixed(2)+'/s</span>':'')+'</span>'+
+    '<span class="tb-seg">SUCCESS <b>'+v(TB.successRate,x=>x.toFixed(1)+'%')+'</b></span>'+
+    '<span class="tb-seg">ACTIVE ANTS <b>'+v(TB.activeAnts)+'</b></span>'+
+    '<span class="tb-seg">APPROVALS <b'+((TB.approvals??0)>0?' style="color:var(--status-warning)"':'')+'>'+v(TB.approvals)+'</b></span>'+
+    '<span class="tb-seg">HEALTH '+(TB.health===null?'<b>—</b>':athPill(hs,TB.health+'% '+TB.healthLabel))+'</span>'+
+    '<input class="tb-search" placeholder="Search colony..." value="'+escapeHtml(TB.search)+'" '+
+      'oninput="TB.search=this.value; if(typeof colonySearchHook===\'function\')colonySearchHook(TB.search);">'+
+    '</div>';
+}
+
+// Wire into page lifecycle without touching existing enter handlers.
+(function(){
+  const prevOv=PAGE_ENTER['overview'];
+  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); };
+  const prevCo=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
+  setInterval(pollTelemetry,15000);
+})();
 
 // -- Boot ----------------------------------------------------------------------
 // v1.9.1.1: the header/title version comes from the API (single source of truth:
