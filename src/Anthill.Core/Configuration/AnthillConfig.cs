@@ -71,6 +71,28 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_proxmox_credential_id")] public string HomelabProxmoxCredentialId { get; set; } = "proxmox-main";
     [JsonPropertyName("homelab_proxmox_insecure_tls")] public bool HomelabProxmoxInsecureTls { get; set; } = false;
     [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
+    // Read-only virtualization integrations (v2.1.0). Each mirrors Proxmox: no write path exists in the
+    // client, the secret lives in the credential store (referenced by id, never here), and the host must
+    // be on the target allowlist. ESXi/vCenter = vSphere REST; Docker = Engine API; Hyper-V = WinRM (WMI
+    // read-only Enumerate). All disabled by default.
+    [JsonPropertyName("homelab_esxi_enabled")] public bool HomelabEsxiEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_esxi_host")] public string HomelabEsxiHost { get; set; } = "";
+    [JsonPropertyName("homelab_esxi_port")] public int HomelabEsxiPort { get; set; } = 443;
+    [JsonPropertyName("homelab_esxi_credential_id")] public string HomelabEsxiCredentialId { get; set; } = "esxi-main";
+    [JsonPropertyName("homelab_esxi_insecure_tls")] public bool HomelabEsxiInsecureTls { get; set; } = false;
+    [JsonPropertyName("homelab_esxi_sync_interval_seconds")] public int HomelabEsxiSyncIntervalSeconds { get; set; } = 300;
+    [JsonPropertyName("homelab_docker_enabled")] public bool HomelabDockerEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_docker_host")] public string HomelabDockerHost { get; set; } = "";
+    [JsonPropertyName("homelab_docker_port")] public int HomelabDockerPort { get; set; } = 2376;
+    [JsonPropertyName("homelab_docker_credential_id")] public string HomelabDockerCredentialId { get; set; } = "docker-main";
+    [JsonPropertyName("homelab_docker_insecure_tls")] public bool HomelabDockerInsecureTls { get; set; } = false;
+    [JsonPropertyName("homelab_docker_sync_interval_seconds")] public int HomelabDockerSyncIntervalSeconds { get; set; } = 300;
+    [JsonPropertyName("homelab_hyperv_enabled")] public bool HomelabHypervEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_hyperv_host")] public string HomelabHypervHost { get; set; } = "";
+    [JsonPropertyName("homelab_hyperv_port")] public int HomelabHypervPort { get; set; } = 5986;
+    [JsonPropertyName("homelab_hyperv_credential_id")] public string HomelabHypervCredentialId { get; set; } = "hyperv-main";
+    [JsonPropertyName("homelab_hyperv_insecure_tls")] public bool HomelabHypervInsecureTls { get; set; } = false;
+    [JsonPropertyName("homelab_hyperv_sync_interval_seconds")] public int HomelabHypervSyncIntervalSeconds { get; set; } = 300;
     // Network + security awareness (v1.13.0, NORTH_STAR Phase 9): deterministic findings, no scanning.
     [JsonPropertyName("homelab_risk_interval_seconds")] public int HomelabRiskIntervalSeconds { get; set; } = 3600;
     // Incident + change memory (v1.14.0, NORTH_STAR Phase 10): tracking + recommendations, no auto-fixes.

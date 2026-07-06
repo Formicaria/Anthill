@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v2.1.0 — Multi-hypervisor read-only inventory + Virtualization Connections UI
+
+Extends the read-only virtualization layer beyond Proxmox to **VMware ESXi/vCenter, Docker, and
+Hyper-V**, and makes every integration configurable from the console (previously Proxmox could only be
+set up by hand-editing `config.json`). Enterprise-geared and read-only end-to-end — every client is
+read-only *by construction*, exactly like Proxmox.
+
+- **New read-only clients + inventory providers** (each disabled by default, credential in the store,
+  host gated by the target allowlist, `AllowAutoRedirect = false` SSRF hardening):
+  - **Docker** — Engine API over TLS (or a read-only socket proxy). GET-only: no
+    start/stop/kill/remove/exec exists in the client. Syncs the engine as a container-host node plus
+    its containers and volumes.
+  - **VMware ESXi / vCenter** — vSphere REST. The only non-GET is a single `POST /api/session` (auth
+    only — mints a session token, changes nothing); all inventory reads are GET. A built-in Read-only
+    role is enough. Syncs hosts → hypervisor nodes, VMs, and datastores.
+  - **Hyper-V** — WinRM / WS-Management, restricted to the read-only WMI `Enumerate` of
+    `Msvm_ComputerSystem` (no `Invoke`/`Put`/`Create`/`Delete`, no command shell). Syncs the host node
+    and its VMs.
+  - All four project into the same inventory tables through one `IInventoryProvider` shape and a
+    unified `GET /homelab/virtualization/status` + `POST /homelab/virtualization/{kind}/sync`.
+    Providers are built **on demand from current config**, so a connection edited in the UI works on
+    the next sync without a restart.
+- **Virtualization Connections panel** in the console: one card per integration (enable, host, port,
+  credential id, skip-TLS, plus an inline write-only "Save cred"), Save + Sync-now, and live status
+  (credential configured / active). Wire-level tests prove each client stays read-only (every request
+  a GET / Enumerate; the vSphere session is the only POST) and that the allowlist blocks unlisted hosts.
+- **Dependency graph** now renders hosts as **boxes** and services as **pills**, coloured by kind with
+  a status-coloured border and a legend, so "host vs service" reads at a glance. (Delete-dependency and
+  the full host/dependency tables already shipped in v2.0 — the delete `✕` and Actions column are live.)
+
 ## v2.0.0 — 🐜 Homelab Command Center launch (NORTH_STAR Phase 11)
 
 The V2 era begins: everything the V1.9–V1.14 line taught ANTHILL to know, in one living console
