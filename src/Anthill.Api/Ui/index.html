@@ -701,6 +701,12 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 }
 #result-overlay.show{display:flex;animation:slide-up .18s ease;}
 @keyframes slide-up{from{transform:translateY(18px);opacity:0}to{transform:none;opacity:1}}
+/* In-app confirm/prompt modal — replaces the blocking native window.confirm()/prompt(). */
+.ui-modal-ov{position:fixed;inset:0;z-index:600;background:rgba(3,7,18,.72);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:16px;}
+.ui-modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.55);animation:slide-up .16s ease;}
+.ui-modal-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;}
+.ui-modal-msg{font-size:12px;color:var(--dim);line-height:1.55;white-space:pre-wrap;}
+.ui-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
 .result-head{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--border);flex-shrink:0;}
 .result-head-title{font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .result-head-actions{display:flex;gap:6px;}
@@ -2326,6 +2332,55 @@ async function rawPost(path, body){
   return r.json();
 }
 
+// -- In-app confirm / prompt --------------------------------------------------
+// Promise-based replacements for native window.confirm()/prompt(). The native dialogs block the
+// renderer's main thread until dismissed — which hung the Autonomy Stop button (and froze the page
+// under automation) — and look out of place in the HUD. These are non-blocking, themed, and
+// keyboard-navigable (Enter=confirm, Esc/backdrop=cancel).
+function uiConfirm(message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-modal="true">
+      <div class="ui-modal-title">${escapeHtml(opts.title||'Confirm')}</div>
+      <div class="ui-modal-msg">${escapeHtml(message||'')}</div>
+      <div class="ui-modal-actions">
+        <button class="btn btn-ghost" data-act="cancel">${escapeHtml(opts.cancel||'Cancel')}</button>
+        <button class="btn ${opts.danger?'btn-danger':'btn-primary'}" data-act="ok">${escapeHtml(opts.ok||'Confirm')}</button>
+      </div></div>`;
+    const done=(v)=>{ document.removeEventListener('keydown',onKey); ov.remove(); resolve(v); };
+    const onKey=(e)=>{ if(e.key==='Escape'){e.preventDefault();done(false);} else if(e.key==='Enter'){e.preventDefault();done(true);} };
+    ov.addEventListener('click',e=>{ if(e.target===ov){done(false);return;} const a=e.target.closest('[data-act]'); if(a)done(a.dataset.act==='ok'); });
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(ov);
+    const okb=ov.querySelector('[data-act="ok"]'); if(okb)okb.focus();
+  });
+}
+function uiPrompt(message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-modal="true">
+      <div class="ui-modal-title">${escapeHtml(opts.title||'Input')}</div>
+      <div class="ui-modal-msg">${escapeHtml(message||'')}</div>
+      <input class="form-input ui-modal-input" type="${opts.password?'password':'text'}" style="width:100%;margin-top:10px;font-family:var(--mono);" />
+      <div class="ui-modal-actions">
+        <button class="btn btn-ghost" data-act="cancel">Cancel</button>
+        <button class="btn btn-primary" data-act="ok">OK</button>
+      </div></div>`;
+    const inp=ov.querySelector('.ui-modal-input');
+    const done=(v)=>{ document.removeEventListener('keydown',onKey); ov.remove(); resolve(v); };
+    const onKey=(e)=>{ if(e.key==='Escape'){e.preventDefault();done(null);} };
+    ov.addEventListener('click',e=>{ if(e.target===ov){done(null);return;} const a=e.target.closest('[data-act]'); if(a)done(a.dataset.act==='ok'?(inp.value||''):null); });
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();done(inp.value||'');} });
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(ov);
+    inp.focus();
+  });
+}
+
 function showAuth(mode, err){
   document.getElementById('app-shell').classList.add('hidden');
   setupEl.style.display='flex';
@@ -3471,7 +3526,7 @@ async function doApproval(id,action){
 }
 
 async function cancelJob(id){
-  if(!confirm('Cancel this running job?')) return;
+  if(!await uiConfirm('Cancel this running job?')) return;
   try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
 }
 
@@ -4094,7 +4149,7 @@ async function pcApprove(approvalId,patchId){
   }catch(e){ pcToast('Approve failed: '+e.message,false); }
 }
 async function pcReject(approvalId,patchId){
-  if(!confirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
   try{ const res=await fetch(url('/reject/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
     if(!res.ok) throw new Error('HTTP '+res.status);
     pcToast('Patch rejected.'); loadPatches(); pollApprovals();
@@ -4110,7 +4165,7 @@ async function pcApply(patchId){
   const msg='Apply this patch to '+(d.file_path||'the file')+'?\n\n'+
     (warns.length?('⚠ '+warns.join('\n⚠ ')+'\n\n'):'')+
     'This writes to disk. A backup is taken and a failed build auto-rolls back.';
-  if(!confirm(msg)) return;
+  if(!await uiConfirm(msg)) return;
   try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     const txt=await res.text();
     if(!res.ok){
@@ -4132,7 +4187,7 @@ async function pcApproveDirect(patchId){
   }catch(e){ pcToast('Approve failed: '+e.message,false); }
 }
 async function pcRejectDirect(patchId){
-  if(!confirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
   try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/reject'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
     if(!res.ok) throw new Error('HTTP '+res.status);
     pcToast('Patch rejected.'); loadPatches(); pollApprovals();
@@ -4870,7 +4925,7 @@ async function loadMaintStats(){
 }
 document.getElementById('maint-refresh').addEventListener('click',loadMaintStats);
 document.getElementById('maint-flush').addEventListener('click',async()=>{
-  if(!confirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
+  if(!await uiConfirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
   maintMsg('maint-msg','Flushing…',true);
   try{ const r=await api('/maintenance/flush','POST',{});
     maintMsg('maint-msg', r.success?`Freed ${humanBytes(r.data?.bytes_freed)} (${r.data?.backups_deleted} backups).`:(r.message||'Failed'), r.success);
@@ -4878,7 +4933,7 @@ document.getElementById('maint-flush').addEventListener('click',async()=>{
   }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
 });
 document.getElementById('maint-reset').addEventListener('click',async()=>{
-  if(!confirm('Reset all settings to safe defaults? Connection settings (Ollama host/model/routes, API bind) are preserved.')) return;
+  if(!await uiConfirm('Reset all settings to safe defaults? Connection settings (Ollama host/model/routes, API bind) are preserved.')) return;
   try{ const r=await api('/maintenance/reset-config','POST',{});
     maintMsg('maint-msg', r.success?'Config reset (connection preserved).':(r.message||'Failed'), r.success);
   }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
@@ -4886,14 +4941,14 @@ document.getElementById('maint-reset').addEventListener('click',async()=>{
 
 // Missions page: Cancel All + Clear Missions
 document.getElementById('ms-cancel-all').addEventListener('click',async()=>{
-  if(!confirm('Cancel all jobs? Queued work is dropped; a running mission finishes on its own.')) return;
+  if(!await uiConfirm('Cancel all jobs? Queued work is dropped; a running mission finishes on its own.')) return;
   try{ const r=await api('/jobs/cancel-all','POST',{});
     maintMsg('ms-maint-msg', r.success?`Cancelled ${r.data?.cancelled} job(s).`:(r.message||'Failed'), r.success);
     pollJobs();
   }catch(e){ maintMsg('ms-maint-msg','Failed: '+e.message,false); }
 });
 document.getElementById('ms-clear').addEventListener('click',async()=>{
-  if(!confirm('Clear ALL mission history (missions, tasks, events, patches, approvals)? Objectives, pheromones, users, and config are kept. This cannot be undone.')) return;
+  if(!await uiConfirm('Clear ALL mission history (missions, tasks, events, patches, approvals)? Objectives, pheromones, users, and config are kept. This cannot be undone.')) return;
   try{ const r=await api('/maintenance/clear-missions','POST',{});
     maintMsg('ms-maint-msg', r.success?`Cleared ${r.data?.missions_deleted} mission(s); freed ${humanBytes(r.data?.bytes_freed)}.`:(r.message||'Failed'), r.success);
     pollJobs(); pollStatus();
@@ -4902,7 +4957,7 @@ document.getElementById('ms-clear').addEventListener('click',async()=>{
 
 // Autonomy page: Dump Directives
 document.getElementById('auto-dump').addEventListener('click',async()=>{
-  if(!confirm('Dump the entire objective backlog and its run history? Missions and everything else are kept. This cannot be undone.')) return;
+  if(!await uiConfirm('Dump the entire objective backlog and its run history? Missions and everything else are kept. This cannot be undone.')) return;
   try{ const r=await api('/objectives/clear','POST',{});
     autoMsg(r.success?`Dumped ${r.data?.objectives_deleted} objective(s).`:(r.message||'Failed'), r.success);
     if(typeof reloadAutonomy==='function') reloadAutonomy();
@@ -5015,7 +5070,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
   }
 
   if(e.target.classList.contains('pv-remove')){
-    if(!confirm(`Remove the ${provider} connection? Ants routed to it will fall back to Ollama.`)) return;
+    if(!await uiConfirm(`Remove the ${provider} connection? Ants routed to it will fall back to Ollama.`)) return;
     try{
       const r=await api('/providers/'+encodeURIComponent(provider),'DELETE');
       if(r.success){setMsg('Removed',true);await loadProvidersTab();}
@@ -5388,8 +5443,8 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
   msg.style.color='var(--green)';msg.textContent='Saved ?';setTimeout(()=>msg.textContent='',2500);
 });
 
-document.getElementById('antcfg-reset').addEventListener('click',()=>{
-  if(!confirm('Reset all ant names, colours and positions to defaults?')) return;
+document.getElementById('antcfg-reset').addEventListener('click',async()=>{
+  if(!await uiConfirm('Reset all ant names, colours and positions to defaults?')) return;
   uiState.castes={};uiState.positions={};applyUiState();buildNodes();saveUiState();openAntConfig();
 });
 
@@ -5482,7 +5537,7 @@ document.getElementById('auto-start-btn').addEventListener('click',async()=>{
   }catch(e){ autoMsg('Failed: '+e.message,false); }
 });
 document.getElementById('auto-stop-btn').addEventListener('click',async()=>{
-  if(!confirm('Stop the Colony Director and engage the kill switch?')) return;
+  if(!await uiConfirm('Stop the Colony Director and engage the kill switch?')) return;
   try{
     const r=await api('/autonomy/stop','POST');
     autoMsg(r.success?'Director stopped; kill switch engaged.':(r.message||'Failed'),r.success);
@@ -5621,7 +5676,7 @@ async function objAdjustPriority(id,priority){
   }catch(e){ autoMsg('Failed: '+e.message,false); }
 }
 async function objDelete(id){
-  if(!confirm('Delete this objective? This cannot be undone.')) return;
+  if(!await uiConfirm('Delete this objective? This cannot be undone.')) return;
   try{
     const r=await api('/objectives/'+encodeURIComponent(id),'DELETE');
     if(r.success){ autoMsg('Objective deleted.',true); await reloadObjectives(); }
@@ -5739,9 +5794,9 @@ PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
 document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
 document.getElementById('sh-run').addEventListener('click',runShell);
 // Quick-command buttons: put the command in the input and run it (restart asks first).
-document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',()=>{
+document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',async()=>{
   const cmd=b.dataset.cmd;
-  if(cmd==='systemctl restart anthill' && !confirm('Restart the ANTHILL service now? The console will briefly disconnect.')) return;
+  if(cmd==='systemctl restart anthill' && !(await uiConfirm('Restart the ANTHILL service now? The console will briefly disconnect.'))) return;
   const inp=document.getElementById('sh-input'); if(inp.disabled) return;
   inp.value=cmd; runShell();
 }));
@@ -5881,7 +5936,7 @@ document.getElementById('phero-reload').addEventListener('click',reloadPheromone
 document.getElementById('memory-search').addEventListener('click',reloadPheromones);
 document.getElementById('memory-query').addEventListener('keydown',e=>{if(e.key==='Enter') reloadPheromones();});
 document.getElementById('phero-prune').addEventListener('click',async()=>{
-  if(!confirm('Prune weak and failure-dominant pheromone trails? This keeps only useful colony memory.')) return;
+  if(!await uiConfirm('Prune weak and failure-dominant pheromone trails? This keeps only useful colony memory.')) return;
   const msg=document.getElementById('phero-msg');
   try{const r=await api('/pheromones/prune','POST');msg.style.color='var(--green)';msg.textContent=r.message||'Pruned';await reloadPheromones();}
   catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
@@ -6003,11 +6058,11 @@ async function userPatch(username,body,okMsg){
     if(r.success){usersMsg(okMsg,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
   }catch(e){usersMsg('Failed: '+e.message,false);}
 }
-function userResetPw(u){const p=prompt(`New password for ${u} (min 8 characters):`);if(p)userPatch(u,{password:p},'Password reset for '+u);}
-function userToggleRole(u,role){if(confirm(`Change role of ${u} to ${role}?`))userPatch(u,{role},'Role changed for '+u);}
+async function userResetPw(u){const p=await uiPrompt(`New password for ${u} (min 8 characters):`,{password:true,title:'Reset password'});if(p)userPatch(u,{password:p},'Password reset for '+u);}
+async function userToggleRole(u,role){if(await uiConfirm(`Change role of ${u} to ${role}?`))userPatch(u,{role},'Role changed for '+u);}
 function userToggleActive(u,active){userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u);}
 async function userDelete(u){
-  if(!confirm(`Delete account ${u}? This cannot be undone.`)) return;
+  if(!await uiConfirm(`Delete account ${u}? This cannot be undone.`)) return;
   try{
     const r=await api('/users/'+encodeURIComponent(u),'DELETE');
     if(r.success){usersMsg('Deleted '+u,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
