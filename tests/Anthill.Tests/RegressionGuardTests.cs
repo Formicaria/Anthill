@@ -128,6 +128,22 @@ public class RegressionGuardTests : IDisposable
             "UI encoding corruption in src/Anthill.Api/Ui/index.html: " + string.Join("; ", problems));
     }
 
+    /// <summary>
+    /// v1.9.1.1: the UI title/header versions were hardcoded markup and silently drifted
+    /// (stuck at v1.8.29.1 while the runtime said v1.9.1). The UI must render the version it
+    /// fetches from /health — never a literal version baked into the HTML.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_NoHardcodedVersionInMarkup()
+    {
+        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var hardcoded = Regex.Matches(ui, @">\s*v\d+\.\d+[\d.]*\s*<");
+        Assert.True(hardcoded.Count == 0,
+            "Hardcoded version string(s) in UI markup (must come from /health at runtime): "
+            + string.Join("; ", hardcoded.Select(m => m.Value.Trim())));
+        Assert.DoesNotContain("<title>ANTHILL v", ui);
+    }
+
     // ---- No active Python ------------------------------------------------------------------------
     // py.old/ is archived history. No .py file may exist anywhere else in the repo.
 

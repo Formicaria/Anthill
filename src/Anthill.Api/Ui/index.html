@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ANTHILL v1.8.29.1</title>
+<title>ANTHILL</title>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -926,7 +926,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="setup-overlay">
   <div class="auth-box">
-    <div class="auth-logo">ANTHILL <span>v1.8.29.1</span></div>
+    <div class="auth-logo">ANTHILL <span id="auth-ver"></span></div>
     <div class="auth-sub">Swarm Intelligence Orchestration</div>
 
     <!-- Login form -->
@@ -969,7 +969,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <nav id="nav-rail">
     <div class="nav-logo">
       <span class="nav-logo-text">ANTHILL</span>
-      <span class="nav-logo-ver">v1.8.29.1</span>
+      <span class="nav-logo-ver" id="nav-ver"></span>
     </div>
 
     <div class="nav-scroll">
@@ -5854,6 +5854,20 @@ async function userDelete(u){
 }
 
 // -- Boot ----------------------------------------------------------------------
+// v1.9.1.1: the header/title version comes from the API (single source of truth:
+// AnthillRuntime.Version via the public /health endpoint) instead of hardcoded markup,
+// which had silently drifted from the runtime version. Guarded by RegressionGuardTests.
+async function bootVersion(){
+  try{
+    const h=await (await fetch(url('/health'))).json();
+    const v=h?.data?.version;
+    if(!v) return;
+    document.title='ANTHILL v'+v;
+    const a=document.getElementById('auth-ver'); if(a) a.textContent='v'+v;
+    const n=document.getElementById('nav-ver'); if(n) n.textContent='v'+v;
+  }catch(e){ /* offline/unreachable: header simply shows no version */ }
+}
+bootVersion();
 bootAuth();
 
 </script>
