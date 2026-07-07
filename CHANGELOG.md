@@ -1,5 +1,14 @@
 # ANTHILL Changelog
 
+## v2.2.5 — Fix: tunnels visible between ALL chambers, not just Queen ↔ Mission Control
+
+- Delegation tunnels were drawn for every chamber but idle ones used the near-invisible border
+  color at 35% opacity — only the active Queen ↔ Mission Control run could be seen. Every tunnel
+  now renders in its chamber's role color (subtle when idle), curved like dug tunnels, and lights
+  up with an animated glow-flow when that chamber has active ants — so pheromone traffic back to
+  the Queen is followable across the whole colony. Command chain unchanged: Queen → Mission
+  Control → every chamber, honoring dragged chamber positions.
+
 ## v2.2.4 — Chamber delegation lines, draggable chambers, ant duties in every inspector
 
 - **Live delegation lines on the chamber map**: Queen → Mission Control → each chamber, mirroring
