@@ -65,9 +65,17 @@
 }
 /* V2.2 Pass B — Overview command-center grid */
 .overview-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;margin-bottom:14px;position:relative;z-index:1;}
-/* v2.2.2: condensed two-row layout — 6 cards, nothing duplicated from other tabs. */
+/* v2.2.3: balanced 3-row command-center grid (12 cols), no stranded panels, no blank regions.
+   Row 1: Health 3 / Core 5 / Missions 4 · Row 2: Approvals 4 / Resources 4 / Actions 4
+   Row 3: Attention 4 / Mission Command 4 / Recent Events 4 · Colony Vitals full-width below. */
 .ov2-health{grid-column:span 3;} .ov2-core{grid-column:span 5;} .ov2-active{grid-column:span 4;}
-.ov2-approvals{grid-column:span 4;} .ov2-resources{grid-column:span 3;} .ov2-actions{grid-column:span 5;}
+.ov2-approvals{grid-column:span 4;} .ov2-resources{grid-column:span 4;} .ov2-actions{grid-column:span 4;}
+.ov2-attn{grid-column:span 4;} .ov2-mission{grid-column:span 4;} .ov2-events{grid-column:span 4;}
+#ov2-grid{align-items:stretch;}
+#ov2-grid>.ath-card{min-height:120px;max-height:340px;overflow-y:auto;}
+#ov2-grid>.hud-panel{margin:0;}
+@media (max-width:1100px){#ov2-grid>*{grid-column:span 6 !important;}}
+@media (max-width:700px){#ov2-grid>*{grid-column:span 12 !important;}}
 .ov2-orb{width:54px;height:54px;border-radius:50%;flex-shrink:0;position:relative;
   background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.25),transparent 55%),var(--role-queen);}
 .ov2-orb[data-state=idle]{background-color:#3a4a5a;box-shadow:0 0 12px rgba(120,150,180,.35);}
@@ -133,13 +141,20 @@
    telemetry bar hides (it would break the row) and the view-switch bar floats over the canvas. */
 #page-colony{position:relative;}
 #page-colony:not(.cmap-mode) #tb-colony{display:none;}
-#page-colony:not(.cmap-mode) #cmap2-bar{position:absolute;top:10px;right:14px;width:auto;z-index:6;
+/* !important needed: the bar carries an inline position:relative (for cmap-mode layering) which
+   otherwise beats this rule and leaves the bar in flow as a dead row column (v2.2.2 bug). */
+#page-colony:not(.cmap-mode) #cmap2-bar{position:absolute !important;top:10px;right:14px;left:auto;width:auto;z-index:6;
   background:rgba(10,14,22,.88);border:1px solid var(--anthill-border);border-radius:10px;padding:5px 9px;}
 /* In classic mode only the VIEW switcher floats; motion/label/pheromone selects are map-only. */
 #page-colony:not(.cmap-mode) #cmap2-bar>*:nth-child(n+5){display:none;}
 #page-colony.cmap-mode #cmap2-wrap{flex:1;min-height:0;}
 #page-colony.cmap-mode #cmap2{height:calc(100vh - 250px);min-height:480px;cursor:grab;}
 #page-colony.cmap-mode #cmap2:active{cursor:grabbing;}
+/* v2.2.3: active ants breathe on the chamber map (active-only animation; reduced-motion covered
+   by the existing #cmap2 * override above). */
+.cm-ant-active{animation:cmantpulse 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center;}
+@keyframes cmantpulse{0%,100%{transform:scale(1);}50%{transform:scale(1.35);}}
+.cmap2-motion-off .cm-ant-active,.cmap2-motion-low .cm-ant-active{animation:none;}
 #cmap2-inspector.collapsed{width:34px !important;overflow:hidden;}
 #cmap2-inspector.collapsed>*:not(#cmap2-insp-toggle){display:none;}
 /* V2.2.1 — Overview de-duplication: the grid now owns telemetry, core, and metrics; the old HUD
@@ -1293,6 +1308,36 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button onclick="showPage('settings')">⚙ Colony Settings</button>
             </div>
           </div>
+
+          <!-- v2.2.3: row 3 — attention, mission command, and events live IN the grid (they were
+               stranded below it beside hidden panels, leaving a huge blank region). -->
+          <div class="ath-card ov2-attn hud-panel" id="hud-attn-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Operator Attention</span><span class="hud-hd-sub" id="attn-count"></span>
+              <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events')">Event Log ?</button></span></div>
+            <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony…</div></div>
+          </div>
+
+          <div class="ath-card ov2-mission hud-panel mission-node">
+            <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
+            <div class="mn-prompt">
+              <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
+              <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
+              <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
+            </div>
+            <div class="mn-modes" id="ov-modes">
+              <button class="hud-act" data-mode="inspect" aria-pressed="false" onclick="setOvMode('inspect')" title="Inspect only. Do not modify files.">Inspect</button>
+              <button class="hud-act" data-mode="verify" aria-pressed="false" onclick="setOvMode('verify')" title="Verify only. Do not create patches.">Verify</button>
+              <button class="hud-act" data-mode="patch" aria-pressed="false" onclick="setOvMode('patch')" title="Create patch proposals only. Do not apply.">Patch Proposal</button>
+              <button class="hud-act" data-mode="build" aria-pressed="false" onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
+            </div>
+            <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
+            <div class="mn-actions">
+              <button class="hud-act" id="ov-preview-btn" onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
+            </div>
+            <div class="hud-plan" id="ov-plan" style="display:none"></div>
+          </div>
+
+          <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
         </div>
 
         <!-- -- Top colony status strip -- -->
@@ -1315,49 +1360,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="s-label">Pressure</div><div class="s-val" id="hs-pressure-val">—</div></div>
         </div>
 
-        <!-- -- Core + attention + mission command -- -->
-        <div class="hud-dash-grid">
-          <!-- Central system core -->
-          <div class="hud-panel" id="hud-core-panel">
-            <div class="hud-hd"><span class="hud-hd-title">System Core</span><span class="hud-hd-sub" id="core-hint"></span></div>
-            <div class="core-wrap">
-              <div class="core-orb" id="hud-core" data-state="idle">
-                <div class="core-ring r1"></div><div class="core-ring r2"></div><div class="core-ring r3"></div>
-                <div class="core-center"><div class="c-state" id="core-state">IDLE</div><div class="c-sub" id="core-sub">standby</div></div>
-              </div>
-              <div class="core-bars" id="core-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            </div>
-          </div>
-
-          <!-- Right column: operator attention + mission command -->
-          <div style="display:flex;flex-direction:column;gap:14px;min-width:0;">
-            <div class="hud-panel" id="hud-attn-panel" style="flex:1;min-height:150px;">
-              <div class="hud-hd"><span class="hud-hd-title">Operator Attention</span><span class="hud-hd-sub" id="attn-count"></span>
-                <span class="hud-hd-action"><button class="hud-act" onclick="showPage('events')">Event Log ?</button></span></div>
-              <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony…</div></div>
-            </div>
-
-            <div class="hud-panel mission-node">
-              <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
-              <div class="mn-prompt">
-                <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
-                <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
-                <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
-              </div>
-              <div class="mn-modes" id="ov-modes">
-                <button class="hud-act" data-mode="inspect" aria-pressed="false" onclick="setOvMode('inspect')" title="Inspect only. Do not modify files.">Inspect</button>
-                <button class="hud-act" data-mode="verify" aria-pressed="false" onclick="setOvMode('verify')" title="Verify only. Do not create patches.">Verify</button>
-                <button class="hud-act" data-mode="patch" aria-pressed="false" onclick="setOvMode('patch')" title="Create patch proposals only. Do not apply.">Patch Proposal</button>
-                <button class="hud-act" data-mode="build" aria-pressed="false" onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
-              </div>
-              <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
-              <div class="mn-actions">
-                <button class="hud-act" id="ov-preview-btn" onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
-              </div>
-              <div class="hud-plan" id="ov-plan" style="display:none"></div>
-            </div>
-          </div>
-        </div>
+        <!-- v2.2.3: hud-dash-grid removed — the retired hidden System Core panel plus this
+             two-column wrapper were what stranded Attention/Mission Command below the grid with a
+             blank half-page. Those two panels now live inside #ov2-grid above. Legacy renderers
+             that wrote to hud-core/core-state are null-guarded (setEl checks existence). -->
 
         <!-- -- Hardware / environment + colony metric cards -- -->
         <div class="hud-metrics" id="hud-metrics">
@@ -7371,7 +7377,22 @@ async function pollOv2(){
   const roles=(reg&&reg.success&&reg.data)?(Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[])):[];
   renderOv2Health(); renderOv2Active(jobs,missions);
   renderOv2Approvals(approvals); renderOv2Core(roles,jobs,missions,approvals);
-  renderOv2Resources();
+  renderOv2Resources(); renderOv2Events(events);
+}
+
+// v2.2.3: restored — the events feed anchors row 3 of the balanced grid (uses data already
+// fetched by pollOv2; no extra polling).
+function renderOv2Events(events){
+  const el=document.getElementById('ov2-events-body'); if(!el) return;
+  const recent=events.slice(0,6);
+  if(!recent.length){ el.innerHTML='<div class="ov2-empty">No recent events yet.</div>'; return; }
+  el.innerHTML=recent.map(e=>{
+    const who=String(e.ant||e.ant_name||e.source||'');
+    return '<div class="ov2-list-item"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+getRoleColor(who||e.event_type)+';margin-right:6px;"></span>'+
+      '<span style="color:var(--anthill-dim)">'+escapeHtml((e.created_at||'').substring(11,16))+'</span> '+
+      (who?'<b style="color:var(--anthill-text)">'+escapeHtml(who)+'</b> ':'')+
+      escapeHtml(String(e.message||e.event_type||'').substring(0,70))+'</div>';
+  }).join('');
 }
 
 function renderOv2Health(){
@@ -7440,7 +7461,7 @@ function renderOv2Core(roles,jobs,missions,approvals){
   else if(pending.length){ state='action'; text='OPERATOR ACTION'; sub=highRisk?highRisk+' high-risk patch':pending.length+' awaiting review'; }
   else if(activeJobs){ state='mission'; text='MISSION ACTIVE'; sub=activeJobs+' in flight'; }
   const col=state==='alert'?'var(--status-danger)':state==='action'?'var(--status-warning)':state==='mission'?'var(--status-info)':'var(--anthill-muted)';
-  const workers=roles.reduce((n,r)=>n+1+((r.workers&&r.workers.length)||0),0);
+  const workers=roles.reduce((n,r)=>n+1+antWorkers(r).length,0);
   el.innerHTML='<div style="display:flex;align-items:center;gap:14px;">'+
     '<div class="ov2-orb" data-state="'+state+'"></div>'+
     '<div style="flex:1;min-width:0;">'+
@@ -7462,7 +7483,15 @@ function renderOv2Resources(){
 }
 
 // -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
-function antRoleId(r){ return r.roleId||r.role_id||r.id||r.displayName||r.display_name||''; }
+// v2.2.3 ROOT-CAUSE FIX for "Other · 25": the registry serializes PascalCase (RoleId/DisplayName/
+// Workers) — this helper only tried camelCase, returned '' for every role, and getRoleLabel('')
+// classified the entire colony as Other. Now uses the same case-tolerant prop() accessors as the
+// classic Live Colony engine (roleId/roleName/roleWorkers), which is why that view was unaffected.
+function antRoleId(r){ return prop(r,'roleId','RoleId','role_id','id')||''; }
+function antRoleName(r){ return prop(r,'displayName','DisplayName','display_name')||antRoleId(r); }
+function antWorkers(r){ return prop(r,'workers','Workers')||[]; }
+function antWorkerId(w){ return prop(w,'workerId','WorkerId','worker_id','id')||''; }
+function antWorkerName(w){ return prop(w,'displayName','DisplayName','display_name')||antWorkerId(w); }
 const CMAP={view:'chamber',motion:'normal',labels:'all',pheromones:'all',showIdle:true,
   selected:null,selectedKind:null,chambers:{},trails:[],events:[]};
 const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Researchers':{x:.28,y:.23},
@@ -7536,13 +7565,21 @@ async function loadColonyMap(){
     CMAP.events.forEach(e=>{ const t=Date.parse(e.created_at||''); if(!isNaN(t)&&t>=cutoff){ const w=String(e.ant||e.ant_name||e.source||''); if(w)activeNames.add(w.toLowerCase()); }});
     CMAP.chambers={};
     roles.forEach(r=>{
-      const rid=antRoleId(r);
-      const label=rid.toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
-      const ch=CMAP.chambers[label]=CMAP.chambers[label]||{label, color:getRoleColor(rid), ants:[]};
+      const rid=antRoleId(r), rname=antRoleName(r);
+      // Classify by id first, fall back to display name — only truly unmatchable ants become Other.
+      let label=String(rid).toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
+      if(label==='Other') label=getRoleLabel(rname);
+      const ch=CMAP.chambers[label]=CMAP.chambers[label]||{label, color:getRoleColor(label==='Other'?rid:label), ants:[]};
       const mk=(id,name)=>({id, name, active:activeNames.has(String(name||id).toLowerCase())||activeNames.has(String(id).toLowerCase())});
-      ch.ants.push(mk(rid, r.displayName||r.display_name||rid));
-      (r.workers||[]).forEach(w=>ch.ants.push(mk(w.workerId||w.worker_id||w.id, w.displayName||w.display_name||w.workerId)));
+      ch.ants.push(mk(rid, rname));
+      antWorkers(r).forEach(w=>ch.ants.push(mk(antWorkerId(w), antWorkerName(w))));
     });
+    // Dev diagnostics (no sensitive data): surface classification quality instead of failing silent.
+    const otherN=(CMAP.chambers['Other']||{ants:[]}).ants.length;
+    const totalN=Object.values(CMAP.chambers).reduce((n,c)=>n+c.ants.length,0);
+    if(otherN>0&&typeof console!=='undefined'&&console.debug)
+      console.debug('[colony-map] '+totalN+' ants, '+Object.keys(CMAP.chambers).length+' chambers, '+otherN+' unclassified',
+        (CMAP.chambers['Other']||{ants:[]}).ants.slice(0,3).map(a=>a.id));
     // Pheromone display strength: real trail scores when the rows carry them; otherwise derived
     // from recent event frequency per chamber (mapping isolated here, per the design rules).
     const rows=Array.isArray(ph&&ph.data)?ph.data:[];
@@ -7627,21 +7664,31 @@ function renderColonyMap(){
     out+='<g class="cm-chamber'+(activeCount>0?' cm-active':'')+(sel?' cm-selected':'')+'" onclick="cmapSelect(\'chamber\',\''+escapeHtml(label)+'\')" '+
       (isQueen?'':'ondblclick="cmapExpand(\''+escapeHtml(label)+'\')"')+'>'+
       '<circle class="cm-ring" cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" stroke="'+ch.color+'"/>';
-    // Ant dots: representative in chamber view; all when this chamber is expanded.
-    const expandedHere=CMAP.view==='expanded'&&CMAP.selected===label;
+    // Ant dots (v2.2.3): representative in chamber view; ALL ants when expanded — for the selected
+    // chamber, or for every chamber when none is selected (expanded must never collapse to a
+    // placeholder). Every visible dot is clickable and routes to the existing selection handler.
+    const expandedHere=CMAP.view==='expanded'&&(CMAP.selected===label||!CMAP.selected);
     const dots=expandedHere?shown:shown.slice(0,8);
     dots.forEach((a,i)=>{
       const n=dots.length, ang=(i/Math.max(1,n))*Math.PI*2;
-      const rr=expandedHere?(r*0.75):(r*0.55);
-      const ax=p.x+Math.cos(ang)*rr, ay=p.y+Math.sin(ang)*rr;
-      out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.35)+'"'+
-        (expandedHere?' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"':'')+
+      const ring=expandedHere?Math.floor(i/14):0;
+      const rr=(expandedHere?(r*0.75):(r*0.55))+ring*11;
+      const ax=p.x+Math.cos(ang*(ring+1)+ring)*rr, ay=p.y+Math.sin(ang*(ring+1)+ring)*rr;
+      const selAnt=CMAP.selectedAnt===a.id;
+      out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4.5:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.4)+'"'+
+        (selAnt?' stroke="var(--anthill-text)" stroke-width="1.5"':'')+
+        (a.active?' class="cm-ant-active"':'')+
+        ' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"'+
         '><title>'+escapeHtml(a.name)+(a.active?' (active)':' (idle)')+'</title></circle>';
+      if(expandedHere&&(a.active||selAnt))
+        out+='<text x="'+ax+'" y="'+(ay-7)+'" font-size="8" text-anchor="middle" fill="var(--anthill-muted)">'+escapeHtml(String(a.name).substring(0,18))+'</text>';
     });
     const showLabel=CMAP.labels==='all'||(CMAP.labels==='active'&&activeCount>0)||isQueen;
     if(showLabel) out+='<text x="'+p.x+'" y="'+(p.y+r+13)+'" font-size="11" text-anchor="middle">'+escapeHtml(label)+' · '+ch.ants.length+(activeCount?' · '+activeCount+' active':'')+'</text>';
     out+='</g>';
   });
+  if(CMAP.view==='expanded'&&!CMAP.selected)
+    out+='<text x="500" y="20" font-size="10" text-anchor="middle" fill="var(--anthill-dim)">Select a chamber to focus · all ants shown</text>';
   svg.innerHTML=out;
 }
 
@@ -7651,7 +7698,21 @@ function cmapSelect(kind,id){ CMAP.selectedKind=kind; CMAP.selected=kind==='ant'
 function cmapInspect(kind,id){
   const el=document.getElementById('cmap2-insp-body'); if(!el)return;
   kind=kind||CMAP.selectedKind; id=id||(kind==='ant'?CMAP.selectedAnt:CMAP.selected);
-  if(!kind||!id){ el.innerHTML='<div class="ov2-empty">Select a chamber, ant, or trail.</div>'; return; }
+  if(!kind||!id){
+    // v2.2.3: no selection → colony summary instead of an empty panel.
+    const labels=Object.keys(CMAP.chambers);
+    if(!labels.length){ el.innerHTML='<div class="ov2-empty">Select a chamber, ant, or trail.</div>'; return; }
+    let total=0,act=0;
+    labels.forEach(l=>{ total+=CMAP.chambers[l].ants.length; act+=CMAP.chambers[l].ants.filter(a=>a.active).length; });
+    el.innerHTML='<div class="ov2-row"><span>Ants</span><b>'+total+'</b></div>'+
+      '<div class="ov2-row"><span>Active (15m)</span><b>'+act+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">CHAMBERS</div>'+
+      labels.map(l=>{ const c=CMAP.chambers[l], a=c.ants.filter(x=>x.active).length;
+        return '<div class="ov2-list-item" style="cursor:pointer" onclick="cmapSelect(\'chamber\',\''+escapeHtml(l)+'\')">'+
+          '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+c.color+';margin-right:6px;"></span>'+
+          escapeHtml(l)+' <b>'+c.ants.length+'</b>'+(a?' · '+a+' active':'')+'</div>'; }).join('');
+    return;
+  }
   const evFor=n=>CMAP.events.filter(e=>String(e.ant||e.ant_name||e.source||'').toLowerCase().includes(String(n).toLowerCase())).slice(0,5);
   if(kind==='chamber'){
     const ch=CMAP.chambers[id]; if(!ch){el.innerHTML='<div class="ov2-empty">Unknown chamber.</div>';return;}
