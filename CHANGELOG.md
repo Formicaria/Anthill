@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v2.2.6 — Cleanup + hardening pass (no new features; framework checkpoint before V2.3.0)
+
+Full audit of the v2.2.x churn; every finding fixed at the root:
+
+- **Resource Usage card fixed**: it read `cpu_percent`/`memory_percent`/`disk_percent` fields the
+  API never provides, so it was permanently "Metrics unavailable". It now renders the real
+  governor signals (CPU load/core, memory used, backend latency, concurrency) published by the
+  dashboard poll — the same data the retired hidden metrics row used.
+- **One System Core state machine**: pollHud (which sees autonomy, objectives, patches, and
+  provider health) is the single computer of core state; the System Core card renders its
+  published state, so AUTONOMY ONLINE / provider-offline can no longer be silently under-reported.
+- **Hidden legacy panels deleted for real**: the display:none HUD strip and metrics row (still
+  fully re-rendered every 6s) are gone — markup, writers, and their whole CSS families
+  (.hud-strip/.hud-metric/.hud-dash-grid/JARVIS-orb rules). No more orphaned element lookups.
+- Telemetry-bar ant count no longer goes stale (registry re-requested through the TTL cache).
+- **⌂ Reset layout** button returns dragged chambers to the default map layout.
+- System Core orb colors now use design tokens (raw hexes removed).
+- Hardening: ids embedded in inline map handlers pass through `attrSafe()` (strips every JS-string
+  breakout character; defense-in-depth over escapeHtml). Fast drag-release can no longer trigger
+  an accidental chamber expand. Expanded view uses proper concentric rings (no dot overlap in
+  large chambers).
+- **New regression guards** (run in `dotnet test` and CI): CHANGELOG top entry must equal the
+  runtime version (tag-ordering mishaps); no orphaned getElementById targets and no duplicate ids
+  in the UI; registry adapter accessors must stay case-tolerant (the "Other · 25" class of bug).
+- NORTH_STAR annotated with the shipped v2.2.1–v2.2.6 patch series; V2.3.0 (approval-gated
+  homelab actions) is next.
+
 ## v2.2.5 — Fix: tunnels visible between ALL chambers, not just Queen ↔ Mission Control
 
 - Delegation tunnels were drawn for every chamber but idle ones used the near-invisible border

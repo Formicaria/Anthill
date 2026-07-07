@@ -78,11 +78,12 @@
 @media (max-width:700px){#ov2-grid>*{grid-column:span 12 !important;}}
 .ov2-orb{width:54px;height:54px;border-radius:50%;flex-shrink:0;position:relative;
   background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.25),transparent 55%),var(--role-queen);}
-.ov2-orb[data-state=idle]{background-color:#3a4a5a;box-shadow:0 0 12px rgba(120,150,180,.35);}
-.ov2-orb[data-state=mission]{background-color:#2a7de1;box-shadow:0 0 18px rgba(42,125,225,.55);animation:ov2pulse 2.2s infinite;}
-.ov2-orb[data-state=autonomy]{background-color:#7a4de1;box-shadow:0 0 18px rgba(122,77,225,.55);animation:ov2pulse 2.2s infinite;}
-.ov2-orb[data-state=action]{background-color:#e1a12a;box-shadow:0 0 18px rgba(225,161,42,.55);animation:ov2pulse 1.4s infinite;}
-.ov2-orb[data-state=alert]{background-color:#e12a4d;box-shadow:0 0 20px rgba(225,42,77,.6);animation:ov2pulse .9s infinite;}
+/* v2.2.6: design tokens instead of raw hexes (token rule from v2.2.0). */
+.ov2-orb[data-state=idle]{background-color:var(--role-other);box-shadow:0 0 12px var(--role-other);}
+.ov2-orb[data-state=mission]{background-color:var(--status-info);box-shadow:0 0 18px var(--status-info);animation:ov2pulse 2.2s infinite;}
+.ov2-orb[data-state=autonomy]{background-color:var(--role-mission-control);box-shadow:0 0 18px var(--role-mission-control);animation:ov2pulse 2.2s infinite;}
+.ov2-orb[data-state=action]{background-color:var(--status-warning);box-shadow:0 0 18px var(--status-warning);animation:ov2pulse 1.4s infinite;}
+.ov2-orb[data-state=alert]{background-color:var(--status-danger);box-shadow:0 0 20px var(--status-danger);animation:ov2pulse .9s infinite;}
 @keyframes ov2pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
 @media (prefers-reduced-motion:reduce){.ov2-orb{animation:none !important;}}
 @media (max-width:1200px){.overview-grid>*{grid-column:span 6;}}
@@ -162,9 +163,8 @@
 .cmap2-motion-off .cm-ant-active,.cmap2-motion-low .cm-ant-active{animation:none;}
 #cmap2-inspector.collapsed{width:34px !important;overflow:hidden;}
 #cmap2-inspector.collapsed>*:not(#cmap2-insp-toggle){display:none;}
-/* V2.2.1 — Overview de-duplication: the grid now owns telemetry, core, and metrics; the old HUD
-   strip/core/metrics are retired (Mission Command + Operator Attention remain below the grid). */
-#hud-strip,#hud-core-panel,#hud-metrics{display:none !important;}
+/* v2.2.6: the retired HUD strip/core/metrics are deleted from the DOM (they were hidden but
+   still rendered every poll); the grid owns telemetry, core, and metrics outright. */
 </style>
 <style>
 /* -- Reset ------------------------------------------------------------------- */
@@ -949,19 +949,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .hud-hd-sub{font-size:9px;color:var(--dim);}
 .hud-hd .hud-hd-action{margin-left:auto;}
 
-/* Metric card */
-.hud-metric{position:relative;background:var(--card);border:1px solid var(--border);border-left-width:2px;border-radius:6px;
-  padding:10px 12px;min-width:0;overflow:hidden;}
-.hud-metric .m-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px;}
-.hud-metric .m-label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.hud-metric .m-value{font-size:20px;font-weight:700;font-family:var(--mono);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.hud-metric .m-sub{font-size:9px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.hud-metric .m-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:7px;overflow:hidden;}
-.hud-metric .m-bar>i{display:block;height:100%;border-radius:2px;background:var(--hud-cyan);transition:width .5s ease;}
-.hud-metric.clickable{cursor:pointer;transition:border-color .2s,transform .1s;}
-.hud-metric.clickable:hover{border-color:var(--hud-cyan);}
-.hud-metric.clickable:active{transform:translateY(1px);}
+/* v2.2.6: .hud-metric family deleted (the hidden metrics row markup was removed; Resource Usage
+   card renders the governor signals now). */
 
 /* Telemetry line */
 .hud-telem{display:flex;gap:8px;padding:4px 2px;font-size:11px;line-height:1.45;border-bottom:1px solid rgba(30,51,84,.4);}
@@ -995,47 +984,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .hud-act[aria-pressed="true"]{background:rgba(34,211,238,.14);color:var(--hud-cyan);border-color:var(--hud-cyan);}
 
 /* -- Overview command dashboard layout -- */
-.hud-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-bottom:14px;}
-.hud-strip-item{background:var(--hud-glass);border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;
-  transition:border-color .2s;min-width:0;}
-.hud-strip-item:hover{border-color:var(--hud-cyan);}
-.hud-strip-item.warn{border-color:rgba(251,146,60,.5);}
-.hud-strip-item.alert{border-color:rgba(239,68,68,.55);}
-.hud-strip-item .s-label{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
-.hud-strip-item .s-val{font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.hud-dash-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;margin-bottom:14px;align-items:stretch;}
-.hud-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
+/* v2.2.6: .hud-strip family deleted (markup removed). */
+/* v2.2.6: .hud-strip / .hud-dash-grid / .hud-metrics layout rules deleted (markup removed). */
 .hud-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;}
 
-/* Central system core (JARVIS orb) */
-.core-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;height:100%;padding:8px 0;}
-.core-orb{position:relative;width:180px;height:180px;display:flex;align-items:center;justify-content:center;}
-.core-ring{position:absolute;border-radius:50%;border:1px solid var(--hud-line);}
-.core-ring.r1{inset:0;border-top-color:var(--hud-cyan);border-right-color:var(--hud-cyan);animation:core-spin 8s linear infinite;}
-.core-ring.r2{inset:20px;border-bottom-color:var(--blue);border-left-color:var(--blue);animation:core-spin 12s linear infinite reverse;}
-.core-ring.r3{inset:40px;border-top-color:var(--purple);animation:core-spin 20s linear infinite;}
-.core-center{position:relative;width:96px;height:96px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  background:radial-gradient(circle at 50% 40%,rgba(34,211,238,.22),rgba(17,29,48,.6));border:1px solid var(--hud-line);
-  animation:core-pulse 3.5s ease-in-out infinite;}
-.core-center .c-state{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--hud-cyan);text-align:center;padding:0 6px;line-height:1.15;}
-.core-center .c-sub{font-size:8px;color:var(--muted);margin-top:3px;text-align:center;padding:0 4px;}
-.core-orb[data-state="alert"] .core-center{background:radial-gradient(circle at 50% 40%,rgba(239,68,68,.28),rgba(17,29,48,.6));animation:core-pulse 1.6s ease-in-out infinite;}
-.core-orb[data-state="alert"] .core-center .c-state{color:var(--red);}
-.core-orb[data-state="alert"] .core-ring.r1{border-top-color:var(--red);border-right-color:var(--red);}
-.core-orb[data-state="action"] .core-center{background:radial-gradient(circle at 50% 40%,rgba(245,158,11,.26),rgba(17,29,48,.6));animation:core-pulse 2.2s ease-in-out infinite;}
-.core-orb[data-state="action"] .core-center .c-state{color:var(--amber);}
-.core-orb[data-state="autonomy"] .core-ring.r2{border-bottom-color:var(--purple);border-left-color:var(--purple);animation-duration:6s;}
-.core-orb[data-state="autonomy"] .core-center .c-state{color:var(--purple);}
-.core-orb[data-state="mission"] .core-ring{animation-duration:4s;}
-.core-bars{display:flex;align-items:flex-end;gap:3px;height:20px;}
-.core-bars i{width:3px;background:var(--hud-cyan);border-radius:1px;opacity:.7;animation:core-wave 1.1s ease-in-out infinite;}
-.core-bars i:nth-child(2){animation-delay:.15s} .core-bars i:nth-child(3){animation-delay:.3s}
-.core-bars i:nth-child(4){animation-delay:.45s} .core-bars i:nth-child(5){animation-delay:.6s}
-.core-bars i:nth-child(6){animation-delay:.75s} .core-bars i:nth-child(7){animation-delay:.9s}
-@keyframes core-spin{to{transform:rotate(360deg);}}
-@keyframes core-pulse{0%,100%{box-shadow:0 0 18px -6px rgba(34,211,238,.5);}50%{box-shadow:0 0 30px -4px rgba(34,211,238,.85);}}
-@keyframes core-wave{0%,100%{height:5px;}50%{height:18px;}}
+/* v2.2.6: the JARVIS-orb CSS family (.core-wrap/.core-orb/.core-ring/.core-bars + keyframes) is
+   deleted — its markup was removed in v2.2.3; the System Core card's .ov2-orb replaced it. */
 
 /* Mission command node */
 .mission-node .mn-prompt{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
@@ -1077,13 +1031,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .hud-attn-item .a-reason{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 @media (max-width:1100px){
-  .hud-strip{grid-template-columns:repeat(4,1fr);}
-  .hud-metrics{grid-template-columns:repeat(3,1fr);}
-  .hud-dash-grid{grid-template-columns:1fr;}
   .hud-grid3{grid-template-columns:1fr;}
 }
 @media (prefers-reduced-motion:reduce){
-  .core-ring,.core-center,.core-bars i,.hud-spinner{animation:none !important;}
+  .hud-spinner{animation:none !important;}
 }
 </style>
 </head>
@@ -1345,52 +1296,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
         </div>
 
-        <!-- -- Top colony status strip -- -->
-        <div class="hud-strip" id="hud-strip">
-          <div class="hud-strip-item" id="hs-api" title="API + backend health" onclick="document.getElementById('status-chip').click()">
-            <div class="s-label">API Link</div><div class="s-val" id="hs-api-val">—</div></div>
-          <div class="hud-strip-item" id="hs-provider" title="Model provider / route" onclick="showPage('settings')">
-            <div class="s-label">Provider</div><div class="s-val" id="hs-provider-val">—</div></div>
-          <div class="hud-strip-item" id="hs-auto" title="Autonomy state" onclick="showPage('autonomy')">
-            <div class="s-label">Autonomy</div><div class="s-val" id="hs-auto-val">—</div></div>
-          <div class="hud-strip-item" id="hs-missions" title="Active missions" onclick="showPage('missions')">
-            <div class="s-label">Active Missions</div><div class="s-val" id="hs-missions-val">—</div></div>
-          <div class="hud-strip-item" id="hs-objectives" title="Active objectives" onclick="showPage('autonomy')">
-            <div class="s-label">Objectives</div><div class="s-val" id="hs-objectives-val">—</div></div>
-          <div class="hud-strip-item" id="hs-approvals" title="Pending patch approvals" onclick="showPage('patches')">
-            <div class="s-label">Approvals</div><div class="s-val" id="hs-approvals-val">—</div></div>
-          <div class="hud-strip-item" id="hs-warn" title="Recent failures / warnings" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
-            <div class="s-label">Warnings</div><div class="s-val" id="hs-warn-val">—</div></div>
-          <div class="hud-strip-item" id="hs-pressure" title="Resource pressure (governor)" onclick="showPage('autonomy')">
-            <div class="s-label">Pressure</div><div class="s-val" id="hs-pressure-val">—</div></div>
-        </div>
+        <!-- v2.2.6: the retired hidden status strip is deleted (telemetry bar + grid own this). -->
 
         <!-- v2.2.3: hud-dash-grid removed — the retired hidden System Core panel plus this
              two-column wrapper were what stranded Attention/Mission Command below the grid with a
              blank half-page. Those two panels now live inside #ov2-grid above. Legacy renderers
              that wrote to hud-core/core-state are null-guarded (setEl checks existence). -->
 
-        <!-- -- Hardware / environment + colony metric cards -- -->
-        <div class="hud-metrics" id="hud-metrics">
-          <div class="hud-metric clickable" style="border-left-color:var(--blue)" onclick="showPage('events');reloadLogModal&&reloadLogModal()">
-            <div class="m-top"><span class="m-label">Model Calls</span></div>
-            <div class="m-value" id="ov-calls" style="color:var(--blue)">—</div><div class="m-sub">LLM invocations</div></div>
-          <div class="hud-metric clickable" style="border-left-color:var(--green)" onclick="showPage('results')">
-            <div class="m-top"><span class="m-label">Tasks Done</span></div>
-            <div class="m-value" id="ov-tasks" style="color:var(--green)">—</div><div class="m-sub">completed nodes</div></div>
-          <div class="hud-metric" style="border-left-color:var(--hud-cyan)">
-            <div class="m-top"><span class="m-label">CPU / core</span></div>
-            <div class="m-value" id="hud-cpu">—</div><div class="m-bar"><i id="hud-cpu-bar" style="width:0%"></i></div></div>
-          <div class="hud-metric" style="border-left-color:var(--purple)">
-            <div class="m-top"><span class="m-label">Mem free</span></div>
-            <div class="m-value" id="hud-mem">—</div><div class="m-bar"><i id="hud-mem-bar" style="width:0%"></i></div></div>
-          <div class="hud-metric" style="border-left-color:var(--amber)">
-            <div class="m-top"><span class="m-label">Backend latency</span></div>
-            <div class="m-value" id="hud-lat">—</div><div class="m-sub" id="hud-lat-sub">Ollama probe</div></div>
-          <div class="hud-metric clickable" style="border-left-color:var(--orange)" onclick="showPage('autonomy')">
-            <div class="m-top"><span class="m-label">Concurrency</span></div>
-            <div class="m-value" id="hud-conc">—</div><div class="m-sub" id="hud-conc-sub">effective / configured</div></div>
-        </div>
+        <!-- v2.2.6: the retired hidden metrics row is deleted — governor signals now render in
+             the Resource Usage card (published via GOV by pollHud). -->
 
         <!-- -- Colony vitals (System Health) -- -->
         <div class="hud-panel" style="margin-bottom:14px;">
@@ -1494,6 +1408,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </select>
           <label style="font-size:9px;color:var(--anthill-muted);"><input type="checkbox" id="cmap2-idle" checked onchange="cmapSetPref('showIdle',this.checked?'1':'0')"> idle ants</label>
           <button class="hud-act" onclick="cmapResetZoom()" title="Reset pan/zoom">⤾ Reset view</button>
+          <button class="hud-act" onclick="cmapResetLayout()" title="Return dragged chambers to the default layout">⌂ Reset layout</button>
           <span style="font-size:8px;color:var(--anthill-dim);">scroll = zoom · drag = pan · dbl-click chamber = expand</span>
         </div>
         <div id="cmap2-wrap" style="display:flex;gap:10px;padding:0 8px 8px;min-height:420px;position:relative;z-index:1;">
@@ -3476,8 +3391,8 @@ async function pollStatus(){
   try{
     const r=await api('/status'); if(!r.success) return;
     const d=r.data;
-    setEl('s-calls',d.model_calls??0);    setEl('ov-calls',d.model_calls??0);
-    setEl('s-tasks',d.tasks??0);          setEl('ov-tasks',d.tasks??0);
+    setEl('s-calls',d.model_calls??0);
+    setEl('s-tasks',d.tasks??0);
     setEl('s-events',d.events??0);        setEl('ov-events',d.events??0);
     setEl('s-approvals',d.pending_approvals??0); setEl('ov-approvals',d.pending_approvals??0);
     modelCallRate=Math.max(0,(d.model_calls??0)-totalModelCalls);
@@ -3564,6 +3479,10 @@ function setOvMode(mode){
 }
 
 // -- Overview command dashboard (v1.8.23) -------------------------------------
+// v2.2.6: shared stores — pollHud is the single computer of core state + hardware signals;
+// the ov2 cards are pure renderers of these (no second state machine, no drift).
+let CORE_STATE=null; // {state,text,sub,at}
+let GOV=null;        // {load,memFree,lat,backendOk,concEff,concCfg,at}
 async function pollHud(){
   if(!document.getElementById('page-overview')?.classList.contains('active')) return;
   let st,au,jb,pt,ob,mn;
@@ -3592,36 +3511,12 @@ async function pollHud(){
   const autoRunning=!!a.running, autoKilled=!!a.kill_switch_engaged, autoEnabled=!!a.enabled;
   const warnings=failedMissions+retiredObjectives+failedObjectives+highRiskPatches+(providerDown?1:0);
 
-  // -- Status strip --
-  const stripApi=document.getElementById('hs-api');
-  setEl('hs-api-val', connected?'ONLINE':'OFFLINE');
-  stripApi&&stripApi.classList.toggle('alert', !connected);
-  document.getElementById('hs-api-val').style.color=connected?'var(--green)':'var(--red)';
-  const provTxt = providerDown ? 'OLLAMA DOWN'
-    : (sum.routing_mode==='local'?'LOCAL':sum.routing_mode==='providers'?'PROVIDERS':sum.routing_mode==='mixed'?'MIXED':'—');
-  setEl('hs-provider-val', provTxt);
-  document.getElementById('hs-provider').classList.toggle('alert', !!providerDown);
-  document.getElementById('hs-provider-val').style.color=providerDown?'var(--red)':'var(--text)';
-  const autoTxt=autoRunning?'RUNNING':autoKilled?'HALTED':autoEnabled?'IDLE':'OFF';
-  setEl('hs-auto-val',autoTxt);
-  document.getElementById('hs-auto-val').style.color=autoRunning?'var(--green)':autoKilled?'var(--red)':'var(--muted)';
-  setEl('hs-missions-val',activeJobs);
-  setEl('hs-objectives-val',activeObjectives);
-  setEl('hs-approvals-val',pendingApprovals);
-  document.getElementById('hs-approvals').classList.toggle('warn', pendingApprovals>0);
-  document.getElementById('hs-approvals-val').style.color=pendingApprovals>0?'var(--queen)':'var(--text)';
-  setEl('hs-warn-val',warnings);
-  document.getElementById('hs-warn').classList.toggle('alert', warnings>0);
-  document.getElementById('hs-warn-val').style.color=warnings>0?'var(--orange)':'var(--text)';
-  const gc=(a.governor_code||'').toLowerCase();
-  const pressure = gc.includes('critical')||gc.includes('unreachable') ? ['CRITICAL','var(--red)','alert']
-    : (gc.includes('high')||gc.includes('low')||gc.includes('slow')) ? ['ELEVATED','var(--orange)','warn']
-    : gc==='ok' ? ['NOMINAL','var(--green)',''] : ['—','var(--muted)',''];
-  setEl('hs-pressure-val',pressure[0]);
-  document.getElementById('hs-pressure-val').style.color=pressure[1];
-  const hp=document.getElementById('hs-pressure'); hp.classList.remove('warn','alert'); if(pressure[2]) hp.classList.add(pressure[2]);
+  // v2.2.6: the hidden #hud-strip writers are gone (the strip was retired in v2.2.1; rendering
+  // into display:none elements every 6s was dead work, and several lookups were unguarded).
 
-  // -- Central system core --
+  // -- Central system core — SINGLE source of truth (v2.2.6) --
+  // pollHud sees the full picture (autonomy, objectives, patches, provider); it computes the core
+  // state and publishes it for renderOv2Core so the visible card can't drift or under-report.
   let coreState='idle', coreText='IDLE', coreSub='standby';
   if(failedMissions>0||providerDown||retiredObjectives>0||failedObjectives>0){
     coreState='alert'; coreText='ALERT';
@@ -3632,28 +3527,14 @@ async function pollHud(){
   } else if(autoRunning){ coreState='autonomy'; coreText='AUTONOMY ONLINE'; coreSub=`${activeObjectives} active objective${activeObjectives===1?'':'s'}`; }
   else if(activeJobs>0){ coreState='mission'; coreText='MISSION ACTIVE'; coreSub=`${activeJobs} in flight`; }
   else { coreState='idle'; coreText='IDLE'; coreSub=autoEnabled?'autonomy standby':'awaiting directive'; }
-  const orb=document.getElementById('hud-core');
-  if(orb) orb.dataset.state=coreState;
-  setEl('core-state',coreText); setEl('core-sub',coreSub);
-  const corePanel=document.getElementById('hud-core-panel');
-  if(corePanel){ corePanel.classList.remove('glow-active','glow-warn','glow-alert');
-    corePanel.classList.add(coreState==='alert'?'glow-alert':coreState==='action'?'glow-warn':'glow-active'); }
+  CORE_STATE={state:coreState,text:coreText,sub:coreSub,at:Date.now()};
+  if(typeof renderOv2CoreOrb==='function') renderOv2CoreOrb(); // refresh the visible card in place
 
-  // -- Hardware / environment metrics (governor signals + autonomy status) --
+  // -- Hardware / environment metrics (v2.2.6): published for the Resource Usage card instead of
+  // being rendered into the deleted hidden #hud-metrics row (those lookups were unguarded).
   const sig=a.governor_signals||{};
-  const load=sig.load_per_core;
-  if(load==null){ setEl('hud-cpu','—'); document.getElementById('hud-cpu-bar').style.width='0%'; }
-  else { setEl('hud-cpu',Number(load).toFixed(2)); document.getElementById('hud-cpu-bar').style.width=Math.max(0,Math.min(100,load*100))+'%'; }
-  const memFrac=sig.memory_available_fraction;
-  if(memFrac==null){ setEl('hud-mem','—'); document.getElementById('hud-mem-bar').style.width='0%'; }
-  else { setEl('hud-mem',Math.round(memFrac*100)+'% free'); document.getElementById('hud-mem-bar').style.width=Math.max(0,Math.min(100,(1-memFrac)*100))+'%'; }
-  const lat=sig.backend_latency_ms, latEl=document.getElementById('hud-lat');
-  if(sig.backend_ok===false){ setEl('hud-lat','offline'); latEl.style.color='var(--red)'; setEl('hud-lat-sub','backend unreachable'); }
-  else if(lat==null){ setEl('hud-lat','—'); latEl.style.color=''; setEl('hud-lat-sub','runs during autonomy'); }
-  else { setEl('hud-lat',Math.round(lat)+' ms'); latEl.style.color=lat>=1500?'var(--orange)':'var(--text)'; setEl('hud-lat-sub','Ollama probe'); }
-  const ce=a.concurrency_effective, cc=a.concurrency_configured;
-  setEl('hud-conc', (ce??cc??'—')+(cc!=null?' / '+cc:''));
-  setEl('core-hint', autoRunning?'live':'');
+  GOV={load:sig.load_per_core, memFree:sig.memory_available_fraction, lat:sig.backend_latency_ms,
+    backendOk:sig.backend_ok, concEff:a.concurrency_effective, concCfg:a.concurrency_configured, at:Date.now()};
   setEl('ov-events-sub', (s.events??0)+' events logged');
 
   // -- Operator attention --
@@ -7336,7 +7217,9 @@ async function pollTelemetry(){
   const coActive=document.getElementById('page-colony')?.classList.contains('active');
   if(!ovActive&&!coActive) return;
   try{
-    const [st,reg]=await Promise.all([api('/status'), TB.activeAnts===null?api('/colony/registry'):Promise.resolve(null)]);
+    // v2.2.6: always request the registry so the ant count tracks changes (api() TTL-caches it,
+    // so this adds no network traffic between cache windows — the count just stops going stale).
+    const [st,reg]=await Promise.all([api('/status'), api('/colony/registry')]);
     const s=(st&&st.success&&st.data)||null;
     TB.online=!!s;
     if(s){
@@ -7486,21 +7369,27 @@ function renderOv2Approvals(items){
 }
 
 function renderOv2Core(roles,jobs,missions,approvals){
-  // v2.2.2 fix: the card previously scraped state from the HIDDEN legacy HUD panel's DOM, so it
-  // sat on a stale "idle" forever. State is now computed here from the same live data pollOv2
-  // just fetched — identical rules to the original core logic, no fabricated values.
+  // v2.2.6: prefer the authoritative state published by pollHud (it sees autonomy, objectives,
+  // patches, and provider health — this card's local fallback only covers the basics and is used
+  // solely until the first pollHud completes).
   const el=document.getElementById('ov2-core-body'); if(!el) return;
-  jobs=jobs||[]; missions=missions||[]; approvals=approvals||[];
-  const activeJobs=jobs.filter(j=>(j.status||'').toLowerCase()==='running').length;
-  const pending=approvals.filter(a=>a.state==='pending');
-  const highRisk=pending.filter(a=>a.risk_level==='high'||a.risk_level==='critical').length;
-  const lastFailed=missions.length&&(missions[0].status||'')==='failed';
-  const offline=TB.online===false;
-  let state='idle',text='IDLE',sub='awaiting directive';
-  if(offline||lastFailed){ state='alert'; text='ALERT'; sub=offline?'backend offline':'last mission failed'; }
-  else if(pending.length){ state='action'; text='OPERATOR ACTION'; sub=highRisk?highRisk+' high-risk patch':pending.length+' awaiting review'; }
-  else if(activeJobs){ state='mission'; text='MISSION ACTIVE'; sub=activeJobs+' in flight'; }
-  const col=state==='alert'?'var(--status-danger)':state==='action'?'var(--status-warning)':state==='mission'?'var(--status-info)':'var(--anthill-muted)';
+  roles=roles||[]; jobs=jobs||[]; missions=missions||[]; approvals=approvals||[];
+  OV2._core={roles,jobs,missions,approvals};
+  let state,text,sub;
+  if(CORE_STATE&&Date.now()-CORE_STATE.at<30000){
+    state=CORE_STATE.state; text=CORE_STATE.text; sub=CORE_STATE.sub;
+  }else{
+    const activeJobs=jobs.filter(j=>(j.status||'').toLowerCase()==='running').length;
+    const pending=approvals.filter(a=>a.state==='pending');
+    const highRisk=pending.filter(a=>a.risk_level==='high'||a.risk_level==='critical').length;
+    const lastFailed=missions.length&&(missions[0].status||'')==='failed';
+    const offline=TB.online===false;
+    state='idle'; text='IDLE'; sub='awaiting directive';
+    if(offline||lastFailed){ state='alert'; text='ALERT'; sub=offline?'backend offline':'last mission failed'; }
+    else if(pending.length){ state='action'; text='OPERATOR ACTION'; sub=highRisk?highRisk+' high-risk patch':pending.length+' awaiting review'; }
+    else if(activeJobs){ state='mission'; text='MISSION ACTIVE'; sub=activeJobs+' in flight'; }
+  }
+  const col=state==='alert'?'var(--status-danger)':state==='action'?'var(--status-warning)':state==='mission'?'var(--status-info)':state==='autonomy'?'var(--role-mission-control)':'var(--anthill-muted)';
   const workers=roles.reduce((n,r)=>n+1+antWorkers(r).length,0);
   el.innerHTML='<div style="display:flex;align-items:center;gap:14px;">'+
     '<div class="ov2-orb" data-state="'+state+'"></div>'+
@@ -7511,15 +7400,26 @@ function renderOv2Core(roles,jobs,missions,approvals){
       '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(roles.length?workers:(TB.activeAnts??'—'))+'</b></div>'+
     '</div></div>';
 }
+// v2.2.6: pollHud calls this after publishing CORE_STATE so the orb updates without waiting for
+// the next pollOv2 tick (re-renders with the last known card data; no extra API calls).
+function renderOv2CoreOrb(){ if(OV2._core) renderOv2Core(OV2._core.roles,OV2._core.jobs,OV2._core.missions,OV2._core.approvals); }
 
 function renderOv2Resources(){
+  // v2.2.6 fix: this card read cpu_percent/memory_percent/disk_percent fields that /status never
+  // provides, so it was permanently "Metrics unavailable" while real governor signals existed.
+  // It now renders the same signals the retired hud-metrics row used (published by pollHud).
   const el=document.getElementById('ov2-resources-body'); if(!el) return;
-  const sum=(typeof lastSystemSummary==='object'&&lastSystemSummary)?lastSystemSummary:{};
-  const metrics=[['CPU',sum.cpu_percent],['Memory',sum.memory_percent??sum.mem_percent],['Disk',sum.disk_percent],['Network',sum.network_percent]]
-    .filter(m=>typeof m[1]==='number');
-  if(!metrics.length){ el.innerHTML='<div class="ov2-empty">Metrics unavailable.</div>'; return; }
-  el.innerHTML=metrics.map(m=>'<div class="ov2-row"><span>'+m[0]+'</span><b>'+Math.round(m[1])+'%</b></div>'+
-    '<div class="ov2-gauge"><i style="width:'+Math.min(100,m[1])+'%;background:'+(m[1]>=90?'var(--status-danger)':(m[1]>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>').join('');
+  const g=GOV||{};
+  const rows=[];
+  const gauge=(pct)=>'<div class="ov2-gauge"><i style="width:'+Math.min(100,Math.max(0,pct))+'%;background:'+(pct>=90?'var(--status-danger)':(pct>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>';
+  if(g.load!=null){ const pct=Math.min(100,g.load*100);
+    rows.push('<div class="ov2-row"><span>CPU / core</span><b>'+Number(g.load).toFixed(2)+'</b></div>'+gauge(pct)); }
+  if(g.memFree!=null){ const used=(1-g.memFree)*100;
+    rows.push('<div class="ov2-row"><span>Memory used</span><b>'+Math.round(used)+'%</b></div>'+gauge(used)); }
+  if(g.backendOk===false) rows.push('<div class="ov2-row"><span>Backend</span><b style="color:var(--status-danger)">offline</b></div>');
+  else if(g.lat!=null) rows.push('<div class="ov2-row"><span>Backend latency</span><b'+(g.lat>=1500?' style="color:var(--status-warning)"':'')+'>'+Math.round(g.lat)+' ms</b></div>');
+  if(g.concEff!=null||g.concCfg!=null) rows.push('<div class="ov2-row"><span>Concurrency</span><b>'+(g.concEff??g.concCfg??'—')+(g.concCfg!=null?' / '+g.concCfg:'')+'</b></div>');
+  el.innerHTML=rows.length?rows.join(''):'<div class="ov2-empty">No signals yet — governor metrics appear during autonomy or shortly after load.</div>';
 }
 
 // -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
@@ -7533,6 +7433,10 @@ function antWorkers(r){ return prop(r,'workers','Workers')||[]; }
 function antWorkerId(w){ return prop(w,'workerId','WorkerId','worker_id','id')||''; }
 function antWorkerName(w){ return prop(w,'displayName','DisplayName','display_name')||antWorkerId(w); }
 function antPurpose(o){ return prop(o,'purpose','Purpose')||''; }
+// v2.2.6 hardening: ids/labels embedded inside inline handler strings are stripped of every
+// character that could break out of the JS string context (defense-in-depth on top of escapeHtml;
+// registry data is local config, but the map must never be an injection surface).
+function attrSafe(s){ return String(s??'').replace(/[\\'"`<>\n\r]/g,''); }
 const CMAP={view:'chamber',motion:'normal',labels:'all',pheromones:'all',showIdle:true,
   selected:null,selectedKind:null,chambers:{},trails:[],events:[]};
 const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Researchers':{x:.28,y:.23},
@@ -7646,6 +7550,8 @@ async function loadColonyMap(){
 
 // v2.2.1: pan/zoom on the living map (viewBox-based; reduced-motion unaffected — no animation).
 function cmapResetZoom(){ CMAP.vb={x:0,y:0,w:1000,h:600}; renderColonyMap(); }
+// v2.2.6: dragged chamber positions previously had no way back to the default layout.
+function cmapResetLayout(){ CMAP.pos={}; try{localStorage.removeItem('anthill.colony.chamberPos');}catch(e){} renderColonyMap(); }
 function cmapToggleInspector(){ const i=document.getElementById('cmap2-inspector'); if(i)i.classList.toggle('collapsed'); }
 let CMAP_PANZOOM_WIRED=false;
 function cmapWirePanZoom(){
@@ -7713,7 +7619,7 @@ function renderColonyMap(){
       const color=(CMAP.chambers[t.chamber]||{}).color||'var(--role-other)';
       out+='<path class="pheromone-path" d="M'+c.x+' '+c.y+' Q '+((c.x+q.x)/2+30)+' '+((c.y+q.y)/2-30)+' '+q.x+' '+q.y+'"'+
         ' stroke="'+color+'" stroke-width="'+(1+t.strength*5).toFixed(1)+'" opacity="'+(0.2+t.strength*0.8).toFixed(2)+'"'+
-        ' onclick="cmapSelect(\'path\',\''+escapeHtml(t.chamber)+'\')" style="cursor:pointer;pointer-events:stroke;"/>';
+        ' onclick="cmapSelect(\'path\',\''+attrSafe(t.chamber)+'\')" style="cursor:pointer;pointer-events:stroke;"/>';
     });
   }
   // Chambers
@@ -7725,8 +7631,8 @@ function renderColonyMap(){
     const r=isQueen?26:Math.min(40,20+ch.ants.length*1.5);
     const sel=CMAP.selected===label&&CMAP.selectedKind!=='path';
     out+='<g class="cm-chamber'+(activeCount>0?' cm-active':'')+(sel?' cm-selected':'')+'" style="cursor:grab" '+
-      'onmousedown="cmapChamberDown(event,\''+escapeHtml(label)+'\')" onclick="cmapSelect(\'chamber\',\''+escapeHtml(label)+'\')" '+
-      (isQueen?'':'ondblclick="cmapExpand(\''+escapeHtml(label)+'\')"')+'>'+
+      'onmousedown="cmapChamberDown(event,\''+attrSafe(label)+'\')" onclick="cmapSelect(\'chamber\',\''+attrSafe(label)+'\')" '+
+      (isQueen?'':'ondblclick="cmapExpand(\''+attrSafe(label)+'\')"')+'>'+
       '<circle class="cm-ring" cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" stroke="'+ch.color+'"/>';
     // Ant dots (v2.2.3): representative in chamber view; ALL ants when expanded — for the selected
     // chamber, or for every chamber when none is selected (expanded must never collapse to a
@@ -7735,14 +7641,18 @@ function renderColonyMap(){
     const dots=expandedHere?shown:shown.slice(0,8);
     dots.forEach((a,i)=>{
       const n=dots.length, ang=(i/Math.max(1,n))*Math.PI*2;
-      const ring=expandedHere?Math.floor(i/14):0;
-      const rr=(expandedHere?(r*0.75):(r*0.55))+ring*11;
-      const ax=p.x+Math.cos(ang*(ring+1)+ring)*rr, ay=p.y+Math.sin(ang*(ring+1)+ring)*rr;
+      // v2.2.6: proper concentric rings — 14 dots per ring, angle computed within the ring, so
+      // large chambers never overlap dots (the old math reused the full-count angle across rings).
+      const RING=14, ring=expandedHere?Math.floor(i/RING):0;
+      const inRing=expandedHere?Math.min(RING,n-ring*RING):n, idxInRing=expandedHere?(i-ring*RING):i;
+      const ringAng=(idxInRing/Math.max(1,inRing))*Math.PI*2+(ring*0.35);
+      const rr=(expandedHere?(r*0.75):(r*0.55))+ring*12;
+      const ax=p.x+Math.cos(ringAng)*rr, ay=p.y+Math.sin(ringAng)*rr;
       const selAnt=CMAP.selectedAnt===a.id;
       out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4.5:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.4)+'"'+
         (selAnt?' stroke="var(--anthill-text)" stroke-width="1.5"':'')+
         (a.active?' class="cm-ant-active"':'')+
-        ' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"'+
+        ' style="cursor:pointer" onclick="event.stopPropagation();cmapSelect(\'ant\',\''+attrSafe(a.id)+'\')"'+
         '><title>'+escapeHtml(a.name)+(a.active?' (active)':' (idle)')+'</title></circle>';
       if(expandedHere&&(a.active||selAnt))
         out+='<text x="'+ax+'" y="'+(ay-7)+'" font-size="8" text-anchor="middle" fill="var(--anthill-muted)">'+escapeHtml(String(a.name).substring(0,18))+'</text>';
@@ -7756,7 +7666,11 @@ function renderColonyMap(){
   svg.innerHTML=out;
 }
 
-function cmapExpand(label){ CMAP.view='expanded'; CMAP.selected=label; CMAP.selectedKind='chamber'; cmapSetView('expanded'); cmapInspect(); }
+function cmapExpand(label){
+  // v2.2.6: a fast drag-release near a chamber can synthesize a dblclick — don't expand from one.
+  if(CMAP._dragEndAt&&Date.now()-CMAP._dragEndAt<400) return;
+  CMAP.view='expanded'; CMAP.selected=label; CMAP.selectedKind='chamber'; cmapSetView('expanded'); cmapInspect();
+}
 function cmapSelect(kind,id){
   if(CMAP._dragged){ CMAP._dragged=false; return; } // a drag is not a selection
   CMAP.selectedKind=kind; CMAP.selected=kind==='ant'?CMAP.selected:id; if(kind==='ant')CMAP.selectedAnt=id; renderColonyMap(); cmapInspect(kind,id);
@@ -7779,7 +7693,7 @@ function cmapChamberDown(e,label){
   };
   const up=()=>{
     window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up);
-    if(moved){ try{localStorage.setItem('anthill.colony.chamberPos',JSON.stringify(CMAP.pos||{}));}catch(x){} }
+    if(moved){ CMAP._dragEndAt=Date.now(); try{localStorage.setItem('anthill.colony.chamberPos',JSON.stringify(CMAP.pos||{}));}catch(x){} }
   };
   window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
 }
@@ -7797,7 +7711,7 @@ function cmapInspect(kind,id){
       '<div class="ov2-row"><span>Active (15m)</span><b>'+act+'</b></div>'+
       '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">CHAMBERS</div>'+
       labels.map(l=>{ const c=CMAP.chambers[l], a=c.ants.filter(x=>x.active).length;
-        return '<div class="ov2-list-item" style="cursor:pointer" onclick="cmapSelect(\'chamber\',\''+escapeHtml(l)+'\')">'+
+        return '<div class="ov2-list-item" style="cursor:pointer" onclick="cmapSelect(\'chamber\',\''+attrSafe(l)+'\')">'+
           '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+c.color+';margin-right:6px;"></span>'+
           escapeHtml(l)+' <b>'+c.ants.length+'</b>'+(a?' · '+a+' active':'')+'</div>'; }).join('');
     return;
@@ -7810,10 +7724,10 @@ function cmapInspect(kind,id){
       '<div class="ov2-row"><span>Ants</span><b>'+ch.ants.length+'</b></div>'+
       '<div class="ov2-row"><span>Active (15m)</span><b>'+act.length+'</b></div>'+
       '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">ANTS &amp; DUTIES</div>'+
-      ch.ants.map(a=>'<div class="ov2-list-item" style="cursor:pointer" onclick="cmapSelect(\'ant\',\''+escapeHtml(a.id)+'\')"><b style="color:var(--anthill-text)">'+escapeHtml(a.name)+'</b>'+(a.active?' '+athPill('ok','active'):'')+
+      ch.ants.map(a=>'<div class="ov2-list-item" style="cursor:pointer" onclick="cmapSelect(\'ant\',\''+attrSafe(a.id)+'\')"><b style="color:var(--anthill-text)">'+escapeHtml(a.name)+'</b>'+(a.active?' '+athPill('ok','active'):'')+
         (a.purpose?'<div style="font-size:9px;color:var(--anthill-dim);margin-top:1px;">'+escapeHtml(a.purpose.substring(0,90))+'</div>':'')+'</div>').join('')+
       '<div style="display:flex;gap:6px;margin-top:8px;">'+
-      '<button class="hud-act" onclick="cmapExpand(\''+escapeHtml(id)+'\')">Expand</button>'+
+      '<button class="hud-act" onclick="cmapExpand(\''+attrSafe(id)+'\')">Expand</button>'+
       '<button class="hud-act" onclick="showPage(\'antconfig\')">Ant Config</button>'+
       '<button class="hud-act" onclick="showPage(\'antobs\')">Inspector</button></div>';
   }else if(kind==='ant'){
