@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v2.2.4 — Chamber delegation lines, draggable chambers, ant duties in every inspector
+
+- **Live delegation lines on the chamber map**: Queen → Mission Control → each chamber, mirroring
+  the classic engine's structure. Lines stay faint when idle and light up in the chamber's role
+  color with an animated flow when that chamber had ants active in the last 15 minutes — live
+  delegation is now visible in Chamber/Expanded just like Live Colony. (Motion setting and
+  prefers-reduced-motion both disable the animation.)
+- **Chambers are draggable**: grab any chamber group and move it, same as classic ants; positions
+  are normalized and persisted per operator (`anthill.colony.chamberPos`); a drag never triggers a
+  selection; "Reset view" is unaffected (pan/zoom only).
+- **Per-ant duties in the map inspector**: selecting a chamber lists every ant with its registry
+  Purpose (e.g. ScribeAnt — what it does), each row click-selects that ant; selecting an ant shows
+  a PURPOSE section. Real registry data only — ants without a purpose simply omit the line.
+- **Ant Inspector page shows the whole colony**: below the six legacy telemetry castes (which keep
+  their real task stats) a new COLONY DIRECTORY lists every registered role and worker with role
+  color and duty, so any ant can be inspected — not just researcher/web/file/coder/builder/verifier.
+- Chamber map adapter now carries registry Purpose fields end-to-end (case-tolerant).
+
 ## v2.2.3 — Repair: Chamber/Expanded role detection ("Other · 25"), Colony dead space, Overview grid balance
 
 - **"Other · 25" root cause fixed**: the registry serializes PascalCase (`RoleId`/`DisplayName`/
