@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v2.2.6.1 — Proxmox sync: surface the privsep "nodes-only" gotcha in the UI
+
+Live-testing a freshly-connected Proxmox VE integration turned up a confusing dead-end: a manual
+"Sync now" succeeds (HTTP 200, `proxmox sync ok (N items)`) yet the VM / Container / Storage tables
+stay empty. Root cause is not in ANTHILL — it is Proxmox's read-only API-token model:
+
+- A privilege-separated (`privsep=1`) API token's effective permissions are the **intersection** of
+  the backing user's permissions and the token's own ACL. If the token holds `PVEAuditor` on `/` but
+  the backing user holds nothing, the intersection is empty for `VM.Audit` / `Datastore.Audit`.
+- Proxmox then returns **HTTP 200 + an empty list** (never 403) for `/nodes/{node}/qemu`, `/lxc`,
+  `/storage`. Node *listing* is not gated the same way, so the sync finds the nodes and reports them
+  as items while pulling zero guests underneath — exactly the "success but no data" symptom.
+
+Fix (UI only; the sync path and every client stay read-only and unchanged):
+- `hlSyncVirt()` now detects a Proxmox sync that returned nodes but left the VM/container/storage
+  inventory empty, and reports the actual cause inline: grant the **backing user** the `PVEAuditor`
+  role too (`effective perms = user ∩ token`). No more silent "ok" over three empty tables.
+- On failure it now surfaces the error and stops rather than falling through to a generic message;
+  on success it keeps the full `loadHomelab()` refresh (node graph + inventory tables).
+
+Operator fix on the PVE host: `pveum acl modify / --roles PVEAuditor --users <user>@<realm>`.
+
 ## v2.2.6 — Cleanup + hardening pass (no new features; framework checkpoint before V2.3.0)
 
 Full audit of the v2.2.x churn; every finding fixed at the root:

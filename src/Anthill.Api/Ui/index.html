@@ -6653,8 +6653,24 @@ async function hlSaveVirtCred(k){
 async function hlSyncVirt(k){
   hlMsg('Syncing '+k+'...',true);
   const r=await api('/homelab/virtualization/'+encodeURIComponent(k)+'/sync','POST',{});
-  hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
-  if(r.success) loadHomelab();
+  if(!r.success){ hlMsg(r.message||'Failed',false); return; }
+  loadHomelab(); // full refresh: node graph + inventory tables (loadHomelab calls loadHlVirt)
+  // Diagnostic nudge for the #1 read-only Proxmox gotcha: a privilege-separated (privsep=1)
+  // API token's effective permissions are the INTERSECTION of the backing user's perms and the
+  // token's ACL. Proxmox then returns HTTP 200 + EMPTY lists (never 403) for resources the token
+  // can't audit — so a sync "succeeds" and finds the nodes, yet pulls 0 VMs/containers/storage.
+  // Surface the cause here instead of a silent "ok" over empty tables.
+  const items=(r.data&&r.data.items)||0;
+  try{
+    const st=await api('/homelab/virtualization/status');
+    const d=st.success?(st.data||{}):{};
+    const emptyInventory=((d.vms||0)+(d.containers||0)+(d.storage_pools||0))===0;
+    if(k==='proxmox'&&items>0&&emptyInventory){
+      hlMsg(r.message+' — nodes only, no VMs/containers/storage. If this is a privilege-separated API token, grant the backing USER the PVEAuditor role too (effective perms = user ∩ token).',false);
+      return;
+    }
+  }catch(e){}
+  hlMsg(r.message||'Synced',true);
 }
 
 function renderHlVms(vms){
