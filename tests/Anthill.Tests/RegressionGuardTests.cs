@@ -144,6 +144,58 @@ public class RegressionGuardTests : IDisposable
         Assert.DoesNotContain("<title>ANTHILL v", ui);
     }
 
+    /// <summary>
+    /// v2.2.6: release mishaps have twice tagged a version whose CHANGELOG top entry was older
+    /// (rebase ordering). The FIRST '## vX.Y.Z' heading must be the current runtime version.
+    /// </summary>
+    [Fact]
+    public void VersionMarkers_ChangelogTopEntryIsRuntimeVersion()
+    {
+        var changelog = File.ReadAllText(Path.Combine(RepoRoot(), "CHANGELOG.md"));
+        var m = Regex.Match(changelog, @"^##\s+v([0-9][0-9A-Za-z.\-]*)", RegexOptions.Multiline);
+        Assert.True(m.Success, "CHANGELOG.md has no '## vX.Y.Z' entries.");
+        Assert.Equal(AnthillRuntime.Version, m.Groups[1].Value.Trim());
+    }
+
+    /// <summary>
+    /// v2.2.6: the retired System Core panel was deleted while legacy code still looked its
+    /// elements up (silent dead work). Every getElementById target must exist as a static id in
+    /// the markup, ids created at runtime are allow-listed, and no id may be declared twice.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds()
+    {
+        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var dynamicIds = new HashSet<string> { "pc-toast" }; // created via document.createElement at runtime
+
+        var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
+        var duplicates = declared.GroupBy(i => i).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        Assert.True(duplicates.Count == 0, "Duplicate element id(s) in UI markup: " + string.Join(", ", duplicates));
+
+        var declaredSet = declared.ToHashSet();
+        var orphans = Regex.Matches(ui, @"getElementById\('([^']+)'\)")
+            .Select(m => m.Groups[1].Value).Distinct()
+            .Where(id => !declaredSet.Contains(id) && !dynamicIds.Contains(id))
+            .OrderBy(id => id).ToList();
+        Assert.True(orphans.Count == 0,
+            "getElementById target(s) with no matching id= in markup (orphaned lookups): " + string.Join(", ", orphans));
+    }
+
+    /// <summary>
+    /// v2.2.3 shipped 'Other · 25': the registry serializes PascalCase but a UI adapter read only
+    /// camelCase, classifying the whole colony as Other. The adapter accessors must stay
+    /// case-tolerant (both casings listed) so a serializer/policy change can never silently
+    /// unclassify the colony again.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_RegistryAdapterAccessorsAreCaseTolerant()
+    {
+        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        Assert.Contains("prop(r,'roleId','RoleId'", ui);
+        Assert.Contains("prop(w,'workerId','WorkerId'", ui);
+        Assert.Contains("prop(r,'workers','Workers')", ui);
+    }
+
     // ---- No active Python ------------------------------------------------------------------------
     // py.old/ is archived history. No .py file may exist anywhere else in the repo.
 
