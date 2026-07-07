@@ -152,8 +152,9 @@
 /* v2.2.3: active ants breathe on the chamber map (active-only animation; reduced-motion covered
    by the existing #cmap2 * override above). */
 /* v2.2.4: delegation lines (Queen → Mission Control → chambers); active targets flow. */
-.cm-deleg{stroke-width:1;opacity:.35;pointer-events:none;}
-.cm-deleg-active{stroke-width:2;opacity:.85;stroke-dasharray:6 5;animation:cmdeleg 1.1s linear infinite;}
+.cm-deleg{fill:none;stroke-width:1.5;opacity:.3;pointer-events:none;}
+.cm-deleg-active{stroke-width:2.5;opacity:.9;stroke-dasharray:7 6;animation:cmdeleg 1.1s linear infinite;
+  filter:drop-shadow(0 0 3px currentColor);}
 @keyframes cmdeleg{to{stroke-dashoffset:-11;}}
 .cmap2-motion-off .cm-deleg-active{animation:none;}
 .cm-ant-active{animation:cmantpulse 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center;}
@@ -7687,17 +7688,22 @@ function renderColonyMap(){
   // v2.2.4: delegation lines — same structure as the classic engine (Queen → Mission Control,
   // Mission Control → every chamber). Lines light up and flow when the target chamber has ants
   // active in the last 15m, so live delegation is visible in this view too.
+  // v2.2.5: tunnels are always visible in each chamber's role color (idle ones were drawn in the
+  // near-invisible border color, so only Queen ↔ Mission Control could be seen). Curved like dug
+  // tunnels; active chambers flow. Command chain: Queen → Mission Control → every chamber.
   const mcL=CMAP.chambers['Mission Control']?'Mission Control':'Queen';
   const mc=P(mcL);
+  const tunnel=(a,b,color,act)=>{
+    const mx=(a.x+b.x)/2+(b.y-a.y)*0.12, my=(a.y+b.y)/2-(b.x-a.x)*0.12;
+    return '<path class="cm-deleg'+(act?' cm-deleg-active':'')+'" d="M'+a.x+' '+a.y+' Q '+mx.toFixed(0)+' '+my.toFixed(0)+' '+b.x+' '+b.y+'" stroke="'+color+'"/>';
+  };
   labels.forEach(label=>{
     if(label===mcL||label==='Queen')return;
-    const p=P(label);
-    const act=CMAP.chambers[label].ants.some(a=>a.active);
-    out+='<line class="cm-deleg'+(act?' cm-deleg-active':'')+'" x1="'+mc.x+'" y1="'+mc.y+'" x2="'+p.x+'" y2="'+p.y+'"'+
-      ' stroke="'+(act?CMAP.chambers[label].color:'var(--anthill-border)')+'"/>';
+    const ch=CMAP.chambers[label];
+    out+=tunnel(mc,P(label),ch.color,ch.ants.some(a=>a.active));
   });
   if(CMAP.chambers['Queen']&&mcL==='Mission Control')
-    out+='<line class="cm-deleg'+(CMAP.chambers[mcL].ants.some(a=>a.active)?' cm-deleg-active':'')+'" x1="'+q.x+'" y1="'+q.y+'" x2="'+mc.x+'" y2="'+mc.y+'" stroke="var(--role-queen)"/>';
+    out+=tunnel(q,mc,'var(--role-queen)',CMAP.chambers[mcL].ants.some(a=>a.active));
   // Trails chamber → queen (pheromone layer)
   if(CMAP.pheromones!=='off'){
     CMAP.trails.forEach(t=>{
