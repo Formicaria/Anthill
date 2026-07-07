@@ -141,12 +141,11 @@
    telemetry bar hides (it would break the row) and the view-switch bar floats over the canvas. */
 #page-colony{position:relative;}
 #page-colony:not(.cmap-mode) #tb-colony{display:none;}
-/* !important needed: the bar carries an inline position:relative (for cmap-mode layering) which
-   otherwise beats this rule and leaves the bar in flow as a dead row column (v2.2.2 bug). */
-#page-colony:not(.cmap-mode) #cmap2-bar{position:absolute !important;top:10px;right:14px;left:auto;width:auto;z-index:6;
-  background:rgba(10,14,22,.88);border:1px solid var(--anthill-border);border-radius:10px;padding:5px 9px;}
-/* In classic mode only the VIEW switcher floats; motion/label/pheromone selects are map-only. */
-#page-colony:not(.cmap-mode) #cmap2-bar>*:nth-child(n+5){display:none;}
+/* v2.2.4: in classic (Live Colony) mode the map toolbar is hidden entirely — floating it was
+   fragile (clipped at the top-left). The map-view switches live inside the classic canvas's own
+   #colony-viewbar instead, which is already correctly positioned top-right. */
+#page-colony:not(.cmap-mode) #cmap2-bar{display:none !important;}
+.cv-sep{width:1px;height:14px;background:var(--border);margin:0 3px;}
 #page-colony.cmap-mode #cmap2-wrap{flex:1;min-height:0;}
 #page-colony.cmap-mode #cmap2{height:calc(100vh - 250px);min-height:480px;cursor:grab;}
 #page-colony.cmap-mode #cmap2:active{cursor:grabbing;}
@@ -1565,6 +1564,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="cv-btn" data-view="active" title="Only current mission path">Active</button>
             <button class="cv-btn" data-view="group" title="Group by colony">Groups</button>
             <button class="cv-btn on" data-toggle="handoffs" title="Show active handoff edges">Handoffs</button>
+            <span class="cv-sep"></span>
+            <button class="cv-btn" onclick="cmapSetView('chamber')" title="Switch to the role-grouped chamber map">🗺 Chamber Map</button>
+            <button class="cv-btn" onclick="cmapSetView('expanded')" title="Switch to the chamber map with every ant visible">🗺 Expanded Map</button>
           </div>
           <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
           <!-- Mission bar overlays the bottom of the canvas -->
