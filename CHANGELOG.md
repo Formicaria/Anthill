@@ -1,5 +1,30 @@
 # ANTHILL Changelog
 
+## v2.2.3 — Repair: Chamber/Expanded role detection ("Other · 25"), Colony dead space, Overview grid balance
+
+- **"Other · 25" root cause fixed**: the registry serializes PascalCase (`RoleId`/`DisplayName`/
+  `Workers`); the chamber adapter only tried camelCase, got '' for every role, and classified the
+  whole colony as Other. The adapter now uses the same case-tolerant accessors as the classic Live
+  Colony engine (which is why that view was unaffected) and falls back to the display name before
+  giving up — only truly unmatchable ants land in Other. Dev-only console.debug reports total
+  ants / chambers / unclassified samples.
+- **Colony dead-space fixed**: the floating VIEW bar carries an inline `position:relative` (for
+  cmap-mode layering) which overrode the classic-mode absolute float, leaving the bar in flow as
+  an empty ~350px row column. Now `!important`-scoped; the bar floats top-right over the canvas.
+- **Expanded view repaired**: with no chamber selected it shows every ant in every chamber (multi-
+  ring layout, never a single placeholder circle) with a "Select a chamber to focus" hint; ant
+  dots are clickable in all views (existing selection/inspector handlers), active/selected ants
+  get labels and a breathing pulse (active-only animation, motion setting + reduced-motion safe).
+- **Inspector**: with nothing selected it now shows a colony summary (total ants, active count,
+  per-chamber breakdown with click-to-select) instead of an empty prompt.
+- **Overview grid rebalanced**: Operator Attention and Mission Command moved INTO the 12-column
+  grid (they were stranded below it beside retired hidden panels, leaving a huge blank region);
+  Recent Events restored as the third row-3 card (reuses pollOv2 data, no extra polling); retired
+  hidden System Core panel removed from the DOM (legacy writers are null-guarded); consistent card
+  min/max heights with internal scroll; responsive 2-col/1-col fallbacks. Colony Vitals remains
+  full-width below the grid.
+- Overview System Core ant count now uses the case-tolerant worker accessor (was undercounting).
+
 ## v2.2.2 — Fix: classic live colony default + Raw blank-canvas; Overview condensed, System Core functional
 
 Live feedback on v2.2.1: the original colony experience — every individual ant visible and
