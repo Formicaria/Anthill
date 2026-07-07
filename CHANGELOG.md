@@ -17,6 +17,11 @@
   their real task stats) a new COLONY DIRECTORY lists every registered role and worker with role
   color and duty, so any ant can be inspected — not just researcher/web/file/coder/builder/verifier.
 - Chamber map adapter now carries registry Purpose fields end-to-end (case-tolerant).
+- **Classic-mode view switcher fixed**: the floating map toolbar was clipped at the top-left in
+  Live Colony mode. It's now hidden there entirely; "🗺 Chamber Map" / "🗺 Expanded Map" buttons
+  live inside the classic canvas's own top-right viewbar (Command/Expanded/Active/Groups/Handoffs),
+  which is already correctly positioned. The full map toolbar (motion/labels/pheromones/reset)
+  still appears in Chamber/Expanded modes.
 
 ## v2.2.3 — Repair: Chamber/Expanded role detection ("Other · 25"), Colony dead space, Overview grid balance
 
