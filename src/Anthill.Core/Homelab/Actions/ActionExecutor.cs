@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Anthill.Core.Common;
 using Anthill.Core.Homelab.Approvals;
+// Anthill.Core.Domain declares its own mission `Task` model, which shadows
+// System.Threading.Tasks.Task via parent-namespace lookup — alias it back explicitly.
+using Task = System.Threading.Tasks.Task;
 
 namespace Anthill.Core.Homelab.Actions;
 
