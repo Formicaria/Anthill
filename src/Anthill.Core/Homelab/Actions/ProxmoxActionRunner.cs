@@ -15,20 +15,33 @@ public sealed class ProxmoxActionClient : IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _base;
+    private readonly string _host;
+    private readonly IHomelabTargetGuard _targetGuard;
     private readonly Func<string> _tokenProvider;
 
+    /// <param name="targetGuard">D1 target allowlist — v2.3.1.1: the WRITE client checks it before
+    /// every request, exactly like the v1.12 read client. It was missing in v2.3.1.</param>
     /// <param name="tokenProvider">Pulled from the credential store per client (mirrors the
     /// v1.12 read client) — the token is never cached in config or logged.</param>
-    public ProxmoxActionClient(string host, int port, Func<string> tokenProvider,
-        bool insecureTls = false, string protocol = "https")
+    public ProxmoxActionClient(string host, int port, IHomelabTargetGuard targetGuard,
+        Func<string> tokenProvider, bool insecureTls = false, string protocol = "https")
     {
         var scheme = string.Equals(protocol, "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
+        _host = host;
         _base = $"{scheme}://{host}:{port}/api2/json";
+        _targetGuard = targetGuard;
         _tokenProvider = tokenProvider;
         var handler = new HttpClientHandler { AllowAutoRedirect = false };
         if (insecureTls)
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
         _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+    }
+
+    private void EnsureTargetAllowed()
+    {
+        if (!_targetGuard.IsAllowed(_host))
+            throw new InvalidOperationException(
+                $"Refused: Proxmox host '{_host}' is not on the homelab target allowlist (add it under Homelab → Allowlist).");
     }
 
     private HttpRequestMessage Req(HttpMethod method, string path, HttpContent? content = null)
@@ -47,6 +60,7 @@ public sealed class ProxmoxActionClient : IDisposable
 
     public async Task<string> PostAsync(string path, Dictionary<string, string>? form, CancellationToken ct)
     {
+        EnsureTargetAllowed(); // D1: no write ever leaves toward a non-allowlisted host
         if (!IsAllowedWritePath(path))
             throw new InvalidOperationException($"Refused: '{path}' is not an allowlisted action endpoint.");
         var content = new FormUrlEncodedContent(form ?? new Dictionary<string, string>());
@@ -63,6 +77,7 @@ public sealed class ProxmoxActionClient : IDisposable
     /// <summary>Read-only status probe used ONLY for post-execution verification.</summary>
     public async Task<string> GetGuestStatusAsync(string node, string kind, string vmid, CancellationToken ct)
     {
+        EnsureTargetAllowed();
         var path = $"/nodes/{Uri.EscapeDataString(node)}/{kind}/{Uri.EscapeDataString(vmid)}/status/current";
         using var req = Req(HttpMethod.Get, path);
         using var resp = await _http.SendAsync(req, ct);
@@ -112,7 +127,12 @@ public sealed class ProxmoxActionRunner : IHomelabActionRunner
     {
         node = kind = vmid = "";
         var parts = (p.TargetId ?? "").Split('/');
-        if (parts.Length != 2 || parts[0].Length == 0 || !parts[1].All(char.IsDigit)) return false;
+        // v2.3.1.1: the node segment is character-validated, not just non-empty. Without this, a
+        // target id like "pve1?x=y/104" passes the structural path allowlist (regex sees [^/]+)
+        // while the actual HTTP request goes to a DIFFERENT path with an injected query string —
+        // the validated path and the emitted path must be the same bytes.
+        if (parts.Length != 2 || parts[1].Length == 0 || !parts[1].All(char.IsDigit)) return false;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(parts[0], "^[A-Za-z0-9._-]+$")) return false;
         node = parts[0]; vmid = parts[1];
         kind = p.ActionType.Contains("container") ? "lxc"
              : p.ActionType.Contains("vm") ? "qemu"

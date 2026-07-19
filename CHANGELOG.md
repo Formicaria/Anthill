@@ -1,5 +1,61 @@
 # ANTHILL Changelog
 
+## v2.3.2 — Homelab Service Deck + write-runner hardening
+
+Two things in one release: a full-replace redesign of the Homelab console page driven by live
+operator feedback ("everything that is added needs to be visible"), and the hardening pass on the
+v2.3.1 Proxmox write runner.
+
+### Homelab Service Deck (UI full-replace)
+
+The old page was config-first: two viewports of registration forms and credential cards before any
+data, hung "Loading..." blocks when endpoints were slow, an empty dependency graph consuming half a
+viewport, and the actual homelab (hosts, synced VMs/containers, services) visible only as counts.
+Now:
+
+- **Service Deck front and center** — a Homarr-style tile grid grouped by host: every registered
+  host and every synced virtualization node is a card; its VMs, containers, and services are live
+  tiles with status dots (guest state / latest health-check result), click-to-open service URLs,
+  host/service detail drawer on click, and a ⚡ shortcut that pre-fills an approval-gated action
+  proposal (restart VM/CT/service) for that exact target.
+- **Config out of the way** — every registration form (host, service, device, health check,
+  dependency) plus Subsystem Status and the Virtualization Connections cards moved into one
+  "+ Add / Manage" drawer, hidden until asked for.
+- **Secondary tables collapsed** — VM/CT/storage, network & risk, and inventory tables are
+  collapsible sections (state persisted); Health, Actions, and Incidents stay first-class.
+- **No dead space, no dead ends** — the dependency graph auto-hides until relationships exist,
+  and the command-summary / what-next blocks replace themselves with a labeled fallback after 7s
+  instead of loading forever (relevant under reverse-proxy 503 bursts, observed live).
+- All additive within the single vanilla HTML/CSS/JS console; every existing element id, endpoint,
+  and behavior preserved.
+
+### Proxmox write-runner hardening (was staged as v2.3.1.1)
+
+Review of the first write-capable client found three real gaps and two smaller defects; all fixed
+at the root:
+
+- **D1 target-allowlist enforcement (safety)**: `ProxmoxActionClient` never consulted the homelab
+  target guard — the one client that can *change* infrastructure was the only one skipping the
+  allowlist every read-only client honors. The guard is now a required constructor dependency and
+  is checked before ANY request (writes and the verification GET alike); a non-allowlisted host is
+  refused before I/O with a pointer to Homelab → Allowlist. Tests prove both paths refuse.
+- **Node-segment injection (safety)**: `TryParseTarget` accepted any characters in the node part
+  of a `node/vmid` target. A target like `pve1?x=y/104` passed the structural path allowlist
+  (its regex sees `[^/]+`) while the emitted HTTP request went to a *different* path with an
+  injected query string. The node segment is now validated against `^[A-Za-z0-9._-]+$` so the
+  validated path and the emitted path are always the same bytes. Injection targets are CanRun=false.
+- **Mock runner shadowed the real runner**: runners are matched first-CanRun-wins, and the dev
+  mock runner (which claims every catalog action) was registered before the Proxmox runner — with
+  `homelab_mock_providers_enabled` on, a real `start_vm` was "executed" by the mock and reported
+  success without touching anything. The mock is now registered last.
+- **dry_run_available always false for Proxmox actions**: the propose-time probe called
+  `CanRun` with an action-type-only stub, which the Proxmox runner rejects (it also validates the
+  target form). The probe now uses the real proposal.
+- **Stale guidance + xUnit2012**: the no-runner error still said "runners arrive in v2.3.1"; it
+  now points at `homelab_proxmox_write_actions_enabled` and the `node/vmid` target form.
+  `JsonSafetyTests` uses `Assert.DoesNotContain`, clearing the analyzer warning. HOMELAB.md phase
+  row updated to cover v2.3.1/v2.3.1.1.
+
 ## v2.3.1 — ProxmoxActionRunner: the first write-capable infrastructure runner
 
 Completes NORTH_STAR Phase 12: the v2.3.0 approval pipeline now controls real Proxmox VE.
