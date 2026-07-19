@@ -80,10 +80,10 @@ public class ProxmoxActionRunnerTests
     }
 
     [Fact]
-    public void StopMapsToCleanShutdown_NeverHardStop()
+    public async System.Threading.Tasks.Task StopMapsToCleanShutdown_NeverHardStop()
     {
         // Verified via dry-run text: the stop actions must issue 'shutdown' (guest-clean), not 'stop'.
-        var msg = Runner().DryRunAsync(P("stop_vm", "pve1/104")).Result.Message;
-        Assert.Contains("status/shutdown", msg);
+        var r = await Runner().DryRunAsync(P("stop_vm", "pve1/104"));
+        Assert.Contains("status/shutdown", r.Message);
     }
 }

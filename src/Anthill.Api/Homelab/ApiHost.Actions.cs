@@ -35,7 +35,10 @@ public static partial class ApiHost
             && !string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
             runners.Add(new ProxmoxActionRunner(() => new ProxmoxActionClient(
                 AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
-                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxActionRunner"),
+                // CS8603 fix: GetSecret is nullable — fail fast with a clear operator message rather
+                // than sending an empty Authorization header to Proxmox.
+                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxActionRunner")
+                    ?? throw new InvalidOperationException($"Proxmox credential '{AnthillRuntime.HomelabProxmoxCredentialId}' is not configured — save it under Homelab → + Add / Manage → Virtualization Connections."),
                 AnthillRuntime.HomelabProxmoxInsecureTls,
                 protocol: AnthillRuntime.HomelabProxmoxProtocol)));
         // v2.3.1.1: the mock runner is registered LAST. It claims every catalog action, so with the

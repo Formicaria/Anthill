@@ -30,3 +30,6 @@ publish/
 *.env
 .env*
 secrets.json
+
+# stray files from sandbox git/test runs — never commit
+FETCH_HEAD
