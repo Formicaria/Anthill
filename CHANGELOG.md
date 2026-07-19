@@ -1,5 +1,62 @@
 # ANTHILL Changelog
 
+## v2.3.0 — Approval-gated homelab actions (NORTH_STAR Phase 12, framework release)
+
+The v1.14.0 IApprovable/ActionProposal design gains its execution side. Scope decision: framework
+first — the full pipeline ships with **local + mock runners only**, so the first write-capable
+infrastructure client (Proxmox power/snapshot/backup) lands in v2.3.1 as its own isolated,
+reviewable diff.
+
+The pipeline (every safety property enforced in the executor, with a test on it):
+
+- **Propose** (`POST /homelab/actions/propose`, `manage_homelab_integrations`): validated against
+  the allowlisted `ActionCatalog` — restart_service, start/stop/restart VM + container,
+  create_snapshot, run_backup, resolve_incident, update_inventory, run_diagnostic. The NORTH_STAR
+  forbidden set (delete VM/LXC/container, firewall changes, factory reset, wipe disk, secret
+  modification, backup disable) is refused by name, and anything unknown is refused by default.
+  Proposals persist in the new `action_proposals` table (idempotent migration) and dedupe by
+  `action_type:target_id` — the newer pending proposal supersedes the older.
+- **Blast radius**: deterministic `BlastRadius` scorer (plain arithmetic, no LLM) over the rubric
+  fields shipped in v1.14: dependency fan-out (computed from the v1.10 dependency map), service
+  criticality (unknown scores as high — fail toward caution), backup coverage, internet exposure,
+  rollback-note presence (largest single penalty), action class. Score + explanation land on the
+  proposal and drive the risk badge.
+- **Approve / Reject** (`POST /homelab/actions/{id}/approve|reject`, `approve_homelab_actions`):
+  pending-only, records decided_by/at, audited. A rollback note can be added or refined via
+  `POST /homelab/actions/{id}/rollback-note` (score honestly recomputed).
+- **Execute** (`POST /homelab/actions/{id}/execute`, `execute_homelab_actions` — a separate
+  permission from approval): checks the HOMELAB_STOP kill switch FIRST, re-reads state at
+  execution time and refuses anything not `approved` (TOCTOU guard), re-checks the catalog
+  (a forbidden record written around the API still never runs), requires a rollback note, runs
+  the matching runner, then runs post-execution verification and reports it honestly
+  (`… | verify: ok/FAILED`). Failures keep state `approved` with an `execution_failed` audit
+  event — retry is explicit, never silent.
+- **Dry run** (`POST /homelab/actions/{id}/dryrun`): describes exactly what would happen, never
+  executes, never changes state.
+- **Runners**: `LocalActionRunner` (resolve_incident, update_inventory, run_diagnostic — touch
+  only ANTHILL's own database, zero network) and `MockActionRunner` (deterministic harness,
+  registered only behind the existing `homelab_mock_providers_enabled` gate).
+- **Kill switch**: `HomelabActionControl` mirrors AutonomyControl — durable on-disk
+  `.anthill/HOMELAB_STOP` sentinel OR in-process flag; no auto-clear. `POST
+  /homelab/actions/stop` (approve permission — halting must be easy) / `resume` (execute
+  permission — un-halting is an execution-grade decision). Sentinel scope is disjoint from the
+  autonomy STOP file.
+- **One queue**: action proposals project into `GET /homelab/approvals/unified` beside patches
+  (`kinds: ["patch","homelab_action"]`) via `ApprovableProjections.FromActionProposal`; the
+  Overview approvals card routes decisions by kind. The v1.14 IApprovable contract is unchanged —
+  `ActionProposal` gained only additive execution metadata (payload, blast-radius score/
+  explanation, decided/executed stamps, execution result).
+- **UI**: new Actions panel on the Homelab page — propose form (action list served by the API),
+  proposal table with risk/blast-radius/rollback/result columns, approve/reject/dry-run/execute
+  buttons, and the kill-switch toggle with engaged-state banner.
+- **Fail closed**: `approve_homelab_actions` and `execute_homelab_actions` capability gates STILL
+  default OFF. A fresh v2.3.0 install cannot execute anything until an operator enables them.
+- **Tests** (`ActionApprovalTests`): approval gate (pending/rejected refused), forbidden actions
+  refused at propose AND at execute (including a record smuggled straight into the store),
+  kill-switch halt + resume, mandatory rollback note, dry-run leaves state untouched, dedupe
+  supersede, deterministic blast radius + caution-on-unknown, local incident-resolve with
+  verification, unified projection shape, and fail-closed capability gates.
+
 ## v2.2.6.1 — Proxmox sync: surface the privsep "nodes-only" gotcha in the UI
 
 Live-testing a freshly-connected Proxmox VE integration turned up a confusing dead-end: a manual
