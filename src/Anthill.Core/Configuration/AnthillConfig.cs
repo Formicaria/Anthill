@@ -75,6 +75,7 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_proxmox_protocol")] public string HomelabProxmoxProtocol { get; set; } = "https";
     [JsonPropertyName("homelab_proxmox_write_actions_enabled")] public bool HomelabProxmoxWriteActionsEnabled { get; set; } = false;
     [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
+    [JsonPropertyName("homelab_arr_sync_interval_seconds")] public int HomelabArrSyncIntervalSeconds { get; set; } = 300;
     // Read-only virtualization integrations (v2.1.0). Each mirrors Proxmox: no write path exists in the
     // client, the secret lives in the credential store (referenced by id, never here), and the host must
     // be on the target allowlist. ESXi/vCenter = vSphere REST; Docker = Engine API; Hyper-V = WinRM (WMI

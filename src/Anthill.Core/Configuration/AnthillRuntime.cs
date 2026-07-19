@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.4.0";
+    public const string Version = "2.4.1";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -161,6 +161,8 @@ public static class AnthillRuntime
     /// connecting Proxmox read-only must never silently grant power/snapshot/backup capability.</summary>
     public static bool HomelabProxmoxWriteActionsEnabled = false;
     public static int HomelabProxmoxSyncIntervalSeconds = 300;
+    /// <summary>v2.3.3: cadence of the *arr-stack app status sync (read-only).</summary>
+    public static int HomelabArrSyncIntervalSeconds = 300;
     // ---- Read-only virtualization integrations (v2.1.0) --------------------
     // ESXi/vCenter (vSphere REST), Docker (Engine API), Hyper-V (WinRM WMI read-only). Each mirrors
     // Proxmox: no write path in the client, secret in the credential store (by id), host on the allowlist.
@@ -519,6 +521,7 @@ public static class AnthillRuntime
         HomelabProxmoxProtocol = string.Equals((config.HomelabProxmoxProtocol ?? "").Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
         HomelabProxmoxWriteActionsEnabled = config.HomelabProxmoxWriteActionsEnabled;
         HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
+        HomelabArrSyncIntervalSeconds = Math.Clamp(config.HomelabArrSyncIntervalSeconds, 30, 86400);
         EnableHomelabEsxi = config.HomelabEsxiEnabled;
         HomelabEsxiHost = (config.HomelabEsxiHost ?? "").Trim();
         HomelabEsxiPort = Math.Clamp(config.HomelabEsxiPort, 1, 65535);
@@ -729,6 +732,7 @@ public static class AnthillRuntime
         ["homelab_proxmox_insecure_tls"] = HomelabProxmoxInsecureTls,
         ["homelab_proxmox_protocol"] = HomelabProxmoxProtocol,
         ["homelab_proxmox_sync_interval_seconds"] = HomelabProxmoxSyncIntervalSeconds,
+        ["homelab_arr_sync_interval_seconds"] = HomelabArrSyncIntervalSeconds,
         ["homelab_esxi_enabled"] = EnableHomelabEsxi,
         ["homelab_esxi_host"] = HomelabEsxiHost,
         ["homelab_esxi_port"] = HomelabEsxiPort,

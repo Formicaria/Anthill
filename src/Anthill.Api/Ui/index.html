@@ -1778,6 +1778,30 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           .hl3-col .hl3-caret{float:right;color:var(--dim);transition:transform .15s;}
           .hl3-col.open .hl3-caret{transform:rotate(180deg);}
           #hl3-config{border-left:2px solid var(--hl-memory,#7a5cff);}
+          /* v2.3.3: full sub-pages (nothing nested — nested things open a page with a close button) */
+          #hl3-page{position:fixed;inset:0;z-index:900;background:var(--bg,#0a0f16);overflow-y:auto;display:none;padding:18px 26px;}
+          #hl3-page .hl3-page-hd{display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--bg,#0a0f16);padding:6px 0 10px;border-bottom:1px solid var(--line,#223);z-index:2;}
+          #hl3-page .hl3-page-hd h2{margin:0;font-size:16px;color:var(--anthill-text,#dfe7ef);}
+          /* metrics bars */
+          .hl3-bars{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:9px;color:var(--dim);}
+          .hl3-bar{display:flex;align-items:center;gap:6px;}
+          .hl3-bar b{width:28px;font-weight:400;}
+          .hl3-bar .tr{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;}
+          .hl3-bar .fl{height:100%;border-radius:3px;background:var(--status-success,#31c48d);}
+          .hl3-bar .fl.warn{background:var(--status-warning,#ffb020);}
+          .hl3-bar .fl.bad{background:var(--status-danger,#f05252);}
+          .hl3-bar .v{width:88px;text-align:right;}
+          /* tile hide + hidden tray */
+          .hl3-x{opacity:0;margin-left:2px;color:var(--dim);font-size:9px;}
+          .hl3-tile:hover .hl3-x,.hl3-host-hd:hover .hl3-x{opacity:.8;}
+          .hl3-x:hover{color:var(--status-danger,#f05252);}
+          /* *arr app tiles (Homarr-style) */
+          #hl3-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px;}
+          .hl3-app{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line,#223);border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer;}
+          .hl3-app:hover{border-color:var(--status-info,#4aa3ff);}
+          .hl3-app .av{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#0a0f16;flex:none;}
+          .hl3-app .nm{font-size:11px;font-weight:700;color:var(--anthill-text,#dfe7ef);}
+          .hl3-app .mt{font-size:9px;color:var(--dim);}
         </style>
 
         <div class="page-hdr">
@@ -1807,6 +1831,18 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <span style="font-weight:400;color:var(--dim)">(hosts · VMs · containers · services — live status; click a tile to open/inspect, ⚡ to propose an action)</span>
           </div>
           <div id="hl3-deck"><div class="hl3-empty">Loading deck…</div></div>
+          <div id="hl3-hidden-tray" style="margin-top:6px;font-size:10px;color:var(--dim);"></div>
+        </div>
+
+        <!-- v2.3.3 *arr-stack Apps (Homarr-style integrations: sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr) -->
+        <div class="card hl-sec-memory" id="hl3-apps-card" style="padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">Apps <span id="hl3-apps-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="float:right;display:flex;gap:8px;">
+              <button class="btn btn-ghost" onclick="hl3ArrSync()" title="Refresh status/health/queue for every enabled app">⟳ Sync</button>
+              <button class="btn btn-ghost" onclick="hl3ToggleConfig(true)" title="Add an *arr app (in + Add / Manage)">+ App</button>
+            </span>
+          </div>
+          <div id="hl3-apps"><div class="hl3-empty">Loading apps…</div></div>
         </div>
 
         <!-- V2.0 What should I do next (v2.3.2: compact, timeout fallback) -->
@@ -1924,7 +1960,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <!-- v2.3.2: everything below is secondary detail — collapsible, collapsed by default -->
         <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-virt',this)">Virtualization Detail <span style="font-weight:400;color:var(--dim)">(VMs · containers · storage tables)</span><span class="hl3-caret">▾</span></div>
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-virt','Virtualization Detail')">Virtualization Detail <span style="font-weight:400;color:var(--dim)">(VMs · containers · storage tables — opens full page)</span><span class="hl3-caret">↗</span></div>
           <div id="hl3-sec-virt" style="display:none">
             <div class="section-head" style="margin:6px 16px 0;">Virtual Machines</div>
             <table class="users-table">
@@ -1945,7 +1981,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-net',this)">Network &amp; Risk <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span><span class="hl3-caret">▾</span></div>
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-net','Network & Risk')">Network &amp; Risk <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span> <span style="font-weight:400;color:var(--dim)">(opens full page)</span><span class="hl3-caret">↗</span></div>
           <div id="hl3-sec-net" style="display:none">
             <div class="section-head" style="margin:6px 16px 0;">Network Devices</div>
             <table class="users-table">
@@ -1963,7 +1999,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-inv',this)">Inventory Tables <span style="font-weight:400;color:var(--dim)">(hosts · services · ports · dependencies · changes)</span><span class="hl3-caret">▾</span></div>
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-inv','Inventory Tables')">Inventory Tables <span style="font-weight:400;color:var(--dim)">(hosts · services · ports · dependencies · changes — opens full page)</span><span class="hl3-caret">↗</span></div>
           <div id="hl3-sec-inv" style="display:none">
             <div class="section-head" style="margin:6px 16px 0;">Hosts</div>
             <table class="users-table">
@@ -2069,6 +2105,31 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Notes</label><input class="form-input" id="hl-d-notes" type="text" placeholder="optional" autocomplete="off"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDep()">Add Dependency</button></div>
           </div>
+
+          <div class="section-head" style="margin:14px 0 0;" id="hl3-arr-form">Add *arr App <span style="font-weight:400;color:var(--dim)">(Homarr-style integration — API key is stored write-only in the credential store; the app host must be on the allowlist)</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl3-ar-kind">
+                <option value="sonarr" selected>sonarr (TV)</option><option value="radarr">radarr (movies)</option>
+                <option value="lidarr">lidarr (music)</option><option value="readarr">readarr (books)</option>
+                <option value="whisparr">whisparr</option><option value="prowlarr">prowlarr (indexers)</option>
+                <option value="bazarr">bazarr (subtitles)</option>
+              </select>
+            </div>
+            <div class="form-field"><label>Name</label><input class="form-input" id="hl3-ar-name" type="text" placeholder="sonarr-main" autocomplete="off"></div>
+            <div class="form-field"><label>URL</label><input class="form-input" id="hl3-ar-url" type="text" placeholder="http://192.168.1.10:8989" autocomplete="off"></div>
+            <div class="form-field"><label>API key</label><input class="form-input" id="hl3-ar-key" type="password" placeholder="from the app's Settings → General" autocomplete="off"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hl3ArrAdd()">Add App</button></div>
+          </div>
+        </div>
+
+        <!-- v2.3.3 sub-page overlay: full page, close button at top, content moved in and out -->
+        <div id="hl3-page">
+          <div class="hl3-page-hd">
+            <button class="btn btn-primary" onclick="hl3PageClose()">✕ Close</button>
+            <h2 id="hl3-page-title"></h2>
+          </div>
+          <div id="hl3-page-body" style="padding-top:12px;"></div>
         </div>
       </div><!-- /page-homelab -->
 
@@ -6558,8 +6619,8 @@ async function loadHomelab(){
     loadHlIncidents();
     loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
     hlLoadBackup();     // v2.4.0: backup + restore intelligence (Phase 13)
-    renderHlDeck();     // v2.3.2: the Service Deck — hosts/VMs/CTs/services as live tiles
-    hl3Restore();       // v2.3.2: restore collapsed-section preferences
+    renderHlDeck();     // v2.3.2/3: the Service Deck — hosts/VMs/CTs/services as live tiles + metrics
+    renderHl3Apps();    // v2.4.1: *arr-stack apps (Homarr-style)
     hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s
     loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
     hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
@@ -7215,13 +7276,14 @@ function hl3Dot(status){
 }
 async function renderHlDeck(){
   const deck=document.getElementById('hl3-deck'); if(!deck) return;
-  let vms=[],cts=[],health=[];
+  let vms=[],cts=[],health=[],metrics=[];
   try{
-    const [v,c,h]=await Promise.all([api('/homelab/vms'),api('/homelab/containers'),api('/homelab/health/results')]);
+    const [v,c,h,m]=await Promise.all([api('/homelab/vms'),api('/homelab/containers'),api('/homelab/health/results'),api('/homelab/metrics/nodes')]);
     vms=Array.isArray(v&&v.data)?v.data:[]; cts=Array.isArray(c&&c.data)?c.data:[];
-    health=Array.isArray(h&&h.data)?h.data:[];
+    health=Array.isArray(h&&h.data)?h.data:[]; metrics=Array.isArray(m&&m.data)?m.data:[];
   }catch(e){ /* deck renders what it has */ }
-  // Latest health result per target (results arrive newest-first).
+  HL3.metrics={}; for(const m of metrics) HL3.metrics[m.node_id]=m;
+  HL3.vms=vms; HL3.cts=cts;
   const latest={};
   for(const r of health){ const t=String(r.target||''); if(t&&!(t in latest)) latest[t]=String(r.status||''); }
   const healthFor=(needle)=>{
@@ -7230,66 +7292,229 @@ async function renderHlDeck(){
     const hit=Object.keys(latest).find(t=>t.includes(needle));
     return hit?latest[hit]:'';
   };
-  // Group: registered hosts first (by name), then any virt node not registered as a host.
+  const hidden=hl3Hidden();
+  // Group by HOST RECORD ID: registered hosts + provider-synced nodes both live in HL_HOSTS,
+  // and vm.node_id / ct.node_id reference homelab_nodes.id (e.g. "pve-node:host:pve1").
   const groups=new Map();
-  const keyFor=(name)=>String(name||'').toLowerCase();
-  for(const hst of (HL_HOSTS||[])) groups.set(keyFor(hst.name),{host:hst,vms:[],cts:[],svcs:[]});
-  const bucket=(nodeName)=>{
-    const k=keyFor(nodeName)||'(unassigned)';
-    if(!groups.has(k)) groups.set(k,{host:{name:nodeName||'(unassigned)',kind:'node',address:''},vms:[],cts:[],svcs:[]});
-    return groups.get(k);
-  };
+  for(const hst of (HL_HOSTS||[])) groups.set(hst.id,{host:hst,vms:[],cts:[],svcs:[]});
+  const misc={host:{id:'',name:'(unassigned)',kind:'',address:''},vms:[],cts:[],svcs:[]};
+  const bucket=(nodeId)=>groups.get(nodeId)||misc;
   for(const vm of vms) bucket(vm.node_id).vms.push(vm);
   for(const ct of cts) bucket(ct.node_id).cts.push(ct);
-  for(const svc of (HL_SVCS||[])){
-    const owner=(HL_HOSTS||[]).find(hh=>hh.id===svc.node_id);
-    (owner?groups.get(keyFor(owner.name)):bucket('')).svcs.push(svc);
-  }
+  for(const svc of (HL_SVCS||[])) bucket(svc.node_id).svcs.push(svc);
+  if(misc.vms.length||misc.cts.length||misc.svcs.length) groups.set('(unassigned)',misc);
   if(!groups.size){
     deck.innerHTML='<div class="hl3-empty">Nothing registered yet. Use <b>+ Add / Manage</b> to register a host or connect Proxmox/ESXi/Docker/Hyper-V — synced VMs and containers appear here automatically.</div>';
-    return;
+    hl3RenderHiddenTray(0); return;
   }
-  let html='';
-  for(const [,g] of groups){
+  let html=''; let hiddenCount=0;
+  for(const [gid,g] of groups){
+    if(hidden.has('host:'+gid)){ hiddenCount++; continue; }
     const total=g.vms.length+g.cts.length+g.svcs.length;
+    const met=HL3.metrics[gid];
     const hostDot=hl3Dot(healthFor(g.host.address)||((g.vms.some(v=>String(v.status).toLowerCase()==='running')||g.cts.some(c=>String(c.status).toLowerCase()==='running'))?'running':''));
-    html+='<div class="hl3-host"><div class="hl3-host-hd" onclick="'+(g.host.id?('hlEntity(\'host\',\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
+    html+='<div class="hl3-host"><div class="hl3-host-hd" onclick="'+(g.host.id?('hl3HostPage(\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
       +hostDot+escapeHtml(g.host.name||'?')
       +' <span style="font-weight:400;color:var(--dim);font-size:9px;">'+escapeHtml(g.host.kind||'')+(g.host.address?' · '+escapeHtml(g.host.address):'')+'</span>'
-      +'<span class="sub">'+total+' item(s)</span></div><div class="hl3-tiles">';
+      +'<span class="sub">'+total+' item(s)'
+      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" onclick="event.stopPropagation();hl3Hide(\'host:'+escapeHtml(gid)+'\')">✕</span>'):'')
+      +'</span></div>';
+    if(met) html+=hl3Bars(met);
+    html+='<div class="hl3-tiles">';
     for(const vm of g.vms){
-      const tgt=escapeHtml((vm.node_id||'')+'/'+(vm.vm_id||''));
-      html+='<span class="hl3-tile" title="VM '+tgt+' — '+escapeHtml(vm.status||'?')+'">'+hl3Dot(vm.status)
+      const key='vm:'+vm.id; if(hidden.has(key)){ hiddenCount++; continue; }
+      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" onclick="hl3GuestPage(\'vm\',\''+escapeHtml(vm.id)+'\')">'+hl3Dot(vm.status)
         +'<span class="k">vm</span>'+escapeHtml(vm.name||vm.vm_id||'?')
-        +'<span class="zap" title="Propose restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_vm\',\'vm\',\''+tgt+'\')">⚡</span></span>';
+        +'<span class="hl3-x" title="Hide" onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     for(const ct of g.cts){
-      const tgt=escapeHtml((ct.node_id||'')+'/'+(ct.container_id||''));
-      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+tgt+' — '+escapeHtml(ct.status||'?')+'">'+hl3Dot(ct.status)
+      const key='ct:'+ct.id; if(hidden.has(key)){ hiddenCount++; continue; }
+      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" onclick="hl3GuestPage(\'ct\',\''+escapeHtml(ct.id)+'\')">'+hl3Dot(ct.status)
         +'<span class="k">'+escapeHtml(ct.kind||'ct')+'</span>'+escapeHtml(ct.name||ct.container_id||'?')
-        +'<span class="zap" title="Propose restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_container\',\'container\',\''+tgt+'\')">⚡</span></span>';
+        +'<span class="hl3-x" title="Hide" onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     for(const svc of g.svcs){
+      const key='svc:'+svc.id; if(hidden.has(key)){ hiddenCount++; continue; }
       const st=healthFor(svc.url)||healthFor((svc.ports&&svc.ports.length&&g.host.address)?(g.host.address+':'+svc.ports[0]):'');
       const open=svc.url?('window.open(\''+escapeHtml(svc.url)+'\',\'_blank\')'):('hlEntity(\'service\',\''+escapeHtml(svc.id)+'\')');
       html+='<span class="hl3-tile" title="'+escapeHtml(svc.name)+(svc.url?' — '+escapeHtml(svc.url):'')+' (click to open)" onclick="'+open+'">'
         +hl3Dot(st||(svc.criticality==='critical'?'warning':''))
         +'<span class="k">svc</span>'+escapeHtml(svc.name||'?')
         +(svc.internet_exposed?'<span title="internet exposed" style="color:var(--status-warning)">🌐</span>':'')
-        +'<span class="zap" title="Propose service restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span></span>';
+        +'<span class="zap" title="Propose service restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span>'
+        +'<span class="hl3-x" title="Hide" onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     if(!total) html+='<span class="hl3-empty" style="padding:4px;">no services or guests yet</span>';
     html+='</div></div>';
   }
-  deck.innerHTML=html;
-  // Graph earns its space only when relationships exist.
+  deck.innerHTML=html||'<div class="hl3-empty">Everything is hidden — restore items from the tray below.</div>';
+  hl3RenderHiddenTray(hiddenCount);
   const gc=document.getElementById('hl-graph-card');
   if(gc) gc.style.display=((HL_DEPS||[]).length||(HL_SVCS||[]).some(s=>s.node_id))?'':'none';
+}
+const HL3={metrics:{},vms:[],cts:[],apps:[]};
+function hl3Bars(m){
+  const pct=(u,t)=>u>=0&&t>0?Math.min(100,Math.round(u/t*100)):-1;
+  const cls=(p)=>p>=90?'bad':(p>=75?'warn':'');
+  const gb=(b)=>b<0?'—':(b/1073741824).toFixed(1)+' GB';
+  let html='<div class="hl3-bars">';
+  if(m.cpu_percent>=0){ const p=Math.round(m.cpu_percent);
+    html+='<div class="hl3-bar"><b>CPU</b><span class="tr"><span class="fl '+cls(p)+'" style="width:'+p+'%"></span></span><span class="v">'+p+'% of '+(m.cpu_cores||'?')+'c</span></div>'; }
+  const mp=pct(m.mem_used_bytes,m.mem_total_bytes);
+  if(mp>=0) html+='<div class="hl3-bar"><b>RAM</b><span class="tr"><span class="fl '+cls(mp)+'" style="width:'+mp+'%"></span></span><span class="v">'+gb(m.mem_used_bytes)+' / '+gb(m.mem_total_bytes)+'</span></div>';
+  const dp=pct(m.disk_used_bytes,m.disk_total_bytes);
+  if(dp>=0) html+='<div class="hl3-bar"><b>DISK</b><span class="tr"><span class="fl '+cls(dp)+'" style="width:'+dp+'%"></span></span><span class="v">'+gb(m.disk_used_bytes)+' / '+gb(m.disk_total_bytes)+'</span></div>';
+  return html+'</div>';
+}
+function hl3Hidden(){
+  try{ return new Set(JSON.parse(localStorage.getItem('hl3.hiddenTiles')||'[]')); }catch(e){ return new Set(); }
+}
+function hl3SaveHidden(set){ try{ localStorage.setItem('hl3.hiddenTiles',JSON.stringify([...set])); }catch(e){} }
+function hl3Hide(key){ const h=hl3Hidden(); h.add(key); hl3SaveHidden(h); renderHlDeck(); }
+function hl3Unhide(key){ const h=hl3Hidden(); h.delete(key); hl3SaveHidden(h); renderHlDeck(); }
+function hl3RenderHiddenTray(count){
+  const tray=document.getElementById('hl3-hidden-tray'); if(!tray) return;
+  const h=[...hl3Hidden()];
+  if(!h.length){ tray.innerHTML=''; return; }
+  const label=(k)=>{
+    const [kind,id]=[k.slice(0,k.indexOf(':')),k.slice(k.indexOf(':')+1)];
+    if(kind==='host'){ const x=(HL_HOSTS||[]).find(o=>o.id===id); return 'node '+(x?x.name:id.slice(0,14)); }
+    if(kind==='vm'){ const x=(HL3.vms||[]).find(o=>o.id===id); return 'vm '+(x?x.name||x.vm_id:id.slice(0,14)); }
+    if(kind==='ct'){ const x=(HL3.cts||[]).find(o=>o.id===id); return 'ct '+(x?x.name||x.container_id:id.slice(0,14)); }
+    const x=(HL_SVCS||[]).find(o=>o.id===id); return 'svc '+(x?x.name:id.slice(0,14));
+  };
+  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" onclick="hl3Unhide(\''+escapeHtml(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
+    +' <span style="cursor:pointer;text-decoration:underline;" onclick="hl3SaveHidden(new Set());renderHlDeck()">restore all</span>';
+}
+// ---- v2.3.3 sub-pages: nothing nested — nested content opens a full page with ✕ Close on top --
+let HL3_PAGE_HOME=null;
+function hl3PageOpen(title,node){
+  const pg=document.getElementById('hl3-page'); if(!pg) return;
+  document.getElementById('hl3-page-title').textContent=title;
+  const body=document.getElementById('hl3-page-body');
+  body.innerHTML='';
+  if(typeof node==='string'){ HL3_PAGE_HOME=null; body.innerHTML=node; }
+  else{ HL3_PAGE_HOME={node,parent:node.parentNode}; body.appendChild(node); node.style.display=''; }
+  pg.style.display='block'; pg.scrollTop=0;
+}
+function hl3PageClose(){
+  const pg=document.getElementById('hl3-page'); if(!pg) return;
+  if(HL3_PAGE_HOME){ HL3_PAGE_HOME.node.style.display='none'; HL3_PAGE_HOME.parent.appendChild(HL3_PAGE_HOME.node); HL3_PAGE_HOME=null; }
+  pg.style.display='none';
+}
+function hl3PageFromSection(id,title){
+  const node=document.getElementById(id); if(!node) return;
+  hl3PageOpen(title,node);
+}
+function hl3HostPage(hostId){
+  const h=(HL_HOSTS||[]).find(x=>x.id===hostId); if(!h) return;
+  const m=HL3.metrics[hostId];
+  const vms=(HL3.vms||[]).filter(v=>v.node_id===hostId), cts=(HL3.cts||[]).filter(c=>c.node_id===hostId);
+  const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Facts</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Kind: <b>'+escapeHtml(h.kind||'—')+'</b> · Address: <b>'+escapeHtml(h.address||'—')+'</b> · OS: <b>'+escapeHtml(h.os||'—')+'</b>'
+    +(m?' · Uptime: <b>'+up(m.uptime_seconds)+'</b> · Metrics via <b>'+escapeHtml(m.source)+'</b> at '+escapeHtml((m.updated_at||'').slice(0,19).replace('T',' ')):'')+'</div>'
+    +(m?hl3Bars(m):'<div style="font-size:10px;color:var(--dim);margin-top:6px;">No resource metrics for this node yet — they arrive with the next provider sync.</div>')+'</div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Guests ('+(vms.length+cts.length)+')</div><div class="hl3-tiles">'
+    +vms.map(v=>'<span class="hl3-tile" onclick="hl3GuestPage(\'vm\',\''+escapeHtml(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
+    +cts.map(c=>'<span class="hl3-tile" onclick="hl3GuestPage(\'ct\',\''+escapeHtml(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
+    +((vms.length+cts.length)?'':'<span class="hl3-empty">no guests</span>')+'</div></div>';
+  hl3PageOpen('Node — '+(h.name||'?'),html);
+}
+function hl3GuestTarget(g,kind){
+  // ActionExecutor targets use node/vmid; node_id is "pve-node:host:NODENAME".
+  const nodeName=String(g.node_id||'').split(':').pop();
+  return nodeName+'/'+(kind==='vm'?(g.vm_id||''):(g.container_id||''));
+}
+async function hl3GuestPage(kind,id){
+  const list=kind==='vm'?(HL3.vms||[]):(HL3.cts||[]);
+  const g=list.find(x=>x.id===id); if(!g) return;
+  const host=(HL_HOSTS||[]).find(h=>h.id===g.node_id);
+  const tgt=hl3GuestTarget(g,kind);
+  const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
+  const act=(type,label)=>'<button class="btn btn-ghost" onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+escapeHtml(tgt)+'\')">'+label+'</button>';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Status</div>'
+    +'<div style="font-size:12px;">'+hl3Dot(g.status)+' <b>'+escapeHtml((g.status||'unknown').toUpperCase())+'</b>'
+    +' <span style="color:var(--dim);font-size:10px;">on '+escapeHtml(host?host.name:String(g.node_id||'').split(':').pop())+' · id '+escapeHtml(kind==='vm'?g.vm_id:g.container_id)+'</span></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:8px;">'
+    +(kind==='vm'?('vCPU: <b>'+(g.cpu_cores||'—')+'</b> · RAM: <b>'+(g.memory_mb?(g.memory_mb/1024).toFixed(1)+' GB':'—')+'</b> · Uptime: <b>'+up(g.uptime_seconds)+'</b>'):('Kind: <b>'+escapeHtml(g.kind||'lxc')+'</b>'))
+    +' · Last synced: '+escapeHtml((g.updated_at||'—').slice(0,19).replace('T',' '))+'</div></div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Actions <span style="font-weight:400;color:var(--dim)">(all approval-gated; nothing runs from this page directly)</span></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    +act(kind==='vm'?'start_vm':'start_container','▶ Start')+act(kind==='vm'?'stop_vm':'stop_container','■ Stop (clean)')
+    +act(kind==='vm'?'restart_vm':'restart_container','↻ Restart')+act('create_snapshot','📷 Snapshot')+act('run_backup','💾 Backup')+'</div></div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Recent related events</div><div id="hl3-guest-events" style="font-size:10px;color:var(--muted);">Loading…</div></div>';
+  hl3PageOpen((kind==='vm'?'VM — ':'Container — ')+(g.name||tgt),html);
+  try{
+    const ev=await api('/homelab/events');
+    const rows=(Array.isArray(ev&&ev.data)?ev.data:[]).filter(e=>
+      String(e.subject_id||'').includes(kind==='vm'?g.vm_id:g.container_id)||String(e.message||'').includes(tgt)).slice(0,12);
+    const el=document.getElementById('hl3-guest-events');
+    if(el) el.innerHTML=rows.length?rows.map(e=>'<div>'+escapeHtml((e.created_at||'').slice(0,16).replace('T',' '))+' <b>'+escapeHtml(e.event_type||'')+'</b> '+escapeHtml((e.message||'').substring(0,110))+'</div>').join(''):'No events reference this guest yet.';
+  }catch(e){}
+}
+// ---- v2.3.3 *arr apps (Homarr-style) -----------------------------------------------
+const HL3_ARR_COLORS={sonarr:'#35c5f4',radarr:'#ffc230',lidarr:'#4dd865',readarr:'#8e4239',whisparr:'#c74f9e',prowlarr:'#e66000',bazarr:'#8c9eff'};
+async function renderHl3Apps(){
+  const el=document.getElementById('hl3-apps'); if(!el) return;
+  let items=[];
+  try{ const r=await api('/homelab/arr'); items=(r&&r.success&&r.data&&Array.isArray(r.data.items))?r.data.items:[]; }catch(e){}
+  HL3.apps=items;
+  const kpi=document.getElementById('hl3-apps-kpi');
+  if(kpi) kpi.textContent=items.length?('· '+items.filter(a=>a.status==='ok').length+'/'+items.length+' healthy'):'';
+  if(!items.length){ el.innerHTML='<div class="hl3-empty">No *arr apps connected yet. <b>+ App</b> supports sonarr, radarr, lidarr, readarr, whisparr, prowlarr, and bazarr — status, health, and queue at a glance, Homarr-style.</div>'; return; }
+  el.innerHTML=items.map(a=>{
+    const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
+    return '<div class="hl3-app" onclick="hl3ArrPage(\''+escapeHtml(a.id)+'\')">'
+      +'<span class="av" style="background:'+col+'">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
+      +'<span style="min-width:0;"><div class="nm">'+hl3Dot(a.status==='ok'?'ok':(a.status==='error'?'failed':''))+' '+escapeHtml(a.name)+'</div>'
+      +'<div class="mt">'+escapeHtml(a.kind)+(a.version?' '+escapeHtml(a.version):'')
+      +(a.queue_count>=0?' · queue '+a.queue_count:'')+(a.health_warnings?' · ⚠ '+a.health_warnings:'')+'</div></span></div>';
+  }).join('');
+}
+async function hl3ArrAdd(){
+  const kind=document.getElementById('hl3-ar-kind').value;
+  const url=document.getElementById('hl3-ar-url').value.trim();
+  const key=document.getElementById('hl3-ar-key').value.trim();
+  if(!url||!key){ hlMsg('URL and API key are required',false); return; }
+  const r=await api('/homelab/arr','POST',{kind,name:document.getElementById('hl3-ar-name').value.trim()||kind,url,apiKey:key});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl3-ar-url').value=''; document.getElementById('hl3-ar-key').value=''; hl3ArrSync(); }
+}
+async function hl3ArrSync(){
+  const r=await api('/homelab/arr/sync','POST',{});
+  hlMsg(r.message||(r.success?'Synced':'Sync failed'),r.success);
+  renderHl3Apps();
+}
+function hl3ArrPage(id){
+  const a=(HL3.apps||[]).find(x=>x.id===id); if(!a) return;
+  const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">'
+    +'<span class="av" style="display:inline-flex;width:26px;height:26px;border-radius:6px;background:'+col+';color:#0a0f16;font-weight:800;align-items:center;justify-content:center;margin-right:8px;">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
+    +escapeHtml(a.name)+' <span style="font-weight:400;color:var(--dim)">('+escapeHtml(a.kind)+')</span></div>'
+    +'<div style="font-size:11px;color:var(--muted);">Status: '+hl3Dot(a.status==='ok'?'ok':'failed')+' <b>'+escapeHtml(a.status)+'</b>'
+    +(a.version?' · Version <b>'+escapeHtml(a.version)+'</b>':'')
+    +(a.queue_count>=0?' · Queue <b>'+a.queue_count+'</b>':'')
+    +' · Health warnings <b>'+(a.health_warnings||0)+'</b>'
+    +' · Checked '+escapeHtml((a.last_checked||'never').slice(0,19).replace('T',' '))+'</div>'
+    +(a.last_message?'<div style="font-size:10px;color:var(--status-danger);margin-top:6px;">'+escapeHtml(a.last_message)+'</div>':'')
+    +'<div style="display:flex;gap:8px;margin-top:10px;">'
+    +'<button class="btn btn-primary" onclick="window.open(\''+escapeHtml(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
+    +'<button class="btn btn-ghost" onclick="hl3ArrSync();hl3PageClose()">⟳ Sync now</button>'
+    +'<button class="btn btn-ghost" onclick="hl3ArrRemove(\''+escapeHtml(a.id)+'\')">🗑 Remove</button></div>'
+    +'<div style="font-size:9px;color:var(--dim);margin-top:8px;">API key is stored write-only in the credential store (id '+escapeHtml(a.credential_id)+') and is never displayed. All requests are GET-only and allowlist-gated.</div></div>';
+  hl3PageOpen('App — '+a.name,html);
+}
+async function hl3ArrRemove(id){
+  if(!await uiConfirm('Remove this app and delete its stored API key?')) return;
+  const r=await api('/homelab/arr/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  hl3PageClose(); renderHl3Apps();
 }
 async function hl3DeckPropose(type,kind,target){
   const card=document.getElementById('hl-actions-card');
   const sel=document.getElementById('hl-a-type');
-  if(sel&&!sel.options.length) await loadHlActions(); // options come from the API's allowed_actions
+  if(sel&&!sel.options.length) await loadHlActions();
   if(sel) sel.value=type;
   const tk=document.getElementById('hl-a-tkind'); if(tk) tk.value=kind;
   const ti=document.getElementById('hl-a-target'); if(ti) ti.value=target;

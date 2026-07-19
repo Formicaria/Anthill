@@ -244,3 +244,39 @@ public sealed class IntegrationStatus
     [JsonPropertyName("last_run")] public string LastRun { get; set; } = "";
     [JsonPropertyName("last_result")] public string LastResult { get; set; } = "";
 }
+
+/// <summary>v2.3.3: point-in-time resource metrics for a hypervisor/virtualization node.</summary>
+public sealed class NodeMetricRecord
+{
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";     // homelab_nodes.id
+    [JsonPropertyName("node_name")] public string NodeName { get; set; } = "";
+    [JsonPropertyName("source")] public string Source { get; set; } = "";       // proxmox | docker | esxi | hyperv
+    [JsonPropertyName("cpu_percent")] public double CpuPercent { get; set; } = -1;  // -1 = not reported by this source
+    [JsonPropertyName("cpu_cores")] public int CpuCores { get; set; }
+    [JsonPropertyName("mem_used_bytes")] public long MemUsedBytes { get; set; } = -1;
+    [JsonPropertyName("mem_total_bytes")] public long MemTotalBytes { get; set; } = -1;
+    [JsonPropertyName("disk_used_bytes")] public long DiskUsedBytes { get; set; } = -1;
+    [JsonPropertyName("disk_total_bytes")] public long DiskTotalBytes { get; set; } = -1;
+    [JsonPropertyName("uptime_seconds")] public long UptimeSeconds { get; set; }
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// v2.3.3: a configured *arr-stack application (Homarr-style integration). The API key lives in
+/// the credential store (referenced by CredentialId, never here); sync results are read-only.
+/// </summary>
+public sealed class ArrAppRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";           // sonarr|radarr|lidarr|readarr|prowlarr|bazarr|whisparr
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("url")] public string Url { get; set; } = "";
+    [JsonPropertyName("credential_id")] public string CredentialId { get; set; } = "";
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown"; // ok | error | unknown
+    [JsonPropertyName("version")] public string Version { get; set; } = "";
+    [JsonPropertyName("health_warnings")] public int HealthWarnings { get; set; }
+    [JsonPropertyName("queue_count")] public int QueueCount { get; set; } = -1;  // -1 = kind has no queue
+    [JsonPropertyName("last_message")] public string LastMessage { get; set; } = "";
+    [JsonPropertyName("last_checked")] public string LastChecked { get; set; } = "";
+}
