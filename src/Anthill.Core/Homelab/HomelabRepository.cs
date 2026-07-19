@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
+using Anthill.Core.Homelab.Approvals;
 using Microsoft.Data.Sqlite;
 
 namespace Anthill.Core.Homelab;
@@ -51,7 +52,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         "homelab_nodes", "network_devices", "services", "vm_inventory", "container_inventory",
         "storage_inventory", "backup_inventory", "health_checks", "homelab_events", "change_log",
         "incidents", "dependencies", "risk_records", "homelab_credentials", "homelab_target_allowlist",
-        "health_check_schedules",
+        "health_check_schedules", "action_proposals",
     };
 
     private static readonly string[] SchemaStatements =
@@ -119,6 +120,17 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             id TEXT PRIMARY KEY, check_kind TEXT NOT NULL, target TEXT NOT NULL,
             service_id TEXT, node_id TEXT, enabled INTEGER NOT NULL DEFAULT 1,
             timeout_ms INTEGER DEFAULT 0, created_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS action_proposals (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT, action_type TEXT NOT NULL,
+            target_kind TEXT, target_id TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+            risk_level TEXT NOT NULL DEFAULT 'high', dedupe_key TEXT NOT NULL,
+            dependency_fanout INTEGER DEFAULT 0, service_criticality TEXT,
+            backup_covered INTEGER NOT NULL DEFAULT 0, internet_exposed INTEGER NOT NULL DEFAULT 0,
+            rollback_note TEXT, dry_run_available INTEGER NOT NULL DEFAULT 0, payload TEXT,
+            blast_radius_score INTEGER DEFAULT 0, blast_radius_explanation TEXT,
+            requested_by TEXT, created_at TEXT NOT NULL,
+            decided_by TEXT, decided_at TEXT, executed_by TEXT, executed_at TEXT, execution_result TEXT)",
+        @"CREATE INDEX IF NOT EXISTS idx_action_proposals_state ON action_proposals(state, created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_homelab_events_created ON homelab_events(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_health_checks_checked ON health_checks(checked_at)",
@@ -554,6 +566,99 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             });
         }
         return list;
+    }
+
+    // ---- Action proposals (v2.3.0, NORTH_STAR Phase 12) ----------------------------------------
+
+    private const string ActionProposalColumns =
+        "id, title, summary, action_type, target_kind, target_id, state, risk_level, dedupe_key, " +
+        "dependency_fanout, service_criticality, backup_covered, internet_exposed, rollback_note, " +
+        "dry_run_available, payload, blast_radius_score, blast_radius_explanation, requested_by, " +
+        "created_at, decided_by, decided_at, executed_by, executed_at, execution_result";
+
+    public void SaveActionProposal(ActionProposal p)
+    {
+        if (string.IsNullOrWhiteSpace(p.CreatedAt)) p.CreatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"INSERT INTO action_proposals ({ActionProposalColumns})
+                VALUES ($id,$title,$summary,$atype,$tkind,$tid,$state,$risk,$dedupe,$fanout,$crit,$backup,$exposed,$rollback,$dry,$payload,$score,$expl,$reqby,$created,$decby,$decat,$exby,$exat,$exres)";
+            BindActionProposal(cmd, p);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public void UpdateActionProposal(ActionProposal p)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"UPDATE action_proposals SET title=$title, summary=$summary, action_type=$atype,
+                target_kind=$tkind, target_id=$tid, state=$state, risk_level=$risk, dedupe_key=$dedupe,
+                dependency_fanout=$fanout, service_criticality=$crit, backup_covered=$backup,
+                internet_exposed=$exposed, rollback_note=$rollback, dry_run_available=$dry, payload=$payload,
+                blast_radius_score=$score, blast_radius_explanation=$expl, requested_by=$reqby,
+                created_at=$created, decided_by=$decby, decided_at=$decat, executed_by=$exby,
+                executed_at=$exat, execution_result=$exres WHERE id=$id";
+            BindActionProposal(cmd, p);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public ActionProposal? GetActionProposal(string id)
+    {
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT {ActionProposalColumns} FROM action_proposals WHERE id=$id";
+        Bind(cmd, "$id", id);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? ReadActionProposal(r) : null;
+    }
+
+    public IReadOnlyList<ActionProposal> ListActionProposals(int limit = 100)
+    {
+        var list = new List<ActionProposal>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT {ActionProposalColumns} FROM action_proposals ORDER BY created_at DESC LIMIT $limit";
+        Bind(cmd, "$limit", Math.Clamp(limit, 1, 500));
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) list.Add(ReadActionProposal(r));
+        return list;
+    }
+
+    private static void BindActionProposal(SqliteCommand cmd, ActionProposal p)
+    {
+        Bind(cmd, "$id", p.ApprovableId); Bind(cmd, "$title", p.Title); Bind(cmd, "$summary", p.Summary);
+        Bind(cmd, "$atype", p.ActionType); Bind(cmd, "$tkind", p.TargetKind); Bind(cmd, "$tid", p.TargetId);
+        Bind(cmd, "$state", p.State); Bind(cmd, "$risk", p.RiskLevel); Bind(cmd, "$dedupe", p.DedupeKey);
+        Bind(cmd, "$fanout", p.DependencyFanout); Bind(cmd, "$crit", p.ServiceCriticality);
+        Bind(cmd, "$backup", p.BackupCovered ? 1 : 0); Bind(cmd, "$exposed", p.InternetExposed ? 1 : 0);
+        Bind(cmd, "$rollback", p.RollbackNote); Bind(cmd, "$dry", p.DryRunAvailable ? 1 : 0);
+        Bind(cmd, "$payload", p.Payload); Bind(cmd, "$score", p.BlastRadiusScore);
+        Bind(cmd, "$expl", p.BlastRadiusExplanation); Bind(cmd, "$reqby", p.RequestedBy);
+        Bind(cmd, "$created", p.CreatedAt); Bind(cmd, "$decby", p.DecidedBy); Bind(cmd, "$decat", p.DecidedAt);
+        Bind(cmd, "$exby", p.ExecutedBy); Bind(cmd, "$exat", p.ExecutedAt); Bind(cmd, "$exres", p.ExecutionResult);
+    }
+
+    private static ActionProposal ReadActionProposal(SqliteDataReader r)
+    {
+        string S(int i) => r.IsDBNull(i) ? "" : r.GetString(i);
+        return new ActionProposal
+        {
+            ApprovableId = S(0), Title = S(1), Summary = S(2), ActionType = S(3), TargetKind = S(4),
+            TargetId = S(5), State = S(6), RiskLevel = S(7), DedupeKey = S(8),
+            DependencyFanout = r.IsDBNull(9) ? 0 : r.GetInt32(9), ServiceCriticality = S(10),
+            BackupCovered = !r.IsDBNull(11) && r.GetInt32(11) == 1,
+            InternetExposed = !r.IsDBNull(12) && r.GetInt32(12) == 1,
+            RollbackNote = S(13), DryRunAvailable = !r.IsDBNull(14) && r.GetInt32(14) == 1,
+            Payload = S(15), BlastRadiusScore = r.IsDBNull(16) ? 0 : r.GetInt32(16),
+            BlastRadiusExplanation = S(17), RequestedBy = S(18), CreatedAt = S(19),
+            DecidedBy = S(20), DecidedAt = S(21), ExecutedBy = S(22), ExecutedAt = S(23), ExecutionResult = S(24),
+        };
     }
 
     // ---- Events / changes / health -------------------------------------------------------------

@@ -11,12 +11,13 @@ namespace Anthill.Core.Security;
 ///   management, pheromone pruning, ant configuration) is denied.
 /// - <b>homelab_operator</b> — the NORTH_STAR D3 homelab tier (v1.9.0): may view everything the
 ///   coordinator can, read the homelab (inventory, health, events, allowlist, secret-free
-///   credential statuses), and approve homelab action proposals once V2.1 ships. May NOT manage
+///   credential statuses), and approve homelab action proposals (shipped v2.3.0). May NOT manage
 ///   integrations/credentials, execute actions, touch providers, settings, users, or the shell.
 ///
 /// Role checks compose with the capability gates in <c>AnthillRuntime.ApiPermissions</c>: an
 /// action is allowed only if the user's role permits it AND the capability is enabled at all
-/// (execute/approve homelab gates ship disabled until V2.1).
+/// (the execute/approve homelab gates still ship disabled — fail closed — even though v2.3.0
+/// implemented the action pipeline behind them).
 /// </summary>
 public static class UserRoles
 {
@@ -54,7 +55,7 @@ public static class UserRoles
     {
         "run_mission", "read_status", "read_events", "read_ui_state",
         "read_homelab",            // inventory, health, events, allowlist, credential statuses
-        "approve_homelab_actions", // approve V2.1 action proposals (capability-gated off until then)
+        "approve_homelab_actions", // approve v2.3.0 action proposals (capability gate still ships off)
         // Deliberately absent: manage_homelab_integrations (credentials/allowlist writes),
         // execute_homelab_actions, and every provider/settings/user/shell permission.
     };
