@@ -1,5 +1,30 @@
 # ANTHILL Changelog
 
+## v2.5.0 — Automation rules (NORTH_STAR Phase 14)
+
+Simple self-healing and alerting — low-risk automation only; risky actions still require approval.
+
+- **Rule engine** (`AutomationEngine`, evaluated every 2 minutes on the shared HomelabScheduler —
+  no private timers): triggers `service_down`, `repeated_health_failure` (N consecutive),
+  `backup_failed_twice`, `disk_above_percent`, `unknown_device`; actions `propose_restart`,
+  `alert` (v1.11 webhooks), `warn_event`, `open_incident`, `flag_risk`.
+- **Double opt-in, fail closed**: the engine is behind `homelab_automation_enabled` (default OFF)
+  AND every rule ships disabled — nothing self-heals until an operator turns on both.
+- **Approval-required by construction**: `propose_restart` never executes anything. It files an
+  ActionProposal through the v2.3 pipeline ("restart-once" rollback note, requested_by
+  `automation:<rule>`), so human approval, the execution permission, the forbidden-action catalog,
+  and HOMELAB_STOP all apply unchanged.
+- **Triple loop prevention**: per-rule cooldown, max-runs-per-day cap, and no new proposal while a
+  prior automation proposal for the same target is still pending.
+- **Audit**: every fire/skip lands in `automation_runs` and on the homelab_events stream.
+- API: `GET/POST /homelab/automation/rules`, `POST …/rules/{id}/enable|disable`,
+  `GET /homelab/automation/runs`, `POST /homelab/automation/evaluate` (manual test tick).
+  New tables `automation_rules`/`automation_runs` (idempotent migration).
+- UI: Automation Rules card on the Homelab page — rules with enable/disable, recent runs,
+  "Evaluate now".
+- Tests (Phase 14 validation, fixed clock): rule trigger fires/quiet, disabled-by-default,
+  cooldown, daily cap, restart-goes-to-pending-proposal-never-executes, no proposal stacking.
+
 ## v2.4.3 — Honest Ollama diagnostics (the "could not connect" lie)
 
 Field-debugging an offline install surfaced a genuinely misleading failure mode: OllamaClient

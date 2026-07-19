@@ -190,7 +190,7 @@ V2.2.x   Live-feedback patch series on the v2.2.0 revision    [SHIPPED v2.2.1–
           default only after functional parity — phased plan recorded in CHANGELOG v2.2.2.)
 V2.3.0   Approval-gated homelab actions                       [SHIPPED v2.3.0 framework + v2.3.1 Proxmox write runner — phase complete]
 V2.4.0   Backup and restore intelligence                      [SHIPPED v2.4.0]
-V2.5.0   Automation rules                                     (was V2.3.0)
+V2.5.0   Automation rules                                     [SHIPPED v2.5.0]
 V2.6.0   DNS/DHCP/firewall control layer                      (was V2.4.0)
 V2.7.0   Full homelab operations layer                        (was V2.5.0)
 V3.0.0   Bounded autonomous homelab operator
