@@ -27,7 +27,7 @@ public class JsonSafetyTests
         var bad = "before\uD800after";
         var cleaned = TextUtil.SanitizeUtf16(bad);
         Assert.Equal("before�after", cleaned);
-        Assert.False(cleaned.Any(char.IsSurrogate));
+        Assert.DoesNotContain(cleaned, char.IsSurrogate); // xUnit2012-clean form
     }
 
     [Fact]

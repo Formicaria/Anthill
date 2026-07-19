@@ -13,11 +13,11 @@ namespace Anthill.Core.Homelab.Actions;
 public sealed record ActionRunResult(bool Ok, string Message);
 
 /// <summary>
-/// A thing that can carry out an approved action. v2.3.0 ships the framework with two runners:
+/// A thing that can carry out an approved action. v2.3.0 shipped the framework with two runners:
 /// <see cref="LocalActionRunner"/> (touches only ANTHILL's own database — zero network) and
 /// <see cref="MockActionRunner"/> (the deterministic test/dev harness, mirroring the v1.9.1
-/// mock-provider pattern). Real infrastructure runners (Proxmox power/snapshot) arrive in
-/// v2.3.1 as their own carefully-reviewed change.
+/// mock-provider pattern). v2.3.1 added <see cref="ProxmoxActionRunner"/>, the first real
+/// infrastructure runner (double-gated, structurally allowlisted, target-guard enforced).
 /// </summary>
 public interface IHomelabActionRunner
 {
@@ -81,9 +81,12 @@ public sealed class ActionExecutor
             InternetExposed = request.InternetExposed,
             RequestedBy = requestedBy,
             CreatedAt = AnthillTime.NowUtc().ToIso(),
-            DryRunAvailable = _runners.Any(r => r.CanRun(new ActionProposal { ActionType = request.ActionType.Trim().ToLowerInvariant() })),
         };
         proposal.DedupeKey = $"{proposal.ActionType}:{proposal.TargetId}".ToLowerInvariant();
+        // v2.3.1.1: probe runners with the REAL proposal, not an action-type-only stub — the
+        // Proxmox runner also validates the target form, so the stub always answered false and
+        // every Proxmox-backed action reported dry_run_available = false.
+        proposal.DryRunAvailable = _runners.Any(r => r.CanRun(proposal));
 
         // Dependency fan-out from the v1.10 dependency map: who depends on this target?
         proposal.DependencyFanout = _repo.ListDependencies().Count(d =>
@@ -202,8 +205,9 @@ public sealed class ActionExecutor
     }
 
     private static string NoRunnerMessage(ActionProposal p) =>
-        $"No runner can execute '{p.ActionType}' in this build — v2.3.0 ships local + mock runners only; "
-        + "infrastructure runners (Proxmox power/snapshot/backup) arrive in v2.3.1.";
+        $"No registered runner can execute '{p.ActionType}' on target '{p.TargetId}'. Infrastructure "
+        + "actions need the Proxmox write runner: enable homelab_proxmox_write_actions_enabled (plus the "
+        + "Proxmox integration) and use a node/vmid target like 'pve1/104'.";
 
     private static string Truncate(string s) => s.Length <= 500 ? s : s[..500];
 
