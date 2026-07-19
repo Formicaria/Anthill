@@ -1217,16 +1217,40 @@ public static partial class ApiHost
             ["model"] = kv.Value.GetValueOrDefault("model"),
         }).ToList();
 
-        // Live Ollama probe (cheap GET /api/version). Only meaningful when Ollama is in use.
+        // Live Ollama probe. v2.4.3: /api/version alone lied by omission — Ollama can be up while
+        // the configured model is absent (typical on offline installs), and every ant call then
+        // fails although the chip showed green. Now also checks /api/tags for the model.
         bool? ollamaReachable = null;
+        bool? ollamaModelPresent = null;
         if (AnthillRuntime.UseOllama)
         {
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                using var resp = InternalHttp.GetAsync($"{AnthillRuntime.OllamaHost.TrimEnd('/')}/api/version", cts.Token)
-                    .GetAwaiter().GetResult();
+                var baseHost = AnthillRuntime.OllamaHost.TrimEnd('/');
+                using var resp = InternalHttp.GetAsync($"{baseHost}/api/version", cts.Token).GetAwaiter().GetResult();
                 ollamaReachable = resp.IsSuccessStatusCode;
+                if (ollamaReachable == true)
+                {
+                    try
+                    {
+                        using var tags = InternalHttp.GetAsync($"{baseHost}/api/tags", cts.Token).GetAwaiter().GetResult();
+                        if (tags.IsSuccessStatusCode)
+                        {
+                            var tagsBody = tags.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
+                            using var doc = System.Text.Json.JsonDocument.Parse(tagsBody);
+                            var want = AnthillRuntime.OllamaModel;
+                            ollamaModelPresent = doc.RootElement.TryGetProperty("models", out var models)
+                                && models.ValueKind == System.Text.Json.JsonValueKind.Array
+                                && models.EnumerateArray().Any(m =>
+                                    m.TryGetProperty("name", out var n)
+                                    && (string.Equals(n.GetString(), want, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals(n.GetString(), want + ":latest", StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals((n.GetString() ?? "").Split(':')[0], want, StringComparison.OrdinalIgnoreCase)));
+                        }
+                    }
+                    catch { /* model check is best-effort; reachability already established */ }
+                }
             }
             catch { ollamaReachable = false; }
         }
@@ -1243,6 +1267,7 @@ public static partial class ApiHost
             ["use_ollama"] = AnthillRuntime.UseOllama,
             ["ollama_host"] = AnthillRuntime.OllamaHost,
             ["ollama_reachable"] = ollamaReachable,
+            ["ollama_model_present"] = ollamaModelPresent, // v2.4.3: null = unknown/not checked
             ["default_model"] = AnthillRuntime.OllamaModel,
             ["routing_mode"] = providerRoles.Count == 0 ? "local" : (localRoles.Count == 0 ? "providers" : "mixed"),
             ["local_role_count"] = localRoles.Count,

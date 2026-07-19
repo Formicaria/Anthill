@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v2.4.3 — Honest Ollama diagnostics (the "could not connect" lie)
+
+Field-debugging an offline install surfaced a genuinely misleading failure mode: OllamaClient
+treated EVERY non-2xx as "Could not connect to Ollama" (EnsureSuccessStatusCode throws
+HttpRequestException into the connection-failure catch), while the header-chip probe only checked
+/api/version. Net effect: Ollama up + model not pulled (the normal state of an offline machine,
+which cannot `ollama pull`) showed a green chip and "connection" errors from every ant.
+
+- **OllamaClient**: non-2xx responses now report the real status + body. A 404 says exactly what
+  to do — the model is not available, run `ollama pull <model>`, and offline machines need the
+  blobs copied in. True connection failures now name the configured host and point at the two
+  usual suspects: Ollama binding only 127.0.0.1 by default (set OLLAMA_HOST=0.0.0.0 for LAN/LXC
+  use) and ollama_host still pointing at localhost from inside a container/LXC.
+- **System summary probe**: alongside `ollama_reachable`, a best-effort `/api/tags` check now
+  publishes `ollama_model_present` for the configured model (name, name:latest, and base-name
+  matches), so "reachable but model missing" is visible state, not a mystery.
+
+
 ## v2.4.2 — Registering a host or app auto-allowlists its address
 
 Live operator feedback: adding a host or an *arr app and THEN separately allowlisting the same
