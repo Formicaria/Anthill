@@ -1,4 +1,5 @@
 using Anthill.Core.Homelab.Actions;
+using Anthill.Core.Homelab.Approvals;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;
