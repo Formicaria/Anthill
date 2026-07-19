@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Anthill.Core.Configuration;
+using Anthill.Core.Homelab.Approvals;
 
 namespace Anthill.Core.Homelab.Actions;
 
