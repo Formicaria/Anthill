@@ -27,6 +27,18 @@ public static partial class ApiHost
         var runners = new List<IHomelabActionRunner> { new LocalActionRunner(Homelab) };
         // The mock runner rides the same gate as the v1.9.1 mock providers: dev/test installs only.
         if (AnthillRuntime.EnableHomelabMockProviders) runners.Add(new MockActionRunner());
+        // v2.3.1: the first real infrastructure runner. DOUBLE-gated — the Proxmox integration must
+        // be enabled AND the operator must explicitly opt in to write actions (default off), so a
+        // read-only Proxmox connection can never silently gain power/snapshot/backup capability.
+        // Token comes from the credential store per client, exactly like the read-only sync client.
+        if (AnthillRuntime.EnableHomelab && AnthillRuntime.EnableHomelabProxmox
+            && AnthillRuntime.HomelabProxmoxWriteActionsEnabled
+            && !string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
+            runners.Add(new ProxmoxActionRunner(() => new ProxmoxActionClient(
+                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort,
+                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxActionRunner"),
+                AnthillRuntime.HomelabProxmoxInsecureTls,
+                protocol: AnthillRuntime.HomelabProxmoxProtocol)));
         HomelabActions = new ActionExecutor(Homelab, runners);
     }
 

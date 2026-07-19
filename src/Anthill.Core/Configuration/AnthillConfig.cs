@@ -73,6 +73,7 @@ public sealed class AnthillConfig
     // v2.2.0: protocol is separate from TLS verification. "https" (default) or "http" for a PVE
     // reachable only over plain http; auth headers are attached identically in every mode.
     [JsonPropertyName("homelab_proxmox_protocol")] public string HomelabProxmoxProtocol { get; set; } = "https";
+    [JsonPropertyName("homelab_proxmox_write_actions_enabled")] public bool HomelabProxmoxWriteActionsEnabled { get; set; } = false;
     [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
     // Read-only virtualization integrations (v2.1.0). Each mirrors Proxmox: no write path exists in the
     // client, the secret lives in the credential store (referenced by id, never here), and the host must
