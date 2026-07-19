@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.3.1 — ProxmoxActionRunner: the first write-capable infrastructure runner
+
+Completes NORTH_STAR Phase 12: the v2.3.0 approval pipeline now controls real Proxmox VE.
+
+- **`ProxmoxActionClient`** — a NEW client, deliberately separate from the GET-only v1.12 read
+  client (which is untouched, keeping its structural read-only guarantee). It can emit only the
+  endpoint shapes the action catalog needs: guest `status/(start|stop|shutdown|reboot)`,
+  `snapshot`, and `vzdump`. Any other path is refused structurally before network I/O — it cannot
+  be used as a general Proxmox client. Token comes from the credential store per client (same
+  pattern as the read client); never cached in config, never logged.
+- **`ProxmoxActionRunner`** — runs the approved catalog actions start/stop/restart VM + container
+  (`stop` maps to guest-clean `shutdown`, never a hard stop), `create_snapshot` (timestamped
+  `anthill-*` name), `run_backup` (vzdump). Targets use the inventory form `node/vmid`
+  (e.g. `pve1/104`); anything else refuses to run. Dry-run names the exact endpoint it would hit.
+  Post-execution verification polls the guest state (~15s) and reports honestly — a submitted
+  backup task is reported as submitted, not silently assumed complete.
+- **Double-gated registration**: the runner exists only when the Proxmox integration is enabled
+  AND the new `homelab_proxmox_write_actions_enabled` (default **false**) is set — connecting
+  Proxmox read-only never silently grants write capability. Every execution still passes the
+  v2.3.0 executor guards: HOMELAB_STOP, approved-state TOCTOU re-check, catalog/forbidden-list
+  re-check, mandatory rollback note, full audit.
+- Tests: CanRun matrix (unsupported/forbidden/malformed targets refuse), dry-run accuracy,
+  structural path-allowlist refusal (config/user-admin/suspend all throw before I/O), and the
+  clean-shutdown mapping guard.
+- Frontend: no open UI defects found this pass — the v2.2.6 audit items and the v2.2.6.1 Proxmox
+  privsep sync gotcha remain the last known issues, all fixed. The Actions panel shipped with
+  v2.3.0 works unchanged against the new runner (runner name appears in dry-run/execute output).
+
 ## v2.3.0 — Approval-gated homelab actions (NORTH_STAR Phase 12, framework release)
 
 The v1.14.0 IApprovable/ActionProposal design gains its execution side. Scope decision: framework

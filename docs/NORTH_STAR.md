@@ -188,7 +188,7 @@ V2.2.x   Live-feedback patch series on the v2.2.0 revision    [SHIPPED v2.2.1–
           Overview grid rebalance; chamber tunnels/drag/duties; cleanup + hardening pass with
           new regression guards. Classic graph remains canonical; the chamber map becomes the
           default only after functional parity — phased plan recorded in CHANGELOG v2.2.2.)
-V2.3.0   Approval-gated homelab actions                       [SHIPPED v2.3.0 — framework: local+mock runners; Proxmox write runners land v2.3.1]
+V2.3.0   Approval-gated homelab actions                       [SHIPPED v2.3.0 framework + v2.3.1 Proxmox write runner — phase complete]
 V2.4.0   Backup and restore intelligence                      (was V2.2.0)
 V2.5.0   Automation rules                                     (was V2.3.0)
 V2.6.0   DNS/DHCP/firewall control layer                      (was V2.4.0)
