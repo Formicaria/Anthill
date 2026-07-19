@@ -16,7 +16,9 @@ across phases.
 | Network + security awareness | V1.13.0 | **SHIPPED** | Nine deterministic risk findings with reconciliation (auto-resolve + sticky acks), network-device registry, exposure classification, Network & Risk UI — zero network I/O, no scanning |
 | Incident + change memory | V1.14.0 | **SHIPPED** | Auto-opened deduped incidents, suspect-flagged timelines, similar-incident fix memory, repeat patterns, IApprovable design + unified approvals view (docs/APPROVALS.md) — V1.x line complete |
 | Command Center launch | V2.0.0 | **SHIPPED** | One dashboard aggregation, impact-propagating dependency graph, entity drawers, next-checks, ANTHILL identity layer (semantic tokens, colony mesh, purposeful motion, reduced-motion aware) |
-| Approval-gated actions | V2.1.0 | Future | First controlled actions behind IApprovable + approvals |
+| Multi-hypervisor inventory | V2.1.0* | **SHIPPED** | Unplanned insertion: ESXi/Docker/Hyper-V read-only inventory (consumed the V2.1.0 number; the planned action phase shifted to V2.3.0) |
+| Approval-gated actions | V2.3.0 | **SHIPPED** | ActionProposal pipeline (propose → blast-radius score → approve → execute → verify → audit), allowlisted action catalog with structural forbidden set, Local + Mock runners (infrastructure runners arrive v2.3.1), HOMELAB_STOP kill switch + `/homelab/actions/stop`/`resume`, unified-queue projection, Actions console panel. Both action capability gates still ship OFF — fail closed |
+| Backup + restore intelligence | V2.4.0 | Future | Coverage map, stale/failed detection, restore priority/confidence, blast-radius simulation |
 
 ## What v1.9.0 actually is
 

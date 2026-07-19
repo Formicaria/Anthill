@@ -53,6 +53,9 @@ public static partial class ApiHost
         HomelabHealth = new HealthCheckRunner(Homelab, HomelabTargets, HomelabNotifier);
         HomelabRisks = new RiskAnalyzer(Homelab);
         HomelabIncidents = new IncidentManager(Homelab);
+        // v2.3.0 (NORTH_STAR Phase 12): the approval-gated action pipeline. Local + mock runners
+        // only in this release; both action capability gates remain OFF by default (fail closed).
+        InitHomelabActions();
 
         // v1.9.1: the mock-provider harness — the shared execution pattern every real provider
         // follows. Mocks are deterministic and network-free; registered only when the mock gate
@@ -414,20 +417,24 @@ public static partial class ApiHost
                 : ApiJson.Error("Unknown incident or invalid status (open|investigating|resolved).", "bad_request");
         });
 
-        // v1.14.0: the ONE pending-approvals view (IApprovable). Today it projects patch
-        // approvals; V2.1 action proposals and V2.4 network changes join the same queue.
+        // v1.14.0: the ONE pending-approvals view (IApprovable). v2.3.0: homelab action proposals
+        // join the patch projections in the same queue; V2.6 network changes will be next.
         app.MapGet("/homelab/approvals/unified", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_approvals"); if (auth is not null) return auth;
             var views = Queen.Memory.ListApprovalRequests(null, 100)
-                .Select(row => ApprovableProjections.FromPatchApproval(row));
+                .Select(row => ApprovableProjections.FromPatchApproval(row))
+                .Concat(Homelab.ListActionProposals(100).Select(ApprovableProjections.FromActionProposal));
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["items"] = ApprovableProjections.DedupePending(views),
-                ["kinds"] = new[] { "patch" }, // "homelab_action" arrives in V2.1, "network_change" in V2.4
+                ["kinds"] = new[] { "patch", "homelab_action" }, // "network_change" arrives with the network control layer
                 ["design"] = "docs/APPROVALS.md",
             });
         });
+
+        // v2.3.0 (NORTH_STAR Phase 12): approval-gated action endpoints + kill switch.
+        MapHomelabActionEndpoints(app);
 
         // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------
 

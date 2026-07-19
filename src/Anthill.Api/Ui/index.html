@@ -1899,6 +1899,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
 
+        <!-- Approval-gated Actions (v2.3.0, NORTH_STAR Phase 12) -->
+        <div class="card hl-sec-incident" style="overflow-x:auto;" id="hl-actions-card">
+          <div class="section-head" style="margin:10px 16px 0;">Actions <span id="hl-act-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="float:right;display:flex;gap:8px;align-items:center;">
+              <span id="hl-act-stop-state" style="font-size:10px;"></span>
+              <button class="btn btn-ghost" id="hl-act-stop-btn" onclick="hlActKillSwitch()">■ STOP</button>
+            </span>
+          </div>
+          <div style="font-size:10px;color:var(--dim);margin:4px 16px;">Propose → blast-radius score → approve → execute (separate permissions; both action gates ship off — fail closed). Nothing executes while HOMELAB_STOP is engaged, and a rollback note is required before execution.</div>
+          <div class="form-row" style="margin:6px 16px;" id="hl-act-form">
+            <div class="form-field"><label>Action</label>
+              <select class="form-select" id="hl-a-type"></select>
+            </div>
+            <div class="form-field"><label>Target kind</label>
+              <select class="form-select" id="hl-a-tkind"><option value="service">service</option><option value="host">host</option><option value="vm">vm</option><option value="container">container</option><option value="incident">incident</option></select>
+            </div>
+            <div class="form-field"><label>Target id</label><input class="form-input" id="hl-a-target" type="text" placeholder="service/host/vm/incident id" autocomplete="off"></div>
+            <div class="form-field"><label>Rollback / recovery note</label><input class="form-input" id="hl-a-rollback" type="text" placeholder="how to undo or recover" autocomplete="off"></div>
+            <div class="form-field" style="align-self:end;"><button class="btn btn-primary" onclick="hlActPropose()">+ Propose</button></div>
+          </div>
+          <table class="users-table">
+            <thead><tr><th>Risk</th><th>Action</th><th>Target</th><th>State</th><th>Blast radius</th><th>Rollback</th><th>Result</th><th>Operate</th></tr></thead>
+            <tbody id="hl-act-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
         <!-- Network & Risk (v1.13.0) -->
         <div class="card" style="padding:14px 16px;" id="hl-dev-form">
           <div class="section-head" style="margin-top:0;">Register Network Device <span style="font-weight:400;color:var(--dim)">(manual/import only — no scanning; mark unfamiliar devices as unknown to flag them)</span></div>
@@ -3855,11 +3881,16 @@ async function pollApprovals(){
   }catch(e){console.error('pollApprovals',e);}
 }
 
-async function doApproval(id,action){
+async function doApproval(id,action,kind){
   try{
-    const endpoint=action==='approve'?`/approve/${id}`:`/reject/${id}`;
+    // v2.3.0: the unified queue carries more than patches — route the decision by kind
+    // (APPROVALS.md: decisions flow through each kind's own endpoints).
+    const endpoint=(kind==='homelab_action')
+      ?`/homelab/actions/${encodeURIComponent(id)}/${action==='approve'?'approve':'reject'}`
+      :(action==='approve'?`/approve/${id}`:`/reject/${id}`);
     await fetch(url(endpoint),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     pollApprovals(); pollStatus();
+    if(kind==='homelab_action'&&typeof loadHlActions==='function') loadHlActions();
   }catch(e){console.error('Approval error',e);}
 }
 
@@ -6460,6 +6491,7 @@ async function loadHomelab(){
     loadHlVirt();
     loadHlRisks();
     loadHlIncidents();
+    loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
     loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
     hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
     decorateHlSections(); // V2.0 pass 2: subsystem theming + connection cues
@@ -7006,6 +7038,86 @@ async function hlIncStatus(status){
   if(r.success){ document.getElementById('hl-inc-root').value=''; hlCloseIncDetail(); loadHlIncidents(); }
 }
 
+// -- Approval-gated actions (v2.3.0, NORTH_STAR Phase 12) ---------------------------
+let HL_ACT_STOPPED=false;
+async function loadHlActions(){
+  try{
+    const r=await api('/homelab/actions');
+    if(!r.success){ return; }
+    const d=r.data||{};
+    HL_ACT_STOPPED=!!d.stopped;
+    const sel=document.getElementById('hl-a-type');
+    if(sel&&!sel.options.length&&Array.isArray(d.allowed_actions))
+      sel.innerHTML=d.allowed_actions.map(a=>'<option value="'+escapeHtml(a)+'">'+escapeHtml(a)+'</option>').join('');
+    const st=document.getElementById('hl-act-stop-state');
+    if(st) st.innerHTML=HL_ACT_STOPPED?athPill('danger','HOMELAB_STOP ENGAGED'):athPill('ok','actions armed');
+    const btn=document.getElementById('hl-act-stop-btn');
+    if(btn) btn.textContent=HL_ACT_STOPPED?'▶ Resume':'■ STOP';
+    renderHlActions(Array.isArray(d.items)?d.items:[]);
+  }catch(e){ /* panel shows its last state; load errors surface via hl-msg elsewhere */ }
+}
+function renderHlActions(items){
+  const tb=document.getElementById('hl-act-tbody'); if(!tb) return;
+  const kpi=document.getElementById('hl-act-kpi');
+  const pending=items.filter(a=>a.state==='pending').length;
+  if(kpi) kpi.textContent=items.length?(pending+' pending · '+items.length+' total'):'';
+  if(!items.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No action proposals yet — propose one above. Nothing executes without approval.</td></tr>'; return; }
+  tb.innerHTML=items.slice(0,25).map(a=>{
+    const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'ok');
+    const sc=a.state==='executed'?'ok':(a.state==='rejected'||a.state==='superseded'?'danger':(a.state==='approved'?'warn':'info'));
+    let ops='';
+    if(a.state==='pending')
+      ops='<button class="btn btn-ghost" onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
+          '<button class="btn btn-ghost" onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
+    if(a.state==='pending'||a.state==='approved')
+      ops+='<button class="btn btn-ghost" onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
+    if(a.state==='approved')
+      ops+='<button class="btn btn-primary" onclick="hlActExecute(\''+escapeHtml(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
+    return '<tr><td>'+athPill(rc,(a.risk_level||'?')+' · '+(a.blast_radius_score??'?'))+'</td>'+
+      '<td><b>'+escapeHtml(a.action_type||'')+'</b></td>'+
+      '<td title="'+escapeHtml(a.target_kind||'')+'">'+escapeHtml((a.target_id||'').substring(0,24))+'</td>'+
+      '<td>'+athPill(sc,a.state||'?')+'</td>'+
+      '<td style="font-size:10px;max-width:220px;" title="'+escapeHtml(a.blast_radius_explanation||'')+'">'+escapeHtml((a.blast_radius_explanation||'—').substring(0,60))+'</td>'+
+      '<td style="font-size:10px;">'+(a.rollback_note?escapeHtml(a.rollback_note.substring(0,40)):'<span style="color:var(--status-danger)">required</span>')+'</td>'+
+      '<td style="font-size:10px;max-width:200px;" title="'+escapeHtml(a.execution_result||'')+'">'+escapeHtml((a.execution_result||'—').substring(0,50))+'</td>'+
+      '<td style="display:flex;gap:4px;flex-wrap:wrap;">'+(ops||'—')+'</td></tr>';
+  }).join('');
+}
+async function hlActPropose(){
+  const type=document.getElementById('hl-a-type').value;
+  const targetId=document.getElementById('hl-a-target').value.trim();
+  if(!targetId){ hlMsg('A target id is required',false); return; }
+  const r=await api('/homelab/actions/propose','POST',{
+    actionType:type, targetKind:document.getElementById('hl-a-tkind').value,
+    targetId, rollbackNote:document.getElementById('hl-a-rollback').value.trim()});
+  hlMsg(r.message||(r.success?'Proposed':'Refused'),r.success);
+  if(r.success){ document.getElementById('hl-a-target').value=''; document.getElementById('hl-a-rollback').value=''; }
+  loadHlActions();
+}
+async function hlActOp(id,verb){
+  const r=await api('/homelab/actions/'+encodeURIComponent(id)+'/'+verb,'POST',{});
+  if(verb==='dryrun'&&r.success&&r.data&&r.data.dry_run){ await uiConfirm('DRY RUN — nothing was executed:\n\n'+r.data.dry_run); }
+  else hlMsg(r.message||(r.success?'Done':'Refused'),r.success);
+  loadHlActions();
+}
+async function hlActExecute(id){
+  if(!await uiConfirm('Execute this approved action now? It will be verified and audited.')) return;
+  const r=await api('/homelab/actions/'+encodeURIComponent(id)+'/execute','POST',{});
+  hlMsg(r.message||(r.success?'Executed':'Refused'),r.success);
+  loadHlActions();
+}
+async function hlActKillSwitch(){
+  if(HL_ACT_STOPPED){
+    if(!await uiConfirm('Clear HOMELAB_STOP? Approved actions will be executable again.')) return;
+    const r=await api('/homelab/actions/resume','POST',{});
+    hlMsg(r.message||(r.success?'Resumed':'Refused'),r.success);
+  }else{
+    const r=await api('/homelab/actions/stop','POST',{reason:'console kill switch'});
+    hlMsg(r.message||(r.success?'Stopped':'Refused'),r.success);
+  }
+  loadHlActions();
+}
+
 // -- Network & risk awareness (v1.13.0) --------------------------------------------
 async function loadHlRisks(){
   try{
@@ -7377,10 +7489,11 @@ function renderOv2Approvals(items){
   if(!pending.length){ el.innerHTML='<div class="ov2-empty">No approvals pending.</div>'; return; }
   el.innerHTML=pending.map(a=>{
     const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'info');
-    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+
+    const kindTag=a.kind==='homelab_action'?' '+athPill('warn','action'):'';
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+kindTag+
       '<div style="margin-top:4px;display:flex;gap:6px;">'+
-      '<button class="ov2-approve" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\')">✓ Approve</button>'+
-      '<button class="ov2-reject" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\')">✕ Reject</button></div></div>';
+      '<button class="ov2-approve" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\',\''+escapeHtml(a.kind||'patch')+'\')">✓ Approve</button>'+
+      '<button class="ov2-reject" onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\',\''+escapeHtml(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
   }).join('');
 }
 

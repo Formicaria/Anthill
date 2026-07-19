@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.2.6.1";
+    public const string Version = "2.3.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -67,8 +67,9 @@ public static class AnthillRuntime
         // Operator shell console: admin-only interactive host terminal. Gated a second time by
         // operator_shell_enabled at runtime; never granted to coordinators (see UserRoles).
         ["operator_shell"] = true,
-        // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled; the two
-        // action permissions stay OFF until V2.1 ships approval-gated actions — fail closed.
+        // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled. The two
+        // action permissions gained their implementation in v2.3.0 (approval-gated actions) but
+        // STILL ship disabled — fail closed; an operator must turn the gates on deliberately.
         ["read_homelab"] = true, ["manage_homelab_integrations"] = true,
         ["approve_homelab_actions"] = false, ["execute_homelab_actions"] = false,
     };
