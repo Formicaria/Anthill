@@ -1815,6 +1815,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="hl-next" style="font-size:11px;color:var(--muted);">Loading...</div>
         </div>
 
+        <!-- v2.4.0 Phase 13: backup + restore intelligence -->
+        <div class="card" id="hl-backup-card" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Backup Intelligence
+            <span id="hl-bk-totals" style="font-weight:normal;font-size:10px;color:var(--dim);margin-left:8px;"></span>
+            <button class="btn btn-ghost" style="float:right;" onclick="hlLoadBackup()" title="Refresh coverage">↺</button>
+          </div>
+          <div id="hl-bk-body" style="font-size:11px;color:var(--muted);">Loading coverage…</div>
+          <div id="hl-bk-runbook" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:11px;"></div>
+        </div>
+
         <!-- V2.0 Entity detail drawer (host/service) -->
         <div class="card" id="hl-entity-detail" style="display:none;padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Detail — <span id="hl-ent-title"></span>
@@ -6497,6 +6507,42 @@ function hlMsg(m,ok){ const el=document.getElementById('hl-msg'); if(!el) return
   el.textContent=m; el.style.color=ok?'var(--green)':'var(--red)';
   setTimeout(()=>{ if(el.textContent===m) el.textContent=''; },6000); }
 
+// -- v2.4.0 Phase 13: backup + restore intelligence ---------------------------------------------
+async function hlLoadBackup(){
+  const body=document.getElementById('hl-bk-body'); if(!body) return;
+  try{
+    const r=await api('/homelab/backup/coverage');
+    if(!(r&&r.success&&r.data)){ body.innerHTML='<span style="color:var(--dim)">Coverage unavailable.</span>'; return; }
+    const d=r.data, entries=d.entries||[], t=d.totals||{};
+    const tot=document.getElementById('hl-bk-totals');
+    if(tot) tot.textContent=(t.ok||0)+' ok · '+(t.stale||0)+' stale · '+(t.failed||0)+' failed · '+(t.none||0)+' unprotected · stale after '+d.stale_after_days+'d';
+    if(!entries.length){ body.innerHTML='<span style="color:var(--dim)">No VMs or containers in inventory yet — sync an integration first.</span>'; return; }
+    const cov=c=>c==='ok'?'var(--green)':c==='stale'?'var(--orange)':'var(--red)';
+    body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:10px;">'+
+      '<tr style="color:var(--dim);text-align:left;"><th>#</th><th>Target</th><th>Node</th><th>Coverage</th><th>Last success</th><th>Confidence</th><th></th></tr>'+
+      entries.map(e=>'<tr style="border-top:1px solid var(--border);">'+
+        '<td>'+e.restore_priority+'</td>'+
+        '<td><b style="color:var(--text)">'+escapeHtml(e.name||e.target_id)+'</b> <span style="color:var(--dim)">'+escapeHtml(e.target_kind)+' '+escapeHtml(e.target_id)+'</span></td>'+
+        '<td>'+escapeHtml(e.node_id||'—')+'</td>'+
+        '<td style="color:'+cov(e.coverage)+';font-weight:700;" title="'+escapeHtml(e.detail)+'">'+e.coverage.toUpperCase()+'</td>'+
+        '<td>'+escapeHtml((e.last_success||'—').substring(0,16))+'</td>'+
+        '<td>'+e.restore_confidence+'/100</td>'+
+        '<td><button class="btn btn-ghost" style="font-size:9px;" onclick="hlRunbook(\''+attrSafe(e.target_kind)+'\',\''+attrSafe(e.target_id)+'\')">Runbook</button></td>'+
+      '</tr>').join('')+'</table>';
+  }catch(e){ body.innerHTML='<span style="color:var(--red)">Error loading coverage: '+escapeHtml(e.message||'')+'</span>'; }
+}
+async function hlRunbook(kind,id){
+  const box=document.getElementById('hl-bk-runbook'); if(!box) return;
+  box.style.display='block'; box.innerHTML='Generating runbook…';
+  try{
+    const r=await api('/homelab/backup/runbook/'+encodeURIComponent(kind)+'/'+encodeURIComponent(id));
+    const steps=(r&&r.success&&r.data&&r.data.steps)||[];
+    box.innerHTML='<div class="section-head" style="margin-top:0;">Restore Runbook — '+escapeHtml(kind)+' '+escapeHtml(id)+
+      '<button class="btn btn-ghost" style="float:right;" onclick="document.getElementById(\'hl-bk-runbook\').style.display=\'none\'">✕</button></div>'+
+      steps.map(s=>'<div style="padding:3px 0;'+(s.includes('STOP')||s.includes('WARNING')?'color:var(--orange);':'')+'">'+escapeHtml(s)+'</div>').join('');
+  }catch(e){ box.innerHTML='<span style="color:var(--red)">Runbook error: '+escapeHtml(e.message||'')+'</span>'; }
+}
+
 async function loadHomelab(){
   try{
     const [sum,hosts,svcs,deps,chg]=await Promise.all([
@@ -6511,6 +6557,7 @@ async function loadHomelab(){
     loadHlRisks();
     loadHlIncidents();
     loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
+    hlLoadBackup();     // v2.4.0: backup + restore intelligence (Phase 13)
     renderHlDeck();     // v2.3.2: the Service Deck — hosts/VMs/CTs/services as live tiles
     hl3Restore();       // v2.3.2: restore collapsed-section preferences
     hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s

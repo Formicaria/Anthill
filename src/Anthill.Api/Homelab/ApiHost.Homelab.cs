@@ -435,6 +435,7 @@ public static partial class ApiHost
 
         // v2.3.0 (NORTH_STAR Phase 12): approval-gated action endpoints + kill switch.
         MapHomelabActionEndpoints(app);
+        MapHomelabBackupEndpoints(app); // v2.4.0 Phase 13
 
         // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------
 
