@@ -1757,39 +1757,62 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       }
       </style>
       <div class="page page-scroll" id="page-homelab">
+        <style id="hl3-theme">
+          /* v2.3.2 Service Deck */
+          #hl3-deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:8px;}
+          .hl3-host{border:1px solid var(--line,#223);border-radius:8px;padding:10px 12px;background:rgba(255,255,255,0.015);}
+          .hl3-host-hd{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--anthill-text,#dfe7ef);cursor:pointer;}
+          .hl3-host-hd .sub{font-weight:400;font-size:10px;color:var(--dim);margin-left:auto;}
+          .hl3-tiles{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+          .hl3-tile{display:flex;align-items:center;gap:6px;font-size:10px;padding:5px 8px;border:1px solid var(--line,#223);border-radius:6px;background:rgba(255,255,255,0.02);cursor:pointer;max-width:100%;}
+          .hl3-tile:hover{border-color:var(--status-info,#4aa3ff);}
+          .hl3-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim,#556);}
+          .hl3-dot.ok{background:var(--status-success,#31c48d);box-shadow:0 0 4px var(--status-success,#31c48d);}
+          .hl3-dot.bad{background:var(--status-danger,#f05252);box-shadow:0 0 4px var(--status-danger,#f05252);}
+          .hl3-dot.warn{background:var(--status-warning,#ffb020);}
+          .hl3-tile .k{color:var(--dim);font-size:9px;text-transform:uppercase;}
+          .hl3-tile .zap{opacity:.35;font-size:10px;}
+          .hl3-tile .zap:hover{opacity:1;}
+          .hl3-empty{color:var(--dim);font-size:11px;padding:14px;text-align:center;}
+          .hl3-col{cursor:pointer;user-select:none;}
+          .hl3-col .hl3-caret{float:right;color:var(--dim);transition:transform .15s;}
+          .hl3-col.open .hl3-caret{transform:rotate(180deg);}
+          #hl3-config{border-left:2px solid var(--hl-memory,#7a5cff);}
+        </style>
+
         <div class="page-hdr">
           <div>
-            <h1>Homelab Inventory</h1>
+            <h1>Homelab</h1>
             <div class="sub" id="hl-count"></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg" id="hl-msg"></span>
-            <button class="btn btn-ghost" onclick="hlExport()" title="Download nodes, services, and dependencies as JSON (never secrets)">⬇ Export JSON</button>
-            <button class="btn btn-ghost" id="hl-import-btn" onclick="hlImportPick()" title="Import an inventory JSON bundle (upsert by id — re-import is safe)">⬆ Import JSON</button>
+            <button class="btn btn-primary" onclick="hl3ToggleConfig(true)" title="Register hosts, services, devices, checks, dependencies — and manage integrations">+ Add / Manage</button>
+            <button class="btn btn-ghost" onclick="hlExport()" title="Download nodes, services, and dependencies as JSON (never secrets)">⬇ Export</button>
+            <button class="btn btn-ghost" id="hl-import-btn" onclick="hlImportPick()" title="Import an inventory JSON bundle (upsert by id — re-import is safe)">⬆ Import</button>
             <input type="file" id="hl-import-file" accept="application/json" style="display:none" onchange="hlImportFile(event)">
             <button class="btn btn-ghost" onclick="loadHomelab()">↺ Reload</button>
           </div>
         </div>
 
-        <!-- V2.0 Command Summary strip (Pass 1: functional; Pass 2 styles it) -->
+        <!-- V2.0 Command Summary strip (v2.3.2: timeout fallback instead of infinite loading) -->
         <div class="card hl-sec-memory" id="hl-cmd-strip" style="padding:10px 16px;">
           <div id="hl-cmd-kpis" style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;">Loading command summary...</div>
           <div id="hl-cmd-stamps" style="font-size:9px;color:var(--dim);margin-top:6px;"></div>
         </div>
 
-        <!-- V2.0 What should I do next -->
-        <div class="card hl-sec-incident" id="hl-next-card" style="padding:10px 16px;">
-          <div class="section-head" style="margin-top:0;">What Should I Do Next</div>
-          <div id="hl-next" style="font-size:11px;color:var(--muted);">Loading...</div>
+        <!-- v2.3.2 Service Deck: THE view — everything registered or synced, grouped by host -->
+        <div class="card hl-sec-compute" id="hl3-deck-card" style="padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">Service Deck
+            <span style="font-weight:400;color:var(--dim)">(hosts · VMs · containers · services — live status; click a tile to open/inspect, ⚡ to propose an action)</span>
+          </div>
+          <div id="hl3-deck"><div class="hl3-empty">Loading deck…</div></div>
         </div>
 
-        <!-- V2.0 Dependency graph -->
-        <div class="card hl-sec-compute" style="padding:10px 16px;">
-          <div class="section-head" style="margin-top:0;">Dependency Graph <span style="font-weight:400;color:var(--dim)">(click a node: highlight its paths + list what depends on it; red = impacted path)</span></div>
-          <div id="hl-graph-wrap" style="overflow-x:auto;">
-            <svg id="hl-graph" width="100%" height="230" style="min-width:600px;display:block;"></svg>
-          </div>
-          <div id="hl-graph-info" style="font-size:10px;color:var(--muted);padding-top:4px;"></div>
+        <!-- V2.0 What should I do next (v2.3.2: compact, timeout fallback) -->
+        <div class="card hl-sec-incident" id="hl-next-card" style="padding:8px 16px;">
+          <div class="section-head" style="margin-top:0;">What Should I Do Next</div>
+          <div id="hl-next" style="font-size:11px;color:var(--muted);">Loading...</div>
         </div>
 
         <!-- V2.0 Entity detail drawer (host/service) -->
@@ -1804,62 +1827,26 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
 
-        <!-- Subsystem status -->
-        <div class="card" style="padding:12px 16px;">
-          <div class="section-head" style="margin-top:0;">Subsystem Status</div>
-          <div id="hl-summary" style="font-size:11px;color:var(--muted);">Loading...</div>
+        <!-- V2.0 Dependency graph (v2.3.2: auto-hidden while empty) -->
+        <div class="card hl-sec-compute" id="hl-graph-card" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Dependency Graph <span style="font-weight:400;color:var(--dim)">(click a node: highlight its paths + list what depends on it; red = impacted path)</span></div>
+          <div id="hl-graph-wrap" style="overflow-x:auto;">
+            <svg id="hl-graph" width="100%" height="230" style="min-width:600px;display:block;"></svg>
+          </div>
+          <div id="hl-graph-info" style="font-size:10px;color:var(--muted);padding-top:4px;"></div>
         </div>
 
-        <!-- Health checks (v1.11.0) -->
-        <div class="card" style="padding:14px 16px;" id="hl-check-form">
-          <div class="section-head" style="margin-top:0;">Add Health Check <span style="font-weight:400;color:var(--dim)">(target host must be on the allowlist; strict timeouts; no auto-remediation)</span></div>
-          <div class="form-row">
-            <div class="form-field"><label>Kind</label>
-              <select class="form-select" id="hl-c-kind">
-                <option value="http" selected>http (URL)</option><option value="service_url">service_url (URL)</option>
-                <option value="ping">ping (host)</option><option value="tcp">tcp (host:port)</option>
-                <option value="disk">disk (placeholder)</option><option value="uptime">uptime (placeholder)</option>
-              </select>
-            </div>
-            <div class="form-field"><label>Target</label><input class="form-input" id="hl-c-target" type="text" placeholder="http://192.168.1.5:8096 or nas.lan:445" autocomplete="off"></div>
-            <div class="form-field"><label>Timeout ms (0 = default)</label><input class="form-input" id="hl-c-timeout" type="number" value="0" min="0" max="60000"></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddCheck()">Add Check</button></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" onclick="hlRunChecks()" title="Run every enabled check now">▶ Run All Now</button></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" onclick="hlTestNotify()" title="Send a test alert to the configured webhooks (requires homelab_notifications_enabled)">🔔 Test Notify</button></div>
-          </div>
-        </div>
+        <!-- Health (v2.3.2: table stays front-and-center; the add form lives in + Add / Manage) -->
         <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Health <span id="hl-health-kpi" style="font-weight:400;color:var(--dim)"></span></div>
+          <div class="section-head" style="margin:10px 16px 0;">Health <span id="hl-health-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="float:right;display:flex;gap:8px;">
+              <button class="btn btn-ghost" onclick="hlRunChecks()" title="Run every enabled check now">▶ Run All Now</button>
+              <button class="btn btn-ghost" onclick="hl3ToggleConfig(true)" title="Add a health check (in + Add / Manage)">+ Check</button>
+            </span>
+          </div>
           <table class="users-table">
             <thead><tr><th>Kind</th><th>Target</th><th>Last Status</th><th>Latency</th><th>Detail</th><th>Checked</th><th>Actions</th></tr></thead>
             <tbody id="hl-checks-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
-
-        <!-- Virtualization connections (v2.1.0: Proxmox / ESXi / Docker / Hyper-V — all read-only) -->
-        <div class="card" style="padding:12px 16px;">
-          <div class="section-head" style="margin-top:0;">Virtualization Connections <span style="font-weight:400;color:var(--dim)">(read-only inventory — enable, set host + credential, Save, then Sync. No control actions exist in any client.)</span></div>
-          <div id="hl-virt-conns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:10px;margin-top:8px;"><div style="color:var(--dim);font-size:11px;">Loading...</div></div>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Virtual Machines</div>
-          <table class="users-table">
-            <thead><tr><th>VMID</th><th>Name</th><th>Node</th><th>Status</th><th>vCPU</th><th>RAM</th><th>Uptime</th><th>Updated</th></tr></thead>
-            <tbody id="hl-vms-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Containers</div>
-          <table class="users-table">
-            <thead><tr><th>CTID</th><th>Name</th><th>Kind</th><th>Node</th><th>Status</th><th>Updated</th></tr></thead>
-            <tbody id="hl-cts-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Storage Pools</div>
-          <table class="users-table">
-            <thead><tr><th>Name</th><th>Node</th><th>Type</th><th>Used</th><th>Total</th><th>Usage</th><th>Updated</th></tr></thead>
-            <tbody id="hl-storage-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
           </table>
         </div>
 
@@ -1925,41 +1912,102 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
-        <!-- Network & Risk (v1.13.0) -->
-        <div class="card" style="padding:14px 16px;" id="hl-dev-form">
-          <div class="section-head" style="margin-top:0;">Register Network Device <span style="font-weight:400;color:var(--dim)">(manual/import only — no scanning; mark unfamiliar devices as unknown to flag them)</span></div>
-          <div class="form-row">
-            <div class="form-field"><label>Name</label><input class="form-input" id="hl-n-name" type="text" placeholder="office-switch" autocomplete="off"></div>
-            <div class="form-field"><label>Kind</label>
-              <select class="form-select" id="hl-n-kind"><option value="switch">switch</option><option value="ap">ap</option><option value="firewall">firewall</option><option value="printer">printer</option><option value="iot">iot</option><option value="unknown" selected>unknown</option></select>
-            </div>
-            <div class="form-field"><label>MAC</label><input class="form-input" id="hl-n-mac" type="text" placeholder="aa:bb:cc:dd:ee:ff" autocomplete="off"></div>
-            <div class="form-field"><label>IP</label><input class="form-input" id="hl-n-ip" type="text" placeholder="192.168.1.20" autocomplete="off"></div>
-            <div class="form-field"><label>VLAN</label><input class="form-input" id="hl-n-vlan" type="text" placeholder="10" autocomplete="off"></div>
-            <div class="form-field"><label>Known?</label><select class="form-select" id="hl-n-known"><option value="yes" selected>yes</option><option value="no">no (flag it)</option></select></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDevice()">Add Device</button></div>
-          </div>
-        </div>
+        <!-- v2.3.2: everything below is secondary detail — collapsible, collapsed by default -->
         <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Network Devices</div>
-          <table class="users-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Known</th><th>Last Seen</th><th>Actions</th></tr></thead>
-            <tbody id="hl-devs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Security &amp; Risk Findings <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span>
-            <button class="btn btn-ghost" id="hl-risk-analyze" style="float:right;" onclick="hlAnalyzeRisks()" title="Re-run the deterministic risk rules over current inventory (no network I/O)">⚠ Analyze Now</button>
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-virt',this)">Virtualization Detail <span style="font-weight:400;color:var(--dim)">(VMs · containers · storage tables)</span><span class="hl3-caret">▾</span></div>
+          <div id="hl3-sec-virt" style="display:none">
+            <div class="section-head" style="margin:6px 16px 0;">Virtual Machines</div>
+            <table class="users-table">
+              <thead><tr><th>VMID</th><th>Name</th><th>Node</th><th>Status</th><th>vCPU</th><th>RAM</th><th>Uptime</th><th>Updated</th></tr></thead>
+              <tbody id="hl-vms-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Containers</div>
+            <table class="users-table">
+              <thead><tr><th>CTID</th><th>Name</th><th>Kind</th><th>Node</th><th>Status</th><th>Updated</th></tr></thead>
+              <tbody id="hl-cts-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Storage Pools</div>
+            <table class="users-table">
+              <thead><tr><th>Name</th><th>Node</th><th>Type</th><th>Used</th><th>Total</th><th>Usage</th><th>Updated</th></tr></thead>
+              <tbody id="hl-storage-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
           </div>
-          <table class="users-table">
-            <thead><tr><th>Severity</th><th>Finding</th><th>Summary</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
-            <tbody id="hl-risks-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
         </div>
 
-        <!-- Hosts -->
-        <div class="card" style="padding:14px 16px;" id="hl-host-form">
-          <div class="section-head" style="margin-top:0;">Register Host</div>
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-net',this)">Network &amp; Risk <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span><span class="hl3-caret">▾</span></div>
+          <div id="hl3-sec-net" style="display:none">
+            <div class="section-head" style="margin:6px 16px 0;">Network Devices</div>
+            <table class="users-table">
+              <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Known</th><th>Last Seen</th><th>Actions</th></tr></thead>
+              <tbody id="hl-devs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Security &amp; Risk Findings
+              <button class="btn btn-ghost" id="hl-risk-analyze" style="float:right;" onclick="hlAnalyzeRisks()" title="Re-run the deterministic risk rules over current inventory (no network I/O)">⚠ Analyze Now</button>
+            </div>
+            <table class="users-table">
+              <thead><tr><th>Severity</th><th>Finding</th><th>Summary</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+              <tbody id="hl-risks-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="overflow-x:auto;">
+          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3Toggle('hl3-sec-inv',this)">Inventory Tables <span style="font-weight:400;color:var(--dim)">(hosts · services · ports · dependencies · changes)</span><span class="hl3-caret">▾</span></div>
+          <div id="hl3-sec-inv" style="display:none">
+            <div class="section-head" style="margin:6px 16px 0;">Hosts</div>
+            <table class="users-table">
+              <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th>OS</th><th>Role Tags</th><th>Services</th><th>Updated</th></tr></thead>
+              <tbody id="hl-hosts-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Services</div>
+            <table class="users-table">
+              <thead><tr><th>Name</th><th>Runs on</th><th>URL</th><th>Ports</th><th>Owner</th><th>Criticality</th><th>Exposed</th><th>Updated</th></tr></thead>
+              <tbody id="hl-svcs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Open Ports (from registered services)</div>
+            <table class="users-table">
+              <thead><tr><th>Port</th><th>Service</th><th>Host</th><th>Protocol</th><th>Internet Exposed</th></tr></thead>
+              <tbody id="hl-ports-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Dependencies</div>
+            <table class="users-table">
+              <thead><tr><th>From</th><th>Kind</th><th>To</th><th>Notes</th><th>Actions</th></tr></thead>
+              <tbody id="hl-deps-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+            <div class="section-head" style="margin:6px 16px 0;">Recent Changes</div>
+            <div id="hl-changes" style="padding:8px 16px 14px;font-size:10px;color:var(--muted);">Loading...</div>
+          </div>
+        </div>
+
+        <!-- v2.3.2 + Add / Manage drawer: every registration form + integration config, hidden until asked for -->
+        <div class="card" id="hl3-config" style="display:none;padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">+ Add / Manage
+            <button class="btn btn-ghost" style="float:right;" onclick="hl3ToggleConfig(false)">✕ Close</button>
+          </div>
+
+          <div class="section-head" style="margin:10px 0 0;">Subsystem Status</div>
+          <div id="hl-summary" style="font-size:11px;color:var(--muted);">Loading...</div>
+
+          <div class="section-head" style="margin:14px 0 0;" id="hl-check-form">Add Health Check <span style="font-weight:400;color:var(--dim)">(target host must be on the allowlist; strict timeouts; no auto-remediation)</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-c-kind">
+                <option value="http" selected>http (URL)</option><option value="service_url">service_url (URL)</option>
+                <option value="ping">ping (host)</option><option value="tcp">tcp (host:port)</option>
+                <option value="disk">disk (placeholder)</option><option value="uptime">uptime (placeholder)</option>
+              </select>
+            </div>
+            <div class="form-field"><label>Target</label><input class="form-input" id="hl-c-target" type="text" placeholder="http://192.168.1.5:8096 or nas.lan:445" autocomplete="off"></div>
+            <div class="form-field"><label>Timeout ms (0 = default)</label><input class="form-input" id="hl-c-timeout" type="number" value="0" min="0" max="60000"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddCheck()">Add Check</button></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" onclick="hlTestNotify()" title="Send a test alert to the configured webhooks (requires homelab_notifications_enabled)">🔔 Test Notify</button></div>
+          </div>
+
+          <div class="section-head" style="margin:14px 0 0;">Virtualization Connections <span style="font-weight:400;color:var(--dim)">(read-only inventory — enable, set host + credential, Save, then Sync. Write actions need the separate v2.3.1 opt-in gate.)</span></div>
+          <div id="hl-virt-conns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:10px;margin-top:8px;"><div style="color:var(--dim);font-size:11px;">Loading...</div></div>
+
+          <div class="section-head" style="margin:14px 0 0;" id="hl-host-form">Register Host</div>
           <div class="form-row">
             <div class="form-field"><label>Name</label><input class="form-input" id="hl-h-name" type="text" placeholder="pve1" autocomplete="off"></div>
             <div class="form-field"><label>Kind</label>
@@ -1973,18 +2021,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Role tags (comma-sep)</label><input class="form-input" id="hl-h-tags" type="text" placeholder="hypervisor, storage" autocomplete="off"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddHost()">Add Host</button></div>
           </div>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Hosts</div>
-          <table class="users-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th>OS</th><th>Role Tags</th><th>Services</th><th>Updated</th></tr></thead>
-            <tbody id="hl-hosts-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
 
-        <!-- Services -->
-        <div class="card" style="padding:14px 16px;" id="hl-svc-form">
-          <div class="section-head" style="margin-top:0;">Register Service</div>
+          <div class="section-head" style="margin:14px 0 0;" id="hl-svc-form">Register Service</div>
           <div class="form-row">
             <div class="form-field"><label>Name</label><input class="form-input" id="hl-s-name" type="text" placeholder="jellyfin" autocomplete="off"></div>
             <div class="form-field"><label>Runs on</label><select class="form-select" id="hl-s-node"><option value="">— unassigned —</option></select></div>
@@ -1997,27 +2035,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Internet exposed</label><select class="form-select" id="hl-s-exposed"><option value="no" selected>no</option><option value="yes">yes</option></select></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddService()">Add Service</button></div>
           </div>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Services</div>
-          <table class="users-table">
-            <thead><tr><th>Name</th><th>Runs on</th><th>URL</th><th>Ports</th><th>Owner</th><th>Criticality</th><th>Exposed</th><th>Updated</th></tr></thead>
-            <tbody id="hl-svcs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
 
-        <!-- Ports -->
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Open Ports (from registered services)</div>
-          <table class="users-table">
-            <thead><tr><th>Port</th><th>Service</th><th>Host</th><th>Protocol</th><th>Internet Exposed</th></tr></thead>
-            <tbody id="hl-ports-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
+          <div class="section-head" style="margin:14px 0 0;" id="hl-dev-form">Register Network Device <span style="font-weight:400;color:var(--dim)">(manual/import only — no scanning; mark unfamiliar devices as unknown to flag them)</span></div>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input class="form-input" id="hl-n-name" type="text" placeholder="office-switch" autocomplete="off"></div>
+            <div class="form-field"><label>Kind</label>
+              <select class="form-select" id="hl-n-kind"><option value="switch">switch</option><option value="ap">ap</option><option value="firewall">firewall</option><option value="printer">printer</option><option value="iot">iot</option><option value="unknown" selected>unknown</option></select>
+            </div>
+            <div class="form-field"><label>MAC</label><input class="form-input" id="hl-n-mac" type="text" placeholder="aa:bb:cc:dd:ee:ff" autocomplete="off"></div>
+            <div class="form-field"><label>IP</label><input class="form-input" id="hl-n-ip" type="text" placeholder="192.168.1.20" autocomplete="off"></div>
+            <div class="form-field"><label>VLAN</label><input class="form-input" id="hl-n-vlan" type="text" placeholder="10" autocomplete="off"></div>
+            <div class="form-field"><label>Known?</label><select class="form-select" id="hl-n-known"><option value="yes" selected>yes</option><option value="no">no (flag it)</option></select></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDevice()">Add Device</button></div>
+          </div>
 
-        <!-- Dependencies -->
-        <div class="card" style="padding:14px 16px;" id="hl-dep-form">
-          <div class="section-head" style="margin-top:0;">Map Dependency <span style="font-weight:400;color:var(--dim)">(answers "what runs where?" and "what depends on this?")</span></div>
+          <div class="section-head" style="margin:14px 0 0;" id="hl-dep-form">Map Dependency <span style="font-weight:400;color:var(--dim)">(answers "what runs where?" and "what depends on this?")</span></div>
           <div class="form-row">
             <div class="form-field"><label>Service / source</label><select class="form-select" id="hl-d-from"></select></div>
             <div class="form-field"><label>Kind</label>
@@ -2027,19 +2059,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Notes</label><input class="form-input" id="hl-d-notes" type="text" placeholder="optional" autocomplete="off"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" onclick="hlAddDep()">Add Dependency</button></div>
           </div>
-        </div>
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Dependencies</div>
-          <table class="users-table">
-            <thead><tr><th>From</th><th>Kind</th><th>To</th><th>Notes</th><th>Actions</th></tr></thead>
-            <tbody id="hl-deps-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-          </table>
-        </div>
-
-        <!-- Recent changes -->
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head" style="margin:10px 16px 0;">Recent Changes</div>
-          <div id="hl-changes" style="padding:8px 16px 14px;font-size:10px;color:var(--muted);">Loading...</div>
         </div>
       </div><!-- /page-homelab -->
 
@@ -6492,6 +6511,9 @@ async function loadHomelab(){
     loadHlRisks();
     loadHlIncidents();
     loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
+    renderHlDeck();     // v2.3.2: the Service Deck — hosts/VMs/CTs/services as live tiles
+    hl3Restore();       // v2.3.2: restore collapsed-section preferences
+    hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s
     loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
     hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
     decorateHlSections(); // V2.0 pass 2: subsystem theming + connection cues
@@ -7116,6 +7138,124 @@ async function hlActKillSwitch(){
     hlMsg(r.message||(r.success?'Stopped':'Refused'),r.success);
   }
   loadHlActions();
+}
+
+// -- v2.3.2 Service Deck --------------------------------------------------------------
+function hl3Toggle(id,head){
+  const el=document.getElementById(id); if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'':'none';
+  if(head) head.classList.toggle('open',open);
+  try{ localStorage.setItem('hl3.'+id,open?'1':'0'); }catch(e){}
+}
+function hl3Restore(){
+  ['hl3-sec-virt','hl3-sec-net','hl3-sec-inv'].forEach(id=>{
+    let saved=null; try{ saved=localStorage.getItem('hl3.'+id); }catch(e){}
+    if(saved==='1'){ const el=document.getElementById(id); if(el){ el.style.display=''; const head=el.parentNode.querySelector('.hl3-col'); if(head) head.classList.add('open'); } }
+  });
+}
+function hl3ToggleConfig(show){
+  const el=document.getElementById('hl3-config'); if(!el) return;
+  el.style.display=show?'':'none';
+  if(show) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function hl3Dot(status){
+  const s=String(status||'').toLowerCase();
+  const cls=s==='running'||s==='healthy'||s==='ok'||s==='online'?'ok'
+    :(s==='stopped'||s==='failed'||s==='error'||s==='offline'?'bad'
+    :(s==='degraded'||s==='warning'?'warn':''));
+  return '<span class="hl3-dot '+cls+'" title="'+escapeHtml(s||'unknown')+'"></span>';
+}
+async function renderHlDeck(){
+  const deck=document.getElementById('hl3-deck'); if(!deck) return;
+  let vms=[],cts=[],health=[];
+  try{
+    const [v,c,h]=await Promise.all([api('/homelab/vms'),api('/homelab/containers'),api('/homelab/health/results')]);
+    vms=Array.isArray(v&&v.data)?v.data:[]; cts=Array.isArray(c&&c.data)?c.data:[];
+    health=Array.isArray(h&&h.data)?h.data:[];
+  }catch(e){ /* deck renders what it has */ }
+  // Latest health result per target (results arrive newest-first).
+  const latest={};
+  for(const r of health){ const t=String(r.target||''); if(t&&!(t in latest)) latest[t]=String(r.status||''); }
+  const healthFor=(needle)=>{
+    if(!needle) return '';
+    if(latest[needle]!==undefined) return latest[needle];
+    const hit=Object.keys(latest).find(t=>t.includes(needle));
+    return hit?latest[hit]:'';
+  };
+  // Group: registered hosts first (by name), then any virt node not registered as a host.
+  const groups=new Map();
+  const keyFor=(name)=>String(name||'').toLowerCase();
+  for(const hst of (HL_HOSTS||[])) groups.set(keyFor(hst.name),{host:hst,vms:[],cts:[],svcs:[]});
+  const bucket=(nodeName)=>{
+    const k=keyFor(nodeName)||'(unassigned)';
+    if(!groups.has(k)) groups.set(k,{host:{name:nodeName||'(unassigned)',kind:'node',address:''},vms:[],cts:[],svcs:[]});
+    return groups.get(k);
+  };
+  for(const vm of vms) bucket(vm.node_id).vms.push(vm);
+  for(const ct of cts) bucket(ct.node_id).cts.push(ct);
+  for(const svc of (HL_SVCS||[])){
+    const owner=(HL_HOSTS||[]).find(hh=>hh.id===svc.node_id);
+    (owner?groups.get(keyFor(owner.name)):bucket('')).svcs.push(svc);
+  }
+  if(!groups.size){
+    deck.innerHTML='<div class="hl3-empty">Nothing registered yet. Use <b>+ Add / Manage</b> to register a host or connect Proxmox/ESXi/Docker/Hyper-V — synced VMs and containers appear here automatically.</div>';
+    return;
+  }
+  let html='';
+  for(const [,g] of groups){
+    const total=g.vms.length+g.cts.length+g.svcs.length;
+    const hostDot=hl3Dot(healthFor(g.host.address)||((g.vms.some(v=>String(v.status).toLowerCase()==='running')||g.cts.some(c=>String(c.status).toLowerCase()==='running'))?'running':''));
+    html+='<div class="hl3-host"><div class="hl3-host-hd" onclick="'+(g.host.id?('hlEntity(\'host\',\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
+      +hostDot+escapeHtml(g.host.name||'?')
+      +' <span style="font-weight:400;color:var(--dim);font-size:9px;">'+escapeHtml(g.host.kind||'')+(g.host.address?' · '+escapeHtml(g.host.address):'')+'</span>'
+      +'<span class="sub">'+total+' item(s)</span></div><div class="hl3-tiles">';
+    for(const vm of g.vms){
+      const tgt=escapeHtml((vm.node_id||'')+'/'+(vm.vm_id||''));
+      html+='<span class="hl3-tile" title="VM '+tgt+' — '+escapeHtml(vm.status||'?')+'">'+hl3Dot(vm.status)
+        +'<span class="k">vm</span>'+escapeHtml(vm.name||vm.vm_id||'?')
+        +'<span class="zap" title="Propose restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_vm\',\'vm\',\''+tgt+'\')">⚡</span></span>';
+    }
+    for(const ct of g.cts){
+      const tgt=escapeHtml((ct.node_id||'')+'/'+(ct.container_id||''));
+      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+tgt+' — '+escapeHtml(ct.status||'?')+'">'+hl3Dot(ct.status)
+        +'<span class="k">'+escapeHtml(ct.kind||'ct')+'</span>'+escapeHtml(ct.name||ct.container_id||'?')
+        +'<span class="zap" title="Propose restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_container\',\'container\',\''+tgt+'\')">⚡</span></span>';
+    }
+    for(const svc of g.svcs){
+      const st=healthFor(svc.url)||healthFor((svc.ports&&svc.ports.length&&g.host.address)?(g.host.address+':'+svc.ports[0]):'');
+      const open=svc.url?('window.open(\''+escapeHtml(svc.url)+'\',\'_blank\')'):('hlEntity(\'service\',\''+escapeHtml(svc.id)+'\')');
+      html+='<span class="hl3-tile" title="'+escapeHtml(svc.name)+(svc.url?' — '+escapeHtml(svc.url):'')+' (click to open)" onclick="'+open+'">'
+        +hl3Dot(st||(svc.criticality==='critical'?'warning':''))
+        +'<span class="k">svc</span>'+escapeHtml(svc.name||'?')
+        +(svc.internet_exposed?'<span title="internet exposed" style="color:var(--status-warning)">🌐</span>':'')
+        +'<span class="zap" title="Propose service restart (approval-gated)" onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span></span>';
+    }
+    if(!total) html+='<span class="hl3-empty" style="padding:4px;">no services or guests yet</span>';
+    html+='</div></div>';
+  }
+  deck.innerHTML=html;
+  // Graph earns its space only when relationships exist.
+  const gc=document.getElementById('hl-graph-card');
+  if(gc) gc.style.display=((HL_DEPS||[]).length||(HL_SVCS||[]).some(s=>s.node_id))?'':'none';
+}
+async function hl3DeckPropose(type,kind,target){
+  const card=document.getElementById('hl-actions-card');
+  const sel=document.getElementById('hl-a-type');
+  if(sel&&!sel.options.length) await loadHlActions(); // options come from the API's allowed_actions
+  if(sel) sel.value=type;
+  const tk=document.getElementById('hl-a-tkind'); if(tk) tk.value=kind;
+  const ti=document.getElementById('hl-a-target'); if(ti) ti.value=target;
+  if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
+  const ri=document.getElementById('hl-a-rollback'); if(ri) ri.focus();
+}
+function hl3LoaderFallbacks(){
+  setTimeout(()=>{
+    const kpis=document.getElementById('hl-cmd-kpis');
+    if(kpis&&/^Loading/.test(kpis.textContent)) kpis.textContent='Command summary unavailable right now — retrying on the next poll.';
+    const nxt=document.getElementById('hl-next');
+    if(nxt&&/^Loading/.test(nxt.textContent)) nxt.textContent='Recommendations unavailable right now — retrying on the next poll.';
+  },7000);
 }
 
 // -- Network & risk awareness (v1.13.0) --------------------------------------------
