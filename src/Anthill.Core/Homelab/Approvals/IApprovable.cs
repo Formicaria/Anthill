@@ -88,6 +88,18 @@ public sealed class ActionProposal : IApprovable
     [JsonPropertyName("internet_exposed")] public bool InternetExposed { get; set; }
     [JsonPropertyName("rollback_note")] public string RollbackNote { get; set; } = "";
     [JsonPropertyName("dry_run_available")] public bool DryRunAvailable { get; set; }
+
+    // v2.3.0 additive execution fields — the v1.14 contract above is unchanged (APPROVALS.md:
+    // "V2.1 implements execution against this contract without changing it").
+    /// <summary>Optional JSON parameters for the runner (e.g. root_cause for resolve_incident). Never secrets.</summary>
+    [JsonPropertyName("payload")] public string Payload { get; set; } = "";
+    [JsonPropertyName("blast_radius_score")] public int BlastRadiusScore { get; set; }
+    [JsonPropertyName("blast_radius_explanation")] public string BlastRadiusExplanation { get; set; } = "";
+    [JsonPropertyName("decided_by")] public string DecidedBy { get; set; } = "";
+    [JsonPropertyName("decided_at")] public string DecidedAt { get; set; } = "";
+    [JsonPropertyName("executed_by")] public string ExecutedBy { get; set; } = "";
+    [JsonPropertyName("executed_at")] public string ExecutedAt { get; set; } = "";
+    [JsonPropertyName("execution_result")] public string ExecutionResult { get; set; } = "";
 }
 
 /// <summary>
@@ -123,6 +135,22 @@ public static class ApprovableProjections
             SourceId = S("id"),
         };
     }
+
+    /// <summary>v2.3.0: action proposals join the unified queue — one more From* method, not one more queue.</summary>
+    public static ApprovableView FromActionProposal(ActionProposal p) => new()
+    {
+        ApprovableId = "homelab_action:" + p.ApprovableId,
+        Kind = p.Kind,
+        Title = p.Title,
+        Summary = p.Summary,
+        RiskLevel = p.RiskLevel,
+        State = p.State,
+        DedupeKey = p.DedupeKey,
+        RendererHint = p.RendererHint,
+        RequestedBy = p.RequestedBy,
+        CreatedAt = p.CreatedAt,
+        SourceId = p.ApprovableId,
+    };
 
     private static string RiskFromMetadata(string metadataJson)
     {
