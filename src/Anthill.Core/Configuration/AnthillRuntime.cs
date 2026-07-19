@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.4.3";
+    public const string Version = "2.5.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -143,6 +143,9 @@ public static class AnthillRuntime
     public static int HomelabHealthTimeoutMs = 5000;
     /// <summary>Master gate for webhook notifications. Off by default.</summary>
     public static bool EnableHomelabNotifications = false;
+    /// <summary>v2.5.0: master gate for automation rules — default OFF, and every rule is
+    /// additionally disabled by default (Phase 14 rule: nothing self-heals until opted in twice).</summary>
+    public static bool EnableHomelabAutomation = false;
     public static string HomelabSlackWebhook = "";
     public static string HomelabDiscordWebhook = "";
     public static string HomelabGenericWebhook = "";
@@ -510,6 +513,7 @@ public static class AnthillRuntime
         HomelabHealthIntervalSeconds = Math.Clamp(config.HomelabHealthIntervalSeconds, 10, 86400);
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
+        EnableHomelabAutomation = config.HomelabAutomationEnabled;
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
         HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
         HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();

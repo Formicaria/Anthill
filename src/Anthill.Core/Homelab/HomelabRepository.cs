@@ -53,6 +53,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         "storage_inventory", "backup_inventory", "health_checks", "homelab_events", "change_log",
         "incidents", "dependencies", "risk_records", "homelab_credentials", "homelab_target_allowlist",
         "health_check_schedules", "action_proposals", "node_metrics", "arr_apps",
+        "automation_rules", "automation_runs", // v2.5.0 Phase 14
     };
 
     private static readonly string[] SchemaStatements =
@@ -84,6 +85,14 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, target_id TEXT NOT NULL, location TEXT,
             status TEXT NOT NULL DEFAULT 'unknown', last_success TEXT, last_attempt TEXT,
             size_bytes INTEGER DEFAULT 0, notes TEXT, updated_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS automation_rules (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, trigger_kind TEXT NOT NULL, target TEXT,
+            threshold INTEGER NOT NULL DEFAULT 3, action_kind TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0, cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+            max_runs_per_day INTEGER NOT NULL DEFAULT 3, updated_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS automation_runs (
+            id TEXT PRIMARY KEY, rule_id TEXT NOT NULL, rule_name TEXT, trigger_detail TEXT,
+            action_taken TEXT, outcome TEXT NOT NULL, fired_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS health_checks (
             id TEXT PRIMARY KEY, check_kind TEXT NOT NULL, target TEXT NOT NULL, service_id TEXT,
             node_id TEXT, status TEXT NOT NULL, latency_ms REAL DEFAULT 0, detail TEXT,
@@ -340,6 +349,83 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
                 Id = r.GetString(0), ContainerId = r.IsDBNull(1) ? "" : r.GetString(1), Kind = r.GetString(2),
                 Name = r.GetString(3), NodeId = r.IsDBNull(4) ? "" : r.GetString(4),
                 Status = r.IsDBNull(5) ? "" : r.GetString(5), UpdatedAt = r.GetString(6),
+            });
+        }
+        return list;
+    }
+
+    // ---- Automation (v2.5.0 Phase 14) ----------------------------------------------------------
+
+    public void UpsertAutomationRule(Automation.AutomationRule r)
+    {
+        r.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO automation_rules (id, name, trigger_kind, target, threshold, action_kind, enabled, cooldown_minutes, max_runs_per_day, updated_at)
+                VALUES ($id,$name,$tk,$target,$th,$ak,$en,$cd,$cap,$updated)
+                ON CONFLICT(id) DO UPDATE SET name=$name, trigger_kind=$tk, target=$target, threshold=$th,
+                    action_kind=$ak, enabled=$en, cooldown_minutes=$cd, max_runs_per_day=$cap, updated_at=$updated";
+            Bind(cmd, "$id", r.Id); Bind(cmd, "$name", r.Name); Bind(cmd, "$tk", r.TriggerKind);
+            Bind(cmd, "$target", r.Target); Bind(cmd, "$th", r.Threshold); Bind(cmd, "$ak", r.ActionKind);
+            Bind(cmd, "$en", r.Enabled ? 1 : 0); Bind(cmd, "$cd", r.CooldownMinutes);
+            Bind(cmd, "$cap", r.MaxRunsPerDay); Bind(cmd, "$updated", r.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<Automation.AutomationRule> ListAutomationRules()
+    {
+        var list = new List<Automation.AutomationRule>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, name, trigger_kind, target, threshold, action_kind, enabled, cooldown_minutes, max_runs_per_day, updated_at FROM automation_rules ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new Automation.AutomationRule
+            {
+                Id = r.GetString(0), Name = r.GetString(1), TriggerKind = r.GetString(2),
+                Target = r.IsDBNull(3) ? "" : r.GetString(3), Threshold = (int)r.GetInt64(4),
+                ActionKind = r.GetString(5), Enabled = r.GetInt64(6) == 1,
+                CooldownMinutes = (int)r.GetInt64(7), MaxRunsPerDay = (int)r.GetInt64(8),
+                UpdatedAt = r.GetString(9),
+            });
+        }
+        return list;
+    }
+
+    public void RecordAutomationRun(Automation.AutomationRun run)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT OR IGNORE INTO automation_runs (id, rule_id, rule_name, trigger_detail, action_taken, outcome, fired_at)
+                VALUES ($id,$rid,$rname,$detail,$action,$outcome,$fired)";
+            Bind(cmd, "$id", run.Id); Bind(cmd, "$rid", run.RuleId); Bind(cmd, "$rname", run.RuleName);
+            Bind(cmd, "$detail", run.TriggerDetail); Bind(cmd, "$action", run.ActionTaken);
+            Bind(cmd, "$outcome", run.Outcome); Bind(cmd, "$fired", run.FiredAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<Automation.AutomationRun> ListAutomationRuns(int limit = 100)
+    {
+        var list = new List<Automation.AutomationRun>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, rule_id, rule_name, trigger_detail, action_taken, outcome, fired_at FROM automation_runs ORDER BY fired_at DESC, id DESC LIMIT $limit";
+        Bind(cmd, "$limit", limit);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new Automation.AutomationRun
+            {
+                Id = r.GetString(0), RuleId = r.GetString(1), RuleName = r.IsDBNull(2) ? "" : r.GetString(2),
+                TriggerDetail = r.IsDBNull(3) ? "" : r.GetString(3), ActionTaken = r.IsDBNull(4) ? "" : r.GetString(4),
+                Outcome = r.GetString(5), FiredAt = r.GetString(6),
             });
         }
         return list;
