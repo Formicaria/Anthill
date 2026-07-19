@@ -45,6 +45,7 @@
   "homelab_proxmox_protocol":              "https",
   "homelab_proxmox_write_actions_enabled": false,
   "homelab_proxmox_sync_interval_seconds": 300,
+  "homelab_arr_sync_interval_seconds":     300,
 
   "_comment_homelab_virtualization": "Read-only virtualization integrations (v2.1.0). Same discipline as Proxmox: the client has no write methods (no start/stop/delete), the secret lives in the credential store (referenced by id, never here), and the host must be on the homelab allowlist. Configure these from the UI (Homelab -> Virtualization Connections) or here. ESXi/vCenter = vSphere REST (built-in Read-only role is enough); Docker = Engine API over TLS (or a read-only socket proxy); Hyper-V = WinRM WMI read-only Enumerate (HTTPS, read-only account).",
   "homelab_esxi_enabled":                  false,
