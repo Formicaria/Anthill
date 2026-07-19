@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.3.0";
+    public const string Version = "2.3.1";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -157,6 +157,9 @@ public static class AnthillRuntime
     public static bool HomelabProxmoxInsecureTls = false;
     /// <summary>v2.2.0: "https" (default) or "http" — protocol selection, separate from TLS verification.</summary>
     public static string HomelabProxmoxProtocol = "https";
+    /// <summary>v2.3.1: opt-in gate for the write-capable ProxmoxActionRunner. Default OFF —
+    /// connecting Proxmox read-only must never silently grant power/snapshot/backup capability.</summary>
+    public static bool HomelabProxmoxWriteActionsEnabled = false;
     public static int HomelabProxmoxSyncIntervalSeconds = 300;
     // ---- Read-only virtualization integrations (v2.1.0) --------------------
     // ESXi/vCenter (vSphere REST), Docker (Engine API), Hyper-V (WinRM WMI read-only). Each mirrors
@@ -514,6 +517,7 @@ public static class AnthillRuntime
         HomelabProxmoxCredentialId = string.IsNullOrWhiteSpace(config.HomelabProxmoxCredentialId) ? "proxmox-main" : config.HomelabProxmoxCredentialId.Trim();
         HomelabProxmoxInsecureTls = config.HomelabProxmoxInsecureTls;
         HomelabProxmoxProtocol = string.Equals((config.HomelabProxmoxProtocol ?? "").Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
+        HomelabProxmoxWriteActionsEnabled = config.HomelabProxmoxWriteActionsEnabled;
         HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
         EnableHomelabEsxi = config.HomelabEsxiEnabled;
         HomelabEsxiHost = (config.HomelabEsxiHost ?? "").Trim();
