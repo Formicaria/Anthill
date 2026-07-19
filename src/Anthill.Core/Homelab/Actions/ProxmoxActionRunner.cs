@@ -149,12 +149,12 @@ public sealed class ProxmoxActionRunner : IHomelabActionRunner
     public Task<ActionRunResult> DryRunAsync(ActionProposal p, CancellationToken ct = default)
     {
         if (!TryParseTarget(p, out var node, out var kind, out var vmid))
-            return Task.FromResult(new ActionRunResult(false, $"Target '{p.TargetId}' is not in node/vmid form (e.g. pve1/104)."));
+            return System.Threading.Tasks.Task.FromResult(new ActionRunResult(false, $"Target '{p.TargetId}' is not in node/vmid form (e.g. pve1/104)."));
         var (op, _) = OpFor(p.ActionType);
         var what = op.Length > 0 ? $"POST /nodes/{node}/{kind}/{vmid}/status/{op}"
             : p.ActionType == "create_snapshot" ? $"POST /nodes/{node}/{kind}/{vmid}/snapshot (timestamped anthill-* name)"
             : $"POST /nodes/{node}/vzdump for vmid {vmid}";
-        return Task.FromResult(new ActionRunResult(true, $"Would issue {what}. No other endpoint is reachable by this client."));
+        return System.Threading.Tasks.Task.FromResult(new ActionRunResult(true, $"Would issue {what}. No other endpoint is reachable by this client."));
     }
 
     public async Task<ActionRunResult> VerifyAsync(ActionProposal p, CancellationToken ct = default)
@@ -167,7 +167,7 @@ public sealed class ProxmoxActionRunner : IHomelabActionRunner
         using var client = _clientFactory();
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            await Task.Delay(TimeSpan.FromSeconds(3), ct);
+            await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(3), ct);
             var status = await client.GetGuestStatusAsync(node, kind, vmid, ct);
             if (status == expect) return new(true, $"{kind}/{vmid} is '{status}' as expected");
         }
