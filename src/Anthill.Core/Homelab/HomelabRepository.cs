@@ -334,6 +334,48 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
+    // ---- Backups (v2.4.0 Phase 13: the backup_inventory table finally gets its accessors) ------
+
+    public void UpsertBackup(BackupRecord b)
+    {
+        b.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO backup_inventory (id, target_kind, target_id, location, status, last_success, last_attempt, size_bytes, notes, updated_at)
+                VALUES ($id, $tk, $tid, $loc, $status, $ls, $la, $size, $notes, $updated)
+                ON CONFLICT(id) DO UPDATE SET target_kind=$tk, target_id=$tid, location=$loc, status=$status,
+                    last_success=$ls, last_attempt=$la, size_bytes=$size, notes=$notes, updated_at=$updated";
+            Bind(cmd, "$id", b.Id); Bind(cmd, "$tk", b.TargetKind); Bind(cmd, "$tid", b.TargetId);
+            Bind(cmd, "$loc", b.Location); Bind(cmd, "$status", b.Status); Bind(cmd, "$ls", b.LastSuccess);
+            Bind(cmd, "$la", b.LastAttempt); Bind(cmd, "$size", b.SizeBytes); Bind(cmd, "$notes", b.Notes);
+            Bind(cmd, "$updated", b.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<BackupRecord> ListBackups()
+    {
+        var list = new List<BackupRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, target_kind, target_id, location, status, last_success, last_attempt, size_bytes, notes, updated_at FROM backup_inventory ORDER BY target_kind, target_id";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new BackupRecord
+            {
+                Id = r.GetString(0), TargetKind = r.GetString(1), TargetId = r.GetString(2),
+                Location = r.IsDBNull(3) ? "" : r.GetString(3), Status = r.GetString(4),
+                LastSuccess = r.IsDBNull(5) ? "" : r.GetString(5), LastAttempt = r.IsDBNull(6) ? "" : r.GetString(6),
+                SizeBytes = r.IsDBNull(7) ? 0 : r.GetInt64(7), Notes = r.IsDBNull(8) ? "" : r.GetString(8),
+                UpdatedAt = r.GetString(9),
+            });
+        }
+        return list;
+    }
+
     public void UpsertStoragePool(StoragePoolRecord pool)
     {
         pool.UpdatedAt = AnthillTime.NowUtc().ToIso();
@@ -623,7 +665,9 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         var list = new List<ActionProposal>();
         using var conn = Connect();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT {ActionProposalColumns} FROM action_proposals ORDER BY created_at DESC LIMIT $limit";
+        // v2.4.0: id tiebreaker — created_at is second-resolution ISO, so two proposals created in
+        // the same tick had NONDETERMINISTIC order (source of the Windows-only supersede test flake).
+        cmd.CommandText = $"SELECT {ActionProposalColumns} FROM action_proposals ORDER BY created_at DESC, id DESC LIMIT $limit";
         Bind(cmd, "$limit", Math.Clamp(limit, 1, 500));
         using var r = cmd.ExecuteReader();
         while (r.Read()) list.Add(ReadActionProposal(r));
