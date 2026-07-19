@@ -1861,6 +1861,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="hl-bk-runbook" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:11px;"></div>
         </div>
 
+        <!-- v2.5.0 Phase 14: automation rules -->
+        <div class="card" id="hl-auto-card" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Automation Rules
+            <span id="hl-auto-state" style="font-weight:normal;font-size:10px;color:var(--dim);margin-left:8px;"></span>
+            <button class="btn btn-ghost" style="float:right;" onclick="hlLoadAutomation()" title="Refresh">↺</button>
+            <button class="btn btn-ghost" style="float:right;" onclick="hlAutoEvaluate()" title="Evaluate all enabled rules now">▶ Evaluate now</button>
+          </div>
+          <div id="hl-auto-body" style="font-size:11px;color:var(--muted);">Loading rules…</div>
+          <div id="hl-auto-runs" style="margin-top:8px;font-size:10px;"></div>
+        </div>
+
         <!-- V2.0 Entity detail drawer (host/service) -->
         <div class="card" id="hl-entity-detail" style="display:none;padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Detail — <span id="hl-ent-title"></span>
@@ -6568,6 +6579,44 @@ function hlMsg(m,ok){ const el=document.getElementById('hl-msg'); if(!el) return
   el.textContent=m; el.style.color=ok?'var(--green)':'var(--red)';
   setTimeout(()=>{ if(el.textContent===m) el.textContent=''; },6000); }
 
+// -- v2.5.0 Phase 14: automation rules -----------------------------------------------------------
+async function hlLoadAutomation(){
+  const body=document.getElementById('hl-auto-body'); if(!body) return;
+  try{
+    const [r,runs]=await Promise.all([api('/homelab/automation/rules'),api('/homelab/automation/runs')]);
+    if(!(r&&r.success&&r.data)){ body.innerHTML='<span style="color:var(--dim)">Automation unavailable.</span>'; return; }
+    const d=r.data, rules=d.rules||[];
+    const st=document.getElementById('hl-auto-state');
+    if(st) st.textContent=d.enabled?'engine ON · rules fire only when individually enabled':'engine OFF (homelab_automation_enabled) — rules are stored but nothing evaluates';
+    body.innerHTML=!rules.length
+      ? '<span style="color:var(--dim)">No rules yet. POST /homelab/automation/rules — e.g. disk_above_percent → warn_event, service_down → propose_restart (restart is approval-gated, never direct).</span>'
+      : '<table style="width:100%;border-collapse:collapse;font-size:10px;">'+
+        '<tr style="color:var(--dim);text-align:left;"><th>Rule</th><th>Trigger</th><th>Action</th><th>Cooldown</th><th>Cap/day</th><th>State</th><th></th></tr>'+
+        rules.map(x=>'<tr style="border-top:1px solid var(--border);">'+
+          '<td><b style="color:var(--text)">'+escapeHtml(x.name)+'</b></td>'+
+          '<td>'+escapeHtml(x.trigger_kind)+(x.target?' · '+escapeHtml(x.target):'')+(x.trigger_kind==='disk_above_percent'||x.trigger_kind==='repeated_health_failure'?' ≥'+x.threshold:'')+'</td>'+
+          '<td>'+escapeHtml(x.action_kind)+'</td><td>'+x.cooldown_minutes+'m</td><td>'+x.max_runs_per_day+'</td>'+
+          '<td style="color:'+(x.enabled?'var(--green)':'var(--dim)')+';font-weight:700;">'+(x.enabled?'ENABLED':'off')+'</td>'+
+          '<td><button class="btn btn-ghost" style="font-size:9px;" onclick="hlAutoToggle(\''+attrSafe(x.id)+'\','+(x.enabled?'0':'1')+')">'+(x.enabled?'Disable':'Enable')+'</button></td>'+
+        '</tr>').join('')+'</table>';
+    const runBox=document.getElementById('hl-auto-runs');
+    const rr=(runs&&runs.success&&runs.data)||[];
+    if(runBox) runBox.innerHTML=rr.length
+      ? '<div style="color:var(--dim);margin-bottom:2px;">RECENT RUNS</div>'+rr.slice(0,6).map(x=>'<div style="padding:2px 0;border-top:1px dotted var(--border);">'+
+          '<span style="color:var(--dim)">'+escapeHtml((x.fired_at||'').substring(0,16))+'</span> <b>'+escapeHtml(x.rule_name)+'</b> · '+
+          '<span style="color:'+(x.outcome==='fired'?'var(--orange)':'var(--dim)')+'">'+escapeHtml(x.outcome)+'</span> '+escapeHtml((x.action_taken||x.trigger_detail||'').substring(0,80))+'</div>').join('')
+      : '';
+  }catch(e){ body.innerHTML='<span style="color:var(--red)">Error: '+escapeHtml(e.message||'')+'</span>'; }
+}
+async function hlAutoToggle(id,on){
+  try{ await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),{method:'POST'}); }catch(e){}
+  hlLoadAutomation();
+}
+async function hlAutoEvaluate(){
+  try{ await window.api('/homelab/automation/evaluate',{method:'POST'}); }catch(e){}
+  hlLoadAutomation();
+}
+
 // -- v2.4.0 Phase 13: backup + restore intelligence ---------------------------------------------
 async function hlLoadBackup(){
   const body=document.getElementById('hl-bk-body'); if(!body) return;
@@ -6619,6 +6668,7 @@ async function loadHomelab(){
     loadHlIncidents();
     loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
     hlLoadBackup();     // v2.4.0: backup + restore intelligence (Phase 13)
+    hlLoadAutomation(); // v2.5.0: automation rules (Phase 14)
     renderHlDeck();     // v2.3.2/3: the Service Deck — hosts/VMs/CTs/services as live tiles + metrics
     renderHl3Apps();    // v2.4.1: *arr-stack apps (Homarr-style)
     hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s

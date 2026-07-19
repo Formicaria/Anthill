@@ -60,6 +60,7 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_health_interval_seconds")] public int HomelabHealthIntervalSeconds { get; set; } = 60;
     [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
     [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_automation_enabled")] public bool HomelabAutomationEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
     [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
     [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";

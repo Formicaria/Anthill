@@ -44,6 +44,7 @@
   "homelab_proxmox_insecure_tls":          false,
   "homelab_proxmox_protocol":              "https",
   "homelab_proxmox_write_actions_enabled": false,
+  "homelab_automation_enabled": false,
   "homelab_proxmox_sync_interval_seconds": 300,
   "homelab_arr_sync_interval_seconds":     300,
 
