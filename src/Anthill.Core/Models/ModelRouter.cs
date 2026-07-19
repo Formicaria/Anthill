@@ -39,15 +39,27 @@ public sealed class OllamaClient : IModelClient
             {
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
                 using var response = Http.PostAsync(url, content).GetAwaiter().GetResult();
-                response.EnsureSuccessStatusCode();
+                // v2.4.3: a non-2xx is NOT a connection failure — report what Ollama actually said.
+                // The classic trap: a 404 here almost always means the model is not pulled, which
+                // used to masquerade as "could not connect" and sent operators chasing networking.
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    var detail = errBody.Length > 0 && errBody.Length <= 300 ? $" — {errBody.Trim()}" : "";
+                    return (int)response.StatusCode == 404
+                        ? $"ERROR: Ollama at {_host} is reachable but model '{_model}' is not available{detail}. Run: ollama pull {_model} (an offline machine needs the model blobs copied in — it cannot pull)."
+                        : $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.";
+                }
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 using var doc = JsonDocument.Parse(body);
                 var output = doc.RootElement.TryGetProperty("response", out var resp) ? resp.GetString()?.Trim() ?? "" : "";
                 return string.IsNullOrEmpty(output) ? "Ollama returned an empty response." : output;
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException error)
             {
-                return "ERROR: Could not connect to Ollama. Make sure Ollama is running at http://localhost:11434.";
+                return $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
+                    + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
+                    + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?";
             }
             catch (TaskCanceledException)
             {

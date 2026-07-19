@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.4.2
+**Current version:** v2.4.3
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -59,6 +59,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v2.4.3` | Honest Ollama diagnostics: a 404 from a missing model no longer masquerades as "could not connect" (it now names the model and the fix, including the offline-install case), true connection failures name the configured host + the OLLAMA_HOST=0.0.0.0 binding gotcha, and the system summary adds `ollama_model_present` via `/api/tags` so a green chip can no longer hide an absent model. |
 | `v2.4.2` | Registering a host (`POST/PUT /homelab/hosts`) or an *arr app (`POST /homelab/arr`) now auto-adds its address to the D1 target allowlist (audited, operator-attributed) — the separate manual allowlist step was friction that caused silent sync dead-ends. Provider syncs still cannot widen the allowlist; the general SSRF guard is untouched. |
 | `v2.4.1` | **Dynamic Service Deck + node metrics + guest pages + *arr apps.** Nothing nested: detail sections open full sub-pages with a top ✕ Close. Deck tiles/nodes are hideable + restorable from a tray. Proxmox node CPU/RAM/disk/uptime persisted (`node_metrics`, `GET /homelab/metrics/nodes`) and rendered as bars on host cards. Every VM/LXC gets its own page (facts, events, approval-gated action shortcuts). Homarr-style *arr integrations for sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr: GET-only client, credential-store keys, allowlist-gated, scheduler-synced status/health/queue, per-app pages. |
 | `v2.3.2` | **Homelab Service Deck (UI full-replace) + Proxmox write-runner hardening.** The Homelab page is now a Homarr-style deck: hosts and synced virtualization nodes as cards, their VMs/containers/services as live status tiles (click to open, ⚡ to pre-fill an approval-gated action), all registration forms and integration config folded into one "+ Add / Manage" drawer, secondary tables collapsible, the dependency graph hidden until relationships exist, and 7-second labeled fallbacks instead of infinite "Loading...". Hardening (was staged v2.3.1.1): the write client enforces the **D1 target allowlist** before every request, the `node` target segment is character-validated (blocks query/fragment smuggling past the structural path allowlist), the dev mock runner registers **after** the Proxmox runner (no more shadowed real execution), `dry_run_available` computed against the real proposal, stale errors now point at `homelab_proxmox_write_actions_enabled`, xUnit2012 cleared. |
