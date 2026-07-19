@@ -1,5 +1,19 @@
 # ANTHILL Changelog
 
+## v2.4.2 — Registering a host or app auto-allowlists its address
+
+Live operator feedback: adding a host or an *arr app and THEN separately allowlisting the same
+address was pure friction — and forgetting the second step produced silent "sync refuses to
+connect" dead-ends. Now `POST/PUT /homelab/hosts` and `POST /homelab/arr` auto-add the address to
+the D1 target allowlist when it is not already on it (audited entry, note says what registered
+it).
+
+Safety boundary unchanged: both endpoints already require `manage_homelab_integrations`, so the
+operator's registration IS the declaration of intent. Provider sync paths deliberately cannot
+allowlist anything — a sync never widens D1 — and the general SSRF guard for LLM-directed tools
+is untouched.
+
+
 ## v2.4.1 — Dynamic Service Deck, node metrics, guest pages, *arr-stack apps
 
 Driven by live operator feedback on v2.3.2 ("fully dynamic and versatile... everything visible,
