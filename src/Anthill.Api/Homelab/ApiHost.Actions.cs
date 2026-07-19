@@ -25,20 +25,23 @@ public static partial class ApiHost
     private static void InitHomelabActions()
     {
         var runners = new List<IHomelabActionRunner> { new LocalActionRunner(Homelab) };
-        // The mock runner rides the same gate as the v1.9.1 mock providers: dev/test installs only.
-        if (AnthillRuntime.EnableHomelabMockProviders) runners.Add(new MockActionRunner());
         // v2.3.1: the first real infrastructure runner. DOUBLE-gated — the Proxmox integration must
         // be enabled AND the operator must explicitly opt in to write actions (default off), so a
         // read-only Proxmox connection can never silently gain power/snapshot/backup capability.
-        // Token comes from the credential store per client, exactly like the read-only sync client.
+        // Token comes from the credential store per client; the target allowlist is enforced inside
+        // the client before any request (v2.3.1.1), exactly like the read-only sync client.
         if (AnthillRuntime.EnableHomelab && AnthillRuntime.EnableHomelabProxmox
             && AnthillRuntime.HomelabProxmoxWriteActionsEnabled
             && !string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
             runners.Add(new ProxmoxActionRunner(() => new ProxmoxActionClient(
-                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort,
+                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
                 () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxActionRunner"),
                 AnthillRuntime.HomelabProxmoxInsecureTls,
                 protocol: AnthillRuntime.HomelabProxmoxProtocol)));
+        // v2.3.1.1: the mock runner is registered LAST. It claims every catalog action, so with the
+        // dev mock gate on it previously shadowed the real Proxmox runner (first CanRun match wins)
+        // and reported real actions as executed without touching anything.
+        if (AnthillRuntime.EnableHomelabMockProviders) runners.Add(new MockActionRunner());
         HomelabActions = new ActionExecutor(Homelab, runners);
     }
 
