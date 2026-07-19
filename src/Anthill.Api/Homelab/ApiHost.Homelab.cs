@@ -56,6 +56,8 @@ public static partial class ApiHost
         // v2.3.0 (NORTH_STAR Phase 12): the approval-gated action pipeline. Local + mock runners
         // only in this release; both action capability gates remain OFF by default (fail closed).
         InitHomelabActions();
+        // v2.3.3: *arr-stack app sync (read-only, credential-store keys, allowlist-gated).
+        InitHomelabArr();
 
         // v1.9.1: the mock-provider harness — the shared execution pattern every real provider
         // follows. Mocks are deterministic and network-free; registered only when the mock gate
@@ -436,6 +438,9 @@ public static partial class ApiHost
         // v2.3.0 (NORTH_STAR Phase 12): approval-gated action endpoints + kill switch.
         MapHomelabActionEndpoints(app);
         MapHomelabBackupEndpoints(app); // v2.4.0 Phase 13
+
+        // v2.3.3: *arr apps + node metrics.
+        MapHomelabArrEndpoints(app);
 
         // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------
 

@@ -52,7 +52,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         "homelab_nodes", "network_devices", "services", "vm_inventory", "container_inventory",
         "storage_inventory", "backup_inventory", "health_checks", "homelab_events", "change_log",
         "incidents", "dependencies", "risk_records", "homelab_credentials", "homelab_target_allowlist",
-        "health_check_schedules", "action_proposals",
+        "health_check_schedules", "action_proposals", "node_metrics", "arr_apps",
     };
 
     private static readonly string[] SchemaStatements =
@@ -131,6 +131,17 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             requested_by TEXT, created_at TEXT NOT NULL,
             decided_by TEXT, decided_at TEXT, executed_by TEXT, executed_at TEXT, execution_result TEXT)",
         @"CREATE INDEX IF NOT EXISTS idx_action_proposals_state ON action_proposals(state, created_at)",
+        @"CREATE TABLE IF NOT EXISTS node_metrics (
+            node_id TEXT PRIMARY KEY, node_name TEXT NOT NULL, source TEXT NOT NULL,
+            cpu_percent REAL DEFAULT -1, cpu_cores INTEGER DEFAULT 0,
+            mem_used_bytes INTEGER DEFAULT -1, mem_total_bytes INTEGER DEFAULT -1,
+            disk_used_bytes INTEGER DEFAULT -1, disk_total_bytes INTEGER DEFAULT -1,
+            uptime_seconds INTEGER DEFAULT 0, updated_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS arr_apps (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL,
+            credential_id TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'unknown', version TEXT, health_warnings INTEGER DEFAULT 0,
+            queue_count INTEGER DEFAULT -1, last_message TEXT, last_checked TEXT)",
         @"CREATE INDEX IF NOT EXISTS idx_homelab_events_created ON homelab_events(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_health_checks_checked ON health_checks(checked_at)",
@@ -1189,5 +1200,93 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             counts[table] = (long)(cmd.ExecuteScalar() ?? 0L);
         }
         return counts;
+    }
+
+    // ---- v2.3.3: node metrics + *arr apps -----------------------------------------------------
+
+    public void UpsertNodeMetric(NodeMetricRecord m)
+    {
+        m.UpdatedAt = AnthillTime.NowUtc().ToIso();
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO node_metrics (node_id,node_name,source,cpu_percent,cpu_cores,mem_used_bytes,mem_total_bytes,disk_used_bytes,disk_total_bytes,uptime_seconds,updated_at)
+                VALUES ($id,$name,$src,$cpu,$cores,$mu,$mt,$du,$dt,$up,$at)
+                ON CONFLICT(node_id) DO UPDATE SET node_name=$name,source=$src,cpu_percent=$cpu,cpu_cores=$cores,
+                mem_used_bytes=$mu,mem_total_bytes=$mt,disk_used_bytes=$du,disk_total_bytes=$dt,uptime_seconds=$up,updated_at=$at";
+            Bind(cmd,"$id",m.NodeId); Bind(cmd,"$name",m.NodeName); Bind(cmd,"$src",m.Source);
+            Bind(cmd,"$cpu",m.CpuPercent); Bind(cmd,"$cores",m.CpuCores); Bind(cmd,"$mu",m.MemUsedBytes);
+            Bind(cmd,"$mt",m.MemTotalBytes); Bind(cmd,"$du",m.DiskUsedBytes); Bind(cmd,"$dt",m.DiskTotalBytes);
+            Bind(cmd,"$up",m.UptimeSeconds); Bind(cmd,"$at",m.UpdatedAt);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<NodeMetricRecord> ListNodeMetrics()
+    {
+        var list = new List<NodeMetricRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT node_id,node_name,source,cpu_percent,cpu_cores,mem_used_bytes,mem_total_bytes,disk_used_bytes,disk_total_bytes,uptime_seconds,updated_at FROM node_metrics ORDER BY node_name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) list.Add(new NodeMetricRecord
+        {
+            NodeId=r.GetString(0), NodeName=r.GetString(1), Source=r.GetString(2),
+            CpuPercent=r.IsDBNull(3)?-1:r.GetDouble(3), CpuCores=r.IsDBNull(4)?0:r.GetInt32(4),
+            MemUsedBytes=r.IsDBNull(5)?-1:r.GetInt64(5), MemTotalBytes=r.IsDBNull(6)?-1:r.GetInt64(6),
+            DiskUsedBytes=r.IsDBNull(7)?-1:r.GetInt64(7), DiskTotalBytes=r.IsDBNull(8)?-1:r.GetInt64(8),
+            UptimeSeconds=r.IsDBNull(9)?0:r.GetInt64(9), UpdatedAt=r.IsDBNull(10)?"":r.GetString(10),
+        });
+        return list;
+    }
+
+    public void UpsertArrApp(ArrAppRecord a)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO arr_apps (id,kind,name,url,credential_id,enabled,status,version,health_warnings,queue_count,last_message,last_checked)
+                VALUES ($id,$kind,$name,$url,$cred,$en,$st,$ver,$hw,$q,$msg,$at)
+                ON CONFLICT(id) DO UPDATE SET kind=$kind,name=$name,url=$url,credential_id=$cred,enabled=$en,
+                status=$st,version=$ver,health_warnings=$hw,queue_count=$q,last_message=$msg,last_checked=$at";
+            Bind(cmd,"$id",a.Id); Bind(cmd,"$kind",a.Kind); Bind(cmd,"$name",a.Name); Bind(cmd,"$url",a.Url);
+            Bind(cmd,"$cred",a.CredentialId); Bind(cmd,"$en",a.Enabled?1:0); Bind(cmd,"$st",a.Status);
+            Bind(cmd,"$ver",a.Version); Bind(cmd,"$hw",a.HealthWarnings); Bind(cmd,"$q",a.QueueCount);
+            Bind(cmd,"$msg",a.LastMessage); Bind(cmd,"$at",a.LastChecked);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public void RemoveArrApp(string id, string removedBy)
+    {
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM arr_apps WHERE id=$id";
+            Bind(cmd,"$id",id);
+            if (cmd.ExecuteNonQuery() > 0)
+                RecordChange(new ChangeRecord { SubjectKind="arr_app", SubjectId=id, ChangeKind="removed", Summary="*arr app removed", ChangedBy=removedBy });
+        }
+    }
+
+    public IReadOnlyList<ArrAppRecord> ListArrApps()
+    {
+        var list = new List<ArrAppRecord>();
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id,kind,name,url,credential_id,enabled,status,version,health_warnings,queue_count,last_message,last_checked FROM arr_apps ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) list.Add(new ArrAppRecord
+        {
+            Id=r.GetString(0), Kind=r.GetString(1), Name=r.GetString(2), Url=r.GetString(3),
+            CredentialId=r.GetString(4), Enabled=!r.IsDBNull(5)&&r.GetInt32(5)==1,
+            Status=r.IsDBNull(6)?"unknown":r.GetString(6), Version=r.IsDBNull(7)?"":r.GetString(7),
+            HealthWarnings=r.IsDBNull(8)?0:r.GetInt32(8), QueueCount=r.IsDBNull(9)?-1:r.GetInt32(9),
+            LastMessage=r.IsDBNull(10)?"":r.GetString(10), LastChecked=r.IsDBNull(11)?"":r.GetString(11),
+        });
+        return list;
     }
 }

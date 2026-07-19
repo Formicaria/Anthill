@@ -65,6 +65,17 @@ public sealed class ProxmoxInventoryProvider : IInventoryProvider, IIntegrationS
                 }, changedBy: Name);
                 items++;
 
+                // v2.3.3: the /nodes payload already carries live resource usage — persist it so
+                // the Service Deck can show CPU/RAM/storage bars per hypervisor node.
+                _repository.UpsertNodeMetric(new NodeMetricRecord
+                {
+                    NodeId = nodeId, NodeName = nodeName, Source = "proxmox",
+                    CpuPercent = Frac(node, "cpu") >= 0 ? Frac(node, "cpu") * 100.0 : -1, CpuCores = (int)Num(node, "maxcpu"),
+                    MemUsedBytes = Num(node, "mem"), MemTotalBytes = Num(node, "maxmem"),
+                    DiskUsedBytes = Num(node, "disk"), DiskTotalBytes = Num(node, "maxdisk"),
+                    UptimeSeconds = Num(node, "uptime"),
+                });
+
                 foreach (var vm in Arr(await _client.GetQemuAsync(nodeName, ct).ConfigureAwait(false)))
                 {
                     var vmid = Str(vm, "vmid");
@@ -160,6 +171,11 @@ public sealed class ProxmoxInventoryProvider : IInventoryProvider, IIntegrationS
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
             ? (long)Math.Round(v.GetDouble())
             : 0;
+    /// <summary>v2.3.3: fractional values (e.g. Proxmox node cpu = 0.0431) that Num would round away.</summary>
+    private static double Frac(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+            ? v.GetDouble()
+            : -1;
 }
 
 /// <summary>Read-only Proxmox reachability check: GET /version → healthy. One GET, nothing else.</summary>

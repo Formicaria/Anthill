@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v2.4.1 — Dynamic Service Deck, node metrics, guest pages, *arr-stack apps
+
+Driven by live operator feedback on v2.3.2 ("fully dynamic and versatile... everything visible,
+nothing nested"). Homarr (open source, homarr.dev) is the referenced UX model for the apps/deck
+behavior.
+
+- **Nothing nested**: the collapsible detail sections are gone. Virtualization Detail,
+  Network & Risk, and Inventory Tables now open as FULL sub-pages with a ✕ Close button at the
+  top (one shared overlay engine, `hl3PageOpen`, moves the live DOM section in and back out —
+  all existing table renderers keep working untouched).
+- **Dynamic deck**: every node card and every VM/container/service tile can be hidden (✕ on
+  hover) and restored from a visible "Hidden (n)" tray — per-browser persisted. Deck grouping
+  bug fixed: Proxmox guests now group under their real host card (node_id is the full
+  `pve-node:host:name` id, not the bare node name).
+- **Node resource metrics**: new `node_metrics` table + `GET /homelab/metrics/nodes`. The
+  Proxmox sync now persists per-node CPU %, cores, RAM used/total, disk used/total, and uptime
+  from the `/nodes` payload it already fetched; deck host cards render CPU/RAM/DISK bars
+  (75%/90% warn/danger thresholds). Unreported metrics stay `-1` — shown as "—", never
+  fabricated (ESXi/Docker/Hyper-V report what their read-only surface provides).
+- **Per-VM / per-LXC pages**: clicking a guest tile opens a dedicated page — live status, vCPU/
+  RAM/uptime facts, related recent events, and one-click approval-gated action shortcuts
+  (start / clean-stop / restart / snapshot / backup) that pre-fill a proposal, never execute.
+  Node cards open a matching per-node page (facts, metric bars, guest tiles).
+- ***arr-stack integrations (the full mainstream family)**: sonarr, radarr, lidarr, readarr,
+  whisparr, prowlarr, bazarr. One structural GET-only `ArrClient` (no write method exists)
+  covers all seven — X-Api-Key auth, API key write-only in the credential store, host must be
+  on the D1 allowlist, 10s timeout. A deterministic `arr-sync` job on the shared scheduler
+  refreshes version / health warnings / queue depth. New Apps card renders Homarr-style tiles
+  (color-coded, status dot, queue badge); each app opens its own page with Open/Sync/Remove.
+  Endpoints: `GET/POST /homelab/arr`, `DELETE /homelab/arr/{id}`, `POST /homelab/arr/sync`
+  (reads `read_homelab`, writes `manage_homelab_integrations`).
+- **Tests**: `ArrIntegrationTests` — kind catalog completeness, allowlist refusal before I/O,
+  missing-key refusal, arr_apps/node_metrics round-trips, secrets-never-stored.
+
 ## v2.4.0 — Backup + restore intelligence (NORTH_STAR Phase 13)
 
 Know what is protected, what is not, and what recovery looks like. Deterministic arithmetic over
