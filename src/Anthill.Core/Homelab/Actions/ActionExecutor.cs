@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Anthill.Core.Common;
 using Anthill.Core.Homelab.Approvals;
-// Anthill.Core.Domain declares its own mission `Task` model, which shadows
-// System.Threading.Tasks.Task via parent-namespace lookup — alias it back explicitly.
-using Task = System.Threading.Tasks.Task;
 
 namespace Anthill.Core.Homelab.Actions;
+
+// NOTE: Anthill.Core's GlobalUsings.cs binds the bare identifier `Task` to the domain mission
+// entity (Anthill.Core.Domain.Task). Generic Task<T> still resolves to the threading type
+// (aliases are arity-specific), but non-generic statics like Task.FromResult must be written
+// fully qualified — the same convention FakeProviders/IncidentManager/RiskAnalyzer follow.
 
 /// <summary>Outcome of a runner call (execute, dry-run, or verify).</summary>
 public sealed record ActionRunResult(bool Ok, string Message);
@@ -228,7 +230,7 @@ public sealed class LocalActionRunner : IHomelabActionRunner
 
     public bool CanRun(ActionProposal p) => ActionCatalog.LocalActions.Contains(p.ActionType);
 
-    public Task<ActionRunResult> ExecuteAsync(ActionProposal p, CancellationToken ct = default) => Task.FromResult(p.ActionType switch
+    public Task<ActionRunResult> ExecuteAsync(ActionProposal p, CancellationToken ct = default) => System.Threading.Tasks.Task.FromResult(p.ActionType switch
     {
         "resolve_incident" => ResolveIncident(p),
         "update_inventory" => UpdateInventory(p),
@@ -236,7 +238,7 @@ public sealed class LocalActionRunner : IHomelabActionRunner
         _ => new ActionRunResult(false, $"LocalActionRunner cannot run '{p.ActionType}'."),
     });
 
-    public Task<ActionRunResult> DryRunAsync(ActionProposal p, CancellationToken ct = default) => Task.FromResult(p.ActionType switch
+    public Task<ActionRunResult> DryRunAsync(ActionProposal p, CancellationToken ct = default) => System.Threading.Tasks.Task.FromResult(p.ActionType switch
     {
         "resolve_incident" => new ActionRunResult(true, $"Would mark incident '{p.TargetId}' resolved" + (PayloadField(p, "root_cause") is { Length: > 0 } rc ? $" with root cause: {rc}" : "") + ". No infrastructure is touched."),
         "update_inventory" => new ActionRunResult(true, $"Would append an operator note to {p.TargetKind} '{p.TargetId}' in the inventory. No infrastructure is touched."),
@@ -244,7 +246,7 @@ public sealed class LocalActionRunner : IHomelabActionRunner
         _ => new ActionRunResult(false, $"LocalActionRunner cannot dry-run '{p.ActionType}'."),
     });
 
-    public Task<ActionRunResult> VerifyAsync(ActionProposal p, CancellationToken ct = default) => Task.FromResult(p.ActionType switch
+    public Task<ActionRunResult> VerifyAsync(ActionProposal p, CancellationToken ct = default) => System.Threading.Tasks.Task.FromResult(p.ActionType switch
     {
         "resolve_incident" => _repo.GetIncident(p.TargetId) is { Status: "resolved" }
             ? new ActionRunResult(true, "incident is resolved")
@@ -314,12 +316,12 @@ public sealed class MockActionRunner : IHomelabActionRunner
     public Task<ActionRunResult> ExecuteAsync(ActionProposal p, CancellationToken ct = default)
     {
         Executed.Add($"{p.ActionType}:{p.TargetId}");
-        return Task.FromResult(new ActionRunResult(true, $"[mock] {p.ActionType} performed on {p.TargetKind}/{p.TargetId}."));
+        return System.Threading.Tasks.Task.FromResult(new ActionRunResult(true, $"[mock] {p.ActionType} performed on {p.TargetKind}/{p.TargetId}."));
     }
 
     public Task<ActionRunResult> DryRunAsync(ActionProposal p, CancellationToken ct = default)
-        => Task.FromResult(new ActionRunResult(true, $"[mock] would perform {p.ActionType} on {p.TargetKind}/{p.TargetId}."));
+        => System.Threading.Tasks.Task.FromResult(new ActionRunResult(true, $"[mock] would perform {p.ActionType} on {p.TargetKind}/{p.TargetId}."));
 
     public Task<ActionRunResult> VerifyAsync(ActionProposal p, CancellationToken ct = default)
-        => Task.FromResult(new ActionRunResult(true, $"[mock] {p.ActionType} verified."));
+        => System.Threading.Tasks.Task.FromResult(new ActionRunResult(true, $"[mock] {p.ActionType} verified."));
 }
