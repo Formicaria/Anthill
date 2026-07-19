@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v2.4.0 — Backup + restore intelligence (NORTH_STAR Phase 13)
+
+Know what is protected, what is not, and what recovery looks like. Deterministic arithmetic over
+real inventory/backup/dependency data — no LLM, no invented values; unknown fails toward caution.
+
+- **backup_inventory finally live**: the v1.9.0 table gains `UpsertBackup`/`ListBackups` accessors,
+  `GET/POST /homelab/backups` (reads read_homelab; registering a record — PBS/NAS jobs, manual —
+  needs manage_homelab_integrations, audited to homelab_events).
+- **Coverage map** (`GET /homelab/backup/coverage`): every VM and container classified ok / stale
+  (> 7 days) / failed / none. A record whose status says "ok" but has never succeeded counts as
+  NONE. Includes per-target restore confidence (0–100 from recency, verified status, artifact size,
+  location) and restore priority (criticality via runs_on dependencies first, least-recoverable
+  first).
+- **Blast-radius simulation** (`GET /homelab/backup/impact/{nodeId}`): what dies if this node
+  fails — VMs, containers, dependent + hosted services, critical/high count, and which casualties
+  have NO restorable backup.
+- **Restore runbooks** (`GET /homelab/backup/runbook/{kind}/{id}`): deterministic step lists from
+  the real records — artifact location + confidence, explicit STALE/FAILED warnings, and an honest
+  "STOP — rebuild, not restore" when no artifact exists. Never pretends a restore path exists.
+- **UI**: Backup Intelligence card on the Homelab page — coverage totals, ranked table with
+  coverage badges and confidence, one-click runbook per target.
+- **Flake fix**: `ListActionProposals` gains an id tiebreaker — created_at is second-resolution,
+  so same-tick proposals ordered nondeterministically (the Windows-only supersede test flake).
+- Tests (Phase 13 validation): coverage classification matrix, priority ranking, node-loss blast
+  radius incl. unprotected casualties, runbook generation (covered / uncovered / unknown), and
+  idempotent backup upsert — all on an injected fixed clock, nothing time-flaky.
+
 ## v2.3.2 — Homelab Service Deck + write-runner hardening
 
 Two things in one release: a full-replace redesign of the Homelab console page driven by live
