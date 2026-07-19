@@ -75,6 +75,9 @@ public interface IHomelabRepository : IHomelabEventSink
     IReadOnlyList<ServiceRecord> ListServices();
 
     // Virtualization + storage inventory (v1.12.0, filled by the Proxmox read-only sync)
+    // v2.4.1: per-node resource metrics captured during the same sync (deck CPU/RAM/disk bars).
+    void UpsertNodeMetric(NodeMetricRecord metric);
+    IReadOnlyList<NodeMetricRecord> ListNodeMetrics();
     void UpsertVm(VmRecord vm);
     IReadOnlyList<VmRecord> ListVms();
     void UpsertContainer(ContainerRecord container);
