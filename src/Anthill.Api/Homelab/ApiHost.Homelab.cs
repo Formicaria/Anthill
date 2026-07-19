@@ -124,6 +124,23 @@ public static partial class ApiHost
         }
     }
 
+    /// <summary>
+    /// v2.4.2: operator-initiated registrations auto-allowlist their host. Safe because every
+    /// caller already passed the manage_homelab_integrations permission check — registering a
+    /// host/app IS the declaration of intent, so the separate manual allowlist step was pure
+    /// friction. Deliberately NOT called from provider sync paths: a sync must never widen D1.
+    /// </summary>
+    private static void EnsureHostAllowlisted(string hostOrIp, string by, string context)
+    {
+        var target = (hostOrIp ?? "").Trim();
+        if (target.Length == 0 || HomelabTargets.IsAllowed(target)) return;
+        Homelab.AddAllowlistEntry(new TargetAllowlistRecord
+        {
+            Target = target, Enabled = true, AddedBy = by,
+            Note = $"auto-added when registering {context}",
+        });
+    }
+
     private static void MapHomelabEndpoints(WebApplication app)
     {
         // v2.1.0: unified read-only virtualization endpoints (Proxmox/ESXi/Docker/Hyper-V status + sync).
@@ -167,8 +184,10 @@ public static partial class ApiHost
                 Address = (body.Address ?? "").Trim(), Os = (body.Os ?? "").Trim(),
                 RoleTags = body.RoleTags ?? new(), Notes = (body.Notes ?? "").Trim(),
             };
-            Homelab.UpsertNode(node, CurrentUsername(ctx) ?? "operator");
-            return ApiJson.Ok(node, $"Node '{node.Name}' saved.");
+            var hostBy = CurrentUsername(ctx) ?? "operator";
+            Homelab.UpsertNode(node, hostBy);
+            EnsureHostAllowlisted(node.Address, hostBy, $"host '{node.Name}'"); // v2.4.2
+            return ApiJson.Ok(node, $"Node '{node.Name}' saved." + (node.Address.Length > 0 ? $" Host '{node.Address}' is on the allowlist." : ""));
         });
 
         app.MapGet("/homelab/services", (HttpContext ctx) =>
@@ -208,8 +227,10 @@ public static partial class ApiHost
                 Address = (body.Address ?? "").Trim(), Os = (body.Os ?? "").Trim(),
                 RoleTags = body.RoleTags ?? new(), Notes = (body.Notes ?? "").Trim(),
             };
-            Homelab.UpsertNode(node, CurrentUsername(ctx) ?? "operator");
-            return ApiJson.Ok(node, $"Node '{node.Name}' updated.");
+            var hostBy2 = CurrentUsername(ctx) ?? "operator";
+            Homelab.UpsertNode(node, hostBy2);
+            EnsureHostAllowlisted(node.Address, hostBy2, $"host '{node.Name}'"); // v2.4.2
+            return ApiJson.Ok(node, $"Node '{node.Name}' updated." + (node.Address.Length > 0 ? $" Host '{node.Address}' is on the allowlist." : ""));
         });
 
         app.MapPut("/homelab/services/{id}", async (HttpContext ctx, string id) =>

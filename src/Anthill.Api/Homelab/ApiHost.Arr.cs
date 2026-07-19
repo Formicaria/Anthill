@@ -74,8 +74,8 @@ public static partial class ApiHost
 
             Homelab.UpsertArrApp(record);
             Homelab.RecordChange(new ChangeRecord { SubjectKind = "arr_app", SubjectId = record.Id, ChangeKind = existing is null ? "created" : "updated", Summary = $"{record.Kind} '{record.Name}' @ {uri.Host}", ChangedBy = by });
-            var hint = HomelabTargets.IsAllowed(uri.Host) ? "" : $" NOTE: '{uri.Host}' is not on the homelab allowlist yet — add it or the sync will refuse to connect.";
-            return ApiJson.Ok(Homelab.ListArrApps(), $"{record.Kind} '{record.Name}' saved.{hint}");
+            EnsureHostAllowlisted(uri.Host, by, $"{record.Kind} app '{record.Name}'"); // v2.4.2: adding the app IS the intent
+            return ApiJson.Ok(Homelab.ListArrApps(), $"{record.Kind} '{record.Name}' saved. Host '{uri.Host}' is on the allowlist; sync will pick it up.");
         });
 
         app.MapDelete("/homelab/arr/{id}", (HttpContext ctx, string id) =>
