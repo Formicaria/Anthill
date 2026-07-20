@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v2.5.1 — Console Refit R1: generic integration framework (docs/CONSOLE_REFIT.md)
+
+The *arr pattern becomes the platform core: every connected app is now an `IIntegrationDefinition`
+(kind, category, auth mode, widget kinds, GET-only sync) registered in `IntegrationCatalog` —
+adding an integration is one class + one registry entry, zero schema or endpoint changes.
+
+- **Contract + registry** (`IIntegrationDefinition`, `IntegrationContext`, `IntegrationCatalog`):
+  deterministic C# `SyncAsync` receives a guarded context (base url + credential lookup + D1
+  target guard) and returns typed widget payloads. Discipline inherited from the *arr
+  implementation: GET-only clients, credential-store secrets (write-only, by id), allowlist
+  before any I/O, strict timeouts.
+- **New tables**: `integration_instances` (generalized `arr_apps`) and `integration_state`
+  (integration id → widget kind → JSON payload + freshness) — the single source the v2.5.2
+  widget runtime will read. Idempotent migration: legacy `arr_apps` rows move on first open and
+  the old table is emptied; the legacy read/write surface (`ListArrApps` etc.) survives unchanged
+  as a compatibility view, so the existing UI keeps working untouched.
+- **First implementations behind the contract**: `ArrIntegrationDefinition` covers all seven
+  *arr kinds (health + queue payloads via the unchanged GET-only `ArrClient`);
+  `ArrSyncProvider` generalizes into `IntegrationSyncProvider` — one scheduler job (name kept:
+  `arr-sync`) refreshing every enabled instance of every registered kind, one failure never
+  failing the sweep.
+- API: `GET/POST /homelab/integrations`, `DELETE …/{id}`, `POST …/{id}/sync`,
+  `GET …/{id}/widgets/{kind}` (payload + `updated_at` freshness). Reads need `read_homelab`,
+  writes need `manage_homelab_integrations`; v2.4.2 auto-allowlisting applies; secrets are never
+  returned. `/homelab/arr` endpoints stay as the compatibility surface over the same tables.
+- Tests (`IntegrationPlatformTests`): catalog metadata, state round-trip + freshness, removal
+  deletes widget state, *arr compatibility view, legacy row migration (including
+  cannot-double-run), structural allowlist refusal on `SyncAsync`, and sync-sweep filtering of
+  disabled/unregistered instances.
+
 ## v2.5.0 — Automation rules (NORTH_STAR Phase 14)
 
 Simple self-healing and alerting — low-risk automation only; risky actions still require approval.

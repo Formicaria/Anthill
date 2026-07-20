@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.5.0
+**Current version:** v2.5.1
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -59,6 +59,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v2.5.1` | **Console Refit R1 — generic integration framework.** The *arr pattern generalizes into the platform core: `IIntegrationDefinition` contract + `IntegrationCatalog` registry (adding an integration = one class + one registry entry), new `integration_instances`/`integration_state` tables with an idempotent migration off `arr_apps`, one scheduler sync job for every registered kind, and the `GET/POST /homelab/integrations` + `…/{id}/widgets/{kind}` API. The `/homelab/arr` endpoints and UI keep working unchanged as a compatibility view. |
 | `v2.4.3` | Honest Ollama diagnostics: a 404 from a missing model no longer masquerades as "could not connect" (it now names the model and the fix, including the offline-install case), true connection failures name the configured host + the OLLAMA_HOST=0.0.0.0 binding gotcha, and the system summary adds `ollama_model_present` via `/api/tags` so a green chip can no longer hide an absent model. |
 | `v2.4.2` | Registering a host (`POST/PUT /homelab/hosts`) or an *arr app (`POST /homelab/arr`) now auto-adds its address to the D1 target allowlist (audited, operator-attributed) — the separate manual allowlist step was friction that caused silent sync dead-ends. Provider syncs still cannot widen the allowlist; the general SSRF guard is untouched. |
 | `v2.4.1` | **Dynamic Service Deck + node metrics + guest pages + *arr apps.** Nothing nested: detail sections open full sub-pages with a top ✕ Close. Deck tiles/nodes are hideable + restorable from a tray. Proxmox node CPU/RAM/disk/uptime persisted (`node_metrics`, `GET /homelab/metrics/nodes`) and rendered as bars on host cards. Every VM/LXC gets its own page (facts, events, approval-gated action shortcuts). Homarr-style *arr integrations for sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr: GET-only client, credential-store keys, allowlist-gated, scheduler-synced status/health/queue, per-app pages. |
