@@ -2063,6 +2063,20 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
+        <!-- v2.5.4 Console Refit R4: target allow/blocklist (D1) — first collection-manager surface -->
+        <div class="card" data-hlsub="networking" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Targets — Allow / Block <span id="hl-targets-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="font-weight:400;color:var(--dim)">(deny beats allow; every provider, health check, and the action executor consult this list before any I/O)</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 16px 0;">
+            <input class="form-input" id="hl-tg-target" type="text" placeholder="hostname, IP, or IPv4 CIDR" style="width:220px;" autocomplete="off">
+            <select class="form-select" id="hl-tg-kind" style="width:100px;"><option value="allow">allow</option><option value="deny">deny</option></select>
+            <input class="form-input" id="hl-tg-note" type="text" placeholder="note (why)" style="width:220px;" autocomplete="off">
+            <button class="btn btn-primary" onclick="hlTargetAdd()">+ Target</button>
+          </div>
+          <div id="hl-targets" style="padding:0 16px 12px;"></div>
+        </div>
+
         <div class="card" data-hlsub="networking" style="overflow-x:auto;">
           <div class="section-head" style="margin:10px 16px 0;">Network Devices
             <button class="btn btn-ghost" style="float:right;" onclick="hl3ToggleConfig(true)" title="Register a network device (in + Add / Manage)">+ Device</button>
@@ -2947,6 +2961,7 @@ function uiPrompt(message, opts){
         <button class="btn btn-primary" data-act="ok">OK</button>
       </div></div>`;
     const inp=ov.querySelector('.ui-modal-input');
+    if(opts.value) inp.value=opts.value; // v2.5.4 R4: prefill for edit-in-place flows
     const done=(v)=>{ document.removeEventListener('keydown',onKey); ov.remove(); resolve(v); };
     const onKey=(e)=>{ if(e.key==='Escape'){e.preventDefault();done(null);} };
     ov.addEventListener('click',e=>{ if(e.target===ov){done(null);return;} const a=e.target.closest('[data-act]'); if(a)done(a.dataset.act==='ok'?(inp.value||''):null); });
@@ -6757,6 +6772,7 @@ async function loadHomelab(){
     renderHlDeck();     // v2.3.2/3: the Service Deck — hosts/VMs/CTs/services as live tiles + metrics
     renderHl3Apps();    // v2.4.1: *arr-stack apps (Homarr-style)
     renderHl3Widgets(); // v2.5.2: Console Refit R2 — the widget zone (runtime + persisted layout)
+    renderHlTargets();  // v2.5.4: Console Refit R4 — target allow/blocklist collection manager
     hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s
     loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
     hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
@@ -7842,6 +7858,161 @@ function hl3WidgetAdd(){
   wgtZoneSave('homelab',list);
   document.getElementById('hl3-widget-picker').classList.remove('open');
   renderHl3Widgets();
+}
+
+// ---- v2.5.4 Console Refit R4: THE generic collection manager -----------------------------------
+// One reusable component for any CRUD collection (targets today; integration collections in R5+):
+// search, filter, sortable columns, row selection with bulk actions, per-row actions, count
+// footer. Vanilla + string-built like the rest of the console; toolbar renders once (search
+// keeps focus), only the table body re-renders. cfg:
+//   { el, load:async()=>rows, idOf(row), columns:[{key,label,render?(row)}], searchKeys:[...],
+//     filters:[{label,fn?}], bulk:[{label,confirm?,run:async(ids)}], rowActions:[{icon,title,run:async(row)}],
+//     emptyText, defaultSort }
+function collectionManager(cfg){
+  const st={rows:[],q:'',sortKey:cfg.defaultSort||null,sortDir:1,sel:new Set(),filter:0};
+  const el=cfg.el;
+  el.innerHTML='<div class="cm-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;">'
+    +'<input class="form-input cm-q" type="text" placeholder="search…" style="width:180px;" autocomplete="off">'
+    +((cfg.filters&&cfg.filters.length)?'<select class="form-select cm-f" style="width:130px;">'+cfg.filters.map((f,i)=>'<option value="'+i+'">'+escapeHtml(f.label)+'</option>').join('')+'</select>':'')
+    +'<span class="cm-bulk" style="display:flex;gap:6px;"></span>'
+    +'<span class="cm-count" style="margin-left:auto;font-size:10px;color:var(--dim);"></span></div>'
+    +'<div class="cm-body" style="overflow-x:auto;"></div>';
+  const bulkBox=el.querySelector('.cm-bulk');
+  (cfg.bulk||[]).forEach((b,i)=>{
+    const btn=document.createElement('button');
+    btn.className='btn btn-ghost'; btn.textContent=b.label; btn.disabled=true; btn.dataset.cmb=i;
+    btn.addEventListener('click',async()=>{
+      const ids=[...st.sel]; if(!ids.length) return;
+      if(b.confirm&&!(await uiConfirm(b.confirm.replace('{n}',ids.length)))) return;
+      await b.run(ids); reload();
+    });
+    bulkBox.appendChild(btn);
+  });
+  el.querySelector('.cm-q').addEventListener('input',e=>{ st.q=e.target.value.trim().toLowerCase(); renderBody(); });
+  const fsel=el.querySelector('.cm-f');
+  if(fsel) fsel.addEventListener('change',e=>{ st.filter=parseInt(e.target.value,10)||0; renderBody(); });
+  function visibleRows(){
+    let rows=st.rows.slice();
+    const f=(cfg.filters||[])[st.filter];
+    if(f&&typeof f.fn==='function') rows=rows.filter(f.fn);
+    if(st.q) rows=rows.filter(r=>(cfg.searchKeys||[]).some(k=>String(r[k]??'').toLowerCase().includes(st.q)));
+    if(st.sortKey) rows.sort((a,b)=>{ const x=String(a[st.sortKey]??''),y=String(b[st.sortKey]??'');
+      return st.sortDir*x.localeCompare(y,undefined,{numeric:true}); });
+    return rows;
+  }
+  function syncBulk(){ el.querySelectorAll('.cm-bulk button').forEach(b=>b.disabled=!st.sel.size); }
+  function renderBody(){
+    const rows=visibleRows();
+    const body=el.querySelector('.cm-body');
+    el.querySelector('.cm-count').textContent=rows.length+' of '+st.rows.length+(st.sel.size?(' · '+st.sel.size+' selected'):'');
+    if(!rows.length){ body.innerHTML='<div class="hl3-empty">'+escapeHtml(st.rows.length?'Nothing matches the current search/filter.':(cfg.emptyText||'Nothing here yet.'))+'</div>'; syncBulk(); return; }
+    let h='<table class="users-table"><thead><tr><th style="width:24px;"><input type="checkbox" class="cm-all"'+(rows.length&&rows.every(r=>st.sel.has(cfg.idOf(r)))?' checked':'')+'></th>';
+    for(const c of cfg.columns) h+='<th class="cm-th" data-k="'+escapeHtml(c.key)+'" style="cursor:pointer;">'+escapeHtml(c.label)+(st.sortKey===c.key?(st.sortDir>0?' ▲':' ▼'):'')+'</th>';
+    if(cfg.rowActions&&cfg.rowActions.length) h+='<th>Actions</th>';
+    h+='</tr></thead><tbody>';
+    for(const r of rows){
+      const id=cfg.idOf(r);
+      h+='<tr><td><input type="checkbox" class="cm-sel" data-id="'+escapeHtml(id)+'"'+(st.sel.has(id)?' checked':'')+'></td>';
+      for(const c of cfg.columns) h+='<td>'+(c.render?c.render(r):escapeHtml(String(r[c.key]??'')))+'</td>';
+      if(cfg.rowActions&&cfg.rowActions.length){
+        h+='<td style="white-space:nowrap;">'+cfg.rowActions.map((a,i)=>'<button class="btn btn-ghost cm-act" data-id="'+escapeHtml(id)+'" data-a="'+i+'" title="'+escapeHtml(a.title)+'" style="padding:1px 6px;font-size:10px;">'+(typeof a.icon==='function'?a.icon(r):a.icon)+'</button>').join(' ')+'</td>';
+      }
+      h+='</tr>';
+    }
+    body.innerHTML=h+'</tbody></table>';
+    body.querySelector('.cm-all').addEventListener('change',e=>{
+      rows.forEach(r=>{ const id=cfg.idOf(r); if(e.target.checked) st.sel.add(id); else st.sel.delete(id); });
+      renderBody();
+    });
+    body.querySelectorAll('.cm-sel').forEach(cb=>cb.addEventListener('change',e=>{
+      if(e.target.checked) st.sel.add(e.target.dataset.id); else st.sel.delete(e.target.dataset.id);
+      el.querySelector('.cm-count').textContent=visibleRows().length+' of '+st.rows.length+(st.sel.size?(' · '+st.sel.size+' selected'):'');
+      syncBulk();
+    }));
+    body.querySelectorAll('.cm-th').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(st.sortKey===k) st.sortDir=-st.sortDir; else { st.sortKey=k; st.sortDir=1; }
+      renderBody();
+    }));
+    body.querySelectorAll('.cm-act').forEach(btn=>btn.addEventListener('click',async()=>{
+      const row=st.rows.find(r=>cfg.idOf(r)===btn.dataset.id); if(!row) return;
+      await cfg.rowActions[parseInt(btn.dataset.a,10)].run(row); reload();
+    }));
+    syncBulk();
+  }
+  async function reload(){ st.rows=(await cfg.load())||[]; for(const id of [...st.sel]) if(!st.rows.some(r=>cfg.idOf(r)===id)) st.sel.delete(id); renderBody(); }
+  el._cm={reload};
+  reload();
+  return el._cm;
+}
+
+// ---- Targets (allow/blocklist) — the first collection-manager surface --------------------------
+function hlTargetChip(e){
+  const deny=e.kind==='deny';
+  return '<span style="font-size:9px;font-weight:700;padding:1px 7px;border-radius:8px;border:1px solid '
+    +(deny?'var(--status-danger,#f05252)':'var(--status-success,#31c48d)')+';color:'
+    +(deny?'var(--status-danger,#f05252)':'var(--status-success,#31c48d)')+';">'+(deny?'DENY':'ALLOW')+'</span>';
+}
+function renderHlTargets(){
+  const el=document.getElementById('hl-targets'); if(!el) return;
+  if(el._cm){ el._cm.reload(); return; }
+  collectionManager({
+    el,
+    load:async()=>{
+      const r=await api('/homelab/allowlist');
+      const rows=(r&&r.success&&Array.isArray(r.data))?r.data:[];
+      const kpi=document.getElementById('hl-targets-kpi');
+      if(kpi) kpi.textContent=rows.length?('· '+rows.filter(e=>e.kind!=='deny'&&e.enabled).length+' allow / '+rows.filter(e=>e.kind==='deny'&&e.enabled).length+' deny'):'';
+      return rows;
+    },
+    idOf:e=>e.id,
+    searchKeys:['target','note','added_by','kind'],
+    defaultSort:'created_at',
+    emptyText:'No targets yet. Allow entries open hosts to the deterministic providers; deny entries slam the door (deny beats allow).',
+    filters:[
+      {label:'All'},
+      {label:'Allow',fn:e=>e.kind!=='deny'},
+      {label:'Deny',fn:e=>e.kind==='deny'},
+      {label:'Disabled',fn:e=>!e.enabled},
+    ],
+    columns:[
+      {key:'kind',label:'Kind',render:hlTargetChip},
+      {key:'target',label:'Target',render:e=>'<b>'+escapeHtml(e.target)+'</b>'},
+      {key:'note',label:'Note'},
+      {key:'enabled',label:'Enabled',render:e=>e.enabled?'<span style="color:var(--status-success)">yes</span>':'<span style="color:var(--dim)">no</span>'},
+      {key:'added_by',label:'Origin'},
+      {key:'created_at',label:'Added',render:e=>escapeHtml(hlDate(e.created_at))},
+    ],
+    rowActions:[
+      {icon:'✎',title:'Edit note',run:async e=>{
+        const note=await uiPrompt('Note for '+e.target,{value:e.note||''});
+        if(note!==null&&note!==undefined) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{note:note});
+      }},
+      {icon:e=>e.kind==='deny'?'✔':'⛔',title:'Flip allow/deny',run:async e=>{
+        await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{kind:e.kind==='deny'?'allow':'deny'});
+      }},
+      {icon:e=>e.enabled?'⏸':'▶',title:'Enable/disable',run:async e=>{
+        await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{enabled:!e.enabled});
+      }},
+      {icon:'🗑',title:'Remove entry',run:async e=>{
+        if(await uiConfirm('Remove target \''+e.target+'\'?')) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'DELETE');
+      }},
+    ],
+    bulk:[
+      {label:'Enable',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'enable',ids})},
+      {label:'Disable',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'disable',ids})},
+      {label:'Remove',confirm:'Remove {n} target entr(y/ies)?',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'remove',ids})},
+    ],
+  });
+}
+async function hlTargetAdd(){
+  const target=document.getElementById('hl-tg-target').value.trim();
+  const kind=document.getElementById('hl-tg-kind').value;
+  const note=document.getElementById('hl-tg-note').value.trim();
+  if(!target){ hlMsg('Target (hostname, IP, or CIDR) is required',false); return; }
+  const r=await api('/homelab/allowlist','POST',{target,kind,note});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-tg-target').value=''; document.getElementById('hl-tg-note').value=''; renderHlTargets(); }
 }
 
 async function hl3DeckPropose(type,kind,target){

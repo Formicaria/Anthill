@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.5.3
+**Current version:** v2.5.4
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -59,6 +59,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v2.5.4` | **Console Refit R4 — allow/blocklist management + collections framework.** Blocklist lands first-class in the D1 target list (`list_kind` column, idempotent migration): deny beats allow, and every guard consumer — integration clients, health checks, the approval-gated action executor — honors it with zero changes of their own. Full CRUD API: create with kind, `PUT /homelab/allowlist/{id}` edit-in-place, bulk enable/disable/remove (one audited change per batch). New reusable collection-manager UI component (search, filter, sortable columns, row selection, bulk + per-row actions) debuts as the Targets surface on the Networking sub-page with kind/origin/timestamps/notes visible. |
 | `v2.5.3` | **Console Refit R3 — navigation + information architecture.** The Homelab page gains eleven category sub-pages (Overview, Services, Virtualization, Containers, Storage, Networking, Monitoring, Automation, Apps, Alerts, Activity) via a sticky sub-nav; every card declares exactly ONE home (`data-hlsub`) — the collapsible "secondary detail" mega-cards were split so VMs, containers, storage, devices, and risk findings each live on their own page; drawers (entity detail, incident detail, + Add / Manage) stay reachable from every sub-page. Keyboard nav extended: `g h` opens Homelab, `1-9` / `0` / `-` switch sub-pages; last sub-page restored per browser. |
 | `v2.5.2` | **Console Refit R2 — widget framework.** One JS widget runtime, `widget(kind, integrationId, el)`: full lifecycle (labeled loading/empty/error/success), per-kind TTL polling that stops when the element leaves the DOM, manual refresh, responsive grid sizing, and a per-operator layout registry persisted via `/ui/state` (ordered arrays — drag-and-drop ready). Ten registered widget kinds (health + queue live today from the *arr integrations; the rest render honestly empty until R5/R6 syncs publish them). Widgets never know their page — the Homelab "Widgets" card is just the first zone. |
 | `v2.5.1` | **Console Refit R1 — generic integration framework.** The *arr pattern generalizes into the platform core: `IIntegrationDefinition` contract + `IntegrationCatalog` registry (adding an integration = one class + one registry entry), new `integration_instances`/`integration_state` tables with an idempotent migration off `arr_apps`, one scheduler sync job for every registered kind, and the `GET/POST /homelab/integrations` + `…/{id}/widgets/{kind}` API. The `/homelab/arr` endpoints and UI keep working unchanged as a compatibility view. |
