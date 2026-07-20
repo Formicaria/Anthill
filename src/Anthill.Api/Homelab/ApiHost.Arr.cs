@@ -3,6 +3,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Homelab;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Integrations.Arr;
+using Anthill.Core.Integrations.Download;
 
 namespace Anthill.Api;
 
@@ -22,6 +23,10 @@ public static partial class ApiHost
         // v2.5.1 Console Refit R1: the *arr kinds register in the generic IntegrationCatalog and
         // the sync job generalizes to every registered kind (job name kept for meta continuity).
         ArrIntegrationDefinition.RegisterAll();
+        // v2.5.5 Console Refit R5 Wave 1: download clients (qBittorrent/Transmission/Deluge/
+        // SABnzbd/NZBGet) register into the same catalog; the generic sync job below sweeps them
+        // too — no per-kind wiring, endpoints, or UI pages.
+        DownloadIntegrationDefinition.RegisterAll();
         HomelabArr = new IntegrationSyncProvider(Homelab, HomelabTargets,
             credId => HomelabCredentials.GetSecret(credId, usedBy: "IntegrationSyncProvider"));
         if (AnthillRuntime.EnableHomelab)

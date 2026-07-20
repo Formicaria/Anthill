@@ -46,7 +46,9 @@ executor + guards consume both).
 
 ## Phase R5 — v2.5.5+: Integration waves (one PR per wave, read-only first)
 
-W1 download clients: qBittorrent, Transmission, Deluge, SABnzbd, NZBGet.
+W1 download clients: qBittorrent, Transmission, Deluge, SABnzbd, NZBGet. — SHIPPED v2.5.5
+   (DownloadIntegrationDefinition; read-only by construction — ProbeAsync is the only op even for
+   the RPC-over-POST clients; health/queue/statistics widgets; no new tables/endpoints/pages).
 W2 media servers/requests: Plex, Jellyfin, Emby, Tautulli, Overseerr, Jellyseerr.
 W3 monitoring: Uptime Kuma, Netdata, Prometheus, Grafana annotations/health.
 W4 infra: Portainer, TrueNAS, Unraid (Proxmox/Docker already exist — refit onto contract).
