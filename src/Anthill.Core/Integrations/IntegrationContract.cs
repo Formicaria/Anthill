@@ -53,6 +53,15 @@ public sealed class IntegrationInstanceRecord
     [JsonPropertyName("last_checked")] public string LastChecked { get; set; } = "";
 }
 
+/// <summary>One persisted widget payload for one integration — what the widget runtime reads.</summary>
+public sealed class IntegrationStateRecord
+{
+    [JsonPropertyName("integration_id")] public string IntegrationId { get; set; } = "";
+    [JsonPropertyName("widget_kind")] public string WidgetKind { get; set; } = "";
+    [JsonPropertyName("payload_json")] public string PayloadJson { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = ""; // freshness marker
+}
+
 /// <summary>
 /// The registry. Adding an integration to ANTHILL = implementing IIntegrationDefinition and
 /// registering it here — no new tables, endpoints, or UI pages. R1 migrates the seven *arr kinds
