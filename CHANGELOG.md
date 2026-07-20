@@ -1,5 +1,28 @@
 # ANTHILL Changelog
 
+## v2.5.3 — Console Refit R3: navigation + information architecture (docs/CONSOLE_REFIT.md)
+
+The single-page console gains intentional structure: the Homelab page becomes eleven category
+sub-pages, and every datum on it gets exactly ONE home.
+
+- **Category sub-pages** via a sticky sub-nav: Overview (command summary, widgets, what-next),
+  Services (deck, dependency graph, inventory tables), Virtualization (VMs), Containers,
+  Storage (pools + backup intelligence), Networking (devices), Monitoring (health checks),
+  Automation (rules + the approval-gated action pipeline), Apps (*arr), Alerts (incidents +
+  risk findings), Activity (the audited change log). Cards declare their home with
+  `data-hlsub`; the sub-nav filters visibility — no markup duplication, no second render path.
+- **Redundancy audit (homelab scope)**: the three collapsible "secondary detail" mega-cards
+  (Virtualization Detail, Network & Risk, Inventory Tables) were split so VMs, containers,
+  storage pools, network devices, and risk findings each live on exactly one sub-page; the
+  "open section as full page" duplication (`hl3Toggle`/`hl3PageFromSection`) was removed.
+  All tbody ids are unchanged, so loaders, row delegates, connection cues, and subsystem
+  theming keep working untouched.
+- **Progressive disclosure without modal abuse**: on-demand drawers (entity detail, incident
+  detail, + Add / Manage) stay reachable from every sub-page; guest/app full pages unchanged.
+- **Keyboard nav extended**: `g h` opens Homelab; while on it, `1-9` / `0` / `-` switch
+  sub-pages. The `?` shortcuts help documents both. The operator's last sub-page is restored
+  per browser (localStorage), matching the existing last-page behavior.
+
 ## v2.5.2 — Console Refit R2: widget framework (docs/CONSOLE_REFIT.md)
 
 One JS widget runtime for every dashboard tile — widgets are modular and page-agnostic

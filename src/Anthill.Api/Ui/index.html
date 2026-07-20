@@ -1824,6 +1824,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           @keyframes wgtShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
           #hl3-widget-picker{display:none;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;}
           #hl3-widget-picker.open{display:flex;}
+          /* v2.5.3 Console Refit R3 — homelab category sub-nav */
+          #hl-subnav{background:var(--bg,#0a0f16);}
+          .hl-sub-btn{background:none;border:1px solid transparent;border-radius:6px;color:var(--dim,#556);font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit;}
+          .hl-sub-btn:hover{color:var(--anthill-text,#dfe7ef);border-color:var(--line,#223);}
+          .hl-sub-btn.active{color:var(--anthill-text,#dfe7ef);border-color:var(--status-info,#4aa3ff);background:rgba(74,163,255,0.08);font-weight:700;}
           .hl3-app{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line,#223);border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer;}
           .hl3-app:hover{border-color:var(--status-info,#4aa3ff);}
           .hl3-app .av{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#0a0f16;flex:none;}
@@ -1846,14 +1851,31 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
 
+        <!-- v2.5.3 Console Refit R3: category sub-pages — every homelab datum has exactly ONE home.
+             Cards carry data-hlsub; the sub-nav filters visibility. Detail drawers and the
+             + Add / Manage config drawer stay global (they open on demand from any sub-page). -->
+        <div class="card" id="hl-subnav" style="padding:6px 10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;position:sticky;top:0;z-index:5;">
+          <button class="hl-sub-btn" data-sub="overview" onclick="hlSubShow('overview')" title="1">Overview</button>
+          <button class="hl-sub-btn" data-sub="services" onclick="hlSubShow('services')" title="2">Services</button>
+          <button class="hl-sub-btn" data-sub="virtualization" onclick="hlSubShow('virtualization')" title="3">Virtualization</button>
+          <button class="hl-sub-btn" data-sub="containers" onclick="hlSubShow('containers')" title="4">Containers</button>
+          <button class="hl-sub-btn" data-sub="storage" onclick="hlSubShow('storage')" title="5">Storage</button>
+          <button class="hl-sub-btn" data-sub="networking" onclick="hlSubShow('networking')" title="6">Networking</button>
+          <button class="hl-sub-btn" data-sub="monitoring" onclick="hlSubShow('monitoring')" title="7">Monitoring</button>
+          <button class="hl-sub-btn" data-sub="automation" onclick="hlSubShow('automation')" title="8">Automation</button>
+          <button class="hl-sub-btn" data-sub="apps" onclick="hlSubShow('apps')" title="9">Apps</button>
+          <button class="hl-sub-btn" data-sub="alerts" onclick="hlSubShow('alerts')" title="0">Alerts</button>
+          <button class="hl-sub-btn" data-sub="activity" onclick="hlSubShow('activity')" title="-">Activity</button>
+        </div>
+
         <!-- V2.0 Command Summary strip (v2.3.2: timeout fallback instead of infinite loading) -->
-        <div class="card hl-sec-memory" id="hl-cmd-strip" style="padding:10px 16px;">
+        <div class="card hl-sec-memory" id="hl-cmd-strip" data-hlsub="overview" style="padding:10px 16px;">
           <div id="hl-cmd-kpis" style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;">Loading command summary...</div>
           <div id="hl-cmd-stamps" style="font-size:9px;color:var(--dim);margin-top:6px;"></div>
         </div>
 
         <!-- v2.3.2 Service Deck: THE view — everything registered or synced, grouped by host -->
-        <div class="card hl-sec-compute" id="hl3-deck-card" style="padding:12px 16px;">
+        <div class="card hl-sec-compute" id="hl3-deck-card" data-hlsub="services" style="padding:12px 16px;">
           <div class="section-head" style="margin-top:0;">Service Deck
             <span style="font-weight:400;color:var(--dim)">(hosts · VMs · containers · services — live status; click a tile to open/inspect, ⚡ to propose an action)</span>
           </div>
@@ -1862,7 +1884,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- v2.5.2 Console Refit R2: the widget zone — modular, integration-fed, layout persisted per operator via /ui/state -->
-        <div class="card hl-sec-memory" id="hl3-widgets-card" style="padding:12px 16px;">
+        <div class="card hl-sec-memory" id="hl3-widgets-card" data-hlsub="overview" style="padding:12px 16px;">
           <div class="section-head" style="margin-top:0;">Widgets <span id="hl3-widgets-kpi" style="font-weight:400;color:var(--dim)"></span>
             <span style="float:right;display:flex;gap:8px;">
               <button class="btn btn-ghost" onclick="hl3WidgetsRefresh()" title="Refresh every widget now">⟳ Refresh</button>
@@ -1879,7 +1901,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- v2.3.3 *arr-stack Apps (Homarr-style integrations: sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr) -->
-        <div class="card hl-sec-memory" id="hl3-apps-card" style="padding:12px 16px;">
+        <div class="card hl-sec-memory" id="hl3-apps-card" data-hlsub="apps" style="padding:12px 16px;">
           <div class="section-head" style="margin-top:0;">Apps <span id="hl3-apps-kpi" style="font-weight:400;color:var(--dim)"></span>
             <span style="float:right;display:flex;gap:8px;">
               <button class="btn btn-ghost" onclick="hl3ArrSync()" title="Refresh status/health/queue for every enabled app">⟳ Sync</button>
@@ -1890,13 +1912,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- V2.0 What should I do next (v2.3.2: compact, timeout fallback) -->
-        <div class="card hl-sec-incident" id="hl-next-card" style="padding:8px 16px;">
+        <div class="card hl-sec-incident" id="hl-next-card" data-hlsub="overview" style="padding:8px 16px;">
           <div class="section-head" style="margin-top:0;">What Should I Do Next</div>
           <div id="hl-next" style="font-size:11px;color:var(--muted);">Loading...</div>
         </div>
 
         <!-- v2.4.0 Phase 13: backup + restore intelligence -->
-        <div class="card" id="hl-backup-card" style="padding:10px 16px;">
+        <div class="card" id="hl-backup-card" data-hlsub="storage" style="padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Backup Intelligence
             <span id="hl-bk-totals" style="font-weight:normal;font-size:10px;color:var(--dim);margin-left:8px;"></span>
             <button class="btn btn-ghost" style="float:right;" onclick="hlLoadBackup()" title="Refresh coverage">↺</button>
@@ -1906,7 +1928,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- v2.5.0 Phase 14: automation rules -->
-        <div class="card" id="hl-auto-card" style="padding:10px 16px;">
+        <div class="card" id="hl-auto-card" data-hlsub="automation" style="padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Automation Rules
             <span id="hl-auto-state" style="font-weight:normal;font-size:10px;color:var(--dim);margin-left:8px;"></span>
             <button class="btn btn-ghost" style="float:right;" onclick="hlLoadAutomation()" title="Refresh">↺</button>
@@ -1929,7 +1951,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- V2.0 Dependency graph (v2.3.2: auto-hidden while empty) -->
-        <div class="card hl-sec-compute" id="hl-graph-card" style="padding:10px 16px;">
+        <div class="card hl-sec-compute" id="hl-graph-card" data-hlsub="services" style="padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Dependency Graph <span style="font-weight:400;color:var(--dim)">(click a node: highlight its paths + list what depends on it; red = impacted path)</span></div>
           <div id="hl-graph-wrap" style="overflow-x:auto;">
             <svg id="hl-graph" width="100%" height="230" style="min-width:600px;display:block;"></svg>
@@ -1938,7 +1960,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- Health (v2.3.2: table stays front-and-center; the add form lives in + Add / Manage) -->
-        <div class="card" style="overflow-x:auto;">
+        <div class="card" id="hl-health-card" data-hlsub="monitoring" style="overflow-x:auto;">
           <div class="section-head" style="margin:10px 16px 0;">Health <span id="hl-health-kpi" style="font-weight:400;color:var(--dim)"></span>
             <span style="float:right;display:flex;gap:8px;">
               <button class="btn btn-ghost" onclick="hlRunChecks()" title="Run every enabled check now">▶ Run All Now</button>
@@ -1952,7 +1974,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- Incidents (v1.14.0) -->
-        <div class="card" style="overflow-x:auto;">
+        <div class="card" id="hl-incidents-card" data-hlsub="alerts" style="overflow-x:auto;">
           <div class="section-head" style="margin:10px 16px 0;">Incidents <span id="hl-inc-kpi" style="font-weight:400;color:var(--dim)"></span>
             <span style="float:right;display:flex;gap:8px;" id="hl-inc-form">
               <input class="form-input" id="hl-i-title" type="text" placeholder="Open incident manually: title" style="width:260px;" autocomplete="off">
@@ -1988,7 +2010,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- Approval-gated Actions (v2.3.0, NORTH_STAR Phase 12) -->
-        <div class="card hl-sec-incident" style="overflow-x:auto;" id="hl-actions-card">
+        <div class="card hl-sec-incident" data-hlsub="automation" style="overflow-x:auto;" id="hl-actions-card">
           <div class="section-head" style="margin:10px 16px 0;">Actions <span id="hl-act-kpi" style="font-weight:400;color:var(--dim)"></span>
             <span style="float:right;display:flex;gap:8px;align-items:center;">
               <span id="hl-act-stop-state" style="font-size:10px;"></span>
@@ -2013,72 +2035,81 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </table>
         </div>
 
-        <!-- v2.3.2: everything below is secondary detail — collapsible, collapsed by default -->
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-virt','Virtualization Detail')">Virtualization Detail <span style="font-weight:400;color:var(--dim)">(VMs · containers · storage tables — opens full page)</span><span class="hl3-caret">↗</span></div>
-          <div id="hl3-sec-virt" style="display:none">
-            <div class="section-head" style="margin:6px 16px 0;">Virtual Machines</div>
-            <table class="users-table">
-              <thead><tr><th>VMID</th><th>Name</th><th>Node</th><th>Status</th><th>vCPU</th><th>RAM</th><th>Uptime</th><th>Updated</th></tr></thead>
-              <tbody id="hl-vms-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Containers</div>
-            <table class="users-table">
-              <thead><tr><th>CTID</th><th>Name</th><th>Kind</th><th>Node</th><th>Status</th><th>Updated</th></tr></thead>
-              <tbody id="hl-cts-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Storage Pools</div>
-            <table class="users-table">
-              <thead><tr><th>Name</th><th>Node</th><th>Type</th><th>Used</th><th>Total</th><th>Usage</th><th>Updated</th></tr></thead>
-              <tbody id="hl-storage-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-          </div>
+        <!-- v2.5.3 R3: the former collapsible "secondary detail" cards are now first-class
+             sub-page cards — one datum, one home (the collapsible/opens-full-page pattern is
+             replaced by the sub-nav's progressive disclosure). tbody ids unchanged: every
+             loader, row-delegate, and theming hook keeps working. -->
+        <div class="card" data-hlsub="virtualization" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Virtual Machines</div>
+          <table class="users-table">
+            <thead><tr><th>VMID</th><th>Name</th><th>Node</th><th>Status</th><th>vCPU</th><th>RAM</th><th>Uptime</th><th>Updated</th></tr></thead>
+            <tbody id="hl-vms-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
         </div>
 
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-net','Network & Risk')">Network &amp; Risk <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span> <span style="font-weight:400;color:var(--dim)">(opens full page)</span><span class="hl3-caret">↗</span></div>
-          <div id="hl3-sec-net" style="display:none">
-            <div class="section-head" style="margin:6px 16px 0;">Network Devices</div>
-            <table class="users-table">
-              <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Known</th><th>Last Seen</th><th>Actions</th></tr></thead>
-              <tbody id="hl-devs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Security &amp; Risk Findings
-              <button class="btn btn-ghost" id="hl-risk-analyze" style="float:right;" onclick="hlAnalyzeRisks()" title="Re-run the deterministic risk rules over current inventory (no network I/O)">⚠ Analyze Now</button>
-            </div>
-            <table class="users-table">
-              <thead><tr><th>Severity</th><th>Finding</th><th>Summary</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
-              <tbody id="hl-risks-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-          </div>
+        <div class="card" data-hlsub="containers" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Containers</div>
+          <table class="users-table">
+            <thead><tr><th>CTID</th><th>Name</th><th>Kind</th><th>Node</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody id="hl-cts-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
         </div>
 
-        <div class="card" style="overflow-x:auto;">
-          <div class="section-head hl3-col" style="margin:10px 16px;" onclick="hl3PageFromSection('hl3-sec-inv','Inventory Tables')">Inventory Tables <span style="font-weight:400;color:var(--dim)">(hosts · services · ports · dependencies · changes — opens full page)</span><span class="hl3-caret">↗</span></div>
-          <div id="hl3-sec-inv" style="display:none">
-            <div class="section-head" style="margin:6px 16px 0;">Hosts</div>
-            <table class="users-table">
-              <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th>OS</th><th>Role Tags</th><th>Services</th><th>Updated</th></tr></thead>
-              <tbody id="hl-hosts-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Services</div>
-            <table class="users-table">
-              <thead><tr><th>Name</th><th>Runs on</th><th>URL</th><th>Ports</th><th>Owner</th><th>Criticality</th><th>Exposed</th><th>Updated</th></tr></thead>
-              <tbody id="hl-svcs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Open Ports (from registered services)</div>
-            <table class="users-table">
-              <thead><tr><th>Port</th><th>Service</th><th>Host</th><th>Protocol</th><th>Internet Exposed</th></tr></thead>
-              <tbody id="hl-ports-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Dependencies</div>
-            <table class="users-table">
-              <thead><tr><th>From</th><th>Kind</th><th>To</th><th>Notes</th><th>Actions</th></tr></thead>
-              <tbody id="hl-deps-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-            <div class="section-head" style="margin:6px 16px 0;">Recent Changes</div>
-            <div id="hl-changes" style="padding:8px 16px 14px;font-size:10px;color:var(--muted);">Loading...</div>
+        <div class="card" data-hlsub="storage" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Storage Pools</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Node</th><th>Type</th><th>Used</th><th>Total</th><th>Usage</th><th>Updated</th></tr></thead>
+            <tbody id="hl-storage-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" data-hlsub="networking" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Network Devices
+            <button class="btn btn-ghost" style="float:right;" onclick="hl3ToggleConfig(true)" title="Register a network device (in + Add / Manage)">+ Device</button>
           </div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th>IP</th><th>VLAN</th><th>Known</th><th>Last Seen</th><th>Actions</th></tr></thead>
+            <tbody id="hl-devs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" data-hlsub="alerts" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Security &amp; Risk Findings <span id="hl-risk-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <button class="btn btn-ghost" id="hl-risk-analyze" style="float:right;" onclick="hlAnalyzeRisks()" title="Re-run the deterministic risk rules over current inventory (no network I/O)">⚠ Analyze Now</button>
+          </div>
+          <table class="users-table">
+            <thead><tr><th>Severity</th><th>Finding</th><th>Summary</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+            <tbody id="hl-risks-tbody"><tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" data-hlsub="services" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Inventory <span style="font-weight:400;color:var(--dim)">(hosts · services · ports · dependencies)</span></div>
+          <div class="section-head" style="margin:6px 16px 0;">Hosts</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Kind</th><th>Address</th><th>OS</th><th>Role Tags</th><th>Services</th><th>Updated</th></tr></thead>
+            <tbody id="hl-hosts-tbody"><tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+          <div class="section-head" style="margin:6px 16px 0;">Services</div>
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Runs on</th><th>URL</th><th>Ports</th><th>Owner</th><th>Criticality</th><th>Exposed</th><th>Updated</th></tr></thead>
+            <tbody id="hl-svcs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+          <div class="section-head" style="margin:6px 16px 0;">Open Ports (from registered services)</div>
+          <table class="users-table">
+            <thead><tr><th>Port</th><th>Service</th><th>Host</th><th>Protocol</th><th>Internet Exposed</th></tr></thead>
+            <tbody id="hl-ports-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+          <div class="section-head" style="margin:6px 16px 0;">Dependencies</div>
+          <table class="users-table">
+            <thead><tr><th>From</th><th>Kind</th><th>To</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="hl-deps-tbody"><tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" data-hlsub="activity" style="overflow-x:auto;">
+          <div class="section-head" style="margin:10px 16px 0;">Recent Changes <span style="font-weight:400;color:var(--dim)">(the audited change log — who changed what, when)</span></div>
+          <div id="hl-changes" style="padding:8px 16px 14px;font-size:10px;color:var(--muted);">Loading...</div>
         </div>
 
         <!-- v2.3.2 + Add / Manage drawer: every registration form + integration config, hidden until asked for -->
@@ -2749,6 +2780,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div><kbd>g</kbd> <kbd>p</kbd></div><div>Patch Center (admin)</div>
       <div><kbd>g</kbd> <kbd>e</kbd></div><div>Event Log</div>
       <div><kbd>g</kbd> <kbd>s</kbd></div><div>Settings (admin)</div>
+      <div><kbd>g</kbd> <kbd>h</kbd></div><div>Homelab</div>
+      <div><kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd></div><div>Homelab sub-pages (while on Homelab)</div>
       <div><kbd>Esc</kbd></div><div>Close overlays</div>
     </div>
   </div>
@@ -5143,11 +5176,18 @@ document.addEventListener('keydown',e=>{
   if(e.key==='g'){ gSeqAt=now; return; }
   if(gSeqAt && now-gSeqAt<900){
     const admin=ROLE==='admin';
-    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',
+    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',h:'homelab',
       p:admin?'patches':null,b:admin?'objboard':null,s:admin?'settings':null,u:admin?'users':null,a:admin?'autonomy':null};
     const dest=map[e.key.toLowerCase()];
     if(dest){ e.preventDefault(); showPage(dest); }
     gSeqAt=0;
+    return;
+  }
+  // v2.5.3 R3: while on Homelab, 1-9 / 0 / - jump between category sub-pages.
+  if(document.getElementById('page-homelab')?.classList.contains('active')){
+    const subMap={'1':'overview','2':'services','3':'virtualization','4':'containers','5':'storage',
+      '6':'networking','7':'monitoring','8':'automation','9':'apps','0':'alerts','-':'activity'};
+    if(subMap[e.key]){ e.preventDefault(); hlSubShow(subMap[e.key]); }
   }
 });
 
@@ -6698,6 +6738,7 @@ async function hlRunbook(kind,id){
 }
 
 async function loadHomelab(){
+  hlSubRestore(); // v2.5.3 R3: apply the operator's saved sub-page before any data lands
   try{
     const [sum,hosts,svcs,deps,chg]=await Promise.all([
       api('/homelab/summary'),api('/homelab/hosts'),api('/homelab/services'),
@@ -7344,18 +7385,26 @@ async function hlActKillSwitch(){
 }
 
 // -- v2.3.2 Service Deck --------------------------------------------------------------
-function hl3Toggle(id,head){
-  const el=document.getElementById(id); if(!el) return;
-  const open=el.style.display==='none';
-  el.style.display=open?'':'none';
-  if(head) head.classList.toggle('open',open);
-  try{ localStorage.setItem('hl3.'+id,open?'1':'0'); }catch(e){}
+// (hl3Toggle removed in v2.5.3 R3 — the collapsible sections it drove are now sub-page cards.)
+// v2.5.3 R3: the collapsible secondary sections became category sub-pages (see hlSubShow);
+// hl3Restore now restores the operator's last sub-page instead of collapse states.
+function hl3Restore(){ hlSubRestore(); }
+
+// ---- v2.5.3 Console Refit R3: homelab category sub-pages ---------------------------------------
+// Every card on the Homelab page declares exactly ONE home via data-hlsub; the sub-nav filters
+// visibility. Cards without data-hlsub (entity detail, incident detail, + Add / Manage drawer)
+// are on-demand overlays and stay available from every sub-page. Keyboard: g h opens Homelab,
+// then 1-9 / 0 / - switch sub-pages (see the ? shortcuts help).
+const HL_SUBPAGES=['overview','services','virtualization','containers','storage','networking','monitoring','automation','apps','alerts','activity'];
+function hlSubShow(name){
+  if(!HL_SUBPAGES.includes(name)) name='overview';
+  try{ localStorage.setItem('hl3.subpage',name); }catch(e){}
+  document.querySelectorAll('#page-homelab [data-hlsub]').forEach(c=>{ c.style.display=(c.dataset.hlsub===name)?'':'none'; });
+  document.querySelectorAll('#hl-subnav .hl-sub-btn').forEach(b=>b.classList.toggle('active',b.dataset.sub===name));
 }
-function hl3Restore(){
-  ['hl3-sec-virt','hl3-sec-net','hl3-sec-inv'].forEach(id=>{
-    let saved=null; try{ saved=localStorage.getItem('hl3.'+id); }catch(e){}
-    if(saved==='1'){ const el=document.getElementById(id); if(el){ el.style.display=''; const head=el.parentNode.querySelector('.hl3-col'); if(head) head.classList.add('open'); } }
-  });
+function hlSubRestore(){
+  let saved=null; try{ saved=localStorage.getItem('hl3.subpage'); }catch(e){}
+  hlSubShow(saved||'overview');
 }
 function hl3ToggleConfig(show){
   const el=document.getElementById('hl3-config'); if(!el) return;
@@ -7497,10 +7546,7 @@ function hl3PageClose(){
   if(HL3_PAGE_HOME){ HL3_PAGE_HOME.node.style.display='none'; HL3_PAGE_HOME.parent.appendChild(HL3_PAGE_HOME.node); HL3_PAGE_HOME=null; }
   pg.style.display='none';
 }
-function hl3PageFromSection(id,title){
-  const node=document.getElementById(id); if(!node) return;
-  hl3PageOpen(title,node);
-}
+// (hl3PageFromSection removed in v2.5.3 R3 — its "open section as full page" role is replaced by sub-pages.)
 function hl3HostPage(hostId){
   const h=(HL_HOSTS||[]).find(x=>x.id===hostId); if(!h) return;
   const m=HL3.metrics[hostId];
