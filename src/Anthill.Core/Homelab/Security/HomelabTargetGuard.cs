@@ -20,26 +20,33 @@ public sealed class HomelabTargetGuard : IHomelabTargetGuard
 
     public HomelabTargetGuard(IHomelabRepository repository) => _repository = repository;
 
+    /// <summary>
+    /// v2.5.4 (Console Refit R4): the list carries allow AND deny entries — deny beats allow.
+    /// A single matching enabled deny entry refuses the target no matter how many allow entries
+    /// also match, so every consumer of this guard (integration clients, health checks, the
+    /// approval-gated action executor) honors the blocklist with no changes of their own.
+    /// </summary>
     public bool IsAllowed(string hostOrIp)
     {
         var target = (hostOrIp ?? "").Trim().TrimEnd('.').ToLowerInvariant();
         if (target.Length == 0) return false;
 
+        var allowed = false;
         foreach (var entry in _repository.ListAllowlist())
         {
             if (!entry.Enabled) continue;
             var pattern = entry.Target.Trim().TrimEnd('.').ToLowerInvariant();
-            if (pattern.Length == 0) continue;
-
-            // Exact hostname or exact IP match.
-            if (string.Equals(pattern, target, StringComparison.OrdinalIgnoreCase)) return true;
-
-            // IPv4 CIDR containment (e.g. 10.0.0.0/24).
-            if (pattern.Contains('/') && IPAddress.TryParse(target, out var ip) && InCidr(ip, pattern))
-                return true;
+            if (pattern.Length == 0 || !Matches(pattern, target)) continue;
+            if (string.Equals(entry.Kind, "deny", StringComparison.OrdinalIgnoreCase)) return false;
+            allowed = true; // keep scanning — a later deny entry still wins
         }
-        return false;
+        return allowed;
     }
+
+    /// <summary>Exact hostname (case-insensitive), exact IP, or IPv4 CIDR containment.</summary>
+    private static bool Matches(string pattern, string target) =>
+        string.Equals(pattern, target, StringComparison.OrdinalIgnoreCase)
+        || (pattern.Contains('/') && IPAddress.TryParse(target, out var ip) && InCidr(ip, pattern));
 
     internal static bool InCidr(IPAddress ip, string cidr)
     {

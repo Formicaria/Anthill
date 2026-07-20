@@ -26,7 +26,8 @@ public static partial class ApiHost
     public static HomelabTargetGuard HomelabTargets { get; private set; } = null!;
     public static HomelabScheduler HomelabJobs { get; private set; } = null!;
 
-    private sealed record AllowlistUpsertRequest(string? Target, string? Note, bool? Enabled);
+    private sealed record AllowlistUpsertRequest(string? Id, string? Target, string? Kind, string? Note, bool? Enabled);
+    private sealed record AllowlistBulkRequest(string? Action, List<string>? Ids); // v2.5.4 R4: enable | disable | remove
     private sealed record CredentialUpsertRequest(string? Id, string? Kind, string? TargetHost, string? Secret);
     private sealed record NodeUpsertRequest(string? Id, string? Name, string? Kind, string? Address, string? Os, List<string>? RoleTags, string? Notes);
     private sealed record ServiceUpsertRequest(string? Id, string? Name, string? NodeId, string? Url, List<int>? Ports, string? Protocol, string? Owner, string? Criticality, bool? InternetExposed, string? Notes);
@@ -594,20 +595,71 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<AllowlistUpsertRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
             if (string.IsNullOrWhiteSpace(body?.Target)) return ApiJson.Error("Target (hostname, IP, or IPv4 CIDR) is required.", "bad_request");
+            var kind = (body.Kind ?? "allow").Trim().ToLowerInvariant();
+            if (kind != "allow" && kind != "deny") return ApiJson.Error("Kind must be 'allow' or 'deny'.", "bad_request");
             var entry = new TargetAllowlistRecord
             {
-                Target = body.Target!.Trim(), Note = (body.Note ?? "").Trim(),
+                Id = string.IsNullOrWhiteSpace(body.Id) ? Guid.NewGuid().ToString() : body.Id!.Trim(),
+                Target = body.Target!.Trim(), Kind = kind, Note = (body.Note ?? "").Trim(),
                 Enabled = body.Enabled ?? true, AddedBy = CurrentUsername(ctx) ?? "operator",
             };
             Homelab.AddAllowlistEntry(entry);
-            return ApiJson.Ok(Homelab.ListAllowlist(), $"Allowlist target '{entry.Target}' added. This affects deterministic homelab providers only — the general SSRF guard for AI tools is unchanged.");
+            var msg = kind == "deny"
+                ? $"Blocklist target '{entry.Target}' added — deny beats allow, so it is refused even if an allow entry also matches."
+                : $"Allowlist target '{entry.Target}' added. This affects deterministic homelab providers only — the general SSRF guard for AI tools is unchanged.";
+            return ApiJson.Ok(Homelab.ListAllowlist(), msg);
+        });
+
+        // v2.5.4 R4: edit in place (note / enabled / kind / target) — audited as 'updated'.
+        app.MapPut("/homelab/allowlist/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            var existing = Homelab.ListAllowlist().FirstOrDefault(e => e.Id == id);
+            if (existing is null) return ApiJson.Error($"No target entry with id '{id}'.", "not_found");
+            AllowlistUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AllowlistUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body is null) return ApiJson.Error("Invalid request body.", "bad_request");
+            if (body.Kind is not null)
+            {
+                var kind = body.Kind.Trim().ToLowerInvariant();
+                if (kind != "allow" && kind != "deny") return ApiJson.Error("Kind must be 'allow' or 'deny'.", "bad_request");
+                existing.Kind = kind;
+            }
+            if (!string.IsNullOrWhiteSpace(body.Target)) existing.Target = body.Target!.Trim();
+            if (body.Note is not null) existing.Note = body.Note.Trim();
+            if (body.Enabled is not null) existing.Enabled = body.Enabled.Value;
+            existing.AddedBy = existing.AddedBy is { Length: > 0 } ? existing.AddedBy : (CurrentUsername(ctx) ?? "operator");
+            Homelab.AddAllowlistEntry(existing); // upsert by id → audited 'updated'
+            return ApiJson.Ok(Homelab.ListAllowlist(), $"Target '{existing.Target}' updated.");
+        });
+
+        // v2.5.4 R4: bulk enable / disable / remove — one request, one audited change record.
+        app.MapPost("/homelab/allowlist/bulk", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            AllowlistBulkRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AllowlistBulkRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var ids = (body?.Ids ?? new List<string>()).Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
+            if (ids.Count == 0) return ApiJson.Error("Ids are required.", "bad_request");
+            var by = CurrentUsername(ctx) ?? "operator";
+            var n = (body!.Action ?? "").Trim().ToLowerInvariant() switch
+            {
+                "enable" => Homelab.SetAllowlistEnabled(ids, true, by),
+                "disable" => Homelab.SetAllowlistEnabled(ids, false, by),
+                "remove" => Homelab.RemoveAllowlistEntries(ids, by),
+                _ => -1,
+            };
+            if (n < 0) return ApiJson.Error("Action must be 'enable', 'disable', or 'remove'.", "bad_request");
+            return ApiJson.Ok(Homelab.ListAllowlist(), $"Bulk {body.Action}: {n} entr{(n == 1 ? "y" : "ies")} affected.");
         });
 
         app.MapDelete("/homelab/allowlist/{id}", (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
             Homelab.RemoveAllowlistEntry(id, CurrentUsername(ctx) ?? "operator");
-            return ApiJson.Ok(Homelab.ListAllowlist(), "Allowlist entry removed.");
+            return ApiJson.Ok(Homelab.ListAllowlist(), "Target entry removed.");
         });
 
         // ---- Credentials (D2) — write-only secrets, secret-free statuses -------------------------
