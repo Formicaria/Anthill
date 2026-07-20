@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v2.5.5 — Console Refit R5 Wave 1: download-client integrations (docs/CONSOLE_REFIT.md)
+
+The first integration wave on the R1 platform. Five download clients join the catalog with
+**zero new tables, endpoints, or UI pages** — proof the generic contract holds: a new integration
+is one `IIntegrationDefinition` plus one registry entry, and the R2 widget runtime renders it.
+
+- **Five kinds, one definition**: qBittorrent, Transmission, Deluge (torrent) and SABnzbd, NZBGet
+  (usenet) register as `DownloadIntegrationDefinition` in `IntegrationCatalog` — category
+  `download`, feeding the `health`, `queue`, and `statistics` widget kinds the console already
+  renders. The generic `/homelab/integrations` surface lists them, the shared sync job sweeps
+  them, and the widget picker offers them, all with no per-kind wiring.
+- **Read-only by construction (a new proof for RPC clients)**: unlike the *arr/Proxmox GET-only
+  clients, three of these five speak RPC-over-POST even to *read* — Transmission's `X-Transmission-
+  Session-Id` 409 handshake, Deluge's JSON-RPC `/json`, and qBittorrent's cookie login. "GET-only"
+  is impossible at the protocol level, so the guarantee is enforced differently: the ONLY public
+  operation on `DownloadClient` is `ProbeAsync`, and every request it issues names a hardcoded READ
+  method. No pause/resume/delete/add/reprioritise is expressible on the type. Tests assert the
+  public surface carries no mutating verb. Transfer control, if it ever lands, arrives behind the
+  approval-gated action pipeline — exactly as planned for Proxmox.
+- **Normalized snapshot**: each protocol reduces to one `DownloadSnapshot` (version, state,
+  down/up bytes-per-sec, active/total counts). SABnzbd and NZBGet report no upload (usenet), so it
+  reads zero honestly rather than being faked. Speeds render human-readable (`3.4 MB/s`,
+  deterministic invariant-culture formatting).
+- **Same discipline as every integration**: the D1 target allowlist is checked before a single
+  byte leaves (asserted before-any-I/O in tests); secrets live write-only in the credential store
+  (`username:password` for qBittorrent/Transmission/NZBGet, web password for Deluge, API key for
+  SABnzbd) and are fetched per probe, never logged; strict 10s timeout; redirects never followed
+  (SSRF hardening); deterministic C# — never the model router.
+- **Tests**: `DownloadIntegrationTests` — catalog metadata, the no-mutating-method surface, the
+  allowlist/credential gate before I/O, per-protocol parsing against a mock server (qBittorrent
+  cookie login + Referer, Transmission 409 handshake, Deluge JSON-RPC login/status, SABnzbd
+  pure-GET apikey, NZBGet GET + HTTP Basic with the default `nzbget` user), the end-to-end
+  `SyncAsync` widget payloads, and rate formatting.
+
 ## v2.5.4 — Console Refit R4: allow/blocklist management + collections framework (docs/CONSOLE_REFIT.md)
 
 The D1 target list grows a first-class blocklist and its first real management surface.
