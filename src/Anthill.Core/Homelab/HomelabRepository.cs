@@ -13,7 +13,7 @@ namespace Anthill.Core.Homelab;
 /// (CREATE TABLE IF NOT EXISTS) — fresh DB, existing DB, and re-runs are all safe, mirroring
 /// SqliteMemory. Read-only foundation: nothing here can control infrastructure.
 /// </summary>
-public sealed class HomelabRepository : IHomelabRepository, IDisposable
+public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
 {
     public string DbPath { get; }
     private readonly object _writeLock = new();
@@ -54,6 +54,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         "incidents", "dependencies", "risk_records", "homelab_credentials", "homelab_target_allowlist",
         "health_check_schedules", "action_proposals", "node_metrics", "arr_apps",
         "automation_rules", "automation_runs", // v2.5.0 Phase 14
+        "integration_instances", "integration_state", // v2.5.1 Console Refit R1
     };
 
     private static readonly string[] SchemaStatements =
@@ -151,6 +152,17 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
             credential_id TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'unknown', version TEXT, health_warnings INTEGER DEFAULT 0,
             queue_count INTEGER DEFAULT -1, last_message TEXT, last_checked TEXT)",
+        // v2.5.1 Console Refit R1 — generic integration platform. integration_instances is the
+        // generalized successor of arr_apps (any IIntegrationDefinition kind); integration_state
+        // holds one typed widget payload per (integration, widget kind) with freshness.
+        @"CREATE TABLE IF NOT EXISTS integration_instances (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL,
+            credential_id TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'unknown', last_message TEXT, last_checked TEXT)",
+        @"CREATE TABLE IF NOT EXISTS integration_state (
+            integration_id TEXT NOT NULL, widget_kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY (integration_id, widget_kind))",
         @"CREATE INDEX IF NOT EXISTS idx_homelab_events_created ON homelab_events(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_change_log_created ON change_log(created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_health_checks_checked ON health_checks(checked_at)",
@@ -169,6 +181,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
                 cmd.CommandText = ddl;
                 cmd.ExecuteNonQuery();
             }
+            MigrateArrAppsToIntegrations(conn, tx); // v2.5.1 R1: legacy rows move, UI keeps working
             tx.Commit();
         }
     }
@@ -1327,52 +1340,7 @@ public sealed class HomelabRepository : IHomelabRepository, IDisposable
         return list;
     }
 
-    public void UpsertArrApp(ArrAppRecord a)
-    {
-        lock (_writeLock)
-        {
-            using var conn = Connect();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT INTO arr_apps (id,kind,name,url,credential_id,enabled,status,version,health_warnings,queue_count,last_message,last_checked)
-                VALUES ($id,$kind,$name,$url,$cred,$en,$st,$ver,$hw,$q,$msg,$at)
-                ON CONFLICT(id) DO UPDATE SET kind=$kind,name=$name,url=$url,credential_id=$cred,enabled=$en,
-                status=$st,version=$ver,health_warnings=$hw,queue_count=$q,last_message=$msg,last_checked=$at";
-            Bind(cmd,"$id",a.Id); Bind(cmd,"$kind",a.Kind); Bind(cmd,"$name",a.Name); Bind(cmd,"$url",a.Url);
-            Bind(cmd,"$cred",a.CredentialId); Bind(cmd,"$en",a.Enabled?1:0); Bind(cmd,"$st",a.Status);
-            Bind(cmd,"$ver",a.Version); Bind(cmd,"$hw",a.HealthWarnings); Bind(cmd,"$q",a.QueueCount);
-            Bind(cmd,"$msg",a.LastMessage); Bind(cmd,"$at",a.LastChecked);
-            cmd.ExecuteNonQuery();
-        }
-    }
-
-    public void RemoveArrApp(string id, string removedBy)
-    {
-        lock (_writeLock)
-        {
-            using var conn = Connect();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM arr_apps WHERE id=$id";
-            Bind(cmd,"$id",id);
-            if (cmd.ExecuteNonQuery() > 0)
-                RecordChange(new ChangeRecord { SubjectKind="arr_app", SubjectId=id, ChangeKind="removed", Summary="*arr app removed", ChangedBy=removedBy });
-        }
-    }
-
-    public IReadOnlyList<ArrAppRecord> ListArrApps()
-    {
-        var list = new List<ArrAppRecord>();
-        using var conn = Connect();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id,kind,name,url,credential_id,enabled,status,version,health_warnings,queue_count,last_message,last_checked FROM arr_apps ORDER BY name";
-        using var r = cmd.ExecuteReader();
-        while (r.Read()) list.Add(new ArrAppRecord
-        {
-            Id=r.GetString(0), Kind=r.GetString(1), Name=r.GetString(2), Url=r.GetString(3),
-            CredentialId=r.GetString(4), Enabled=!r.IsDBNull(5)&&r.GetInt32(5)==1,
-            Status=r.IsDBNull(6)?"unknown":r.GetString(6), Version=r.IsDBNull(7)?"":r.GetString(7),
-            HealthWarnings=r.IsDBNull(8)?0:r.GetInt32(8), QueueCount=r.IsDBNull(9)?-1:r.GetInt32(9),
-            LastMessage=r.IsDBNull(10)?"":r.GetString(10), LastChecked=r.IsDBNull(11)?"":r.GetString(11),
-        });
-        return list;
-    }
+    // v2.5.1 Console Refit R1: the *arr app persistence (UpsertArrApp/RemoveArrApp/ListArrApps)
+    // moved to HomelabRepository.Integrations.cs — same public surface, now backed by the generic
+    // integration_instances + integration_state tables.
 }
