@@ -7912,10 +7912,10 @@ function collectionManager(cfg){
     h+='</tr></thead><tbody>';
     for(const r of rows){
       const id=cfg.idOf(r);
-      h+='<tr><td><input type="checkbox" class="cm-sel" data-id="'+escapeHtml(id)+'"'+(st.sel.has(id)?' checked':'')+'></td>';
+      h+='<tr><td><input type="checkbox" class="cm-sel" data-row="'+escapeHtml(id)+'"'+(st.sel.has(id)?' checked':'')+'></td>';
       for(const c of cfg.columns) h+='<td>'+(c.render?c.render(r):escapeHtml(String(r[c.key]??'')))+'</td>';
       if(cfg.rowActions&&cfg.rowActions.length){
-        h+='<td style="white-space:nowrap;">'+cfg.rowActions.map((a,i)=>'<button class="btn btn-ghost cm-act" data-id="'+escapeHtml(id)+'" data-a="'+i+'" title="'+escapeHtml(a.title)+'" style="padding:1px 6px;font-size:10px;">'+(typeof a.icon==='function'?a.icon(r):a.icon)+'</button>').join(' ')+'</td>';
+        h+='<td style="white-space:nowrap;">'+cfg.rowActions.map((a,i)=>'<button class="btn btn-ghost cm-act" data-row="'+escapeHtml(id)+'" data-a="'+i+'" title="'+escapeHtml(a.title)+'" style="padding:1px 6px;font-size:10px;">'+(typeof a.icon==='function'?a.icon(r):a.icon)+'</button>').join(' ')+'</td>';
       }
       h+='</tr>';
     }
@@ -7925,7 +7925,7 @@ function collectionManager(cfg){
       renderBody();
     });
     body.querySelectorAll('.cm-sel').forEach(cb=>cb.addEventListener('change',e=>{
-      if(e.target.checked) st.sel.add(e.target.dataset.id); else st.sel.delete(e.target.dataset.id);
+      if(e.target.checked) st.sel.add(e.target.dataset.row); else st.sel.delete(e.target.dataset.row);
       el.querySelector('.cm-count').textContent=visibleRows().length+' of '+st.rows.length+(st.sel.size?(' · '+st.sel.size+' selected'):'');
       syncBulk();
     }));
@@ -7935,7 +7935,7 @@ function collectionManager(cfg){
       renderBody();
     }));
     body.querySelectorAll('.cm-act').forEach(btn=>btn.addEventListener('click',async()=>{
-      const row=st.rows.find(r=>cfg.idOf(r)===btn.dataset.id); if(!row) return;
+      const row=st.rows.find(r=>cfg.idOf(r)===btn.dataset.row); if(!row) return;
       await cfg.rowActions[parseInt(btn.dataset.a,10)].run(row); reload();
     }));
     syncBulk();
