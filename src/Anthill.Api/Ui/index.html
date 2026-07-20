@@ -1797,6 +1797,33 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           .hl3-x:hover{color:var(--status-danger,#f05252);}
           /* *arr app tiles (Homarr-style) */
           #hl3-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:8px;}
+          /* v2.5.2 Console Refit R2 — widget runtime (page-agnostic; this grid is just one zone) */
+          .wgt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:8px;}
+          .wgt{border:1px solid var(--line,#223);border-radius:8px;background:rgba(255,255,255,0.015);display:flex;flex-direction:column;min-height:96px;overflow:hidden;}
+          .wgt.wide{grid-column:span 2;}
+          @media (max-width:640px){.wgt.wide{grid-column:span 1;}}
+          .wgt-hd{display:flex;align-items:center;gap:6px;padding:7px 10px 5px;font-size:10px;font-weight:700;color:var(--anthill-text,#dfe7ef);border-bottom:1px solid var(--line,#223);}
+          .wgt-hd .src{font-weight:400;color:var(--dim);text-transform:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+          .wgt-hd .ctl{margin-left:auto;display:flex;gap:2px;flex:none;}
+          .wgt-hd .ctl button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:10px;padding:1px 3px;border-radius:3px;}
+          .wgt-hd .ctl button:hover{color:var(--anthill-text,#dfe7ef);background:rgba(255,255,255,0.06);}
+          .wgt-bd{padding:8px 10px;font-size:11px;color:var(--muted);flex:1;min-height:0;overflow-y:auto;max-height:220px;}
+          .wgt-ft{padding:3px 10px 6px;font-size:9px;color:var(--dim);}
+          .wgt-ft.stale{color:var(--status-warning,#ffb020);}
+          .wgt-state{display:flex;align-items:center;justify-content:center;text-align:center;min-height:56px;color:var(--dim);font-size:10px;padding:8px;}
+          .wgt-state.err{color:var(--status-danger,#f05252);}
+          .wgt-state .retry{margin-left:6px;text-decoration:underline;cursor:pointer;}
+          .wgt-big{font-size:26px;font-weight:800;color:var(--anthill-text,#dfe7ef);line-height:1.1;}
+          .wgt-kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:10px;}
+          .wgt-kv b{color:var(--dim);font-weight:400;text-transform:uppercase;font-size:9px;}
+          .wgt-li{padding:3px 0;border-bottom:1px dashed rgba(255,255,255,0.05);font-size:10px;display:flex;gap:6px;align-items:baseline;min-width:0;}
+          .wgt-li:last-child{border-bottom:none;}
+          .wgt-li .at{color:var(--dim);font-size:9px;flex:none;}
+          .wgt-li .tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+          .wgt-skel{height:10px;border-radius:4px;background:linear-gradient(90deg,rgba(255,255,255,0.04),rgba(255,255,255,0.10),rgba(255,255,255,0.04));background-size:200% 100%;animation:wgtShimmer 1.2s infinite;margin:6px 0;}
+          @keyframes wgtShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+          #hl3-widget-picker{display:none;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;}
+          #hl3-widget-picker.open{display:flex;}
           .hl3-app{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line,#223);border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer;}
           .hl3-app:hover{border-color:var(--status-info,#4aa3ff);}
           .hl3-app .av{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#0a0f16;flex:none;}
@@ -1832,6 +1859,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <div id="hl3-deck"><div class="hl3-empty">Loading deck…</div></div>
           <div id="hl3-hidden-tray" style="margin-top:6px;font-size:10px;color:var(--dim);"></div>
+        </div>
+
+        <!-- v2.5.2 Console Refit R2: the widget zone — modular, integration-fed, layout persisted per operator via /ui/state -->
+        <div class="card hl-sec-memory" id="hl3-widgets-card" style="padding:12px 16px;">
+          <div class="section-head" style="margin-top:0;">Widgets <span id="hl3-widgets-kpi" style="font-weight:400;color:var(--dim)"></span>
+            <span style="float:right;display:flex;gap:8px;">
+              <button class="btn btn-ghost" onclick="hl3WidgetsRefresh()" title="Refresh every widget now">⟳ Refresh</button>
+              <button class="btn btn-ghost" onclick="hl3WidgetPickerToggle()" title="Add a widget fed by a connected integration">+ Widget</button>
+            </span>
+          </div>
+          <div id="hl3-widget-picker">
+            <select class="form-select" id="hl3-wp-integration" onchange="hl3WidgetPickerKinds()" style="max-width:200px;"></select>
+            <select class="form-select" id="hl3-wp-kind" style="max-width:180px;"></select>
+            <button class="btn btn-primary" onclick="hl3WidgetAdd()">Add</button>
+            <span style="font-size:9px;color:var(--dim);">Each integration offers only the widget kinds it can feed. Layout is saved to your console state.</span>
+          </div>
+          <div id="hl3-widgets" class="wgt-grid"><div class="hl3-empty">Loading widgets…</div></div>
         </div>
 
         <!-- v2.3.3 *arr-stack Apps (Homarr-style integrations: sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr) -->
@@ -2749,7 +2793,7 @@ function url(path){ return API_BASE ? API_BASE.replace(/\/$/,'') + path : path; 
 const API_TTL={'/status':10000,'/events/json':3000,'/jobs':5000,'/missions/json':10000,
   '/colony/registry':30000,'/pheromones/json':20000,'/autonomy/status':10000,'/objectives':15000,
   '/patches':30000,'/homelab/dashboard':10000,'/homelab/summary':10000,'/homelab/approvals/unified':10000,
-  '/system/summary':15000,'/update/check':300000};
+  '/system/summary':15000,'/update/check':300000,'/homelab/integrations':15000};
 const _apiCache=new Map(), _apiInflight=new Map(); let _api429Until=0;
 function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
   for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
@@ -5747,7 +5791,7 @@ document.getElementById('log-filter-level').addEventListener('change',reloadLogM
 document.getElementById('log-filter-since').addEventListener('change',reloadLogModal);
 
 // -- UI State ------------------------------------------------------------------
-let uiState={version:1,castes:{},positions:{}};
+let uiState={version:1,castes:{},positions:{},widgets:{}}; // widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
 const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
 const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
@@ -5756,7 +5800,7 @@ uiReady=true;
 async function loadUiState(){
   try{
     const r=await api('/ui/state');
-    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; }
+    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; }
   }catch{}
   applyUiState();
 }
@@ -5765,7 +5809,7 @@ let uiSaveTimer=null;
 function saveUiState(){
   clearTimeout(uiSaveTimer);
   uiSaveTimer=setTimeout(async()=>{
-    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions});}
+    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets});}
     catch(e){console.error('saveUiState',e);}
   },350);
 }
@@ -6671,6 +6715,7 @@ async function loadHomelab(){
     hlLoadAutomation(); // v2.5.0: automation rules (Phase 14)
     renderHlDeck();     // v2.3.2/3: the Service Deck — hosts/VMs/CTs/services as live tiles + metrics
     renderHl3Apps();    // v2.4.1: *arr-stack apps (Homarr-style)
+    renderHl3Widgets(); // v2.5.2: Console Refit R2 — the widget zone (runtime + persisted layout)
     hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s
     loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
     hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
@@ -7561,6 +7606,198 @@ async function hl3ArrRemove(id){
   hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
   hl3PageClose(); renderHl3Apps();
 }
+// ---- v2.5.2 Console Refit R2: THE widget runtime -----------------------------------------------
+// One runtime for every dashboard tile: widget(kind, integrationId, el). Widgets are page-agnostic
+// — they know their integration and their kind, never where they render. Full lifecycle
+// (loading → success | empty | error, all labeled), per-kind TTL polling that stops when the
+// element leaves the DOM, manual refresh, responsive sizing via the .wgt-grid zone, and a layout
+// registry persisted per operator in /ui/state (ordered arrays — drag-and-drop ready).
+// Data source: GET /homelab/integrations/{id}/widgets/{kind} (integration_state + freshness).
+const WIDGET_KINDS={
+  'health':          {title:'Health',          icon:'♥', ttl:30000,  render:wgtRenderHealth},
+  'queue':           {title:'Queue',           icon:'⇣', ttl:15000,  render:wgtRenderQueue},
+  'statistics':      {title:'Statistics',      icon:'∑', ttl:60000,  render:wgtRenderKv},
+  'disk-usage':      {title:'Disk Usage',      icon:'◔', ttl:60000,  render:wgtRenderBars},
+  'resource-usage':  {title:'Resources',       icon:'▦', ttl:20000,  render:wgtRenderBars},
+  'recent-activity': {title:'Recent Activity', icon:'≡', ttl:30000,  wide:true, render:wgtRenderList},
+  'calendar':        {title:'Upcoming',        icon:'▤', ttl:120000, wide:true, render:wgtRenderList},
+  'failed-imports':  {title:'Failed Imports',  icon:'✕', ttl:60000,  wide:true, render:wgtRenderList},
+  'logs':            {title:'Logs',            icon:'☰', ttl:20000,  wide:true, render:wgtRenderList},
+  'alerts':          {title:'Alerts',          icon:'⚠', ttl:20000,  wide:true, render:wgtRenderList},
+};
+const _widgets=new Map(); // el → widget state (timer bookkeeping; cleared on unmount)
+
+function widget(kind,integrationId,el,opts){
+  opts=opts||{};
+  const def=WIDGET_KINDS[kind]||{title:kind,icon:'▣',ttl:30000,render:wgtRenderKv}; // unknown kinds render generically — never break
+  const st={kind,integrationId,el,def,hasData:false,timer:null};
+  el.classList.add('wgt'); if(def.wide) el.classList.add('wide');
+  el.innerHTML='<div class="wgt-hd">'+def.icon+' '+escapeHtml(def.title)
+    +' <span class="src">'+escapeHtml(opts.label||'')+'</span>'
+    +'<span class="ctl">'+(opts.controls||'')+'<button title="Refresh now" onclick="wgtRefreshEl(this)">⟳</button></span></div>'
+    +'<div class="wgt-bd"><div class="wgt-skel"></div><div class="wgt-skel" style="width:70%"></div></div>'
+    +'<div class="wgt-ft"></div>';
+  _widgets.set(el,st); el._wgt=st;
+  wgtLoad(st,false);
+  return { refresh:()=>wgtLoad(st,true), unmount:()=>wgtUnmount(el) };
+}
+function wgtUnmount(el){ const st=_widgets.get(el); if(st){ clearTimeout(st.timer); _widgets.delete(el); } }
+function wgtRefreshEl(btn){ const el=btn.closest('.wgt'); if(el&&el._wgt) wgtLoad(el._wgt,true); }
+function wgtPath(st){ return '/homelab/integrations/'+encodeURIComponent(st.integrationId)+'/widgets/'+encodeURIComponent(st.kind); }
+
+async function wgtLoad(st,force){
+  if(!st.el.isConnected){ wgtUnmount(st.el); return; } // page moved on — stop polling
+  clearTimeout(st.timer);
+  if(force) apiCacheBust(wgtPath(st));
+  const bd=st.el.querySelector('.wgt-bd'), ft=st.el.querySelector('.wgt-ft');
+  let r=null;
+  try{ r=await api(wgtPath(st)); }catch(e){ r={success:false,message:(e&&e.message)||'load failed'}; }
+  if(!st.el.isConnected){ wgtUnmount(st.el); return; }
+  if(r&&r.success&&r.data){
+    st.hasData=true;
+    try{ bd.innerHTML=st.def.render(r.data.payload||{},st); }
+    catch(e){ bd.innerHTML='<div class="wgt-state err">Render failed: '+escapeHtml((e&&e.message)||'?')+'</div>'; }
+    wgtFreshness(ft,r.data.updated_at,st.def.ttl);
+  }else if(r&&r.error==='not_found'){
+    if(!st.hasData) bd.innerHTML='<div class="wgt-state">No data yet — this integration hasn’t published “'+escapeHtml(st.kind)+'”. It appears after the next sync.</div>';
+    if(ft) ft.textContent='';
+  }else{
+    if(!st.hasData) bd.innerHTML='<div class="wgt-state err">'+escapeHtml((r&&r.message)||'Load failed.')+'<span class="retry" onclick="wgtRefreshEl(this)">retry</span></div>';
+    else if(ft){ ft.classList.add('stale'); ft.textContent='refresh failed — showing last data'; }
+  }
+  st.timer=setTimeout(()=>wgtLoad(st,false),st.def.ttl); // TTL poll; api() cache still dedupes
+}
+function wgtFreshness(ft,iso,ttl){
+  if(!ft) return;
+  if(!iso){ ft.textContent=''; return; }
+  const age=Date.now()-Date.parse(iso);
+  const stale=isFinite(age)&&age>Math.max(3*ttl,180000);
+  ft.className='wgt-ft'+(stale?' stale':'');
+  ft.textContent=(stale?'stale — ':'')+'updated '+String(iso).slice(0,19).replace('T',' ');
+}
+
+// ---- Kind renderers (typed payloads from integration_state; tolerant of missing fields) --------
+function wgtRenderHealth(p){
+  const ok=(p.status||'unknown')==='ok';
+  return '<div style="display:flex;align-items:center;gap:10px;">'
+    +'<span style="font-size:20px;">'+hl3Dot(ok?'ok':(p.status==='error'?'failed':''))+'</span>'
+    +'<div><div style="font-weight:700;color:var(--anthill-text)">'+escapeHtml(p.status||'unknown')+(p.version?' · v'+escapeHtml(String(p.version)):'')+'</div>'
+    +'<div style="font-size:10px;color:'+((p.health_warnings|0)>0?'var(--status-warning)':'var(--dim)')+'">'
+    +((p.health_warnings|0)>0?('⚠ '+p.health_warnings+' health warning'+(p.health_warnings>1?'s':'')):'no health warnings')+'</div></div></div>';
+}
+function wgtRenderQueue(p){
+  const t=(typeof p.total==='number')?p.total:-1;
+  return '<div class="wgt-big">'+(t<0?'—':t)+'</div><div style="font-size:10px;color:var(--dim);">'+(t<0?'queue not reported yet':('item'+(t===1?'':'s')+' in queue'))+'</div>';
+}
+function wgtRenderKv(p){
+  const rows=Object.entries(p||{}).filter(([k,v])=>v===null||['string','number','boolean'].includes(typeof v)).slice(0,12);
+  if(!rows.length) return '<div class="wgt-state">Nothing to show yet.</div>';
+  return '<div class="wgt-kv">'+rows.map(([k,v])=>'<b>'+escapeHtml(k.replace(/_/g,' '))+'</b><span>'+escapeHtml(String(v??'—'))+'</span>').join('')+'</div>';
+}
+function wgtRenderBars(p){
+  // Accepts {items:[{label,used_bytes,total_bytes}]} or flat {cpu_percent,mem_used_bytes,mem_total_bytes,...}
+  const bars=[];
+  if(Array.isArray(p.items)) for(const it of p.items.slice(0,6)) bars.push([it.label||it.path||it.name||'?',it.used_bytes,it.total_bytes]);
+  else{
+    if(typeof p.cpu_percent==='number'&&p.cpu_percent>=0) bars.push(['cpu',p.cpu_percent,100]);
+    if(p.mem_total_bytes>0) bars.push(['mem',p.mem_used_bytes,p.mem_total_bytes]);
+    if(p.disk_total_bytes>0) bars.push(['disk',p.disk_used_bytes,p.disk_total_bytes]);
+  }
+  if(!bars.length) return '<div class="wgt-state">No usage data yet.</div>';
+  return '<div class="hl3-bars">'+bars.map(([l,u,t])=>{
+    const pct=(t>0&&u>=0)?Math.min(100,Math.round(u*100/t)):0;
+    return '<div class="hl3-bar"><b>'+escapeHtml(String(l)).slice(0,10)+'</b><div class="tr"><div class="fl'+(pct>90?' bad':(pct>75?' warn':''))+'" style="width:'+pct+'%"></div></div><span>'+pct+'%</span></div>';
+  }).join('')+'</div>';
+}
+function wgtRenderList(p){
+  const items=Array.isArray(p.items)?p.items:[];
+  if(!items.length) return '<div class="wgt-state">Nothing here yet.</div>';
+  return items.slice(0,10).map(it=>{
+    const at=it.at||it.time||it.date||it.created_at||'';
+    const tx=it.title||it.text||it.message||it.line||it.name||JSON.stringify(it).slice(0,80);
+    return '<div class="wgt-li"><span class="at">'+escapeHtml(String(at).slice(0,16).replace('T',' '))+'</span><span class="tx" title="'+escapeHtml(String(tx))+'">'+escapeHtml(String(tx))+'</span></div>';
+  }).join('');
+}
+
+// ---- Layout registry (per-operator, persisted via /ui/state; ordered = drag-and-drop ready) ----
+function wgtZone(zone){ const w=uiState.widgets||{}; return Array.isArray(w[zone])?w[zone]:[]; }
+function wgtZoneSave(zone,list){ uiState.widgets=uiState.widgets||{}; uiState.widgets[zone]=list; saveUiState(); }
+
+// ---- Homelab page glue: the "homelab" widget zone ----------------------------------------------
+let HL3W={instances:[],kinds:[]};
+async function renderHl3Widgets(){
+  const box=document.getElementById('hl3-widgets'); if(!box) return;
+  try{
+    const r=await api('/homelab/integrations');
+    if(r&&r.success&&r.data){ HL3W.instances=r.data.items||[]; HL3W.kinds=r.data.kinds||[]; }
+  }catch(e){}
+  for(const child of Array.from(box.children)) if(child._wgt) wgtUnmount(child);
+  const layout=wgtZone('homelab');
+  const kpi=document.getElementById('hl3-widgets-kpi');
+  if(kpi) kpi.textContent=layout.length?('· '+layout.length):'';
+  if(!layout.length){
+    box.innerHTML='<div class="hl3-empty">No widgets yet. <b>+ Widget</b> pins live data from any connected integration — health, queue, and more as integrations publish them. Your layout is saved per operator.</div>';
+    return;
+  }
+  box.innerHTML='';
+  layout.forEach((entry,ix)=>{
+    const inst=HL3W.instances.find(i=>i.id===entry.integration_id);
+    const div=document.createElement('div');
+    div.dataset.wid=entry.id;
+    const controls='<button title="Move left" onclick="hl3WidgetMove(this,-1)">◀</button>'
+      +'<button title="Move right" onclick="hl3WidgetMove(this,1)">▶</button>'
+      +'<button title="Remove widget (data is untouched)" onclick="hl3WidgetRemove(this)">✕</button>';
+    box.appendChild(div);
+    widget(entry.kind,entry.integration_id,div,{label:inst?inst.name:'(integration removed)',controls:controls});
+  });
+}
+function hl3WidgetMove(btn,dir){
+  const el=btn.closest('.wgt'); if(!el) return;
+  const list=wgtZone('homelab').slice();
+  const ix=list.findIndex(e=>e.id===el.dataset.wid);
+  const to=ix+dir;
+  if(ix<0||to<0||to>=list.length) return;
+  const [e]=list.splice(ix,1); list.splice(to,0,e);
+  wgtZoneSave('homelab',list); renderHl3Widgets();
+}
+function hl3WidgetRemove(btn){
+  const el=btn.closest('.wgt'); if(!el) return;
+  wgtZoneSave('homelab',wgtZone('homelab').filter(e=>e.id!==el.dataset.wid));
+  renderHl3Widgets();
+}
+function hl3WidgetsRefresh(){
+  for(const [el,st] of _widgets) if(el.closest('#hl3-widgets')) wgtLoad(st,true);
+}
+async function hl3WidgetPickerToggle(){
+  const pk=document.getElementById('hl3-widget-picker'); if(!pk) return;
+  if(pk.classList.contains('open')){ pk.classList.remove('open'); return; }
+  const r=await api('/homelab/integrations');
+  if(r&&r.success&&r.data){ HL3W.instances=r.data.items||[]; HL3W.kinds=r.data.kinds||[]; }
+  const sel=document.getElementById('hl3-wp-integration');
+  const enabled=HL3W.instances.filter(i=>i.enabled);
+  if(!enabled.length){ hlMsg('Connect an integration first (Apps → + App).',false); return; }
+  sel.innerHTML=enabled.map(i=>'<option value="'+escapeHtml(i.id)+'">'+escapeHtml(i.name)+' ('+escapeHtml(i.kind)+')</option>').join('');
+  hl3WidgetPickerKinds();
+  pk.classList.add('open');
+}
+function hl3WidgetPickerKinds(){
+  const sel=document.getElementById('hl3-wp-integration'), ks=document.getElementById('hl3-wp-kind');
+  if(!sel||!ks) return;
+  const inst=HL3W.instances.find(i=>i.id===sel.value);
+  const kinds=(HL3W.kinds.find(k=>k.kind===(inst&&inst.kind))||{}).widget_kinds||[];
+  ks.innerHTML=kinds.length?kinds.map(k=>'<option value="'+escapeHtml(k)+'">'+escapeHtml((WIDGET_KINDS[k]||{}).title||k)+'</option>').join(''):'<option value="">(no widgets offered)</option>';
+}
+function hl3WidgetAdd(){
+  const id=document.getElementById('hl3-wp-integration').value;
+  const kind=document.getElementById('hl3-wp-kind').value;
+  if(!id||!kind){ hlMsg('Pick an integration and a widget kind.',false); return; }
+  const list=wgtZone('homelab').slice();
+  list.push({id:'w'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),kind:kind,integration_id:id});
+  wgtZoneSave('homelab',list);
+  document.getElementById('hl3-widget-picker').classList.remove('open');
+  renderHl3Widgets();
+}
+
 async function hl3DeckPropose(type,kind,target){
   const card=document.getElementById('hl-actions-card');
   const sel=document.getElementById('hl-a-type');
