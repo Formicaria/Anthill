@@ -213,6 +213,7 @@ public sealed class TargetAllowlistRecord
 {
     [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
     [JsonPropertyName("target")] public string Target { get; set; } = ""; // "nas.lan" | "192.168.1.10" | "10.0.0.0/24"
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "allow"; // v2.5.4 R4: allow | deny (deny beats allow)
     [JsonPropertyName("note")] public string Note { get; set; } = "";
     [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
     [JsonPropertyName("added_by")] public string AddedBy { get; set; } = "";

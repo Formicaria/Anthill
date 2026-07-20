@@ -181,9 +181,28 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
                 cmd.CommandText = ddl;
                 cmd.ExecuteNonQuery();
             }
+            // v2.5.4 R4: the target list carries allow AND deny entries (deny beats allow).
+            EnsureColumn(conn, tx, "homelab_target_allowlist", "list_kind", "TEXT NOT NULL DEFAULT 'allow'");
             MigrateArrAppsToIntegrations(conn, tx); // v2.5.1 R1: legacy rows move, UI keeps working
             tx.Commit();
         }
+    }
+
+    /// <summary>Idempotent ALTER TABLE ADD COLUMN — safe on fresh DBs, upgraded DBs, and re-runs.</summary>
+    private static void EnsureColumn(SqliteConnection conn, SqliteTransaction tx, string table, string column, string ddl)
+    {
+        using (var check = conn.CreateCommand())
+        {
+            check.Transaction = tx;
+            check.CommandText = $"PRAGMA table_info({table})";
+            using var r = check.ExecuteReader();
+            while (r.Read())
+                if (string.Equals(r.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return;
+        }
+        using var alter = conn.CreateCommand();
+        alter.Transaction = tx;
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {ddl}";
+        alter.ExecuteNonQuery();
     }
 
     private static void Bind(SqliteCommand cmd, string name, object? value) =>
@@ -1128,22 +1147,80 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
     public void AddAllowlistEntry(TargetAllowlistRecord entry)
     {
         if (string.IsNullOrWhiteSpace(entry.CreatedAt)) entry.CreatedAt = AnthillTime.NowUtc().ToIso();
+        entry.Kind = string.Equals(entry.Kind, "deny", StringComparison.OrdinalIgnoreCase) ? "deny" : "allow"; // normalize; unknown kinds fail closed to 'allow' semantics
+        var existed = ListAllowlist().Any(e => e.Id == entry.Id);
         lock (_writeLock)
         {
             using var conn = Connect();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT INTO homelab_target_allowlist (id, target, note, enabled, added_by, created_at)
-                VALUES ($id, $target, $note, $enabled, $by, $created)
-                ON CONFLICT(id) DO UPDATE SET target=$target, note=$note, enabled=$enabled";
-            Bind(cmd, "$id", entry.Id); Bind(cmd, "$target", entry.Target.Trim()); Bind(cmd, "$note", entry.Note);
+            cmd.CommandText = @"INSERT INTO homelab_target_allowlist (id, target, list_kind, note, enabled, added_by, created_at)
+                VALUES ($id, $target, $kind, $note, $enabled, $by, $created)
+                ON CONFLICT(id) DO UPDATE SET target=$target, list_kind=$kind, note=$note, enabled=$enabled";
+            Bind(cmd, "$id", entry.Id); Bind(cmd, "$target", entry.Target.Trim()); Bind(cmd, "$kind", entry.Kind);
+            Bind(cmd, "$note", entry.Note);
             Bind(cmd, "$enabled", entry.Enabled ? 1 : 0); Bind(cmd, "$by", entry.AddedBy); Bind(cmd, "$created", entry.CreatedAt);
             cmd.ExecuteNonQuery();
         }
         RecordChange(new ChangeRecord
         {
-            SubjectKind = "allowlist", SubjectId = entry.Id, ChangeKind = "created",
-            Summary = $"Allowlist target '{entry.Target}' added", ChangedBy = entry.AddedBy,
+            SubjectKind = "allowlist", SubjectId = entry.Id, ChangeKind = existed ? "updated" : "created",
+            Summary = $"{(entry.Kind == "deny" ? "Blocklist" : "Allowlist")} target '{entry.Target}' {(existed ? "updated" : "added")}",
+            ChangedBy = entry.AddedBy,
         });
+    }
+
+    /// <summary>v2.5.4 R4: bulk enable/disable — one audited change record for the whole batch.</summary>
+    public int SetAllowlistEnabled(IReadOnlyCollection<string> ids, bool enabled, string changedBy)
+    {
+        if (ids.Count == 0) return 0;
+        int changed;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            changed = 0;
+            foreach (var id in ids)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE homelab_target_allowlist SET enabled=$en WHERE id=$id";
+                Bind(cmd, "$en", enabled ? 1 : 0); Bind(cmd, "$id", id);
+                changed += cmd.ExecuteNonQuery();
+            }
+        }
+        if (changed > 0)
+            RecordChange(new ChangeRecord
+            {
+                SubjectKind = "allowlist", SubjectId = "bulk", ChangeKind = "updated",
+                Summary = $"Bulk {(enabled ? "enabled" : "disabled")} {changed} target entr{(changed == 1 ? "y" : "ies")}",
+                ChangedBy = changedBy,
+            });
+        return changed;
+    }
+
+    /// <summary>v2.5.4 R4: bulk remove — one audited change record for the whole batch.</summary>
+    public int RemoveAllowlistEntries(IReadOnlyCollection<string> ids, string removedBy)
+    {
+        if (ids.Count == 0) return 0;
+        int removed;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            removed = 0;
+            foreach (var id in ids)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM homelab_target_allowlist WHERE id=$id";
+                Bind(cmd, "$id", id);
+                removed += cmd.ExecuteNonQuery();
+            }
+        }
+        if (removed > 0)
+            RecordChange(new ChangeRecord
+            {
+                SubjectKind = "allowlist", SubjectId = "bulk", ChangeKind = "removed",
+                Summary = $"Bulk removed {removed} target entr{(removed == 1 ? "y" : "ies")}",
+                ChangedBy = removedBy,
+            });
+        return removed;
     }
 
     public void RemoveAllowlistEntry(string id, string removedBy)
@@ -1168,14 +1245,16 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
         var list = new List<TargetAllowlistRecord>();
         using var conn = Connect();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, target, note, enabled, added_by, created_at FROM homelab_target_allowlist ORDER BY created_at";
+        cmd.CommandText = "SELECT id, target, list_kind, note, enabled, added_by, created_at FROM homelab_target_allowlist ORDER BY created_at";
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
             list.Add(new TargetAllowlistRecord
             {
-                Id = r.GetString(0), Target = r.GetString(1), Note = r.IsDBNull(2) ? "" : r.GetString(2),
-                Enabled = r.GetInt64(3) != 0, AddedBy = r.IsDBNull(4) ? "" : r.GetString(4), CreatedAt = r.GetString(5),
+                Id = r.GetString(0), Target = r.GetString(1),
+                Kind = r.IsDBNull(2) ? "allow" : r.GetString(2),
+                Note = r.IsDBNull(3) ? "" : r.GetString(3),
+                Enabled = r.GetInt64(4) != 0, AddedBy = r.IsDBNull(5) ? "" : r.GetString(5), CreatedAt = r.GetString(6),
             });
         }
         return list;
