@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.5.1
+**Current version:** v2.5.2
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -59,6 +59,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v2.5.2` | **Console Refit R2 — widget framework.** One JS widget runtime, `widget(kind, integrationId, el)`: full lifecycle (labeled loading/empty/error/success), per-kind TTL polling that stops when the element leaves the DOM, manual refresh, responsive grid sizing, and a per-operator layout registry persisted via `/ui/state` (ordered arrays — drag-and-drop ready). Ten registered widget kinds (health + queue live today from the *arr integrations; the rest render honestly empty until R5/R6 syncs publish them). Widgets never know their page — the Homelab "Widgets" card is just the first zone. |
 | `v2.5.1` | **Console Refit R1 — generic integration framework.** The *arr pattern generalizes into the platform core: `IIntegrationDefinition` contract + `IntegrationCatalog` registry (adding an integration = one class + one registry entry), new `integration_instances`/`integration_state` tables with an idempotent migration off `arr_apps`, one scheduler sync job for every registered kind, and the `GET/POST /homelab/integrations` + `…/{id}/widgets/{kind}` API. The `/homelab/arr` endpoints and UI keep working unchanged as a compatibility view. |
 | `v2.4.3` | Honest Ollama diagnostics: a 404 from a missing model no longer masquerades as "could not connect" (it now names the model and the fix, including the offline-install case), true connection failures name the configured host + the OLLAMA_HOST=0.0.0.0 binding gotcha, and the system summary adds `ollama_model_present` via `/api/tags` so a green chip can no longer hide an absent model. |
 | `v2.4.2` | Registering a host (`POST/PUT /homelab/hosts`) or an *arr app (`POST /homelab/arr`) now auto-adds its address to the D1 target allowlist (audited, operator-attributed) — the separate manual allowlist step was friction that caused silent sync dead-ends. Provider syncs still cannot widen the allowlist; the general SSRF guard is untouched. |

@@ -1,5 +1,28 @@
 # ANTHILL Changelog
 
+## v2.5.2 — Console Refit R2: widget framework (docs/CONSOLE_REFIT.md)
+
+One JS widget runtime for every dashboard tile — widgets are modular and page-agnostic
+(they know their integration and kind, never where they render).
+
+- **Runtime**: `widget(kind, integrationId, el)` with the full lifecycle — skeleton loading,
+  labeled empty ("not published yet — appears after the next sync"), labeled error with retry,
+  success via per-kind renderers. Per-kind TTL polling (15s–2min) that stops itself when the
+  element leaves the DOM; manual per-widget and per-zone refresh (cache-busting); stale-data
+  marking from the `updated_at` freshness the R1 API returns; render failures are contained to
+  the widget. Data source: `GET /homelab/integrations/{id}/widgets/{kind}`.
+- **Ten registered kinds**: health and queue render live *arr data today; statistics,
+  disk-usage, resource-usage, recent-activity, calendar/upcoming, failed-imports, logs, and
+  alerts have real renderers (key-value grid, usage bars, timestamped lists) over documented
+  payload shapes and state honestly empty until the R5/R6 syncs publish them. Unknown kinds
+  fall back to a generic renderer — a new server-side kind never breaks the console.
+- **Layout registry**: per-operator, persisted via `/ui/state` (`widgets` key alongside the
+  existing castes/positions — round-tripped, no backend change). Zones hold ordered arrays
+  (add / remove / reorder today = drag-and-drop ready per the R2 plan).
+- **First zone**: a "Widgets" card on the Homelab page — "+ Widget" picker offers only the
+  widget kinds each connected integration declares in the catalog; responsive `.wgt-grid`
+  auto-fill sizing with wide (2-column) list widgets.
+
 ## v2.5.1 — Console Refit R1: generic integration framework (docs/CONSOLE_REFIT.md)
 
 The *arr pattern becomes the platform core: every connected app is now an `IIntegrationDefinition`
