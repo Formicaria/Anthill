@@ -465,6 +465,9 @@ public static partial class ApiHost
         // v2.3.3: *arr apps + node metrics.
         MapHomelabArrEndpoints(app);
 
+        // v2.5.1 Console Refit R1: generic integration platform (catalog + instances + widgets).
+        MapHomelabIntegrationEndpoints(app);
+
         // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------
 
         app.MapGet("/homelab/devices", (HttpContext ctx) =>

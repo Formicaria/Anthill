@@ -13,14 +13,17 @@ namespace Anthill.Api;
 /// </summary>
 public static partial class ApiHost
 {
-    public static ArrSyncProvider HomelabArr { get; private set; } = null!;
+    public static IntegrationSyncProvider HomelabArr { get; private set; } = null!;
 
     private sealed record ArrUpsertRequest(string? Id, string? Kind, string? Name, string? Url, string? ApiKey, bool? Enabled);
 
     private static void InitHomelabArr()
     {
-        HomelabArr = new ArrSyncProvider(Homelab, HomelabTargets,
-            credId => HomelabCredentials.GetSecret(credId, usedBy: "ArrSyncProvider"));
+        // v2.5.1 Console Refit R1: the *arr kinds register in the generic IntegrationCatalog and
+        // the sync job generalizes to every registered kind (job name kept for meta continuity).
+        ArrIntegrationDefinition.RegisterAll();
+        HomelabArr = new IntegrationSyncProvider(Homelab, HomelabTargets,
+            credId => HomelabCredentials.GetSecret(credId, usedBy: "IntegrationSyncProvider"));
         if (AnthillRuntime.EnableHomelab)
             HomelabJobs.Register(new HomelabScheduledJob("arr-sync",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabArrSyncIntervalSeconds), HomelabArr.RunAsync));
@@ -82,7 +85,7 @@ public static partial class ApiHost
         {
             var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
             var existing = Homelab.ListArrApps().FirstOrDefault(a => a.Id == id);
-            if (existing is not null && existing.CredentialId.StartsWith("arr-"))
+            if (existing is not null && IsManagedCredential(existing.CredentialId))
                 HomelabCredentials.RemoveCredential(existing.CredentialId, CurrentUsername(ctx) ?? "operator");
             Homelab.RemoveArrApp(id, CurrentUsername(ctx) ?? "operator");
             return ApiJson.Ok(Homelab.ListArrApps(), "App removed (its stored API key was deleted too).");
