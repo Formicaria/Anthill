@@ -1,5 +1,34 @@
 # ANTHILL Changelog
 
+## v2.5.4 — Console Refit R4: allow/blocklist management + collections framework (docs/CONSOLE_REFIT.md)
+
+The D1 target list grows a first-class blocklist and its first real management surface.
+
+- **Deny beats allow**: the target list now carries `allow` AND `deny` entries (`list_kind`
+  column; idempotent `ALTER TABLE` migration — pre-2.5.4 rows stay allows, behavior unchanged
+  by upgrade). `HomelabTargetGuard` scans the whole list: one matching enabled deny refuses the
+  target no matter how many allow entries also match (a deny /24 carves a hole out of an
+  allow /16). Every guard consumer — integration clients, health checks, virtualization
+  providers, and the approval-gated action executor — consumes the blocklist with zero changes
+  of their own, because the guard is the single choke point. Unknown kinds normalize to
+  `allow` semantics; the default stays closed.
+- **Full CRUD over D1**: `POST /homelab/allowlist` accepts `kind` (allow|deny) + optional id
+  (edit); new `PUT /homelab/allowlist/{id}` edits target/kind/note/enabled in place (audited
+  as `updated`); new `POST /homelab/allowlist/bulk` enables/disables/removes batches with ONE
+  audited change record per batch; DELETE unchanged.
+- **Collections framework**: a generic, reusable collection-manager UI component
+  (`collectionManager(cfg)`) — search, filter presets, sortable columns, row selection with
+  bulk actions, per-row actions, count footer; toolbar renders once so search keeps focus.
+  Built for reuse by the R5 integration waves.
+- **Targets surface**: first collection-manager instance, on the Networking sub-page —
+  kind chips (ALLOW/DENY), target, note (edit-in-place), enabled, origin (`added_by`,
+  including the v2.4.2 auto-allowlist attribution), and created timestamp all visible;
+  add form with kind select; flip allow/deny, enable/disable, remove per row or in bulk.
+- Tests (`TargetBlocklistTests`): deny-beats-allow (exact + CIDR carve-out), deny implies no
+  allow for others, disabled deny ignored, kind normalization, upsert audits `updated`,
+  bulk ops with single audit records, and the legacy-database column migration (idempotent
+  across reopens, legacy rows default to allow).
+
 ## v2.5.3 — Console Refit R3: navigation + information architecture (docs/CONSOLE_REFIT.md)
 
 The single-page console gains intentional structure: the Homelab page becomes eleven category
