@@ -33,3 +33,6 @@ secrets.json
 
 # stray files from sandbox git/test runs — never commit
 FETCH_HEAD
+
+# local SDK bootstrap helper (downloaded Microsoft installer; not project source)
+dotnet-install.sh
