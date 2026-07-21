@@ -27,18 +27,25 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
         InitDb();
     }
 
-    public void Dispose() => SqliteConnection.ClearAllPools();
+    // Scoped to THIS database's pool. The process-global ClearAllPools() previously used here
+    // disposed pooled handles for every live repository/memory instance — a parallel-test
+    // "disposed object" hazard (see SqliteMemory.Dispose). ClearPool targets only this connection.
+    public void Dispose()
+    {
+        try { using var c = new SqliteConnection(ConnString); SqliteConnection.ClearPool(c); } catch { }
+    }
+
+    private string ConnString => new SqliteConnectionStringBuilder
+    {
+        DataSource = DbPath,
+        Mode = SqliteOpenMode.ReadWriteCreate,
+        Cache = SqliteCacheMode.Shared,
+        Pooling = true,
+    }.ToString();
 
     private SqliteConnection Connect()
     {
-        var builder = new SqliteConnectionStringBuilder
-        {
-            DataSource = DbPath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-            Pooling = true,
-        };
-        var conn = new SqliteConnection(builder.ToString());
+        var conn = new SqliteConnection(ConnString);
         conn.Open();
         using var pragma = conn.CreateCommand();
         pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON;";

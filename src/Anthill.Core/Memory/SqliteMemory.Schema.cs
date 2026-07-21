@@ -40,18 +40,20 @@ public sealed partial class SqliteMemory : IDisposable
         HardenDbFiles();
     }
 
+    // Shared cache + WAL gives readers concurrency with a single writer, which matches the
+    // parallel-ant execution model. Busy timeout absorbs brief write contention. Built once here so
+    // Connect() and Dispose() (pool clear) always agree on the exact connection string.
+    private string ConnString => new SqliteConnectionStringBuilder
+    {
+        DataSource = DbPath,
+        Mode = SqliteOpenMode.ReadWriteCreate,
+        Cache = SqliteCacheMode.Shared,
+        Pooling = true,
+    }.ToString();
+
     private SqliteConnection Connect()
     {
-        // Shared cache + WAL gives readers concurrency with a single writer, which matches
-        // the parallel-ant execution model. Busy timeout absorbs brief write contention.
-        var builder = new SqliteConnectionStringBuilder
-        {
-            DataSource = DbPath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-            Pooling = true,
-        };
-        var conn = new SqliteConnection(builder.ToString());
+        var conn = new SqliteConnection(ConnString);
         conn.Open();
         using (var pragma = conn.CreateCommand())
         {
@@ -84,7 +86,13 @@ public sealed partial class SqliteMemory : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Clear ONLY this database's pooled connections. The process-global ClearAllPools() used to
+        // live here — but it disposes pooled handles for EVERY live SqliteMemory instance, yanking
+        // connections out from under any concurrent instance. That was the source of a parallel-test
+        // "Cannot access a disposed object" flake, and a latent hazard if two instances ever coexist.
+        // ClearPool is scoped to this connection string; the throwaway connection is only used to
+        // identify the pool and is never opened.
+        try { using var c = new SqliteConnection(ConnString); SqliteConnection.ClearPool(c); } catch { }
     }
 
     private void InitDb()
