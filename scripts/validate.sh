@@ -27,8 +27,10 @@ if [[ "${1:-}" == "--full" ]]; then
 fi
 
 if command -v node >/dev/null 2>&1; then
-  echo "==> node --check on embedded UI JavaScript"
-  awk 'BEGIN{RS="</script>"} /<script/{sub(/.*<script[^>]*>/,""); print; print "\n;\n"}' \
+  echo "==> node --check on the console script (v2.6.3: JS lives in Ui/app.js, not inline)"
+  node --check src/Anthill.Api/Ui/app.js
+  # Any inline <script> content that might creep back into index.html is also checked.
+  awk 'BEGIN{RS="</script>"} /<script[^>]*>[^<]/{sub(/.*<script[^>]*>/,""); print; print "\n;\n"}' \
     src/Anthill.Api/Ui/index.html > /tmp/anthill_ui_validate.js
   node --check /tmp/anthill_ui_validate.js
 else

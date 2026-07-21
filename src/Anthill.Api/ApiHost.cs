@@ -29,6 +29,7 @@ public static partial class ApiHost
     private static RateLimiter MissionLimiter = null!;
     private static RateLimiter AuthLimiter = null!;
     private static string UiHtml = "";
+    private static string UiAppJs = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
     // reuses connections. Per-call timeouts are applied via CancellationToken.
@@ -61,6 +62,7 @@ public static partial class ApiHost
         MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
         UiHtml = LoadUi();
+        UiAppJs = LoadUiAsset("app.js");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
         var app = builder.Build();
@@ -90,8 +92,25 @@ public static partial class ApiHost
             var h = ctx.Response.Headers;
             h["X-Frame-Options"] = "DENY";
             h["X-Content-Type-Options"] = "nosniff";
-            h["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:";
+            // CSP hardening (v2.6.3): closed several vectors that need no markup changes —
+            //   base-uri 'self'      : block <base> tag hijacking of relative URLs
+            //   object-src 'none'    : no <object>/<embed>/<applet> plugin content
+            //   frame-ancestors 'none': clickjacking protection (modern peer of X-Frame-Options)
+            //   form-action 'self'   : forms can only post back to this origin
+            // script-src is now 'self' ONLY — no 'unsafe-inline'. The console carries zero inline JS:
+            // the page script lives in /ui/app.js, and all former inline on*= handlers were converted
+            // to data-on* driven by a single delegated dispatcher (see app.js). This blocks inline
+            // script injection (the main XSS vector). style-src keeps 'unsafe-inline' — 864 inline
+            // style attributes remain and style injection is far lower risk. connect-src is
+            // intentionally omitted so the "remote API base URL" feature (browser → a different API
+            // host) keeps working.
+            h["Content-Security-Policy"] =
+                "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+                "form-action 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; " +
+                "img-src 'self' data:";
             h["Referrer-Policy"] = "no-referrer";
+            h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+            h["Cross-Origin-Opener-Policy"] = "same-origin";
             await next();
         });
 
@@ -167,6 +186,15 @@ public static partial class ApiHost
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiHtml, "text/html");
+        });
+
+        // v2.6.3: the console script, served same-origin ('self') so the page needs no inline JS.
+        // no-store for the same upgrade-staleness reason as /ui. Public like /ui — it contains no
+        // secrets (all data still requires auth via the API endpoints it calls).
+        app.MapGet("/ui/app.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiAppJs, "text/javascript; charset=utf-8");
         });
 
         app.MapGet("/health", () => ApiJson.Ok(new Dictionary<string, object?>
@@ -1709,11 +1737,14 @@ public static partial class ApiHost
 
     private static string ClientIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-    private static string LoadUi()
+    private static string LoadUi() => LoadUiAsset("index.html", "<h1>ANTHILL</h1><p>UI resource missing.</p>");
+
+    /// <summary>Reads an embedded UI asset (index.html, app.js) by resource-name suffix.</summary>
+    private static string LoadUiAsset(string suffix, string fallback = "")
     {
         var asm = Assembly.GetExecutingAssembly();
-        var name = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("index.html", StringComparison.OrdinalIgnoreCase));
-        if (name is null) return "<h1>ANTHILL</h1><p>UI resource missing.</p>";
+        var name = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        if (name is null) return fallback;
         using var stream = asm.GetManifestResourceStream(name)!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
