@@ -1602,7 +1602,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-results">
         <div class="page-hdr">
-          <div><h1>Results</h1><div class="sub">Every mission's outcome — expand a row to read the full report: final output, per-task results, tangible changes, and objectives it created</div></div>
+          <div><h1>Mission Results</h1><div class="sub">Every mission's outcome — expand a row to read the full report: final output, per-task results, tangible changes, and objectives it created</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <select id="results-filter" class="form-input" style="width:auto;font-size:11px;padding:5px 8px;">
               <option value="">All statuses</option>
@@ -1621,7 +1621,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-patches">
         <div class="page-hdr">
-          <div><h1>Patch Center</h1><div class="sub">Inspect, compare, approve, and apply every coder patch proposal — nothing touches disk until you approve <i>and</i> apply.</div></div>
+          <div><h1 id="pc-title">Changes</h1><div class="sub" id="pc-sub">Inspect, compare, approve, and apply every coder patch proposal — nothing touches disk until you approve <i>and</i> apply.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn btn-ghost" id="patches-refresh">↺ Refresh</button>
           </div>
@@ -1644,7 +1644,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-objboard">
         <div class="page-hdr">
-          <div><h1>Objective Command Board</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
+          <div><h1>Objectives</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="hud-hd-sub" id="ob-count"></span>
             <button class="btn btn-ghost" id="ob-refresh">↺ Refresh</button>
@@ -1674,7 +1674,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
       <div class="page page-scroll" id="page-events">
         <div class="page-hdr">
-          <div><h1>Event Log</h1><div class="sub" id="log-modal-count"></div></div>
+          <div><h1>Events</h1><div class="sub" id="log-modal-count"></div></div>
           <button class="btn btn-ghost" id="log-reload">↺ Reload</button>
         </div>
 
@@ -1708,7 +1708,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page page-scroll" id="page-pheromones">
         <div class="page-hdr">
           <div>
-            <h1>Memory + Pheromone Explorer</h1>
+            <h1>Signals &amp; Memory Explorer</h1>
             <div class="sub" id="phero-count"></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
@@ -1889,7 +1889,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <div class="page-hdr">
           <div>
-            <h1>Homelab</h1>
+            <h1>Infrastructure</h1>
             <div class="sub" id="hl-count"></div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
@@ -2289,7 +2289,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-antconfig">
         <div class="page-hdr">
-          <div><h1>Ant Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
+          <div><h1>Agent Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="antcfg-msg"></span>
             <button class="btn btn-ghost" id="antcfg-reset">↺ Reset Defaults</button>
@@ -2306,7 +2306,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-antobs">
         <div class="page-hdr">
-          <div><h1>Ant Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance — expand a card for recent activity.</div></div>
+          <div><h1>Agent Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance — expand a card for recent activity.</div></div>
           <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
         </div>
         <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div></div>
@@ -2317,7 +2317,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-autonomy">
         <div class="page-hdr">
-          <div><h1>Autonomy</h1><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
+          <div><h1>Automation</h1><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="auto-msg"></span>
             <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
@@ -2632,7 +2632,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-shell">
         <div class="page-hdr">
-          <div><h1>Shell</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> — administrators only, every command is audit-logged</div></div>
+          <div><h1>Terminal</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> — administrators only, every command is audit-logged</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg" id="sh-msg"></span>
             <button class="btn btn-ghost" id="sh-clear">Clear</button>
@@ -3192,7 +3192,8 @@ const IA = [
       { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
       { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
     ]},
-    { label:'Changes & Approvals', route:'/operations/changes', page:'patches', vis:'admin', badge:'nav-patches-badge' },
+    { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals', badge:'nav-patches-badge' },
+    { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
   ]},
   { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
     { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
@@ -3239,10 +3240,10 @@ const DOMAIN_HOME = {};
     if(d.sections&&d.sections.length&&!DOMAIN_HOME[d.id]) DOMAIN_HOME[d.id]=d.sections[0].route;
     for(const s of (d.sections||[])){
       const tabs=s.tabs?s.tabs.map(t=>({label:t.label,route:t.route,vis:t.vis||s.vis||d.vis||'all'})):null;
-      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
+      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,view:s.view||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
       if(!PAGE_HOME[s.page]) PAGE_HOME[s.page]=s.route;
       if(s.tabs) for(const t of s.tabs){
-        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
+        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,view:t.view||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
         if(!PAGE_HOME[t.page]) PAGE_HOME[t.page]=t.route;
       }
     }
@@ -3321,7 +3322,7 @@ function buildNav(){
 function go(route,push){
   const r=ROUTE_TABLE[route]; if(!r) return;
   if(!canSee(r.vis)) return;
-  showPage(r.page,{route:route,hlsub:r.hlsub,noHistory:true});
+  showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,noHistory:true});
   try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
 }
 
@@ -3337,6 +3338,21 @@ function showPage(id,o){
   if(id==='homelab'){
     if(o.hlsub && typeof hlSubShow==='function') hlSubShow(o.hlsub,true); // chrome already set by go/showPage
     else if(typeof hlSubRestore==='function') hlSubRestore();             // reopen last sub + sync chrome
+  }
+  // v2.6 Phase 3: Patch Center splits into two route-driven views over the same list — Approvals
+  // (pending queue) and Changes (full history). Purely presentational: drives the status filter,
+  // no DOM moves. Set before PAGE_ENTER['patches'] so its loadPatches() uses the right filter.
+  if(id==='patches'){
+    const approvals=(o.view==='approvals');
+    if(typeof pcFilters!=='undefined'){
+      pcFilters.status=approvals?'pending':'';
+      if(typeof applyPcFiltersToInputs==='function') applyPcFiltersToInputs();
+    }
+    const t=document.getElementById('pc-title'), sub=document.getElementById('pc-sub');
+    if(t) t.textContent=approvals?'Approvals':'Changes';
+    if(sub) sub.textContent=approvals
+      ? 'Patch proposals awaiting your decision — nothing touches disk until you approve and apply.'
+      : 'Every coder patch proposal — inspect, compare, approve, apply, and roll back. Full history.';
   }
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);

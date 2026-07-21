@@ -13,6 +13,15 @@ vCenter, Proxmox VE, Grafana, GitHub Enterprise, Kubernetes Dashboard, Datadog, 
 
 ## Implementation status (living)
 
+**Live-verified** on a deployed build (browser walkthrough): the grouped sidebar, hash routing +
+deep links (`#/dashboard`, `#/monitoring/activity`, `#/infrastructure/compute`, `#/colony/agents`),
+clickable breadcrumbs, contextual sub-nav, the unified Activity page + facets, the Infrastructure
+rename with **bidirectional** sidebar↔in-page sub-nav sync, and the Agents Configure/Inspect tabs
+all work with no errors. The walkthrough surfaced stale in-page `<h1>` titles on renamed pages
+(e.g. the Infrastructure page still read "Homelab"); those were aligned to the new names
+(Infrastructure, Changes & Approvals, Mission Results, Objectives, Events, Signals & Memory
+Explorer, Agent Configuration, Agent Inspector, Automation, Terminal).
+
 **Phase 1 — IA / routing spine: IMPLEMENTED** (front-end only; `src/Anthill.Api/Ui/index.html`).
 Internal page ids are unchanged, so every existing caller of `showPage(id)` keeps working; the new
 IA is a presentation + routing layer on top.
@@ -54,11 +63,17 @@ IA is a presentation + routing layer on top.
   as tabs — so the change is purely additive and degrades gracefully. Reuses the proven
   `evTypeClass` / `ANT_MAP` / `setEl` render helpers. `node --check` clean; id/glyph guards pass.
 
+- **Patch Center → Approvals + Changes split: IMPLEMENTED.** Operations now carries two distinct
+  sections/routes — **Approvals** (`/operations/approvals`, the list pre-filtered to `pending`, the
+  pending-approvals badge lives here) and **Changes** (`/operations/changes`, the full history +
+  apply/rollback). Done as two route-driven *views* over the one patches page: `showPage('patches',
+  {view})` sets the `pcFilters.status` filter and relabels the header (`pc-title`/`pc-sub`) before
+  `PAGE_ENTER` reloads — no DOM moved, so it's non-destructive.
+
 **Still deferred (Phase 3 remainder — deeper page-content surgery; land one at a time with browser
 verification on a deployed build):** a single Agents *blade* with View/Edit/Live modes (today
-Configure/Inspect are sub-nav tabs over the two existing pages); splitting Patch Center into
-distinct Approvals vs Changes pages; extracting Model Routing as its own Colony page. The version
-bump to **v2.6.0** should accompany completion of this phase.
+Configure/Inspect are sub-nav tabs over the two existing pages); extracting Model Routing as its
+own Colony page. The version bump to **v2.6.0** should accompany completion of this phase.
 
 ---
 
