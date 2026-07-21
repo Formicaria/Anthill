@@ -1,5 +1,21 @@
 # ANTHILL Changelog
 
+## v2.6.1 — Console Redesign follow-ups: Model Routing home + sidebar-only Infrastructure nav
+
+Two refinements on the v2.6.0 IA (front-end only; `src/Anthill.Api/Ui/index.html`).
+
+- **Model Routing gets a home in Colony.** `Colony → Model Routing` (`/colony/model-routing`) with
+  sub-nav tabs **Routes & Models** and **Providers** — model/provider configuration now lives in the
+  runtime domain instead of being buried in Settings. Route-driven (same pattern as the
+  Approvals/Changes split): it opens the Settings page pre-switched to the matching `.settings-tab`
+  via a new `stab` route field, and `Administration → Settings` with no `stab` resets to the
+  Connection tab so every route lands deterministically.
+- **Infrastructure navigation is sidebar-only.** The redundant in-page category sub-nav row on the
+  Infrastructure (Homelab) page is hidden — all 11 sub-pages are already left-sidebar entries
+  (Infrastructure's sections + Monitoring's Alerts/Activity). `hlSubShow()` still drives sub-page
+  visibility via the sidebar routes and `1`–`-` keyboard shortcuts; only the duplicate row is gone.
+- No backend/API changes; `node --check` clean; UI-integrity guards pass.
+
 ## v2.6.0 — Console Redesign: enterprise information architecture (docs/CONSOLE_REDESIGN.md)
 
 The single-page console with ~16 flat, inconsistently-grouped tabs becomes a routable, seven-domain
