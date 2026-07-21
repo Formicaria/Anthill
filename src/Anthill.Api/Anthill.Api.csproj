@@ -15,9 +15,12 @@
     <InternalsVisibleTo Include="Anthill.Tests" />
   </ItemGroup>
 
-  <!-- The single-page colony UI is embedded so the API stays self-contained. -->
+  <!-- The colony UI is embedded so the API stays self-contained. v2.6.3: the page script lives in
+       app.js (served 'self') so the console carries no inline JS — required to drop CSP
+       script-src 'unsafe-inline'. -->
   <ItemGroup>
     <EmbeddedResource Include="Ui\index.html" />
+    <EmbeddedResource Include="Ui\app.js" />
   </ItemGroup>
 
 </Project>
