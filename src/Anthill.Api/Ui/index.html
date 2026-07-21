@@ -2434,10 +2434,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-settings">
         <div class="page-hdr">
-          <div><h1>Settings</h1><div class="sub">Colony configuration, model routes, and system diagnostics</div></div>
+          <div><h1 id="set-title">Settings</h1><div class="sub" id="set-sub">Colony configuration, model routes, and system diagnostics</div></div>
         </div>
 
-        <div class="settings-tabs">
+        <div class="settings-tabs" id="settings-tabs">
           <div class="settings-tab active" data-tab="connection">Connection</div>
           <div class="settings-tab" data-tab="providers">Providers</div>
           <div class="settings-tab" data-tab="colony">Colony</div>
@@ -3368,9 +3368,20 @@ function showPage(id,o){
   // tab (route-driven, reuses the existing settings tab machinery). Administration → Settings with no
   // stab resets to the Connection tab so each route lands deterministically.
   if(id==='settings'){
+    const isMR=(o.route||'').indexOf('/colony/model-routing')===0; // Colony → Model Routing view
     const stab=o.stab||'connection';
     const tabEl=document.querySelector('.settings-tab[data-tab="'+stab+'"]');
     if(tabEl) tabEl.click();
+    // Model Routing is a dedicated view: hide the full Settings tab strip (its Routes & Models /
+    // Providers sub-nav covers what's relevant) and relabel the header. Administration → Settings
+    // keeps the strip and its own title.
+    const strip=document.getElementById('settings-tabs');
+    if(strip) strip.style.display=isMR?'none':'';
+    const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
+    if(st) st.textContent=isMR?'Model Routing':'Settings';
+    if(ss) ss.textContent=isMR
+      ? 'Provider connections and per-role model routes for the colony.'
+      : 'Colony configuration, model routes, and system diagnostics';
   }
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
 }
