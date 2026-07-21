@@ -1,5 +1,17 @@
 # ANTHILL Changelog
 
+## v2.6.2 — Console Redesign polish: Model Routing is a dedicated view
+
+Follow-up to v2.6.1 (front-end only; `src/Anthill.Api/Ui/index.html`).
+
+- **`Colony → Model Routing` is now a clean, dedicated view.** Reached via the sidebar it hides the
+  full Settings tab strip (its own **Routes & Models / Providers** sub-nav covers what's relevant)
+  and relabels the header to "Model Routing" — no more double tab row or leftover "Settings" title
+  under the Model Routing breadcrumb. `Administration → Settings` is unchanged: it keeps the full
+  Connection/Providers/Colony/Models/System Info strip and its own title. Driven by the route
+  (`/colony/model-routing`), so the two entry points stay visually distinct.
+- No backend/API changes; `node --check` clean; UI-integrity guards pass.
+
 ## v2.6.1 — Console Redesign follow-ups: Model Routing home + sidebar-only Infrastructure nav
 
 Two refinements on the v2.6.0 IA (front-end only; `src/Anthill.Api/Ui/index.html`).
