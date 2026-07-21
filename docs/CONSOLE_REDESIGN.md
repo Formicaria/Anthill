@@ -70,10 +70,18 @@ IA is a presentation + routing layer on top.
   {view})` sets the `pcFilters.status` filter and relabels the header (`pc-title`/`pc-sub`) before
   `PAGE_ENTER` reloads — no DOM moved, so it's non-destructive.
 
-**Still deferred (Phase 3 remainder — deeper page-content surgery; land one at a time with browser
-verification on a deployed build):** a single Agents *blade* with View/Edit/Live modes (today
-Configure/Inspect are sub-nav tabs over the two existing pages); extracting Model Routing as its
-own Colony page. The version bump to **v2.6.0** should accompany completion of this phase.
+- **Model Routing extracted to Colony: IMPLEMENTED.** `Colony → Model Routing`
+  (`/colony/model-routing`) gives model/provider configuration a first-class home in the runtime
+  domain, with sub-nav tabs **Routes & Models** and **Providers**. Same safe route-driven pattern as
+  the Approvals/Changes split: it opens the Settings page pre-switched to the corresponding tab via
+  the existing `.settings-tab` machinery (a new `stab` route field); `Administration → Settings`
+  with no `stab` resets to the Connection tab so every route lands deterministically.
+
+**Remaining (optional polish, not a problem):** a single Agents *blade* with View/Edit/Live modes —
+today Configure/Inspect are sub-nav tabs over the two existing pages, which already delivers the
+unified experience; physically fusing them is cosmetic. Every substantive item in the proposal
+(IA, routing, breadcrumbs, sub-nav, naming, unified Activity, Approvals/Changes split, Model
+Routing) is now implemented. Shipped as **v2.6.0**.
 
 ---
 
