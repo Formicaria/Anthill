@@ -1,5 +1,60 @@
 # ANTHILL Changelog
 
+## v2.6.3 — Console polish, CSP hardening & accessibility
+
+UI consistency pass across the console (front-end only; `src/Anthill.Api/Ui/index.html`). No
+backend/API changes.
+
+- **Flattened-glyph repair.** Fixed 15 icons that had rotted to a literal `?` from prior non-UTF-8
+  re-saves of the embedded UI — 9 trailing action arrows on the Dashboard/JS links (`Events →`,
+  `Mission Results →`, `Changes →`, `Automation →`, `All →`, `Log →`, `Open in Changes →`) plus 6
+  leading icons the UI-integrity guard did not catch (it only flags `?` at the start of a static
+  label or a bare `>?<`, not `label ?<` or `>? {dynamic}`); the broken leading markers were removed
+  so no stray `?` renders.
+- **Terminology cohesion.** Aligned the remaining pre-redesign names in user-visible labels with the
+  v2.6.0 IA vocabulary: Dashboard card links and quick actions, the keyboard-shortcuts help modal,
+  the Colony Vitals "Automation" tile, the Settings "Automation" section, the Colony Learning
+  "Signals" card, and dynamic status/patch messages now read Events, Mission Results, Changes,
+  Automation, Signals, Infrastructure, and Agents consistently with the sidebar and breadcrumbs.
+- **Guard hardened.** `RegressionGuardTests.UiIntegrity` now also fails on `Label ?<` (trailing) and
+  `>? {content}` (leading) glyph rot — the two patterns that let these ship — so the class can't
+  silently recur in CI.
+- **Accessibility.** Icon-only header controls (notifications, approvals, sign out, collapse sidebar)
+  gained `aria-label`s; the sidebar is now keyboard-operable (config-driven nav items/domains carry
+  `role`/`tabindex`/`aria-expanded` and activate on Enter/Space); added visible `:focus-visible`
+  outlines for nav, sub-nav, breadcrumbs, and header buttons; `nav-rail` labelled as primary nav; the
+  redesign's nav transitions now honor `prefers-reduced-motion` like the rest of the app. Non-native
+  clickables (div/span carrying `data-onclick`) are now keyboard-operable — the delegated dispatcher
+  activates them on Enter/Space and tags them `role="button" tabindex="0"` (initial pass + a
+  MutationObserver for dynamically-rendered ones). Gave every previously-unlabeled form control an
+  accessible name: 35 static controls (event/patch filter selects, homelab registration forms,
+  virtualization-connection toggles, auto-apply settings) plus the dynamically-generated ones
+  (per-agent name/colour/provider/model fields on Colony → Agents, and the collection-manager filter)
+  now carry contextual `aria-label`s so screen readers announce each control's purpose.
+- Restored the high-confidence pending-approvals warning icon (`⚠`); genuinely ambiguous stripped
+  icons were left as clean text rather than guessed.
+- `node --check` clean; UI-integrity guards (duplicate ids, U+FFFD, `>?<`, `Label ?<`, `>? `) pass.
+
+### Security: CSP `script-src 'unsafe-inline'` removed (backend + UI)
+- **Dropped `'unsafe-inline'` from `script-src`** (now `script-src 'self'`) — closes the primary
+  inline-script XSS vector. This required removing all inline JavaScript from the console:
+  - The single `<script>` block (~6,300 lines) was **externalized to `Ui/app.js`**, embedded and
+    served same-origin at `/ui/app.js` (`no-store`); index.html now loads it via `<script src>`.
+  - All **199 inline `on*=` event handlers** (88 in markup, 111 generated in JS template strings)
+    were converted to `data-on*` attributes driven by a single **delegated dispatcher** that runs
+    the handler through a small micro-parser — never `eval`. Verified live: nav, tabs, filters,
+    object/`this`/`event` args, statement sequences, and `return false` all dispatch correctly with
+    zero handler errors.
+  - No inline `<script>`, no `javascript:` URLs doing work, and no other inline handler attributes
+    remain, so the policy holds.
+- Also added (no markup change): `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`,
+  `form-action 'self'`, `Permissions-Policy` (camera/mic/geolocation/payment/usb denied), and
+  `Cross-Origin-Opener-Policy: same-origin`. `style-src` keeps `'unsafe-inline'` (864 inline style
+  attributes; style injection is far lower risk). `connect-src` omitted so the "remote API base URL"
+  feature keeps working.
+- Guards updated: `scripts/validate.sh` `node --check`s `Ui/app.js`; `RegressionGuardTests`
+  glyph/encoding scan covers both `index.html` and `app.js`.
+
 ## v2.6.2 — Console Redesign polish: Model Routing is a dedicated view
 
 Follow-up to v2.6.1 (front-end only; `src/Anthill.Api/Ui/index.html`).

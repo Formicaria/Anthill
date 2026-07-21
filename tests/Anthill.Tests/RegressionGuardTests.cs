@@ -109,7 +109,11 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_NoFlattenedGlyphsOrReplacementChars()
     {
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        // v2.6.3: the console script moved to Ui/app.js; scan both files (glyph rot can hit either).
+        var uiDir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var indexHtml = File.ReadAllText(Path.Combine(uiDir, "index.html"));
+        var appJsPath = Path.Combine(uiDir, "app.js");
+        var ui = indexHtml + "\n" + (File.Exists(appJsPath) ? File.ReadAllText(appJsPath) : "");
         var problems = new List<string>();
 
         var fffd = ui.Count(c => c == '�');
@@ -120,6 +124,15 @@ public class RegressionGuardTests : IDisposable
 
         var labeled = Regex.Matches(ui, @">\s*\?\s+[A-Z][a-z]").Count; // '>? Label' buttons
         if (labeled > 0) problems.Add($"{labeled} '>? Label' button glyph(s)");
+
+        // v2.6.3: two rot classes the checks above missed and that shipped to production —
+        // trailing action arrows ('Events ?</button>') and leading icons on dynamic labels
+        // ('...">? ${count} change(s)'). <kbd>?</kbd> is '>?<' and is not matched by either.
+        var trailing = Regex.Matches(ui, @"[A-Za-z0-9\)] \?<").Count; // 'Label ?</tag>' trailing glyphs
+        if (trailing > 0) problems.Add($"{trailing} 'Label ?<' trailing icon glyph(s) flattened to '?'");
+
+        var leading = Regex.Matches(ui, @">\? ").Count; // '>? {content}' leading icon glyphs
+        if (leading > 0) problems.Add($"{leading} '>? ' leading icon glyph(s) flattened to '?'");
 
         var ternary = Regex.Matches(ui, Regex.Escape("'?':'?'")).Count; // caret ternaries
         if (ternary > 0) problems.Add($"{ternary} \"'?':'?'\" caret ternary(ies)");
