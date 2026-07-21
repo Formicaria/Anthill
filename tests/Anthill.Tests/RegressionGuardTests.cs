@@ -106,10 +106,23 @@ public class RegressionGuardTests : IDisposable
     // An editor in the pipeline has repeatedly re-saved the embedded UI as non-UTF-8, flattening
     // icon glyphs to '?' / U+FFFD. Mirror of the CI ui-integrity job so `dotnet test` catches it too.
 
+    /// <summary>
+    /// v2.6.3: the console script moved out of index.html into app.js. UI guards that scan the
+    /// console *source* (glyphs, id/lookup integrity, adapter accessors) must read BOTH files, or
+    /// they silently go blind to everything that now lives in app.js.
+    /// </summary>
+    private static string UiSource()
+    {
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var html = File.ReadAllText(Path.Combine(dir, "index.html"));
+        var appJs = Path.Combine(dir, "app.js");
+        return html + "\n" + (File.Exists(appJs) ? File.ReadAllText(appJs) : "");
+    }
+
     [Fact]
     public void UiIntegrity_NoFlattenedGlyphsOrReplacementChars()
     {
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var ui = UiSource();
         var problems = new List<string>();
 
         var fffd = ui.Count(c => c == '�');
@@ -120,6 +133,15 @@ public class RegressionGuardTests : IDisposable
 
         var labeled = Regex.Matches(ui, @">\s*\?\s+[A-Z][a-z]").Count; // '>? Label' buttons
         if (labeled > 0) problems.Add($"{labeled} '>? Label' button glyph(s)");
+
+        // v2.6.3: two rot classes the checks above missed and that shipped to production —
+        // trailing action arrows ('Events ?</button>') and leading icons on dynamic labels
+        // ('...">? ${count} change(s)'). <kbd>?</kbd> is '>?<' and is not matched by either.
+        var trailing = Regex.Matches(ui, @"[A-Za-z0-9\)] \?<").Count; // 'Label ?</tag>' trailing glyphs
+        if (trailing > 0) problems.Add($"{trailing} 'Label ?<' trailing icon glyph(s) flattened to '?'");
+
+        var leading = Regex.Matches(ui, @">\? ").Count; // '>? {content}' leading icon glyphs
+        if (leading > 0) problems.Add($"{leading} '>? ' leading icon glyph(s) flattened to '?'");
 
         var ternary = Regex.Matches(ui, Regex.Escape("'?':'?'")).Count; // caret ternaries
         if (ternary > 0) problems.Add($"{ternary} \"'?':'?'\" caret ternary(ies)");
@@ -165,7 +187,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds()
     {
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var ui = UiSource(); // index.html (static ids) + app.js (getElementById + template-built ids)
         var dynamicIds = new HashSet<string> { "pc-toast" }; // created via document.createElement at runtime
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
@@ -190,7 +212,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_RegistryAdapterAccessorsAreCaseTolerant()
     {
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var ui = UiSource(); // adapter accessors live in app.js since the v2.6.3 script externalization
         Assert.Contains("prop(r,'roleId','RoleId'", ui);
         Assert.Contains("prop(w,'workerId','WorkerId'", ui);
         Assert.Contains("prop(r,'workers','Workers')", ui);

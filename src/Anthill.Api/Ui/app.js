@@ -1,0 +1,6434 @@
+'use strict';
+
+var uiReady = false;
+
+// -- Config & API -------------------------------------------------------------
+let TOKEN    = localStorage.getItem('anthill_token') || '';
+let API_BASE = localStorage.getItem('anthill_apibase') || '';
+
+function setToken(t)  { TOKEN = t;    localStorage.setItem('anthill_token', t); }
+function setApiBase(u){ API_BASE = u; localStorage.setItem('anthill_apibase', u); }
+
+function url(path){ return API_BASE ? API_BASE.replace(/\/$/,'') + path : path; }
+
+// V2.2 Pass D — centralized API layer: auth-flood gate, in-flight GET deduplication, TTL cache
+// with stale-while-revalidate, request timeouts, and 429 backoff. Root-cause fixes:
+// - "Too many attempts": ~7 pollers each retried through a dead session; every 401 fed the
+//   server's AuthLimiter. Now the FIRST 401 flips the auth-lost gate and every later call
+//   short-circuits locally (zero network) until re-login clears it (enterApp sets authLost=false).
+// - Slow Overview/Patch Center: identical GETs from parallel pollers now share one in-flight
+//   promise and a per-path TTL cache; hidden tabs serve cache instead of hitting the API.
+const API_TTL={'/status':10000,'/events/json':3000,'/jobs':5000,'/missions/json':10000,
+  '/colony/registry':30000,'/pheromones/json':20000,'/autonomy/status':10000,'/objectives':15000,
+  '/patches':30000,'/homelab/dashboard':10000,'/homelab/summary':10000,'/homelab/approvals/unified':10000,
+  '/system/summary':15000,'/update/check':300000,'/homelab/integrations':15000};
+const _apiCache=new Map(), _apiInflight=new Map(); let _api429Until=0;
+function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
+  for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
+function apiCacheBust(prefix){ for(const k of Array.from(_apiCache.keys())) if(!prefix||k.startsWith(prefix)) _apiCache.delete(k); }
+
+async function api(path, method='GET', body=null) {
+  const isGet=method==='GET'&&!body;
+  // Auth gate: while logged out, only auth endpoints may touch the network.
+  if(typeof authLost!=='undefined'&&authLost&&!path.startsWith('/auth'))
+    return { success:false, message:'Not signed in.', status:401 };
+  const now=Date.now();
+  if(isGet){
+    const hit=_apiCache.get(path);
+    if(hit&&(now-hit.at<_ttlFor(path)||document.hidden||now<_api429Until)) return hit.data; // fresh, hidden-tab, or backoff → cached
+    if(_apiInflight.has(path)) return _apiInflight.get(path); // dedupe identical in-flight GETs
+    if(now<_api429Until&&hit) return hit.data;
+    if(now<_api429Until) return { success:false, message:'Rate limited — backing off.', status:429 };
+  }
+  const run=(async()=>{
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),10000);
+    try{
+      const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(url(path), opts);
+      if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
+      if (r.status === 429) {
+        const ra=parseInt(r.headers.get('Retry-After')||'15',10);
+        _api429Until=Date.now()+Math.min(Math.max(ra,5),120)*1000; // respect Retry-After, clamp 5-120s
+      }
+      const text = await r.text();
+      let out;
+      if (!text) out={ success:false, message:`Empty response (HTTP ${r.status})${r.status===404?' — this build may be missing the endpoint; redeploy?':''}`, status:r.status };
+      else { try { out=JSON.parse(text); } catch { out={ success:false, message:`Non-JSON response (HTTP ${r.status})`, status:r.status, raw:text.slice(0,200) }; } }
+      if(isGet&&out&&out.success!==false) _apiCache.set(path,{at:Date.now(),data:out});
+      return out;
+    }catch(e){
+      if(e&&e.message==='unauthorized') throw e;
+      const stale=isGet?_apiCache.get(path):null;
+      if(stale) return stale.data; // stale-while-error: keep the UI alive, refresh next poll
+      return { success:false, message:(e&&e.name==='AbortError')?'Request timed out (10s).':('Request failed: '+((e&&e.message)||'network error')), status:0 };
+    }finally{ clearTimeout(timer); if(isGet)_apiInflight.delete(path); }
+  })();
+  if(isGet)_apiInflight.set(path,run);
+  return run;
+}
+// Mutations must show fresh data next read: bust the GET cache after any successful POST/PUT/DELETE.
+(function(){ const _m=api; window.api=async function(p,method='GET',body=null){
+  const out=await _m(p,method,body);
+  if(method!=='GET'&&out&&out.success!==false) apiCacheBust('');
+  return out; };})();
+// Same auth gate for text endpoints (approvals/events text views) — no network while logged out.
+(function(){ const _t=apiText; window.apiText=async function(p){
+  if(typeof authLost!=='undefined'&&authLost) throw new Error('unauthenticated');
+  return _t(p); };})();
+async function apiText(path) {
+  const r = await fetch(url(path), { headers: { 'Authorization': 'Bearer '+TOKEN } });
+  if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
+  return r.text();
+}
+
+// -- Authentication ------------------------------------------------------------
+const setupEl = document.getElementById('setup-overlay');
+let ROLE = localStorage.getItem('anthill_role') || '';
+let USERNAME = localStorage.getItem('anthill_user') || '';
+let pollingStarted = false;
+
+function setSession(token, role, username){
+  setToken(token); ROLE=role; USERNAME=username;
+  localStorage.setItem('anthill_role', role||'');
+  localStorage.setItem('anthill_user', username||'');
+}
+function clearSession(){
+  TOKEN=''; ROLE=''; USERNAME='';
+  ['anthill_token','anthill_role','anthill_user'].forEach(k=>localStorage.removeItem(k));
+}
+
+async function rawPost(path, body){
+  const r = await fetch(url(path), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  return r.json();
+}
+
+// -- In-app confirm / prompt --------------------------------------------------
+// Promise-based replacements for native window.confirm()/prompt(). The native dialogs block the
+// renderer's main thread until dismissed — which hung the Autonomy Stop button (and froze the page
+// under automation) — and look out of place in the HUD. These are non-blocking, themed, and
+// keyboard-navigable (Enter=confirm, Esc/backdrop=cancel).
+function uiConfirm(message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-modal="true">
+      <div class="ui-modal-title">${escapeHtml(opts.title||'Confirm')}</div>
+      <div class="ui-modal-msg">${escapeHtml(message||'')}</div>
+      <div class="ui-modal-actions">
+        <button class="btn btn-ghost" data-act="cancel">${escapeHtml(opts.cancel||'Cancel')}</button>
+        <button class="btn ${opts.danger?'btn-danger':'btn-primary'}" data-act="ok">${escapeHtml(opts.ok||'Confirm')}</button>
+      </div></div>`;
+    const done=(v)=>{ document.removeEventListener('keydown',onKey); ov.remove(); resolve(v); };
+    const onKey=(e)=>{ if(e.key==='Escape'){e.preventDefault();done(false);} else if(e.key==='Enter'){e.preventDefault();done(true);} };
+    ov.addEventListener('click',e=>{ if(e.target===ov){done(false);return;} const a=e.target.closest('[data-act]'); if(a)done(a.dataset.act==='ok'); });
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(ov);
+    const okb=ov.querySelector('[data-act="ok"]'); if(okb)okb.focus();
+  });
+}
+function uiPrompt(message, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-modal="true">
+      <div class="ui-modal-title">${escapeHtml(opts.title||'Input')}</div>
+      <div class="ui-modal-msg">${escapeHtml(message||'')}</div>
+      <input class="form-input ui-modal-input" type="${opts.password?'password':'text'}" style="width:100%;margin-top:10px;font-family:var(--mono);" />
+      <div class="ui-modal-actions">
+        <button class="btn btn-ghost" data-act="cancel">Cancel</button>
+        <button class="btn btn-primary" data-act="ok">OK</button>
+      </div></div>`;
+    const inp=ov.querySelector('.ui-modal-input');
+    if(opts.value) inp.value=opts.value; // v2.5.4 R4: prefill for edit-in-place flows
+    const done=(v)=>{ document.removeEventListener('keydown',onKey); ov.remove(); resolve(v); };
+    const onKey=(e)=>{ if(e.key==='Escape'){e.preventDefault();done(null);} };
+    ov.addEventListener('click',e=>{ if(e.target===ov){done(null);return;} const a=e.target.closest('[data-act]'); if(a)done(a.dataset.act==='ok'?(inp.value||''):null); });
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();done(inp.value||'');} });
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(ov);
+    inp.focus();
+  });
+}
+
+function showAuth(mode, err){
+  document.getElementById('app-shell').classList.add('hidden');
+  setupEl.style.display='flex';
+  document.getElementById('auth-login').style.display = mode==='login'?'block':'none';
+  document.getElementById('auth-setup').style.display = mode==='setup'?'block':'none';
+  const el = document.getElementById(mode==='setup'?'setup-err-msg':'auth-err');
+  if(el) el.textContent = err||'';
+}
+
+let authLost=false;
+function onUnauthorized(){
+  authLost=true;
+  clearSession();
+  // Re-assert the login screen on ANY 401 while the app shell is still showing — not just the first.
+  // The old early-return meant that if a session went invalid mid-flight (e.g. the server rotating its
+  // session secret during a redeploy), the page could stay stuck half-loaded behind failing background
+  // polls instead of bouncing to login. Guarding on the shell's visibility redirects reliably without
+  // re-running showAuth once we're already on the login view.
+  const shell=document.getElementById('app-shell');
+  if(shell && !shell.classList.contains('hidden')) showAuth('login','Session expired — please sign in again.');
+}
+
+async function bootAuth(){
+  let status;
+  try { status = await (await fetch(url('/auth/status'))).json(); }
+  catch(e){ showAuth('login','Cannot reach API. Check the API Base URL and try again.'); return; }
+  if(status?.data?.setup_required){ showAuth('setup'); return; }
+  if(TOKEN){
+    try{
+      const me=await api('/auth/me');
+      if(me.success){ setSession(TOKEN, me.data.role, me.data.username); enterApp(); return; }
+    } catch{ /* fall through */ }
+  }
+  showAuth('login');
+}
+
+function enterApp(){
+  authLost=false;
+  setupEl.style.display='none';
+  document.getElementById('app-shell').classList.remove('hidden');
+  applyRoleVisibility();
+  enableInput(true);
+  if(!pollingStarted){ pollingStarted=true; startPolling(); }
+  // Restore nav collapse state
+  if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
+}
+
+// Login
+document.getElementById('login-btn').addEventListener('click', doLogin);
+document.getElementById('login-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('login-user').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('login-pass').focus(); });
+
+async function doLogin(){
+  const u=document.getElementById('login-user').value.trim();
+  const p=document.getElementById('login-pass').value;
+  const base=document.getElementById('apibase-input').value.trim();
+  const err=document.getElementById('auth-err'); err.textContent='';
+  if(!u||!p){ err.textContent='Enter your username and password.'; return; }
+  setApiBase(base||'');
+  try{
+    const r=await rawPost('/auth/login',{username:u,password:p});
+    if(r.success){ document.getElementById('login-pass').value=''; setSession(r.data.token,r.data.role,r.data.username); enterApp(); }
+    else err.textContent=r.message||'Login failed.';
+  }catch(e){ err.textContent='Cannot reach API: '+e.message; }
+}
+
+// First-run setup
+document.getElementById('setup-btn').addEventListener('click', doSetup);
+document.getElementById('setup-pass2').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
+
+async function doSetup(){
+  const u=document.getElementById('setup-user').value.trim()||'admin';
+  const p=document.getElementById('setup-pass').value;
+  const p2=document.getElementById('setup-pass2').value;
+  const base=document.getElementById('setup-apibase').value.trim();
+  const err=document.getElementById('setup-err-msg'); err.textContent='';
+  if(p.length<8){ err.textContent='Password must be at least 8 characters.'; return; }
+  if(p!==p2){ err.textContent='Passwords do not match.'; return; }
+  setApiBase(base||'');
+  try{
+    const r=await rawPost('/auth/setup',{username:u,password:p});
+    if(r.success){ setSession(r.data.token,r.data.role,r.data.username); enterApp(); }
+    else err.textContent=r.message||'Setup failed.';
+  }catch(e){ err.textContent='Cannot reach API: '+e.message; }
+}
+
+document.getElementById('logout-btn').addEventListener('click', async ()=>{
+  try{ await api('/auth/logout','POST'); }catch{}
+  clearSession(); location.reload();
+});
+
+// Role visibility: admins see Config section; coordinators see only colony + missions + events
+function applyRoleVisibility(){
+  const admin = ROLE==='admin';
+  // v1.10.0: the Homelab page is visible to admins and homelab operators; write forms are admin-only
+  // (manage_homelab_integrations is not granted to the homelab_operator role).
+  // v2.6: the sidebar is config-driven; per-item visibility (all|admin|hl) is applied in buildNav().
+  if(typeof buildNav==='function') buildNav();
+  ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze','hl-inc-form','hl-inc-resolve'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
+  });
+  // approval bell
+  const bell=document.getElementById('approval-bell');
+  if(bell) bell.style.display=admin?'':'none';
+  // approvals card on colony page
+  if(!admin){ const ac=document.getElementById('approvals-card'); if(ac) ac.style.display='none'; }
+  // User chip in nav footer
+  const nameEl=document.getElementById('nav-user-name');
+  const roleEl=document.getElementById('nav-user-role');
+  if(nameEl) nameEl.textContent=USERNAME||'?';
+  if(roleEl) roleEl.textContent=admin?'Administrator':(ROLE==='homelab_operator'?'Homelab Operator':'Coordinator');
+  const avatarEl=document.getElementById('nav-user-avatar');
+  if(avatarEl){
+    const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
+    avatarEl.textContent=initials;
+    avatarEl.style.background=admin
+      ?'linear-gradient(135deg,#fbbf24,#f59e0b)'
+      :'linear-gradient(135deg,#3b82f6,#6366f1)';
+  }
+}
+
+// -- Page Routing (v2.6 Console Redesign — IA + hash routing layer; docs/CONSOLE_REDESIGN.md) --
+// Internal page ids are UNCHANGED (every existing caller of showPage(id) keeps working). The new
+// enterprise IA is a presentation + routing layer on top: a config-driven grouped sidebar, real
+// deep-linkable routes, breadcrumbs, and contextual sub-navigation for the grouped domains.
+const PAGE_TITLES = {
+  overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
+  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
+  activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
+  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users'
+};
+const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
+PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); if(typeof pollHud==='function') pollHud(); };
+
+// Domain icons (reuse the pre-redesign nav glyph set).
+const IAICON = {
+  dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
+  monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  infrastructure:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>',
+  colony:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>',
+  security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  administration:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>'
+};
+
+// The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
+const IA = [
+  { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
+  { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
+    { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
+      { label:'All', route:'/monitoring/activity', page:'activity', vis:'all' },
+      { label:'Events', route:'/monitoring/activity/events', page:'events', vis:'all' },
+      { label:'Mission Results', route:'/monitoring/activity/results', page:'results', vis:'all' },
+      { label:'Changes', route:'/monitoring/activity/changes', page:'patches', vis:'admin' },
+      { label:'Autonomous Runs', route:'/monitoring/activity/runs', page:'autonomy', vis:'admin' },
+      { label:'Infra Changes', route:'/monitoring/activity/infra', page:'homelab', hlsub:'activity', vis:'hl' },
+    ]},
+    { label:'Alerts', route:'/monitoring/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
+  ]},
+  { type:'domain', id:'operations', label:'Operations', vis:'all', sections:[
+    { label:'Missions', route:'/operations/missions', page:'missions', vis:'all', badge:'nav-jobs-badge', tabs:[
+      { label:'Console', route:'/operations/missions/console', page:'missions', vis:'all' },
+      { label:'History', route:'/operations/missions/history', page:'results', vis:'all' },
+    ]},
+    { label:'Automation', route:'/operations/automation', page:'autonomy', vis:'admin', badge:'nav-autonomy-badge', tabs:[
+      { label:'Director', route:'/operations/automation/director', page:'autonomy', vis:'admin' },
+      { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
+      { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
+    ]},
+    { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals', badge:'nav-patches-badge' },
+    { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
+  ]},
+  { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
+    { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
+    { label:'Compute', route:'/infrastructure/compute', page:'homelab', hlsub:'virtualization', vis:'hl' },
+    { label:'Containers', route:'/infrastructure/containers', page:'homelab', hlsub:'containers', vis:'hl' },
+    { label:'Storage', route:'/infrastructure/storage', page:'homelab', hlsub:'storage', vis:'hl' },
+    { label:'Network', route:'/infrastructure/network', page:'homelab', hlsub:'networking', vis:'hl' },
+    { label:'Services', route:'/infrastructure/services', page:'homelab', hlsub:'services', vis:'hl' },
+    { label:'Health', route:'/infrastructure/health', page:'homelab', hlsub:'monitoring', vis:'hl' },
+    { label:'Automation Rules', route:'/infrastructure/automation', page:'homelab', hlsub:'automation', vis:'hl' },
+    { label:'Apps', route:'/infrastructure/apps', page:'homelab', hlsub:'apps', vis:'hl' },
+  ]},
+  { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
+    { label:'Topology', route:'/colony/topology', page:'colony', vis:'all' },
+    { label:'Agents', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
+      { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
+      { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
+    ]},
+    { label:'Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
+    { label:'Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
+      { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
+      { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
+    ]},
+  ]},
+  { type:'domain', id:'security', label:'Security', vis:'admin', sections:[
+    { label:'Security Center', route:'/security/posture', page:'security', vis:'admin' },
+    { label:'Access & Targets', route:'/security/access', page:'homelab', hlsub:'networking', vis:'hl' },
+  ]},
+  { type:'domain', id:'administration', label:'Administration', vis:'admin', sections:[
+    { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
+    { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
+    { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
+  ]},
+];
+
+// Derived: route -> descriptor, page -> canonical home route, domain -> first-section route.
+const ROUTE_TABLE = {};
+const PAGE_HOME = {};
+const DOMAIN_HOME = {};
+(function buildRoutes(){
+  for(const d of IA){
+    if(d.type==='item'){
+      ROUTE_TABLE[d.route]={page:d.page,hlsub:null,vis:d.vis||'all',crumb:[d.label],domain:d.id,section:null,tabs:null,activeTab:null};
+      DOMAIN_HOME[d.id]=d.route;
+      if(!PAGE_HOME[d.page]) PAGE_HOME[d.page]=d.route;
+      continue;
+    }
+    if(d.sections&&d.sections.length&&!DOMAIN_HOME[d.id]) DOMAIN_HOME[d.id]=d.sections[0].route;
+    for(const s of (d.sections||[])){
+      const tabs=s.tabs?s.tabs.map(t=>({label:t.label,route:t.route,vis:t.vis||s.vis||d.vis||'all'})):null;
+      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,view:s.view||null,stab:s.stab||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
+      if(!PAGE_HOME[s.page]) PAGE_HOME[s.page]=s.route;
+      if(s.tabs) for(const t of s.tabs){
+        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,view:t.view||null,stab:t.stab||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
+        if(!PAGE_HOME[t.page]) PAGE_HOME[t.page]=t.route;
+      }
+    }
+  }
+})();
+// Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
+Object.assign(PAGE_HOME,{
+  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
+  activity:'/monitoring/activity',
+  results:'/monitoring/activity/results', events:'/monitoring/activity/events',
+  patches:'/operations/changes', objboard:'/operations/automation/objectives',
+  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
+  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
+  autonomy:'/operations/automation/director', security:'/security/posture',
+  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+});
+// Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
+// existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
+const HLSUB_ROUTE={
+  overview:'/infrastructure/overview', virtualization:'/infrastructure/compute',
+  containers:'/infrastructure/containers', storage:'/infrastructure/storage',
+  networking:'/infrastructure/network', services:'/infrastructure/services',
+  monitoring:'/infrastructure/health', automation:'/infrastructure/automation',
+  apps:'/infrastructure/apps', alerts:'/monitoring/alerts', activity:'/monitoring/activity/infra'
+};
+// Legacy hash → new route (URL migration; §9 of the proposal).
+const LEGACY_REDIRECT={
+  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
+  events:'/monitoring/activity/events', results:'/monitoring/activity/results',
+  patches:'/operations/changes', objboard:'/operations/automation/objectives',
+  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
+  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
+  autonomy:'/operations/automation/director', security:'/security/posture',
+  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+};
+
+function canSee(vis){
+  if(vis==='admin') return ROLE==='admin';
+  if(vis==='hl') return ROLE==='admin'||ROLE==='homelab_operator';
+  return true;
+}
+
+// Render the grouped sidebar from IA config into #nav-scroll (called on enter / role change).
+// Enter/Space activate a div acting as a control (keyboard a11y for the config-driven nav).
+function navKeyActivate(el,fn){
+  el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fn(); } });
+}
+function buildNav(){
+  const root=document.getElementById('nav-scroll'); if(!root) return;
+  root.innerHTML='';
+  for(const d of IA){
+    if(d.type==='item'){
+      if(!canSee(d.vis)) continue;
+      const it=document.createElement('div');
+      it.className='nav-item'; it.dataset.route=d.route;
+      it.setAttribute('role','link'); it.tabIndex=0; it.setAttribute('aria-label',d.label);
+      it.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span>';
+      it.addEventListener('click',()=>go(d.route)); navKeyActivate(it,()=>go(d.route));
+      root.appendChild(it); continue;
+    }
+    const sections=(d.sections||[]).filter(s=>canSee(s.vis||d.vis));
+    if(!sections.length) continue;
+    const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
+    const head=document.createElement('div'); head.className='nav-dom-head';
+    head.setAttribute('role','button'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
+    head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
+    const toggle=()=>{ const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
+    head.addEventListener('click',toggle); navKeyActivate(head,toggle);
+    dom.appendChild(head);
+    const kids=document.createElement('div'); kids.className='nav-children';
+    for(const s of sections){
+      const c=document.createElement('div'); c.className='nav-child'; c.dataset.route=s.route;
+      c.setAttribute('role','link'); c.tabIndex=0; c.setAttribute('aria-label',s.label);
+      c.innerHTML='<span>'+escapeHtml(s.label)+'</span>'+(s.badge?'<span class="nav-badge" id="'+s.badge+'" style="display:none"></span>':'');
+      c.addEventListener('click',()=>go(s.route)); navKeyActivate(c,()=>go(s.route));
+      kids.appendChild(c);
+    }
+    dom.appendChild(kids);
+    root.appendChild(dom);
+  }
+}
+
+// Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
+function go(route,push){
+  const r=ROUTE_TABLE[route]; if(!r) return;
+  if(!canSee(r.vis)) return;
+  showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,noHistory:true});
+  try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
+}
+
+function showPage(id,o){
+  o=o||{};
+  try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg=document.getElementById('page-'+id);
+  if(pg) pg.classList.add('active');
+  const route=o.route||PAGE_HOME[id]||('/'+id);
+  updateChrome(route,id);
+  if(!o.noHistory){ try{ history.replaceState(null,'','#'+route); }catch{} }
+  if(id==='homelab'){
+    if(o.hlsub && typeof hlSubShow==='function') hlSubShow(o.hlsub,true); // chrome already set by go/showPage
+    else if(typeof hlSubRestore==='function') hlSubRestore();             // reopen last sub + sync chrome
+  }
+  // v2.6 Phase 3: Patch Center splits into two route-driven views over the same list — Approvals
+  // (pending queue) and Changes (full history). Purely presentational: drives the status filter,
+  // no DOM moves. Set before PAGE_ENTER['patches'] so its loadPatches() uses the right filter.
+  if(id==='patches'){
+    const approvals=(o.view==='approvals');
+    if(typeof pcFilters!=='undefined'){
+      pcFilters.status=approvals?'pending':'';
+      if(typeof applyPcFiltersToInputs==='function') applyPcFiltersToInputs();
+    }
+    const t=document.getElementById('pc-title'), sub=document.getElementById('pc-sub');
+    if(t) t.textContent=approvals?'Approvals':'Changes';
+    if(sub) sub.textContent=approvals
+      ? 'Patch proposals awaiting your decision — nothing touches disk until you approve and apply.'
+      : 'Every coder patch proposal — inspect, compare, approve, apply, and roll back. Full history.';
+  }
+  if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
+  // v2.6 Phase 3: Colony → Model Routing opens the Settings page pre-switched to its Models/Providers
+  // tab (route-driven, reuses the existing settings tab machinery). Administration → Settings with no
+  // stab resets to the Connection tab so each route lands deterministically.
+  if(id==='settings'){
+    const isMR=(o.route||'').indexOf('/colony/model-routing')===0; // Colony → Model Routing view
+    const stab=o.stab||'connection';
+    const tabEl=document.querySelector('.settings-tab[data-tab="'+stab+'"]');
+    if(tabEl) tabEl.click();
+    // Model Routing is a dedicated view: hide the full Settings tab strip (its Routes & Models /
+    // Providers sub-nav covers what's relevant) and relabel the header. Administration → Settings
+    // keeps the strip and its own title.
+    const strip=document.getElementById('settings-tabs');
+    if(strip) strip.style.display=isMR?'none':'';
+    const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
+    if(st) st.textContent=isMR?'Model Routing':'Settings';
+    if(ss) ss.textContent=isMR
+      ? 'Provider connections and per-role model routes for the colony.'
+      : 'Colony configuration, model routes, and system diagnostics';
+  }
+  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
+}
+
+// Breadcrumb + active-nav + contextual sub-nav for the current route.
+function updateChrome(route,id){
+  const r=ROUTE_TABLE[route];
+  const cb=document.getElementById('hdr-crumbs');
+  if(cb){
+    const labels=(r&&r.crumb)?r.crumb.slice():[PAGE_TITLES[id]||id];
+    const targets=[];
+    if(r){
+      targets.push(DOMAIN_HOME[r.domain]||null);            // domain crumb → its first section
+      if(labels.length>=2) targets.push(r.section||route);  // section crumb → the section route
+      if(labels.length>=3) targets.push(null);              // tab crumb is the current view
+    }
+    cb.innerHTML=labels.map((c,i)=>{
+      const cur=i===labels.length-1;
+      const t=targets[i];
+      const link=(!cur&&t&&ROUTE_TABLE[t]&&canSee(ROUTE_TABLE[t].vis))?t:null;
+      const attr=link?(' role="link" tabindex="0" data-onclick="go(\''+link+'\')"'):'';
+      return '<span class="crumb'+(cur?' cur':'')+(link?' link':'')+'"'+attr+'>'+escapeHtml(c)+'</span>';
+    }).join('<span class="crumb-sep">&#8250;</span>');
+  }
+  document.querySelectorAll('#nav-scroll .nav-item,#nav-scroll .nav-child').forEach(n=>n.classList.remove('active'));
+  const activeRoute=(r&&r.section)?r.section:route;
+  let el=document.querySelector('#nav-scroll [data-route="'+activeRoute+'"]')||document.querySelector('#nav-scroll [data-route="'+route+'"]');
+  if(el){ el.classList.add('active'); const dom=el.closest('.nav-domain'); if(dom){ dom.classList.add('open'); dom.querySelector('.nav-dom-head')?.setAttribute('aria-expanded','true'); } }
+  const sn=document.getElementById('domain-subnav');
+  if(sn){
+    if(r&&r.tabs&&r.tabs.length){
+      const active=r.activeTab||route;
+      const html=r.tabs.filter(t=>canSee(t.vis||'all'))
+        .map(t=>'<button class="subnav-tab'+(t.route===active?' active':'')+'" data-onclick="go(\''+t.route+'\')">'+escapeHtml(t.label)+'</button>').join('');
+      sn.innerHTML=html; sn.style.display=html?'flex':'none';
+    } else { sn.innerHTML=''; sn.style.display='none'; }
+  }
+}
+
+// Hash router: resolve #/domain/section (or a legacy #page) to a route. Returns true if it navigated.
+function router(){
+  let h=(location.hash||'').replace(/^#/,'');
+  if(!h) return false;
+  if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
+  const r=ROUTE_TABLE[h];
+  if(r && canSee(r.vis)){ go(h,false); return true; }
+  return false;
+}
+window.addEventListener('popstate',()=>router());
+
+// Nav collapse toggle
+document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
+  document.body.classList.toggle('nav-collapsed');
+  localStorage.setItem('nav-collapsed', document.body.classList.contains('nav-collapsed')?'1':'0');
+  setTimeout(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')) resize(); },220);
+});
+
+function enableInput(on){
+  ['mission-input','send-btn','ms-mission-input','ms-send-btn','ov-mission-input','ov-send-btn','ov-preview-btn'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.disabled=!on;
+  });
+}
+
+// -- Settings overlay (now a page) --------------------------------------------
+let settingsModelInfo = null;
+
+function openSettings(){
+  document.getElementById('si-username').textContent = USERNAME||'—';
+  document.getElementById('si-role').textContent = ROLE==='admin'?'Administrator':(ROLE||'—');
+  document.getElementById('settings-apibase').value = API_BASE;
+  showPage('settings');
+  loadSettingsInfo();
+}
+
+document.getElementById('settings-save').addEventListener('click', saveSettings);
+async function saveSettings(){
+  const base=document.getElementById('settings-apibase').value.trim();
+  setApiBase(base);
+  try{
+    const r=await api('/status');
+    if(r.success){ enableInput(true); setConnected(true); }
+  }catch{ setConnected(false); enableInput(false); }
+}
+
+PAGE_ENTER['settings']=()=>{
+  document.getElementById('si-username').textContent=USERNAME||'—';
+  document.getElementById('si-role').textContent=ROLE==='admin'?'Administrator':(ROLE||'—');
+  document.getElementById('settings-apibase').value=API_BASE;
+  loadSettingsInfo();
+};
+
+// -- Canvas --------------------------------------------------------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize(){
+  const el=document.getElementById('colony-canvas-area');
+  if(!el) return;
+  // Render at the display's real pixel density so the colony stays sharp on HiDPI screens:
+  // backing store scaled by devicePixelRatio, all drawing kept in logical (CSS px) coordinates.
+  const dpr=window.devicePixelRatio||1;
+  W=el.clientWidth; H=el.clientHeight;
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  cx=W/2; cy=H/2;
+}
+resize();
+window.addEventListener('resize',()=>{ resize(); buildNodes(); });
+
+let camX=0,camY=0,camZ=1,tX=0,tY=0,tZ=1;
+
+const ROLE_COLORS={
+  queen:'#fbbf24',director:'#f59e0b',planner:'#a78bfa',constraint:'#f43f5e',
+  researcher:'#38bdf8',file:'#67e8f9',web:'#4ade80',coder:'#fb923c',
+  ui_cartographer:'#2dd4bf',builder:'#c084fc',verifier:'#f87171',tester:'#60a5fa',
+  soldier:'#ef4444',medic:'#34d399',archivist:'#facc15',quartermaster:'#94a3b8',scribe:'#e879f9'
+};
+let colonyRegistry=null,colonyView='command',showHandoffs=true;
+const ANT_MAP={
+  researcher:{ color:ROLE_COLORS.researcher, label:'ResearcherAnt', role:'CONTEXT' },
+  web:       { color:ROLE_COLORS.web,        label:'WebAnt',        role:'EXTERNAL' },
+  file:      { color:ROLE_COLORS.file,       label:'FileAnt',       role:'WORKSPACE' },
+  coder:     { color:ROLE_COLORS.coder,      label:'CoderAnt',      role:'CODE' },
+  builder:   { color:ROLE_COLORS.builder,    label:'BuilderAnt',    role:'OUTPUT' },
+  verifier:  { color:ROLE_COLORS.verifier,   label:'VerifierAnt',   role:'VERIFY' },
+};
+const ANT_R=15, QUEEN_R=26;
+const colonyActivity={ researcher:0, web:0, file:0, coder:0, builder:0, verifier:0 };
+let totalModelCalls=0, modelCallRate=0, colonyRunning=false;
+let nodes=[], edges=[], dataFlowEdges=[], particles=[], selectedNode=null, hoveredNode=null;
+
+function prop(o,...names){for(const n of names){if(o&&Object.prototype.hasOwnProperty.call(o,n))return o[n];}return undefined;}
+function roleId(r){return prop(r,'roleId','RoleId')||'';}
+function roleName(r){return prop(r,'displayName','DisplayName')||roleId(r);}
+function roleColony(r){return prop(r,'colony','Colony')||'Colony';}
+function rolePurpose(r){return prop(r,'purpose','Purpose')||'';}
+function roleEnabled(r){return prop(r,'enabled','Enabled')!==false;}
+function roleExecutable(r){return prop(r,'executable','Executable')===true;}
+function roleWorkers(r){return prop(r,'workers','Workers')||[];}
+function rolePerms(r){return prop(r,'permissions','Permissions')||{};}
+function roleAllowedTools(r){return prop(r,'allowedTools','AllowedTools')||[];}
+function roleForbiddenTools(r){return prop(r,'forbiddenTools','ForbiddenTools')||[];}
+function workerId(w){return prop(w,'workerId','WorkerId')||'';}
+function workerName(w){return prop(w,'displayName','DisplayName')||workerId(w);}
+function workerPurpose(w){return prop(w,'purpose','Purpose')||'';}
+function workerPerms(w){return prop(w,'permissions','Permissions')||{};}
+function permList(p){
+  const map=[['ReadWorkspace','read workspace'],['WriteWorkspace','write workspace'],['ReadMemory','read memory'],['WriteMemory','write memory'],['UseWeb','web'],['RunShell','shell'],['RunAllowlistedChecks','checks'],['ProposePatches','patch proposals'],['ApplyPatches','apply patches']];
+  return map.filter(([k])=>p[k]||p[k.charAt(0).toLowerCase()+k.slice(1)]).map(([,v])=>v);
+}
+function activeRoles(){
+  const roles=new Set();
+  (lastGraphData?.nodes||[]).forEach(t=>{if(t.assigned_ant)roles.add(t.assigned_ant);});
+  return roles;
+}
+function visibleRoles(){
+  const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
+  if(colonyView==='active'){
+    const ar=activeRoles();
+    return roles.filter(r=>ar.has(roleId(r)));
+  }
+  return roles;
+}
+function colonyAngleFor(role,index,total){
+  if(colonyView!=='group') return -90 + index*(360/Math.max(1,total));
+  const order=['Command','Command / Safety','Context','Workspace','External Research','UI','Code','Testing','Verification','Security','Repair','Memory','Resources','Communication / Docs'];
+  const c=roleColony(role),ci=Math.max(0,order.indexOf(c));
+  return -115 + ci*(230/Math.max(1,order.length-1)) + (index%3-1)*7;
+}
+async function loadColonyRegistry(){
+  try{
+    const r=await api('/colony/registry');
+    if(r.success){
+      colonyRegistry=r.data;buildNodes();renderColonyLegend();
+      if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
+    }
+  }catch(e){console.warn('colony registry unavailable',e);}
+}
+
+function buildNodes(){
+  nodes=[]; edges=[];
+  const bR=Math.min(W,H)*0.27;
+  nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core' });
+  nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core' });
+  edges.push({from:'queen',to:'director'});
+  if(!colonyRegistry){
+    const fallback=['researcher','file','web','coder','builder','verifier'].map(id=>({RoleId:id,DisplayName:ANT_MAP[id].label,Colony:ANT_MAP[id].role,Purpose:'Legacy executable ant',Enabled:true,Executable:true,Workers:[]}));
+    colonyRegistry={roles:fallback};
+  }
+  const roles=visibleRoles();
+  roles.forEach((r,i)=>{
+    const id=roleId(r),rad=colonyAngleFor(r,i,roles.length)*Math.PI/180;
+    const bx=cx+Math.cos(rad)*bR,by=cy+Math.sin(rad)*bR;
+    const color=ROLE_COLORS[id]||'#7fa0bc';
+    nodes.push({id,ant:id,x:bx,y:by,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,r:ANT_R,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r)});
+    edges.push({from:id==='planner'||id==='constraint'?'queen':'director',to:id});
+    const showWorkers=colonyView==='expanded'||colonyView==='group'||colonyView==='active';
+    if(showWorkers){
+      const activeWorkers=new Set((lastGraphData?.nodes||[]).map(t=>t.assigned_worker).filter(Boolean));
+      const ws=roleWorkers(r).filter(w=>colonyView!=='active'||activeWorkers.has(workerId(w))),sR=Math.max(54,bR*.30);
+      ws.forEach((w,wi)=>{
+        const spread=ws.length===1?0:(wi-(ws.length-1)/2)*24;
+        const cr=(colonyAngleFor(r,i,roles.length)+spread)*Math.PI/180;
+        const wid=workerId(w);
+        nodes.push({id:wid,ant:id,worker:wid,x:bx+Math.cos(cr)*sR,y:by+Math.sin(cr)*sR,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id});
+        edges.push({from:id,to:wid});
+      });
+    }
+  });
+  applyUiState();
+}
+buildNodes();
+
+document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const view=btn.dataset.view;
+    const toggle=btn.dataset.toggle;
+    if(view){
+      colonyView=view;
+      document.querySelectorAll('#colony-viewbar [data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
+      buildNodes();renderColonyLegend();
+    }
+    if(toggle==='handoffs'){
+      showHandoffs=!showHandoffs;
+      btn.classList.toggle('on',showHandoffs);
+      if(!showHandoffs) dataFlowEdges=[];
+    }
+  });
+});
+
+function updateNodeActivity(){
+  nodes.forEach(n=>{
+    if(n.id==='queen'){n.activity=colonyRunning?1:.3;return;}
+    const key=n.nodeType==='worker'?n.worker:n.ant;
+    n.activity=Math.min(1,Math.max(0,colonyRunning?(colonyActivity[key]??colonyActivity[n.ant]??0):0));
+  });
+}
+
+function h2rgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+
+function spawnParticle(e){
+  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
+  if(!fn||!tn||tn.activity===0) return;
+  const [r,g,b]=h2rgb(tn.color);
+  particles.push({fn,tn,t:0,speed:.003+tn.activity*.006,r,g,b,a:.6+tn.activity*.4,sz:1.5+tn.activity*2});
+}
+
+let lastSpawn=0;
+function maybeSpawn(ts){
+  if(!colonyRunning) return;
+  const dt=200-modelCallRate*80;
+  if(ts-lastSpawn<Math.max(80,dt)) return;
+  lastSpawn=ts;
+  const active=edges.filter(e=>{const tn=nodes.find(n=>n.id===e.to);return tn&&tn.activity>0;});
+  const n=Math.min(4,active.length);
+  for(let i=0;i<n;i++) spawnParticle(active[Math.floor(Math.random()*active.length)]);
+}
+
+function w2s(wx,wy){return{x:(wx-cx)*camZ+cx+camX,y:(wy-cy)*camZ+cy+camY};}
+function s2w(sx,sy){return{x:(sx-cx-camX)/camZ+cx,y:(sy-cy-camY)/camZ+cy};}
+function qb(fp,cp,tp,t){return{x:(1-t)**2*fp.x+2*(1-t)*t*cp.x+t**2*tp.x,y:(1-t)**2*fp.y+2*(1-t)*t*cp.y+t**2*tp.y};}
+function cpFor(fp,tp){const dx=tp.x-fp.x,dy=tp.y-fp.y;return{x:fp.x+dx*.5+dy*.1,y:fp.y+dy*.5-dx*.1};}
+
+function drawBg(){
+  const g=ctx.createRadialGradient(cx,cy*.5,0,cx,cy,Math.max(W,H)*.85);
+  g.addColorStop(0,'#1c2d40');g.addColorStop(1,'#0f1923');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.globalAlpha=.028;ctx.strokeStyle='#fff';ctx.lineWidth=1;
+  const gs=56*camZ,ox=((camX%gs)+gs)%gs,oy=((camY%gs)+gs)%gs;
+  for(let x=ox-gs;x<W+gs;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=oy-gs;y<H+gs;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.restore();
+}
+
+function drawEdge(e){
+  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
+  if(!fn||!tn) return;
+  const fp=w2s(fn.x,fn.y),tp=w2s(tn.x,tn.y),cp=cpFor(fp,tp);
+  const [r,g,b]=h2rgb(tn.color);
+  ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
+  ctx.strokeStyle='rgba(255,255,255,0.035)';ctx.lineWidth=(3+tn.activity*3)*camZ;ctx.stroke();
+  if(tn.activity>0){
+    ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
+    ctx.strokeStyle=`rgba(${r},${g},${b},${tn.activity*.28})`;ctx.lineWidth=(1+tn.activity*1.5)*camZ;ctx.stroke();
+  }
+}
+
+function drawDataFlowEdge(e,ts){
+  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
+  if(!fn||!tn) return;
+  const fp=w2s(fn.x,fn.y),tp=w2s(tn.x,tn.y);
+  const dx=tp.x-fp.x,dy=tp.y-fp.y;
+  const mx=(fp.x+tp.x)/2,my=(fp.y+tp.y)/2;
+  const perp={x:-dy*.35,y:dx*.35};
+  const cp={x:mx+perp.x,y:my+perp.y};
+  const [r,g,b]=h2rgb(fn.color);
+  const pulse=.4+Math.sin(ts*.002+e.phase)*0.25;
+  ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
+  ctx.setLineDash([4*camZ,5*camZ]);
+  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.18})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
+  ctx.setLineDash([]);
+  const t2=qb(fp,cp,tp,.92),sz=5*camZ;
+  const ax=tp.x-t2.x,ay=tp.y-t2.y,al=Math.hypot(ax,ay)||1;
+  ctx.beginPath();
+  ctx.moveTo(t2.x+ax/al*sz*1.2,t2.y+ay/al*sz*1.2);
+  ctx.lineTo(t2.x-ay/al*sz*.5,t2.y+ax/al*sz*.5);
+  ctx.lineTo(t2.x+ay/al*sz*.5,t2.y-ax/al*sz*.5);
+  ctx.closePath();
+  ctx.fillStyle=`rgba(${r},${g},${b},${pulse*.55})`;ctx.fill();
+}
+
+function drawParticles(){
+  particles.forEach(p=>{
+    const fp=w2s(p.fn.x,p.fn.y),tp=w2s(p.tn.x,p.tn.y),cp=cpFor(fp,tp);
+    for(let i=3;i>=0;i--){const tt=Math.max(0,p.t-i*.02),pp=qb(fp,cp,tp,tt);ctx.beginPath();ctx.arc(pp.x,pp.y,p.sz*(4-i)/4*camZ,0,Math.PI*2);ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${p.a*(1-i/4)*.3})`;ctx.fill();}
+    const pos=qb(fp,cp,tp,p.t);
+    const gg=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,p.sz*5*camZ);
+    gg.addColorStop(0,`rgba(${p.r},${p.g},${p.b},.3)`);gg.addColorStop(1,`rgba(${p.r},${p.g},${p.b},0)`);
+    ctx.beginPath();ctx.arc(pos.x,pos.y,p.sz*5*camZ,0,Math.PI*2);ctx.fillStyle=gg;ctx.fill();
+    ctx.beginPath();ctx.arc(pos.x,pos.y,p.sz*camZ,0,Math.PI*2);ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${p.a})`;ctx.fill();
+  });
+}
+
+function drawNode(n,ts){
+  const sp=w2s(n.x,n.y),r=n.r*camZ;
+  if(r<3) return;
+  const [cr,cg,cb]=h2rgb(n.color);
+  const act=n.activity,sel=selectedNode&&selectedNode.id===n.id,hov=hoveredNode&&hoveredNode.id===n.id;
+  const pulse=Math.sin(ts*.0018+n.pp)*.1+.9;
+  if(act>0||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(1.7+Math.sin(ts*.0014+n.pp)*.15),0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},${(hov?.1:0)+act*.06})`;ctx.fill();}
+  if(sel||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(hov?1.8:2),0,Math.PI*2);ctx.strokeStyle=`rgba(${cr},${cg},${cb},${hov?.55:.4})`;ctx.lineWidth=hov?2:1.5;ctx.setLineDash([5,5]);ctx.stroke();ctx.setLineDash([]);}
+  ctx.save();
+  ctx.shadowColor=`rgba(${cr},${cg},${cb},${act*.5+(hov?.3:0)})`;ctx.shadowBlur=r*(act>0||hov?2.2:.5);
+  const grad=ctx.createRadialGradient(sp.x-r*.25,sp.y-r*.25,0,sp.x,sp.y,r);
+  const alpha=act>0||hov?.95:.3;
+  grad.addColorStop(0,`rgba(${Math.min(255,cr+55)},${Math.min(255,cg+55)},${Math.min(255,cb+40)},${alpha})`);
+  grad.addColorStop(1,`rgba(${cr},${cg},${cb},${alpha*.85})`);
+  ctx.beginPath();ctx.arc(sp.x,sp.y,r,0,Math.PI*2);ctx.fillStyle=grad;ctx.fill();
+  ctx.restore();
+  ctx.beginPath();ctx.arc(sp.x,sp.y,r,0,Math.PI*2);
+  ctx.strokeStyle=`rgba(${cr},${cg},${cb},${act>0||hov?.6:.2})`;ctx.lineWidth=sel||hov?2:1.2;ctx.stroke();
+  ctx.beginPath();ctx.arc(sp.x,sp.y,r*.45,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${act>0?.1:.03})`;ctx.fill();
+  if(r>7&&camZ>.42){
+    ctx.font=`${Math.max(9,10*camZ)}px 'Segoe UI',sans-serif`;ctx.textAlign='center';
+    ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
+    ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},.45)`;ctx.fillText(n.label,sp.x,sp.y+r*1.8);
+  }
+  if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
+}
+
+// -- Mouse (all coords via getBoundingClientRect) ------------------------------
+let dragging=false,dragStart={x:0,y:0},dragCam={x:0,y:0};
+const tooltip=document.getElementById('tooltip');
+let draggingNode=null,nodeDragOff={x:0,y:0},nodeMoved=false;
+
+function getCanvasLocal(e){
+  const rect=canvas.getBoundingClientRect();
+  return{x:e.clientX-rect.left,y:e.clientY-rect.top};
+}
+
+canvas.addEventListener('mousedown',e=>{
+  const cl=getCanvasLocal(e);
+  const wp=s2w(cl.x,cl.y);
+  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
+  if(hit){ draggingNode=hit; nodeDragOff={x:wp.x-hit.x,y:wp.y-hit.y}; nodeMoved=false; dragStart={x:e.clientX,y:e.clientY}; canvas.style.cursor='grabbing'; return; }
+  dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};
+});
+
+canvas.addEventListener('mousemove',e=>{
+  if(draggingNode){
+    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
+    draggingNode.x=wp.x-nodeDragOff.x; draggingNode.y=wp.y-nodeDragOff.y;
+    nodeMoved=true; hoveredNode=null; tooltip.style.display='none'; return;
+  }
+  if(dragging){camX=dragCam.x+(e.clientX-dragStart.x);camY=dragCam.y+(e.clientY-dragStart.y);tX=camX;tY=camY;hoveredNode=null;tooltip.style.display='none';return;}
+  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
+  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
+  canvas.style.cursor=hit?'grab':'default';
+  if(hit){
+    hoveredNode=hit;
+    const tasks=hit.nodeType==='worker'
+      ? (lastGraphData?.worker_counts?.[hit.worker]??0)
+      : (lastGraphData?.ant_counts?.[hit.ant]??0);
+    const act=hit.id==='queen'?'Command':colonyRunning&&hit.activity>0?'Active':'Idle';
+    document.getElementById('tt-name').textContent=`${hit.label} (${hit.role})`;
+    document.getElementById('tt-name').style.color=hit.color;
+    document.getElementById('tt-status').textContent=act;
+    document.getElementById('tt-tasks').textContent=tasks;
+    document.getElementById('tt-activity').textContent=Math.round(hit.activity*100)+'%';
+    tooltip.style.display='block';
+    const tx=e.clientX+14,ty=e.clientY-10;
+    tooltip.style.left=(tx+150>window.innerWidth?e.clientX-tooltip.offsetWidth-10:tx)+'px';
+    tooltip.style.top=ty+'px';
+  } else { hoveredNode=null;tooltip.style.display='none'; }
+});
+
+canvas.addEventListener('mouseleave',()=>{hoveredNode=null;tooltip.style.display='none';});
+
+canvas.addEventListener('mouseup',e=>{
+  if(draggingNode){
+    const n=draggingNode; draggingNode=null; canvas.style.cursor='grab';
+    if(nodeMoved){ persistNodePosition(n); } else { showInspector(n); }
+    return;
+  }
+  const moved=Math.abs(e.clientX-dragStart.x)+Math.abs(e.clientY-dragStart.y);
+  dragging=false;
+  if(moved<5){
+    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
+    const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
+    if(hit) showInspector(hit);
+    else{selectedNode=null;document.getElementById('agent-detail').innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
+  }
+});
+
+canvas.addEventListener('dblclick',e=>{
+  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
+  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
+  if(hit) openRename(hit,e.clientX,e.clientY);
+});
+
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const cl=getCanvasLocal(e);
+  const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
+  const wx=(cl.x-cx-tX)/tZ+cx,wy=(cl.y-cy-tY)/tZ+cy;
+  tZ=nz;tX=cl.x-cx-(wx-cx)*nz;tY=cl.y-cy-(wy-cy)*nz;
+},{passive:false});
+
+function statusColor(s){return{complete:'var(--green)',failed:'var(--red)',running:'var(--queen)',blocked:'var(--purple)'}[s]||'var(--dim)';}
+
+function showInspector(n){
+  selectedNode=n;
+  const act=n.activity,pct=Math.round(act*100);
+  const tasks=n.nodeType==='worker'
+    ? (lastGraphData?.worker_counts?.[n.worker]??0)
+    : (lastGraphData?.ant_counts?.[n.ant]??0);
+  const statusLine=n.id==='queen'?'Commander':colonyRunning&&act>0?'Active':'Idle';
+  // Real live task load for this caste from the current mission graph.
+  const antTasks=(lastGraphData?.nodes||[]).filter(t=>n.nodeType==='worker'?t.assigned_worker===n.worker:t.assigned_ant===n.ant);
+  const tRunning=antTasks.filter(t=>t.status==='running').length;
+  const tDone=antTasks.filter(t=>t.status==='complete').length;
+  const tFailed=antTasks.filter(t=>t.status==='failed').length;
+  const perms=permList(n.permissions||{}).join(', ')||'read/status only';
+  const tools=(n.allowedTools||[]).slice(0,6).join(', ')||'none listed';
+  const forbidden=(n.forbiddenTools||[]).slice(0,5).join(', ')||'none listed';
+  const tele=n.nodeType==='worker'?workerTelemetryById(n.worker):null;
+  const usage=tele?.usage||{},audit=tele?.audit||{},metric=tele?.metric||{};
+  const totalRuntimeTasks=usage.task_count??usage.taskCount??usage.TaskCount??tasks;
+  const auditCount=audit.audit_count??audit.auditCount??audit.AuditCount??0;
+  const metricCount=metric.metric_count??metric.metricCount??metric.MetricCount??0;
+  const avgElapsed=usage.avg_elapsed_seconds??usage.avgElapsedSeconds??usage.AvgElapsedSeconds??0;
+  document.getElementById('agent-detail').innerHTML=`
+    <div class="ad-name">${n.label}</div>
+    <div class="ad-type" style="color:${n.color}">${n.role} · ${n.worker||n.ant||'queen'}</div>
+    <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
+    <div class="ad-row"><span class="ad-key">Type</span><span class="ad-val">${n.nodeType||'role'}</span></div>
+    ${n.parent?`<div class="ad-row"><span class="ad-key">Parent</span><span class="ad-val">${n.parent}</span></div>`:''}
+    ${n.colony?`<div class="ad-row"><span class="ad-key">Colony</span><span class="ad-val">${n.colony}</span></div>`:''}
+    ${n.enabled===false?`<div class="ad-row"><span class="ad-key">Enabled</span><span class="ad-val" style="color:var(--red)">false</span></div>`:''}
+    <div class="ad-row"><span class="ad-key">Activity</span><span class="ad-val">${pct}%</span></div>
+    <div class="ad-row"><span class="ad-key">Task Count</span><span class="ad-val">${tasks}</span></div>
+    ${n.nodeType==='worker'?`<div class="ad-row"><span class="ad-key">Runtime Tasks</span><span class="ad-val">${totalRuntimeTasks}</span></div>
+    <div class="ad-row"><span class="ad-key">Audits</span><span class="ad-val">${auditCount}</span></div>
+    <div class="ad-row"><span class="ad-key">Metrics</span><span class="ad-val">${metricCount}</span></div>
+    <div class="ad-row"><span class="ad-key">Avg Time</span><span class="ad-val">${avgElapsed}s</span></div>`:''}
+    ${n.purpose?`<div class="ad-section">Purpose</div><div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(n.purpose)}</div>`:''}
+    <div class="ad-section">Permissions</div>
+    <div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(perms)}</div>
+    <div class="ad-section">Tools</div>
+    <div style="font-size:10px;line-height:1.5;color:var(--muted)">Allowed: ${escapeHtml(tools)}<br>Forbidden: ${escapeHtml(forbidden)}</div>
+    <div class="ad-section">Live Task Load</div>
+    <div class="ad-bar"><div class="ad-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${n.color}88,${n.color})"></div></div>
+    <div class="ad-row" style="margin-top:6px"><span class="ad-key">Running</span><span class="ad-val">${tRunning}</span></div>
+    <div class="ad-row"><span class="ad-key">Completed</span><span class="ad-val" style="color:${tDone?'var(--green)':''}">${tDone}</span></div>
+    <div class="ad-row"><span class="ad-key">Failed</span><span class="ad-val" style="color:${tFailed?'var(--red)':''}">${tFailed}</span></div>
+    ${(()=>{ // v1.8.23: worker sub-caste breakdown for this ant (Ant Capability Profiles).
+      const wc={};
+      antTasks.forEach(t=>{ const w=t.assigned_worker||t.assigned_agent; if(w&&w!==n.ant){wc[w]=(wc[w]||0)+1;} });
+      const ent=Object.entries(wc);
+      if(!ent.length) return '';
+      return `<div class="ad-section">Workers</div>`+ent.map(([w,c])=>`
+        <div class="ad-row"><span class="ad-key" title="${escapeHtml(w)}">${escapeHtml(w.split('.').pop())}</span><span class="ad-val">${c}</span></div>`).join('');
+    })()}
+    ${antTasks.slice(0,4).map(t=>`
+      <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
+        <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.assigned_worker||t.assigned_ant} · ${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
+        <div style="font-size:10px;color:var(--muted)">${(t.title||'').substring(0,55)}</div>
+      </div>`).join('')||''}`;
+}
+
+// -- Render Loop ---------------------------------------------------------------
+function loop(ts){
+  requestAnimationFrame(loop);
+  camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
+  drawBg();
+  edges.forEach(e=>drawEdge(e));
+  drawPheromoneField();            // Real-pheromone drift under the structural edges
+  if(showHandoffs) dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
+  maybeSpawn(ts);
+  particles=particles.filter(p=>(p.t+=p.speed)<=1);
+  drawParticles();
+  nodes.forEach(n=>{
+    // NB: parentheses matter — this used to parse as `colonyActivity || (0-n.activity)`,
+    // which accumulated activity unboundedly every frame (tooltips showing >100%).
+    if(n.id!=='queen'){const key=n.worker||n.ant;n.activity=Math.min(1,Math.max(0,n.activity+((colonyActivity[key]||0)-n.activity)*.06));}
+    drawNode(n,ts);
+  });
+}
+requestAnimationFrame(loop);
+
+// -- Real data polling ----------------------------------------------------------
+let lastGraphData=null,lastEventText='',activeJobId=null,jobPollTimer=null,connected=false;
+let selectedJobId=null;
+
+function setConnected(ok){
+  connected=ok;
+  renderStatusChip(); // the header chip's online dot reflects API + backend health
+}
+
+function setEl(id,val){ const e=document.getElementById(id); if(e) e.textContent=val; }
+
+async function pollStatus(){
+  try{
+    const r=await api('/status'); if(!r.success) return;
+    const d=r.data;
+    setEl('s-calls',d.model_calls??0);
+    setEl('s-tasks',d.tasks??0);
+    setEl('s-events',d.events??0);        setEl('ov-events',d.events??0);
+    setEl('s-approvals',d.pending_approvals??0); setEl('ov-approvals',d.pending_approvals??0);
+    modelCallRate=Math.max(0,(d.model_calls??0)-totalModelCalls);
+    totalModelCalls=d.model_calls??0;
+    setConnected(true);
+    const pending=d.pending_approvals??0;
+    const bc=document.getElementById('bell-count');
+    bc.style.display=pending>0?'block':'none';
+    bc.textContent=pending;
+  }catch{ setConnected(false); }
+}
+
+// -- System Health panel (Overview) --------------------------------------------
+async function pollHealth(){
+  // Only fetch when the Overview is the visible page — keeps it cheap.
+  if(!document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const [a,m,ev]=await Promise.all([api('/autonomy/status'),api('/maintenance/stats'),api('/events/json?limit=600')]);
+    const s=a.data||{}, d=m.data||{};
+    // Autonomy
+    const running=!!s.running, killed=!!s.kill_switch_engaged, enabled=!!s.enabled;
+    const autoState=running?'RUNNING':(killed?'HALTED':(enabled?'IDLE':'OFF'));
+    setEl('ov-h-auto',autoState);
+    document.getElementById('ov-h-auto').style.color=running?'var(--green)':(killed?'var(--red)':'var(--muted)');
+    document.getElementById('ov-h-auto-dot').className='health-dot '+(running?'ok':(killed?'err':''));
+    setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
+    setEl('ov-h-auto-backlog',`${(s.backlog_pending??0)+(s.backlog_active??0)}`);
+    setEl('ov-h-auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
+    // Storage
+    const free=d.disk_free_bytes||0, total=d.disk_total_bytes||1;
+    const usedPct=Math.round((1-free/total)*100);
+    setEl('ov-h-disk',`${humanBytes(free)} free`);
+    const bar=document.getElementById('ov-h-disk-bar'); bar.style.width=usedPct+'%';
+    const diskWarn=usedPct>=85, diskDanger=usedPct>=93;
+    bar.style.background=diskDanger?'var(--red)':(diskWarn?'var(--queen)':'var(--green)');
+    document.getElementById('ov-h-disk-dot').className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
+    setEl('ov-h-db',humanBytes(d.db_bytes));
+    setEl('ov-h-backups',`${d.backup_count||0} · ${humanBytes(d.backup_bytes)}`);
+    // Coder patch health (from recent events)
+    const c={}; (ev.data?.events||[]).forEach(e=>{const t=e.event_type||'';c[t]=(c[t]||0)+1;});
+    const ok=c['patch_set_created']||0, fail=c['patch_proposal_parse_failed']||0, applied=c['autonomy_autoapply_applied']||0;
+    const rate=(ok+fail)>0?Math.round(ok/(ok+fail)*100):null;
+    setEl('ov-h-coder',rate==null?'—':rate+'%');
+    document.getElementById('ov-h-coder').style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
+    document.getElementById('ov-h-coder-dot').className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
+    setEl('ov-h-coder-ok',ok); setEl('ov-h-coder-fail',fail); setEl('ov-h-coder-applied',applied);
+    // Alert line — nudge reclaimable disk
+    const alert=document.getElementById('ov-health-alert');
+    const reclaimable=(d.backup_count||0)>(d.max_db_backups||10);
+    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`? ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings ? Maintenance ? Flush Cache`; }
+    else alert.style.display='none';
+  }catch{}
+}
+
+// -- HUD design-system helpers (v1.8.23) --------------------------------------
+function hudBadge(status,label){ const s=(status||'unknown').toString().toLowerCase();
+  return `<span class="hud-badge ${s}">${escapeHtml(label||s)}</span>`; }
+function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
+  return `<span class="hud-risk ${l}">${escapeHtml(l)}</span>`; }
+// Map a mission/objective/job status onto a canonical HUD badge state.
+function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
+  if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
+  if(['running','active','queued','complete','partial','failed','paused','pending','approved','applied','rejected','completed','stopped','looping','idle','proposed'].includes(st)) return st==='proposed'?'pending':st;
+  return 'unknown'; }
+
+// -- Mission command modes (front-end prompt helpers ? v1.8.23 planner constraints) --
+let ovMode='';
+const OV_MODE_TEXT={
+  inspect:'Inspect only. Do not modify files. ',
+  verify:'Verify only. Do not create patches. ',
+  patch:'Create patch proposals only. Do not apply changes. ',
+  build:'Create changes only if needed and run the normal build/test checks. ',
+};
+const OV_MODE_LABEL={inspect:'INSPECT',verify:'VERIFY',patch:'PATCH PROPOSAL',build:'FULL BUILD/TEST'};
+function setOvMode(mode){
+  ovMode = (ovMode===mode) ? '' : mode; // toggle
+  document.querySelectorAll('#ov-modes .hud-act').forEach(b=>b.setAttribute('aria-pressed', b.dataset.mode===ovMode ? 'true':'false'));
+  const badge=document.getElementById('ov-mode-badge');
+  if(badge) badge.innerHTML = ovMode ? hudBadge('active',OV_MODE_LABEL[ovMode]) : '';
+  const hint=document.getElementById('ov-mode-hint');
+  if(hint) hint.textContent = ovMode
+    ? `Mode active — "${OV_MODE_TEXT[ovMode].trim()}" will be prepended to your directive.`
+    : 'Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.';
+}
+
+// -- Overview command dashboard (v1.8.23) -------------------------------------
+// v2.2.6: shared stores — pollHud is the single computer of core state + hardware signals;
+// the ov2 cards are pure renderers of these (no second state machine, no drift).
+let CORE_STATE=null; // {state,text,sub,at}
+let GOV=null;        // {load,memFree,lat,backendOk,concEff,concCfg,at}
+async function pollHud(){
+  if(!document.getElementById('page-overview')?.classList.contains('active')) return;
+  let st,au,jb,pt,ob,mn;
+  try{
+    [st,au,jb,pt,ob,mn]=await Promise.all([
+      api('/status'), api('/autonomy/status'), api('/jobs'),
+      api('/patches?limit=200'), api('/objectives'), api('/missions/json?limit=8'),
+    ]);
+  }catch{ return; } // transient; existing panels keep their last values
+  const s=(st&&st.data)||{}, a=(au&&au.data)||{};
+  const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
+  const patches=Array.isArray(pt&&pt.data)?pt.data:[];
+  const objectives=Array.isArray(ob&&ob.data)?ob.data:[];
+  const missions=Array.isArray(mn&&mn.data)?mn.data:[];
+  const sum=(typeof lastSystemSummary==='object'&&lastSystemSummary)?lastSystemSummary:{};
+
+  // -- Derived state (memoized locals) --
+  const activeJobs=jobs.filter(j=>['running','queued'].includes((j.status||'').toLowerCase())).length;
+  const pendingApprovals=s.pending_approvals??0;
+  const highRiskPatches=patches.filter(p=>(p.risk==='high')&&(p.status==='proposed'||p.approval_status==='pending')).length;
+  const failedMissions=missions.filter(m=>(m.status||'')==='failed').length;
+  const retiredObjectives=objectives.filter(o=>o.retired_code==='looping_goals'||o.end_reason==='retired_looping').length;
+  const failedObjectives=objectives.filter(o=>o.end_reason==='failed').length;
+  const activeObjectives=objectives.filter(o=>['active','pending'].includes((o.status||'').toLowerCase()) && o.retired_code!=='looping_goals' && (o.status||'')!=='done').length;
+  const providerDown = sum.use_ollama && sum.ollama_reachable===false;
+  const autoRunning=!!a.running, autoKilled=!!a.kill_switch_engaged, autoEnabled=!!a.enabled;
+  const warnings=failedMissions+retiredObjectives+failedObjectives+highRiskPatches+(providerDown?1:0);
+
+  // v2.2.6: the hidden #hud-strip writers are gone (the strip was retired in v2.2.1; rendering
+  // into display:none elements every 6s was dead work, and several lookups were unguarded).
+
+  // -- Central system core — SINGLE source of truth (v2.2.6) --
+  // pollHud sees the full picture (autonomy, objectives, patches, provider); it computes the core
+  // state and publishes it for renderOv2Core so the visible card can't drift or under-report.
+  let coreState='idle', coreText='IDLE', coreSub='standby';
+  if(failedMissions>0||providerDown||retiredObjectives>0||failedObjectives>0){
+    coreState='alert'; coreText='ALERT';
+    coreSub=providerDown?'provider offline':failedMissions>0?'mission failed':'objective retired';
+  } else if(pendingApprovals>0||highRiskPatches>0){
+    coreState='action'; coreText='OPERATOR ACTION';
+    coreSub=highRiskPatches>0?`${highRiskPatches} high-risk patch`:`${pendingApprovals} awaiting review`;
+  } else if(autoRunning){ coreState='autonomy'; coreText='AUTONOMY ONLINE'; coreSub=`${activeObjectives} active objective${activeObjectives===1?'':'s'}`; }
+  else if(activeJobs>0){ coreState='mission'; coreText='MISSION ACTIVE'; coreSub=`${activeJobs} in flight`; }
+  else { coreState='idle'; coreText='IDLE'; coreSub=autoEnabled?'autonomy standby':'awaiting directive'; }
+  CORE_STATE={state:coreState,text:coreText,sub:coreSub,at:Date.now()};
+  if(typeof renderOv2CoreOrb==='function') renderOv2CoreOrb(); // refresh the visible card in place
+
+  // -- Hardware / environment metrics (v2.2.6): published for the Resource Usage card instead of
+  // being rendered into the deleted hidden #hud-metrics row (those lookups were unguarded).
+  const sig=a.governor_signals||{};
+  GOV={load:sig.load_per_core, memFree:sig.memory_available_fraction, lat:sig.backend_latency_ms,
+    backendOk:sig.backend_ok, concEff:a.concurrency_effective, concCfg:a.concurrency_configured, at:Date.now()};
+  setEl('ov-events-sub', (s.events??0)+' events logged');
+
+  // -- Operator attention --
+  const attn=[];
+  if(pendingApprovals>0) attn.push({sev:'warning',title:`${pendingApprovals} pending patch approval${pendingApprovals===1?'':'s'}`,reason:'Review and approve or reject in Changes.',go:"showPage('patches')"});
+  if(highRiskPatches>0) attn.push({sev:'error',title:`${highRiskPatches} high-risk patch waiting`,reason:'High-risk change needs careful review before apply.',go:"openPatches({risk:'high'})"});
+  if(providerDown) attn.push({sev:'error',title:'Model backend unreachable',reason:`Ollama at ${escapeHtml(sum.ollama_host||'?')} did not respond.`,go:"showPage('settings')"});
+  if(failedMissions>0) attn.push({sev:'error',title:`${failedMissions} recent mission failed`,reason:'Open Results to see what went wrong.',go:"showPage('results')"});
+  retiredObjectives>0 && attn.push({sev:'warning',title:`${retiredObjectives} objective retired for looping`,reason:'The Director stopped a looping objective.',go:"showPage('autonomy')"});
+  failedObjectives>0 && attn.push({sev:'error',title:`${failedObjectives} objective failed`,reason:'Circuit breaker tripped after repeated failures.',go:"showPage('autonomy')"});
+  const attnList=document.getElementById('hud-attn-list');
+  setEl('attn-count', attn.length?`${attn.length} item${attn.length===1?'':'s'}`:'');
+  const attnPanel=document.getElementById('hud-attn-panel');
+  attnPanel&&attnPanel.classList.toggle('glow-warn', attn.length>0);
+  if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
+  else attnList.innerHTML=attn.slice(0,6).map(it=>
+    `<div class="hud-attn-item" data-onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
+    `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+
+  // -- Summaries --
+  const msEl=document.getElementById('ov-sum-missions');
+  msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid rgba(30,51,84,.4)" data-onclick="openResults('${m.id}')">`+
+    hudBadge(hudStatusClass(m.status),m.status)+
+    `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
+    `<span style="color:var(--dim);font-size:9px;white-space:nowrap">${fmtTime(m.saved_at||m.created_at)||''}</span></div>`).join('')
+    : '<div class="hud-state">No missions yet.</div>';
+
+  const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
+  const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
+  document.getElementById('ov-sum-patches').innerHTML = patches.length ?
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
+      chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
+      chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
+      (highRiskPatches?`<span class="hud-risk high" style="justify-content:center">${highRiskPatches} high-risk</span>`:'')+`</div>`
+    : '<div class="hud-state">No patch proposals yet.</div>';
+
+  const oc={active:0,paused:0,done:0,looping:0,failed:0};
+  objectives.forEach(o=>{ const st=(o.status||'').toLowerCase();
+    if(o.retired_code==='looping_goals'||o.end_reason==='retired_looping') oc.looping++;
+    else if(o.end_reason==='failed') oc.failed++;
+    else if(st==='done') oc.done++; else if(st==='paused') oc.paused++;
+    else if(st==='active'||st==='pending') oc.active++; });
+  document.getElementById('ov-sum-objectives').innerHTML = objectives.length ?
+    `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
+      chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
+      (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
+    : '<div class="hud-state">No objectives yet.</div>';
+}
+
+function renderJobList(jobs, listId, badgeId, limit){
+  const badge=document.getElementById(badgeId);
+  if(badge) badge.textContent=jobs.length;
+  const list=document.getElementById(listId);
+  if(!list) return;
+  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>'; return; }
+  list.innerHTML=jobs.slice(0,limit||8).map(j=>{
+    const isRunning=j.status==='running';
+    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
+      <div class="job-top">
+        <span class="job-status ${j.status}">${j.status}</span>
+        <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
+      </div>
+      <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
+      <div class="job-actions">
+        ${isDone?`<button class="job-btn view" data-onclick="event.stopPropagation();openJobResult('${j.id}','${j.mission_id||''}')">View Result</button>`
+          :isRunning?`<button class="job-btn view" data-onclick="event.stopPropagation();selectJob('${j.id}')">View Status</button>`:''}
+        ${isRunning?`<button class="job-btn cancel" data-onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function pollJobs(){
+  try{
+    const r=await api('/jobs'); if(!r.success) return;
+    const jobs=r.data||[];
+    const running=jobs.find(j=>j.status==='running');
+    const queued =jobs.find(j=>j.status==='queued');
+    const current=running||queued;
+    colonyRunning=!!current;
+    const dot=document.getElementById('mission-dot'),goalEl=document.getElementById('mission-goal');
+    if(running){dot.className='dot running';goalEl.textContent=running.goal.substring(0,80)+(running.goal.length>80?'…':'');}
+    else if(queued){dot.className='dot active';goalEl.textContent='Queued: '+queued.goal.substring(0,70);}
+    else{dot.className='dot';goalEl.textContent='Idle — no active mission';}
+    // Render to all job list containers
+    renderJobList(jobs,'jobs-list','jobs-badge',8);
+    renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5);
+    renderJobList(jobs,'ms-jobs-list','ms-jobs-badge',20);
+    // Nav badge
+    const navBadge=document.getElementById('nav-jobs-badge');
+    if(navBadge){ navBadge.style.display=jobs.length>0?'':'none'; navBadge.textContent=jobs.length; }
+  }catch{}
+}
+
+async function pollGraph(){
+  try{
+    const r=await api('/graph'); if(!r.success) return;
+    lastGraphData=r.data;
+    // True live activity from current task states — not "share of all tasks in the mission".
+    // running task(s) = fully active (1.0); only queued work (ready/pending) = warming (0.35);
+    // everything terminal = idle (0). Always in [0,1], so the tooltip can never exceed 100%.
+    const live={};
+    (r.data?.nodes||[]).forEach(t=>{
+      const a=t.assigned_ant; if(!a) return;
+      const keys=[a,t.assigned_worker].filter(Boolean);
+      keys.forEach(k=>{ if(!live[k]) live[k]={running:0,queued:0}; });
+      keys.forEach(k=>{
+        if(t.status==='running') live[k].running++;
+        else if(t.status==='ready'||t.status==='pending') live[k].queued++;
+      });
+    });
+    Object.keys(colonyActivity).forEach(k=>delete colonyActivity[k]);
+    Object.keys(live).forEach(k=>{const s=live[k];colonyActivity[k]=!s?0:(s.running>0?1:(s.queued>0?0.35:0));});
+    updateNodeActivity();
+    if(selectedNode) showInspector(selectedNode);
+    buildDataFlowEdges(r.data?.nodes||[]);
+    if(colonyView==='active'){ buildNodes(); updateNodeActivity(); }
+    renderColonyLegend(); // Keep the caste legend's live state in sync
+  }catch{}
+}
+
+function buildDataFlowEdges(taskNodes){
+  const taskById={};
+  taskNodes.forEach(t=>{taskById[t.id]=t;});
+  const seen=new Set();
+  const newEdges=[];
+  taskNodes.forEach(t=>{
+    const toAnt=t.assigned_worker||t.assigned_ant;
+    (t.dependency_ids||[]).forEach(depId=>{
+      const dep=taskById[depId];
+      if(!dep) return;
+      const fromAnt=dep.assigned_worker||dep.assigned_ant;
+      if(fromAnt===toAnt) return;
+      const key=`${fromAnt}?${toAnt}`;
+      if(seen.has(key)) return;
+      seen.add(key);
+      const fromNode=nodes.find(n=>n.id===fromAnt);
+      const toNode=nodes.find(n=>n.id===toAnt);
+      if(!fromNode||!toNode) return;
+      const existing=dataFlowEdges.find(e=>e.from===fromAnt&&e.to===toAnt);
+      if(!existing) newEdges.push({from:fromAnt,to:toAnt,phase:Math.random()*Math.PI*2,count:1});
+      else existing.count=(existing.count||1)+1;
+    });
+  });
+  const existingKeys=new Set(dataFlowEdges.map(e=>`${e.from}?${e.to}`));
+  newEdges.filter(e=>!existingKeys.has(`${e.from}?${e.to}`)).forEach(e=>dataFlowEdges.push(e));
+  if(!colonyRunning&&taskNodes.length===0) dataFlowEdges=[];
+}
+
+// -- Colony Live Canvas 2.0 · caste legend + real pheromone trails --
+const CHUD_CASTES=['researcher','web','file','coder','builder','verifier'];
+let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
+
+function renderColonyLegend(){
+  const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
+  const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
+  const want=(roles.length?roles.map(roleId):CHUD_CASTES).slice(0,15);
+  el.innerHTML=want.map(a=>{
+    const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
+    const on=(colonyActivity[a]||0)>0;
+    return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${am.color};background:${am.color}"></span>${am.label}</div>`;
+  }).join('');
+}
+
+// Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
+async function pollColonyPheromones(){
+  if(!document.getElementById('page-colony')?.classList.contains('active')) return;
+  try{
+    const r=await api('/pheromones/json'); if(!r||!r.success) return;
+    const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));
+    pheromoneTrails=trails.slice(0,6);
+    const topN=pheromoneTrails.slice(0,3);
+    pheromoneIntensity = topN.length ? Math.max(0,Math.min(1, topN.reduce((s,t)=>s+(+t.strength||0),0)/topN.length)) : 0;
+    const body=document.getElementById('chud-phero-body'); if(!body) return;
+    body.innerHTML = pheromoneTrails.length ? pheromoneTrails.slice(0,4).map(t=>{
+      const s=Math.max(0,Math.min(1,+t.strength||0)), pct=Math.round(s*100);
+      const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
+      const key=(t.trail_key||'—').split(':').slice(-1)[0];
+      return `<div class="chud-trail"><div class="tk" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(key)}</div><div class="tb"><i style="width:${pct}%;background:${col}"></i></div></div>`;
+    }).join('') : '<div class="chud-empty">No trails yet — run missions to build colony memory.</div>';
+  }catch{}
+}
+
+// Additive canvas pass: motes drifting from the castes toward the Queen, density + opacity scaled by
+// real pheromone intensity. CSS-cheap, guarded (invisible when there is no colony memory yet).
+function drawPheromoneField(){
+  if(pheromoneIntensity<=0) return;
+  const queen=nodes.find(n=>n.id==='queen'); if(!queen) return;
+  const target=Math.round(6+pheromoneIntensity*14);
+  while(pheroMotes.length<target){
+    const src=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen;
+    pheroMotes.push({from:src,t:Math.random(),speed:.0015+Math.random()*.002});
+  }
+  if(pheroMotes.length>target) pheroMotes.length=target;
+  const qp=w2s(queen.x,queen.y);
+  pheroMotes.forEach(m=>{
+    m.t+=m.speed; if(m.t>=1){ m.t=0; m.from=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen; }
+    const fp=w2s(m.from.x,m.from.y);
+    const x=fp.x+(qp.x-fp.x)*m.t, y=fp.y+(qp.y-fp.y)*m.t;
+    const a=(0.10+pheromoneIntensity*0.22)*(1-Math.abs(m.t-0.5)*1.2);
+    if(a<=0) return;
+    ctx.beginPath();ctx.arc(x,y,1.6*camZ,0,Math.PI*2);
+    ctx.fillStyle=`rgba(251,191,36,${a})`;ctx.fill();
+  });
+}
+
+function evTypeClass(t){
+  if(!t) return '';
+  if(t.includes('fail')||t.includes('error')||t.includes('reject')) return 'type-error';
+  if(t.includes('patch')||t.includes('apply')) return 'type-patch';
+  if(t.includes('approval')) return 'type-approval';
+  if(t.includes('mission')) return 'type-mission';
+  if(t.includes('task')) return 'type-task';
+  return '';
+}
+function evCardClass(t){
+  if(!t) return '';
+  if(t.includes('fail')||t.includes('error')||t.includes('reject')) return 'ev-error';
+  if(t.includes('patch')||t.includes('apply')) return 'ev-patch';
+  if(t.includes('approval')) return 'ev-approval';
+  if(t.includes('mission')) return 'ev-mission';
+  return '';
+}
+
+let evTotalSeen=0;
+async function pollEvents(){
+  try{
+    const text=await apiText('/events');
+    if(text===lastEventText) return;
+    lastEventText=text;
+    if(text.startsWith('No events')) return;
+    const allBlocks=text.split('\n\n').slice(1).filter(b=>b.trim()&&b.includes('['));
+    if(!allBlocks.length) return;
+    const prevCount=evTotalSeen;
+    evTotalSeen=allBlocks.length;
+    const newCount=evTotalSeen-prevCount;
+    setEl('ev-count',`${evTotalSeen} events`);
+    if(typeof notifIngest==='function') notifIngest(allBlocks); // v1.8.25 notification center feed
+    function renderFeed(blocks, containerId, maxItems){
+      const list=document.getElementById(containerId); if(!list) return;
+      const wasAtBottom=list.scrollHeight-list.scrollTop-list.clientHeight<40;
+      list.innerHTML=blocks.slice(0,maxItems).map((block,idx)=>{
+        const lines=block.trim().split('\n');
+        const l0=lines[0]||'';
+        const typeMatch=l0.match(/^\[([^\]]+)\]/);
+        const evType=typeMatch?typeMatch[1]:'event';
+        const isoTs=l0.replace(/^\[[^\]]+\]\s*/,'').substring(0,19);
+        const timeStr=isoTs.replace('T',' ');
+        const l1=lines[1]||'';
+        const antMatch=l1.match(/Ant:\s*([^\s|]+)/);
+        const ant=antMatch?antMatch[1].trim():'—';
+        const missionMatch=l1.match(/Mission:\s*([^\s|]+)/);
+        const missionShort=(missionMatch?missionMatch[1].trim():'').substring(0,12);
+        const taskMatch=l1.match(/Task:\s*([^\s|]+)/);
+        const taskShort=(taskMatch?taskMatch[1].trim():'').substring(0,10);
+        const msg=lines.slice(2).join(' ').replace(/\.\.\.\[.+?\]/g,'').trim().substring(0,160);
+        const col=ANT_MAP[ant]?.color||'var(--dim)';
+        const tc=evTypeClass(evType),cc=evCardClass(evType);
+        const isNew=idx<newCount&&newCount>0;
+        return `<div class="ev${cc?' '+cc:''}${isNew?' fresh':''}">
+          <div class="ev-top">
+            <span class="ev-type ${tc}">${evType}</span>
+            <span class="ev-ant" style="color:${col}">${ant}</span>
+            <span class="ev-time">${timeStr}</span>
+          </div>
+          <div class="ev-meta">mission:${missionShort||'—'} · task:${taskShort||'—'}</div>
+          <div class="ev-msg">${msg||'—'}</div>
+        </div>`;
+      }).join('');
+      if(newCount>0) list.scrollTop=0;
+      setTimeout(()=>list.querySelectorAll('.fresh').forEach(el=>el.classList.remove('fresh')),3000);
+    }
+    renderFeed(allBlocks,'feed-list',50);
+    renderFeed(allBlocks,'ov-feed-list',20);
+  }catch{}
+}
+
+function parseApprovalsText(text){
+  if(!text||text.startsWith('No approval')) return [];
+  const body=text.replace(/^[^\n]*\n\n?/,'');
+  const rawBlocks=body.split(/\n-{40,}\n/);
+  const results=[];
+  for(const block of rawBlocks){
+    if(!block.trim()||!block.includes('Approval ID:')) continue;
+    const get=(key)=>{const m=block.match(new RegExp(key+':\\s*(.+)'));return m?m[1].trim():'';}
+    const id=get('Approval ID'); if(!id) continue;
+    results.push({id,status:get('Status'),action_type:get('Action'),target_id:get('Target ID'),title:get('Title'),file_path:get('File'),created_at:get('Created At')});
+  }
+  return results;
+}
+
+async function pollApprovals(){
+  try{
+    const text=await apiText('/approvals');
+    const items=parseApprovalsText(text);
+    const card=document.getElementById('approvals-card');
+    const bellCount=document.getElementById('bell-count');
+    setEl('approval-count',items.length);
+    bellCount.style.display=items.length>0?'block':'none';
+    bellCount.textContent=items.length;
+    if(!items.length){if(card)card.style.display='none';return;}
+    if(card)card.style.display='block';
+    document.getElementById('approvals-list').innerHTML=items.slice(0,5).map(a=>{
+      const filePath=a.file_path||(a.title||'').replace('Approve patch proposal for ','').trim();
+      return `<div class="approval-item">
+        <div class="approval-title">${(a.title||a.action_type||'Approval needed').substring(0,60)}</div>
+        ${filePath?`<div style="font-size:9px;color:var(--blue);font-family:var(--mono);margin-bottom:3px;word-break:break-all">${filePath}</div>`:''}
+        <div class="approval-meta">${a.action_type||'patch_proposal'} · ${fmtTime(a.created_at)||'now'}</div>
+        <div style="font-size:8px;color:var(--dim);margin-bottom:5px;font-family:var(--mono)">${a.id.substring(0,20)}…</div>
+        <div class="approval-btns">
+          <button class="approval-btn approve" data-onclick="doApproval('${a.id}','approve')">✓ Approve &amp; Queue Apply</button>
+          <button class="approval-btn reject" data-onclick="doApproval('${a.id}','reject')">✕ Reject</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){console.error('pollApprovals',e);}
+}
+
+async function doApproval(id,action,kind){
+  try{
+    // v2.3.0: the unified queue carries more than patches — route the decision by kind
+    // (APPROVALS.md: decisions flow through each kind's own endpoints).
+    const endpoint=(kind==='homelab_action')
+      ?`/homelab/actions/${encodeURIComponent(id)}/${action==='approve'?'approve':'reject'}`
+      :(action==='approve'?`/approve/${id}`:`/reject/${id}`);
+    await fetch(url(endpoint),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    pollApprovals(); pollStatus();
+    if(kind==='homelab_action'&&typeof loadHlActions==='function') loadHlActions();
+  }catch(e){console.error('Approval error',e);}
+}
+
+async function cancelJob(id){
+  if(!await uiConfirm('Cancel this running job?')) return;
+  try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
+}
+
+// -- Header status chip + popover ----------------------------------------------
+let lastSystemSummary=null, lastUpdateInfo=null;
+const LOCAL_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+const CLOUD_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
+
+async function pollModelInfo(){
+  try{
+    const r=await api('/system/summary'); if(!r.success) return;
+    lastSystemSummary=r.data; renderStatusChip(); if(document.getElementById('status-pop').classList.contains('show')) renderStatusPop();
+  }catch{}
+}
+
+function renderStatusChip(){
+  const s=lastSystemSummary; if(!s) return;
+  const providers=s.routing_mode!=='local';
+  const modeTxt=s.routing_mode==='local'?'Local':s.routing_mode==='providers'?'Providers':'Mixed';
+  const modeCol=s.routing_mode==='local'?'var(--green)':'var(--purple)';
+  const modeEl=document.getElementById('sc-mode'); modeEl.style.color=modeCol;
+  modeEl.querySelector('.sc-mode-icon').innerHTML=providers?CLOUD_ICON:LOCAL_ICON;
+  setEl('sc-mode-txt',modeTxt);
+  setEl('sc-model',s.default_model||'—');
+  // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
+  const dot=document.getElementById('sc-dot');
+  const ok = connected && (s.ollama_reachable!==false);
+  dot.className='sc-dot '+(ok?'ok':'err');
+  document.getElementById('status-chip').title = ok?'Online — click for details':(s.ollama_reachable===false?'Ollama unreachable — click for details':'Click for details');
+}
+
+function renderStatusPop(){
+  const s=lastSystemSummary||{};
+  setEl('sp-version','v'+(s.version||'—'));
+  setEl('sp-api', connected?'? Online':'? Offline');
+  document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
+  const or=s.ollama_reachable;
+  const oTxt = !s.use_ollama?'not in use':(or===true?'? Reachable':or===false?'? Unreachable':'—');
+  setEl('sp-ollama',oTxt);
+  document.getElementById('sp-ollama').style.color = or===true?'var(--green)':or===false?'var(--red)':'var(--dim)';
+  setEl('sp-ollama-host',s.ollama_host||'—');
+  setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  setEl('sp-default',s.default_model||'—');
+  const routes=s.routes||[];
+  document.getElementById('sp-routes').innerHTML=routes.map(rt=>{
+    const local=(rt.provider||'ollama').toLowerCase()==='ollama';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;font-size:10px;">
+      <span style="color:var(--dim);text-transform:capitalize;">${escapeHtml(rt.role)}</span>
+      <span style="font-family:var(--mono);display:flex;align-items:center;gap:5px;">
+        <span style="color:${local?'var(--green)':'var(--purple)'};font-size:8px;font-weight:700;text-transform:uppercase;">${local?'local':escapeHtml(rt.provider)}</span>
+        ${escapeHtml(rt.model||'—')}</span></div>`;
+  }).join('')||'<div style="color:var(--dim);font-size:10px;">No routes configured.</div>';
+  renderUpdateBanner();
+}
+
+function renderUpdateBanner(){
+  const u=lastUpdateInfo, banner=document.getElementById('sp-update-banner'), dot=document.getElementById('sc-update');
+  if(!u){ banner.style.display='none'; if(dot) dot.style.display='none'; return; }
+  if(u.update_available){
+    banner.style.display='block';
+    banner.innerHTML=`? Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+
+      (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `:'')+
+      `On the LXC: <span style="font-family:var(--mono)">cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh</span>`;
+    if(dot) dot.style.display='';
+  } else {
+    if(dot) dot.style.display='none';
+    banner.style.display=u.status==='unknown'?'block':'none';
+    if(u.status==='unknown') banner.innerHTML=`<span style="color:var(--dim)">Update check unavailable (${escapeHtml(u.reason||'offline')}). You have v${escapeHtml(u.current)}.</span>`;
+  }
+}
+
+async function checkForUpdate(force){
+  try{
+    const r=await api('/update/check'+(force?'?force=1':'')); if(!r.success) return;
+    lastUpdateInfo=r.data; renderUpdateBanner();
+  }catch{}
+}
+
+function closeStatusPop(){ document.getElementById('status-pop').classList.remove('show'); }
+document.getElementById('status-chip').addEventListener('click',e=>{
+  e.stopPropagation();
+  const pop=document.getElementById('status-pop');
+  const show=!pop.classList.contains('show');
+  pop.classList.toggle('show',show);
+  if(show){ renderStatusPop(); checkForUpdate(false); }
+});
+document.addEventListener('click',e=>{
+  const pop=document.getElementById('status-pop');
+  if(pop.classList.contains('show') && !pop.contains(e.target) && !document.getElementById('status-chip').contains(e.target)) pop.classList.remove('show');
+});
+document.getElementById('sp-recheck').addEventListener('click',e=>{ e.stopPropagation(); setEl('sp-update-banner','Checking…'); document.getElementById('sp-update-banner').style.display='block'; checkForUpdate(true); });
+
+// -- Job result ----------------------------------------------------------------
+function selectJob(id){
+  selectedJobId=id;
+  document.querySelectorAll('.job-item').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
+  showJobResult(id);
+}
+
+async function showJobResult(id){
+  try{
+    const r=await api(`/jobs/${id}`); if(!r.success) return;
+    const j=r.data;
+    document.getElementById('result-title').textContent=`${j.status.toUpperCase()} · ${(j.goal||'').substring(0,55)}`;
+    const body=document.getElementById('result-body');
+    if(j.status==='running'||j.status==='queued'){
+      body.textContent=j.status==='running'
+        ?'Mission is running — the colony is working...\n\nWatch Colony Events for live updates.'
+        :'Job is queued, waiting for a worker...';
+    } else if(j.mission_id){
+      await renderMissionReport(j.mission_id, body);
+    } else if(j.error){
+      body.textContent='ERROR:\n'+j.error;
+    } else if(j.result){
+      body.textContent=j.result;
+    } else {
+      body.textContent='No result recorded.';
+    }
+    const statusBar=document.getElementById('result-status-bar');
+    const start=j.started_at?fmtTime(j.started_at):'—',end=j.finished_at?fmtTime(j.finished_at):'—';
+    statusBar.innerHTML=`<span>Job: <span style="font-family:var(--mono)">${id.substring(0,8)}…</span></span><span>Started: ${start}</span><span>Finished: ${end}</span>`;
+    document.getElementById('result-overlay').classList.add('show');
+  }catch{}
+}
+
+// -- Mission report: the readable "what actually happened" view ----------------
+const MR_STATUS={complete:['? Completed','var(--green)'],partial:['? Completed with gaps','var(--queen)'],
+  failed:['? Failed','var(--red)'],running:['? Running','var(--blue)']};
+const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'—',ready:'—'};
+const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
+  applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
+
+async function renderMissionReport(missionId, body){
+  const r=await api(`/missions/${encodeURIComponent(missionId)}/report`);
+  if(!r.success){ body.textContent='Could not load the mission report: '+(r.message||'unknown error'); return; }
+  const rep=r.data, tc=rep.task_counts||{};
+  const [stLabel,stColor]=MR_STATUS[rep.status]||[rep.status,'var(--text)'];
+  const sec=(title,inner)=>`<div style="margin-bottom:16px"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">${title}</div>${inner}</div>`;
+  let html='';
+
+  // Mission-level outcome — separate from the tasks that produced it.
+  html+=sec('Mission',
+    `<div style="white-space:normal;line-height:1.6"><span style="color:${stColor};font-weight:600">${stLabel}</span>`+
+    `<span style="color:var(--dim)"> · score ${rep.success_score!=null?Number(rep.success_score).toFixed(2):'—'}`+
+    ` · ${tc.complete||0}/${tc.total||0} tasks completed${tc.failed?` · <span style="color:var(--red)">${tc.failed} failed</span>`:''}${tc.skipped?` · ${tc.skipped} skipped`:''}</span>`+
+    `<div style="margin-top:6px;color:var(--text)">${escapeHtml(rep.goal||'')}</div></div>`);
+
+  html+=sec('Final output (mission result)',
+    `<div style="background:var(--panel2,rgba(255,255,255,.03));border:1px solid var(--border);border-radius:6px;padding:10px 12px;">${escapeHtml(rep.final_output||'No mission-level output was recorded.')}</div>`);
+
+  // Tangible changes — the part that answers "did anything actually happen?"
+  const patches=rep.patches||[];
+  if(patches.length){
+    const pcnt=rep.patch_counts||{};
+    const countLine=`<div style="white-space:normal;font-size:11px;color:var(--dim);margin-bottom:6px">`+
+      `${pcnt.total||patches.length} proposed · ${pcnt.pending||0} pending · ${pcnt.approved||0} approved · ${pcnt.applied||0} applied · ${pcnt.rejected||0} rejected${pcnt.failed?` · <span style="color:var(--red)">${pcnt.failed} failed</span>`:''}`+
+      ` · <a href="#" data-onclick="openPatches({mission_id:'${rep.id}'});return false;" style="color:var(--blue)">Open in Changes →</a></div>`;
+    html+=sec(`Tangible changes proposed (${patches.length})`,
+      countLine+
+      patches.map(p=>{
+        const [pl,pc]=MR_PATCH_STATE[p.status]||[p.status,'var(--text)'];
+        return `<div style="white-space:normal;margin-bottom:6px;line-height:1.5">`+
+          `<a href="#" data-onclick="openPatches({mission_id:'${rep.id}',file:'${escapeHtml(p.file_path||'')}'});return false;" style="font-family:var(--mono);color:var(--blue)">${escapeHtml(p.file_path||'?')}</a> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
+          ` — <span style="color:${pc}">${pl}</span>`+
+          `<div style="color:var(--dim);font-size:11px">${escapeHtml(p.reason||'')}</div>`+
+          (p.last_error?`<div style="color:var(--red);font-size:11px">Apply error: ${escapeHtml(p.last_error)}</div>`:'')+`</div>`;
+      }).join('')+
+      (rep.pending_approvals?`<div style="white-space:normal;color:var(--queen);font-size:11px;margin-top:4px">⚠ ${rep.pending_approvals} change(s) are waiting for review · open the <b>Changes</b> to inspect &amp; apply. Nothing touches disk until you approve &amp; apply.</div>`:''));
+  } else {
+    html+=sec('Tangible changes proposed',
+      `<div style="white-space:normal;color:var(--dim)">None — this mission produced text output only. File changes only happen when the coder proposes patches <i>and</i> they are approved &amp; applied.</div>`);
+  }
+  if(rep.sources_saved) html+=sec('Research', `<div style="white-space:normal;color:var(--dim)">${rep.sources_saved} web source(s) saved.</div>`);
+
+  // v1.8.23: gated auto-apply outcome · answers "did the autonomous change actually stick?"
+  if(rep.auto_apply){
+    const aa=rep.auto_apply, kept=!!aa.kept;
+    const col=kept?'var(--green)':(aa.outcome==='reverted'?'var(--red)':'var(--queen)');
+    const label={verified:'Kept (verified)',kept_unverified:'Kept (no verify)',reverted:'Reverted after failed verify',
+      apply_failed:'Apply failed',git_failed:'Kept, git commit failed',skipped:'Skipped',started:'In progress'}[aa.outcome]||aa.outcome;
+    html+=sec('Autonomous auto-apply',
+      `<div style="white-space:normal;line-height:1.5"><span style="color:${col};font-weight:600">${label}</span>`+
+      `<div style="color:var(--dim);font-size:11px;margin-top:3px">${escapeHtml(aa.message||'')}</div></div>`);
+  }
+
+  // Autonomy linkage — which objective drove this mission, and what it spawned.
+  if(rep.autonomy_run){
+    const ar=rep.autonomy_run;
+    html+=sec('Autonomous run',
+      `<div style="white-space:normal;line-height:1.6;color:var(--dim)">Driven by objective <b style="color:var(--text)">${escapeHtml(ar.objective_title||ar.objective_id||'?')}</b>`+
+      `${ar.follow_ups_created?` · spawned ${ar.follow_ups_created} follow-up objective(s)`:''}</div>`);
+  }
+  const created=rep.created_objectives||[];
+  if(created.length){
+    html+=sec(`Objectives created by this mission (${created.length})`,
+      created.map(o=>`<div style="white-space:normal;margin-bottom:5px;line-height:1.5">`+
+        `<b>${escapeHtml(o.title||'')}</b> <span class="obj-status ${o.status}">${o.status}</span> <span style="color:var(--dim)">(priority ${o.priority})</span>`+
+        `<div style="color:var(--dim);font-size:11px">${escapeHtml(o.charter||'')}</div></div>`).join('')+
+      `<div style="white-space:normal;color:var(--dim);font-size:11px;margin-top:4px">These now live in the <b>Automation</b> backlog.</div>`);
+  }
+
+  // Problems — surfaced instead of buried (incl. unparseable coder proposals).
+  const problems=rep.problems||[];
+  if(problems.length){
+    html+=sec(`Problems (${problems.length})`,
+      problems.map(p=>{
+        const friendly=p.type==='patch_proposal_parse_failed'
+          ?'The coder produced a change proposal the parser could not read — that work never reached the approval queue.'
+          :escapeHtml(p.message||p.type);
+        return `<div style="white-space:normal;color:var(--red);font-size:11px;margin-bottom:4px">[${escapeHtml(p.type)}] ${friendly}</div>`;
+      }).join(''));
+  }
+
+  // Per-task breakdown — each task's own readable output, expandable.
+  const tasks=rep.tasks||[];
+  html+=sec(`Tasks (${tasks.length})`,
+    tasks.map((t,i)=>{
+      const icon=MR_TASK_ICON[t.status]||'·';
+      const color=t.status==='complete'?'var(--green)':t.status==='failed'?'var(--red)':t.status==='skipped'?'var(--dim)':'var(--queen)';
+      const reason=t.failure_reason||t.skipped_reason||t.blocked_reason;
+      const elapsed=t.elapsed_seconds!=null?` · ${Number(t.elapsed_seconds).toFixed(1)}s`:'';
+      return `<details style="white-space:normal;margin-bottom:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px">`+
+        `<summary style="cursor:pointer;line-height:1.5"><span style="color:${color}">${icon}</span> `+
+        `<b>${i+1}. ${escapeHtml(t.title||'')}</b> <span style="color:var(--dim)">— ${escapeHtml(t.ant||'')} ant${elapsed}</span></summary>`+
+        `<div style="margin-top:6px;white-space:pre-wrap;font-size:11px;color:var(--text)">${escapeHtml(t.readable_output||'(no output recorded)')}</div>`+
+        (reason?`<div style="margin-top:4px;color:var(--red);font-size:11px;white-space:pre-wrap">Why: ${escapeHtml(reason)}</div>`:'')+
+        `</details>`;
+    }).join('')||'<div style="color:var(--dim)">No tasks recorded.</div>');
+
+  // v1.8.23 (Phase 6): task DAG + timeline, lazy-loaded on demand.
+  if(tasks.length){
+    const fid='mrflow-'+missionId.replace(/[^a-zA-Z0-9]/g,'');
+    html+=sec('Task Flow (DAG + timeline)',
+      `<div id="${fid}"><button class="hud-act" data-onclick="loadTaskFlow('${missionId}','${fid}')">◈ Show task DAG &amp; timeline</button></div>`);
+  }
+
+  body.innerHTML=html;
+}
+
+// -- Mission Timeline + Task DAG viewer (v1.8.23, UI Phase 6) ------------------
+async function loadTaskFlow(missionId, containerId){
+  const box=document.getElementById(containerId); if(!box) return;
+  box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Building flow…</div>';
+  try{
+    const r=await api('/missions/'+encodeURIComponent(missionId)+'/graph'); if(!r.success) throw new Error(r.message);
+    const nodes=(r.data&&r.data.nodes)||[];
+    if(!nodes.length){ box.innerHTML='<div class="hud-state">No task graph for this mission.</div>'; return; }
+    TASKFLOW[containerId]={nodes, byId:Object.fromEntries(nodes.map(n=>[n.id,n]))};
+    box.innerHTML=
+      `<div class="mrflow-tabs">
+        <button class="hud-act primary" data-v="dag" data-onclick="switchFlow('${containerId}','dag',this)">DAG</button>
+        <button class="hud-act" data-v="timeline" data-onclick="switchFlow('${containerId}','timeline',this)">Timeline</button>
+       </div>
+       <div class="mrflow-view" id="${containerId}-view"></div>
+       <div class="mrflow-drawer" id="${containerId}-drawer"></div>`;
+    renderFlowView(containerId,'dag');
+  }catch(e){ box.innerHTML=`<div class="hud-state err">Could not build flow: ${escapeHtml(e.message)}</div>`; }
+}
+const TASKFLOW={};
+function switchFlow(cid,view,btn){
+  if(btn){ btn.parentElement.querySelectorAll('.hud-act').forEach(b=>b.classList.remove('primary')); btn.classList.add('primary'); }
+  renderFlowView(cid,view);
+}
+const FLOW_STATUS_COL={complete:'var(--green)',failed:'var(--red)',running:'var(--hud-cyan)',skipped:'var(--dim)',blocked:'var(--amber)',ready:'var(--amber)',pending:'var(--amber)'};
+function renderFlowView(cid,view){
+  const v=document.getElementById(cid+'-view'), data=TASKFLOW[cid]; if(!v||!data) return;
+  v.innerHTML = view==='timeline' ? flowTimeline(cid,data) : flowDag(cid,data);
+}
+function flowDag(cid,data){
+  const {nodes,byId}=data;
+  // Longest-path level (column) per node from its dependencies (memoized, cycle-safe).
+  const lvl={}, seen={};
+  function level(id){
+    if(lvl[id]!=null) return lvl[id];
+    if(seen[id]) return 0; seen[id]=1;
+    const n=byId[id]; const deps=(n&&(n.dependency_ids||n.depends_on))||[];
+    let m=0; deps.forEach(d=>{ if(byId[d]) m=Math.max(m,level(d)+1); });
+    return lvl[id]=m;
+  }
+  nodes.forEach(n=>level(n.id));
+  const cols={}; nodes.forEach(n=>{ const L=lvl[n.id]||0; (cols[L]=cols[L]||[]).push(n); });
+  const colW=150, rowH=42, padX=14, padY=14, boxW=124, boxH=28;
+  const maxRow=Math.max(1,...Object.values(cols).map(c=>c.length));
+  const width=padX*2+ (Math.max(1,Object.keys(cols).length))*colW;
+  const height=padY*2+ maxRow*rowH;
+  const pos={};
+  Object.keys(cols).forEach(L=>{ cols[L].forEach((n,i)=>{ pos[n.id]={x:padX+L*colW, y:padY+i*rowH}; }); });
+  let edges='';
+  nodes.forEach(n=>{ ((n.dependency_ids||n.depends_on)||[]).forEach(d=>{
+    if(!pos[d]||!pos[n.id]) return;
+    const a=pos[d], b=pos[n.id];
+    const x1=a.x+boxW, y1=a.y+boxH/2, x2=b.x, y2=b.y+boxH/2;
+    const fail=(byId[d]&&byId[d].status==='failed')||n.status==='failed';
+    edges+=`<path class="dag-edge ${fail?'fail':''}" d="M${x1},${y1} C${x1+30},${y1} ${x2-30},${y2} ${x2},${y2}"/>`;
+  }); });
+  const boxes=nodes.map(n=>{
+    const p=pos[n.id], st=(n.status||'pending');
+    const label=escapeHtml((n.title||n.assigned_ant||'task').slice(0,20));
+    return `<g class="dag-node ${st}" data-onclick="flowSelect('${cid}','${n.id}')" style="color:${FLOW_STATUS_COL[st]||'var(--amber)'}">
+      <rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}"/>
+      <text x="${p.x+7}" y="${p.y+12}">${label}</text>
+      <text x="${p.x+7}" y="${p.y+23}" style="fill:var(--dim);font-size:8px">${escapeHtml(n.assigned_ant||'')} · ${escapeHtml(st)}</text>
+    </g>`;
+  }).join('');
+  return `<div class="mrflow-dag"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${edges}${boxes}</svg></div>`;
+}
+function flowTimeline(cid,data){
+  const {nodes}=data;
+  const withStart=nodes.map(n=>({n,ts:Date.parse(n.started_at||n.created_at||'')||0}));
+  withStart.sort((a,b)=>a.ts-b.ts);
+  const durs=nodes.map(n=>+n.elapsed_seconds||0); const maxDur=Math.max(1,...durs);
+  const t0=Math.min(...withStart.map(x=>x.ts).filter(Boolean)); const span=Math.max(1,Math.max(...withStart.map(x=>x.ts).filter(Boolean))-t0);
+  return withStart.map(({n,ts})=>{
+    const st=(n.status||'pending'), col=FLOW_STATUS_COL[st]||'var(--amber)';
+    const dur=+n.elapsed_seconds||0;
+    const offPct = ts&&t0 ? Math.max(0,Math.min(96,(ts-t0)/span*96)) : 0;
+    const wPct = Math.max(2,Math.min(100-offPct, dur/maxDur*100));
+    return `<div class="tl-row" data-onclick="flowSelect('${cid}','${n.id}')">
+      <span class="tl-dot" style="background:${col}"></span>
+      <span class="tl-name" title="${escapeHtml(n.title||'')}">${escapeHtml(n.title||n.assigned_ant||'task')}</span>
+      <span class="tl-track"><span class="tl-bar" style="left:${offPct}%;width:${wPct}%;background:${col}"></span></span>
+      <span class="tl-dur">${dur?dur.toFixed(1)+'s':'—'}</span>
+    </div>`;
+  }).join('');
+}
+function flowSelect(cid,taskId){
+  const data=TASKFLOW[cid]; if(!data) return;
+  const n=data.byId[taskId]; if(!n) return;
+  document.querySelectorAll('#'+cid+'-view .dag-node').forEach(g=>g.classList.remove('sel'));
+  const drawer=document.getElementById(cid+'-drawer'); if(!drawer) return;
+  const reason=n.status_message||n.failure_type||'';
+  const row=(k,val)=>val?`<div style="display:flex;gap:8px;padding:1px 0"><span style="color:var(--dim);min-width:90px">${k}</span><span>${escapeHtml(String(val))}</span></div>`:'';
+  drawer.innerHTML=
+    `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(n.title||'task')}</div>`+
+    row('Ant', n.assigned_ant)+row('Worker', n.assigned_worker)+row('Type', n.task_type)+row('Status', n.status)+
+    row('Elapsed', n.elapsed_seconds!=null?(+n.elapsed_seconds).toFixed(1)+'s':'')+
+    row('Attempts', (n.attempt_count!=null?`${n.attempt_count}/${n.max_attempts??1}`:''))+
+    (reason?`<div style="color:${n.status==='failed'?'var(--red)':'var(--muted)'};margin-top:4px">${escapeHtml(reason)}</div>`:'');
+  drawer.classList.add('show');
+}
+
+// -- Results page: expandable mission reports ---------------------------------
+let resultsMissions=[], resultsPendingExpand=null;
+
+PAGE_ENTER['results']=()=>loadResults();
+document.getElementById('results-refresh').addEventListener('click',()=>loadResults());
+document.getElementById('results-filter').addEventListener('change',()=>renderResultsList());
+
+async function loadResults(){
+  try{
+    const r=await api('/missions/json?limit=100'); if(!r.success) throw new Error(r.message);
+    resultsMissions=r.data||[];
+    renderResultsList();
+  }catch(e){ document.getElementById('results-list').innerHTML=`<div style="color:var(--red);padding:20px;">Error loading missions: ${escapeHtml(e.message)}</div>`; }
+}
+
+function renderResultsList(){
+  const filter=document.getElementById('results-filter').value;
+  const list=document.getElementById('results-list');
+  const rows=resultsMissions.filter(m=>!filter||m.status===filter);
+  if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No missions match.</div>'; return; }
+  list.innerHTML=rows.map(m=>{
+    const [stLabel,stColor]=MR_STATUS[m.status]||[m.status,'var(--text)'];
+    const score=m.success_score!=null?Number(m.success_score).toFixed(2):'—';
+    return `<details class="card" style="margin-bottom:8px;padding:0;" data-mission="${m.id}" data-ontoggle="onResultToggle(this)">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;user-select:none;">
+        <span style="color:${stColor};font-weight:600;white-space:nowrap;font-size:11px;">${stLabel}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${escapeHtml(m.goal||'')}</span>
+        <span style="color:var(--dim);font-size:10px;font-family:var(--mono);white-space:nowrap;">score ${score} · ${fmtTime(m.saved_at||m.created_at)}</span>
+        <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+      </summary>
+      <div class="mr-body" style="padding:4px 16px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;line-height:1.7;white-space:pre-wrap;">
+        <div style="color:var(--dim);padding:8px 0;">Loading report…</div>
+      </div>
+    </details>`;
+  }).join('');
+  if(resultsPendingExpand){
+    const target=list.querySelector(`details[data-mission="${resultsPendingExpand}"]`);
+    resultsPendingExpand=null;
+    if(target){ target.open=true; target.scrollIntoView({behavior:'smooth',block:'start'}); }
+  }
+}
+
+async function onResultToggle(det){
+  const caret=det.querySelector('.box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open||det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  await renderMissionReport(det.dataset.mission, det.querySelector('.mr-body'));
+}
+
+// Deep link: open the Results page with one mission expanded (View Result buttons land here).
+function openResults(missionId){
+  resultsPendingExpand=missionId||null;
+  showPage('results');
+}
+
+// -- Patch Center (v1.8.23) ---------------------------------------------------
+function pcToast(msg,ok=true){
+  let el=document.getElementById('pc-toast');
+  if(!el){ el=document.createElement('div'); el.id='pc-toast';
+    el.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;padding:10px 16px;border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:340px;';
+    document.body.appendChild(el); }
+  el.style.background=ok?'rgba(16,185,129,.95)':'rgba(239,68,68,.95)'; el.style.color='#fff';
+  el.textContent=msg; el.style.opacity='1';
+  clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0'; },3200);
+}
+let pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:''};
+let pcPending=null; // filter to apply on next entry (deep-link from Results/Autonomy/Objectives)
+
+// Compact "Patches: 2 applied, 1 pending" cell used in the Autonomy runs table and elsewhere.
+// Clicking opens the Patch Center filtered to the given mission or objective.
+function patchSummaryText(c){
+  if(!c||!c.total) return 'Patches: 0';
+  const parts=[];
+  if(c.applied) parts.push(`${c.applied} applied`);
+  if(c.pending||c.proposed) parts.push(`${c.pending||c.proposed} pending`);
+  if(c.approved) parts.push(`${c.approved} approved`);
+  if(c.rejected) parts.push(`${c.rejected} rejected`);
+  if(c.failed) parts.push(`${c.failed} failed`);
+  return 'Patches: '+(parts.join(', ')||c.total);
+}
+function patchCellHtml(counts,missionId,objectiveId){
+  const c=counts||{}; const txt=patchSummaryText(c);
+  if(!c.total) return `<span style="color:var(--dim)">${txt}</span>`;
+  const filter=objectiveId?`{objective_id:'${objectiveId}'}`:(missionId?`{mission_id:'${missionId}'}`:'{}');
+  const color=c.failed?'var(--red)':(c.applied?'var(--green)':'var(--queen)');
+  return `<a href="#" data-onclick="openPatches(${filter});return false;" style="color:${color};text-decoration:none;" title="Open in Patch Center">${txt}</a>`;
+}
+
+PAGE_ENTER['patches']=()=>{ if(ROLE==='admin') loadPatches(); };
+
+function pcBind(){
+  const s=document.getElementById('pc-filter-status'), rk=document.getElementById('pc-filter-risk');
+  const f=document.getElementById('pc-filter-file'), m=document.getElementById('pc-filter-mission'), o=document.getElementById('pc-filter-objective');
+  if(!s) return;
+  [s,rk].forEach(el=>el.addEventListener('change',()=>{ syncPcFilters(); loadPatches(); }));
+  let t=null;
+  [f,m,o].forEach(el=>el.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ syncPcFilters(); loadPatches(); },350); }));
+  document.getElementById('patches-refresh').addEventListener('click',loadPatches);
+  document.getElementById('pc-filter-clear').addEventListener('click',()=>{
+    pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:''}; applyPcFiltersToInputs(); loadPatches();
+  });
+  const grp=document.getElementById('pc-group');
+  if(grp){
+    grp.value=pcGroup;
+    if(grp.value!==pcGroup){ pcGroup=''; localStorage.removeItem('pc-group'); } // stale stored value
+    grp.addEventListener('change',()=>{ pcGroup=grp.value; localStorage.setItem('pc-group',pcGroup); loadPatches(); });
+  }
+}
+function syncPcFilters(){
+  pcFilters.status=document.getElementById('pc-filter-status').value;
+  pcFilters.risk=document.getElementById('pc-filter-risk').value;
+  pcFilters.file=document.getElementById('pc-filter-file').value.trim();
+  pcFilters.mission_id=document.getElementById('pc-filter-mission').value.trim();
+  pcFilters.objective_id=document.getElementById('pc-filter-objective').value.trim();
+}
+function applyPcFiltersToInputs(){
+  document.getElementById('pc-filter-status').value=pcFilters.status||'';
+  document.getElementById('pc-filter-risk').value=pcFilters.risk||'';
+  document.getElementById('pc-filter-file').value=pcFilters.file||'';
+  document.getElementById('pc-filter-mission').value=pcFilters.mission_id||'';
+  document.getElementById('pc-filter-objective').value=pcFilters.objective_id||'';
+}
+// Deep-link entry: openPatches({mission_id:'…'}) or {objective_id} or {status}.
+function openPatches(filter){
+  pcFilters={status:'',risk:'',file:'',mission_id:'',objective_id:'',...(filter||{})};
+  pcPending=true;
+  showPage('patches');
+}
+async function loadPatches(){
+  const list=document.getElementById('patches-list'); if(!list) return;
+  if(pcPending){ applyPcFiltersToInputs(); pcPending=null; } else { syncPcFilters(); }
+  const qs=new URLSearchParams();
+  if(pcFilters.status) qs.set('status',pcFilters.status);
+  if(pcFilters.risk) qs.set('risk',pcFilters.risk);
+  if(pcFilters.file) qs.set('file',pcFilters.file);
+  if(pcFilters.mission_id) qs.set('mission_id',pcFilters.mission_id);
+  if(pcFilters.objective_id) qs.set('objective_id',pcFilters.objective_id);
+  qs.set('limit','300');
+  try{
+    const r=await api('/patches?'+qs.toString()); if(!r.success) throw new Error(r.message);
+    const rows=r.data||[];
+    renderPcSummary(rows);
+    renderPatchList(rows);
+  }catch(e){ list.innerHTML=`<div style="color:var(--red);padding:20px;">Error loading patches: ${escapeHtml(e.message)}</div>`; }
+}
+function renderPcSummary(rows){
+  const box=document.getElementById('pc-summary');
+  const by={};(rows||[]).forEach(p=>{ by[p.status]=(by[p.status]||0)+1; });
+  const chip=(label,key)=>`<span class="pc-chip">${label} <b>${by[key]||0}</b></span>`;
+  box.innerHTML=`<span class="pc-chip">Total <b>${rows.length}</b></span>`+
+    chip('Pending','proposed')+chip('Approved','approved')+chip('Applied','applied')+
+    chip('Rejected','rejected')+chip('Failed','failed')+
+    (by['superseded']?chip('Superseded','superseded'):'');
+}
+function renderPatchCard(p){
+  const badge=`<span class="pc-badge ${p.status}">${escapeHtml(p.status_label||p.status)}</span>`;
+  const risk=`<span class="pc-risk ${p.risk||'unknown'}">${escapeHtml(p.risk||'unknown')}</span>`;
+  const src=p.objective_id?`obj ${escapeHtml(String(p.objective_id).slice(0,8))}`:(p.mission_id?`mission ${escapeHtml(String(p.mission_id).slice(0,8))}`:'manual');
+  return `<details class="card" style="margin-bottom:8px;padding:0;" data-patch="${p.id}" data-ontoggle="onPatchToggle(this)">
+    <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:11px 14px;user-select:none;">
+      ${badge}${risk}
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;">${escapeHtml(p.file_path||'?')}</span>
+      <span style="color:var(--dim);font-size:10px;white-space:nowrap;">${escapeHtml(p.change_type||'modify')} · ${escapeHtml(src)} · ${fmtTime(p.created_at)||''}</span>
+      <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+    </summary>
+    <div class="pc-body" style="padding:6px 14px 14px;border-top:1px solid var(--border);">
+      <div style="color:var(--muted);font-size:11px;padding:4px 0;">${escapeHtml(p.reason||'')}</div>
+      <div class="pc-detail" style="color:var(--dim);font-size:11px;">Expand to load the diff…</div>
+    </div>
+  </details>`;
+}
+// UI Phase 7 (v1.8.24): optional grouping by status / risk / file / mission / objective.
+// Grouping is a pure client-side re-render of the same fetched rows — filters, cards,
+// diffs, and approve/reject/apply behavior are unchanged.
+let pcGroup=localStorage.getItem('pc-group')||'';
+const PC_GROUPERS={
+  status:{ key:p=>p.status||'unknown', label:k=>k, order:['proposed','pending','approved','applied','rejected','failed','superseded','unknown'] },
+  risk:{ key:p=>p.risk||'unknown', label:k=>`${k} risk`, order:['high','medium','low','unknown'] },
+  file:{ key:p=>p.file_path||'(no file)', label:k=>k, order:null },
+  mission:{ key:p=>p.mission_id||'(manual)', label:k=>k==='(manual)'?k:`mission ${k.slice(0,12)}`, order:null },
+  objective:{ key:p=>p.objective_id||'(no objective)', label:k=>k==='(no objective)'?k:`objective ${String(k).slice(0,12)}`, order:null },
+};
+function renderPatchList(rows){
+  const list=document.getElementById('patches-list');
+  if(!rows.length){ list.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center;">No patch proposals match these filters.</div>'; return; }
+  const g=PC_GROUPERS[pcGroup];
+  if(!g){ list.innerHTML=rows.map(renderPatchCard).join(''); return; }
+  const groups=new Map();
+  rows.forEach(p=>{ const k=g.key(p); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); });
+  let keys=[...groups.keys()];
+  if(g.order) keys.sort((a,b)=>{ const ia=g.order.indexOf(a), ib=g.order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
+  else keys.sort((a,b)=>groups.get(b).length-groups.get(a).length || String(a).localeCompare(String(b)));
+  list.innerHTML=keys.map(k=>{
+    const items=groups.get(k);
+    const by={}; items.forEach(p=>{ by[p.status]=(by[p.status]||0)+1; });
+    const chips=Object.keys(by).map(s=>`<span class="pc-chip">${escapeHtml(s)} <b>${by[s]}</b></span>`).join('');
+    return `<details class="pc-group-sec" open>
+      <summary><span class="pc-group-name" title="${escapeHtml(String(k))}">${escapeHtml(g.label(String(k)))}</span><span class="pc-group-count">${items.length} patch${items.length===1?'':'es'}</span><span style="flex:1"></span>${chips}</summary>
+      <div class="pc-group-body">${items.map(renderPatchCard).join('')}</div>
+    </details>`;
+  }).join('');
+}
+const pcDetailCache={}; // patchId -> detail (avoids inlining patch content into onclick handlers)
+async function onPatchToggle(det){
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.pc-detail');
+  const pid=det.dataset.patch;
+  try{
+    const r=await api('/patches/'+encodeURIComponent(pid)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    pcDetailCache[pid]=d;
+    const meta=(k,v)=>v?`<div style="display:flex;gap:8px;padding:1px 0;"><span style="color:var(--dim);min-width:110px;">${k}</span><span style="word-break:break-all;">${escapeHtml(String(v))}</span></div>`:'';
+    const canApprove=d.approval_id && d.approval_status==='pending';
+    // v1.8.24: a pending patch with NO approval record can now be acted on — the backend
+    // creates the missing approval record first, then runs the normal approve/reject path.
+    const orphanPending=d.status==='proposed' && !d.approval_id;
+    // Apply is available once the patch OR its approval record is approved (and not yet applied).
+    // Honoring approval_status also covers patches approved before the backend started flipping the
+    // patch status, so already-approved-but-still-"proposed" rows are appliable too.
+    const canApply=(d.status==='approved'||d.approval_status==='approved') && d.approval_id && d.status!=='applied';
+    const canVerify=d.status==='proposed';
+    const canEdit=d.status==='proposed'||d.status==='approved';
+    const actions=`<div class="pc-actions">
+      ${d.mission_id?`<button class="pc-act" data-onclick="openResults('${d.mission_id}')">View Mission</button>`:''}
+      ${canApprove?`<button class="pc-act approve" data-onclick="pcApprove('${d.approval_id}','${pid}')">✓ Approve</button>`:''}
+      ${orphanPending?`<button class="pc-act approve" data-onclick="pcApproveDirect('${pid}')" title="Creates the missing approval record, then approves">✓ Approve</button>`:''}
+      ${canApprove?`<button class="pc-act reject" data-onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
+      ${orphanPending?`<button class="pc-act reject" data-onclick="pcRejectDirect('${pid}')">✕ Reject</button>`:''}
+      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">⚖ Verify &amp; Auto-approve</button>`:''}
+      ${canEdit?`<button class="pc-act" data-onclick="pcOpenEdit('${pid}')" title="Edit this patch's content and offer it as an alternative proposal (goes through the same approval gate)">✎ Edit as alternative</button>`:''}
+      ${canApply?`<button class="pc-act apply" data-onclick="pcApply('${pid}')">▶ Apply</button>`:''}
+    </div>
+    <div class="pc-editbox" id="pc-edit-${pid}" style="display:none;"></div>
+    <div class="pc-verifyout" id="pc-verifyout-${pid}" style="display:none;"></div>`;
+    box.innerHTML=
+      meta('Status', (d.status_label||d.status)+(d.approval_status?` (approval ${d.approval_status})`:''))+
+      meta('Risk', (d.risk||'unknown')+(d.risk_raw&&d.risk_raw!==d.risk?` — "${d.risk_raw}"`:''))+
+      meta('Objective', d.objective_title||d.objective_id)+
+      meta('Mission goal', d.mission_goal)+
+      meta('Applied at', d.applied_at)+
+      (d.last_error?`<div style="color:var(--red);font-size:11px;margin:4px 0;">Apply error: ${escapeHtml(d.last_error)}</div>`:'')+
+      renderDiff(d.old_content, d.new_content, d.change_type)+
+      actions;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load patch: ${escapeHtml(e.message)}</span>`; }
+}
+// Minimal LCS-based unified diff — removed lines red, added lines green, context muted.
+function renderDiff(oldC, newC, changeType){
+  const a=(oldC==null?'':String(oldC)).split('\n');
+  const b=(newC==null?'':String(newC)).split('\n');
+  if(oldC==null && newC!=null){ // pure add
+    return `<div class="pc-diff">${b.map((l,i)=>diffLine('add',i+1,l)).join('')}</div>`;
+  }
+  if(newC==null){ return `<div class="pc-diff"><div class="dl ctx" style="padding:6px 8px;">(no new content — ${escapeHtml(changeType||'delete')})</div></div>`; }
+  // LCS table (bounded to keep it cheap on large files).
+  const N=Math.min(a.length,1200), M=Math.min(b.length,1200);
+  const dp=Array.from({length:N+1},()=>new Uint16Array(M+1));
+  for(let i=N-1;i>=0;i--)for(let j=M-1;j>=0;j--)dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  let i=0,j=0,out='',ln=0;
+  while(i<N&&j<M){
+    if(a[i]===b[j]){ out+=diffLine('ctx',++ln,a[i]); i++;j++; }
+    else if(dp[i+1][j]>=dp[i][j+1]){ out+=diffLine('del','-',a[i]); i++; }
+    else { out+=diffLine('add',++ln,b[j]); j++; }
+  }
+  while(i<N){ out+=diffLine('del','-',a[i++]); }
+  while(j<M){ out+=diffLine('add',++ln,b[j++]); }
+  if(a.length>1200||b.length>1200) out+=`<div class="dl ctx" style="padding:4px 8px;color:var(--queen)">…diff truncated (large file) — full content applies on Apply.</div>`;
+  return `<div class="pc-diff">${out}</div>`;
+}
+function diffLine(cls,gutter,text){
+  const sign=cls==='add'?'+':cls==='del'?'-':' ';
+  return `<div class="dl ${cls}"><span class="gutter">${gutter}</span><span>${sign} ${escapeHtml(text)}</span></div>`;
+}
+async function pcApprove(approvalId,patchId){
+  try{ const res=await fetch(url('/approve/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch approved — apply it below to write it to disk.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+}
+async function pcReject(approvalId,patchId){
+  if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  try{ const res=await fetch(url('/reject/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+}
+async function pcApply(patchId){
+  const d=pcDetailCache[patchId]; if(!d){ pcToast('Reopen the patch and try again.',false); return; }
+  // Operator safety checks (v1.8.23): warn before writing to disk.
+  const warns=[];
+  if((d.risk==='medium'||d.risk==='high')) warns.push(`risk is ${d.risk.toUpperCase()}`);
+  if(!d.old_content && d.change_type!=='add') warns.push('old content is missing/partial (context may be incomplete)');
+  if(!d.has_backup) warns.push('no pre-apply backup recorded yet');
+  const msg='Apply this patch to '+(d.file_path||'the file')+'?\n\n'+
+    (warns.length?('⚠ '+warns.join('\n⚠ ')+'\n\n'):'')+
+    'This writes to disk. A backup is taken and a failed build auto-rolls back.';
+  if(!await uiConfirm(msg)) return;
+  try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    const txt=await res.text();
+    if(!res.ok){
+      // v1.10.0: surface the server's reason instead of a bare HTTP code, and give the operator
+      // the actual next step when the apply capability gate is off.
+      let msg='HTTP '+res.status;
+      try{ const j=JSON.parse(txt); if(j&&j.message) msg=j.message; }catch(e2){}
+      if(res.status===403&&/apply_patch|disabled/i.test(msg)) msg+=' → enable "Patch application" in Settings, then retry.';
+      throw new Error(msg);
+    }
+    pcToast('Apply requested — see result in the patch row.'); loadPatches();
+  }catch(e){ pcToast('Apply failed: '+e.message,false); }
+}
+// -- Patch Center 2.0 (v1.8.24): approve/reject by patch id, verify, edit-as-alternative --------
+async function pcApproveDirect(patchId){
+  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/approve'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Approval record created and patch approved — apply it to write to disk.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+}
+async function pcRejectDirect(patchId){
+  if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
+  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/reject'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+}
+async function pcVerify(patchId){
+  const btn=document.getElementById('pc-verify-'+patchId);
+  const out=document.getElementById('pc-verifyout-'+patchId);
+  if(btn){ btn.disabled=true; btn.textContent='⚖ Verifying… (build+test)'; }
+  if(out){ out.style.display='block'; out.innerHTML='<div style="color:var(--dim);font-size:11px;padding:6px 0;">Running unbiased verification — the patch is applied with a backup, the verify command runs, and the workspace is always restored. This can take a few minutes.</div>'; }
+  try{
+    const r=await api('/patches/'+encodeURIComponent(patchId)+'/verify','POST');
+    if(!r.success) throw new Error(r.message||'verify endpoint error');
+    const d=r.data||{};
+    const tail=(d.output_tail||'').trim();
+    if(d.verified){
+      pcToast('Verification PASSED — patch auto-approved. Apply is still manual.');
+      if(out) out.innerHTML=`<div style="color:var(--green);font-size:11px;padding:4px 0;">✓ Verify green (exit ${d.exit_code}, ${d.seconds}s) — auto-approved.</div>`+(tail?`<pre class="pc-verifytail">${escapeHtml(tail)}</pre>`:'');
+    }else{
+      pcToast('Verification FAILED — patch stays pending. Workspace restored.',false);
+      if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;padding:4px 0;">✕ Verify failed (${d.timed_out?'timed out':'exit '+d.exit_code}${d.seconds?', '+d.seconds+'s':''})${d.error?' — '+escapeHtml(d.error):''}. Patch left pending; workspace restored.</div>`+(tail?`<pre class="pc-verifytail">${escapeHtml(tail)}</pre>`:'');
+    }
+    loadPatches._dirty=true;
+  }catch(e){
+    pcToast('Verify failed: '+e.message,false);
+    if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;">Verify error: ${escapeHtml(e.message)}</div>`;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='⚖ Verify & Auto-approve'; }
+  }
+}
+function pcOpenEdit(patchId){
+  const box=document.getElementById('pc-edit-'+patchId); if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; return; }
+  const d=pcDetailCache[patchId]||{};
+  box.style.display='block';
+  box.innerHTML=`
+    <div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:8px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Edit the proposed content and submit it as an <b>alternative patch</b>. It becomes a new proposal behind the normal approval gate — nothing is written to disk here. The original is marked superseded.</div>
+      <textarea id="pc-edit-content-${patchId}" class="form-input" spellcheck="false" style="width:100%;min-height:220px;font-family:var(--mono);font-size:11px;white-space:pre;overflow:auto;"></textarea>
+      <input id="pc-edit-reason-${patchId}" class="form-input" placeholder="Why this alternative? (optional)" style="width:100%;margin-top:6px;font-size:11px;">
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
+        <button class="pc-act approve" data-onclick="pcSubmitAlternative('${patchId}')">Submit alternative</button>
+        <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="pc-edit-supersede-${patchId}" checked> supersede original</label>
+        <button class="pc-act" data-onclick="pcOpenEdit('${patchId}')">Cancel</button>
+      </div>
+    </div>`;
+  const ta=document.getElementById('pc-edit-content-'+patchId);
+  ta.value=(d.new_content!=null?String(d.new_content):'');
+  ta.focus();
+}
+async function pcSubmitAlternative(patchId){
+  const ta=document.getElementById('pc-edit-content-'+patchId); if(!ta) return;
+  const content=ta.value;
+  if(!content.trim()){ pcToast('Alternative content is empty.',false); return; }
+  const reason=(document.getElementById('pc-edit-reason-'+patchId)?.value||'').trim();
+  const supersede=!!document.getElementById('pc-edit-supersede-'+patchId)?.checked;
+  try{
+    const r=await api('/patches/'+encodeURIComponent(patchId)+'/alternative','POST',{new_content:content,reason:reason,supersede_original:supersede});
+    if(!r.success) throw new Error(r.message||'alternative endpoint error');
+    pcToast('Alternative patch proposed — it appears in the list as a new pending patch.');
+    loadPatches(); pollApprovals();
+  }catch(e){ pcToast('Alternative failed: '+e.message,false); }
+}
+pcBind();
+
+// -- Objective Command Board (v1.8.23, UI Phase 5) ----------------------------
+// Lanes by lifecycle. Each objective lands in exactly one lane (precedence top?down).
+const OB_LANES=[
+  ['backlog','Backlog','var(--dim)'],
+  ['active','Active','var(--hud-cyan)'],
+  ['paused','Paused','var(--amber)'],
+  ['completed','Completed','var(--green)'],
+  ['stopped','Stopped','var(--blue)'],
+  ['looping','Looping','var(--orange)'],
+  ['failed','Failed','var(--red)'],
+];
+PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin') loadObjBoard(); };
+function objLane(o){
+  const st=(o.status||'').toLowerCase();
+  const end=o.end_reason||(o.retired_code==='looping_goals'?'retired_looping':null);
+  if(end==='retired_looping'||o.retired_code==='looping_goals') return 'looping';
+  if(end==='failed') return 'failed';
+  if(st==='done'){
+    if(end==='stopped_no_followup_required'||end==='manually_stopped') return 'stopped';
+    return 'completed';
+  }
+  if(st==='paused') return 'paused';
+  if(st==='active') return 'active';
+  if(st==='pending') return 'backlog';
+  return 'active';
+}
+async function loadObjBoard(){
+  const board=document.getElementById('ob-board'); if(!board) return;
+  board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div>';
+  try{
+    const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
+    const objectives=Array.isArray(r.data)?r.data:[];
+    setEl('ob-count',`${objectives.length} objective${objectives.length===1?'':'s'}`);
+    const byLane={}; OB_LANES.forEach(([k])=>byLane[k]=[]);
+    objectives.forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
+    board.innerHTML=OB_LANES.map(([key,name,col])=>{
+      const items=byLane[key]||[];
+      const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">—</div>';
+      return `<div class="ob-lane ${key}">
+        <div class="ob-lane-hd"><span class="ln-dot" style="background:${col}"></span><span class="ln-name">${name}</span><span class="ln-count">${items.length}</span></div>
+        <div class="ob-lane-body">${cards}</div>
+      </div>`;
+    }).join('');
+  }catch(e){ board.innerHTML=`<div class="hud-state err">Error loading objectives: ${escapeHtml(e.message)}</div>`; }
+}
+function objCard(o){
+  const ema=o.success_ema==null?'—':Number(o.success_ema).toFixed(2);
+  const reason=o.end_detail||o.retired_reason||'';
+  return `<details class="ob-card" data-obj="${o.id}" data-ontoggle="onObjCardToggle(this)">
+    <summary>
+      <div class="oc-title">${escapeHtml(o.title||'(untitled)')}</div>
+      <div class="oc-meta">
+        <span class="ob-chip">runs ${o.run_count??0}${o.max_runs?'/'+o.max_runs:''}</span>
+        <span class="ob-chip" title="Success EMA">ema ${ema}</span>
+        <span class="ob-chip">prio ${o.priority??0}</span>
+      </div>
+      ${reason?`<div class="oc-reason">${escapeHtml(reason)}</div>`:''}
+    </summary>
+    <div class="oc-detail"><span style="color:var(--dim)">Expand to load runs, missions, tasks, and patches…</span></div>
+  </details>`;
+}
+async function onObjCardToggle(det){
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.oc-detail');
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    const pc=d.patch_counts||{};
+    const kv=(k,v)=>`<div class="ob-mini"><span style="color:var(--dim)">${k}:</span> ${escapeHtml(String(v??'—'))}</div>`;
+    const runs=(d.runs||[]).slice(0,6).map(x=>`<div class="ob-mini">• ${escapeHtml((x.generated_goal||'').slice(0,70))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).slice(0,6).map(x=>`<div class="ob-mini">• <a href="#" data-onclick="openResults('${x.id}');return false;" style="color:var(--blue);font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</a> ${escapeHtml((x.goal||'').slice(0,55))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div class="ob-mini" style="color:var(--dim)">none</div>';
+    const patchLine = pc.total
+      ? `${patchSummaryText(pc)} · <a href="#" data-onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Changes →</a>`
+      : 'No patches produced.';
+    box.innerHTML=
+      kv('End reason', d.end_reason_label||d.end_reason||'—')+
+      (d.end_detail?kv('Detail', d.end_detail):'')+
+      kv('Runs / Missions / Tasks', `${(d.runs||[]).length} / ${(d.missions||[]).length} / ${(d.tasks||[]).length}`)+
+      kv('Ended at', d.ended_at||d.retired_at||'—')+
+      `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Patches</div><div class="ob-mini">${patchLine}</div>`+
+      `<div class="ob-mini" style="margin-top:6px;color:var(--muted);font-weight:600">Recent runs</div>${runs}`+
+      `<div class="ob-mini" style="margin-top:4px;color:var(--muted);font-weight:600">Missions</div>${missions}`;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
+}
+document.getElementById('ob-refresh')?.addEventListener('click',loadObjBoard);
+
+// -- Ant Inspector + Performance Observatory (v1.8.23, UI Phase 8) ------------
+const ANTOBS_CASTES=[
+  ['researcher','Researcher',['model']],
+  ['web','Web',['web_search']],
+  ['file','File',['file_tools']],
+  ['coder','Coder',['file_writing','patch_application']],
+  ['builder','Builder',['model']],
+  ['verifier','Verifier',['model']],
+];
+const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'file write',patch_application:'apply',model:'model only'};
+PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin') loadAntObs(); };
+async function loadAntObs(){
+  const grid=document.getElementById('antobs-grid'); if(!grid) return;
+  grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
+  try{
+    const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
+    grid.innerHTML=ANTOBS_CASTES.map(([ant,label,gateKeys])=>{
+      const am=(typeof ANT_MAP!=='undefined'&&ANT_MAP[ant])||{color:'var(--muted)',role:ant};
+      const s=stats[ant]||{total:0,complete:0,failed:0,skipped:0,running:0,avg_seconds:0};
+      const total=s.total||0, ok=s.complete||0, fail=s.failed||0, skip=s.skipped||0;
+      const rate=total?Math.round(ok/total*100):null;
+      const rt=routes[ant]||{};
+      const gateBadges=gateKeys.map(g=>{
+        if(g==='model') return `<span class="ac-gate off">model only</span>`;
+        const on=!!gates[g];
+        return `<span class="ac-gate ${on?'on':'off'}">${ANTOBS_GATELABEL[g]||g}${on?'':' off'}</span>`;
+      }).join('');
+      const okPct=total?ok/total*100:0, failPct=total?fail/total*100:0, skipPct=total?skip/total*100:0;
+      return `<div class="ant-card" style="border-left-color:${am.color}">
+        <div class="ac-hd"><span class="ac-dot" style="color:${am.color};background:${am.color}"></span>
+          <span class="ac-name">${label}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span></div>
+        <div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
+        <div class="ac-gates">${gateBadges}</div>
+        <div class="ac-stats">
+          <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
+          <div class="ac-stat"><div class="n" style="color:var(--green)">${ok}</div><div class="l">Done</div></div>
+          <div class="ac-stat"><div class="n" style="color:${fail?'var(--red)':'var(--dim)'}">${fail}</div><div class="l">${ant==='verifier'?'Reject':'Failed'}</div></div>
+          <div class="ac-stat"><div class="n" style="color:${rate==null?'var(--dim)':(rate>=70?'var(--green)':rate>=40?'var(--queen)':'var(--red)')}">${rate==null?'—':rate+'%'}</div><div class="l">Success</div></div>
+        </div>
+        <div class="ac-bar">
+          <i style="width:${okPct}%;background:var(--green)"></i><i style="width:${failPct}%;background:var(--red)"></i><i style="width:${skipPct}%;background:var(--dim)"></i>
+        </div>
+        <div class="ac-sub">avg ${s.avg_seconds?Number(s.avg_seconds).toFixed(1)+'s':'—'}/task${skip?` · ${skip} skipped`:''}${s.running?` · ${s.running} running`:''}</div>
+        <details data-ant="${ant}" data-ontoggle="onAntRecentToggle(this)"><summary>recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
+      </div>`;
+    }).join('');
+    loadAntObsDirectory(grid);
+  }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
+}
+
+// v2.2.4: full colony directory — the six cards above are the legacy executable castes with task
+// telemetry; this section lists EVERY registry ant (roles + workers) with its purpose so any ant
+// can be inspected here, matching the colony map inspector.
+async function loadAntObsDirectory(grid){
+  try{
+    const r=await api('/colony/registry'); if(!(r&&r.success&&r.data))return;
+    const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
+    if(!roles.length)return;
+    const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
+    const html=roles.map(role=>{
+      const rid=antRoleId(role), rname=antRoleName(role);
+      let label=String(rid).toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
+      if(label==='Other')label=getRoleLabel(rname);
+      const color=getRoleColor(label==='Other'?rid:label);
+      const workers=antWorkers(role);
+      return `<div class="ant-card" style="border-left-color:${color}">
+        <div class="ac-hd"><span class="ac-dot" style="color:${color};background:${color}"></span>
+          <span class="ac-name">${escapeHtml(rname)}</span><span class="ac-role">${escapeHtml(label)}</span></div>
+        ${antPurpose(role)?`<div class="ac-sub" style="margin:4px 0 6px;">${escapeHtml(antPurpose(role))}</div>`:''}
+        ${workers.length?`<div style="font-size:9px;color:var(--dim);margin-bottom:2px;">WORKERS · ${workers.length}</div>`+
+          workers.map(w=>`<div style="padding:3px 0;border-bottom:1px solid rgba(30,51,84,.4);font-size:10px;">
+            <b style="color:var(--text)">${escapeHtml(antWorkerName(w))}</b>
+            ${antPurpose(w)?`<div style="color:var(--muted);font-size:9px;">${escapeHtml(antPurpose(w))}</div>`:''}
+          </div>`).join(''):''}
+      </div>`;
+    }).join('');
+    grid.insertAdjacentHTML('beforeend',
+      `<div style="grid-column:1/-1;margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.08em;">COLONY DIRECTORY · ${total} ants — every registered role and worker with its duty</div>`+html);
+  }catch(e){ /* directory is additive; telemetry cards above still render */ }
+}
+async function onAntRecentToggle(det){
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.ac-recent');
+  try{
+    const r=await api('/events/json?limit=12&ant='+encodeURIComponent(det.dataset.ant)); if(!r.success) throw new Error(r.message);
+    const evs=(r.data&&r.data.events)||[];
+    box.innerHTML = evs.length ? evs.map(e=>{
+      const t=(e.event_type||'').replace(/_/g,' ');
+      return `<div style="padding:2px 0;border-bottom:1px solid rgba(30,51,84,.4)"><span style="color:var(--dim);font-size:9px">${fmtTime(e.created_at)||''}</span> ${escapeHtml(t)}<div style="color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((e.message||'').slice(0,90))}</div></div>`;
+    }).join('') : '<div style="color:var(--dim)">No recent events for this caste.</div>';
+  }catch(e){ box.innerHTML=`<div style="color:var(--red)">Error: ${escapeHtml(e.message)}</div>`; }
+}
+document.getElementById('antobs-refresh')?.addEventListener('click',loadAntObs);
+
+
+// Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
+// the quick view for running/queued jobs and legacy jobs without a mission id.
+function openJobResult(jobId, missionId){
+  if(missionId) openResults(missionId);
+  else selectJob(jobId);
+}
+
+// Opens the report modal directly for a mission id (used as a fallback quick view).
+async function showMissionReport(missionId,label){
+  document.getElementById('result-title').textContent=label||'Mission Report';
+  const body=document.getElementById('result-body');
+  body.textContent='Loading mission report...';
+  document.getElementById('result-overlay').classList.add('show');
+  const statusBar=document.getElementById('result-status-bar');
+  statusBar.innerHTML=`<span>Mission: <span style="font-family:var(--mono)">${escapeHtml(String(missionId)).substring(0,8)}…</span></span>`;
+  try{ await renderMissionReport(missionId, body); }
+  catch(e){ body.textContent='Could not load the mission report: '+e.message; }
+}
+
+document.getElementById('result-close').addEventListener('click',()=>{
+  document.getElementById('result-overlay').classList.remove('show');
+  selectedJobId=null;
+  document.querySelectorAll('.job-item').forEach(el=>el.classList.remove('selected'));
+});
+document.getElementById('result-refresh-btn').addEventListener('click',()=>{ if(selectedJobId) showJobResult(selectedJobId); });
+document.getElementById('copy-btn').addEventListener('click',()=>{
+  const text=document.getElementById('result-body').textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.getElementById('copy-btn');
+    btn.textContent='Copied!';btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
+  });
+});
+
+async function pollActiveJob(){
+  if(!activeJobId) return;
+  try{
+    const r=await api(`/jobs/${activeJobId}`); if(!r.success) return;
+    const j=r.data;
+    if(j.status==='complete'||j.status==='failed'||j.status==='partial'){
+      clearInterval(jobPollTimer);jobPollTimer=null;
+      showJobResult(activeJobId);
+      enableInput(true);
+      activeJobId=null;
+    }
+  }catch{}
+}
+
+// -- Mission dispatch ----------------------------------------------------------
+// Mission inputs are auto-growing <textarea>s: they wrap into a paragraph instead of
+// scrolling as a single line, capped at max-height (then they scroll internally).
+function autoGrowMissionInput(el){
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,140)+'px';
+}
+
+// Compose the effective goal for the Overview node: prepend the selected mode's safe wording
+// (read by the v1.8.23 planner constraints) to the raw directive.
+function composeOvGoal(raw){
+  if(ovMode && typeof OV_MODE_TEXT!=='undefined' && OV_MODE_TEXT[ovMode]) return OV_MODE_TEXT[ovMode] + raw;
+  return raw;
+}
+// Core dispatch: POST a goal and start tracking the resulting job. Shared by direct dispatch and
+// by the Mission Composer's Approve & Dispatch, so both submit the exact same goal string.
+async function submitMissionGoal(goal){
+  if(!goal) return;
+  enableInput(false);
+  try{
+    const r=await api('/missions','POST',{goal});
+    if(!r.success){enableInput(true);return;}
+    activeJobId=r.data.id;
+    selectedJobId=r.data.id;
+    if(jobPollTimer) clearInterval(jobPollTimer);
+    jobPollTimer=setInterval(pollActiveJob,2500);
+    pollJobs();
+  }catch{enableInput(true);}
+}
+async function dispatchMission(inputId){
+  const input=document.getElementById(inputId||'mission-input');
+  if(!input) return;
+  let val=input.value.trim(); if(!val) return;
+  if(inputId==='ov-mission-input'){ val=composeOvGoal(val); hidePlanPreview(); }
+  input.value='';
+  autoGrowMissionInput(input);
+  submitMissionGoal(val);
+}
+
+// -- Mission Composer plan preview (v1.8.23, UI Phase 3) ----------------------
+let ovPreviewGoal='';
+async function previewPlan(){
+  const input=document.getElementById('ov-mission-input'); if(!input) return;
+  const raw=input.value.trim();
+  if(!raw){ if(typeof pcToast==='function') pcToast('Enter a directive to preview.',false); return; }
+  ovPreviewGoal=composeOvGoal(raw);
+  const box=document.getElementById('ov-plan'); if(!box) return;
+  box.style.display=''; box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Planning… (the planner runs once; no mission is created)</div>';
+  const btn=document.getElementById('ov-preview-btn'); if(btn) btn.disabled=true;
+  try{
+    const r=await api('/missions/plan','POST',{goal:ovPreviewGoal});
+    if(!r.success){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(r.message||'error')}</div>`; return; }
+    renderPlan(r.data||{});
+  }catch(e){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(e.message)}</div>`; }
+  finally{ if(btn) btn.disabled=false; }
+}
+function renderPlan(d){
+  const box=document.getElementById('ov-plan'); if(!box) return;
+  const c=d.constraints||{}, tasks=Array.isArray(d.tasks)?d.tasks:[];
+  const flags=[];
+  if(c.verification_only) flags.push('verification-only');
+  if(c.read_only) flags.push('read-only');
+  if(c.no_patches) flags.push('no file changes');
+  if(c.one_shot) flags.push('one-shot');
+  let banner='';
+  if(c.blocks_patches) banner=`<div class="hud-plan-banner warn">Constraint: ${flags.join(' · ')} — this plan proposes <b>no file changes</b> (coder patch steps are dropped).</div>`;
+  else if(d.has_coder_task) banner=`<div class="hud-plan-banner info">This plan includes a <b>coder patch-proposal</b> step. Nothing is written to disk until you approve &amp; apply the patch in Changes.</div>`;
+  const steps=tasks.map(t=>{
+    const ant=(t.ant||'').toLowerCase();
+    const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
+    const crit=t.critical===false?' · optional':'';
+    // v1.8.23: show the resolved worker sub-caste, when the planner picked one.
+    const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
+    return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
+      `<div class="p-title">${escapeHtml(t.title||'')}</div>`+
+      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${worker}${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
+      `</div></div>`;
+  }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
+  // v1.8.23: surface any capability-contract warnings from worker validation.
+  const warns=(Array.isArray(d.constraint_warnings)?d.constraint_warnings:[]).filter(Boolean);
+  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' · ')}</div>`;
+  box.innerHTML=
+    `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
+    `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+
+    banner+
+    `<div style="font-size:10px;color:var(--dim);margin-bottom:6px;word-break:break-word">Goal: ${escapeHtml(d.goal||ovPreviewGoal)}</div>`+
+    steps+
+    `<div class="hud-actions" style="margin-top:10px">`+
+      `<button class="hud-act primary" data-onclick="approveDispatch()">✓ Approve &amp; Dispatch</button>`+
+      `<button class="hud-act" data-onclick="editPlan()">Edit</button>`+
+      `<button class="hud-act danger" data-onclick="hidePlanPreview()">Reject</button>`+
+    `</div>`;
+}
+function approveDispatch(){
+  if(!ovPreviewGoal){ hidePlanPreview(); return; }
+  const goal=ovPreviewGoal; ovPreviewGoal='';
+  const input=document.getElementById('ov-mission-input'); if(input){ input.value=''; autoGrowMissionInput(input); }
+  hidePlanPreview();
+  submitMissionGoal(goal);
+}
+function editPlan(){ hidePlanPreview(); document.getElementById('ov-mission-input')?.focus(); }
+function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b.style.display='none'; b.innerHTML=''; } }
+
+// Wire up all mission dispatch inputs — Enter dispatches, Shift+Enter inserts a newline.
+['mission-input','ms-mission-input','ov-mission-input'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); dispatchMission(id); }
+  });
+  el.addEventListener('input',()=>autoGrowMissionInput(el));
+});
+document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
+document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
+document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
+
+// -- Helpers -------------------------------------------------------------------
+function fmtTime(iso){
+  if(!iso) return '';
+  try{return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  catch{return iso.substring(11,16);}
+}
+
+// -- Keyboard shortcuts (v1.8.25 UI Phase 10) -----------------------------------
+// Ctrl+K now opens the command palette (it previously jumped to the mission input —
+// "New mission" is the top palette action, one Enter away). Ctrl+L unchanged.
+let gSeqAt=0; // "g then <key>" two-key page navigation
+function typingInField(){
+  const el=document.activeElement;
+  return el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.tagName==='SELECT'||el.isContentEditable);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    document.getElementById('result-overlay').classList.remove('show');
+    document.getElementById('rename-pop').classList.remove('show');
+    closePalette(); closeShortcuts(); closeNotifPanel();
+  }
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){ e.preventDefault(); togglePalette(); return; }
+  if((e.ctrlKey||e.metaKey)&&e.key==='l'){ e.preventDefault(); showPage('events'); reloadLogModal(); return; }
+  if(typingInField()||e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.key==='?'){ e.preventDefault(); openShortcuts(); return; }
+  const now=Date.now();
+  if(e.key==='g'){ gSeqAt=now; return; }
+  if(gSeqAt && now-gSeqAt<900){
+    const admin=ROLE==='admin';
+    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',h:'homelab',
+      p:admin?'patches':null,b:admin?'objboard':null,s:admin?'settings':null,u:admin?'users':null,a:admin?'autonomy':null};
+    const dest=map[e.key.toLowerCase()];
+    if(dest){ e.preventDefault(); showPage(dest); }
+    gSeqAt=0;
+    return;
+  }
+  // v2.5.3 R3: while on Homelab, 1-9 / 0 / - jump between category sub-pages.
+  if(document.getElementById('page-homelab')?.classList.contains('active')){
+    const subMap={'1':'overview','2':'services','3':'virtualization','4':'containers','5':'storage',
+      '6':'networking','7':'monitoring','8':'automation','9':'apps','0':'alerts','-':'activity'};
+    if(subMap[e.key]){ e.preventDefault(); hlSubShow(subMap[e.key]); }
+  }
+});
+
+// -- Polling loop --------------------------------------------------------------
+function startPolling(){
+  loadUiState();
+  loadColonyRegistry();
+  restoreLayout();          // v1.8.25 saved layout: reopen the last page you were on
+  setTimeout(()=>startTour(false),600); // v1.8.25 onboarding tour on first login only
+  pollStatus();pollJobs();pollEvents();pollModelInfo();pollGraph();pollApprovals();pollHealth();pollHud();checkForUpdate(false);
+  setInterval(pollStatus,   4000);
+  setInterval(pollJobs,     3000);
+  setInterval(pollEvents,   5000);
+  setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
+  setInterval(pollColonyPheromones, 15000); // Canvas 2.0 pheromone HUD (only fetches when Colony is visible)
+  setInterval(pollApprovals,6000);
+  setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
+  setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
+  setInterval(pollModelInfo,15000);
+  setInterval(()=>checkForUpdate(false), 6*60*60*1000); // update check is cached server-side (30m)
+}
+
+// Bell ? navigate to colony and scroll to approvals card
+document.getElementById('approval-bell').addEventListener('click',()=>{
+  showPage('colony');
+  setTimeout(()=>{
+    const card=document.getElementById('approvals-card');
+    if(card&&card.style.display!=='none') card.scrollIntoView({behavior:'smooth'});
+  },120);
+  pollApprovals();
+});
+
+// ============================================================================
+// v1.8.25 — UI Phase 10: Full Command Center Polish
+// Command palette + global memory search, notification center, saved layout
+// restore, keyboard shortcuts help, onboarding tour. All additive; no page,
+// route, or behavior removed (Ctrl+K reassigned to the palette, see keydown).
+// ============================================================================
+
+// ---- Command palette --------------------------------------------------------
+const PALETTE_PAGES=[
+  ['overview','Dashboard',false],['colony','Colony · Topology',false],['missions','Missions',false],
+  ['results','Mission Results',false],['events','Activity · Events',false],
+  ['patches','Changes & Approvals',true],['objboard','Automation · Objectives',true],
+  ['pheromones','Colony · Signals',true],['antconfig','Agents · Configure',true],
+  ['antobs','Agents · Inspect',true],['autonomy','Automation · Director',true],['security','Security',true],
+  ['shell','Terminal',true],['settings','Settings',true],['users','Users',true],
+];
+const PALETTE_ACTIONS=[
+  ['new-mission','New mission (compose)',()=>{ showPage('overview'); setTimeout(()=>document.getElementById('ov-mission-input')?.focus(),80); },false],
+  ['toggle-nav','Toggle navigation sidebar',()=>document.getElementById('nav-collapse-btn')?.click(),false],
+  ['shortcuts','Show keyboard shortcuts',()=>openShortcuts(),false],
+  ['tour','Restart onboarding tour',()=>startTour(true),false],
+  ['approvals','Open pending approvals',()=>document.getElementById('approval-bell')?.click(),true],
+  ['refresh-events','Refresh event feed',()=>pollEvents(),false],
+];
+let palSel=0, palItems=[], palSearchTimer=null, palSearchRows=[], palLastQ='';
+function paletteRecent(){ try{ return JSON.parse(localStorage.getItem('palette-recent')||'[]'); }catch{ return []; } }
+function paletteRemember(key){
+  try{
+    const r=paletteRecent().filter(k=>k!==key); r.unshift(key);
+    localStorage.setItem('palette-recent',JSON.stringify(r.slice(0,8)));
+  }catch{}
+}
+function fuzzyScore(q,text){
+  q=q.toLowerCase(); text=text.toLowerCase();
+  if(!q) return 1;
+  if(text.includes(q)) return 100-text.indexOf(q);
+  let qi=0;
+  for(let i=0;i<text.length&&qi<q.length;i++) if(text[i]===q[qi]) qi++;
+  return qi===q.length?10:0;
+}
+function paletteBuild(q){
+  const admin=ROLE==='admin';
+  const recents=paletteRecent();
+  const rank=k=>{ const i=recents.indexOf(k); return i<0?0:(50-i); };
+  const items=[];
+  PALETTE_PAGES.filter(([,,adm])=>!adm||admin).forEach(([id,title])=>{
+    const s=fuzzyScore(q,'go to '+title)+rank('page:'+id);
+    if(s>0||!q) items.push({kind:'page',key:'page:'+id,title,meta:'g '+({overview:'o',colony:'c',missions:'m',results:'r',events:'e',patches:'p',objboard:'b',settings:'s',users:'u',autonomy:'a'}[id]||''),score:s,run:()=>showPage(id)});
+  });
+  PALETTE_ACTIONS.filter(([,,,adm])=>!adm||admin).forEach(([key,title,run])=>{
+    const s=fuzzyScore(q,title)+rank('act:'+key);
+    if(s>0||!q) items.push({kind:'action',key:'act:'+key,title,meta:'',score:s,run});
+  });
+  items.sort((a,b)=>b.score-a.score);
+  return items.slice(0,12);
+}
+function paletteRender(){
+  const box=document.getElementById('palette-results');
+  const rows=[];
+  if(palItems.length){
+    rows.push('<div class="palette-sect">Commands</div>');
+    palItems.forEach((it,i)=>rows.push(
+      `<div class="palette-item${i===palSel?' sel':''}" data-pi="${i}" data-onclick="paletteRun(${i})">`+
+      `<span class="pi-kind">${it.kind}</span><span class="pi-title">${escapeHtml(it.title)}</span><span class="pi-meta">${escapeHtml(it.meta||'')}</span></div>`));
+  }
+  if(palSearchRows.length){
+    rows.push('<div class="palette-sect">Mission memory</div>');
+    palSearchRows.forEach((r,j)=>{
+      const i=palItems.length+j;
+      rows.push(`<div class="palette-item${i===palSel?' sel':''}" data-pi="${i}" data-onclick="paletteRun(${i})">`+
+        `<span class="pi-kind">${r.kind}</span><span class="pi-title">${escapeHtml(r.title)}</span><span class="pi-meta">${escapeHtml(r.meta||'')}</span></div>`);
+    });
+  }
+  box.innerHTML=rows.length?rows.join(''):'<div class="palette-empty">No matches — try fewer letters, or 2+ characters to search mission memory.</div>';
+  const sel=box.querySelector('.palette-item.sel'); if(sel) sel.scrollIntoView({block:'nearest'});
+}
+function paletteAll(){ return palItems.concat(palSearchRows); }
+function paletteRun(i){
+  const it=paletteAll()[i]; if(!it) return;
+  if(it.key) paletteRemember(it.key);
+  closePalette();
+  try{ it.run(); }catch(e){ console.error('palette action failed',e); }
+}
+async function paletteSearch(q){
+  if(ROLE!=='admin'||q.length<2){ palSearchRows=[]; paletteRender(); return; }
+  try{
+    const r=await api('/memory/explorer?limit=20&q='+encodeURIComponent(q));
+    if(!r.success||q!==palLastQ) return;
+    const d=r.data||{}; const rows=[];
+    (d.missions||[]).slice(0,5).forEach(m=>rows.push({kind:'mission',title:m.goal||'(mission)',meta:m.status||'',run:()=>openResults(m.id)}));
+    (d.tasks||[]).slice(0,4).forEach(t=>rows.push({kind:'task',title:t.title||'(task)',meta:t.status||'',run:()=>{ if(t.mission_id) openResults(t.mission_id); }}));
+    (d.patches||[]).slice(0,4).forEach(p=>rows.push({kind:'patch',title:p.file_path||'(patch)',meta:p.status||'',run:()=>openPatches(p.mission_id?{mission_id:p.mission_id}:{})}));
+    (d.sources||[]).slice(0,3).forEach(s=>rows.push({kind:'source',title:s.title||s.url||'(source)',meta:s.domain||'',run:()=>{ if(s.mission_id) openResults(s.mission_id); }}));
+    palSearchRows=rows;
+    if(palSel>=paletteAll().length) palSel=0;
+    paletteRender();
+  }catch{ /* memory search is best-effort inside the palette */ }
+}
+function togglePalette(){ document.getElementById('palette-overlay').classList.contains('show')?closePalette():openPalette(); }
+function openPalette(){
+  closeNotifPanel();
+  const ov=document.getElementById('palette-overlay'); ov.classList.add('show');
+  const inp=document.getElementById('palette-input');
+  inp.value=''; palSel=0; palLastQ=''; palSearchRows=[]; palItems=paletteBuild('');
+  paletteRender(); setTimeout(()=>inp.focus(),30);
+}
+function closePalette(){ document.getElementById('palette-overlay')?.classList.remove('show'); }
+document.getElementById('palette-overlay').addEventListener('click',e=>{ if(e.target.id==='palette-overlay') closePalette(); });
+document.getElementById('palette-input').addEventListener('input',e=>{
+  const q=e.target.value.trim(); palLastQ=q; palSel=0;
+  palItems=paletteBuild(q); paletteRender();
+  clearTimeout(palSearchTimer); palSearchTimer=setTimeout(()=>paletteSearch(q),300);
+});
+document.getElementById('palette-input').addEventListener('keydown',e=>{
+  const total=paletteAll().length;
+  if(e.key==='ArrowDown'){ e.preventDefault(); palSel=Math.min(total-1,palSel+1); paletteRender(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); palSel=Math.max(0,palSel-1); paletteRender(); }
+  else if(e.key==='Enter'){ e.preventDefault(); paletteRun(palSel); }
+  else if(e.key==='Escape'){ closePalette(); }
+});
+
+// ---- Notification center ----------------------------------------------------
+const NOTIF_NOTABLE=/^(mission_complete|mission_failed|patch_applied|patch_apply_failed|patch_alternative_created|patch_verified_approved|patch_verify_failed|approval_request_created|approval_request_approved|approval_request_rejected|autonomy_autoapply_\w+|jobs_cancel_all)$/;
+const NOTIF_BAD=/failed|reverted|rejected|cancel/;
+const NOTIF_GOOD=/complete|applied|approved|verified|kept/;
+let notifStore=[];
+function notifSeen(){ return localStorage.getItem('notif-seen')||''; }
+function notifIngest(blocks){
+  const out=[];
+  for(const block of blocks.slice(0,120)){
+    const lines=block.trim().split('\n');
+    const l0=lines[0]||'';
+    const m=l0.match(/^\[([^\]]+)\]\s*(.*)$/); if(!m) continue;
+    const type=m[1], ts=(m[2]||'').substring(0,19);
+    if(!NOTIF_NOTABLE.test(type)) continue;
+    const msg=lines.slice(2).join(' ').trim().substring(0,140)||lines.slice(1).join(' ').trim().substring(0,140);
+    out.push({type,ts,msg});
+    if(out.length>=30) break;
+  }
+  notifStore=out;
+  notifRenderBadge();
+}
+function notifUnreadCount(){ const seen=notifSeen(); return notifStore.filter(n=>n.ts>seen).length; }
+function notifRenderBadge(){
+  const b=document.getElementById('notif-count'); if(!b) return;
+  const n=notifUnreadCount();
+  b.style.display=n>0?'block':'none';
+  b.textContent=n>9?'9+':String(n);
+}
+function notifClass(t){ return NOTIF_BAD.test(t)?'bad':(NOTIF_GOOD.test(t)?'good':'warn'); }
+function notifTarget(t){
+  if(/^patch|^approval/.test(t)) return ()=>{ if(ROLE==='admin') showPage('patches'); else showPage('events'); };
+  if(/^mission/.test(t)) return ()=>showPage('results');
+  return ()=>showPage('events');
+}
+function notifRenderPanel(){
+  const list=document.getElementById('notif-list');
+  const seen=notifSeen();
+  if(!notifStore.length){ list.innerHTML='<div class="notif-empty">No notable activity yet.</div>'; return; }
+  list.innerHTML=notifStore.map((n,i)=>
+    `<div class="notif-item ${notifClass(n.type)}${n.ts>seen?' unread':''}" data-onclick="notifOpen(${i})">`+
+    `<span class="ni-dot"></span><span class="ni-msg"><b>${escapeHtml(n.type)}</b><br>${escapeHtml(n.msg)}</span>`+
+    `<span class="ni-time">${escapeHtml((n.ts||'').replace('T',' ').substring(5))}</span></div>`).join('');
+}
+function notifOpen(i){ const n=notifStore[i]; closeNotifPanel(); if(n) notifTarget(n.type)(); }
+function notifMarkAllRead(){
+  if(notifStore.length) localStorage.setItem('notif-seen',notifStore[0].ts);
+  notifRenderBadge(); notifRenderPanel();
+}
+function closeNotifPanel(){ document.getElementById('notif-panel')?.classList.remove('show'); }
+document.getElementById('notif-bell').addEventListener('click',e=>{
+  e.stopPropagation();
+  const p=document.getElementById('notif-panel');
+  if(p.classList.contains('show')){ closeNotifPanel(); return; }
+  closePalette(); notifRenderPanel(); p.classList.add('show');
+  setTimeout(notifMarkAllRead,1200); // brief delay so "unread" highlights are visible before clearing
+});
+document.getElementById('notif-clear').addEventListener('click',e=>{ e.stopPropagation(); notifMarkAllRead(); });
+document.addEventListener('click',e=>{
+  const p=document.getElementById('notif-panel');
+  if(p?.classList.contains('show')&&!p.contains(e.target)&&e.target.id!=='notif-bell'&&!document.getElementById('notif-bell').contains(e.target)) closeNotifPanel();
+});
+
+// ---- Keyboard shortcuts help --------------------------------------------------
+function openShortcuts(){ document.getElementById('shortcut-overlay').classList.add('show'); }
+function closeShortcuts(){ document.getElementById('shortcut-overlay')?.classList.remove('show'); }
+document.getElementById('shortcut-overlay').addEventListener('click',e=>{ if(e.target.id==='shortcut-overlay') closeShortcuts(); });
+
+// ---- Onboarding tour ----------------------------------------------------------
+const TOUR_STEPS=[
+  ['Welcome to the colony','ANTHILL turns one request into a coordinated mission: the Queen plans, specialised ants execute, and everything they do is observable here. This 60-second tour shows you where things live.'],
+  ['Dispatch missions','The Overview page is your command node — compose a goal, Preview Plan to see the task DAG the planner builds (with constraint warnings), then approve and dispatch. The Colony page shows the live canvas while it runs.'],
+  ['Review every change','Nothing touches disk without you. Patch proposals land in Changes: filter, group, diff, edit an alternative, run an unbiased verify (build+test with auto-restore), approve, and only then apply.'],
+  ['Memory that learns','The Pheromones page is the colony\'s memory explorer — successful paths strengthen, failures decay, and mission history is searchable. The same search is one Ctrl+K away from anywhere.'],
+  ['Fast hands','Press Ctrl+K for the command palette, ? for shortcuts, and g then a letter to jump between pages (g o, g m, g p…). The bell tracks notable activity. That\'s it — the colony is yours.'],
+];
+let tourStep=0;
+function tourRender(){
+  const [t,b]=TOUR_STEPS[tourStep];
+  setEl('tour-step-label',`${tourStep+1} / ${TOUR_STEPS.length}`);
+  setEl('tour-title',t); setEl('tour-body',b);
+  document.getElementById('tour-back').style.visibility=tourStep===0?'hidden':'visible';
+  document.getElementById('tour-next').textContent=tourStep===TOUR_STEPS.length-1?'Finish':'Next';
+}
+function startTour(force){
+  if(!force&&localStorage.getItem('tour-done')==='1') return;
+  tourStep=0; tourRender();
+  document.getElementById('tour-overlay').classList.add('show');
+}
+function endTour(){
+  localStorage.setItem('tour-done','1');
+  document.getElementById('tour-overlay').classList.remove('show');
+}
+document.getElementById('tour-skip').addEventListener('click',endTour);
+document.getElementById('tour-back').addEventListener('click',()=>{ if(tourStep>0){ tourStep--; tourRender(); } });
+document.getElementById('tour-next').addEventListener('click',()=>{
+  if(tourStep<TOUR_STEPS.length-1){ tourStep++; tourRender(); } else endTour();
+});
+
+// ---- Saved layout restore ------------------------------------------------------
+// nav-collapsed, per-card collapse, and Patch Center grouping already persist.
+// This restores the last active page after login (admin pages only for admins).
+function restoreLayout(){
+  try{
+    // 1) An explicit deep link in the URL wins (bookmarks / shared links / back-forward).
+    if(router()) return;
+    // 2) Otherwise reopen the last page, mapped to its canonical route (honoring role visibility).
+    const last=localStorage.getItem('last-page');
+    if(last && PAGE_HOME[last]){
+      const r=ROUTE_TABLE[PAGE_HOME[last]];
+      if(r && !canSee(r.vis)){ go('/dashboard',false); return; }
+      go(PAGE_HOME[last],false); return;
+    }
+    go('/dashboard',false);
+  }catch{ try{ showPage('overview'); }catch{} }
+}
+
+// -- Card collapse --------------------------------------------------------------
+function initCollapse(){
+  document.querySelectorAll('.collapse-btn').forEach(btn=>{
+    const cardId=btn.dataset.card;
+    if(localStorage.getItem('collapsed:'+cardId)==='1') collapseCard(cardId,false);
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const card=document.getElementById(cardId);
+      if(card.classList.contains('collapsed')) expandCard(cardId);
+      else collapseCard(cardId,true);
+    });
+  });
+}
+function collapseCard(id,save){
+  const card=document.getElementById(id); if(!card) return;
+  card.classList.add('collapsed');
+  if(save) localStorage.setItem('collapsed:'+id,'1');
+}
+function expandCard(id){
+  const card=document.getElementById(id); if(!card) return;
+  card.classList.remove('collapsed');
+  localStorage.removeItem('collapsed:'+id);
+}
+initCollapse();
+
+// -- Settings tabs --------------------------------------------------------------
+document.querySelectorAll('.settings-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.settings-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.settings-pane').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab)?.classList.add('active');
+    if(tab.dataset.tab==='models') loadModelsTab();
+    if(tab.dataset.tab==='info') loadInfoTab();
+    if(tab.dataset.tab==='colony') loadColonyTab();
+    if(tab.dataset.tab==='connection') loadSettingsInfo();
+    if(tab.dataset.tab==='providers') loadProvidersTab();
+  });
+});
+
+document.getElementById('models-refresh').addEventListener('click',loadModelsTab);
+document.getElementById('diag-refresh').addEventListener('click',loadInfoTab);
+
+// -- Maintenance / data hygiene ------------------------------------------------
+function humanBytes(b){ if(b==null) return '—'; const u=['B','KB','MB','GB','TB']; let v=b,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(v<10&&i>0?1:0)+' '+u[i]; }
+function maintMsg(el,t,ok){ const m=document.getElementById(el); if(!m)return; m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },5000); }
+
+async function loadMaintStats(){
+  try{
+    const r=await api('/maintenance/stats'); if(!r.success) return; const d=r.data||{};
+    setEl('maint-keep', d.max_db_backups);
+    setEl('maint-disk', d.disk_total_bytes?`${humanBytes(d.disk_free_bytes)} free of ${humanBytes(d.disk_total_bytes)}`:'—');
+    setEl('maint-db', humanBytes(d.db_bytes));
+    setEl('maint-backups', `${d.backup_count||0} files · ${humanBytes(d.backup_bytes)}`);
+  }catch{}
+}
+document.getElementById('maint-refresh').addEventListener('click',loadMaintStats);
+document.getElementById('maint-flush').addEventListener('click',async()=>{
+  if(!await uiConfirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
+  maintMsg('maint-msg','Flushing…',true);
+  try{ const r=await api('/maintenance/flush','POST',{});
+    maintMsg('maint-msg', r.success?`Freed ${humanBytes(r.data?.bytes_freed)} (${r.data?.backups_deleted} backups).`:(r.message||'Failed'), r.success);
+    loadMaintStats();
+  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
+});
+document.getElementById('maint-reset').addEventListener('click',async()=>{
+  if(!await uiConfirm('Reset all settings to safe defaults? Connection settings (Ollama host/model/routes, API bind) are preserved.')) return;
+  try{ const r=await api('/maintenance/reset-config','POST',{});
+    maintMsg('maint-msg', r.success?'Config reset (connection preserved).':(r.message||'Failed'), r.success);
+  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
+});
+
+// Missions page: Cancel All + Clear Missions
+document.getElementById('ms-cancel-all').addEventListener('click',async()=>{
+  if(!await uiConfirm('Cancel all jobs? Queued work is dropped; a running mission finishes on its own.')) return;
+  try{ const r=await api('/jobs/cancel-all','POST',{});
+    maintMsg('ms-maint-msg', r.success?`Cancelled ${r.data?.cancelled} job(s).`:(r.message||'Failed'), r.success);
+    pollJobs();
+  }catch(e){ maintMsg('ms-maint-msg','Failed: '+e.message,false); }
+});
+document.getElementById('ms-clear').addEventListener('click',async()=>{
+  if(!await uiConfirm('Clear ALL mission history (missions, tasks, events, patches, approvals)? Objectives, pheromones, users, and config are kept. This cannot be undone.')) return;
+  try{ const r=await api('/maintenance/clear-missions','POST',{});
+    maintMsg('ms-maint-msg', r.success?`Cleared ${r.data?.missions_deleted} mission(s); freed ${humanBytes(r.data?.bytes_freed)}.`:(r.message||'Failed'), r.success);
+    pollJobs(); pollStatus();
+  }catch(e){ maintMsg('ms-maint-msg','Failed: '+e.message,false); }
+});
+
+// Autonomy page: Dump Directives
+document.getElementById('auto-dump').addEventListener('click',async()=>{
+  if(!await uiConfirm('Dump the entire objective backlog and its run history? Missions and everything else are kept. This cannot be undone.')) return;
+  try{ const r=await api('/objectives/clear','POST',{});
+    autoMsg(r.success?`Dumped ${r.data?.objectives_deleted} objective(s).`:(r.message||'Failed'), r.success);
+    if(typeof reloadAutonomy==='function') reloadAutonomy();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+// -- Settings info -------------------------------------------------------------
+async function loadSettingsInfo(){
+  try{
+    const text=await apiText('/models');
+    const ollamaHost=(text.match(/Ollama Host:\s*([^\n]+)/)||[])[1]?.trim()||'—';
+    const model=(text.match(/Active Route Targets:\s*([^\n]+)/)||[])[1]?.trim()||'—';
+    setEl('si-ollama-host',ollamaHost);
+    setEl('si-model',model);
+    try{
+      const mr=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
+      const md=await mr.json();
+      const ok=Array.isArray(md.models);
+      document.getElementById('si-ollama-dot').className='ollama-dot '+(ok?'ok':'err');
+      setEl('si-ollama-status',ok?`${ollamaHost} (${md.models.length} models)`:'unreachable');
+    }catch{
+      document.getElementById('si-ollama-dot').className='ollama-dot err';
+      setEl('si-ollama-status','unreachable');
+    }
+  }catch{
+    document.getElementById('si-ollama-dot').className='ollama-dot err';
+    setEl('si-ollama-status','unreachable');
+  }
+}
+
+// -- Provider connections ------------------------------------------------------
+let providerCatalog=[];
+
+function providerKindLabel(kind){return kind==='free-local'?'Free · Local':'Paid API';}
+
+async function loadProvidersTab(){
+  const grid=document.getElementById('providers-grid');
+  grid.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>';
+  try{
+    const [catRes,connRes]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+    if(!catRes.success) throw new Error(catRes.message);
+    providerCatalog=(catRes.data||[]).filter(p=>p.requires_key);
+    const connections=connRes.success?(connRes.data||[]):[];
+    const byProvider={};
+    connections.forEach(c=>{byProvider[c.provider]=c;});
+    grid.innerHTML=providerCatalog.map(p=>renderProviderCard(p,byProvider[p.provider]||{})).join('')
+      ||'<div style="font-size:10px;color:var(--dim)">No providers available.</div>';
+  }catch(e){
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+function renderProviderCard(p,conn){
+  const configured=!!conn.configured;
+  let statusHtml,statusColor;
+  if(!configured){statusColor='var(--dim)';statusHtml='Not connected';}
+  else if(conn.last_verify_ok===true){statusColor='var(--green)';statusHtml='Connected · verified '+(conn.last_verified_at?fmtTime(conn.last_verified_at):'');}
+  else if(conn.last_verify_ok===false){statusColor='var(--red)';statusHtml='Connected · last test failed';}
+  else{statusColor='var(--queen)';statusHtml='Connected · not yet tested';}
+  return `<div class="provider-card" data-provider="${p.provider}">
+    <div class="provider-top">
+      <div class="provider-name">${escapeHtml(p.name)}</div>
+      <span class="provider-kind ${p.kind}">${providerKindLabel(p.kind)}</span>
+    </div>
+    <div class="provider-desc">${escapeHtml(p.description||'')}</div>
+    <div class="provider-status"><span class="ollama-dot ${configured?(conn.last_verify_ok===false?'err':'ok'):'err'}"></span>${statusHtml}</div>
+    <div class="provider-field">
+      <label>API Key</label>
+      <input type="password" class="provider-input pv-key" placeholder="${configured?'•••••••••••••••• (leave blank to keep)':'Paste API key'}" autocomplete="off">
+    </div>
+    <div class="provider-field">
+      <label>Base URL <span style="text-transform:none;font-weight:400;">(optional override)</span></label>
+      <input type="text" class="provider-input pv-baseurl" placeholder="${escapeHtml(p.default_endpoint||'')}" value="${escapeHtml(conn.base_url||'')}">
+    </div>
+    <div class="provider-actions">
+      <button class="btn btn-primary pv-save">Save</button>
+      <button class="btn btn-ghost pv-test" ${configured?'':'disabled'}>Test Connection</button>
+      <button class="btn btn-danger pv-remove" ${configured?'':'disabled'}>Remove</button>
+    </div>
+    <div class="save-msg pv-msg"></div>
+    <div class="provider-help">Get a key: <a href="${p.key_help_url}" target="_blank" rel="noopener">${escapeHtml((p.key_help_url||'').replace(/^https?:\/\//,''))}</a></div>
+  </div>`;
+}
+
+document.getElementById('providers-refresh').addEventListener('click',loadProvidersTab);
+
+document.getElementById('providers-grid').addEventListener('click',async(e)=>{
+  const card=e.target.closest('.provider-card'); if(!card) return;
+  const provider=card.dataset.provider;
+  const msg=card.querySelector('.pv-msg');
+  const setMsg=(t,ok)=>{msg.style.color=ok?'var(--green)':'var(--red)';msg.textContent=t;setTimeout(()=>{if(msg.textContent===t)msg.textContent='';},4000);};
+
+  if(e.target.classList.contains('pv-save')){
+    const key=card.querySelector('.pv-key').value.trim();
+    const baseUrl=card.querySelector('.pv-baseurl').value.trim();
+    try{
+      const r=await api('/providers','POST',{provider,api_key:key||undefined,base_url:baseUrl||undefined});
+      if(r.success){setMsg('Saved ?',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
+      else setMsg(r.message||'Failed',false);
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+
+  if(e.target.classList.contains('pv-test')){
+    setMsg('Testing…',true);
+    try{
+      const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
+      setMsg(r.success?'Verified ?':(r.message||'Test failed'),r.success);
+      await loadProvidersTab();
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+
+  if(e.target.classList.contains('pv-remove')){
+    if(!await uiConfirm(`Remove the ${provider} connection? Ants routed to it will fall back to Ollama.`)) return;
+    try{
+      const r=await api('/providers/'+encodeURIComponent(provider),'DELETE');
+      if(r.success){setMsg('Removed',true);await loadProvidersTab();}
+      else setMsg(r.message||'Failed',false);
+    }catch(err){setMsg('Failed: '+err.message,false);}
+  }
+});
+
+// -- Model browser --------------------------------------------------------------
+let activeRouteModels=new Set();
+
+async function loadModelsTab(){
+  await loadRoutes();
+  await loadOllamaModels();
+}
+
+async function loadRoutes(){
+  const grid=document.getElementById('route-grid');
+  try{
+    const text=await apiText('/routes');
+    const lines=text.split('\n').filter(l=>l.includes('?')||l.includes('->'));
+    activeRouteModels=new Set();
+    if(!lines.length){
+      const mtext=await apiText('/models');
+      grid.innerHTML=`<div style="font-size:10px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono)">${mtext.substring(0,800)}</div>`;
+      return;
+    }
+    grid.innerHTML=lines.map(l=>{
+      const parts=l.split(/\?|->/).map(s=>s.trim());
+      const role=parts[0]||'';
+      const rest=parts[1]||'';
+      const modelMatch=rest.match(/^([^\s(]+)/);
+      const model=modelMatch?modelMatch[1]:'';
+      if(model) activeRouteModels.add(model);
+      const providerMatch=rest.match(/\(([^)]+)\)/);
+      const provider=providerMatch?providerMatch[1]:'ollama';
+      return `<div class="route-row"><span class="route-role">${role}</span><span class="route-model">${model}</span><span class="route-provider">${provider}</span></div>`;
+    }).join('');
+  }catch(e){
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${e.message}</div>`;
+  }
+}
+
+async function loadOllamaModels(){
+  const grid=document.getElementById('model-grid');
+  grid.innerHTML='<div style="font-size:10px;color:var(--dim)">Loading from Ollama...</div>';
+  try{
+    const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
+    const data=await r.json();
+    if(!data.models?.length&&data.error){
+      grid.innerHTML=`<div style="font-size:10px;color:var(--red)">${data.message||'Ollama unreachable'}</div>`;
+      return;
+    }
+    const models=(data.models||[]).sort((a,b)=>b.size-a.size);
+    grid.innerHTML=models.map(m=>{
+      const name=m.name||m.model||'unknown';
+      const sizeGb=m.size?(m.size/1e9).toFixed(1)+'GB':'?';
+      const isActive=activeRouteModels.has(name)||[...activeRouteModels].some(r=>name.startsWith(r.split(':')[0]));
+      return `<div class="model-item${isActive?' active-route':''}" data-onclick="navigator.clipboard.writeText('${name}').then(()=>{this.style.borderColor='var(--green)';setTimeout(()=>this.style.borderColor='',1500)})">
+        <span class="model-name">${name}</span>
+        <span class="model-size">${sizeGb}</span>
+        ${isActive?'<span class="model-badge-active">ACTIVE</span>':''}
+      </div>`;
+    }).join('');
+    if(!models.length) grid.innerHTML='<div style="font-size:10px;color:var(--dim)">No models found. Pull a model first: <code>ollama pull llama3.3:70b</code></div>';
+  }catch(e){
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadInfoTab(){
+  loadMaintStats();
+  try{
+    const [sr,cfgText,diagText]=await Promise.all([api('/status'),apiText('/config'),apiText('/diagnostics')]);
+    const d=sr.data||{};
+    setEl('si-version',d.version||'—');
+    setEl('si-kernel',d.native_kernel||'—');
+    setEl('si-safety',cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-workers',cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-web',cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-filewrite',cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    setEl('si-patch',cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
+    const diagEl=document.getElementById('si-diag');
+    if(diagEl) diagEl.textContent=diagText.substring(0,2000);
+  }catch(e){
+    const diagEl=document.getElementById('si-diag');
+    if(diagEl) diagEl.textContent='Error: '+e.message;
+  }
+}
+
+// -- Event log (full page) -----------------------------------------------------
+let allLogEvents=[];
+
+async function openLogModal(){
+  showPage('events');
+  await reloadLogModal();
+}
+
+PAGE_ENTER['events']=()=>{reloadLogModal();};
+
+document.getElementById('log-reload').addEventListener('click',reloadLogModal);
+
+function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+const SINCE_MS={'15m':9e5,'1h':36e5,'6h':216e5,'24h':864e5};
+
+async function reloadLogModal(){
+  try{
+    const ant  =document.getElementById('log-filter-ant').value;
+    const type =document.getElementById('log-filter-type').value;
+    const level=document.getElementById('log-filter-level').value;
+    const since=document.getElementById('log-filter-since').value;
+    const p=new URLSearchParams();
+    if(ant)   p.set('ant',ant);
+    if(type)  p.set('type',type);
+    if(level) p.set('level',level);
+    if(since&&SINCE_MS[since]) p.set('since',new Date(Date.now()-SINCE_MS[since]).toISOString());
+    p.set('limit','500');
+    const r=await api('/events/json?'+p.toString());
+    if(!r.success) throw new Error(r.message);
+    allLogEvents=r.data.events||[];
+    populateLogFilters(r.data.ants||[],r.data.types||[]);
+    renderLogModal();
+  }catch(e){
+    document.getElementById('log-modal-body').innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`;
+  }
+}
+
+function populateLogFilters(ants,types){
+  const antSel=document.getElementById('log-filter-ant');
+  const want=ants.length?ants:Object.keys(ANT_DEFAULTS);
+  const cur=antSel.value;
+  antSel.innerHTML='<option value="">All Ants</option>'+want.map(a=>{
+    const label=ANT_DEFAULTS[a]?casteName(a):a;
+    return `<option value="${escapeHtml(a)}"${a===cur?' selected':''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  const typeSel=document.getElementById('log-filter-type');
+  const tcur=typeSel.value;
+  typeSel.innerHTML='<option value="">All Types</option>'+types.map(t=>`<option value="${escapeHtml(t)}"${t===tcur?' selected':''}>${escapeHtml(t)}</option>`).join('');
+}
+
+function renderLogModal(){
+  const search=(document.getElementById('log-search').value||'').toLowerCase();
+  const body=document.getElementById('log-modal-body');
+  const filtered=allLogEvents.filter(ev=>{
+    if(!search) return true;
+    return `${ev.event_type} ${ev.ant_name} ${ev.message} ${ev.mission_id}`.toLowerCase().includes(search);
+  });
+  setEl('log-modal-count',`${filtered.length} / ${allLogEvents.length} events`);
+  body.innerHTML=filtered.map(ev=>{
+    const evType=ev.event_type||'event';
+    const ant=ev.ant_name||'—';
+    const ts=(ev.created_at||'').substring(0,19).replace('T',' ');
+    const col=ANT_MAP[ant]?.color||'var(--dim)';
+    const tc=evTypeClass(evType);
+    return `<div class="log-ev">
+      <div class="log-ev-head">
+        <span class="log-ev-type ${tc}">${escapeHtml(evType)}</span>
+        <span class="log-ev-ant" style="color:${col}">${escapeHtml(ant)}</span>
+        <span class="log-ev-ts">${ts}</span>
+      </div>
+      <div class="log-ev-meta">mission:${escapeHtml((ev.mission_id||'—').substring(0,14))} · task:${escapeHtml((ev.task_id||'—').toString().substring(0,12))}</div>
+      <div class="log-ev-msg">${escapeHtml((ev.message||'—').replace(/\.\.\.\[.+?\]/g,'').trim())}</div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('log-search').addEventListener('input',renderLogModal);
+document.getElementById('log-filter-ant').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-type').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-level').addEventListener('change',reloadLogModal);
+document.getElementById('log-filter-since').addEventListener('change',reloadLogModal);
+
+// ---- v2.6 Phase 3: unified Activity center ----------------------------------
+// One filtered timeline over the same /events/json stream the Event Log uses. Category facets map
+// event_type prefixes to the workflows an operator reasons about. Purely additive: the Event Log,
+// Mission Results, and Changes pages are untouched and remain reachable as Activity sub-nav tabs.
+const ACT_FACETS=[
+  ['all','All',()=>true],
+  ['missions','Missions',t=>/^(mission|task|plan)/.test(t)],
+  ['changes','Changes',t=>/^(patch|approval)/.test(t)],
+  ['autonomy','Autonomy',t=>/^(autonomy|director|objective|jobs|strateg)/.test(t)],
+  ['infra','Infrastructure',t=>/^(homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+  ['system','System',t=>!/^(mission|task|plan|patch|approval|autonomy|director|objective|jobs|strateg|homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+];
+let actEvents=[], actFacet='all';
+async function loadActivity(){
+  const body=document.getElementById('act-body'); if(!body) return;
+  renderActFacets();
+  try{
+    const r=await api('/events/json?limit=500');
+    if(!r.success) throw new Error(r.message||'load failed');
+    actEvents=(r.data&&r.data.events)||[];
+    renderActivity();
+  }catch(e){ body.innerHTML='<div style="color:var(--red,#f87171);padding:20px">Error: '+escapeHtml((e&&e.message)||'?')+'</div>'; }
+}
+function renderActFacets(){
+  const bar=document.getElementById('act-facets'); if(!bar) return;
+  bar.innerHTML=ACT_FACETS.map(f=>'<button class="subnav-tab'+(f[0]===actFacet?' active':'')+'" data-onclick="actSetFacet(\''+f[0]+'\')">'+escapeHtml(f[1])+'</button>').join('');
+}
+function actSetFacet(k){ actFacet=k; renderActFacets(); renderActivity(); }
+function renderActivity(){
+  const body=document.getElementById('act-body'); if(!body) return;
+  const search=((document.getElementById('act-search')||{}).value||'').toLowerCase();
+  const facetDef=ACT_FACETS.find(f=>f[0]===actFacet)||ACT_FACETS[0];
+  const match=facetDef[2];
+  const rows=actEvents.filter(ev=>{
+    const t=(ev.event_type||'').toLowerCase();
+    if(!match(t)) return false;
+    if(search && !((ev.event_type+' '+ev.ant_name+' '+ev.message+' '+ev.mission_id).toLowerCase().includes(search))) return false;
+    return true;
+  });
+  if(typeof setEl==='function') setEl('act-count',rows.length+' / '+actEvents.length+' events · '+facetDef[1]);
+  if(!rows.length){ body.innerHTML='<div style="font-size:11px;color:var(--dim);text-align:center;padding:24px 0;">No activity in this view yet.</div>'; return; }
+  body.innerHTML=rows.map(ev=>{
+    const evType=ev.event_type||'event';
+    const ant=ev.ant_name||'—';
+    const ts=(ev.created_at||'').substring(0,19).replace('T',' ');
+    const col=(ANT_MAP[ant]&&ANT_MAP[ant].color)||'var(--dim)';
+    const tc=(typeof evTypeClass==='function')?evTypeClass(evType):'';
+    return '<div class="log-ev"><div class="log-ev-head">'+
+      '<span class="log-ev-type '+tc+'">'+escapeHtml(evType)+'</span>'+
+      '<span class="log-ev-ant" style="color:'+col+'">'+escapeHtml(ant)+'</span>'+
+      '<span class="log-ev-ts">'+ts+'</span></div>'+
+      '<div class="log-ev-meta">mission:'+escapeHtml((ev.mission_id||'—').substring(0,14))+'</div>'+
+      '<div class="log-ev-msg">'+escapeHtml((ev.message||'—').replace(/\.\.\.\[.+?\]/g,'').trim())+'</div></div>';
+  }).join('');
+}
+(function(){ const s=document.getElementById('act-search'); if(s) s.addEventListener('input',renderActivity); })();
+PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
+
+// -- UI State ------------------------------------------------------------------
+let uiState={version:1,castes:{},positions:{},widgets:{}}; // widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
+const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
+const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
+  Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
+uiReady=true;
+
+async function loadUiState(){
+  try{
+    const r=await api('/ui/state');
+    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; }
+  }catch{}
+  applyUiState();
+}
+
+let uiSaveTimer=null;
+function saveUiState(){
+  clearTimeout(uiSaveTimer);
+  uiSaveTimer=setTimeout(async()=>{
+    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets});}
+    catch(e){console.error('saveUiState',e);}
+  },350);
+}
+
+function registryRoleById(id){return (colonyRegistry?.roles||colonyRegistry?.Roles||[]).find(r=>roleId(r)===id);}
+function workerTelemetryById(id){
+  const t=colonyRegistry?.worker_telemetry||colonyRegistry?.workerTelemetry||colonyRegistry?.WorkerTelemetry||{};
+  const workers=t.workers||t.Workers||[];
+  const audits=t.permission_audits||t.permissionAudits||t.PermissionAudits||[];
+  const metrics=t.message_metrics||t.messageMetrics||t.MessageMetrics||[];
+  return {
+    usage:workers.find(x=>(x.assigned_worker||x.assignedWorker||x.AssignedWorker)===id)||{},
+    audit:audits.find(x=>(x.runtime_node||x.runtimeNode||x.RuntimeNode)===id)||{},
+    metric:metrics.find(x=>(x.runtime_node||x.runtimeNode||x.RuntimeNode)===id)||{}
+  };
+}
+function casteName(caste){return uiState.castes[caste]?.name||ANT_DEFAULTS[caste]?.label||roleName(registryRoleById(caste)||{RoleId:caste});}
+function casteColor(caste){return uiState.castes[caste]?.color||ANT_DEFAULTS[caste]?.color||ROLE_COLORS[caste]||'#7fa0bc';}
+
+function applyUiState(){
+  if(!uiReady) return;
+  ANT_CASTES.forEach(c=>{if(ANT_MAP[c]) ANT_MAP[c].color=casteColor(c);});
+  nodes.forEach(n=>{
+    const caste=n.ant||'queen';
+    const base=casteName(caste);
+    if(n.id===caste||n.id==='queen') n.label=base;
+    else if(n.id.startsWith(caste+'_')){const idx=parseInt(n.id.split('_').pop(),10)||0;n.label=base+'-'+(idx+1);}
+    n.color=casteColor(caste);
+    const pos=uiState.positions[n.id];
+    if(pos&&typeof pos.x==='number'&&typeof pos.y==='number'){n.x=pos.x;n.y=pos.y;}
+  });
+}
+
+function persistNodePosition(n){uiState.positions[n.id]={x:Math.round(n.x),y:Math.round(n.y)};saveUiState();}
+
+// -- Rename popover ------------------------------------------------------------
+let renameCaste=null;
+const renamePop=document.getElementById('rename-pop');
+
+function openRename(node,sx,sy){
+  renameCaste=node.ant||'queen';
+  const inp=document.getElementById('rename-input');
+  inp.value=casteName(renameCaste);
+  renamePop.style.left=Math.min(sx,window.innerWidth-220)+'px';
+  renamePop.style.top=Math.min(sy,window.innerHeight-120)+'px';
+  renamePop.classList.add('show');
+  inp.focus();inp.select();
+}
+function commitRename(){
+  const v=document.getElementById('rename-input').value.trim();
+  if(renameCaste&&v){
+    uiState.castes[renameCaste]=Object.assign({},uiState.castes[renameCaste],{name:v});
+    applyUiState();saveUiState();
+  }
+  renamePop.classList.remove('show');renameCaste=null;
+}
+document.getElementById('rename-save').addEventListener('click',commitRename);
+document.getElementById('rename-cancel').addEventListener('click',()=>{renamePop.classList.remove('show');renameCaste=null;});
+document.getElementById('rename-input').addEventListener('keydown',e=>{if(e.key==='Enter')commitRename();if(e.key==='Escape'){renamePop.classList.remove('show');renameCaste=null;}});
+
+// -- Ant Config page -----------------------------------------------------------
+let availableModels=[];
+let antcfgCatalog=[];       // provider catalog (ollama + keyed providers), from /providers/catalog
+let antcfgConfigured=new Set(); // provider ids that currently have a working key saved
+
+async function fetchModelNames(){
+  try{
+    const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
+    const d=await r.json();
+    availableModels=(d.models||[]).map(m=>m.name||m.model).filter(Boolean);
+  }catch{availableModels=[];}
+}
+
+async function fetchProviderCatalog(){
+  try{
+    const [catRes,connRes]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+    antcfgCatalog=catRes.success?(catRes.data||[]):[];
+    antcfgConfigured=new Set((connRes.success?(connRes.data||[]):[]).filter(c=>c.configured).map(c=>c.provider));
+  }catch{antcfgCatalog=[];antcfgConfigured=new Set();}
+}
+
+function antcfgModelOptions(provider,curModel){
+  const models=provider==='ollama'?availableModels:((antcfgCatalog.find(p=>p.provider===provider)||{}).models||[]);
+  const opts=models.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('');
+  const extra=curModel&&!models.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:'';
+  return `<option value="">— default —</option>${opts}${extra}`;
+}
+
+function antcfgProviderOptions(curProvider){
+  const providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
+  return providers.map(p=>{
+    const connected=p.provider==='ollama'||antcfgConfigured.has(p.provider);
+    const label=connected?p.name:`${p.name} (not connected)`;
+    return `<option value="${p.provider}"${p.provider===(curProvider||'ollama')?' selected':''}>${label}</option>`;
+  }).join('');
+}
+
+async function openAntConfig(){
+  // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
+  // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
+  // from the "Reset" button below (where the page is already active). Calling showPage from in
+  // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
+  // mutual-recursion loop, blowing the call stack every single time this page was opened.
+  await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
+  let routes={};
+  try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
+  const grid=document.getElementById('antcfg-grid');
+  const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
+  const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
+  grid.innerHTML=castes.map(c=>{
+    const reg=registryRoleById(c)||{RoleId:c,DisplayName:c,Colony:ANT_DEFAULTS[c]?.role||'Legacy',Purpose:'Legacy ant role',Workers:[]};
+    const d=ANT_DEFAULTS[c]||{role:roleColony(reg)},name=casteName(c),color=casteColor(c);
+    const curProvider=uiState.castes[c]?.provider||routes[c]?.provider||'ollama';
+    const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
+    const modelField=(c==='queen'||c==='director'||roleExecutable(reg)===false)?'':`
+      <div class="antcfg-field">
+        <label>Provider</label>
+        <select data-caste="${c}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(name)}">${antcfgProviderOptions(curProvider)}</select>
+      </div>
+      <div class="antcfg-field">
+        <label>Model (route)</label>
+        <select data-caste="${c}" class="antcfg-model antcfg-modelname" data-provider="${curProvider}" aria-label="Model route for ${escapeHtml(name)}">
+          ${antcfgModelOptions(curProvider,curModel)}
+        </select>
+      </div>`;
+    const perms=permList(rolePerms(reg)).join(', ')||'none';
+    const workerList=roleWorkers(reg).map(w=>{
+      const wid=workerId(w),tele=workerTelemetryById(wid),u=tele.usage||{},a=tele.audit||{};
+      const taskCount=u.task_count??u.taskCount??u.TaskCount??0;
+      const completeCount=u.complete_count??u.completeCount??u.CompleteCount??0;
+      const failedCount=u.failed_count??u.failedCount??u.FailedCount??0;
+      const auditCount=a.audit_count??a.auditCount??a.AuditCount??0;
+      return `<div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px"><span style="color:var(--text)">${escapeHtml(workerName(w))}</span><br><span style="font-family:var(--mono);font-size:9px">${escapeHtml(wid)}</span><br><span>${taskCount} task(s) · ${completeCount} complete · ${failedCount} failed · ${auditCount} audit(s)</span></div>`;
+    }).join('');
+    return `<div class="antcfg-card">
+      <div class="antcfg-top">
+        <span class="antcfg-dot" style="background:${color}"></span>
+        <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} · ${escapeHtml(c)}${roleExecutable(reg)?'':' · visible'}</div></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">${escapeHtml(rolePurpose(reg))}</div>
+      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" aria-label="Display name for ${escapeHtml(name)}" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
+      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" aria-label="Accent colour for ${escapeHtml(name)}" data-caste="${c}" type="color" value="${color}"></div>
+      ${modelField}
+      <div class="antcfg-field"><label>Permissions</label><div style="font-size:10px;color:var(--muted);line-height:1.45">${escapeHtml(perms)}</div></div>
+      ${workerList?`<div class="antcfg-field"><label>Specialized Workers</label>${workerList}</div>`:''}
+    </div>`;
+  }).join('');
+
+  // Switching provider repopulates the model list for that caste from the right catalog.
+  grid.querySelectorAll('.antcfg-provider').forEach(sel=>{
+    sel.addEventListener('change',()=>{
+      const c=sel.dataset.caste,provider=sel.value;
+      const modelSel=grid.querySelector(`.antcfg-modelname[data-caste="${c}"]`);
+      modelSel.dataset.provider=provider;
+      modelSel.innerHTML=antcfgModelOptions(provider,'');
+    });
+  });
+}
+
+PAGE_ENTER['antconfig']=()=>openAntConfig();
+
+document.getElementById('antcfg-save').addEventListener('click',async()=>{
+  const msg=document.getElementById('antcfg-msg'); msg.textContent='';
+  document.querySelectorAll('.antcfg-name').forEach(i=>{const c=i.dataset.caste,v=i.value.trim();if(v)uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});});
+  document.querySelectorAll('.antcfg-color').forEach(i=>{const c=i.dataset.caste;uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value});});
+  const routeUpdate={};
+  document.querySelectorAll('.antcfg-modelname').forEach(s=>{
+    const c=s.dataset.caste,v=s.value,provider=s.dataset.provider||'ollama';
+    uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined,provider:provider!=='ollama'?provider:undefined});
+    if(v) routeUpdate[c]={provider,model:v};
+  });
+  applyUiState();saveUiState();
+  if(Object.keys(routeUpdate).length){
+    try{await api('/settings','POST',{model_routes:routeUpdate});}
+    catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
+  }
+  msg.style.color='var(--green)';msg.textContent='Saved ?';setTimeout(()=>msg.textContent='',2500);
+});
+
+document.getElementById('antcfg-reset').addEventListener('click',async()=>{
+  if(!await uiConfirm('Reset all ant names, colours and positions to defaults?')) return;
+  uiState.castes={};uiState.positions={};applyUiState();buildNodes();saveUiState();openAntConfig();
+});
+
+// -- Autonomy page (Phase 1/2: Colony Director, objective backlog, Strategist runs) -------------
+let autonomyObjectives=[];
+let autoRefreshTimer=null;
+
+async function openAutonomy(){
+  // Data-loader only — do NOT call showPage('autonomy') here. This is invoked exclusively from
+  // PAGE_ENTER['autonomy'] below, which showPage() itself calls *after* switching to this page.
+  // Calling showPage from in here used to re-fire PAGE_ENTER['autonomy'] -> openAutonomy() ->
+  // showPage() in an unbounded mutual-recursion loop: every single visit to the Autonomy page
+  // (including clicking Start/Stop, which reloads this page's status) burned the call stack down
+  // to a "RangeError: Maximum call stack size exceeded" within milliseconds. Recoverable on its
+  // own (the thrown error just aborts that call chain), but it froze page interaction long enough
+  // that clicks — like the kill switch's Stop button — appeared to hang or crash the app.
+  await reloadAutonomy();
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;
+  // self-cancels the moment the user navigates elsewhere so it never polls in the background.
+  autoRefreshTimer=setInterval(()=>{
+    if(!document.getElementById('page-autonomy')?.classList.contains('active')){
+      clearInterval(autoRefreshTimer); autoRefreshTimer=null; return;
+    }
+    reloadAutonomyStatus();
+  },4000);
+}
+PAGE_ENTER['autonomy']=()=>{ if(ROLE==='admin') openAutonomy(); };
+
+async function reloadAutonomy(){
+  await reloadObjectives();
+  await Promise.all([reloadAutonomyStatus(), reloadAutonomyRuns()]);
+}
+
+document.getElementById('auto-refresh').addEventListener('click',reloadAutonomy);
+
+// Collapsible table boxes (Autonomy page): header click folds the body; caret tracks state.
+function toggleBoxBody(id,hdr){
+  const box=document.getElementById(id); if(!box) return;
+  const hidden=box.style.display==='none';
+  box.style.display=hidden?'':'none';
+  const caret=hdr.querySelector('.box-caret'); if(caret) caret.textContent=hidden?'▸':'▾';
+}
+
+function autoMsg(t,ok){
+  const m=document.getElementById('auto-msg');
+  m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t;
+  setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },3500);
+}
+
+async function reloadAutonomyStatus(){
+  try{
+    const r=await api('/autonomy/status'); if(!r.success) throw new Error(r.message);
+    const s=r.data||{};
+    document.getElementById('auto-disabled-note').style.display=s.enabled?'none':'block';
+    document.getElementById('auto-start-btn').disabled=!s.enabled||!!s.running;
+    document.getElementById('auto-stop-btn').disabled=!s.running;
+    const runEl=document.getElementById('auto-running');
+    runEl.textContent=s.running?'RUNNING':(s.enabled?'IDLE':'OFF');
+    runEl.style.color=s.running?'var(--green)':(s.enabled?'var(--queen)':'var(--dim)');
+    setEl('auto-poll-sub','poll every '+(s.poll_seconds??'—')+'s');
+    setEl('auto-hour',`${s.missions_last_hour??0}/${s.max_missions_per_hour??'—'}`);
+    setEl('auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
+    setEl('auto-backlog',`${s.backlog_pending??0}/${s.backlog_active??0}`);
+    const killEngaged=!!s.kill_switch_engaged;
+    document.getElementById('auto-kill-dot').className='kill-dot '+(killEngaged?'engaged':'ok');
+    setEl('auto-kill-text',killEngaged?'Kill switch engaged':'Kill switch clear');
+    setEl('auto-next',s.next_objective?`${s.next_objective.title} (priority ${s.next_objective.priority})`:'— backlog empty —');
+    setEl('auto-decision',s.budget_decision||'—');
+    setEl('auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
+    setEl('auto-conc-sub',(s.governor_code&&s.governor_code!=='ok')?('governed: '+s.governor_code):'effective / configured');
+    setEl('auto-governor',s.governor_reason||(s.running?'— first cycle pending —':'—'));
+    const inflight=s.in_flight||[];
+    setEl('auto-inflight',inflight.length
+      ?inflight.map(f=>`${f.objective_title} (${f.job_status}${f.mission_id?', mission '+String(f.mission_id).slice(0,8):''})`).join(' · ')
+      :'— none —');
+    const badge=document.getElementById('nav-autonomy-badge');
+    if(badge){
+      if(s.running){ badge.style.display=''; badge.textContent='●'; badge.style.color='var(--green)'; }
+      else badge.style.display='none';
+    }
+  }catch(e){ setEl('auto-decision','Error: '+e.message); }
+}
+
+document.getElementById('auto-start-btn').addEventListener('click',async()=>{
+  try{
+    const r=await api('/autonomy/start','POST');
+    autoMsg(r.success?'Director started.':(r.message||'Failed'),r.success);
+    await reloadAutonomyStatus();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+document.getElementById('auto-stop-btn').addEventListener('click',async()=>{
+  if(!await uiConfirm('Stop the Colony Director and engage the kill switch?')) return;
+  try{
+    const r=await api('/autonomy/stop','POST');
+    autoMsg(r.success?'Director stopped; kill switch engaged.':(r.message||'Failed'),r.success);
+    await reloadAutonomyStatus();
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+async function reloadObjectives(){
+  const tb=document.getElementById('obj-tbody');
+  try{
+    const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
+    // Terminal objectives (loop-retired, or completed/stopped as 'done') move to the Completed
+    // Objectives box below — hide them from the active backlog. Resumable pauses stay here.
+    autonomyObjectives=(r.data||[]).filter(o=>o.retired_code!=='looping_goals' && o.status!=='done');
+    setEl('obj-count',`Objectives (${autonomyObjectives.length})`);
+    reloadCompletedObjectives();
+    tb.innerHTML=autonomyObjectives.map(o=>{
+      const paused=o.status==='paused';
+      return `<tr>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(o.title)}</td>
+        <td class="obj-charter" title="${escapeHtml(o.charter||'')}">${escapeHtml(o.charter||'')}</td>
+        <td style="white-space:nowrap;">
+          <button class="obj-prio-btn" data-onclick="objAdjustPriority('${o.id}',${o.priority-1})" title="Lower priority">-</button>
+          <span style="font-family:var(--mono);font-size:11px;margin:0 3px;">${o.priority}</span>
+          <button class="obj-prio-btn" data-onclick="objAdjustPriority('${o.id}',${o.priority+1})" title="Raise priority">+</button>
+        </td>
+        <td><span class="obj-status ${o.status}">${o.status}</span></td>
+        <td style="font-family:var(--mono);font-size:11px;">${o.run_count}${o.max_runs?'/'+o.max_runs:''}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:${o.success_ema==null?'var(--dim)':(o.success_ema>=0.5?'var(--green)':(o.success_ema>=0.25?'var(--queen)':'var(--red)'))}" title="Success score EMA — biases selection priority (Phase 4 learning)">${o.success_ema==null?'—':o.success_ema.toFixed(2)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:${o.consecutive_failures>0?'var(--red)':'var(--dim)'}">${o.consecutive_failures}</td>
+        <td>${o.last_run_at?fmtTime(o.last_run_at):'never'}</td>
+        <td style="white-space:nowrap;">
+          <button class="job-btn view" data-onclick="objToggleStatus('${o.id}','${paused?'active':'paused'}')">${paused?'Resume':'Pause'}</button>
+          <button class="job-btn cancel" data-onclick="objDelete('${o.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">No objectives yet — add one above.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="9" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
+
+// -- Completed Objectives (Director-ended: completed / stopped / retired / failed) --
+// Badge styling per canonical end_reason (v1.8.23).
+const OBJ_END_BADGE={
+  completed_successfully:['Completed','rgba(16,185,129,.14)','var(--green)'],
+  stopped_no_followup_required:['Stopped','rgba(59,130,246,.14)','var(--blue)'],
+  retired_looping:['Retired · Looping','rgba(251,191,36,.14)','var(--queen)'],
+  failed:['Failed','rgba(239,68,68,.14)','var(--red)'],
+  manually_paused:['Paused','rgba(251,191,36,.14)','var(--queen)'],
+  manually_stopped:['Stopped','rgba(255,255,255,.06)','var(--dim)'],
+};
+async function reloadCompletedObjectives(){
+  const list=document.getElementById('completed-obj-list'); if(!list) return;
+  try{
+    const r=await api('/objectives/completed'); if(!r.success) throw new Error(r.message);
+    const rows=r.data||[];
+    setEl('completed-obj-count',`Completed Objectives (${rows.length})`);
+    if(!rows.length){ list.innerHTML='<div style="color:var(--dim);font-size:11px;padding:8px 0;">None — objectives the Director has completed, stopped, or retired will appear here.</div>'; return; }
+    list.innerHTML=rows.map(o=>{
+      const [blabel,bbg,bcol]=OBJ_END_BADGE[o.end_reason]||['Ended','rgba(255,255,255,.06)','var(--dim)'];
+      const pc=o.patch_counts||{};
+      const patchTag=pc.total?`<span class="obj-status" style="background:rgba(59,130,246,.10);color:var(--blue)" title="Patches produced">${pc.total} patch${pc.total>1?'es':''}</span>`:'';
+      return `
+      <details class="card" style="margin-bottom:6px;padding:0;" data-obj="${o.id}" data-ontoggle="onCompletedToggle(this)">
+        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:9px 12px;user-select:none;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;">${escapeHtml(o.title||'')}</span>
+          ${patchTag}
+          <span class="obj-status" style="background:${bbg};color:${bcol};">${blabel}</span>
+          <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+        </summary>
+        <div style="padding:2px 14px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);">
+          <div style="margin:6px 0;color:${bcol};">${escapeHtml(o.end_detail||o.end_reason_label||'Ended.')}</div>
+          <div class="co-detail" style="color:var(--dim);">Expand to load related runs, missions, tasks, and patches…</div>
+        </div>
+      </details>`;}).join('');
+  }catch(e){ list.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${escapeHtml(e.message)}</div>`; }
+}
+
+async function onCompletedToggle(det){
+  const caret=det.querySelector('summary .box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
+  if(!det.open || det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const box=det.querySelector('.co-detail');
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(det.dataset.obj)+'/detail'); if(!r.success) throw new Error(r.message);
+    const d=r.data||{};
+    const kv=(k,v)=>`<div style="display:flex;gap:8px;padding:2px 0;"><span style="color:var(--dim);min-width:130px;">${k}</span><span style="font-family:var(--mono);word-break:break-all;">${escapeHtml(String(v??'—'))}</span></div>`;
+    const runs=(d.runs||[]).map(x=>`<div style="padding:2px 0;">• ${escapeHtml((x.generated_goal||'').slice(0,110))} <span style="color:var(--dim)">(${escapeHtml(x.mission_status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const missions=(d.missions||[]).map(x=>`<div style="padding:2px 0;">• <span style="font-family:var(--mono)">${escapeHtml(String(x.id||'').slice(0,8))}</span> ${escapeHtml((x.goal||'').slice(0,90))} <span style="color:var(--dim)">(${escapeHtml(x.status||'—')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const tasks=(d.tasks||[]).map(x=>`<div style="padding:1px 0;">• ${escapeHtml(x.ant||'')}: ${escapeHtml((x.title||'').slice(0,80))} <span style="color:var(--dim)">(${escapeHtml(x.status||'')})</span></div>`).join('')||'<div style="color:var(--dim)">none</div>';
+    const pc=d.patch_counts||{};
+    const patchBlock=pc.total
+      ? `<div>${escapeHtml(patchSummaryText(pc))} · <a href="#" data-onclick="openPatches({objective_id:'${d.id}'});return false;" style="color:var(--blue)">Open in Changes →</a></div>`
+      : '<div style="color:var(--dim)">No patches produced.</div>';
+    box.innerHTML=
+      kv('Objective ID', d.id)+kv('Original title', d.title)+
+      kv('End reason', d.end_reason_label||d.end_reason)+kv('Detail', d.end_detail||d.retired_reason)+
+      kv('Runs', (d.runs||[]).length)+kv('Missions', (d.missions||[]).length)+
+      kv('Tasks', (d.tasks||[]).length)+kv('Ended at', d.ended_at||d.retired_at)+
+      `<div style="margin-top:8px;color:var(--muted);font-weight:600;">Patch activity</div>${patchBlock}`+
+      `<div style="margin-top:8px;color:var(--muted);font-weight:600;">Related runs</div>${runs}`+
+      `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related missions</div>${missions}`+
+      `<div style="margin-top:6px;color:var(--muted);font-weight:600;">Related tasks</div>${tasks}`;
+  }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
+}
+
+document.getElementById('obj-add').addEventListener('click',async()=>{
+  const title=document.getElementById('obj-title').value.trim();
+  const charter=document.getElementById('obj-charter').value.trim();
+  const priority=parseInt(document.getElementById('obj-priority').value,10)||0;
+  const maxRuns=parseInt(document.getElementById('obj-maxruns').value,10)||0;
+  if(!title||!charter){ autoMsg('Title and charter are required.',false); return; }
+  try{
+    const r=await api('/objectives','POST',{title,charter,priority,max_runs:maxRuns});
+    if(r.success){
+      autoMsg('Objective added.',true);
+      document.getElementById('obj-title').value='';
+      document.getElementById('obj-charter').value='';
+      document.getElementById('obj-priority').value='0';
+      document.getElementById('obj-maxruns').value='0';
+      await reloadObjectives();
+    } else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+async function objToggleStatus(id,status){
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'PATCH',{status});
+    if(r.success){ autoMsg(status==='paused'?'Objective paused.':'Objective resumed.',true); await reloadObjectives(); }
+    else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+async function objAdjustPriority(id,priority){
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'PATCH',{priority});
+    if(r.success) await reloadObjectives(); else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+async function objDelete(id){
+  if(!await uiConfirm('Delete this objective? This cannot be undone.')) return;
+  try{
+    const r=await api('/objectives/'+encodeURIComponent(id),'DELETE');
+    if(r.success){ autoMsg('Objective deleted.',true); await reloadObjectives(); }
+    else autoMsg(r.message||'Failed',false);
+  }catch(e){ autoMsg('Failed: '+e.message,false); }
+}
+
+async function reloadAutonomyRuns(){
+  const tb=document.getElementById('auto-runs-tbody');
+  try{
+    const r=await api('/autonomy/runs'); if(!r.success) throw new Error(r.message);
+    const runs=r.data||[];
+    setEl('auto-runs-count',`Recent Autonomous Runs (${runs.length})`);
+    const titleById={}; autonomyObjectives.forEach(o=>{ titleById[o.id]=o.title; });
+    tb.innerHTML=runs.map(run=>{
+      const status=run.mission_status||'—';
+      const statusColor=status==='complete'?'var(--green)':status==='failed'?'var(--red)':status==='partial'?'var(--orange)':'var(--dim)';
+      return `<tr>
+        <td>${escapeHtml(titleById[run.objective_id]||run.objective_id||'—')}</td>
+        <td class="obj-charter" title="${escapeHtml(run.generated_goal||'')}">${escapeHtml(run.generated_goal||'')}</td>
+        <td style="color:${statusColor}">${status}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${run.success_score!=null?Number(run.success_score).toFixed(2):'—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${run.follow_ups_created||0}</td>
+        <td style="font-size:11px;">${patchCellHtml(run.patch_counts,run.mission_id)}</td>
+        <td>${run.started_at?fmtTime(run.started_at):'—'}</td>
+        <td>${run.mission_id?`<button class="job-btn view" data-onclick="openResults('${run.mission_id}')">View</button>`:'<span style="color:var(--dim);font-size:10px">no mission</span>'}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No autonomous runs yet.</td></tr>';
+  }catch(e){ tb.innerHTML=`<tr><td colspan="8" style="color:var(--red)">Error: ${e.message}</td></tr>`; }
+}
+
+// -- Pheromone memory page -----------------------------------------------------
+async function openPheromones(){
+  showPage('pheromones');
+  await reloadPheromones();
+}
+
+PAGE_ENTER['pheromones']=()=>reloadPheromones();
+
+// -- Security page -------------------------------------------------------------
+const SEC_GATES=[
+  ['web_search_enabled','Web Search','Read-only external research (DuckDuckGo). No API key.'],
+  ['file_tools_enabled','File Read Tools','Let ants list dirs and read files inside the workspace.'],
+  ['file_writing_enabled','File Writing','Allow approved patches to write files (still needs approval).'],
+  ['patch_application_enabled','Patch Application','Allow /apply to write approved patches to disk.'],
+  ['shell_tool_enabled','AI Shell Tool','Allowlisted shell for the AI ants. High risk.'],
+];
+let secSettings={};
+
+PAGE_ENTER['security']=()=>{ if(ROLE==='admin') loadSecurity(); };
+document.getElementById('sec-refresh').addEventListener('click',loadSecurity);
+document.getElementById('sec-save').addEventListener('click',saveSecurity);
+
+async function loadSecurity(){
+  try{ const r=await api('/settings'); if(!r.success) return; secSettings=r.data; }catch{ return; }
+  const bind=secSettings.api_host==='0.0.0.0'?'All interfaces':secSettings.api_host;
+  setEl('sec-auth', secSettings.api_auth_enabled===false?'DISABLED':'Password login');
+  setEl('sec-profile', secSettings.safety_profile||'—');
+  setEl('sec-bind', bind);
+  setEl('sec-enc','AES-256-GCM');
+  document.getElementById('sec-auth').style.color = secSettings.api_auth_enabled===false?'var(--red)':'var(--green)';
+  document.getElementById('sec-bind').style.color = secSettings.api_host==='0.0.0.0'?'var(--queen)':'var(--green)';
+  const tog=(k,label,desc)=>`<div class="toggle-row" style="align-items:flex-start"><div><div>${label}</div><div style="font-size:10px;color:var(--dim)">${desc}</div></div><div class="toggle-sw${secSettings[k]?' on':''}" data-key="${k}" data-onclick="this.classList.toggle('on')"></div></div>`;
+  document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
+  document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
+  document.getElementById('sec-autoapply-toggle').innerHTML=tog('autonomy_autoapply_enabled','Enable auto-apply','Director applies allowlisted patches that verify green, without review.');
+  (function(){var sw=document.querySelector('#sec-autoapply-toggle .toggle-sw');if(sw)sw.addEventListener('click',function(){var pa=document.getElementById('sec-autoapply-paths');if(sw.classList.contains('on')&&pa&&!pa.value.trim())pa.value='docs/**\nsrc/**';});})();
+  document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, commit the change on the standalone branch (never main).');
+  document.getElementById('sec-autoapply-git-push').innerHTML=tog('autonomy_autoapply_git_push','Push branch to origin','After commit, push the standalone branch via the SSH deploy key. Never pushes or merges main.');
+  document.getElementById('sec-autoapply-git-user').value=secSettings.autonomy_autoapply_git_username||'';
+  document.getElementById('sec-autoapply-git-remote').value=secSettings.autonomy_autoapply_git_remote||'origin';
+  document.getElementById('sec-autoapply-git-key').value=secSettings.autonomy_autoapply_git_ssh_key_path||'';
+  secSyncGitBranch();
+  document.getElementById('sec-workspace').value=secSettings.agent_workspace_dir||'';
+  document.getElementById('sec-shell-dir').value=secSettings.operator_shell_dir||'';
+  document.getElementById('sec-autoapply-paths').value=(secSettings.autonomy_autoapply_paths||[]).join('\n');
+  document.getElementById('sec-autoapply-maxlines').value=secSettings.autonomy_autoapply_max_lines??40;
+  document.getElementById('sec-autoapply-timeout').value=secSettings.autonomy_autoapply_verify_timeout??900;
+  document.getElementById('sec-autoapply-verify').value=secSettings.autonomy_autoapply_verify_cmd||'';
+}
+
+function secSyncGitBranch(){
+  const u=(document.getElementById('sec-autoapply-git-user').value||'').trim();
+  const el=document.getElementById('sec-autoapply-git-branch');
+  if(el) el.value=u?`${u}-anthill`:'';
+}
+async function saveSecurity(){
+  const payload={};
+  // Include the Autonomous Auto-Apply toggles — they live in their own containers, so they were
+  // previously never collected here and toggling "Enable auto-apply" / "Git-commit verified changes"
+  // had no effect on save.
+  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw,#sec-autoapply-toggle .toggle-sw,#sec-autoapply-git .toggle-sw,#sec-autoapply-git-push .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
+  const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
+  payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
+  payload.autonomy_autoapply_paths=document.getElementById('sec-autoapply-paths').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  payload.autonomy_autoapply_max_lines=parseInt(document.getElementById('sec-autoapply-maxlines').value,10)||40;
+  payload.autonomy_autoapply_verify_timeout=parseInt(document.getElementById('sec-autoapply-timeout').value,10)||900;
+  payload.autonomy_autoapply_verify_cmd=document.getElementById('sec-autoapply-verify').value.trim();
+  payload.autonomy_autoapply_git_username=document.getElementById('sec-autoapply-git-user').value.trim();
+  payload.autonomy_autoapply_git_remote=document.getElementById('sec-autoapply-git-remote').value.trim()||'origin';
+  payload.autonomy_autoapply_git_ssh_key_path=document.getElementById('sec-autoapply-git-key').value.trim();
+  const msg=document.getElementById('sec-msg');
+  try{
+    const r=await api('/settings','POST',payload);
+    msg.style.color=r.success?'var(--green)':'var(--red)'; msg.textContent=r.success?'Saved.':(r.message||'Failed');
+    if(r.success) await loadSecurity();
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
+  setTimeout(()=>{ msg.textContent=''; },3500);
+}
+
+// -- Shell page (admin-only host terminal) -------------------------------------
+let shHistory=[], shHistIdx=-1, shBusy=false;
+
+PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
+document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
+document.getElementById('sh-run').addEventListener('click',runShell);
+// Quick-command buttons: put the command in the input and run it (restart asks first).
+document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',async()=>{
+  const cmd=b.dataset.cmd;
+  if(cmd==='systemctl restart anthill' && !(await uiConfirm('Restart the ANTHILL service now? The console will briefly disconnect.'))) return;
+  const inp=document.getElementById('sh-input'); if(inp.disabled) return;
+  inp.value=cmd; runShell();
+}));
+document.getElementById('sh-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); runShell(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.max(0,shHistIdx-1); e.target.value=shHistory[shHistIdx]||''; } }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.min(shHistory.length,shHistIdx+1); e.target.value=shHistory[shHistIdx]||''; } }
+});
+
+function showShellBanner(){
+  const out=document.getElementById('sh-output'); if(!out || out.dataset.banner) return;
+  out.dataset.banner='1';
+  const src=document.getElementById('sh-banner-src');
+  const art=src?src.textContent.replace(/\s+$/,''):'';
+  const ver=(typeof lastSystemSummary==='object'&&lastSystemSummary&&lastSystemSummary.version)?('v'+lastSystemSummary.version):'';
+  out.innerHTML=`<pre style="margin:0 0 6px;color:var(--cyan);line-height:1.05;font-size:10px;white-space:pre;overflow-x:auto">${escapeHtml(art)}</pre>`+
+    `<div style="color:var(--dim);margin-bottom:10px;">ANTHILL operator shell ${ver} · type a command and press Enter.</div>`;
+}
+async function initShell(){
+  showShellBanner();
+  try{
+    const r=await api('/shell/info'); if(!r.success) throw new Error(r.message);
+    const info=r.data||{};
+    const enabled=!!info.enabled;
+    document.getElementById('sh-disabled-note').style.display=enabled?'none':'block';
+    document.getElementById('sh-input').disabled=!enabled;
+    document.getElementById('sh-run').disabled=!enabled;
+    setEl('sh-host', info.host?`(${info.host})`:'');
+    setEl('sh-host2', (info.host||'host')+' · '+(info.os||''));
+    const dirEl=document.getElementById('sh-dir');
+    if(!dirEl.value) dirEl.value=info.default_dir||'';
+  }catch(e){ document.getElementById('sh-disabled-note').style.display='block'; }
+}
+
+function shAppend(html){ const o=document.getElementById('sh-output'); o.innerHTML+=html; o.scrollTop=o.scrollHeight; }
+
+async function runShell(){
+  if(shBusy) return;
+  const inp=document.getElementById('sh-input'); const cmd=inp.value.trim(); if(!cmd) return;
+  const dir=document.getElementById('sh-dir').value.trim();
+  shHistory.push(cmd); shHistIdx=shHistory.length; inp.value=''; shBusy=true;
+  document.getElementById('sh-run').disabled=true;
+  shAppend(`<div style="color:var(--dim)"><span style="color:var(--green)">$</span> ${escapeHtml(cmd)}</div>`);
+  try{
+    const r=await api('/shell/exec','POST',{command:cmd,dir});
+    if(!r.success){ shAppend(`<div style="color:var(--red)">${escapeHtml(r.message||'command failed')}</div>`); }
+    else{
+      const d=r.data||{};
+      if(d.stdout) shAppend(`<div>${escapeHtml(d.stdout)}</div>`);
+      if(d.stderr) shAppend(`<div style="color:var(--queen)">${escapeHtml(d.stderr)}</div>`);
+      const ec=d.exit_code, col=ec===0?'var(--dim)':'var(--red)';
+      shAppend(`<div style="color:${col};font-size:10px">[exit ${ec}${d.timed_out?' · timed out':''} · ${d.elapsed_seconds}s · ${escapeHtml(d.dir||'')}]</div>`);
+      if(d.dir) document.getElementById('sh-dir').value=d.dir;
+    }
+  }catch(e){ shAppend(`<div style="color:var(--red)">${escapeHtml(e.message)}</div>`); }
+  shBusy=false; document.getElementById('sh-run').disabled=false; inp.focus();
+}
+
+async function reloadPheromones(){
+  const body=document.getElementById('phero-body');
+  const kpis=document.getElementById('memory-kpis');
+  const signals=document.getElementById('memory-signals');
+  const results=document.getElementById('memory-results');
+  const q=(document.getElementById('memory-query')?.value||'').trim();
+  try{
+    const r=await api('/memory/explorer?limit=120'+(q?'&q='+encodeURIComponent(q):''));if(!r.success) throw new Error(r.message);
+    const data=r.data||{},sum=data.summary||{},trails=data.trails||[];
+    setEl('phero-count',`${sum.missions||0} missions indexed / ${trails.length} trails${q?' / filtered':''}`);
+    renderMemorySummary(sum,kpis);
+    renderMemorySignals(sum,signals);
+    renderMemoryResults(data,results);
+    renderPheromoneTable(trails,body);
+  }catch(e){
+    body.innerHTML=`<div style="color:var(--red)">Error: ${escapeHtml(e.message)}</div>`;
+    if(results) results.innerHTML=`<div style="color:var(--red)">Explorer error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderMemorySummary(sum,box){
+  if(!box) return;
+  const cells=[
+    ['Missions',sum.missions||0],['Tasks',sum.tasks||0],['Sources',sum.sources||0],['Patches',sum.patches||0],
+    ['Trails',sum.trails||0],['Strong',sum.strong_trails||0],['Failure-led',sum.failure_dominant_trails||0],['Loop patterns',sum.loop_pattern_trails||0],
+  ];
+  box.innerHTML=cells.map(([l,v])=>`<div class="memory-kpi"><div class="v">${escapeHtml(v)}</div><div class="l">${escapeHtml(l)}</div></div>`).join('');
+}
+
+function renderMemorySignals(sum,box){
+  if(!box) return;
+  const total=Math.max(1,+sum.trails||0);
+  const mk=(label,val,color)=>{const pct=Math.min(100,Math.round((val/total)*100));return `<div class="memory-signal"><span>${escapeHtml(label)}</span><div class="memory-signal-track"><div class="memory-signal-fill" style="width:${pct}%;background:${color}"></div></div><span>${pct}%</span></div>`;};
+  box.innerHTML=[
+    mk('Strong success',+sum.strong_trails||0,'var(--green)'),
+    mk('Failure-dominant',+sum.failure_dominant_trails||0,'var(--red)'),
+    mk('Loop patterns',+sum.loop_pattern_trails||0,'var(--purple)'),
+  ].join('')+`<div style="font-size:10px;color:var(--dim);line-height:1.5;margin-top:4px;">Signals are derived from stored mission memory and pheromone trails. Use prune to archive weak or failure-heavy trails.</div>`;
+}
+
+function memoryItem(kind,title,copy,meta,chips=[]){
+  return `<div class="memory-result"><div class="memory-result-top"><div><div class="memory-kind">${escapeHtml(kind)}</div><div class="memory-title">${escapeHtml(title||'Untitled')}</div></div><div class="memory-meta">${escapeHtml(meta||'')}</div></div>`+
+    `<div class="memory-copy">${escapeHtml((copy||'').slice(0,260))}</div>`+
+    (chips.length?`<div class="memory-chiprow">${chips.filter(Boolean).map(c=>`<span class="memory-chip">${escapeHtml(c)}</span>`).join('')}</div>`:'')+`</div>`;
+}
+
+function renderMemoryResults(data,box){
+  if(!box) return;
+  const rows=[];
+  (data.missions||[]).slice(0,8).forEach(m=>rows.push(memoryItem('mission',m.goal,m.final_result||m.user_result||m.debug_result,fmtTime(m.saved_at||m.created_at),[`score ${m.success_score??'?'}`,m.status])));
+  (data.tasks||[]).slice(0,10).forEach(t=>rows.push(memoryItem('task',t.title,t.result_summary||t.description||t.failure_reason,t.assigned_worker||t.assigned_ant,[t.status,t.task_type,String(t.mission_id||'').slice(0,8)])));
+  (data.sources||[]).slice(0,8).forEach(s=>rows.push(memoryItem('source',s.title||s.url,s.summary||s.notes||s.domain,s.domain,[`confidence ${s.confidence_score??'?'}`,String(s.mission_id||'').slice(0,8)])));
+  (data.patches||[]).slice(0,8).forEach(p=>rows.push(memoryItem('patch',p.file_path,p.reason||p.patch_set_summary||p.last_error,p.status,[p.change_type,p.risk,String(p.mission_id||'').slice(0,8)])));
+  (data.events||[]).slice(0,8).forEach(e=>rows.push(memoryItem('event',e.event_type,e.message,e.ant_name||fmtTime(e.created_at),[e.level,String(e.mission_id||'').slice(0,8)])));
+  (data.trails||[]).slice(0,8).forEach(t=>rows.push(memoryItem('trail',t.trail_key,`${t.success_count||0} success / ${t.failure_count||0} failure`,t.trail_type,[`strength ${Number(t.strength||0).toFixed(3)}`,`net ${t.net_count??0}`])));
+  box.innerHTML=rows.length?rows.join(''):'<div style="font-size:10px;color:var(--dim);padding:8px 0;">No memory matched that search.</div>';
+}
+
+function renderPheromoneTable(trails,body){
+  if(!trails.length){body.innerHTML='<div style="color:var(--dim)">No pheromone trails recorded yet. Run a few missions to build colony memory.</div>';return;}
+  body.innerHTML=`<table class="phero-table"><thead><tr>
+      <th>Trail</th><th>Type</th><th>Strength</th><th>✓</th><th>✕</th><th>Net</th><th>Updated</th></tr></thead><tbody>${
+      trails.map(t=>{
+        const s=+t.strength||0,pct=Math.round(s*100),net=t.net_count||0;
+        const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
+        return `<tr>
+          <td class="phero-key" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(t.trail_key||'?')}</td>
+          <td>${escapeHtml(t.trail_type||'?')}</td>
+          <td><div style="display:flex;align-items:center;gap:7px"><div class="phero-bar"><div class="phero-bar-fill" style="width:${pct}%;background:${col}"></div></div><span style="color:${col}">${s.toFixed(3)}</span></div></td>
+          <td style="color:var(--green)">${t.success_count||0}</td>
+          <td style="color:var(--red)">${t.failure_count||0}</td>
+          <td class="phero-net ${net>=0?'pos':'neg'}">${net>=0?'+':''}${net}</td>
+          <td>${fmtTime(t.last_updated)||'?'}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+}
+
+document.getElementById('phero-reload').addEventListener('click',reloadPheromones);
+document.getElementById('memory-search').addEventListener('click',reloadPheromones);
+document.getElementById('memory-query').addEventListener('keydown',e=>{if(e.key==='Enter') reloadPheromones();});
+document.getElementById('phero-prune').addEventListener('click',async()=>{
+  if(!await uiConfirm('Prune weak and failure-dominant pheromone trails? This keeps only useful colony memory.')) return;
+  const msg=document.getElementById('phero-msg');
+  try{const r=await api('/pheromones/prune','POST');msg.style.color='var(--green)';msg.textContent=r.message||'Pruned';await reloadPheromones();}
+  catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
+  setTimeout(()=>msg.textContent='',3000);
+});
+
+// -- Colony settings tab -------------------------------------------------------
+const TOGGLE_KEYS=[
+  ['web_search_enabled','Web Search'],['file_tools_enabled','File Tools'],
+  ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
+  ['shell_tool_enabled','Shell Tool'],['parallel_execution_enabled','Parallel Exec'],
+  ['spec_ingestion_enabled','Spec Ingestion'],['autonomy_enabled','Autonomy'],
+  ['autonomy_learning_enabled','Autonomy Learning'],
+];
+const NUM_KEYS=[
+  ['max_parallel_workers','Parallel Workers'],['max_web_searches_per_mission','Web Searches/Mission'],
+  ['max_sources_per_mission','Sources/Mission'],['max_context_packet_chars','Context Chars'],
+  ['long_input_threshold','Long-Input Threshold'],['max_section_chars','Section Chars'],
+];
+const AUTO_KEYS=[
+  ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
+  ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
+  ['autonomy_concurrency','Concurrency'],['autonomy_aging_minutes','Aging Minutes'],
+  ['autonomy_priority_bias_max','Learning Bias Max'],['autonomy_retire_min_runs','Retire Min Runs'],
+  ['autonomy_loop_window','Loop Window'],
+];
+let colonySettings={};
+
+async function loadColonyTab(){
+  try{const r=await api('/settings');if(!r.success)return;colonySettings=r.data;}catch{return;}
+  document.getElementById('set-ollama-host').value=colonySettings.ollama_host||'';
+  document.getElementById('set-ollama-model').value=colonySettings.ollama_model||'';
+  document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
+    `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" data-onclick="this.classList.toggle('on')"></div></div>`).join('');
+  document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
+  document.getElementById('set-autonomy').innerHTML=AUTO_KEYS.map(([k,label])=>
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
+}
+
+async function saveColonyTab(){
+  const msg=document.getElementById('colony-save-msg'); msg.textContent='';
+  const payload={
+    ollama_host:document.getElementById('set-ollama-host').value.trim(),
+    ollama_model:document.getElementById('set-ollama-model').value.trim(),
+  };
+  document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{payload[sw.dataset.key]=sw.classList.contains('on');});
+  document.querySelectorAll('#set-nums input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});
+  try{
+    const r=await api('/settings','POST',payload);
+    if(r.success){msg.style.color='var(--green)';msg.textContent=r.message||'Saved';colonySettings=r.data.settings||colonySettings;pollModelInfo();}
+    else{msg.style.color='var(--red)';msg.textContent=r.message||'Failed';}
+  }catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
+  setTimeout(()=>msg.textContent='',3000);
+}
+
+document.getElementById('colony-save').addEventListener('click',saveColonyTab);
+document.getElementById('colony-reload').addEventListener('click',loadColonyTab);
+
+// -- User management -----------------------------------------------------------
+async function openUsers(){
+  if(ROLE!=='admin') return;
+  showPage('users');
+  await reloadUsers();
+}
+
+PAGE_ENTER['users']=()=>{ if(ROLE==='admin') reloadUsers(); };
+
+async function reloadUsers(){
+  const tb=document.getElementById('users-tbody');
+  try{
+    const r=await api('/users');if(!r.success) throw new Error(r.message);
+    const users=r.data||[];
+    setEl('users-count',`${users.length} account${users.length===1?'':'s'}`);
+    tb.innerHTML=users.map(u=>{
+      const isAdmin=(u.role||'coordinator')==='admin';
+      const status=u.active?'<span style="color:var(--green)">active</span>':'<span style="color:var(--red)">disabled</span>';
+      const last=u.last_login_at?fmtTime(u.last_login_at):'never';
+      const self=u.username===USERNAME;
+      return `<tr>
+        <td style="font-family:var(--mono);color:var(--text)">${escapeHtml(u.username)}${self?' <span style="color:var(--dim)">(you)</span>':''}</td>
+        <td><span style="color:${isAdmin?'var(--queen)':'var(--blue)'}">${isAdmin?'Administrator':'Coordinator'}</span></td>
+        <td>${status}</td>
+        <td>${last}</td>
+        <td style="white-space:nowrap">
+          <button class="job-btn view" data-onclick="userResetPw('${escapeHtml(u.username)}')">Reset PW</button>
+          <button class="job-btn view" data-onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
+          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${escapeHtml(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
+          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${escapeHtml(u.username)}')">Delete</button>`}
+        </td></tr>`;
+    }).join('')||'<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
+  }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`;}
+}
+
+function usersMsg(t,ok){
+  const m=document.getElementById('nu-msg');
+  m.style.color=ok?'var(--green)':'var(--red)';
+  m.textContent=t;
+  setTimeout(()=>{if(m.textContent===t)m.textContent='';},3500);
+}
+
+document.getElementById('nu-add').addEventListener('click',async()=>{
+  const u=document.getElementById('nu-user').value.trim();
+  const p=document.getElementById('nu-pass').value;
+  const role=document.getElementById('nu-role').value;
+  if(!u||!p){usersMsg('Username and password are required.',false);return;}
+  try{
+    const r=await api('/users','POST',{username:u,password:p,role});
+    if(r.success){usersMsg('Created '+u,true);document.getElementById('nu-user').value='';document.getElementById('nu-pass').value='';reloadUsers();}
+    else usersMsg(r.message||'Failed',false);
+  }catch(e){usersMsg('Failed: '+e.message,false);}
+});
+
+document.getElementById('users-reload').addEventListener('click',reloadUsers);
+
+async function userPatch(username,body,okMsg){
+  try{
+    const r=await api('/users/'+encodeURIComponent(username),'PATCH',body);
+    if(r.success){usersMsg(okMsg,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
+  }catch(e){usersMsg('Failed: '+e.message,false);}
+}
+async function userResetPw(u){const p=await uiPrompt(`New password for ${u} (min 8 characters):`,{password:true,title:'Reset password'});if(p)userPatch(u,{password:p},'Password reset for '+u);}
+async function userToggleRole(u,role){if(await uiConfirm(`Change role of ${u} to ${role}?`))userPatch(u,{role},'Role changed for '+u);}
+function userToggleActive(u,active){userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u);}
+async function userDelete(u){
+  if(!await uiConfirm(`Delete account ${u}? This cannot be undone.`)) return;
+  try{
+    const r=await api('/users/'+encodeURIComponent(u),'DELETE');
+    if(r.success){usersMsg('Deleted '+u,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
+  }catch(e){usersMsg('Failed: '+e.message,false);}
+}
+
+// -- Homelab Inventory (v1.10.0, NORTH_STAR Phase 6) ----------------------------
+let HL_HOSTS=[], HL_SVCS=[], HL_DEPS=[];
+PAGE_ENTER['homelab']=()=>loadHomelab();
+
+function hlMsg(m,ok){ const el=document.getElementById('hl-msg'); if(!el) return;
+  el.textContent=m; el.style.color=ok?'var(--green)':'var(--red)';
+  setTimeout(()=>{ if(el.textContent===m) el.textContent=''; },6000); }
+
+// -- v2.5.0 Phase 14: automation rules -----------------------------------------------------------
+async function hlLoadAutomation(){
+  const body=document.getElementById('hl-auto-body'); if(!body) return;
+  try{
+    const [r,runs]=await Promise.all([api('/homelab/automation/rules'),api('/homelab/automation/runs')]);
+    if(!(r&&r.success&&r.data)){ body.innerHTML='<span style="color:var(--dim)">Automation unavailable.</span>'; return; }
+    const d=r.data, rules=d.rules||[];
+    const st=document.getElementById('hl-auto-state');
+    if(st) st.textContent=d.enabled?'engine ON · rules fire only when individually enabled':'engine OFF (homelab_automation_enabled) — rules are stored but nothing evaluates';
+    body.innerHTML=!rules.length
+      ? '<span style="color:var(--dim)">No rules yet. POST /homelab/automation/rules — e.g. disk_above_percent → warn_event, service_down → propose_restart (restart is approval-gated, never direct).</span>'
+      : '<table style="width:100%;border-collapse:collapse;font-size:10px;">'+
+        '<tr style="color:var(--dim);text-align:left;"><th>Rule</th><th>Trigger</th><th>Action</th><th>Cooldown</th><th>Cap/day</th><th>State</th><th></th></tr>'+
+        rules.map(x=>'<tr style="border-top:1px solid var(--border);">'+
+          '<td><b style="color:var(--text)">'+escapeHtml(x.name)+'</b></td>'+
+          '<td>'+escapeHtml(x.trigger_kind)+(x.target?' · '+escapeHtml(x.target):'')+(x.trigger_kind==='disk_above_percent'||x.trigger_kind==='repeated_health_failure'?' ≥'+x.threshold:'')+'</td>'+
+          '<td>'+escapeHtml(x.action_kind)+'</td><td>'+x.cooldown_minutes+'m</td><td>'+x.max_runs_per_day+'</td>'+
+          '<td style="color:'+(x.enabled?'var(--green)':'var(--dim)')+';font-weight:700;">'+(x.enabled?'ENABLED':'off')+'</td>'+
+          '<td><button class="btn btn-ghost" style="font-size:9px;" data-onclick="hlAutoToggle(\''+attrSafe(x.id)+'\','+(x.enabled?'0':'1')+')">'+(x.enabled?'Disable':'Enable')+'</button></td>'+
+        '</tr>').join('')+'</table>';
+    const runBox=document.getElementById('hl-auto-runs');
+    const rr=(runs&&runs.success&&runs.data)||[];
+    if(runBox) runBox.innerHTML=rr.length
+      ? '<div style="color:var(--dim);margin-bottom:2px;">RECENT RUNS</div>'+rr.slice(0,6).map(x=>'<div style="padding:2px 0;border-top:1px dotted var(--border);">'+
+          '<span style="color:var(--dim)">'+escapeHtml((x.fired_at||'').substring(0,16))+'</span> <b>'+escapeHtml(x.rule_name)+'</b> · '+
+          '<span style="color:'+(x.outcome==='fired'?'var(--orange)':'var(--dim)')+'">'+escapeHtml(x.outcome)+'</span> '+escapeHtml((x.action_taken||x.trigger_detail||'').substring(0,80))+'</div>').join('')
+      : '';
+  }catch(e){ body.innerHTML='<span style="color:var(--red)">Error: '+escapeHtml(e.message||'')+'</span>'; }
+}
+async function hlAutoToggle(id,on){
+  try{ await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),{method:'POST'}); }catch(e){}
+  hlLoadAutomation();
+}
+async function hlAutoEvaluate(){
+  try{ await window.api('/homelab/automation/evaluate',{method:'POST'}); }catch(e){}
+  hlLoadAutomation();
+}
+
+// -- v2.4.0 Phase 13: backup + restore intelligence ---------------------------------------------
+async function hlLoadBackup(){
+  const body=document.getElementById('hl-bk-body'); if(!body) return;
+  try{
+    const r=await api('/homelab/backup/coverage');
+    if(!(r&&r.success&&r.data)){ body.innerHTML='<span style="color:var(--dim)">Coverage unavailable.</span>'; return; }
+    const d=r.data, entries=d.entries||[], t=d.totals||{};
+    const tot=document.getElementById('hl-bk-totals');
+    if(tot) tot.textContent=(t.ok||0)+' ok · '+(t.stale||0)+' stale · '+(t.failed||0)+' failed · '+(t.none||0)+' unprotected · stale after '+d.stale_after_days+'d';
+    if(!entries.length){ body.innerHTML='<span style="color:var(--dim)">No VMs or containers in inventory yet — sync an integration first.</span>'; return; }
+    const cov=c=>c==='ok'?'var(--green)':c==='stale'?'var(--orange)':'var(--red)';
+    body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:10px;">'+
+      '<tr style="color:var(--dim);text-align:left;"><th>#</th><th>Target</th><th>Node</th><th>Coverage</th><th>Last success</th><th>Confidence</th><th></th></tr>'+
+      entries.map(e=>'<tr style="border-top:1px solid var(--border);">'+
+        '<td>'+e.restore_priority+'</td>'+
+        '<td><b style="color:var(--text)">'+escapeHtml(e.name||e.target_id)+'</b> <span style="color:var(--dim)">'+escapeHtml(e.target_kind)+' '+escapeHtml(e.target_id)+'</span></td>'+
+        '<td>'+escapeHtml(e.node_id||'—')+'</td>'+
+        '<td style="color:'+cov(e.coverage)+';font-weight:700;" title="'+escapeHtml(e.detail)+'">'+e.coverage.toUpperCase()+'</td>'+
+        '<td>'+escapeHtml((e.last_success||'—').substring(0,16))+'</td>'+
+        '<td>'+e.restore_confidence+'/100</td>'+
+        '<td><button class="btn btn-ghost" style="font-size:9px;" data-onclick="hlRunbook(\''+attrSafe(e.target_kind)+'\',\''+attrSafe(e.target_id)+'\')">Runbook</button></td>'+
+      '</tr>').join('')+'</table>';
+  }catch(e){ body.innerHTML='<span style="color:var(--red)">Error loading coverage: '+escapeHtml(e.message||'')+'</span>'; }
+}
+async function hlRunbook(kind,id){
+  const box=document.getElementById('hl-bk-runbook'); if(!box) return;
+  box.style.display='block'; box.innerHTML='Generating runbook…';
+  try{
+    const r=await api('/homelab/backup/runbook/'+encodeURIComponent(kind)+'/'+encodeURIComponent(id));
+    const steps=(r&&r.success&&r.data&&r.data.steps)||[];
+    box.innerHTML='<div class="section-head" style="margin-top:0;">Restore Runbook — '+escapeHtml(kind)+' '+escapeHtml(id)+
+      '<button class="btn btn-ghost" style="float:right;" data-onclick="document.getElementById(\'hl-bk-runbook\').style.display=\'none\'">✕</button></div>'+
+      steps.map(s=>'<div style="padding:3px 0;'+(s.includes('STOP')||s.includes('WARNING')?'color:var(--orange);':'')+'">'+escapeHtml(s)+'</div>').join('');
+  }catch(e){ box.innerHTML='<span style="color:var(--red)">Runbook error: '+escapeHtml(e.message||'')+'</span>'; }
+}
+
+async function loadHomelab(){
+  hlSubRestore(); // v2.5.3 R3: apply the operator's saved sub-page before any data lands
+  try{
+    const [sum,hosts,svcs,deps,chg]=await Promise.all([
+      api('/homelab/summary'),api('/homelab/hosts'),api('/homelab/services'),
+      api('/homelab/dependencies'),api('/homelab/changes')]);
+    HL_HOSTS=(hosts.data||[]); HL_SVCS=(svcs.data||[]); HL_DEPS=(deps.data||[]);
+    renderHlSummary(sum.success?(sum.data||{}):{});
+    renderHlHosts(); renderHlServices(); renderHlPorts(); renderHlDeps();
+    renderHlChanges(chg.success?(chg.data||[]):[]);
+    loadHlHealth();
+    loadHlVirt();
+    loadHlRisks();
+    loadHlIncidents();
+    loadHlActions();    // v2.3.0: approval-gated action proposals + kill-switch state
+    hlLoadBackup();     // v2.4.0: backup + restore intelligence (Phase 13)
+    hlLoadAutomation(); // v2.5.0: automation rules (Phase 14)
+    renderHlDeck();     // v2.3.2/3: the Service Deck — hosts/VMs/CTs/services as live tiles + metrics
+    renderHl3Apps();    // v2.4.1: *arr-stack apps (Homarr-style)
+    renderHl3Widgets(); // v2.5.2: Console Refit R2 — the widget zone (runtime + persisted layout)
+    renderHlTargets();  // v2.5.4: Console Refit R4 — target allow/blocklist collection manager
+    hl3LoaderFallbacks(); // v2.3.2: no infinite "Loading..." — labeled fallback after 7s
+    loadHlDashboard();  // V2.0: command summary, next checks, dependency graph
+    hlDelegateRows();   // V2.0: host/service row click → entity detail drawer
+    decorateHlSections(); // V2.0 pass 2: subsystem theming + connection cues
+    const c=document.getElementById('hl-count');
+    if(c) c.textContent=HL_HOSTS.length+' host(s) · '+HL_SVCS.length+' service(s) · '+HL_DEPS.length+' dependency(ies)';
+  }catch(e){ hlMsg('Load failed: '+e.message,false); }
+}
+
+function hlNodeName(id){ const n=HL_HOSTS.find(x=>x.id===id); return n?n.name:(id?id.slice(0,8)+'…':'—'); }
+function hlRefName(kind,id){
+  if(kind==='service'){ const s=HL_SVCS.find(x=>x.id===id); if(s) return s.name; }
+  if(kind==='host'){ return hlNodeName(id); }
+  const any=HL_SVCS.find(x=>x.id===id)||HL_HOSTS.find(x=>x.id===id);
+  return any?any.name:(id?id.slice(0,8)+'…':'—');
+}
+function hlDate(s){ return s?String(s).slice(0,16).replace('T',' '):'—'; }
+
+function renderHlSummary(d){
+  const el=document.getElementById('hl-summary'); if(!el) return;
+  const provs=(d.providers||[]).map(p=>escapeHtml(p.name)+': '+escapeHtml(p.state||'idle')).join(' · ')||'none registered';
+  el.innerHTML=
+    'Subsystem: <b>'+(d.enabled?'enabled':'disabled')+'</b> · Scheduler: <b>'+(d.scheduler_enabled?'enabled':'disabled')+
+    (d.scheduler_running?' (running)':'')+'</b> · Allowlist entries: <b>'+(d.allowlist_entries??0)+'</b>'+
+    '<br>Providers: '+provs+
+    '<br><span style="color:var(--dim)">Read-only foundation - actions arrive approval-gated in V2.1. Toggles live in config (homelab_enabled, homelab_scheduler_enabled, homelab_mock_providers_enabled).</span>';
+}
+
+function renderHlHosts(){
+  const tb=document.getElementById('hl-hosts-tbody'); if(!tb) return;
+  if(!HL_HOSTS.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No hosts registered yet.</td></tr>'; return; }
+  tb.innerHTML=HL_HOSTS.map(n=>{
+    const svcCount=HL_SVCS.filter(s=>s.node_id===n.id).length;
+    return '<tr><td>'+escapeHtml(n.name)+'</td><td>'+escapeHtml(n.kind||'')+'</td><td>'+escapeHtml(n.address||'—')+'</td><td>'+escapeHtml(n.os||'—')+
+      '</td><td>'+escapeHtml((n.role_tags||[]).join(', ')||'—')+'</td><td>'+svcCount+'</td><td>'+hlDate(n.updated_at)+'</td></tr>';
+  }).join('');
+  // Keep the service + dependency selectors in sync with registered hosts/services.
+  const sel=document.getElementById('hl-s-node');
+  if(sel) sel.innerHTML='<option value="">— unassigned —</option>'+HL_HOSTS.map(n=>'<option value="'+escapeHtml(n.id)+'">'+escapeHtml(n.name)+'</option>').join('');
+  const from=document.getElementById('hl-d-from'), to=document.getElementById('hl-d-to');
+  if(from) from.innerHTML=HL_SVCS.map(s=>'<option value="service:'+escapeHtml(s.id)+'">service: '+escapeHtml(s.name)+'</option>').join('')
+    +HL_HOSTS.map(n=>'<option value="host:'+escapeHtml(n.id)+'">host: '+escapeHtml(n.name)+'</option>').join('');
+  if(to) to.innerHTML=HL_HOSTS.map(n=>'<option value="host:'+escapeHtml(n.id)+'">host: '+escapeHtml(n.name)+'</option>').join('')
+    +HL_SVCS.map(s=>'<option value="service:'+escapeHtml(s.id)+'">service: '+escapeHtml(s.name)+'</option>').join('');
+}
+
+function renderHlServices(){
+  const tb=document.getElementById('hl-svcs-tbody'); if(!tb) return;
+  if(!HL_SVCS.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No services registered yet.</td></tr>'; return; }
+  tb.innerHTML=HL_SVCS.map(s=>'<tr><td>'+escapeHtml(s.name)+'</td><td>'+escapeHtml(hlNodeName(s.node_id))+'</td><td>'+escapeHtml(s.url||'—')+
+    '</td><td>'+escapeHtml((s.ports||[]).join(', ')||'—')+'</td><td>'+escapeHtml(s.owner||'—')+'</td><td>'+escapeHtml(s.criticality||'normal')+
+    '</td><td>'+(s.internet_exposed?'<span style="color:var(--red)">yes</span>':'no')+'</td><td>'+hlDate(s.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlPorts(){
+  const tb=document.getElementById('hl-ports-tbody'); if(!tb) return;
+  const rows=[];
+  HL_SVCS.forEach(s=>(s.ports||[]).forEach(p=>rows.push({port:p,svc:s})));
+  rows.sort((a,b)=>a.port-b.port);
+  tb.innerHTML=rows.length?rows.map(r=>'<tr><td>'+r.port+'</td><td>'+escapeHtml(r.svc.name)+'</td><td>'+escapeHtml(hlNodeName(r.svc.node_id))+
+    '</td><td>'+escapeHtml(r.svc.protocol||'—')+'</td><td>'+(r.svc.internet_exposed?'<span style="color:var(--red)">yes</span>':'no')+'</td></tr>').join('')
+    :'<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No ports (register services with ports).</td></tr>';
+}
+
+function renderHlDeps(){
+  const tb=document.getElementById('hl-deps-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!HL_DEPS.length){ tb.innerHTML='<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No dependencies mapped yet.</td></tr>'; return; }
+  tb.innerHTML=HL_DEPS.map(d=>'<tr><td>'+escapeHtml(d.from_kind)+': '+escapeHtml(hlRefName(d.from_kind,d.from_id))+'</td><td>'+escapeHtml(d.dependency_kind)+
+    '</td><td>'+escapeHtml(d.to_kind)+': '+escapeHtml(hlRefName(d.to_kind,d.to_id))+'</td><td>'+escapeHtml(d.notes||'—')+
+    '</td><td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDep(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+}
+
+function renderHlChanges(list){
+  const el=document.getElementById('hl-changes'); if(!el) return;
+  el.innerHTML=list.length?list.map(c=>'<div style="padding:2px 0;">'+hlDate(c.created_at)+' — <b>'+escapeHtml(c.change_kind)+'</b> '+escapeHtml(c.subject_kind)+
+    ' · '+escapeHtml(c.summary||'')+(c.changed_by?(' <span style="color:var(--dim)">by '+escapeHtml(c.changed_by)+'</span>'):'')+'</div>').join('')
+    :'No changes recorded yet.';
+}
+
+// -- Virtualization: Proxmox read-only (v1.12.0) ----------------------------------
+function hlBytes(n){ if(!n) return '0'; const u=['B','KB','MB','GB','TB','PB']; let i=0; let v=n;
+  while(v>=1024&&i<u.length-1){ v/=1024; i++; } return v.toFixed(v>=100?0:1)+' '+u[i]; }
+function hlUptime(s){ if(!s) return '—'; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600);
+  return d>0?(d+'d '+h+'h'):(h+'h '+Math.floor(s%3600/60)+'m'); }
+
+// v2.1.0: unified read-only virtualization connections (Proxmox / ESXi / Docker / Hyper-V).
+const HL_VIRT_META={
+  proxmox:{title:'Proxmox VE',   defPort:8006,secretHint:'user@realm!tokenid=SECRET (PVEAuditor role)'},
+  esxi:   {title:'VMware ESXi / vCenter',defPort:443, secretHint:'user:password (built-in Read-only role)'},
+  docker: {title:'Docker Engine',defPort:2376,secretHint:'optional bearer — leave blank for none'},
+  hyperv: {title:'Microsoft Hyper-V',defPort:5986,secretHint:'DOMAIN\\user:password (read-only account)'},
+};
+async function loadHlVirt(){
+  try{
+    const [st,vms,cts,pools]=await Promise.all([
+      api('/homelab/virtualization/status'),api('/homelab/vms'),api('/homelab/containers'),api('/homelab/storage')]);
+    renderHlVirtConns(st.success?(st.data||{}):{});
+    renderHlVms(vms.success?(vms.data||[]):[]);
+    renderHlCts(cts.success?(cts.data||[]):[]);
+    renderHlStorage(pools.success?(pools.data||[]):[]);
+  }catch(e){ hlMsg('Virtualization load failed: '+e.message,false); }
+}
+
+function renderHlVirtConns(data){
+  const wrap=document.getElementById('hl-virt-conns'); if(!wrap) return;
+  const admin=ROLE==='admin';
+  const list=(data&&data.integrations)||[];
+  // Master-gate bar. Read-only inventory still syncs manually with the subsystem off, but scheduled
+  // sync + the health/risk/incident jobs need it enabled (and a restart to (de)register the jobs).
+  let bar='<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:11px;">'+
+    '<span>Infrastructure subsystem: <b style="color:'+(data.homelab_enabled?'var(--green)':'var(--red)')+'">'+(data.homelab_enabled?'enabled':'disabled')+'</b></span>'+
+    '<span>· Scheduler: <b style="color:'+(data.scheduler_enabled?'var(--green)':'var(--dim)')+'">'+(data.scheduler_enabled?'enabled':'disabled')+'</b></span>'+
+    (admin?('<span style="flex:1"></span>'+
+      '<button class="btn btn-ghost" data-onclick="hlSetHomelabGate(\'homelab_enabled\','+(!data.homelab_enabled)+')">'+(data.homelab_enabled?'Disable subsystem':'Enable subsystem')+'</button>'+
+      '<button class="btn btn-ghost" data-onclick="hlSetHomelabGate(\'homelab_scheduler_enabled\','+(!data.scheduler_enabled)+')">'+(data.scheduler_enabled?'Disable scheduler':'Enable scheduler')+'</button>'+
+      '<span style="color:var(--dim)">(restart to (de)register scheduled syncs)</span>'):'')+'</div>';
+  if(!list.length){ wrap.innerHTML=bar+'<div style="color:var(--dim);font-size:11px;">No integrations available.</div>'; return; }
+  wrap.innerHTML=bar+list.map(d=>{
+    const k=d.kind, m=HL_VIRT_META[k]||{title:k,defPort:0,secretHint:'secret'};
+    const dis=admin?'':' disabled';
+    return '<div class="card" style="padding:10px 12px;border:1px solid var(--border);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+        '<b>'+escapeHtml(m.title)+'</b>'+
+        '<span class="hud-risk low" title="No write methods exist in the client — read-only by construction">read-only</span></div>'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin:7px 0;">'+
+        '<input type="checkbox" id="hl-vc-'+k+'-enabled" aria-label="'+escapeHtml(m.title)+' connection enabled"'+(d.enabled?' checked':'')+dis+'> Enabled'+
+        '<span style="flex:1"></span>'+
+        '<input type="checkbox" id="hl-vc-'+k+'-insecure" aria-label="'+escapeHtml(m.title)+': skip TLS verification"'+(d.insecure_tls?' checked':'')+dis+'> Skip TLS verify</label>'+
+      '<div style="display:flex;gap:6px;margin-bottom:6px;">'+
+        '<input class="form-input" id="hl-vc-'+k+'-host" value="'+escapeHtml(d.host||'')+'" placeholder="host / ip" style="flex:2;font-size:11px;" autocomplete="off"'+dis+'>'+
+        '<input class="form-input" id="hl-vc-'+k+'-port" value="'+(d.port||m.defPort||'')+'" type="number" placeholder="port" style="width:66px;font-size:11px;"'+dis+'></div>'+
+      '<input class="form-input" id="hl-vc-'+k+'-credid" value="'+escapeHtml(d.credential_id||'')+'" placeholder="credential id" style="width:100%;font-size:11px;margin-bottom:6px;" autocomplete="off"'+dis+'>'+
+      (admin?('<div style="display:flex;gap:6px;margin-bottom:6px;">'+
+        '<input class="form-input" id="hl-vc-'+k+'-secret" type="password" placeholder="'+escapeHtml(m.secretHint)+'" style="flex:1;font-size:11px;" autocomplete="new-password">'+
+        '<button class="btn btn-ghost" data-onclick="hlSaveVirtCred(\''+k+'\')" title="Store the secret in the write-only credential vault">Save cred</button></div>'+
+        '<div style="display:flex;gap:6px;">'+
+        '<button class="btn btn-primary" data-onclick="hlSaveVirtConn(\''+k+'\')">Save</button>'+
+        '<button class="btn btn-ghost" data-onclick="hlSyncVirt(\''+k+'\')">⟳ Sync now</button></div>'):'')+
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;">credential <b>'+escapeHtml(d.credential_id||'—')+'</b>: '+
+        (d.credential_configured?'<span style="color:var(--green)">configured</span>':'<span style="color:var(--red)">missing</span>')+
+        ' · '+(d.active?'<span style="color:var(--green)">active</span>':'inactive')+
+        (d.host?(' · host: '+(d.host_allowlisted
+          ?'<span style="color:var(--green)">allowlisted</span>'
+          :'<span style="color:var(--red)">NOT allowlisted — requests are blocked</span>'+(admin?' <button class="btn btn-ghost" style="padding:1px 6px;font-size:9px;" data-onclick="hlAllowVirtHost(\''+k+'\')">Allow this host</button>':''))):'')+
+        '</div></div>';
+  }).join('');
+}
+
+async function hlAllowVirtHost(k){
+  const h=document.getElementById('hl-vc-'+k+'-host');
+  const host=h?h.value.trim():'';
+  if(!host){ hlMsg('Set the host first.',false); return; }
+  const r=await api('/homelab/allowlist','POST',{target:host,note:k+' virtualization'});
+  hlMsg(r.success?('Host '+host+' allowlisted — now Sync now to pull inventory.'):(r.message||'Failed'),r.success);
+  if(r.success) loadHlVirt();
+}
+
+async function hlSetHomelabGate(key,val){
+  const payload={}; payload[key]=val;
+  const r=await api('/settings','POST',payload);
+  hlMsg(r.success?(key+' → '+val+'. Restart the service so scheduled syncs (de)register.'):(r.message||'Failed'),r.success);
+  if(r.success) loadHlVirt();
+}
+
+async function hlSaveVirtConn(k){
+  const g=id=>document.getElementById('hl-vc-'+k+'-'+id);
+  if(!g('host')) return;
+  const payload={};
+  payload['homelab_'+k+'_enabled']=g('enabled').checked;
+  payload['homelab_'+k+'_host']=g('host').value.trim();
+  const port=parseInt(g('port').value,10); if(port>0) payload['homelab_'+k+'_port']=port;
+  payload['homelab_'+k+'_credential_id']=g('credid').value.trim();
+  payload['homelab_'+k+'_insecure_tls']=g('insecure').checked;
+  const r=await api('/settings','POST',payload);
+  hlMsg(r.success?(k+' connection saved — Sync now to pull inventory (scheduled sync starts after next restart).'):(r.message||'Save failed'),r.success);
+  if(r.success) loadHlVirt();
+}
+
+async function hlSaveVirtCred(k){
+  const g=id=>document.getElementById('hl-vc-'+k+'-'+id);
+  const secret=(g('secret')?g('secret').value:'').trim();
+  const id=(g('credid')?g('credid').value:'').trim();
+  if(!id){ hlMsg('Set a credential id first.',false); return; }
+  if(!secret){ hlMsg('Enter the secret to store.',false); return; }
+  const r=await api('/homelab/credentials','POST',{id:id,kind:k,target_host:(g('host')?g('host').value.trim():''),secret:secret});
+  hlMsg(r.success?('Credential "'+id+'" stored (write-only).'):(r.message||'Save failed'),r.success);
+  if(g('secret')) g('secret').value='';
+  if(r.success) loadHlVirt();
+}
+
+async function hlSyncVirt(k){
+  hlMsg('Syncing '+k+'...',true);
+  const r=await api('/homelab/virtualization/'+encodeURIComponent(k)+'/sync','POST',{});
+  if(!r.success){ hlMsg(r.message||'Failed',false); return; }
+  loadHomelab(); // full refresh: node graph + inventory tables (loadHomelab calls loadHlVirt)
+  // Diagnostic nudge for the #1 read-only Proxmox gotcha: a privilege-separated (privsep=1)
+  // API token's effective permissions are the INTERSECTION of the backing user's perms and the
+  // token's ACL. Proxmox then returns HTTP 200 + EMPTY lists (never 403) for resources the token
+  // can't audit — so a sync "succeeds" and finds the nodes, yet pulls 0 VMs/containers/storage.
+  // Surface the cause here instead of a silent "ok" over empty tables.
+  const items=(r.data&&r.data.items)||0;
+  try{
+    const st=await api('/homelab/virtualization/status');
+    const d=st.success?(st.data||{}):{};
+    const emptyInventory=((d.vms||0)+(d.containers||0)+(d.storage_pools||0))===0;
+    if(k==='proxmox'&&items>0&&emptyInventory){
+      hlMsg(r.message+' — nodes only, no VMs/containers/storage. If this is a privilege-separated API token, grant the backing USER the PVEAuditor role too (effective perms = user ∩ token).',false);
+      return;
+    }
+  }catch(e){}
+  hlMsg(r.message||'Synced',true);
+}
+
+function renderHlVms(vms){
+  const tb=document.getElementById('hl-vms-tbody'); if(!tb) return;
+  if(!vms.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No VMs synced yet.</td></tr>'; return; }
+  tb.innerHTML=vms.map(v=>'<tr><td>'+escapeHtml(v.vm_id||'—')+'</td><td>'+escapeHtml(v.name)+'</td><td>'+escapeHtml(hlNodeName(v.node_id))+
+    '</td><td style="color:'+(v.status==='running'?'var(--green)':'var(--dim)')+'">'+escapeHtml(v.status||'—')+'</td>'+
+    '<td>'+(v.cpu_cores||0)+'</td><td>'+hlBytes((v.memory_mb||0)*1048576)+'</td><td>'+hlUptime(v.uptime_seconds)+'</td><td>'+hlDate(v.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlCts(cts){
+  const tb=document.getElementById('hl-cts-tbody'); if(!tb) return;
+  if(!cts.length){ tb.innerHTML='<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No containers synced yet.</td></tr>'; return; }
+  tb.innerHTML=cts.map(c=>'<tr><td>'+escapeHtml(c.container_id||'—')+'</td><td>'+escapeHtml(c.name)+'</td><td>'+escapeHtml(c.kind||'lxc')+
+    '</td><td>'+escapeHtml(hlNodeName(c.node_id))+'</td><td style="color:'+(c.status==='running'?'var(--green)':'var(--dim)')+'">'+escapeHtml(c.status||'—')+'</td><td>'+hlDate(c.updated_at)+'</td></tr>').join('');
+}
+
+function renderHlStorage(pools){
+  const tb=document.getElementById('hl-storage-tbody'); if(!tb) return;
+  if(!pools.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No storage synced yet.</td></tr>'; return; }
+  tb.innerHTML=pools.map(p=>{
+    const pct=p.total_bytes>0?Math.round(p.used_bytes*100/p.total_bytes):0;
+    const col=pct>=90?'var(--red)':(pct>=75?'var(--yellow, orange)':'var(--green)');
+    return '<tr><td>'+escapeHtml(p.name)+'</td><td>'+escapeHtml(hlNodeName(p.node_id))+'</td><td>'+escapeHtml(p.kind||'—')+
+      '</td><td>'+hlBytes(p.used_bytes)+'</td><td>'+hlBytes(p.total_bytes)+'</td><td style="color:'+col+'">'+pct+'%</td><td>'+hlDate(p.updated_at)+'</td></tr>';
+  }).join('');
+}
+
+async function hlPveSync(){
+  hlMsg('Syncing Proxmox...',true);
+  const r=await api('/homelab/proxmox/sync','POST',{});
+  hlMsg(r.message||(r.success?'Synced':'Failed'),r.success);
+  if(r.success){ loadHomelab(); }
+}
+
+// -- V2.0 Command Center: dashboard, graph, entity detail (Pass 1: functional) -------
+let HL_DASH=null, HL_GRAPH_SEL=null;
+
+function hlStatusColor(st){ return st==='healthy'?'var(--green)':(st==='degraded'?'var(--yellow, orange)':(st==='failed'?'var(--red)':'var(--dim)')); }
+
+async function loadHlDashboard(){
+  try{
+    const r=await api('/homelab/dashboard');
+    if(!r.success){ hlMsg(r.message||'Dashboard load failed',false); return; }
+    HL_DASH=r.data||{};
+    renderHlCmdStrip(HL_DASH);
+    renderHlNext(HL_DASH);
+    renderHlGraph(HL_DASH);
+  }catch(e){ hlMsg('Dashboard load failed: '+e.message,false); }
+}
+
+function hlKpi(label,value,color){
+  return '<span class="hl-kpi" style="border:1px solid var(--line, #223);border-radius:4px;padding:3px 8px;">'+
+    '<b style="color:'+(color||'var(--muted)')+'">'+value+'</b> <span style="color:var(--dim)">'+escapeHtml(label)+'</span></span>';
+}
+
+function renderHlCmdStrip(d){
+  const el=document.getElementById('hl-cmd-kpis'); if(!el) return;
+  const h=d.health||{};
+  const parts=[
+    hlKpi('hosts', d.hosts??0),
+    hlKpi('services', d.services??0),
+    hlKpi('healthy', h.healthy??0, 'var(--green)'),
+    hlKpi('degraded', h.degraded??0, (h.degraded>0?'var(--yellow, orange)':undefined)),
+    hlKpi('failed', h.failed??0, (h.failed>0?'var(--red)':undefined)),
+    hlKpi('active incidents', (d.active_incidents||[]).length, ((d.active_incidents||[]).length>0?'var(--red)':undefined)),
+    hlKpi('risk errors', d.open_risk_errors??0, (d.open_risk_errors>0?'var(--red)':undefined)),
+    hlKpi('risk warnings', d.open_risk_warnings??0),
+    hlKpi('VMs/CTs', (d.vms??0)+'/'+(d.containers??0)),
+  ];
+  if((d.storage_total_bytes??0)>0)
+    parts.push(hlKpi('storage', hlBytes(d.storage_used_bytes)+' / '+hlBytes(d.storage_total_bytes)+(d.backup_capable_pools>0?(' · '+d.backup_capable_pools+' backup pool(s)'):' · no backup pools')));
+  else parts.push(hlKpi('storage', 'no data yet'));
+  if((d.pending_approvals??-1)>=0) parts.push(hlKpi('pending approvals', d.pending_approvals, (d.pending_approvals>0?'var(--yellow, orange)':undefined)));
+  el.innerHTML=parts.join('');
+  const st=document.getElementById('hl-cmd-stamps');
+  if(st){
+    // Colony-link dot: derived strictly from real job stamps — green+pulse if any scheduler job
+    // ran in the last 15 minutes, amber if ever, gray if never. Never fabricated.
+    const stamps=[d.last_health_run,d.last_proxmox_sync,d.last_risk_analysis].filter(x=>x);
+    const fresh=stamps.some(x=>{ const t=Date.parse(x); return !isNaN(t)&&(Date.now()-t)<15*60*1000; });
+    const dot='<span class="hl-live-dot'+(fresh?' hl-pulse':'')+'" style="background:'+(fresh?'var(--hl-health)':(stamps.length?'var(--hl-memory)':'var(--dim)'))+'" title="'+(fresh?'colony link: scheduler active in the last 15m':(stamps.length?'colony link: idle (no recent job runs)':'colony link: no jobs have run yet'))+'"></span>';
+    st.innerHTML=dot+
+      'last health run: '+(d.last_health_run?hlDate(d.last_health_run):'no data yet')+
+      ' · last proxmox sync: '+(d.last_proxmox_sync?hlDate(d.last_proxmox_sync):'not configured')+
+      ' · last risk analysis: '+(d.last_risk_analysis?hlDate(d.last_risk_analysis):'no data yet')+
+      ' · generated '+hlDate(d.generated_at);
+  }
+}
+
+function renderHlNext(d){
+  const el=document.getElementById('hl-next'); if(!el) return;
+  const items=d.next_checks||[];
+  el.innerHTML=items.length?('<ol style="margin:0 0 0 16px;padding:0;">'+items.map(n=>'<li style="padding:2px 0;">'+escapeHtml(n)+'</li>').join('')+'</ol>')
+    :'<span style="color:var(--green)">Nothing urgent — no failing checks, error incidents, or error findings right now.</span>';
+}
+
+function renderHlGraph(d){
+  const svg=document.getElementById('hl-graph'); if(!svg) return;
+  const nodes=d.graph_nodes||[], edges=d.graph_edges||[];
+  if(!nodes.length){
+    svg.innerHTML='<text x="20" y="40" fill="var(--dim)" font-size="11">No graph yet — register hosts and services (with "runs on") to map dependencies.</text>';
+    const info=document.getElementById('hl-graph-info'); if(info) info.textContent='';
+    return;
+  }
+  const hosts=nodes.filter(n=>n.kind==='host'), svcs=nodes.filter(n=>n.kind!=='host');
+  const W=Math.max(600,(Math.max(hosts.length,svcs.length))*130+60);
+  svg.setAttribute('viewBox','0 0 '+W+' 230'); svg.style.minWidth=W+'px';
+  const pos={};
+  svcs.forEach((n,i)=>pos[n.id]={x:60+i*130+((svcs.length<hosts.length)?65:0), y:55});
+  hosts.forEach((n,i)=>pos[n.id]={x:60+i*130+((hosts.length<svcs.length)?65:0), y:175});
+  const sel=HL_GRAPH_SEL;
+  const connected=new Set();
+  if(sel){ connected.add(sel); edges.forEach(e=>{ if(e.from===sel||e.to===sel){ connected.add(e.from); connected.add(e.to); } }); }
+  let out='';
+  edges.forEach(e=>{
+    const a=pos[e.from], b=pos[e.to]; if(!a||!b) return;
+    const hot=sel&&(e.from===sel||e.to===sel);
+    out+='<line class="hl-edge'+(e.impacted?' hl-edge-bad':'')+(hot?' hl-edge-hot':'')+'" x1="'+a.x+'" y1="'+(a.y+14)+'" x2="'+b.x+'" y2="'+(b.y-16)+'"'+
+      ' stroke="'+(e.impacted?'var(--red)':(hot?'var(--acc, #6cf)':'var(--line, #334)'))+'" stroke-width="'+(hot||e.impacted?2:1)+'"'+(e.impacted?' stroke-dasharray="4 3"':'')+'/>';
+  });
+  nodes.forEach(n=>{
+    const p=pos[n.id]; if(!p) return;
+    const dim=sel&&!connected.has(n.id);
+    const sc=hlStatusColor(n.status), isHost=n.kind==='host';
+    const kindFill=isHost?'var(--hl-compute,#56b6f5)':'var(--hl-service,#5fd7a7)';
+    const pulse=(n.status==='failed'||n.open_incident)?' class="hl-pulse"':'';
+    // Host = square box; Service = rounded pill. Fill by KIND, border by STATUS — so shape+colour make
+    // "is this a host or a service?" obvious at a glance, while the ring still shows health.
+    const shape=isHost
+      ? '<rect x="'+(p.x-17)+'" y="'+(p.y-13)+'" width="34" height="26" rx="4" fill="'+kindFill+'" fill-opacity="0.18" stroke="'+sc+'" stroke-width="2"'+pulse+'/>'
+      : '<rect x="'+(p.x-16)+'" y="'+(p.y-9)+'" width="32" height="18" rx="9" fill="'+kindFill+'" fill-opacity="0.22" stroke="'+sc+'" stroke-width="2"'+pulse+'/>';
+    const glyph='<text x="'+p.x+'" y="'+(p.y+4)+'" font-size="11" fill="'+kindFill+'" text-anchor="middle" style="font-weight:700;">'+(isHost?'▣':'●')+'</text>';
+    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" data-onclick="hlGraphSelect(\''+escapeHtml(n.id)+'\')">'+
+      shape+glyph+
+      (n.internet_exposed?'<text x="'+(p.x+19)+'" y="'+(p.y-14)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
+      (n.open_incident?'<text x="'+(p.x-17)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
+      '<text x="'+p.x+'" y="'+(p.y+(isHost?33:-16))+'" font-size="10" fill="var(--muted)" text-anchor="middle">'+escapeHtml(n.label)+'</text></g>';
+  });
+  svg.innerHTML=out;
+  const info=document.getElementById('hl-graph-info');
+  if(info){
+    if(sel){
+      const me=nodes.find(n=>n.id===sel);
+      const dependents=hlDependents(sel,edges).map(id=>{const n=nodes.find(x=>x.id===id);return n?n.label:id;});
+      info.innerHTML='<b>'+escapeHtml(me?me.label:sel)+'</b> — status <span style="color:'+hlStatusColor(me?me.status:'unknown')+'">'+escapeHtml(me?me.status:'?')+'</span>'+
+        ' · depends-on-this: '+(dependents.length?escapeHtml(dependents.join(', ')):'nothing recorded')+
+        ' · <a href="javascript:void(0)" data-onclick="hlGraphSelect(null)" style="color:var(--dim)">clear selection</a>';
+    } else info.innerHTML='<span style="color:var(--hl-compute,#56b6f5);font-weight:700">▣ host</span> &nbsp; <span style="color:var(--hl-service,#5fd7a7);font-weight:700">● service</span> &nbsp; <span style="color:var(--red)">--- impacted path</span> &nbsp;·&nbsp; '+nodes.length+' node(s), '+edges.length+' edge(s), '+edges.filter(e=>e.impacted).length+' impacted.';
+  }
+}
+
+function hlDependents(id,edges){
+  const incoming={}; edges.forEach(e=>{ (incoming[e.to]=incoming[e.to]||[]).push(e.from); });
+  const seen=new Set([id]), out=[], q=[id];
+  while(q.length){ (incoming[q.shift()]||[]).forEach(p=>{ if(!seen.has(p)){ seen.add(p); out.push(p); q.push(p); } }); }
+  return out;
+}
+
+function hlGraphSelect(id){ HL_GRAPH_SEL=(HL_GRAPH_SEL===id)?null:id; if(HL_DASH) renderHlGraph(HL_DASH); }
+
+// Entity detail drawer (host/service) — click a name row in the Hosts/Services tables.
+function hlEntity(kind,id){
+  const box=document.getElementById('hl-entity-detail'); if(!box) return;
+  const ent=(kind==='host'?HL_HOSTS:HL_SVCS).find(x=>x.id===id); if(!ent) return;
+  box.style.display='';
+  const t=document.getElementById('hl-ent-title'); if(t) t.textContent=(kind==='host'?'Host: ':'Service: ')+(ent.name||id);
+  const node=(HL_DASH&&HL_DASH.graph_nodes||[]).find(n=>n.id===id);
+  const facts=document.getElementById('hl-ent-facts');
+  if(facts) facts.innerHTML=(kind==='host'
+    ? 'Kind: '+escapeHtml(ent.kind||'host')+'<br>Address: '+escapeHtml(ent.address||'—')+'<br>OS: '+escapeHtml(ent.os||'—')+'<br>Tags: '+escapeHtml((ent.role_tags||[]).join(', ')||'—')
+    : 'Runs on: '+escapeHtml(hlNodeName(ent.node_id))+'<br>URL: '+escapeHtml(ent.url||'—')+'<br>Ports: '+escapeHtml((ent.ports||[]).join(', ')||'—')+'<br>Owner: '+escapeHtml(ent.owner||'—')+'<br>Criticality: '+escapeHtml(ent.criticality||'normal')+'<br>Exposed: '+(ent.internet_exposed?'<span style="color:var(--red)">yes</span>':'no'))
+    +'<br>Status: <span style="color:'+hlStatusColor(node?node.status:'unknown')+'">'+escapeHtml(node?node.status:'unknown (no checks)')+'</span>';
+  const depsEl=document.getElementById('hl-ent-deps');
+  if(depsEl){
+    const edges=(HL_DASH&&HL_DASH.graph_edges)||[];
+    const uses=edges.filter(e=>e.from===id).map(e=>hlRefName('any',e.to)+' ('+e.kind+')');
+    const dependents=hlDependents(id,edges).map(x=>hlRefName('any',x));
+    depsEl.innerHTML='Uses: '+(uses.length?escapeHtml(uses.join(', ')):'nothing recorded')+
+      '<br>Depended on by: '+(dependents.length?escapeHtml(dependents.join(', ')):'nothing recorded');
+  }
+  const rel=document.getElementById('hl-ent-related');
+  if(rel){
+    const needle=(ent.name||'')+'|'+(ent.address||ent.url||'')+'|'+id;
+    const toks=needle.split('|').filter(x=>x&&x.length>2);
+    const match=s=>toks.some(t=>String(s||'').toLowerCase().includes(t.toLowerCase()));
+    const incs=(HL_DASH&&HL_DASH.active_incidents||[]).filter(i=>match(i.subject_id)||match(i.title));
+    const chgs=(HL_DASH&&HL_DASH.recent_changes||[]).filter(c=>match(c.summary)||c.subject_id===id);
+    rel.innerHTML=(incs.length?incs.map(i=>'⚠ <b>'+escapeHtml(i.title)+'</b> ('+escapeHtml(i.status)+')').join('<br>'):'No active incidents')+
+      '<br><span style="color:var(--dim)">Recent changes:</span><br>'+
+      (chgs.length?chgs.slice(0,5).map(c=>hlDate(c.created_at)+' — '+escapeHtml(c.summary)).join('<br>'):'none recorded');
+  }
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function hlCloseEntity(){ const box=document.getElementById('hl-entity-detail'); if(box) box.style.display='none'; }
+
+// Row-click delegation for Hosts/Services tables (additive: no renderer changes needed).
+let HL_DELEGATED=false;
+function hlDelegateRows(){
+  if(HL_DELEGATED) return; HL_DELEGATED=true;
+  const wire=(tbodyId,kind,arr)=>{
+    const tb=document.getElementById(tbodyId); if(!tb) return;
+    tb.addEventListener('click',ev=>{
+      if(ev.target.closest('button')) return; // let action buttons win
+      const tr=ev.target.closest('tr'); if(!tr||!tr.parentNode) return;
+      const idx=Array.prototype.indexOf.call(tr.parentNode.children,tr);
+      const list=arr(); if(idx>=0&&idx<list.length) hlEntity(kind,list[idx].id);
+    });
+  };
+  wire('hl-hosts-tbody','host',()=>HL_HOSTS);
+  wire('hl-svcs-tbody','service',()=>HL_SVCS);
+}
+
+// -- V2.0 Pass 2: identity layer (subsystem theming + connection cues) ----------------
+// Tags each card with its subsystem class so the centralized #hl-theme tokens color it.
+// Pure decoration: reads the DOM, changes no data or behavior.
+let HL_DECORATED=false;
+function decorateHlSections(){
+  if(HL_DECORATED) return; HL_DECORATED=true;
+  const map={
+    'hl-checks-tbody':'hl-sec-health','hl-check-form':'hl-sec-health',
+    'hl-pve-status':'hl-sec-compute','hl-vms-tbody':'hl-sec-compute','hl-cts-tbody':'hl-sec-compute',
+    'hl-storage-tbody':'hl-sec-storage',
+    'hl-dev-form':'hl-sec-security','hl-devs-tbody':'hl-sec-security','hl-risks-tbody':'hl-sec-security',
+    'hl-inc-tbody':'hl-sec-incident','hl-inc-detail':'hl-sec-incident',
+    'hl-changes':'hl-sec-memory','hl-hosts-tbody':'hl-sec-memory','hl-svcs-tbody':'hl-sec-memory',
+    'hl-ports-tbody':'hl-sec-memory','hl-deps-tbody':'hl-sec-memory',
+    'hl-graph':'hl-sec-compute','hl-summary':'hl-sec-memory','hl-host-form':'hl-sec-memory','hl-svc-form':'hl-sec-memory','hl-dep-form':'hl-sec-memory'
+  };
+  Object.keys(map).forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    const card=el.closest('.card'); if(card) card.classList.add(map[id]);
+  });
+  // Connection cues: clicking a failed check flashes its related incidents; clicking a risk
+  // finding flashes the services it points at. Subtle, purposeful, no diagrams.
+  const cue=(tbodyId,getNeedle,targetTbodies)=>{
+    const tb=document.getElementById(tbodyId); if(!tb) return;
+    tb.addEventListener('click',ev=>{
+      if(ev.target.closest('button')) return;
+      const tr=ev.target.closest('tr'); if(!tr) return;
+      const needle=getNeedle(tr); if(!needle) return;
+      hlFlashRows(targetTbodies,needle);
+    });
+  };
+  cue('hl-checks-tbody',tr=>(tr.cells[1]?tr.cells[1].textContent:'').trim(),['hl-inc-tbody']);
+  cue('hl-risks-tbody',tr=>{
+    const m=(tr.cells[2]?tr.cells[2].textContent:'').match(/'([^']+)'/); return m?m[1]:'';
+  },['hl-svcs-tbody','hl-hosts-tbody','hl-devs-tbody']);
+}
+
+function hlFlashRows(tbodyIds,needle){
+  const n=String(needle).toLowerCase(); let hits=0;
+  tbodyIds.forEach(id=>{
+    const tb=document.getElementById(id); if(!tb) return;
+    Array.prototype.forEach.call(tb.rows,row=>{
+      if(row.textContent.toLowerCase().includes(n)){
+        row.classList.remove('hl-flash'); void row.offsetWidth; // restart animation
+        row.classList.add('hl-flash'); hits++;
+        if(hits===1) row.scrollIntoView({behavior:'smooth',block:'nearest'});
+      }
+    });
+  });
+  if(!hits) hlMsg('No related rows found for "'+needle+'"',true);
+}
+
+// -- Incidents + change memory (v1.14.0) --------------------------------------------
+let HL_INC_OPEN=null; // id of the incident open in the detail drawer
+
+async function loadHlIncidents(){
+  try{
+    const r=await api('/homelab/incidents');
+    renderHlIncidents(r.success?(r.data||[]):[]);
+  }catch(e){ hlMsg('Incident load failed: '+e.message,false); }
+}
+
+function renderHlIncidents(list){
+  const tb=document.getElementById('hl-inc-tbody'); if(!tb) return;
+  const open=list.filter(i=>i.status!=='resolved');
+  const kpi=document.getElementById('hl-inc-kpi');
+  if(kpi) kpi.textContent='· '+open.length+' active · '+(list.length-open.length)+' resolved';
+  if(!list.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No incidents — health-failure streaks open them automatically.</td></tr>'; return; }
+  tb.innerHTML=list.slice(0,50).map(i=>{
+    const col=i.severity==='error'?'var(--red)':(i.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
+    const stCol=i.status==='resolved'?'var(--green)':(i.status==='investigating'?'var(--yellow, orange)':'var(--red)');
+    return '<tr><td style="color:'+col+'">'+escapeHtml(i.severity)+'</td><td>'+escapeHtml(i.title)+'</td><td>'+escapeHtml(i.subject_id||'—')+
+      '</td><td style="color:'+stCol+'">'+escapeHtml(i.status)+'</td><td>'+hlDate(i.opened_at)+'</td><td>'+escapeHtml(i.root_cause||'—')+
+      '</td><td><button class="btn btn-ghost" data-onclick="hlIncDetail(\''+escapeHtml(i.id)+'\',\''+escapeHtml((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
+  }).join('');
+}
+
+async function hlIncDetail(id,title){
+  HL_INC_OPEN=id;
+  const box=document.getElementById('hl-inc-detail'); if(box) box.style.display='';
+  const t=document.getElementById('hl-inc-detail-title'); if(t) t.textContent=title;
+  try{
+    const [tl,sim]=await Promise.all([
+      api('/homelab/incidents/'+encodeURIComponent(id)+'/timeline'),
+      api('/homelab/incidents/'+encodeURIComponent(id)+'/similar')]);
+    const tlEl=document.getElementById('hl-inc-timeline');
+    const entries=tl.success?(tl.data||[]):[];
+    if(tlEl) tlEl.innerHTML=entries.length?entries.map(e=>{
+      const col=e.severity==='error'?'var(--red)':(e.severity==='warning'?'var(--yellow, orange)':'var(--muted)');
+      return '<div style="padding:2px 0;border-left:2px solid '+(e.suspect?'var(--red)':'var(--line, #223)')+';padding-left:8px;margin:2px 0;">'+
+        '<span style="color:var(--dim)">'+hlDate(e.at)+'</span> <b style="color:'+col+'">'+escapeHtml(e.kind)+'</b>'+
+        (e.suspect?' <span style="color:var(--red);font-weight:700">SUSPECT</span>':'')+' — '+escapeHtml(e.summary)+'</div>';
+    }).join(''):'<div style="color:var(--dim)">No correlated activity found.</div>';
+    const simEl=document.getElementById('hl-inc-similar');
+    const matches=sim.success?(sim.data||[]):[];
+    if(simEl) simEl.innerHTML=matches.length?matches.map(m=>
+      '<div style="padding:4px 0;border-bottom:1px dotted var(--line, #223);">'+
+      '<b>'+escapeHtml(m.incident.title)+'</b> <span style="color:var(--dim)">(score '+m.score+', '+escapeHtml(m.incident.status)+')</span>'+
+      (m.fixed_by?('<br><span style="color:var(--green)">Fixed last time by:</span> '+escapeHtml(m.fixed_by)):'')+'</div>').join('')
+      :'<div style="color:var(--dim)">No similar incidents in memory yet.</div>';
+  }catch(e){ hlMsg('Detail load failed: '+e.message,false); }
+}
+
+function hlCloseIncDetail(){ HL_INC_OPEN=null; const box=document.getElementById('hl-inc-detail'); if(box) box.style.display='none'; }
+
+async function hlOpenIncident(){
+  const title=document.getElementById('hl-i-title').value.trim();
+  if(!title){ hlMsg('Incident title required',false); return; }
+  const r=await api('/homelab/incidents','POST',{title, subjectKind:'manual', subjectId:title, severity:'warning'});
+  hlMsg(r.message||(r.success?'Opened':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-i-title').value=''; loadHlIncidents(); }
+}
+
+async function hlIncStatus(status){
+  if(!HL_INC_OPEN){ hlMsg('Open an incident detail first',false); return; }
+  const root=document.getElementById('hl-inc-root').value.trim();
+  if(status==='resolved'&&!root){ hlMsg('Record the root cause so future incidents can suggest the fix',false); return; }
+  const r=await api('/homelab/incidents/'+encodeURIComponent(HL_INC_OPEN)+'/status','POST',{status, rootCause:root});
+  hlMsg(r.message||(r.success?'Updated':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-inc-root').value=''; hlCloseIncDetail(); loadHlIncidents(); }
+}
+
+// -- Approval-gated actions (v2.3.0, NORTH_STAR Phase 12) ---------------------------
+let HL_ACT_STOPPED=false;
+async function loadHlActions(){
+  try{
+    const r=await api('/homelab/actions');
+    if(!r.success){ return; }
+    const d=r.data||{};
+    HL_ACT_STOPPED=!!d.stopped;
+    const sel=document.getElementById('hl-a-type');
+    if(sel&&!sel.options.length&&Array.isArray(d.allowed_actions))
+      sel.innerHTML=d.allowed_actions.map(a=>'<option value="'+escapeHtml(a)+'">'+escapeHtml(a)+'</option>').join('');
+    const st=document.getElementById('hl-act-stop-state');
+    if(st) st.innerHTML=HL_ACT_STOPPED?athPill('danger','HOMELAB_STOP ENGAGED'):athPill('ok','actions armed');
+    const btn=document.getElementById('hl-act-stop-btn');
+    if(btn) btn.textContent=HL_ACT_STOPPED?'▶ Resume':'■ STOP';
+    renderHlActions(Array.isArray(d.items)?d.items:[]);
+  }catch(e){ /* panel shows its last state; load errors surface via hl-msg elsewhere */ }
+}
+function renderHlActions(items){
+  const tb=document.getElementById('hl-act-tbody'); if(!tb) return;
+  const kpi=document.getElementById('hl-act-kpi');
+  const pending=items.filter(a=>a.state==='pending').length;
+  if(kpi) kpi.textContent=items.length?(pending+' pending · '+items.length+' total'):'';
+  if(!items.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No action proposals yet — propose one above. Nothing executes without approval.</td></tr>'; return; }
+  tb.innerHTML=items.slice(0,25).map(a=>{
+    const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'ok');
+    const sc=a.state==='executed'?'ok':(a.state==='rejected'||a.state==='superseded'?'danger':(a.state==='approved'?'warn':'info'));
+    let ops='';
+    if(a.state==='pending')
+      ops='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
+          '<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
+    if(a.state==='pending'||a.state==='approved')
+      ops+='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
+    if(a.state==='approved')
+      ops+='<button class="btn btn-primary" data-onclick="hlActExecute(\''+escapeHtml(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
+    return '<tr><td>'+athPill(rc,(a.risk_level||'?')+' · '+(a.blast_radius_score??'?'))+'</td>'+
+      '<td><b>'+escapeHtml(a.action_type||'')+'</b></td>'+
+      '<td title="'+escapeHtml(a.target_kind||'')+'">'+escapeHtml((a.target_id||'').substring(0,24))+'</td>'+
+      '<td>'+athPill(sc,a.state||'?')+'</td>'+
+      '<td style="font-size:10px;max-width:220px;" title="'+escapeHtml(a.blast_radius_explanation||'')+'">'+escapeHtml((a.blast_radius_explanation||'—').substring(0,60))+'</td>'+
+      '<td style="font-size:10px;">'+(a.rollback_note?escapeHtml(a.rollback_note.substring(0,40)):'<span style="color:var(--status-danger)">required</span>')+'</td>'+
+      '<td style="font-size:10px;max-width:200px;" title="'+escapeHtml(a.execution_result||'')+'">'+escapeHtml((a.execution_result||'—').substring(0,50))+'</td>'+
+      '<td style="display:flex;gap:4px;flex-wrap:wrap;">'+(ops||'—')+'</td></tr>';
+  }).join('');
+}
+async function hlActPropose(){
+  const type=document.getElementById('hl-a-type').value;
+  const targetId=document.getElementById('hl-a-target').value.trim();
+  if(!targetId){ hlMsg('A target id is required',false); return; }
+  const r=await api('/homelab/actions/propose','POST',{
+    actionType:type, targetKind:document.getElementById('hl-a-tkind').value,
+    targetId, rollbackNote:document.getElementById('hl-a-rollback').value.trim()});
+  hlMsg(r.message||(r.success?'Proposed':'Refused'),r.success);
+  if(r.success){ document.getElementById('hl-a-target').value=''; document.getElementById('hl-a-rollback').value=''; }
+  loadHlActions();
+}
+async function hlActOp(id,verb){
+  const r=await api('/homelab/actions/'+encodeURIComponent(id)+'/'+verb,'POST',{});
+  if(verb==='dryrun'&&r.success&&r.data&&r.data.dry_run){ await uiConfirm('DRY RUN — nothing was executed:\n\n'+r.data.dry_run); }
+  else hlMsg(r.message||(r.success?'Done':'Refused'),r.success);
+  loadHlActions();
+}
+async function hlActExecute(id){
+  if(!await uiConfirm('Execute this approved action now? It will be verified and audited.')) return;
+  const r=await api('/homelab/actions/'+encodeURIComponent(id)+'/execute','POST',{});
+  hlMsg(r.message||(r.success?'Executed':'Refused'),r.success);
+  loadHlActions();
+}
+async function hlActKillSwitch(){
+  if(HL_ACT_STOPPED){
+    if(!await uiConfirm('Clear HOMELAB_STOP? Approved actions will be executable again.')) return;
+    const r=await api('/homelab/actions/resume','POST',{});
+    hlMsg(r.message||(r.success?'Resumed':'Refused'),r.success);
+  }else{
+    const r=await api('/homelab/actions/stop','POST',{reason:'console kill switch'});
+    hlMsg(r.message||(r.success?'Stopped':'Refused'),r.success);
+  }
+  loadHlActions();
+}
+
+// -- v2.3.2 Service Deck --------------------------------------------------------------
+// (hl3Toggle removed in v2.5.3 R3 — the collapsible sections it drove are now sub-page cards.)
+// v2.5.3 R3: the collapsible secondary sections became category sub-pages (see hlSubShow);
+// hl3Restore now restores the operator's last sub-page instead of collapse states.
+function hl3Restore(){ hlSubRestore(); }
+
+// ---- v2.5.3 Console Refit R3: homelab category sub-pages ---------------------------------------
+// Every card on the Homelab page declares exactly ONE home via data-hlsub; the sub-nav filters
+// visibility. Cards without data-hlsub (entity detail, incident detail, + Add / Manage drawer)
+// are on-demand overlays and stay available from every sub-page. Keyboard: g h opens Homelab,
+// then 1-9 / 0 / - switch sub-pages (see the ? shortcuts help).
+const HL_SUBPAGES=['overview','services','virtualization','containers','storage','networking','monitoring','automation','apps','alerts','activity'];
+function hlSubShow(name,fromRoute){
+  if(!HL_SUBPAGES.includes(name)) name='overview';
+  try{ localStorage.setItem('hl3.subpage',name); }catch(e){}
+  document.querySelectorAll('#page-homelab [data-hlsub]').forEach(c=>{ c.style.display=(c.dataset.hlsub===name)?'':'none'; });
+  document.querySelectorAll('#hl-subnav .hl-sub-btn').forEach(b=>b.classList.toggle('active',b.dataset.sub===name));
+  // v2.6 Phase 2: when the in-page sub-nav or a keyboard shortcut drives the change, sync the router
+  // chrome (breadcrumb, sidebar highlight, URL). fromRoute=true means go()/showPage() already did.
+  if(!fromRoute && typeof HLSUB_ROUTE!=='undefined' && document.getElementById('page-homelab')?.classList.contains('active')){
+    const r=HLSUB_ROUTE[name];
+    if(r && typeof updateChrome==='function'){ updateChrome(r,'homelab'); try{ history.replaceState(null,'','#'+r); }catch(e){} }
+  }
+}
+function hlSubRestore(){
+  let saved=null; try{ saved=localStorage.getItem('hl3.subpage'); }catch(e){}
+  hlSubShow(saved||'overview');
+}
+function hl3ToggleConfig(show){
+  const el=document.getElementById('hl3-config'); if(!el) return;
+  el.style.display=show?'':'none';
+  if(show) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function hl3Dot(status){
+  const s=String(status||'').toLowerCase();
+  const cls=s==='running'||s==='healthy'||s==='ok'||s==='online'?'ok'
+    :(s==='stopped'||s==='failed'||s==='error'||s==='offline'?'bad'
+    :(s==='degraded'||s==='warning'?'warn':''));
+  return '<span class="hl3-dot '+cls+'" title="'+escapeHtml(s||'unknown')+'"></span>';
+}
+async function renderHlDeck(){
+  const deck=document.getElementById('hl3-deck'); if(!deck) return;
+  let vms=[],cts=[],health=[],metrics=[];
+  try{
+    const [v,c,h,m]=await Promise.all([api('/homelab/vms'),api('/homelab/containers'),api('/homelab/health/results'),api('/homelab/metrics/nodes')]);
+    vms=Array.isArray(v&&v.data)?v.data:[]; cts=Array.isArray(c&&c.data)?c.data:[];
+    health=Array.isArray(h&&h.data)?h.data:[]; metrics=Array.isArray(m&&m.data)?m.data:[];
+  }catch(e){ /* deck renders what it has */ }
+  HL3.metrics={}; for(const m of metrics) HL3.metrics[m.node_id]=m;
+  HL3.vms=vms; HL3.cts=cts;
+  const latest={};
+  for(const r of health){ const t=String(r.target||''); if(t&&!(t in latest)) latest[t]=String(r.status||''); }
+  const healthFor=(needle)=>{
+    if(!needle) return '';
+    if(latest[needle]!==undefined) return latest[needle];
+    const hit=Object.keys(latest).find(t=>t.includes(needle));
+    return hit?latest[hit]:'';
+  };
+  const hidden=hl3Hidden();
+  // Group by HOST RECORD ID: registered hosts + provider-synced nodes both live in HL_HOSTS,
+  // and vm.node_id / ct.node_id reference homelab_nodes.id (e.g. "pve-node:host:pve1").
+  const groups=new Map();
+  for(const hst of (HL_HOSTS||[])) groups.set(hst.id,{host:hst,vms:[],cts:[],svcs:[]});
+  const misc={host:{id:'',name:'(unassigned)',kind:'',address:''},vms:[],cts:[],svcs:[]};
+  const bucket=(nodeId)=>groups.get(nodeId)||misc;
+  for(const vm of vms) bucket(vm.node_id).vms.push(vm);
+  for(const ct of cts) bucket(ct.node_id).cts.push(ct);
+  for(const svc of (HL_SVCS||[])) bucket(svc.node_id).svcs.push(svc);
+  if(misc.vms.length||misc.cts.length||misc.svcs.length) groups.set('(unassigned)',misc);
+  if(!groups.size){
+    deck.innerHTML='<div class="hl3-empty">Nothing registered yet. Use <b>+ Add / Manage</b> to register a host or connect Proxmox/ESXi/Docker/Hyper-V — synced VMs and containers appear here automatically.</div>';
+    hl3RenderHiddenTray(0); return;
+  }
+  let html=''; let hiddenCount=0;
+  for(const [gid,g] of groups){
+    if(hidden.has('host:'+gid)){ hiddenCount++; continue; }
+    const total=g.vms.length+g.cts.length+g.svcs.length;
+    const met=HL3.metrics[gid];
+    const hostDot=hl3Dot(healthFor(g.host.address)||((g.vms.some(v=>String(v.status).toLowerCase()==='running')||g.cts.some(c=>String(c.status).toLowerCase()==='running'))?'running':''));
+    html+='<div class="hl3-host"><div class="hl3-host-hd" data-onclick="'+(g.host.id?('hl3HostPage(\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
+      +hostDot+escapeHtml(g.host.name||'?')
+      +' <span style="font-weight:400;color:var(--dim);font-size:9px;">'+escapeHtml(g.host.kind||'')+(g.host.address?' · '+escapeHtml(g.host.address):'')+'</span>'
+      +'<span class="sub">'+total+' item(s)'
+      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" data-onclick="event.stopPropagation();hl3Hide(\'host:'+escapeHtml(gid)+'\')">✕</span>'):'')
+      +'</span></div>';
+    if(met) html+=hl3Bars(met);
+    html+='<div class="hl3-tiles">';
+    for(const vm of g.vms){
+      const key='vm:'+vm.id; if(hidden.has(key)){ hiddenCount++; continue; }
+      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(vm.id)+'\')">'+hl3Dot(vm.status)
+        +'<span class="k">vm</span>'+escapeHtml(vm.name||vm.vm_id||'?')
+        +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
+    }
+    for(const ct of g.cts){
+      const key='ct:'+ct.id; if(hidden.has(key)){ hiddenCount++; continue; }
+      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(ct.id)+'\')">'+hl3Dot(ct.status)
+        +'<span class="k">'+escapeHtml(ct.kind||'ct')+'</span>'+escapeHtml(ct.name||ct.container_id||'?')
+        +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
+    }
+    for(const svc of g.svcs){
+      const key='svc:'+svc.id; if(hidden.has(key)){ hiddenCount++; continue; }
+      const st=healthFor(svc.url)||healthFor((svc.ports&&svc.ports.length&&g.host.address)?(g.host.address+':'+svc.ports[0]):'');
+      const open=svc.url?('window.open(\''+escapeHtml(svc.url)+'\',\'_blank\')'):('hlEntity(\'service\',\''+escapeHtml(svc.id)+'\')');
+      html+='<span class="hl3-tile" title="'+escapeHtml(svc.name)+(svc.url?' — '+escapeHtml(svc.url):'')+' (click to open)" data-onclick="'+open+'">'
+        +hl3Dot(st||(svc.criticality==='critical'?'warning':''))
+        +'<span class="k">svc</span>'+escapeHtml(svc.name||'?')
+        +(svc.internet_exposed?'<span title="internet exposed" style="color:var(--status-warning)">🌐</span>':'')
+        +'<span class="zap" title="Propose service restart (approval-gated)" data-onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span>'
+        +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
+    }
+    if(!total) html+='<span class="hl3-empty" style="padding:4px;">no services or guests yet</span>';
+    html+='</div></div>';
+  }
+  deck.innerHTML=html||'<div class="hl3-empty">Everything is hidden — restore items from the tray below.</div>';
+  hl3RenderHiddenTray(hiddenCount);
+  const gc=document.getElementById('hl-graph-card');
+  if(gc) gc.style.display=((HL_DEPS||[]).length||(HL_SVCS||[]).some(s=>s.node_id))?'':'none';
+}
+const HL3={metrics:{},vms:[],cts:[],apps:[]};
+function hl3Bars(m){
+  const pct=(u,t)=>u>=0&&t>0?Math.min(100,Math.round(u/t*100)):-1;
+  const cls=(p)=>p>=90?'bad':(p>=75?'warn':'');
+  const gb=(b)=>b<0?'—':(b/1073741824).toFixed(1)+' GB';
+  let html='<div class="hl3-bars">';
+  if(m.cpu_percent>=0){ const p=Math.round(m.cpu_percent);
+    html+='<div class="hl3-bar"><b>CPU</b><span class="tr"><span class="fl '+cls(p)+'" style="width:'+p+'%"></span></span><span class="v">'+p+'% of '+(m.cpu_cores||'?')+'c</span></div>'; }
+  const mp=pct(m.mem_used_bytes,m.mem_total_bytes);
+  if(mp>=0) html+='<div class="hl3-bar"><b>RAM</b><span class="tr"><span class="fl '+cls(mp)+'" style="width:'+mp+'%"></span></span><span class="v">'+gb(m.mem_used_bytes)+' / '+gb(m.mem_total_bytes)+'</span></div>';
+  const dp=pct(m.disk_used_bytes,m.disk_total_bytes);
+  if(dp>=0) html+='<div class="hl3-bar"><b>DISK</b><span class="tr"><span class="fl '+cls(dp)+'" style="width:'+dp+'%"></span></span><span class="v">'+gb(m.disk_used_bytes)+' / '+gb(m.disk_total_bytes)+'</span></div>';
+  return html+'</div>';
+}
+function hl3Hidden(){
+  try{ return new Set(JSON.parse(localStorage.getItem('hl3.hiddenTiles')||'[]')); }catch(e){ return new Set(); }
+}
+function hl3SaveHidden(set){ try{ localStorage.setItem('hl3.hiddenTiles',JSON.stringify([...set])); }catch(e){} }
+function hl3Hide(key){ const h=hl3Hidden(); h.add(key); hl3SaveHidden(h); renderHlDeck(); }
+function hl3Unhide(key){ const h=hl3Hidden(); h.delete(key); hl3SaveHidden(h); renderHlDeck(); }
+function hl3RenderHiddenTray(count){
+  const tray=document.getElementById('hl3-hidden-tray'); if(!tray) return;
+  const h=[...hl3Hidden()];
+  if(!h.length){ tray.innerHTML=''; return; }
+  const label=(k)=>{
+    const [kind,id]=[k.slice(0,k.indexOf(':')),k.slice(k.indexOf(':')+1)];
+    if(kind==='host'){ const x=(HL_HOSTS||[]).find(o=>o.id===id); return 'node '+(x?x.name:id.slice(0,14)); }
+    if(kind==='vm'){ const x=(HL3.vms||[]).find(o=>o.id===id); return 'vm '+(x?x.name||x.vm_id:id.slice(0,14)); }
+    if(kind==='ct'){ const x=(HL3.cts||[]).find(o=>o.id===id); return 'ct '+(x?x.name||x.container_id:id.slice(0,14)); }
+    const x=(HL_SVCS||[]).find(o=>o.id===id); return 'svc '+(x?x.name:id.slice(0,14));
+  };
+  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" data-onclick="hl3Unhide(\''+escapeHtml(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
+    +' <span style="cursor:pointer;text-decoration:underline;" data-onclick="hl3SaveHidden(new Set());renderHlDeck()">restore all</span>';
+}
+// ---- v2.3.3 sub-pages: nothing nested — nested content opens a full page with ✕ Close on top --
+let HL3_PAGE_HOME=null;
+function hl3PageOpen(title,node){
+  const pg=document.getElementById('hl3-page'); if(!pg) return;
+  document.getElementById('hl3-page-title').textContent=title;
+  const body=document.getElementById('hl3-page-body');
+  body.innerHTML='';
+  if(typeof node==='string'){ HL3_PAGE_HOME=null; body.innerHTML=node; }
+  else{ HL3_PAGE_HOME={node,parent:node.parentNode}; body.appendChild(node); node.style.display=''; }
+  pg.style.display='block'; pg.scrollTop=0;
+}
+function hl3PageClose(){
+  const pg=document.getElementById('hl3-page'); if(!pg) return;
+  if(HL3_PAGE_HOME){ HL3_PAGE_HOME.node.style.display='none'; HL3_PAGE_HOME.parent.appendChild(HL3_PAGE_HOME.node); HL3_PAGE_HOME=null; }
+  pg.style.display='none';
+}
+// (hl3PageFromSection removed in v2.5.3 R3 — its "open section as full page" role is replaced by sub-pages.)
+function hl3HostPage(hostId){
+  const h=(HL_HOSTS||[]).find(x=>x.id===hostId); if(!h) return;
+  const m=HL3.metrics[hostId];
+  const vms=(HL3.vms||[]).filter(v=>v.node_id===hostId), cts=(HL3.cts||[]).filter(c=>c.node_id===hostId);
+  const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Facts</div>'
+    +'<div style="font-size:11px;color:var(--muted);">Kind: <b>'+escapeHtml(h.kind||'—')+'</b> · Address: <b>'+escapeHtml(h.address||'—')+'</b> · OS: <b>'+escapeHtml(h.os||'—')+'</b>'
+    +(m?' · Uptime: <b>'+up(m.uptime_seconds)+'</b> · Metrics via <b>'+escapeHtml(m.source)+'</b> at '+escapeHtml((m.updated_at||'').slice(0,19).replace('T',' ')):'')+'</div>'
+    +(m?hl3Bars(m):'<div style="font-size:10px;color:var(--dim);margin-top:6px;">No resource metrics for this node yet — they arrive with the next provider sync.</div>')+'</div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Guests ('+(vms.length+cts.length)+')</div><div class="hl3-tiles">'
+    +vms.map(v=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
+    +cts.map(c=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
+    +((vms.length+cts.length)?'':'<span class="hl3-empty">no guests</span>')+'</div></div>';
+  hl3PageOpen('Node — '+(h.name||'?'),html);
+}
+function hl3GuestTarget(g,kind){
+  // ActionExecutor targets use node/vmid; node_id is "pve-node:host:NODENAME".
+  const nodeName=String(g.node_id||'').split(':').pop();
+  return nodeName+'/'+(kind==='vm'?(g.vm_id||''):(g.container_id||''));
+}
+async function hl3GuestPage(kind,id){
+  const list=kind==='vm'?(HL3.vms||[]):(HL3.cts||[]);
+  const g=list.find(x=>x.id===id); if(!g) return;
+  const host=(HL_HOSTS||[]).find(h=>h.id===g.node_id);
+  const tgt=hl3GuestTarget(g,kind);
+  const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
+  const act=(type,label)=>'<button class="btn btn-ghost" data-onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+escapeHtml(tgt)+'\')">'+label+'</button>';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Status</div>'
+    +'<div style="font-size:12px;">'+hl3Dot(g.status)+' <b>'+escapeHtml((g.status||'unknown').toUpperCase())+'</b>'
+    +' <span style="color:var(--dim);font-size:10px;">on '+escapeHtml(host?host.name:String(g.node_id||'').split(':').pop())+' · id '+escapeHtml(kind==='vm'?g.vm_id:g.container_id)+'</span></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:8px;">'
+    +(kind==='vm'?('vCPU: <b>'+(g.cpu_cores||'—')+'</b> · RAM: <b>'+(g.memory_mb?(g.memory_mb/1024).toFixed(1)+' GB':'—')+'</b> · Uptime: <b>'+up(g.uptime_seconds)+'</b>'):('Kind: <b>'+escapeHtml(g.kind||'lxc')+'</b>'))
+    +' · Last synced: '+escapeHtml((g.updated_at||'—').slice(0,19).replace('T',' '))+'</div></div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Actions <span style="font-weight:400;color:var(--dim)">(all approval-gated; nothing runs from this page directly)</span></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    +act(kind==='vm'?'start_vm':'start_container','▶ Start')+act(kind==='vm'?'stop_vm':'stop_container','■ Stop (clean)')
+    +act(kind==='vm'?'restart_vm':'restart_container','↻ Restart')+act('create_snapshot','📷 Snapshot')+act('run_backup','💾 Backup')+'</div></div>';
+  html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Recent related events</div><div id="hl3-guest-events" style="font-size:10px;color:var(--muted);">Loading…</div></div>';
+  hl3PageOpen((kind==='vm'?'VM — ':'Container — ')+(g.name||tgt),html);
+  try{
+    const ev=await api('/homelab/events');
+    const rows=(Array.isArray(ev&&ev.data)?ev.data:[]).filter(e=>
+      String(e.subject_id||'').includes(kind==='vm'?g.vm_id:g.container_id)||String(e.message||'').includes(tgt)).slice(0,12);
+    const el=document.getElementById('hl3-guest-events');
+    if(el) el.innerHTML=rows.length?rows.map(e=>'<div>'+escapeHtml((e.created_at||'').slice(0,16).replace('T',' '))+' <b>'+escapeHtml(e.event_type||'')+'</b> '+escapeHtml((e.message||'').substring(0,110))+'</div>').join(''):'No events reference this guest yet.';
+  }catch(e){}
+}
+// ---- v2.3.3 *arr apps (Homarr-style) -----------------------------------------------
+const HL3_ARR_COLORS={sonarr:'#35c5f4',radarr:'#ffc230',lidarr:'#4dd865',readarr:'#8e4239',whisparr:'#c74f9e',prowlarr:'#e66000',bazarr:'#8c9eff'};
+async function renderHl3Apps(){
+  const el=document.getElementById('hl3-apps'); if(!el) return;
+  let items=[];
+  try{ const r=await api('/homelab/arr'); items=(r&&r.success&&r.data&&Array.isArray(r.data.items))?r.data.items:[]; }catch(e){}
+  HL3.apps=items;
+  const kpi=document.getElementById('hl3-apps-kpi');
+  if(kpi) kpi.textContent=items.length?('· '+items.filter(a=>a.status==='ok').length+'/'+items.length+' healthy'):'';
+  if(!items.length){ el.innerHTML='<div class="hl3-empty">No *arr apps connected yet. <b>+ App</b> supports sonarr, radarr, lidarr, readarr, whisparr, prowlarr, and bazarr — status, health, and queue at a glance, Homarr-style.</div>'; return; }
+  el.innerHTML=items.map(a=>{
+    const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
+    return '<div class="hl3-app" data-onclick="hl3ArrPage(\''+escapeHtml(a.id)+'\')">'
+      +'<span class="av" style="background:'+col+'">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
+      +'<span style="min-width:0;"><div class="nm">'+hl3Dot(a.status==='ok'?'ok':(a.status==='error'?'failed':''))+' '+escapeHtml(a.name)+'</div>'
+      +'<div class="mt">'+escapeHtml(a.kind)+(a.version?' '+escapeHtml(a.version):'')
+      +(a.queue_count>=0?' · queue '+a.queue_count:'')+(a.health_warnings?' · ⚠ '+a.health_warnings:'')+'</div></span></div>';
+  }).join('');
+}
+async function hl3ArrAdd(){
+  const kind=document.getElementById('hl3-ar-kind').value;
+  const url=document.getElementById('hl3-ar-url').value.trim();
+  const key=document.getElementById('hl3-ar-key').value.trim();
+  if(!url||!key){ hlMsg('URL and API key are required',false); return; }
+  const r=await api('/homelab/arr','POST',{kind,name:document.getElementById('hl3-ar-name').value.trim()||kind,url,apiKey:key});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl3-ar-url').value=''; document.getElementById('hl3-ar-key').value=''; hl3ArrSync(); }
+}
+async function hl3ArrSync(){
+  const r=await api('/homelab/arr/sync','POST',{});
+  hlMsg(r.message||(r.success?'Synced':'Sync failed'),r.success);
+  renderHl3Apps();
+}
+function hl3ArrPage(id){
+  const a=(HL3.apps||[]).find(x=>x.id===id); if(!a) return;
+  const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
+  let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">'
+    +'<span class="av" style="display:inline-flex;width:26px;height:26px;border-radius:6px;background:'+col+';color:#0a0f16;font-weight:800;align-items:center;justify-content:center;margin-right:8px;">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
+    +escapeHtml(a.name)+' <span style="font-weight:400;color:var(--dim)">('+escapeHtml(a.kind)+')</span></div>'
+    +'<div style="font-size:11px;color:var(--muted);">Status: '+hl3Dot(a.status==='ok'?'ok':'failed')+' <b>'+escapeHtml(a.status)+'</b>'
+    +(a.version?' · Version <b>'+escapeHtml(a.version)+'</b>':'')
+    +(a.queue_count>=0?' · Queue <b>'+a.queue_count+'</b>':'')
+    +' · Health warnings <b>'+(a.health_warnings||0)+'</b>'
+    +' · Checked '+escapeHtml((a.last_checked||'never').slice(0,19).replace('T',' '))+'</div>'
+    +(a.last_message?'<div style="font-size:10px;color:var(--status-danger);margin-top:6px;">'+escapeHtml(a.last_message)+'</div>':'')
+    +'<div style="display:flex;gap:8px;margin-top:10px;">'
+    +'<button class="btn btn-primary" data-onclick="window.open(\''+escapeHtml(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
+    +'<button class="btn btn-ghost" data-onclick="hl3ArrSync();hl3PageClose()">⟳ Sync now</button>'
+    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+escapeHtml(a.id)+'\')">🗑 Remove</button></div>'
+    +'<div style="font-size:9px;color:var(--dim);margin-top:8px;">API key is stored write-only in the credential store (id '+escapeHtml(a.credential_id)+') and is never displayed. All requests are GET-only and allowlist-gated.</div></div>';
+  hl3PageOpen('App — '+a.name,html);
+}
+async function hl3ArrRemove(id){
+  if(!await uiConfirm('Remove this app and delete its stored API key?')) return;
+  const r=await api('/homelab/arr/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  hl3PageClose(); renderHl3Apps();
+}
+// ---- v2.5.2 Console Refit R2: THE widget runtime -----------------------------------------------
+// One runtime for every dashboard tile: widget(kind, integrationId, el). Widgets are page-agnostic
+// — they know their integration and their kind, never where they render. Full lifecycle
+// (loading → success | empty | error, all labeled), per-kind TTL polling that stops when the
+// element leaves the DOM, manual refresh, responsive sizing via the .wgt-grid zone, and a layout
+// registry persisted per operator in /ui/state (ordered arrays — drag-and-drop ready).
+// Data source: GET /homelab/integrations/{id}/widgets/{kind} (integration_state + freshness).
+const WIDGET_KINDS={
+  'health':          {title:'Health',          icon:'♥', ttl:30000,  render:wgtRenderHealth},
+  'queue':           {title:'Queue',           icon:'⇣', ttl:15000,  render:wgtRenderQueue},
+  'statistics':      {title:'Statistics',      icon:'∑', ttl:60000,  render:wgtRenderKv},
+  'disk-usage':      {title:'Disk Usage',      icon:'◔', ttl:60000,  render:wgtRenderBars},
+  'resource-usage':  {title:'Resources',       icon:'▦', ttl:20000,  render:wgtRenderBars},
+  'recent-activity': {title:'Recent Activity', icon:'≡', ttl:30000,  wide:true, render:wgtRenderList},
+  'calendar':        {title:'Upcoming',        icon:'▤', ttl:120000, wide:true, render:wgtRenderList},
+  'failed-imports':  {title:'Failed Imports',  icon:'✕', ttl:60000,  wide:true, render:wgtRenderList},
+  'logs':            {title:'Logs',            icon:'☰', ttl:20000,  wide:true, render:wgtRenderList},
+  'alerts':          {title:'Alerts',          icon:'⚠', ttl:20000,  wide:true, render:wgtRenderList},
+};
+const _widgets=new Map(); // el → widget state (timer bookkeeping; cleared on unmount)
+
+function widget(kind,integrationId,el,opts){
+  opts=opts||{};
+  const def=WIDGET_KINDS[kind]||{title:kind,icon:'▣',ttl:30000,render:wgtRenderKv}; // unknown kinds render generically — never break
+  const st={kind,integrationId,el,def,hasData:false,timer:null};
+  el.classList.add('wgt'); if(def.wide) el.classList.add('wide');
+  el.innerHTML='<div class="wgt-hd">'+def.icon+' '+escapeHtml(def.title)
+    +' <span class="src">'+escapeHtml(opts.label||'')+'</span>'
+    +'<span class="ctl">'+(opts.controls||'')+'<button title="Refresh now" data-onclick="wgtRefreshEl(this)">⟳</button></span></div>'
+    +'<div class="wgt-bd"><div class="wgt-skel"></div><div class="wgt-skel" style="width:70%"></div></div>'
+    +'<div class="wgt-ft"></div>';
+  _widgets.set(el,st); el._wgt=st;
+  wgtLoad(st,false);
+  return { refresh:()=>wgtLoad(st,true), unmount:()=>wgtUnmount(el) };
+}
+function wgtUnmount(el){ const st=_widgets.get(el); if(st){ clearTimeout(st.timer); _widgets.delete(el); } }
+function wgtRefreshEl(btn){ const el=btn.closest('.wgt'); if(el&&el._wgt) wgtLoad(el._wgt,true); }
+function wgtPath(st){ return '/homelab/integrations/'+encodeURIComponent(st.integrationId)+'/widgets/'+encodeURIComponent(st.kind); }
+
+async function wgtLoad(st,force){
+  if(!st.el.isConnected){ wgtUnmount(st.el); return; } // page moved on — stop polling
+  clearTimeout(st.timer);
+  if(force) apiCacheBust(wgtPath(st));
+  const bd=st.el.querySelector('.wgt-bd'), ft=st.el.querySelector('.wgt-ft');
+  let r=null;
+  try{ r=await api(wgtPath(st)); }catch(e){ r={success:false,message:(e&&e.message)||'load failed'}; }
+  if(!st.el.isConnected){ wgtUnmount(st.el); return; }
+  if(r&&r.success&&r.data){
+    st.hasData=true;
+    try{ bd.innerHTML=st.def.render(r.data.payload||{},st); }
+    catch(e){ bd.innerHTML='<div class="wgt-state err">Render failed: '+escapeHtml((e&&e.message)||'?')+'</div>'; }
+    wgtFreshness(ft,r.data.updated_at,st.def.ttl);
+  }else if(r&&r.error==='not_found'){
+    if(!st.hasData) bd.innerHTML='<div class="wgt-state">No data yet — this integration hasn’t published “'+escapeHtml(st.kind)+'”. It appears after the next sync.</div>';
+    if(ft) ft.textContent='';
+  }else{
+    if(!st.hasData) bd.innerHTML='<div class="wgt-state err">'+escapeHtml((r&&r.message)||'Load failed.')+'<span class="retry" data-onclick="wgtRefreshEl(this)">retry</span></div>';
+    else if(ft){ ft.classList.add('stale'); ft.textContent='refresh failed — showing last data'; }
+  }
+  st.timer=setTimeout(()=>wgtLoad(st,false),st.def.ttl); // TTL poll; api() cache still dedupes
+}
+function wgtFreshness(ft,iso,ttl){
+  if(!ft) return;
+  if(!iso){ ft.textContent=''; return; }
+  const age=Date.now()-Date.parse(iso);
+  const stale=isFinite(age)&&age>Math.max(3*ttl,180000);
+  ft.className='wgt-ft'+(stale?' stale':'');
+  ft.textContent=(stale?'stale — ':'')+'updated '+String(iso).slice(0,19).replace('T',' ');
+}
+
+// ---- Kind renderers (typed payloads from integration_state; tolerant of missing fields) --------
+function wgtRenderHealth(p){
+  const ok=(p.status||'unknown')==='ok';
+  return '<div style="display:flex;align-items:center;gap:10px;">'
+    +'<span style="font-size:20px;">'+hl3Dot(ok?'ok':(p.status==='error'?'failed':''))+'</span>'
+    +'<div><div style="font-weight:700;color:var(--anthill-text)">'+escapeHtml(p.status||'unknown')+(p.version?' · v'+escapeHtml(String(p.version)):'')+'</div>'
+    +'<div style="font-size:10px;color:'+((p.health_warnings|0)>0?'var(--status-warning)':'var(--dim)')+'">'
+    +((p.health_warnings|0)>0?('⚠ '+p.health_warnings+' health warning'+(p.health_warnings>1?'s':'')):'no health warnings')+'</div></div></div>';
+}
+function wgtRenderQueue(p){
+  const t=(typeof p.total==='number')?p.total:-1;
+  return '<div class="wgt-big">'+(t<0?'—':t)+'</div><div style="font-size:10px;color:var(--dim);">'+(t<0?'queue not reported yet':('item'+(t===1?'':'s')+' in queue'))+'</div>';
+}
+function wgtRenderKv(p){
+  const rows=Object.entries(p||{}).filter(([k,v])=>v===null||['string','number','boolean'].includes(typeof v)).slice(0,12);
+  if(!rows.length) return '<div class="wgt-state">Nothing to show yet.</div>';
+  return '<div class="wgt-kv">'+rows.map(([k,v])=>'<b>'+escapeHtml(k.replace(/_/g,' '))+'</b><span>'+escapeHtml(String(v??'—'))+'</span>').join('')+'</div>';
+}
+function wgtRenderBars(p){
+  // Accepts {items:[{label,used_bytes,total_bytes}]} or flat {cpu_percent,mem_used_bytes,mem_total_bytes,...}
+  const bars=[];
+  if(Array.isArray(p.items)) for(const it of p.items.slice(0,6)) bars.push([it.label||it.path||it.name||'?',it.used_bytes,it.total_bytes]);
+  else{
+    if(typeof p.cpu_percent==='number'&&p.cpu_percent>=0) bars.push(['cpu',p.cpu_percent,100]);
+    if(p.mem_total_bytes>0) bars.push(['mem',p.mem_used_bytes,p.mem_total_bytes]);
+    if(p.disk_total_bytes>0) bars.push(['disk',p.disk_used_bytes,p.disk_total_bytes]);
+  }
+  if(!bars.length) return '<div class="wgt-state">No usage data yet.</div>';
+  return '<div class="hl3-bars">'+bars.map(([l,u,t])=>{
+    const pct=(t>0&&u>=0)?Math.min(100,Math.round(u*100/t)):0;
+    return '<div class="hl3-bar"><b>'+escapeHtml(String(l)).slice(0,10)+'</b><div class="tr"><div class="fl'+(pct>90?' bad':(pct>75?' warn':''))+'" style="width:'+pct+'%"></div></div><span>'+pct+'%</span></div>';
+  }).join('')+'</div>';
+}
+function wgtRenderList(p){
+  const items=Array.isArray(p.items)?p.items:[];
+  if(!items.length) return '<div class="wgt-state">Nothing here yet.</div>';
+  return items.slice(0,10).map(it=>{
+    const at=it.at||it.time||it.date||it.created_at||'';
+    const tx=it.title||it.text||it.message||it.line||it.name||JSON.stringify(it).slice(0,80);
+    return '<div class="wgt-li"><span class="at">'+escapeHtml(String(at).slice(0,16).replace('T',' '))+'</span><span class="tx" title="'+escapeHtml(String(tx))+'">'+escapeHtml(String(tx))+'</span></div>';
+  }).join('');
+}
+
+// ---- Layout registry (per-operator, persisted via /ui/state; ordered = drag-and-drop ready) ----
+function wgtZone(zone){ const w=uiState.widgets||{}; return Array.isArray(w[zone])?w[zone]:[]; }
+function wgtZoneSave(zone,list){ uiState.widgets=uiState.widgets||{}; uiState.widgets[zone]=list; saveUiState(); }
+
+// ---- Homelab page glue: the "homelab" widget zone ----------------------------------------------
+let HL3W={instances:[],kinds:[]};
+async function renderHl3Widgets(){
+  const box=document.getElementById('hl3-widgets'); if(!box) return;
+  try{
+    const r=await api('/homelab/integrations');
+    if(r&&r.success&&r.data){ HL3W.instances=r.data.items||[]; HL3W.kinds=r.data.kinds||[]; }
+  }catch(e){}
+  for(const child of Array.from(box.children)) if(child._wgt) wgtUnmount(child);
+  const layout=wgtZone('homelab');
+  const kpi=document.getElementById('hl3-widgets-kpi');
+  if(kpi) kpi.textContent=layout.length?('· '+layout.length):'';
+  if(!layout.length){
+    box.innerHTML='<div class="hl3-empty">No widgets yet. <b>+ Widget</b> pins live data from any connected integration — health, queue, and more as integrations publish them. Your layout is saved per operator.</div>';
+    return;
+  }
+  box.innerHTML='';
+  layout.forEach((entry,ix)=>{
+    const inst=HL3W.instances.find(i=>i.id===entry.integration_id);
+    const div=document.createElement('div');
+    div.dataset.wid=entry.id;
+    const controls='<button title="Move left" data-onclick="hl3WidgetMove(this,-1)">◀</button>'
+      +'<button title="Move right" data-onclick="hl3WidgetMove(this,1)">▶</button>'
+      +'<button title="Remove widget (data is untouched)" data-onclick="hl3WidgetRemove(this)">✕</button>';
+    box.appendChild(div);
+    widget(entry.kind,entry.integration_id,div,{label:inst?inst.name:'(integration removed)',controls:controls});
+  });
+}
+function hl3WidgetMove(btn,dir){
+  const el=btn.closest('.wgt'); if(!el) return;
+  const list=wgtZone('homelab').slice();
+  const ix=list.findIndex(e=>e.id===el.dataset.wid);
+  const to=ix+dir;
+  if(ix<0||to<0||to>=list.length) return;
+  const [e]=list.splice(ix,1); list.splice(to,0,e);
+  wgtZoneSave('homelab',list); renderHl3Widgets();
+}
+function hl3WidgetRemove(btn){
+  const el=btn.closest('.wgt'); if(!el) return;
+  wgtZoneSave('homelab',wgtZone('homelab').filter(e=>e.id!==el.dataset.wid));
+  renderHl3Widgets();
+}
+function hl3WidgetsRefresh(){
+  for(const [el,st] of _widgets) if(el.closest('#hl3-widgets')) wgtLoad(st,true);
+}
+async function hl3WidgetPickerToggle(){
+  const pk=document.getElementById('hl3-widget-picker'); if(!pk) return;
+  if(pk.classList.contains('open')){ pk.classList.remove('open'); return; }
+  const r=await api('/homelab/integrations');
+  if(r&&r.success&&r.data){ HL3W.instances=r.data.items||[]; HL3W.kinds=r.data.kinds||[]; }
+  const sel=document.getElementById('hl3-wp-integration');
+  const enabled=HL3W.instances.filter(i=>i.enabled);
+  if(!enabled.length){ hlMsg('Connect an integration first (Apps → + App).',false); return; }
+  sel.innerHTML=enabled.map(i=>'<option value="'+escapeHtml(i.id)+'">'+escapeHtml(i.name)+' ('+escapeHtml(i.kind)+')</option>').join('');
+  hl3WidgetPickerKinds();
+  pk.classList.add('open');
+}
+function hl3WidgetPickerKinds(){
+  const sel=document.getElementById('hl3-wp-integration'), ks=document.getElementById('hl3-wp-kind');
+  if(!sel||!ks) return;
+  const inst=HL3W.instances.find(i=>i.id===sel.value);
+  const kinds=(HL3W.kinds.find(k=>k.kind===(inst&&inst.kind))||{}).widget_kinds||[];
+  ks.innerHTML=kinds.length?kinds.map(k=>'<option value="'+escapeHtml(k)+'">'+escapeHtml((WIDGET_KINDS[k]||{}).title||k)+'</option>').join(''):'<option value="">(no widgets offered)</option>';
+}
+function hl3WidgetAdd(){
+  const id=document.getElementById('hl3-wp-integration').value;
+  const kind=document.getElementById('hl3-wp-kind').value;
+  if(!id||!kind){ hlMsg('Pick an integration and a widget kind.',false); return; }
+  const list=wgtZone('homelab').slice();
+  list.push({id:'w'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),kind:kind,integration_id:id});
+  wgtZoneSave('homelab',list);
+  document.getElementById('hl3-widget-picker').classList.remove('open');
+  renderHl3Widgets();
+}
+
+// ---- v2.5.4 Console Refit R4: THE generic collection manager -----------------------------------
+// One reusable component for any CRUD collection (targets today; integration collections in R5+):
+// search, filter, sortable columns, row selection with bulk actions, per-row actions, count
+// footer. Vanilla + string-built like the rest of the console; toolbar renders once (search
+// keeps focus), only the table body re-renders. cfg:
+//   { el, load:async()=>rows, idOf(row), columns:[{key,label,render?(row)}], searchKeys:[...],
+//     filters:[{label,fn?}], bulk:[{label,confirm?,run:async(ids)}], rowActions:[{icon,title,run:async(row)}],
+//     emptyText, defaultSort }
+function collectionManager(cfg){
+  const st={rows:[],q:'',sortKey:cfg.defaultSort||null,sortDir:1,sel:new Set(),filter:0};
+  const el=cfg.el;
+  el.innerHTML='<div class="cm-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;">'
+    +'<input class="form-input cm-q" type="text" placeholder="search…" style="width:180px;" autocomplete="off">'
+    +((cfg.filters&&cfg.filters.length)?'<select class="form-select cm-f" aria-label="Filter list" style="width:130px;">'+cfg.filters.map((f,i)=>'<option value="'+i+'">'+escapeHtml(f.label)+'</option>').join('')+'</select>':'')
+    +'<span class="cm-bulk" style="display:flex;gap:6px;"></span>'
+    +'<span class="cm-count" style="margin-left:auto;font-size:10px;color:var(--dim);"></span></div>'
+    +'<div class="cm-body" style="overflow-x:auto;"></div>';
+  const bulkBox=el.querySelector('.cm-bulk');
+  (cfg.bulk||[]).forEach((b,i)=>{
+    const btn=document.createElement('button');
+    btn.className='btn btn-ghost'; btn.textContent=b.label; btn.disabled=true; btn.dataset.cmb=i;
+    btn.addEventListener('click',async()=>{
+      const ids=[...st.sel]; if(!ids.length) return;
+      if(b.confirm&&!(await uiConfirm(b.confirm.replace('{n}',ids.length)))) return;
+      await b.run(ids); reload();
+    });
+    bulkBox.appendChild(btn);
+  });
+  el.querySelector('.cm-q').addEventListener('input',e=>{ st.q=e.target.value.trim().toLowerCase(); renderBody(); });
+  const fsel=el.querySelector('.cm-f');
+  if(fsel) fsel.addEventListener('change',e=>{ st.filter=parseInt(e.target.value,10)||0; renderBody(); });
+  function visibleRows(){
+    let rows=st.rows.slice();
+    const f=(cfg.filters||[])[st.filter];
+    if(f&&typeof f.fn==='function') rows=rows.filter(f.fn);
+    if(st.q) rows=rows.filter(r=>(cfg.searchKeys||[]).some(k=>String(r[k]??'').toLowerCase().includes(st.q)));
+    if(st.sortKey) rows.sort((a,b)=>{ const x=String(a[st.sortKey]??''),y=String(b[st.sortKey]??'');
+      return st.sortDir*x.localeCompare(y,undefined,{numeric:true}); });
+    return rows;
+  }
+  function syncBulk(){ el.querySelectorAll('.cm-bulk button').forEach(b=>b.disabled=!st.sel.size); }
+  function renderBody(){
+    const rows=visibleRows();
+    const body=el.querySelector('.cm-body');
+    el.querySelector('.cm-count').textContent=rows.length+' of '+st.rows.length+(st.sel.size?(' · '+st.sel.size+' selected'):'');
+    if(!rows.length){ body.innerHTML='<div class="hl3-empty">'+escapeHtml(st.rows.length?'Nothing matches the current search/filter.':(cfg.emptyText||'Nothing here yet.'))+'</div>'; syncBulk(); return; }
+    let h='<table class="users-table"><thead><tr><th style="width:24px;"><input type="checkbox" class="cm-all"'+(rows.length&&rows.every(r=>st.sel.has(cfg.idOf(r)))?' checked':'')+'></th>';
+    for(const c of cfg.columns) h+='<th class="cm-th" data-k="'+escapeHtml(c.key)+'" style="cursor:pointer;">'+escapeHtml(c.label)+(st.sortKey===c.key?(st.sortDir>0?' ▲':' ▼'):'')+'</th>';
+    if(cfg.rowActions&&cfg.rowActions.length) h+='<th>Actions</th>';
+    h+='</tr></thead><tbody>';
+    for(const r of rows){
+      const id=cfg.idOf(r);
+      h+='<tr><td><input type="checkbox" class="cm-sel" data-row="'+escapeHtml(id)+'"'+(st.sel.has(id)?' checked':'')+'></td>';
+      for(const c of cfg.columns) h+='<td>'+(c.render?c.render(r):escapeHtml(String(r[c.key]??'')))+'</td>';
+      if(cfg.rowActions&&cfg.rowActions.length){
+        h+='<td style="white-space:nowrap;">'+cfg.rowActions.map((a,i)=>'<button class="btn btn-ghost cm-act" data-row="'+escapeHtml(id)+'" data-a="'+i+'" title="'+escapeHtml(a.title)+'" style="padding:1px 6px;font-size:10px;">'+(typeof a.icon==='function'?a.icon(r):a.icon)+'</button>').join(' ')+'</td>';
+      }
+      h+='</tr>';
+    }
+    body.innerHTML=h+'</tbody></table>';
+    body.querySelector('.cm-all').addEventListener('change',e=>{
+      rows.forEach(r=>{ const id=cfg.idOf(r); if(e.target.checked) st.sel.add(id); else st.sel.delete(id); });
+      renderBody();
+    });
+    body.querySelectorAll('.cm-sel').forEach(cb=>cb.addEventListener('change',e=>{
+      if(e.target.checked) st.sel.add(e.target.dataset.row); else st.sel.delete(e.target.dataset.row);
+      el.querySelector('.cm-count').textContent=visibleRows().length+' of '+st.rows.length+(st.sel.size?(' · '+st.sel.size+' selected'):'');
+      syncBulk();
+    }));
+    body.querySelectorAll('.cm-th').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(st.sortKey===k) st.sortDir=-st.sortDir; else { st.sortKey=k; st.sortDir=1; }
+      renderBody();
+    }));
+    body.querySelectorAll('.cm-act').forEach(btn=>btn.addEventListener('click',async()=>{
+      const row=st.rows.find(r=>cfg.idOf(r)===btn.dataset.row); if(!row) return;
+      await cfg.rowActions[parseInt(btn.dataset.a,10)].run(row); reload();
+    }));
+    syncBulk();
+  }
+  async function reload(){ st.rows=(await cfg.load())||[]; for(const id of [...st.sel]) if(!st.rows.some(r=>cfg.idOf(r)===id)) st.sel.delete(id); renderBody(); }
+  el._cm={reload};
+  reload();
+  return el._cm;
+}
+
+// ---- Targets (allow/blocklist) — the first collection-manager surface --------------------------
+function hlTargetChip(e){
+  const deny=e.kind==='deny';
+  return '<span style="font-size:9px;font-weight:700;padding:1px 7px;border-radius:8px;border:1px solid '
+    +(deny?'var(--status-danger,#f05252)':'var(--status-success,#31c48d)')+';color:'
+    +(deny?'var(--status-danger,#f05252)':'var(--status-success,#31c48d)')+';">'+(deny?'DENY':'ALLOW')+'</span>';
+}
+function renderHlTargets(){
+  const el=document.getElementById('hl-targets'); if(!el) return;
+  if(el._cm){ el._cm.reload(); return; }
+  collectionManager({
+    el,
+    load:async()=>{
+      const r=await api('/homelab/allowlist');
+      const rows=(r&&r.success&&Array.isArray(r.data))?r.data:[];
+      const kpi=document.getElementById('hl-targets-kpi');
+      if(kpi) kpi.textContent=rows.length?('· '+rows.filter(e=>e.kind!=='deny'&&e.enabled).length+' allow / '+rows.filter(e=>e.kind==='deny'&&e.enabled).length+' deny'):'';
+      return rows;
+    },
+    idOf:e=>e.id,
+    searchKeys:['target','note','added_by','kind'],
+    defaultSort:'created_at',
+    emptyText:'No targets yet. Allow entries open hosts to the deterministic providers; deny entries slam the door (deny beats allow).',
+    filters:[
+      {label:'All'},
+      {label:'Allow',fn:e=>e.kind!=='deny'},
+      {label:'Deny',fn:e=>e.kind==='deny'},
+      {label:'Disabled',fn:e=>!e.enabled},
+    ],
+    columns:[
+      {key:'kind',label:'Kind',render:hlTargetChip},
+      {key:'target',label:'Target',render:e=>'<b>'+escapeHtml(e.target)+'</b>'},
+      {key:'note',label:'Note'},
+      {key:'enabled',label:'Enabled',render:e=>e.enabled?'<span style="color:var(--status-success)">yes</span>':'<span style="color:var(--dim)">no</span>'},
+      {key:'added_by',label:'Origin'},
+      {key:'created_at',label:'Added',render:e=>escapeHtml(hlDate(e.created_at))},
+    ],
+    rowActions:[
+      {icon:'✎',title:'Edit note',run:async e=>{
+        const note=await uiPrompt('Note for '+e.target,{value:e.note||''});
+        if(note!==null&&note!==undefined) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{note:note});
+      }},
+      {icon:e=>e.kind==='deny'?'✔':'⛔',title:'Flip allow/deny',run:async e=>{
+        await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{kind:e.kind==='deny'?'allow':'deny'});
+      }},
+      {icon:e=>e.enabled?'⏸':'▶',title:'Enable/disable',run:async e=>{
+        await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{enabled:!e.enabled});
+      }},
+      {icon:'🗑',title:'Remove entry',run:async e=>{
+        if(await uiConfirm('Remove target \''+e.target+'\'?')) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'DELETE');
+      }},
+    ],
+    bulk:[
+      {label:'Enable',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'enable',ids})},
+      {label:'Disable',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'disable',ids})},
+      {label:'Remove',confirm:'Remove {n} target entr(y/ies)?',run:ids=>api('/homelab/allowlist/bulk','POST',{action:'remove',ids})},
+    ],
+  });
+}
+async function hlTargetAdd(){
+  const target=document.getElementById('hl-tg-target').value.trim();
+  const kind=document.getElementById('hl-tg-kind').value;
+  const note=document.getElementById('hl-tg-note').value.trim();
+  if(!target){ hlMsg('Target (hostname, IP, or CIDR) is required',false); return; }
+  const r=await api('/homelab/allowlist','POST',{target,kind,note});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-tg-target').value=''; document.getElementById('hl-tg-note').value=''; renderHlTargets(); }
+}
+
+async function hl3DeckPropose(type,kind,target){
+  const card=document.getElementById('hl-actions-card');
+  const sel=document.getElementById('hl-a-type');
+  if(sel&&!sel.options.length) await loadHlActions();
+  if(sel) sel.value=type;
+  const tk=document.getElementById('hl-a-tkind'); if(tk) tk.value=kind;
+  const ti=document.getElementById('hl-a-target'); if(ti) ti.value=target;
+  if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
+  const ri=document.getElementById('hl-a-rollback'); if(ri) ri.focus();
+}
+function hl3LoaderFallbacks(){
+  setTimeout(()=>{
+    const kpis=document.getElementById('hl-cmd-kpis');
+    if(kpis&&/^Loading/.test(kpis.textContent)) kpis.textContent='Command summary unavailable right now — retrying on the next poll.';
+    const nxt=document.getElementById('hl-next');
+    if(nxt&&/^Loading/.test(nxt.textContent)) nxt.textContent='Recommendations unavailable right now — retrying on the next poll.';
+  },7000);
+}
+
+// -- Network & risk awareness (v1.13.0) --------------------------------------------
+async function loadHlRisks(){
+  try{
+    const [devs,risks]=await Promise.all([api('/homelab/devices'),api('/homelab/risks')]);
+    renderHlDevices(devs.success?(devs.data||[]):[]);
+    renderHlRisks(risks.success?(risks.data||[]):[]);
+  }catch(e){ hlMsg('Risk load failed: '+e.message,false); }
+}
+
+function renderHlDevices(devs){
+  const tb=document.getElementById('hl-devs-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!devs.length){ tb.innerHTML='<tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">No devices registered yet.</td></tr>'; return; }
+  tb.innerHTML=devs.map(d=>'<tr><td>'+escapeHtml(d.name||'—')+'</td><td>'+escapeHtml(d.kind||'unknown')+'</td><td>'+escapeHtml(d.mac||'—')+
+    '</td><td>'+escapeHtml(d.ip||'—')+'</td><td>'+escapeHtml(d.vlan||'—')+
+    '</td><td>'+(d.known?'yes':'<span style="color:var(--red)">NO</span>')+'</td><td>'+hlDate(d.last_seen)+'</td>'+
+    '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDevice(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+}
+
+function renderHlRisks(risks){
+  const tb=document.getElementById('hl-risks-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  const open=risks.filter(r=>r.status==='open');
+  const kpi=document.getElementById('hl-risk-kpi');
+  if(kpi) kpi.textContent='· '+open.filter(r=>r.severity==='error').length+' error · '+open.filter(r=>r.severity==='warning').length+' warning · '+open.filter(r=>r.severity==='info').length+' info open';
+  const visible=risks.filter(r=>r.status!=='resolved');
+  if(!visible.length){ tb.innerHTML='<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px;">No open findings — register inventory and hit Analyze Now.</td></tr>'; return; }
+  tb.innerHTML=visible.map(r=>{
+    const col=r.severity==='error'?'var(--red)':(r.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
+    return '<tr><td style="color:'+col+'">'+escapeHtml(r.severity)+'</td><td>'+escapeHtml(r.finding_kind)+'</td><td>'+escapeHtml(r.summary||'')+
+      '</td><td>'+escapeHtml(r.status)+'</td><td>'+hlDate(r.updated_at)+'</td>'+
+      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" data-onclick="hlAckRisk(\''+escapeHtml(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
+  }).join('');
+}
+
+async function hlAddDevice(){
+  const name=document.getElementById('hl-n-name').value.trim(), mac=document.getElementById('hl-n-mac').value.trim();
+  if(!name&&!mac){ hlMsg('Device needs a name or MAC',false); return; }
+  const r=await api('/homelab/devices','POST',{name, kind:document.getElementById('hl-n-kind').value, mac,
+    ip:document.getElementById('hl-n-ip').value.trim(), vlan:document.getElementById('hl-n-vlan').value.trim(),
+    known:document.getElementById('hl-n-known').value==='yes'});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-n-name','hl-n-mac','hl-n-ip','hl-n-vlan'].forEach(id=>document.getElementById(id).value=''); loadHlRisks(); }
+}
+
+async function hlDelDevice(id){
+  const r=await api('/homelab/devices/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHlRisks();
+}
+
+async function hlAnalyzeRisks(){
+  hlMsg('Analyzing risks...',true);
+  const r=await api('/homelab/risks/analyze','POST',{});
+  hlMsg(r.message||(r.success?'Done':'Failed'),r.success);
+  if(r.success) loadHlRisks();
+}
+
+async function hlAckRisk(id){
+  const r=await api('/homelab/risks/'+encodeURIComponent(id)+'/ack','POST',{});
+  hlMsg(r.message||(r.success?'Acknowledged':'Failed'),r.success);
+  if(r.success) loadHlRisks();
+}
+
+// -- Health checks (v1.11.0) -----------------------------------------------------
+async function loadHlHealth(){
+  try{
+    const [sum,sch,res]=await Promise.all([
+      api('/homelab/health/summary'),api('/homelab/health/schedules'),api('/homelab/health/results')]);
+    const s=sum.success?(sum.data||{}):{};
+    const kpi=document.getElementById('hl-health-kpi');
+    if(kpi) kpi.textContent='· '+(s.healthy||0)+' healthy · '+(s.degraded||0)+' degraded · '+(s.failed||0)+' failed · '+(s.unknown||0)+' unknown';
+    renderHlChecks(sch.success?(sch.data||[]):[], res.success?(res.data||[]):[]);
+  }catch(e){ hlMsg('Health load failed: '+e.message,false); }
+}
+
+function renderHlChecks(schedules,results){
+  const tb=document.getElementById('hl-checks-tbody'); if(!tb) return;
+  const admin=ROLE==='admin';
+  if(!schedules.length){ tb.innerHTML='<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px;">No health checks scheduled yet.</td></tr>'; return; }
+  tb.innerHTML=schedules.map(sc=>{
+    const last=results.find(r=>r.target===sc.target&&r.check_kind===sc.check_kind);
+    const st=last?last.status:'—';
+    const col=st==='healthy'?'var(--green)':(st==='degraded'?'var(--yellow, orange)':(st==='failed'?'var(--red)':'var(--dim)'));
+    return '<tr><td>'+escapeHtml(sc.check_kind)+'</td><td>'+escapeHtml(sc.target)+'</td>'+
+      '<td style="color:'+col+'">'+escapeHtml(st)+(sc.enabled?'':' (disabled)')+'</td>'+
+      '<td>'+(last?last.latency_ms+'ms':'—')+'</td><td>'+escapeHtml(last?(last.detail||''):'not run yet')+'</td>'+
+      '<td>'+(last?hlDate(last.checked_at):'—')+'</td>'+
+      '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelCheck(\''+escapeHtml(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
+  }).join('');
+}
+
+async function hlAddCheck(){
+  const target=document.getElementById('hl-c-target').value.trim();
+  if(!target){ hlMsg('Check target is required',false); return; }
+  const r=await api('/homelab/health/schedules','POST',{checkKind:document.getElementById('hl-c-kind').value,
+    target, timeoutMs:parseInt(document.getElementById('hl-c-timeout').value,10)||0});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-c-target').value=''; loadHlHealth(); }
+}
+
+async function hlDelCheck(id){
+  const r=await api('/homelab/health/schedules/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHlHealth();
+}
+
+async function hlRunChecks(){
+  hlMsg('Running health checks...',true);
+  const r=await api('/homelab/health/run','POST',{});
+  hlMsg(r.message||(r.success?'Done':'Failed'),r.success);
+  loadHlHealth();
+}
+
+async function hlTestNotify(){
+  const r=await api('/homelab/notifications/test','POST',{});
+  hlMsg(r.message||(r.success?'Sent':'Failed'),r.success);
+}
+
+async function hlAddHost(){
+  const name=document.getElementById('hl-h-name').value.trim();
+  if(!name){ hlMsg('Host name is required',false); return; }
+  const tags=document.getElementById('hl-h-tags').value.split(',').map(t=>t.trim()).filter(t=>t);
+  const r=await api('/homelab/hosts','POST',{name, kind:document.getElementById('hl-h-kind').value,
+    address:document.getElementById('hl-h-addr').value.trim(), os:document.getElementById('hl-h-os').value.trim(), roleTags:tags});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-h-name','hl-h-addr','hl-h-os','hl-h-tags'].forEach(id=>document.getElementById(id).value=''); loadHomelab(); }
+}
+
+async function hlAddService(){
+  const name=document.getElementById('hl-s-name').value.trim();
+  if(!name){ hlMsg('Service name is required',false); return; }
+  const ports=document.getElementById('hl-s-ports').value.split(',').map(p=>parseInt(p.trim(),10)).filter(p=>!isNaN(p)&&p>0);
+  const r=await api('/homelab/services','POST',{name, nodeId:document.getElementById('hl-s-node').value,
+    url:document.getElementById('hl-s-url').value.trim(), ports, owner:document.getElementById('hl-s-owner').value.trim(),
+    criticality:document.getElementById('hl-s-crit').value, internetExposed:document.getElementById('hl-s-exposed').value==='yes'});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ ['hl-s-name','hl-s-url','hl-s-ports','hl-s-owner'].forEach(id=>document.getElementById(id).value=''); loadHomelab(); }
+}
+
+async function hlAddDep(){
+  const from=document.getElementById('hl-d-from').value, to=document.getElementById('hl-d-to').value;
+  if(!from||!to){ hlMsg('Register a host and a service first',false); return; }
+  const [fk,fid]=from.split(':'), [tk,tid]=to.split(':');
+  const r=await api('/homelab/dependencies','POST',{fromKind:fk, fromId:fid, toKind:tk, toId:tid,
+    dependencyKind:document.getElementById('hl-d-kind').value, notes:document.getElementById('hl-d-notes').value.trim()});
+  hlMsg(r.message||(r.success?'Saved':'Failed'),r.success);
+  if(r.success){ document.getElementById('hl-d-notes').value=''; loadHomelab(); }
+}
+
+async function hlDelDep(id){
+  const r=await api('/homelab/dependencies/'+encodeURIComponent(id),'DELETE');
+  hlMsg(r.message||(r.success?'Removed':'Failed'),r.success);
+  if(r.success) loadHomelab();
+}
+
+async function hlExport(){
+  const r=await api('/homelab/export');
+  if(!r.success){ hlMsg(r.message||'Export failed',false); return; }
+  const blob=new Blob([JSON.stringify(r.data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='anthill-inventory-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  hlMsg('Inventory exported',true);
+}
+
+function hlImportPick(){ const f=document.getElementById('hl-import-file'); if(f) f.click(); }
+async function hlImportFile(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  try{
+    const bundle=JSON.parse(await f.text());
+    const r=await api('/homelab/import','POST',bundle);
+    hlMsg(r.message||(r.success?'Imported':'Import failed'),r.success);
+    if(r.success) loadHomelab();
+  }catch(e){ hlMsg('Import failed: '+e.message,false); }
+  ev.target.value='';
+}
+
+// -- V2.2 Pass A: ANTHILL design-system helpers + TopTelemetryBar --------------------
+// Role colors: THE single mapping for chambers, nodes, dots, badges, trails, legends.
+function getRoleColor(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'var(--role-queen)';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'var(--role-mission-control)';
+  if(n.includes('research'))return 'var(--role-research)';
+  if(n.includes('coder')||n.includes('code'))return 'var(--role-coder)';
+  if(n.includes('builder')||n.includes('build'))return 'var(--role-builder)';
+  if(n.includes('verifier')||n.includes('verify'))return 'var(--role-verifier)';
+  if(n.includes('tester')||n.includes('test'))return 'var(--role-tester)';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'var(--role-scout)';
+  if(n.includes('archivist'))return 'var(--role-archivist)';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'var(--role-memory)';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('guard')||n.includes('soldier')||n.includes('medic'))return 'var(--role-security)';
+  if(n.includes('source')||n.includes('file'))return 'var(--role-source)';
+  if(n.includes('ui')||n.includes('cartographer'))return 'var(--role-ui)';
+  if(n.includes('operator')||n.includes('scribe'))return 'var(--role-operator)';
+  return 'var(--role-other)';
+}
+function getRoleLabel(role){
+  const n=String(role||'').toLowerCase();
+  if(n.includes('queen'))return 'Queen';
+  if(n.includes('mission')||n.includes('director')||n.includes('planner')||n.includes('constraint'))return 'Mission Control';
+  if(n.includes('research'))return 'Researchers';
+  if(n.includes('coder'))return 'Coders';
+  if(n.includes('builder'))return 'Builders';
+  if(n.includes('verifier'))return 'Verifiers';
+  if(n.includes('tester'))return 'Testers';
+  if(n.includes('scout')||n.includes('forager')||n.includes('web'))return 'Scouts';
+  if(n.includes('archivist'))return 'Archivists';
+  if(n.includes('memory')||n.includes('pheromone')||n.includes('quartermaster'))return 'Memory';
+  if(n.includes('security')||n.includes('sentinel')||n.includes('soldier')||n.includes('medic'))return 'Security';
+  if(n.includes('source')||n.includes('file'))return 'Sources';
+  if(n.includes('ui')||n.includes('cartographer'))return 'UI';
+  if(n.includes('operator')||n.includes('scribe'))return 'Operators';
+  return 'Other';
+}
+function athPill(state,text){ return '<span class="ath-pill '+state+'">'+escapeHtml(text)+'</span>'; }
+
+// Central telemetry store — every value is real or null (rendered as em dash, never invented).
+const TB={online:null,tasks:null,tasksPerSec:null,successRate:null,activeAnts:null,approvals:null,
+  health:null,healthLabel:'',search:'',_prevTasks:null,_prevAt:0};
+
+async function pollTelemetry(){
+  const ovActive=document.getElementById('page-overview')?.classList.contains('active');
+  const coActive=document.getElementById('page-colony')?.classList.contains('active');
+  if(!ovActive&&!coActive) return;
+  try{
+    // v2.2.6: always request the registry so the ant count tracks changes (api() TTL-caches it,
+    // so this adds no network traffic between cache windows — the count just stops going stale).
+    const [st,reg]=await Promise.all([api('/status'), api('/colony/registry')]);
+    const s=(st&&st.success&&st.data)||null;
+    TB.online=!!s;
+    if(s){
+      const now=Date.now();
+      const tasks=(typeof s.tasks==='number')?s.tasks:null;
+      if(tasks!==null&&TB._prevTasks!==null&&now>TB._prevAt)
+        TB.tasksPerSec=Math.max(0,(tasks-TB._prevTasks)/((now-TB._prevAt)/1000));
+      TB._prevTasks=tasks; TB._prevAt=now;
+      TB.tasks=tasks;
+      TB.approvals=(typeof s.pending_approvals==='number')?s.pending_approvals:null;
+      // Success rate derived from the real event stream: 1 - failures/events (when events exist).
+      TB.successRate=(typeof s.events==='number'&&s.events>0&&typeof s.failures==='number')
+        ? Math.max(0,Math.min(100,(1-(s.failures/s.events))*100)) : null;
+      // Health: simple real-signal score — start 100, -4 per failure share point, -5 if approvals pile up.
+      if(TB.successRate!==null){
+        let h=Math.round(TB.successRate);
+        if((TB.approvals??0)>5)h-=5;
+        TB.health=Math.max(0,Math.min(100,h));
+        TB.healthLabel=TB.health>=90?'STABLE':(TB.health>=75?'WATCH':(TB.health>=50?'DEGRADED':'CRITICAL'));
+      }
+    }
+    if(reg&&reg.success&&reg.data){
+      const roles=Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[]);
+      let ants=0; roles.forEach(r=>{ ants+=1+((r.workers&&r.workers.length)||0); });
+      if(ants>0)TB.activeAnts=ants;
+    }
+  }catch(e){ TB.online=false; }
+  renderTelemetryBar('tb-overview'); renderTelemetryBar('tb-colony');
+}
+
+function renderTelemetryBar(containerId){
+  const el=document.getElementById(containerId); if(!el) return;
+  // Never re-render while the operator is typing in this bar's search box.
+  const focused=el.querySelector('.tb-search');
+  if(focused&&focused===document.activeElement) return;
+  const v=(x,f)=>x===null||x===undefined?'—':(f?f(x):x);
+  const hs=TB.health===null?'':(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'));
+  el.innerHTML='<div class="tb-bar">'+
+    '<span class="tb-brand">ANTHILL</span>'+
+    '<span class="tb-seg"><span class="tb-dot '+(TB.online?'on':'off')+'"></span>'+(TB.online===null?'CONNECTING':(TB.online?'COLONY ONLINE':'COLONY OFFLINE'))+'</span>'+
+    '<span class="tb-seg">TASKS <b>'+v(TB.tasks)+'</b>'+(TB.tasksPerSec!==null?' <span class="up">'+TB.tasksPerSec.toFixed(2)+'/s</span>':'')+'</span>'+
+    '<span class="tb-seg">SUCCESS <b>'+v(TB.successRate,x=>x.toFixed(1)+'%')+'</b></span>'+
+    '<span class="tb-seg">ACTIVE ANTS <b>'+v(TB.activeAnts)+'</b></span>'+
+    '<span class="tb-seg">APPROVALS <b'+((TB.approvals??0)>0?' style="color:var(--status-warning)"':'')+'>'+v(TB.approvals)+'</b></span>'+
+    '<span class="tb-seg">HEALTH '+(TB.health===null?'<b>—</b>':athPill(hs,TB.health+'% '+TB.healthLabel))+'</span>'+
+    '<input class="tb-search" placeholder="Search colony..." value="'+escapeHtml(TB.search)+'" '+
+      'data-oninput="TB.search=this.value; if(typeof colonySearchHook===\'function\')colonySearchHook(TB.search);">'+
+    '</div>';
+}
+
+// Wire into page lifecycle without touching existing enter handlers.
+(function(){
+  const prevOv=PAGE_ENTER['overview'];
+  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2(); };
+  const prevCo=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
+  setInterval(pollTelemetry,15000);
+  setInterval(()=>{ if(document.getElementById('page-overview')?.classList.contains('active')) pollOv2(); },20000);
+})();
+
+// -- V2.2 Pass B: Overview command-center cards (real data + labeled empty states) ----
+const OV2={healthTrend:[]};
+function ov2FocusMission(){ const el=document.getElementById('ov-mission-input'); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus(); } }
+function ov2Empty(id,msg){ const el=document.getElementById(id); if(el) el.innerHTML='<div class="ov2-empty">'+escapeHtml(msg)+'</div>'; }
+
+async function pollOv2(){
+  let jb,mn,ev,ap,reg;
+  try{
+    [jb,mn,ev,ap,reg]=await Promise.all([
+      api('/jobs'), api('/missions/json?limit=6'), api('/events/json?limit=200'),
+      api('/homelab/approvals/unified'), api('/colony/registry'),
+    ]);
+  }catch(e){ return; }
+  const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
+  const missions=Array.isArray(mn&&mn.data)?mn.data:[];
+  const events=Array.isArray(ev&&ev.data)?ev.data:[];
+  const approvals=(ap&&ap.success&&ap.data&&Array.isArray(ap.data.items))?ap.data.items:[];
+  const roles=(reg&&reg.success&&reg.data)?(Array.isArray(reg.data.roles)?reg.data.roles:(Array.isArray(reg.data)?reg.data:[])):[];
+  renderOv2Health(); renderOv2Active(jobs,missions);
+  renderOv2Approvals(approvals); renderOv2Core(roles,jobs,missions,approvals);
+  renderOv2Resources(); renderOv2Events(events);
+}
+
+// v2.2.3: restored — the events feed anchors row 3 of the balanced grid (uses data already
+// fetched by pollOv2; no extra polling).
+function renderOv2Events(events){
+  const el=document.getElementById('ov2-events-body'); if(!el) return;
+  const recent=events.slice(0,6);
+  if(!recent.length){ el.innerHTML='<div class="ov2-empty">No recent events yet.</div>'; return; }
+  el.innerHTML=recent.map(e=>{
+    const who=String(e.ant||e.ant_name||e.source||'');
+    return '<div class="ov2-list-item"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+getRoleColor(who||e.event_type)+';margin-right:6px;"></span>'+
+      '<span style="color:var(--anthill-dim)">'+escapeHtml((e.created_at||'').substring(11,16))+'</span> '+
+      (who?'<b style="color:var(--anthill-text)">'+escapeHtml(who)+'</b> ':'')+
+      escapeHtml(String(e.message||e.event_type||'').substring(0,70))+'</div>';
+  }).join('');
+}
+
+function renderOv2Health(){
+  const el=document.getElementById('ov2-health-body'); if(!el) return;
+  if(TB.health===null){ el.innerHTML='<div class="ov2-empty">No health signal yet — waiting for event data.</div>'; return; }
+  OV2.healthTrend.push(TB.health); if(OV2.healthTrend.length>48)OV2.healthTrend.shift();
+  const col=TB.health>=90?'var(--status-success)':(TB.health>=75?'var(--status-warning)':'var(--status-danger)');
+  el.innerHTML='<div class="ov2-big" style="color:'+col+'">'+TB.health+'%</div>'+
+    '<div style="margin:4px 0">'+athPill(TB.health>=90?'ok':(TB.health>=75?'warn':'danger'),TB.healthLabel)+'</div>'+
+    '<div class="ov2-row"><span>Systems</span><b>'+(TB.online?'online':'offline')+'</b></div>'+
+    '<div class="ov2-row"><span>Ant network</span><b>'+(TB.activeAnts??'—')+' ants</b></div>'+
+    '<div class="ov2-row"><span>Approvals</span><b>'+(TB.approvals??'—')+' pending</b></div>'+
+    '<div class="ov2-spark" title="session trend">'+OV2.healthTrend.map(h=>'<i style="height:'+Math.max(6,h*0.26)+'px;background:'+col+'"></i>').join('')+'</div>';
+}
+
+function renderOv2Active(jobs,missions){
+  // v2.2.2: single Missions card — active mission plus the queue folded in (queue card removed).
+  const el=document.getElementById('ov2-active-body'); if(!el) return;
+  const running=jobs.find(j=>(j.status||'').toLowerCase()==='running');
+  const queued=jobs.filter(j=>(j.status||'').toLowerCase()==='queued');
+  if(!running&&!queued.length){ el.innerHTML='<div class="ov2-empty">Idle — no active mission.<br>Enter a mission directive to begin.</div>'; return; }
+  let html='';
+  if(running){
+    const started=running.created_at||running.started_at||'';
+    const mins=started?Math.max(0,Math.round((Date.now()-Date.parse(started))/60000)):null;
+    html+='<div style="font-size:12px;color:var(--anthill-text);font-weight:700;margin-bottom:6px;">'+escapeHtml((running.goal||running.title||'Mission').substring(0,90))+'</div>'+
+      '<div class="ov2-row"><span>Status</span><b style="color:var(--status-info)">running'+(mins!==null?' · '+mins+'m':'')+'</b></div>';
+  }
+  if(queued.length){
+    html+='<div class="ov2-row"><span>Queued</span><b>'+queued.length+'</b></div>'+
+      queued.slice(0,2).map(j=>'<div class="ov2-list-item">'+escapeHtml((j.goal||j.id||'Mission').substring(0,55))+'</div>').join('');
+  }
+  el.innerHTML=html;
+}
+
+// v2.2.2: Tasks Today, Chamber Activity, Recent Events, Mission Timeline, and Mission Queue cards
+// removed — all of that lives in the Events / Colony / Missions tabs. Overview shows only
+// cross-cutting status not visible elsewhere.
+
+function renderOv2Approvals(items){
+  const el=document.getElementById('ov2-approvals-body'); if(!el) return;
+  const pending=items.filter(i=>i.state==='pending').slice(0,3);
+  if(!pending.length){ el.innerHTML='<div class="ov2-empty">No approvals pending.</div>'; return; }
+  el.innerHTML=pending.map(a=>{
+    const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'info');
+    const kindTag=a.kind==='homelab_action'?' '+athPill('warn','action'):'';
+    return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+kindTag+
+      '<div style="margin-top:4px;display:flex;gap:6px;">'+
+      '<button class="ov2-approve" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\',\''+escapeHtml(a.kind||'patch')+'\')">✓ Approve</button>'+
+      '<button class="ov2-reject" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\',\''+escapeHtml(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
+  }).join('');
+}
+
+function renderOv2Core(roles,jobs,missions,approvals){
+  // v2.2.6: prefer the authoritative state published by pollHud (it sees autonomy, objectives,
+  // patches, and provider health — this card's local fallback only covers the basics and is used
+  // solely until the first pollHud completes).
+  const el=document.getElementById('ov2-core-body'); if(!el) return;
+  roles=roles||[]; jobs=jobs||[]; missions=missions||[]; approvals=approvals||[];
+  OV2._core={roles,jobs,missions,approvals};
+  let state,text,sub;
+  if(CORE_STATE&&Date.now()-CORE_STATE.at<30000){
+    state=CORE_STATE.state; text=CORE_STATE.text; sub=CORE_STATE.sub;
+  }else{
+    const activeJobs=jobs.filter(j=>(j.status||'').toLowerCase()==='running').length;
+    const pending=approvals.filter(a=>a.state==='pending');
+    const highRisk=pending.filter(a=>a.risk_level==='high'||a.risk_level==='critical').length;
+    const lastFailed=missions.length&&(missions[0].status||'')==='failed';
+    const offline=TB.online===false;
+    state='idle'; text='IDLE'; sub='awaiting directive';
+    if(offline||lastFailed){ state='alert'; text='ALERT'; sub=offline?'backend offline':'last mission failed'; }
+    else if(pending.length){ state='action'; text='OPERATOR ACTION'; sub=highRisk?highRisk+' high-risk patch':pending.length+' awaiting review'; }
+    else if(activeJobs){ state='mission'; text='MISSION ACTIVE'; sub=activeJobs+' in flight'; }
+  }
+  const col=state==='alert'?'var(--status-danger)':state==='action'?'var(--status-warning)':state==='mission'?'var(--status-info)':state==='autonomy'?'var(--role-mission-control)':'var(--anthill-muted)';
+  const workers=roles.reduce((n,r)=>n+1+antWorkers(r).length,0);
+  el.innerHTML='<div style="display:flex;align-items:center;gap:14px;">'+
+    '<div class="ov2-orb" data-state="'+state+'"></div>'+
+    '<div style="flex:1;min-width:0;">'+
+      '<div class="ov2-big" style="font-size:16px;color:'+col+'">'+text+'</div>'+
+      '<div style="font-size:10px;color:var(--anthill-dim);margin-bottom:4px;">'+escapeHtml(sub)+'</div>'+
+      '<div class="ov2-row"><span>Roles</span><b>'+roles.length+'</b></div>'+
+      '<div class="ov2-row"><span>Ants (incl. workers)</span><b>'+(roles.length?workers:(TB.activeAnts??'—'))+'</b></div>'+
+    '</div></div>';
+}
+// v2.2.6: pollHud calls this after publishing CORE_STATE so the orb updates without waiting for
+// the next pollOv2 tick (re-renders with the last known card data; no extra API calls).
+function renderOv2CoreOrb(){ if(OV2._core) renderOv2Core(OV2._core.roles,OV2._core.jobs,OV2._core.missions,OV2._core.approvals); }
+
+function renderOv2Resources(){
+  // v2.2.6 fix: this card read cpu_percent/memory_percent/disk_percent fields that /status never
+  // provides, so it was permanently "Metrics unavailable" while real governor signals existed.
+  // It now renders the same signals the retired hud-metrics row used (published by pollHud).
+  const el=document.getElementById('ov2-resources-body'); if(!el) return;
+  const g=GOV||{};
+  const rows=[];
+  const gauge=(pct)=>'<div class="ov2-gauge"><i style="width:'+Math.min(100,Math.max(0,pct))+'%;background:'+(pct>=90?'var(--status-danger)':(pct>=75?'var(--status-warning)':'var(--status-info)'))+'"></i></div>';
+  if(g.load!=null){ const pct=Math.min(100,g.load*100);
+    rows.push('<div class="ov2-row"><span>CPU / core</span><b>'+Number(g.load).toFixed(2)+'</b></div>'+gauge(pct)); }
+  if(g.memFree!=null){ const used=(1-g.memFree)*100;
+    rows.push('<div class="ov2-row"><span>Memory used</span><b>'+Math.round(used)+'%</b></div>'+gauge(used)); }
+  if(g.backendOk===false) rows.push('<div class="ov2-row"><span>Backend</span><b style="color:var(--status-danger)">offline</b></div>');
+  else if(g.lat!=null) rows.push('<div class="ov2-row"><span>Backend latency</span><b'+(g.lat>=1500?' style="color:var(--status-warning)"':'')+'>'+Math.round(g.lat)+' ms</b></div>');
+  if(g.concEff!=null||g.concCfg!=null) rows.push('<div class="ov2-row"><span>Concurrency</span><b>'+(g.concEff??g.concCfg??'—')+(g.concCfg!=null?' / '+g.concCfg:'')+'</b></div>');
+  el.innerHTML=rows.length?rows.join(''):'<div class="ov2-empty">No signals yet — governor metrics appear during autonomy or shortly after load.</div>';
+}
+
+// -- V2.2 Pass C: Living Colony Map (Chamber / Expanded / Raw Graph) ------------------
+// v2.2.3 ROOT-CAUSE FIX for "Other · 25": the registry serializes PascalCase (RoleId/DisplayName/
+// Workers) — this helper only tried camelCase, returned '' for every role, and getRoleLabel('')
+// classified the entire colony as Other. Now uses the same case-tolerant prop() accessors as the
+// classic Live Colony engine (roleId/roleName/roleWorkers), which is why that view was unaffected.
+function antRoleId(r){ return prop(r,'roleId','RoleId','role_id','id')||''; }
+function antRoleName(r){ return prop(r,'displayName','DisplayName','display_name')||antRoleId(r); }
+function antWorkers(r){ return prop(r,'workers','Workers')||[]; }
+function antWorkerId(w){ return prop(w,'workerId','WorkerId','worker_id','id')||''; }
+function antWorkerName(w){ return prop(w,'displayName','DisplayName','display_name')||antWorkerId(w); }
+function antPurpose(o){ return prop(o,'purpose','Purpose')||''; }
+// v2.2.6 hardening: ids/labels embedded inside inline handler strings are stripped of every
+// character that could break out of the JS string context (defense-in-depth on top of escapeHtml;
+// registry data is local config, but the map must never be an injection surface).
+function attrSafe(s){ return String(s??'').replace(/[\\'"`<>\n\r]/g,''); }
+const CMAP={view:'chamber',motion:'normal',labels:'all',pheromones:'all',showIdle:true,
+  selected:null,selectedKind:null,chambers:{},trails:[],events:[]};
+const CMAP_LAYOUT={ 'Queen':{x:.52,y:.52},'Mission Control':{x:.55,y:.22},'Researchers':{x:.28,y:.23},
+  'Coders':{x:.74,y:.70},'Builders':{x:.30,y:.72},'Testers':{x:.20,y:.58},'Verifiers':{x:.50,y:.78},
+  'Scouts':{x:.78,y:.36},'Archivists':{x:.20,y:.38},'Security':{x:.72,y:.50},'Sources':{x:.86,y:.58},
+  'UI':{x:.42,y:.68},'Memory':{x:.36,y:.40},'Operators':{x:.48,y:.28},'Other':{x:.64,y:.82} };
+
+function cmapLoadPrefs(){
+  try{
+    // v2.2.2: the CLASSIC live colony (individual ants, dragging, pulses, pheromone canvas) is
+    // the default view; chamber/expanded are optional overlays the operator opts into.
+    // One-time migration: v2.2.0/1 persisted 'chamber' as the default for everyone — reset to
+    // the classic view once, then respect whatever the operator picks from here on.
+    if(!localStorage.getItem('anthill.colony.v222migrated')){
+      localStorage.setItem('anthill.colony.viewMode','raw');
+      localStorage.setItem('anthill.colony.v222migrated','1');
+    }
+    CMAP.view=localStorage.getItem('anthill.colony.viewMode')||'raw';
+    try{ CMAP.pos=JSON.parse(localStorage.getItem('anthill.colony.chamberPos')||'{}'); }catch(e){ CMAP.pos={}; }
+    CMAP.motion=localStorage.getItem('anthill.colony.motion')||'normal';
+    CMAP.labels=localStorage.getItem('anthill.colony.labels')||'all';
+    CMAP.pheromones=localStorage.getItem('anthill.colony.pheromones')||'all';
+    CMAP.showIdle=localStorage.getItem('anthill.colony.showIdleAnts')!=='0';
+  }catch(e){}
+  const m=document.getElementById('cmap2-motion'); if(m)m.value=CMAP.motion;
+  const l=document.getElementById('cmap2-labels'); if(l)l.value=CMAP.labels;
+  const p=document.getElementById('cmap2-pher'); if(p)p.value=CMAP.pheromones;
+  const i=document.getElementById('cmap2-idle'); if(i)i.checked=CMAP.showIdle;
+}
+function cmapSetPref(key,val){
+  if(key==='motion'){CMAP.motion=val;try{localStorage.setItem('anthill.colony.motion',val);}catch(e){}}
+  if(key==='labels'){CMAP.labels=val;try{localStorage.setItem('anthill.colony.labels',val);}catch(e){}}
+  if(key==='pheromones'){CMAP.pheromones=val;try{localStorage.setItem('anthill.colony.pheromones',val);}catch(e){}}
+  if(key==='showIdle'){CMAP.showIdle=val==='1';try{localStorage.setItem('anthill.colony.showIdleAnts',val);}catch(e){}}
+  renderColonyMap();
+}
+function cmapSetView(v){
+  CMAP.view=v; try{localStorage.setItem('anthill.colony.viewMode',v);}catch(e){}
+  const wrap=document.getElementById('cmap2-wrap');
+  const canvasArea=document.getElementById('colony-canvas-area');
+  const raw=v==='raw';
+  // v2.2.1: chamber/expanded switch the page to an immersive column layout (map big, original
+  // row panels hidden); raw restores the untouched original colony page.
+  const page=document.getElementById('page-colony');
+  if(page)page.classList.toggle('cmap-mode',!raw);
+  if(wrap)wrap.style.display=raw?'none':'flex';
+  if(canvasArea)canvasArea.style.display=raw?'':'none';
+  ['chamber','expanded','raw'].forEach(x=>{
+    const b=document.getElementById('cmap2-v-'+x); if(b)b.setAttribute('aria-pressed',x===v?'true':'false');
+  });
+  if(raw){
+    // v2.2.2 fix: the classic canvas must be FULLY re-initialized after being unhidden — the
+    // original page boots it with a delayed resize→buildNodes→legend→pheromones sequence
+    // (see showPage('colony')); doing only a synchronous resize left a blank canvas.
+    setTimeout(()=>{
+      if(typeof resize==='function')resize();
+      if(typeof buildNodes==='function')buildNodes();
+      if(typeof renderColonyLegend==='function')renderColonyLegend();
+      if(typeof pollColonyPheromones==='function')pollColonyPheromones();
+    },60);
+  }
+  else renderColonyMap();
+}
+
+async function loadColonyMap(){
+  try{
+    const [reg,ph,ev]=await Promise.all([api('/colony/registry'),api('/pheromones/json?limit=200'),api('/events/json?limit=150')]);
+    const roles=(reg&&reg.success&&reg.data&&Array.isArray(reg.data.roles))?reg.data.roles:[];
+    CMAP.events=Array.isArray(ev&&ev.data)?ev.data:[];
+    const cutoff=Date.now()-15*60000;
+    const activeNames=new Set();
+    CMAP.events.forEach(e=>{ const t=Date.parse(e.created_at||''); if(!isNaN(t)&&t>=cutoff){ const w=String(e.ant||e.ant_name||e.source||''); if(w)activeNames.add(w.toLowerCase()); }});
+    CMAP.chambers={};
+    roles.forEach(r=>{
+      const rid=antRoleId(r), rname=antRoleName(r);
+      // Classify by id first, fall back to display name — only truly unmatchable ants become Other.
+      let label=String(rid).toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
+      if(label==='Other') label=getRoleLabel(rname);
+      const ch=CMAP.chambers[label]=CMAP.chambers[label]||{label, color:getRoleColor(label==='Other'?rid:label), ants:[]};
+      const mk=(id,name,purpose)=>({id, name, purpose:purpose||'', active:activeNames.has(String(name||id).toLowerCase())||activeNames.has(String(id).toLowerCase())});
+      ch.ants.push(mk(rid, rname, antPurpose(r)));
+      antWorkers(r).forEach(w=>ch.ants.push(mk(antWorkerId(w), antWorkerName(w), antPurpose(w))));
+    });
+    // Dev diagnostics (no sensitive data): surface classification quality instead of failing silent.
+    const otherN=(CMAP.chambers['Other']||{ants:[]}).ants.length;
+    const totalN=Object.values(CMAP.chambers).reduce((n,c)=>n+c.ants.length,0);
+    if(otherN>0&&typeof console!=='undefined'&&console.debug)
+      console.debug('[colony-map] '+totalN+' ants, '+Object.keys(CMAP.chambers).length+' chambers, '+otherN+' unclassified',
+        (CMAP.chambers['Other']||{ants:[]}).ants.slice(0,3).map(a=>a.id));
+    // Pheromone display strength: real trail scores when the rows carry them; otherwise derived
+    // from recent event frequency per chamber (mapping isolated here, per the design rules).
+    const rows=Array.isArray(ph&&ph.data)?ph.data:[];
+    const byChamber={};
+    rows.forEach(row=>{
+      const who=String(row.ant||row.ant_name||row.role||row.name||'');
+      if(!who)return;
+      const label=getRoleLabel(who);
+      const score=Number(row.score??row.strength??row.value);
+      if(!isNaN(score)) byChamber[label]=Math.max(byChamber[label]||0,Math.min(1,Math.abs(score)));
+    });
+    if(!Object.keys(byChamber).length){
+      const counts={};
+      CMAP.events.forEach(e=>{ const w=String(e.ant||e.ant_name||e.source||''); if(w)counts[getRoleLabel(w)]=(counts[getRoleLabel(w)]||0)+1; });
+      const max=Math.max.apply(null,Object.keys(counts).map(k=>counts[k]).concat([1]));
+      Object.keys(counts).forEach(k=>byChamber[k]=counts[k]/max);
+    }
+    CMAP.trails=Object.keys(byChamber).map(label=>({chamber:label,strength:byChamber[label]}));
+    renderColonyMap();
+  }catch(e){ /* keep last render */ }
+}
+
+// v2.2.1: pan/zoom on the living map (viewBox-based; reduced-motion unaffected — no animation).
+function cmapResetZoom(){ CMAP.vb={x:0,y:0,w:1000,h:600}; renderColonyMap(); }
+// v2.2.6: dragged chamber positions previously had no way back to the default layout.
+function cmapResetLayout(){ CMAP.pos={}; try{localStorage.removeItem('anthill.colony.chamberPos');}catch(e){} renderColonyMap(); }
+function cmapToggleInspector(){ const i=document.getElementById('cmap2-inspector'); if(i)i.classList.toggle('collapsed'); }
+let CMAP_PANZOOM_WIRED=false;
+function cmapWirePanZoom(){
+  if(CMAP_PANZOOM_WIRED)return; CMAP_PANZOOM_WIRED=true;
+  const svg=document.getElementById('cmap2'); if(!svg)return;
+  let drag=null;
+  svg.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const vb=CMAP.vb||{x:0,y:0,w:1000,h:600};
+    const f=e.deltaY>0?1.15:0.87;
+    const nw=Math.min(3000,Math.max(200,vb.w*f)), nh=nw*0.6;
+    const r=svg.getBoundingClientRect();
+    const mx=vb.x+(e.clientX-r.left)/r.width*vb.w, my=vb.y+(e.clientY-r.top)/r.height*vb.h;
+    CMAP.vb={x:mx-(mx-vb.x)*(nw/vb.w), y:my-(my-vb.y)*(nh/vb.h), w:nw, h:nh};
+    renderColonyMap();
+  },{passive:false});
+  svg.addEventListener('mousedown',e=>{ if(e.target===svg)drag={x:e.clientX,y:e.clientY,vb:Object.assign({},CMAP.vb||{x:0,y:0,w:1000,h:600})}; });
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    const r=svg.getBoundingClientRect();
+    CMAP.vb={x:drag.vb.x-(e.clientX-drag.x)/r.width*drag.vb.w, y:drag.vb.y-(e.clientY-drag.y)/r.height*drag.vb.h, w:drag.vb.w, h:drag.vb.h};
+    renderColonyMap();
+  });
+  window.addEventListener('mouseup',()=>{drag=null;});
+}
+
+function renderColonyMap(){
+  const svg=document.getElementById('cmap2'); if(!svg||CMAP.view==='raw') return;
+  cmapWirePanZoom();
+  const vb=CMAP.vb||{x:0,y:0,w:1000,h:600};
+  svg.setAttribute('viewBox',vb.x+' '+vb.y+' '+vb.w+' '+vb.h);
+  const parent=svg.parentElement; if(parent) parent.className=parent.className.replace(/cmap2-motion-\S+/g,'').trim()+' cmap2-motion-'+CMAP.motion;
+  const labels=Object.keys(CMAP.chambers);
+  if(!labels.length){ svg.innerHTML='<text x="40" y="60" font-size="13">Colony registry unavailable — no chambers to draw.</text>'; return; }
+  // v2.2.4: operator-dragged positions (normalized, persisted) win over the default layout.
+  const P=l=>{ const o=CMAP.pos&&CMAP.pos[l]; if(o)return {x:o.x*1000,y:o.y*600};
+    const p=CMAP_LAYOUT[l]||CMAP_LAYOUT['Other']; return {x:p.x*1000,y:p.y*600}; };
+  const q=P('Queen');
+  let out='';
+  // v2.2.4: delegation lines — same structure as the classic engine (Queen → Mission Control,
+  // Mission Control → every chamber). Lines light up and flow when the target chamber has ants
+  // active in the last 15m, so live delegation is visible in this view too.
+  // v2.2.5: tunnels are always visible in each chamber's role color (idle ones were drawn in the
+  // near-invisible border color, so only Queen ↔ Mission Control could be seen). Curved like dug
+  // tunnels; active chambers flow. Command chain: Queen → Mission Control → every chamber.
+  const mcL=CMAP.chambers['Mission Control']?'Mission Control':'Queen';
+  const mc=P(mcL);
+  const tunnel=(a,b,color,act)=>{
+    const mx=(a.x+b.x)/2+(b.y-a.y)*0.12, my=(a.y+b.y)/2-(b.x-a.x)*0.12;
+    return '<path class="cm-deleg'+(act?' cm-deleg-active':'')+'" d="M'+a.x+' '+a.y+' Q '+mx.toFixed(0)+' '+my.toFixed(0)+' '+b.x+' '+b.y+'" stroke="'+color+'"/>';
+  };
+  labels.forEach(label=>{
+    if(label===mcL||label==='Queen')return;
+    const ch=CMAP.chambers[label];
+    out+=tunnel(mc,P(label),ch.color,ch.ants.some(a=>a.active));
+  });
+  if(CMAP.chambers['Queen']&&mcL==='Mission Control')
+    out+=tunnel(q,mc,'var(--role-queen)',CMAP.chambers[mcL].ants.some(a=>a.active));
+  // Trails chamber → queen (pheromone layer)
+  if(CMAP.pheromones!=='off'){
+    CMAP.trails.forEach(t=>{
+      if(t.chamber==='Queen')return;
+      if(CMAP.pheromones==='active'&&t.strength<0.3)return;
+      const c=P(t.chamber);
+      const color=(CMAP.chambers[t.chamber]||{}).color||'var(--role-other)';
+      out+='<path class="pheromone-path" d="M'+c.x+' '+c.y+' Q '+((c.x+q.x)/2+30)+' '+((c.y+q.y)/2-30)+' '+q.x+' '+q.y+'"'+
+        ' stroke="'+color+'" stroke-width="'+(1+t.strength*5).toFixed(1)+'" opacity="'+(0.2+t.strength*0.8).toFixed(2)+'"'+
+        ' data-onclick="cmapSelect(\'path\',\''+attrSafe(t.chamber)+'\')" style="cursor:pointer;pointer-events:stroke;"/>';
+    });
+  }
+  // Chambers
+  labels.forEach(label=>{
+    const ch=CMAP.chambers[label], p=P(label);
+    const isQueen=label==='Queen';
+    const shown=CMAP.showIdle?ch.ants:ch.ants.filter(a=>a.active);
+    const activeCount=ch.ants.filter(a=>a.active).length;
+    const r=isQueen?26:Math.min(40,20+ch.ants.length*1.5);
+    const sel=CMAP.selected===label&&CMAP.selectedKind!=='path';
+    out+='<g class="cm-chamber'+(activeCount>0?' cm-active':'')+(sel?' cm-selected':'')+'" style="cursor:grab" '+
+      'onmousedown="cmapChamberDown(event,\''+attrSafe(label)+'\')" data-onclick="cmapSelect(\'chamber\',\''+attrSafe(label)+'\')" '+
+      (isQueen?'':'ondblclick="cmapExpand(\''+attrSafe(label)+'\')"')+'>'+
+      '<circle class="cm-ring" cx="'+p.x+'" cy="'+p.y+'" r="'+r+'" stroke="'+ch.color+'"/>';
+    // Ant dots (v2.2.3): representative in chamber view; ALL ants when expanded — for the selected
+    // chamber, or for every chamber when none is selected (expanded must never collapse to a
+    // placeholder). Every visible dot is clickable and routes to the existing selection handler.
+    const expandedHere=CMAP.view==='expanded'&&(CMAP.selected===label||!CMAP.selected);
+    const dots=expandedHere?shown:shown.slice(0,8);
+    dots.forEach((a,i)=>{
+      const n=dots.length, ang=(i/Math.max(1,n))*Math.PI*2;
+      // v2.2.6: proper concentric rings — 14 dots per ring, angle computed within the ring, so
+      // large chambers never overlap dots (the old math reused the full-count angle across rings).
+      const RING=14, ring=expandedHere?Math.floor(i/RING):0;
+      const inRing=expandedHere?Math.min(RING,n-ring*RING):n, idxInRing=expandedHere?(i-ring*RING):i;
+      const ringAng=(idxInRing/Math.max(1,inRing))*Math.PI*2+(ring*0.35);
+      const rr=(expandedHere?(r*0.75):(r*0.55))+ring*12;
+      const ax=p.x+Math.cos(ringAng)*rr, ay=p.y+Math.sin(ringAng)*rr;
+      const selAnt=CMAP.selectedAnt===a.id;
+      out+='<circle cx="'+ax+'" cy="'+ay+'" r="'+(expandedHere?4.5:3)+'" fill="'+ch.color+'" opacity="'+(a.active?1:0.4)+'"'+
+        (selAnt?' stroke="var(--anthill-text)" stroke-width="1.5"':'')+
+        (a.active?' class="cm-ant-active"':'')+
+        ' style="cursor:pointer" data-onclick="event.stopPropagation();cmapSelect(\'ant\',\''+attrSafe(a.id)+'\')"'+
+        '><title>'+escapeHtml(a.name)+(a.active?' (active)':' (idle)')+'</title></circle>';
+      if(expandedHere&&(a.active||selAnt))
+        out+='<text x="'+ax+'" y="'+(ay-7)+'" font-size="8" text-anchor="middle" fill="var(--anthill-muted)">'+escapeHtml(String(a.name).substring(0,18))+'</text>';
+    });
+    const showLabel=CMAP.labels==='all'||(CMAP.labels==='active'&&activeCount>0)||isQueen;
+    if(showLabel) out+='<text x="'+p.x+'" y="'+(p.y+r+13)+'" font-size="11" text-anchor="middle">'+escapeHtml(label)+' · '+ch.ants.length+(activeCount?' · '+activeCount+' active':'')+'</text>';
+    out+='</g>';
+  });
+  if(CMAP.view==='expanded'&&!CMAP.selected)
+    out+='<text x="500" y="20" font-size="10" text-anchor="middle" fill="var(--anthill-dim)">Select a chamber to focus · all ants shown</text>';
+  svg.innerHTML=out;
+}
+
+function cmapExpand(label){
+  // v2.2.6: a fast drag-release near a chamber can synthesize a dblclick — don't expand from one.
+  if(CMAP._dragEndAt&&Date.now()-CMAP._dragEndAt<400) return;
+  CMAP.view='expanded'; CMAP.selected=label; CMAP.selectedKind='chamber'; cmapSetView('expanded'); cmapInspect();
+}
+function cmapSelect(kind,id){
+  if(CMAP._dragged){ CMAP._dragged=false; return; } // a drag is not a selection
+  CMAP.selectedKind=kind; CMAP.selected=kind==='ant'?CMAP.selected:id; if(kind==='ant')CMAP.selectedAnt=id; renderColonyMap(); cmapInspect(kind,id);
+}
+
+// v2.2.4: chamber groups are draggable like classic ants; positions persist per operator.
+function cmapChamberDown(e,label){
+  if(e.button!==0)return;
+  e.stopPropagation(); // don't start an svg pan
+  const svg=document.getElementById('cmap2'); if(!svg)return;
+  const start={x:e.clientX,y:e.clientY}; let moved=false;
+  const mv=ev=>{
+    if(!moved&&Math.abs(ev.clientX-start.x)+Math.abs(ev.clientY-start.y)<4)return;
+    moved=true; CMAP._dragged=true;
+    const r=svg.getBoundingClientRect(), vb=CMAP.vb||{x:0,y:0,w:1000,h:600};
+    const wx=vb.x+(ev.clientX-r.left)/r.width*vb.w, wy=vb.y+(ev.clientY-r.top)/r.height*vb.h;
+    CMAP.pos=CMAP.pos||{};
+    CMAP.pos[label]={x:Math.min(1,Math.max(0,wx/1000)), y:Math.min(1,Math.max(0,wy/600))};
+    renderColonyMap();
+  };
+  const up=()=>{
+    window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up);
+    if(moved){ CMAP._dragEndAt=Date.now(); try{localStorage.setItem('anthill.colony.chamberPos',JSON.stringify(CMAP.pos||{}));}catch(x){} }
+  };
+  window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+}
+
+function cmapInspect(kind,id){
+  const el=document.getElementById('cmap2-insp-body'); if(!el)return;
+  kind=kind||CMAP.selectedKind; id=id||(kind==='ant'?CMAP.selectedAnt:CMAP.selected);
+  if(!kind||!id){
+    // v2.2.3: no selection → colony summary instead of an empty panel.
+    const labels=Object.keys(CMAP.chambers);
+    if(!labels.length){ el.innerHTML='<div class="ov2-empty">Select a chamber, ant, or trail.</div>'; return; }
+    let total=0,act=0;
+    labels.forEach(l=>{ total+=CMAP.chambers[l].ants.length; act+=CMAP.chambers[l].ants.filter(a=>a.active).length; });
+    el.innerHTML='<div class="ov2-row"><span>Ants</span><b>'+total+'</b></div>'+
+      '<div class="ov2-row"><span>Active (15m)</span><b>'+act+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">CHAMBERS</div>'+
+      labels.map(l=>{ const c=CMAP.chambers[l], a=c.ants.filter(x=>x.active).length;
+        return '<div class="ov2-list-item" style="cursor:pointer" data-onclick="cmapSelect(\'chamber\',\''+attrSafe(l)+'\')">'+
+          '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+c.color+';margin-right:6px;"></span>'+
+          escapeHtml(l)+' <b>'+c.ants.length+'</b>'+(a?' · '+a+' active':'')+'</div>'; }).join('');
+    return;
+  }
+  const evFor=n=>CMAP.events.filter(e=>String(e.ant||e.ant_name||e.source||'').toLowerCase().includes(String(n).toLowerCase())).slice(0,5);
+  if(kind==='chamber'){
+    const ch=CMAP.chambers[id]; if(!ch){el.innerHTML='<div class="ov2-empty">Unknown chamber.</div>';return;}
+    const act=ch.ants.filter(a=>a.active);
+    el.innerHTML='<div class="ath-role"><i style="background:'+ch.color+'"></i><b>'+escapeHtml(id)+'</b></div>'+
+      '<div class="ov2-row"><span>Ants</span><b>'+ch.ants.length+'</b></div>'+
+      '<div class="ov2-row"><span>Active (15m)</span><b>'+act.length+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">ANTS &amp; DUTIES</div>'+
+      ch.ants.map(a=>'<div class="ov2-list-item" style="cursor:pointer" data-onclick="cmapSelect(\'ant\',\''+attrSafe(a.id)+'\')"><b style="color:var(--anthill-text)">'+escapeHtml(a.name)+'</b>'+(a.active?' '+athPill('ok','active'):'')+
+        (a.purpose?'<div style="font-size:9px;color:var(--anthill-dim);margin-top:1px;">'+escapeHtml(a.purpose.substring(0,90))+'</div>':'')+'</div>').join('')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" data-onclick="cmapExpand(\''+attrSafe(id)+'\')">Expand</button>'+
+      '<button class="hud-act" data-onclick="showPage(\'antconfig\')">Agents</button>'+
+      '<button class="hud-act" data-onclick="showPage(\'antobs\')">Inspector</button></div>';
+  }else if(kind==='ant'){
+    let found=null,chLabel='';
+    Object.keys(CMAP.chambers).forEach(l=>{ const a=CMAP.chambers[l].ants.find(x=>x.id===id); if(a){found=a;chLabel=l;} });
+    if(!found){el.innerHTML='<div class="ov2-empty">Unknown ant.</div>';return;}
+    const evs=evFor(found.name);
+    el.innerHTML='<div class="ath-role"><i style="background:'+getRoleColor(id)+'"></i><b>'+escapeHtml(found.name)+'</b></div>'+
+      '<div class="ov2-row"><span>Chamber</span><b>'+escapeHtml(chLabel)+'</b></div>'+
+      '<div class="ov2-row"><span>Status</span><b>'+(found.active?'active':'idle')+'</b></div>'+
+      (found.purpose?'<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">PURPOSE</div>'+
+        '<div style="font-size:10px;color:var(--anthill-muted);">'+escapeHtml(found.purpose)+'</div>':'')+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT EVENTS</div>'+
+      (evs.length?evs.map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join(''):'<div class="ov2-empty">No recent events.</div>')+
+      '<div style="display:flex;gap:6px;margin-top:8px;">'+
+      '<button class="hud-act" data-onclick="showPage(\'antobs\')">Inspect Ant</button>'+
+      '<button class="hud-act" data-onclick="showPage(\'events\')">Open Logs</button></div>';
+  }else{
+    const t=CMAP.trails.find(x=>x.chamber===id);
+    el.innerHTML='<div class="ath-role"><i style="background:'+((CMAP.chambers[id]||{}).color||'var(--role-other)')+'"></i><b>Trail: '+escapeHtml(id)+' → Queen</b></div>'+
+      '<div class="ov2-row"><span>Strength</span><b>'+(t?Math.round(t.strength*100)+'%':'—')+'</b></div>'+
+      '<div style="font-size:9px;color:var(--anthill-dim);margin:6px 0 2px;">RECENT FLOW</div>'+
+      evFor(id).map(e=>'<div class="ov2-list-item">'+escapeHtml(String(e.message||e.event_type||'').substring(0,60))+'</div>').join('')||'<div class="ov2-empty">No recent events.</div>';
+  }
+}
+
+function colonySearchHook(q){
+  if(!q||CMAP.view==='raw')return;
+  const needle=q.toLowerCase();
+  for(const label of Object.keys(CMAP.chambers)){
+    const hit=CMAP.chambers[label].ants.find(a=>String(a.name).toLowerCase().includes(needle)||String(a.id).toLowerCase().includes(needle));
+    if(hit){ CMAP.selected=label; CMAP.selectedKind='chamber'; CMAP.selectedAnt=hit.id;
+      if(CMAP.view!=='expanded')cmapSetView('expanded'); else renderColonyMap();
+      cmapInspect('ant',hit.id); return; }
+  }
+}
+
+(function(){
+  const prev=PAGE_ENTER['colony'];
+  PAGE_ENTER['colony']=()=>{ if(prev)prev(); cmapLoadPrefs(); cmapSetView(CMAP.view); loadColonyMap(); };
+  setInterval(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')&&CMAP.view!=='raw') loadColonyMap(); },20000);
+})();
+
+// -- Boot ----------------------------------------------------------------------
+// v1.9.1.1: the header/title version comes from the API (single source of truth:
+// AnthillRuntime.Version via the public /health endpoint) instead of hardcoded markup,
+// which had silently drifted from the runtime version. Guarded by RegressionGuardTests.
+async function bootVersion(){
+  try{
+    const h=await (await fetch(url('/health'))).json();
+    const v=h?.data?.version;
+    if(!v) return;
+    document.title='ANTHILL v'+v;
+    const a=document.getElementById('auth-ver'); if(a) a.textContent='v'+v;
+    const n=document.getElementById('nav-ver'); if(n) n.textContent='v'+v;
+  }catch(e){ /* offline/unreachable: header simply shows no version */ }
+}
+bootVersion();
+bootAuth();
+
+
+
+/* ===================================================================================
+   v2.6.3 CSP: delegated handler dispatcher.  Inline on*= handlers were renamed to
+   data-on*= so the page carries NO inline JS — enabling CSP `script-src 'self'`
+   without 'unsafe-inline'.  Handler code is run via a small micro-parser (never eval).
+   =================================================================================== */
+(function(){
+  function splitTop(s, sep){
+    var out=[], d=0, q=null, cur='';
+    for(var i=0;i<s.length;i++){ var c=s[i];
+      if(q){ cur+=c; if(c===q && s[i-1]!=='\\') q=null; continue; }
+      if(c==='"'||c==="'"){ q=c; cur+=c; continue; }
+      if(c==='('||c==='['||c==='{') d++;
+      else if(c===')'||c===']'||c==='}') d--;
+      if(c===sep && d===0){ out.push(cur); cur=''; continue; }
+      cur+=c;
+    }
+    if(cur.trim()!=='') out.push(cur);
+    return out;
+  }
+  function coerce(a, el, ev){
+    a=a.trim();
+    if(a==='this') return el;
+    if(a==='event') return ev;
+    if(a==='true') return true;
+    if(a==='false') return false;
+    if(a==='null') return null;
+    if(a==='undefined') return undefined;
+    if(/^-?\d+(?:\.\d+)?$/.test(a)) return Number(a);
+    if(a.length>=2 && (a[0]==="'"||a[0]==='"') && a[a.length-1]===a[0])
+      return a.slice(1,-1).replace(/\\(['"\\])/g,'$1');
+    if(a[0]==='{'){ try{ return JSON.parse(a.replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g,'$1"$2":').replace(/'/g,'"')); }catch(e){ return undefined; } }
+    if(a[0]==='['){ try{ return JSON.parse(a.replace(/'/g,'"')); }catch(e){ return undefined; } }
+    return undefined;
+  }
+  function runStmt(stmt, el, ev){
+    stmt=stmt.trim();
+    if(!stmt || stmt==='return false' || stmt==='return true' || stmt==='return') return;
+    if(stmt==='event.stopPropagation()'){ ev.stopPropagation(); return; }
+    if(stmt==='event.preventDefault()'){ ev.preventDefault(); return; }
+    if(/^void\s*\(/.test(stmt)) return;
+    var m=stmt.match(/^([\w$]+(?:\.[\w$]+)*)\(([\s\S]*)\)$/);
+    if(!m) return;
+    var path=m[1].split('.'), rawArgs=m[2].trim();
+    var args=(rawArgs==='')?[]:splitTop(rawArgs, ',').map(function(a){ return coerce(a, el, ev); });
+    var fn, ctx=null, o;
+    if(path.length===1){ fn=window[path[0]]; }
+    else {
+      o = (path[0]==='this') ? el : window[path[0]];
+      for(var i=1;i<path.length-1 && o!=null;i++) o=o[path[i]];
+      ctx=o; fn=(o!=null)?o[path[path.length-1]]:undefined;
+    }
+    if(typeof fn==='function') fn.apply(ctx, args);
+  }
+  function run(code, el, ev){
+    if(el.tagName==='A' || /(^|;)\s*return\s+false\s*(;|$)/.test(code)) ev.preventDefault(); // <a>=JS-action link: no navigate, avoids javascript: CSP violation
+    splitTop(code, ';').forEach(function(s){ try{ runStmt(s, el, ev); }catch(e){ console.error('handler failed:', s, e); } });
+  }
+  function make(evName){
+    var attr='data-on'+evName;
+    return function(ev){
+      var el=ev.target && ev.target.closest ? ev.target.closest('['+attr+']') : null;
+      if(el) run(el.getAttribute(attr), el, ev);
+    };
+  }
+  document.addEventListener('click',  make('click'));
+  document.addEventListener('change', make('change'));
+  document.addEventListener('input',  make('input'));
+  document.addEventListener('toggle', make('toggle'), true); // toggle doesn't bubble -> capture
+
+  // v2.6.3 a11y: non-native clickables (div/span with data-onclick) get keyboard activation +
+  // focusability, so the delegated handlers are usable without a mouse (WCAG 2.1 keyboard).
+  var NATIVE={BUTTON:1,A:1,INPUT:1,SELECT:1,TEXTAREA:1};
+  document.addEventListener('keydown', function(ev){
+    if(ev.key!=='Enter' && ev.key!==' ' && ev.key!=='Spacebar') return;
+    var el=ev.target && ev.target.closest ? ev.target.closest('[data-onclick]') : null;
+    if(!el || NATIVE[el.tagName]) return;         // native controls: the browser already activates
+    ev.preventDefault();
+    run(el.getAttribute('data-onclick'), el, ev);
+  });
+  function tagOne(el){
+    if(NATIVE[el.tagName]) return;
+    if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+  }
+  function tagTree(node){
+    if(!node || node.nodeType!==1) return;
+    if(node.hasAttribute && node.hasAttribute('data-onclick')) tagOne(node);
+    if(node.querySelectorAll) node.querySelectorAll('[data-onclick]').forEach(tagOne);
+  }
+  tagTree(document.body);
+  try{
+    new MutationObserver(function(muts){
+      for(var i=0;i<muts.length;i++){ var a=muts[i].addedNodes; for(var j=0;j<a.length;j++) tagTree(a[j]); }
+    }).observe(document.body, {childList:true, subtree:true});
+  }catch(e){}
+})();
