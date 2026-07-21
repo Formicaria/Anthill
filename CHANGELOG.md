@@ -1,5 +1,20 @@
 # ANTHILL Changelog
 
+## v2.6.4 — Reliability: scope SQLite pool clears to the owning instance
+
+Fixes an intermittent `System.ObjectDisposedException` ("Cannot access a disposed object:
+'SQLitePCL.sqlite3'") that surfaced in CI under parallel test execution.
+
+- **Root cause:** `SqliteMemory.Dispose()` and `HomelabRepository.Dispose()` called the process-global
+  `SqliteConnection.ClearAllPools()`, which disposes pooled SQLite handles for *every* live instance.
+  With connection pooling on and xUnit running test classes in parallel, one instance's teardown could
+  dispose a connection another instance was mid-query on → the disposed-handle exception. It was also a
+  latent hazard in production had two `SqliteMemory`/`HomelabRepository` instances ever coexisted.
+- **Fix:** both `Dispose()` methods now call `SqliteConnection.ClearPool(conn)` scoped to the
+  instance's own connection string, releasing only that database's pooled connections. The connection
+  string is centralized in a `ConnString` member so `Connect()` and `Dispose()` can't drift.
+- No behavior change for callers; purely a lifecycle-scoping correction.
+
 ## v2.6.3 — Console polish, CSP hardening & accessibility
 
 UI consistency pass across the console (front-end only; `src/Anthill.Api/Ui/index.html`). No
