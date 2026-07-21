@@ -1084,6 +1084,36 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 ---------------------------------------------------------------------------- -->
 <div id="app-shell" class="hidden">
 
+  <!-- v2.6 Console Redesign — IA / routing presentation layer (docs/CONSOLE_REDESIGN.md) -->
+  <style id="ia-redesign">
+    #nav-scroll .nav-domain{margin:1px 0;}
+    .nav-dom-head{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;color:var(--dim,#9aa1ad);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;user-select:none;}
+    .nav-dom-head:hover{color:var(--anthill-text,#e5e7eb);}
+    .nav-dom-head .nav-chev{margin-left:auto;transition:transform .15s ease;font-size:10px;opacity:.7;}
+    .nav-domain.open>.nav-dom-head .nav-chev{transform:rotate(90deg);}
+    .nav-children{display:none;flex-direction:column;padding:1px 0 6px;}
+    .nav-domain.open>.nav-children{display:flex;}
+    .nav-child{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 14px 7px 44px;font-size:13px;color:var(--dim,#9aa1ad);cursor:pointer;border-left:2px solid transparent;transition:background .12s,color .12s;}
+    .nav-child .nav-badge{margin-left:auto;}
+    .nav-child:hover{color:var(--anthill-text,#e5e7eb);background:rgba(255,255,255,.03);}
+    .nav-child.active{color:var(--queen,#fbbf24);border-left-color:var(--queen,#fbbf24);background:rgba(251,191,36,.06);}
+    body.nav-collapsed .nav-children,body.nav-collapsed .nav-dom-head .nav-label,body.nav-collapsed .nav-dom-head .nav-chev{display:none;}
+    .crumbs{display:flex;align-items:center;gap:8px;font-size:14px;min-height:20px;}
+    .crumbs .crumb{color:var(--dim,#9aa1ad);}
+    .crumbs .crumb.cur{color:var(--anthill-text,#e5e7eb);font-weight:600;}
+    .crumbs .crumb-sep{color:var(--dim,#667);opacity:.55;font-size:12px;}
+    #domain-subnav{display:none;gap:6px;padding:9px 20px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.012);flex-wrap:wrap;}
+    .subnav-tab{padding:6px 13px;font-size:12px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--dim,#9aa1ad);cursor:pointer;font-family:inherit;}
+    .subnav-tab:hover{color:var(--anthill-text,#e5e7eb);background:rgba(255,255,255,.04);}
+    .subnav-tab.active{color:var(--queen,#fbbf24);border-color:var(--queen,#fbbf24);background:rgba(251,191,36,.06);}
+    .crumbs .crumb.link{cursor:pointer;}
+    .crumbs .crumb.link:hover{color:var(--anthill-text,#e5e7eb);text-decoration:underline;}
+    /* Collapsed rail: reveal a domain's children as a hover fly-out so navigation stays usable. */
+    body.nav-collapsed #nav-scroll .nav-domain{position:relative;}
+    body.nav-collapsed #nav-scroll .nav-domain:hover>.nav-children{display:flex;position:absolute;left:100%;top:0;min-width:190px;background:var(--anthill-panel,#12151c);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:6px 0;box-shadow:0 10px 28px rgba(0,0,0,.45);z-index:60;}
+    body.nav-collapsed #nav-scroll .nav-domain:hover>.nav-children .nav-child{padding-left:16px;}
+  </style>
+
   <!-- -- Nav Rail ------------------------------------------------------------ -->
   <nav id="nav-rail">
     <div class="nav-logo">
@@ -1091,7 +1121,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <span class="nav-logo-ver" id="nav-ver"></span>
     </div>
 
-    <div class="nav-scroll">
+    <div class="nav-scroll" id="nav-scroll">
+      <!-- v2.6: sidebar is rendered by buildNav() from the IA config; the static items below are
+           the pre-redesign fallback and are cleared at runtime (kept for no-JS/debugging only). -->
       <!-- Main -->
       <div id="nav-item-overview" class="nav-item active" data-page="overview">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
@@ -1188,7 +1220,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     <!-- Top Header -->
     <header id="top-header">
       <div class="hdr-left">
-        <span class="hdr-title" id="hdr-page-title">Overview</span>
+        <nav class="crumbs" id="hdr-crumbs" aria-label="Breadcrumb"><span class="crumb cur">Dashboard</span></nav>
       </div>
       <div class="hdr-mission">
         <div class="dot" id="mission-dot"></div>
@@ -1235,6 +1267,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </button>
       </div>
     </header>
+
+    <!-- v2.6: contextual sub-navigation for grouped domains (Activity, Missions, Automation, Agents) -->
+    <div id="domain-subnav" class="domain-subnav"></div>
 
     <!-- Main content area -->
     <main id="main-area">
@@ -1621,6 +1656,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: EVENT LOG
       --------------------------------------------------------------------- -->
+      <!-- v2.6 Phase 3: unified Activity center — one filtered timeline over the whole event stream.
+           The per-stream pages (Events, Results, Changes) remain intact and are reachable as tabs. -->
+      <div class="page page-scroll" id="page-activity">
+        <div class="page-hdr">
+          <div><h1>Activity</h1><div class="sub" id="act-count"></div></div>
+          <button class="btn btn-ghost" onclick="loadActivity()">↺ Reload</button>
+        </div>
+        <div class="filter-row" id="act-facets"></div>
+        <div class="filter-row">
+          <input class="filter-input" id="act-search" type="text" placeholder="Search activity...">
+        </div>
+        <div class="card scroll-body" style="flex:1;padding:10px;" id="act-body">
+          <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px 0;">Loading...</div>
+        </div>
+      </div><!-- /page-activity -->
+
       <div class="page page-scroll" id="page-events">
         <div class="page-hdr">
           <div><h1>Event Log</h1><div class="sub" id="log-modal-count"></div></div>
@@ -3068,18 +3119,11 @@ function applyRoleVisibility(){
   const admin = ROLE==='admin';
   // v1.10.0: the Homelab page is visible to admins and homelab operators; write forms are admin-only
   // (manage_homelab_integrations is not granted to the homelab_operator role).
-  const homelab = admin || ROLE==='homelab_operator';
-  const hlNav=document.getElementById('nav-item-homelab');
-  if(hlNav) hlNav.style.display=homelab?'':'none';
+  // v2.6: the sidebar is config-driven; per-item visibility (all|admin|hl) is applied in buildNav().
+  if(typeof buildNav==='function') buildNav();
   ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze','hl-inc-form','hl-inc-resolve'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
   });
-  ['nav-item-patches','nav-item-objboard','nav-item-antconfig','nav-item-antobs','nav-item-autonomy','nav-item-security','nav-item-shell','nav-item-settings','nav-item-users','nav-section-admin'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.style.display=admin?'':'none';
-  });
-  // nav-item-pheromones: admin only
-  const phEl=document.getElementById('nav-item-pheromones');
-  if(phEl) phEl.style.display=admin?'':'none';
   // approval bell
   const bell=document.getElementById('approval-bell');
   if(bell) bell.style.display=admin?'':'none';
@@ -3100,37 +3144,249 @@ function applyRoleVisibility(){
   }
 }
 
-// -- Page Routing --------------------------------------------------------------
+// -- Page Routing (v2.6 Console Redesign — IA + hash routing layer; docs/CONSOLE_REDESIGN.md) --
+// Internal page ids are UNCHANGED (every existing caller of showPage(id) keeps working). The new
+// enterprise IA is a presentation + routing layer on top: a config-driven grouped sidebar, real
+// deep-linkable routes, breadcrumbs, and contextual sub-navigation for the grouped domains.
 const PAGE_TITLES = {
-  overview:'Overview', colony:'Colony', missions:'Missions', results:'Results',
-  patches:'Patch Center', objboard:'Objective Command Board', antobs:'Ant Inspector', events:'Event Log', pheromones:'Pheromones', homelab:'Homelab Command Center', antconfig:'Ant Config',
-  autonomy:'Autonomy', settings:'Settings', users:'Users'
+  overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
+  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
+  activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
+  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); if(typeof pollHud==='function') pollHud(); };
 
-function showPage(id){
-  try{ localStorage.setItem('last-page',id); }catch{} // v1.8.25 saved layout: reopen where you left off
+// Domain icons (reuse the pre-redesign nav glyph set).
+const IAICON = {
+  dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
+  monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  infrastructure:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>',
+  colony:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>',
+  security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  administration:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>'
+};
+
+// The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
+const IA = [
+  { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
+  { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
+    { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
+      { label:'All', route:'/monitoring/activity', page:'activity', vis:'all' },
+      { label:'Events', route:'/monitoring/activity/events', page:'events', vis:'all' },
+      { label:'Mission Results', route:'/monitoring/activity/results', page:'results', vis:'all' },
+      { label:'Changes', route:'/monitoring/activity/changes', page:'patches', vis:'admin' },
+      { label:'Autonomous Runs', route:'/monitoring/activity/runs', page:'autonomy', vis:'admin' },
+      { label:'Infra Changes', route:'/monitoring/activity/infra', page:'homelab', hlsub:'activity', vis:'hl' },
+    ]},
+    { label:'Alerts', route:'/monitoring/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
+  ]},
+  { type:'domain', id:'operations', label:'Operations', vis:'all', sections:[
+    { label:'Missions', route:'/operations/missions', page:'missions', vis:'all', badge:'nav-jobs-badge', tabs:[
+      { label:'Console', route:'/operations/missions/console', page:'missions', vis:'all' },
+      { label:'History', route:'/operations/missions/history', page:'results', vis:'all' },
+    ]},
+    { label:'Automation', route:'/operations/automation', page:'autonomy', vis:'admin', badge:'nav-autonomy-badge', tabs:[
+      { label:'Director', route:'/operations/automation/director', page:'autonomy', vis:'admin' },
+      { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
+      { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
+    ]},
+    { label:'Changes & Approvals', route:'/operations/changes', page:'patches', vis:'admin', badge:'nav-patches-badge' },
+  ]},
+  { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
+    { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
+    { label:'Compute', route:'/infrastructure/compute', page:'homelab', hlsub:'virtualization', vis:'hl' },
+    { label:'Containers', route:'/infrastructure/containers', page:'homelab', hlsub:'containers', vis:'hl' },
+    { label:'Storage', route:'/infrastructure/storage', page:'homelab', hlsub:'storage', vis:'hl' },
+    { label:'Network', route:'/infrastructure/network', page:'homelab', hlsub:'networking', vis:'hl' },
+    { label:'Services', route:'/infrastructure/services', page:'homelab', hlsub:'services', vis:'hl' },
+    { label:'Health', route:'/infrastructure/health', page:'homelab', hlsub:'monitoring', vis:'hl' },
+    { label:'Automation Rules', route:'/infrastructure/automation', page:'homelab', hlsub:'automation', vis:'hl' },
+    { label:'Apps', route:'/infrastructure/apps', page:'homelab', hlsub:'apps', vis:'hl' },
+  ]},
+  { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
+    { label:'Topology', route:'/colony/topology', page:'colony', vis:'all' },
+    { label:'Agents', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
+      { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
+      { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
+    ]},
+    { label:'Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
+  ]},
+  { type:'domain', id:'security', label:'Security', vis:'admin', sections:[
+    { label:'Security Center', route:'/security/posture', page:'security', vis:'admin' },
+    { label:'Access & Targets', route:'/security/access', page:'homelab', hlsub:'networking', vis:'hl' },
+  ]},
+  { type:'domain', id:'administration', label:'Administration', vis:'admin', sections:[
+    { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
+    { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
+    { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
+  ]},
+];
+
+// Derived: route -> descriptor, page -> canonical home route, domain -> first-section route.
+const ROUTE_TABLE = {};
+const PAGE_HOME = {};
+const DOMAIN_HOME = {};
+(function buildRoutes(){
+  for(const d of IA){
+    if(d.type==='item'){
+      ROUTE_TABLE[d.route]={page:d.page,hlsub:null,vis:d.vis||'all',crumb:[d.label],domain:d.id,section:null,tabs:null,activeTab:null};
+      DOMAIN_HOME[d.id]=d.route;
+      if(!PAGE_HOME[d.page]) PAGE_HOME[d.page]=d.route;
+      continue;
+    }
+    if(d.sections&&d.sections.length&&!DOMAIN_HOME[d.id]) DOMAIN_HOME[d.id]=d.sections[0].route;
+    for(const s of (d.sections||[])){
+      const tabs=s.tabs?s.tabs.map(t=>({label:t.label,route:t.route,vis:t.vis||s.vis||d.vis||'all'})):null;
+      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
+      if(!PAGE_HOME[s.page]) PAGE_HOME[s.page]=s.route;
+      if(s.tabs) for(const t of s.tabs){
+        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
+        if(!PAGE_HOME[t.page]) PAGE_HOME[t.page]=t.route;
+      }
+    }
+  }
+})();
+// Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
+Object.assign(PAGE_HOME,{
+  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
+  activity:'/monitoring/activity',
+  results:'/monitoring/activity/results', events:'/monitoring/activity/events',
+  patches:'/operations/changes', objboard:'/operations/automation/objectives',
+  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
+  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
+  autonomy:'/operations/automation/director', security:'/security/posture',
+  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+});
+// Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
+// existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
+const HLSUB_ROUTE={
+  overview:'/infrastructure/overview', virtualization:'/infrastructure/compute',
+  containers:'/infrastructure/containers', storage:'/infrastructure/storage',
+  networking:'/infrastructure/network', services:'/infrastructure/services',
+  monitoring:'/infrastructure/health', automation:'/infrastructure/automation',
+  apps:'/infrastructure/apps', alerts:'/monitoring/alerts', activity:'/monitoring/activity/infra'
+};
+// Legacy hash → new route (URL migration; §9 of the proposal).
+const LEGACY_REDIRECT={
+  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
+  events:'/monitoring/activity/events', results:'/monitoring/activity/results',
+  patches:'/operations/changes', objboard:'/operations/automation/objectives',
+  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
+  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
+  autonomy:'/operations/automation/director', security:'/security/posture',
+  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+};
+
+function canSee(vis){
+  if(vis==='admin') return ROLE==='admin';
+  if(vis==='hl') return ROLE==='admin'||ROLE==='homelab_operator';
+  return true;
+}
+
+// Render the grouped sidebar from IA config into #nav-scroll (called on enter / role change).
+function buildNav(){
+  const root=document.getElementById('nav-scroll'); if(!root) return;
+  root.innerHTML='';
+  for(const d of IA){
+    if(d.type==='item'){
+      if(!canSee(d.vis)) continue;
+      const it=document.createElement('div');
+      it.className='nav-item'; it.dataset.route=d.route;
+      it.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span>';
+      it.addEventListener('click',()=>go(d.route));
+      root.appendChild(it); continue;
+    }
+    const sections=(d.sections||[]).filter(s=>canSee(s.vis||d.vis));
+    if(!sections.length) continue;
+    const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
+    const head=document.createElement('div'); head.className='nav-dom-head';
+    head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
+    head.addEventListener('click',()=>dom.classList.toggle('open'));
+    dom.appendChild(head);
+    const kids=document.createElement('div'); kids.className='nav-children';
+    for(const s of sections){
+      const c=document.createElement('div'); c.className='nav-child'; c.dataset.route=s.route;
+      c.innerHTML='<span>'+escapeHtml(s.label)+'</span>'+(s.badge?'<span class="nav-badge" id="'+s.badge+'" style="display:none"></span>':'');
+      c.addEventListener('click',()=>go(s.route));
+      kids.appendChild(c);
+    }
+    dom.appendChild(kids);
+    root.appendChild(dom);
+  }
+}
+
+// Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
+function go(route,push){
+  const r=ROUTE_TABLE[route]; if(!r) return;
+  if(!canSee(r.vis)) return;
+  showPage(r.page,{route:route,hlsub:r.hlsub,noHistory:true});
+  try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
+}
+
+function showPage(id,o){
+  o=o||{};
+  try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
   if(pg) pg.classList.add('active');
-  // Nav active state
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const ni=document.getElementById('nav-item-'+id);
-  if(ni) ni.classList.add('active');
-  // Header title
-  const ht=document.getElementById('hdr-page-title');
-  if(ht) ht.textContent=PAGE_TITLES[id]||id;
-  // Per-page onEnter
+  const route=o.route||PAGE_HOME[id]||('/'+id);
+  updateChrome(route,id);
+  if(!o.noHistory){ try{ history.replaceState(null,'','#'+route); }catch{} }
+  if(id==='homelab'){
+    if(o.hlsub && typeof hlSubShow==='function') hlSubShow(o.hlsub,true); // chrome already set by go/showPage
+    else if(typeof hlSubRestore==='function') hlSubRestore();             // reopen last sub + sync chrome
+  }
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
-  // Canvas resize when switching to colony
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
 }
 
-// Nav item clicks
-document.querySelectorAll('.nav-item[data-page]').forEach(item=>{
-  item.addEventListener('click',()=>showPage(item.dataset.page));
-});
+// Breadcrumb + active-nav + contextual sub-nav for the current route.
+function updateChrome(route,id){
+  const r=ROUTE_TABLE[route];
+  const cb=document.getElementById('hdr-crumbs');
+  if(cb){
+    const labels=(r&&r.crumb)?r.crumb.slice():[PAGE_TITLES[id]||id];
+    const targets=[];
+    if(r){
+      targets.push(DOMAIN_HOME[r.domain]||null);            // domain crumb → its first section
+      if(labels.length>=2) targets.push(r.section||route);  // section crumb → the section route
+      if(labels.length>=3) targets.push(null);              // tab crumb is the current view
+    }
+    cb.innerHTML=labels.map((c,i)=>{
+      const cur=i===labels.length-1;
+      const t=targets[i];
+      const link=(!cur&&t&&ROUTE_TABLE[t]&&canSee(ROUTE_TABLE[t].vis))?t:null;
+      const attr=link?(' role="link" tabindex="0" onclick="go(\''+link+'\')"'):'';
+      return '<span class="crumb'+(cur?' cur':'')+(link?' link':'')+'"'+attr+'>'+escapeHtml(c)+'</span>';
+    }).join('<span class="crumb-sep">&#8250;</span>');
+  }
+  document.querySelectorAll('#nav-scroll .nav-item,#nav-scroll .nav-child').forEach(n=>n.classList.remove('active'));
+  const activeRoute=(r&&r.section)?r.section:route;
+  let el=document.querySelector('#nav-scroll [data-route="'+activeRoute+'"]')||document.querySelector('#nav-scroll [data-route="'+route+'"]');
+  if(el){ el.classList.add('active'); const dom=el.closest('.nav-domain'); if(dom) dom.classList.add('open'); }
+  const sn=document.getElementById('domain-subnav');
+  if(sn){
+    if(r&&r.tabs&&r.tabs.length){
+      const active=r.activeTab||route;
+      const html=r.tabs.filter(t=>canSee(t.vis||'all'))
+        .map(t=>'<button class="subnav-tab'+(t.route===active?' active':'')+'" onclick="go(\''+t.route+'\')">'+escapeHtml(t.label)+'</button>').join('');
+      sn.innerHTML=html; sn.style.display=html?'flex':'none';
+    } else { sn.innerHTML=''; sn.style.display='none'; }
+  }
+}
+
+// Hash router: resolve #/domain/section (or a legacy #page) to a route. Returns true if it navigated.
+function router(){
+  let h=(location.hash||'').replace(/^#/,'');
+  if(!h) return false;
+  if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
+  const r=ROUTE_TABLE[h];
+  if(r && canSee(r.vis)){ go(h,false); return true; }
+  return false;
+}
+window.addEventListener('popstate',()=>router());
 
 // Nav collapse toggle
 document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
@@ -5244,12 +5500,12 @@ document.getElementById('approval-bell').addEventListener('click',()=>{
 
 // ---- Command palette --------------------------------------------------------
 const PALETTE_PAGES=[
-  ['overview','Overview',false],['colony','Colony',false],['missions','Missions',false],
-  ['results','Results',false],['events','Event Log',false],
-  ['patches','Patch Center',true],['objboard','Objective Command Board',true],
-  ['pheromones','Pheromones & Memory Explorer',true],['antconfig','Ant Config',true],
-  ['antobs','Ant Inspector',true],['autonomy','Autonomy',true],['security','Security',true],
-  ['shell','Shell',true],['settings','Settings',true],['users','Users',true],
+  ['overview','Dashboard',false],['colony','Colony · Topology',false],['missions','Missions',false],
+  ['results','Mission Results',false],['events','Activity · Events',false],
+  ['patches','Changes & Approvals',true],['objboard','Automation · Objectives',true],
+  ['pheromones','Colony · Signals',true],['antconfig','Agents · Configure',true],
+  ['antobs','Agents · Inspect',true],['autonomy','Automation · Director',true],['security','Security',true],
+  ['shell','Terminal',true],['settings','Settings',true],['users','Users',true],
 ];
 const PALETTE_ACTIONS=[
   ['new-mission','New mission (compose)',()=>{ showPage('overview'); setTimeout(()=>document.getElementById('ov-mission-input')?.focus(),80); },false],
@@ -5459,13 +5715,17 @@ document.getElementById('tour-next').addEventListener('click',()=>{
 // This restores the last active page after login (admin pages only for admins).
 function restoreLayout(){
   try{
+    // 1) An explicit deep link in the URL wins (bookmarks / shared links / back-forward).
+    if(router()) return;
+    // 2) Otherwise reopen the last page, mapped to its canonical route (honoring role visibility).
     const last=localStorage.getItem('last-page');
-    if(!last||last==='overview') return;
-    const entry=PALETTE_PAGES.find(([id])=>id===last);
-    if(!entry) return;
-    if(entry[2]&&ROLE!=='admin') return;
-    showPage(last);
-  }catch{}
+    if(last && PAGE_HOME[last]){
+      const r=ROUTE_TABLE[PAGE_HOME[last]];
+      if(r && !canSee(r.vis)){ go('/dashboard',false); return; }
+      go(PAGE_HOME[last],false); return;
+    }
+    go('/dashboard',false);
+  }catch{ try{ showPage('overview'); }catch{} }
 }
 
 // -- Card collapse --------------------------------------------------------------
@@ -5844,6 +6104,64 @@ document.getElementById('log-filter-ant').addEventListener('change',reloadLogMod
 document.getElementById('log-filter-type').addEventListener('change',reloadLogModal);
 document.getElementById('log-filter-level').addEventListener('change',reloadLogModal);
 document.getElementById('log-filter-since').addEventListener('change',reloadLogModal);
+
+// ---- v2.6 Phase 3: unified Activity center ----------------------------------
+// One filtered timeline over the same /events/json stream the Event Log uses. Category facets map
+// event_type prefixes to the workflows an operator reasons about. Purely additive: the Event Log,
+// Mission Results, and Changes pages are untouched and remain reachable as Activity sub-nav tabs.
+const ACT_FACETS=[
+  ['all','All',()=>true],
+  ['missions','Missions',t=>/^(mission|task|plan)/.test(t)],
+  ['changes','Changes',t=>/^(patch|approval)/.test(t)],
+  ['autonomy','Autonomy',t=>/^(autonomy|director|objective|jobs|strateg)/.test(t)],
+  ['infra','Infrastructure',t=>/^(homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+  ['system','System',t=>!/^(mission|task|plan|patch|approval|autonomy|director|objective|jobs|strateg|homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+];
+let actEvents=[], actFacet='all';
+async function loadActivity(){
+  const body=document.getElementById('act-body'); if(!body) return;
+  renderActFacets();
+  try{
+    const r=await api('/events/json?limit=500');
+    if(!r.success) throw new Error(r.message||'load failed');
+    actEvents=(r.data&&r.data.events)||[];
+    renderActivity();
+  }catch(e){ body.innerHTML='<div style="color:var(--red,#f87171);padding:20px">Error: '+escapeHtml((e&&e.message)||'?')+'</div>'; }
+}
+function renderActFacets(){
+  const bar=document.getElementById('act-facets'); if(!bar) return;
+  bar.innerHTML=ACT_FACETS.map(f=>'<button class="subnav-tab'+(f[0]===actFacet?' active':'')+'" onclick="actSetFacet(\''+f[0]+'\')">'+escapeHtml(f[1])+'</button>').join('');
+}
+function actSetFacet(k){ actFacet=k; renderActFacets(); renderActivity(); }
+function renderActivity(){
+  const body=document.getElementById('act-body'); if(!body) return;
+  const search=((document.getElementById('act-search')||{}).value||'').toLowerCase();
+  const facetDef=ACT_FACETS.find(f=>f[0]===actFacet)||ACT_FACETS[0];
+  const match=facetDef[2];
+  const rows=actEvents.filter(ev=>{
+    const t=(ev.event_type||'').toLowerCase();
+    if(!match(t)) return false;
+    if(search && !((ev.event_type+' '+ev.ant_name+' '+ev.message+' '+ev.mission_id).toLowerCase().includes(search))) return false;
+    return true;
+  });
+  if(typeof setEl==='function') setEl('act-count',rows.length+' / '+actEvents.length+' events · '+facetDef[1]);
+  if(!rows.length){ body.innerHTML='<div style="font-size:11px;color:var(--dim);text-align:center;padding:24px 0;">No activity in this view yet.</div>'; return; }
+  body.innerHTML=rows.map(ev=>{
+    const evType=ev.event_type||'event';
+    const ant=ev.ant_name||'—';
+    const ts=(ev.created_at||'').substring(0,19).replace('T',' ');
+    const col=(ANT_MAP[ant]&&ANT_MAP[ant].color)||'var(--dim)';
+    const tc=(typeof evTypeClass==='function')?evTypeClass(evType):'';
+    return '<div class="log-ev"><div class="log-ev-head">'+
+      '<span class="log-ev-type '+tc+'">'+escapeHtml(evType)+'</span>'+
+      '<span class="log-ev-ant" style="color:'+col+'">'+escapeHtml(ant)+'</span>'+
+      '<span class="log-ev-ts">'+ts+'</span></div>'+
+      '<div class="log-ev-meta">mission:'+escapeHtml((ev.mission_id||'—').substring(0,14))+'</div>'+
+      '<div class="log-ev-msg">'+escapeHtml((ev.message||'—').replace(/\.\.\.\[.+?\]/g,'').trim())+'</div></div>';
+  }).join('');
+}
+(function(){ const s=document.getElementById('act-search'); if(s) s.addEventListener('input',renderActivity); })();
+PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
 
 // -- UI State ------------------------------------------------------------------
 let uiState={version:1,castes:{},positions:{},widgets:{}}; // widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
@@ -7412,11 +7730,17 @@ function hl3Restore(){ hlSubRestore(); }
 // are on-demand overlays and stay available from every sub-page. Keyboard: g h opens Homelab,
 // then 1-9 / 0 / - switch sub-pages (see the ? shortcuts help).
 const HL_SUBPAGES=['overview','services','virtualization','containers','storage','networking','monitoring','automation','apps','alerts','activity'];
-function hlSubShow(name){
+function hlSubShow(name,fromRoute){
   if(!HL_SUBPAGES.includes(name)) name='overview';
   try{ localStorage.setItem('hl3.subpage',name); }catch(e){}
   document.querySelectorAll('#page-homelab [data-hlsub]').forEach(c=>{ c.style.display=(c.dataset.hlsub===name)?'':'none'; });
   document.querySelectorAll('#hl-subnav .hl-sub-btn').forEach(b=>b.classList.toggle('active',b.dataset.sub===name));
+  // v2.6 Phase 2: when the in-page sub-nav or a keyboard shortcut drives the change, sync the router
+  // chrome (breadcrumb, sidebar highlight, URL). fromRoute=true means go()/showPage() already did.
+  if(!fromRoute && typeof HLSUB_ROUTE!=='undefined' && document.getElementById('page-homelab')?.classList.contains('active')){
+    const r=HLSUB_ROUTE[name];
+    if(r && typeof updateChrome==='function'){ updateChrome(r,'homelab'); try{ history.replaceState(null,'','#'+r); }catch(e){} }
+  }
 }
 function hlSubRestore(){
   let saved=null; try{ saved=localStorage.getItem('hl3.subpage'); }catch(e){}
