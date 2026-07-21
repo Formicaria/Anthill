@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v2.6.0 — Console Redesign: enterprise information architecture (docs/CONSOLE_REDESIGN.md)
+
+The single-page console with ~16 flat, inconsistently-grouped tabs becomes a routable, seven-domain
+enterprise operations platform. Front-end only (`src/Anthill.Api/Ui/index.html`); internal page ids
+are unchanged, so every existing `showPage(id)` caller keeps working. Full rationale, sitemap,
+consolidation table, and journeys live in `docs/CONSOLE_REDESIGN.md`.
+
+- **Information architecture.** Sixteen equal-weight tabs collapse into a config-driven, role-aware
+  grouped sidebar: **Dashboard** + **Monitoring / Operations / Infrastructure / Colony / Security /
+  Administration**. One `IA` config renders the nav and derives the route table, so adding a feature
+  is a config entry, not a new top-level tab.
+- **Real routing.** 35 deep-linkable hash routes (`#/monitoring/activity`, `#/infrastructure/compute`,
+  `#/colony/agents`, …) with `go()` / `router()` / `popstate` back-forward and a legacy-redirect table
+  mapping every old `#page` id to its new home. Breadcrumbs (clickable segments) replace the single
+  page title; grouped domains get contextual sub-navigation.
+- **Enterprise naming.** Homelab → **Infrastructure**, Overview → **Dashboard**, Pheromones →
+  **Signals**, Autonomy → **Automation**, Ant Config/Inspector → **Agents**, Patch Center →
+  **Changes & Approvals**, Event Log/Results → **Activity**, Shell → **Terminal** — applied across
+  sidebar, breadcrumbs, command palette, and in-page titles.
+- **Redundancy removed.** A unified **Activity** center renders one filtered timeline over the event
+  stream with category facets (All / Missions / Changes / Autonomy / Infrastructure / System); the
+  Event Log, Mission Results, and Changes pages remain intact as tabs (additive). **Patch Center**
+  splits into **Approvals** (pending queue) and **Changes** (full history) as route-driven views over
+  the one list. **Agents** unifies the former Ant Config + Ant Inspector as Configure/Inspect tabs.
+- **Navigation cohesion.** The Infrastructure in-page sub-nav drives the router (breadcrumb / sidebar
+  / URL stay in sync bidirectionally); the collapsed rail reveals each domain's children as a hover
+  fly-out; live nav badges (jobs / patches / autonomy) are preserved.
+- Verified live in-browser (routing, breadcrumbs, sub-nav sync, unified Activity, Agents tabs). No
+  backend/API changes; `node --check` clean; UI-integrity guards (duplicate ids, glyphs) pass.
+
 ## v2.5.5 — Console Refit R5 Wave 1: download-client integrations (docs/CONSOLE_REFIT.md)
 
 The first integration wave on the R1 platform. Five download clients join the catalog with
