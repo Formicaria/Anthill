@@ -105,9 +105,18 @@ public sealed class ModelRouter
     private readonly SqliteMemory? _memory;
     private readonly Dictionary<string, IModelClient> _clients = new();
     private readonly object _lock = new();
+    private readonly ModelCircuitBreaker? _breaker;
     public int CallCount { get; private set; }
 
-    public ModelRouter(SqliteMemory? memory = null) => _memory = memory;
+    /// <param name="breaker">Test seam. When null a default breaker is built from
+    /// <see cref="AnthillRuntime"/> (or none, if the feature is disabled).</param>
+    public ModelRouter(SqliteMemory? memory = null, ModelCircuitBreaker? breaker = null)
+    {
+        _memory = memory;
+        _breaker = breaker ?? (AnthillRuntime.EnableModelCircuitBreaker
+            ? new ModelCircuitBreaker(AnthillRuntime.ModelCircuitFailureThreshold, AnthillRuntime.ModelCircuitCooldownSeconds)
+            : null);
+    }
 
     public (string Provider, string Model) GetRoute(string role)
     {
@@ -175,12 +184,32 @@ public sealed class ModelRouter
             return "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.";
 
         var (provider, model) = GetRoute(role);
-        var client = GetClient(provider, model);
+        var routeKey = $"{provider}:{model}";
         var started = DateTime.UtcNow;
-        var response = client.Generate(prompt, retries);
+
+        // If this provider's breaker is open, fail fast without a network call — the whole point is to
+        // stop a dead/slow provider from making every mission wait out a full timeout and pin the queue.
+        var blockedReason = _breaker?.Blocked(routeKey);
+        string response;
+        ModelCallOutcome outcome;
+        if (blockedReason is not null)
+        {
+            response = $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
+                     + "Fast-failed without a network call to keep the mission queue moving.";
+            outcome = ModelCallOutcome.ConnectError;
+        }
+        else
+        {
+            var client = GetClient(provider, model);
+            response = client.Generate(prompt, retries);
+            outcome = ModelCallOutcomeExtensions.Classify(response);
+            _breaker?.Record(routeKey, outcome.ToCircuitSignal());
+        }
+
         var durationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds;
-        var success = !response.StartsWith("ERROR:");
-        var pheromoneDelta = success ? 0.01 : response.ToLowerInvariant().Contains("timed out") ? -0.02 : -0.01;
+        var success = !response.StartsWith("ERROR:", StringComparison.Ordinal);
+        var pheromoneDelta = success ? 0.01
+            : outcome is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError ? -0.02 : -0.01;
 
         lock (_lock) CallCount++;
 
@@ -191,6 +220,7 @@ public sealed class ModelRouter
                 metadata: new()
                 {
                     ["role"] = role, ["provider"] = provider, ["model"] = model, ["success"] = success,
+                    ["outcome"] = outcome.Name(), ["circuit_open"] = blockedReason is not null,
                     ["duration_ms"] = durationMs, ["prompt_chars"] = prompt.Length, ["response_chars"] = response.Length,
                     ["pheromone_delta"] = pheromoneDelta,
                 });
@@ -203,6 +233,22 @@ public sealed class ModelRouter
         }
         return response;
     }
+
+    /// <summary>
+    /// Per-route circuit-breaker health for operator dashboards: which providers are healthy, which
+    /// are open (cooling down after repeated transport faults), and which are half-open probing. Empty
+    /// when the breaker is disabled or no route has been exercised yet.
+    /// </summary>
+    public List<Dictionary<string, object?>> ProviderHealth() =>
+        _breaker is null
+            ? new()
+            : _breaker.Snapshot().Select(s => new Dictionary<string, object?>
+            {
+                ["route"] = s.Key,
+                ["state"] = s.State,
+                ["consecutive_faults"] = s.ConsecutiveFaults,
+                ["seconds_until_close"] = s.SecondsUntilClose,
+            }).ToList();
 
     public string FormatRoutes()
     {
@@ -231,7 +277,25 @@ public sealed class ModelRouter
                $"Total Model Calls This Session: {CallCount}\n" +
                $"Active Route Targets: {string.Join(", ", active)}\n" +
                $"Configured External Providers: {(configuredProviders.Count > 0 ? string.Join(", ", configuredProviders) : "none")}\n" +
+               $"Per-Call Timeout: {AnthillRuntime.ModelCallTimeoutSeconds}s | " +
+               $"Circuit Breaker: {(AnthillRuntime.EnableModelCircuitBreaker ? $"ON (opens after {AnthillRuntime.ModelCircuitFailureThreshold} faults, {AnthillRuntime.ModelCircuitCooldownSeconds}s cooldown)" : "OFF")}\n" +
+               FormatProviderHealthLine() +
                "Provider Support: Ollama (local, keyless), OpenAI, Anthropic (Claude), Perplexity, and OpenRouter — " +
                "connect API keys in Settings → Providers.";
+    }
+
+    /// <summary>Plain-English live breaker state for the /models view — nothing to interpret: healthy,
+    /// or exactly which route is cooling down and for how long.</summary>
+    private string FormatProviderHealthLine()
+    {
+        if (!AnthillRuntime.EnableModelCircuitBreaker) return "";
+        var health = ProviderHealth();
+        var degraded = health.Where(h => (string?)h["state"] is "open" or "half_open").ToList();
+        if (degraded.Count == 0)
+            return $"Provider Health: all routes healthy ({health.Count} seen this session)\n";
+        var parts = degraded.Select(h => (string?)h["state"] == "open"
+            ? $"{h["route"]} cooling down ({h["seconds_until_close"]}s left)"
+            : $"{h["route"]} probing (half-open)");
+        return $"Provider Health: DEGRADED — {string.Join("; ", parts)}\n";
     }
 }

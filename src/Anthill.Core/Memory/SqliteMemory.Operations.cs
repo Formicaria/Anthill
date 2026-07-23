@@ -460,7 +460,7 @@ public sealed partial class SqliteMemory
         var d = new Dictionary<string, object?>
         {
             ["total"] = 0, ["proposed"] = 0, ["approved"] = 0, ["applied"] = 0,
-            ["rejected"] = 0, ["failed"] = 0, ["superseded"] = 0,
+            ["rejected"] = 0, ["failed"] = 0, ["superseded"] = 0, ["reverted"] = 0,
         };
         var total = 0;
         foreach (var r in rows)
