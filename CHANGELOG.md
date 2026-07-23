@@ -1,5 +1,16 @@
 # ANTHILL Changelog
 
+## v2.6.5 — Housekeeping: docs refresh + test-warning cleanup
+
+- **README "Using the Web UI" refreshed** to the shipped 7-domain information architecture
+  (Dashboard, Monitoring, Operations, Infrastructure, Colony, Security, Administration) with the
+  deep-linkable route format and a note on keyboard/screen-reader accessibility. The historical
+  version-notes table is intentionally left as-is (it records what each past version actually shipped).
+- **Cleared the one CI code warning** (`xUnit2031`): `AutomationRuleTests` now uses
+  `Assert.Single(collection, predicate)` instead of `Assert.Single(collection.Where(predicate))`
+  — same assertion, no analyzer warning.
+- No code-behavior or API changes.
+
 ## v2.6.4 — Reliability: scope SQLite pool clears to the owning instance
 
 Fixes an intermittent `System.ObjectDisposedException` ("Cannot access a disposed object:
