@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.6.4
+**Current version:** v2.6.5
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -499,24 +499,21 @@ Open:
 http://YOUR_HOST:8713/ui
 ```
 
-Main pages:
+The console is organised into workflow domains with real, deep-linkable routes
+(e.g. `http://YOUR_HOST:8713/ui#/infrastructure/compute`):
 
-| Page | Purpose |
+| Domain | Contains |
 |---|---|
-| Overview | System health, recent activity, mission entry, status cards. |
-| Colony | Live role graph and task flow. |
-| Missions | Submit missions and view job history. |
-| Results | Expand completed missions and read final reports. |
-| Event Log | Searchable event history. |
-| Pheromones | Stored task-pattern history and pruning controls. |
-| Ant Config | Role names, colors, providers, and model routes. |
-| Autonomy | Director status, objectives, runs, and completed objectives. |
-| Security | Auth, feature gates, workspace boundary, shell controls. |
-| Shell | Admin terminal, if enabled. |
-| Settings | Connection, providers, models, maintenance, system info. |
-| Users | Admin account management. |
+| Dashboard | System health, mission command, operator-attention items, and status cards. |
+| Monitoring | **Activity** — a unified event / mission-result / change timeline with category facets — and **Alerts**. |
+| Operations | **Missions** (console + history), **Automation** (Director, objectives, schedules), **Approvals** (pending patch queue), and **Changes** (patch history, apply, rollback). |
+| Infrastructure | Homelab inventory across **Compute, Containers, Storage, Network, Services, Health, Automation Rules, Apps**, plus registration/import and virtualization connections. |
+| Colony | **Topology** (live role graph and task flow), **Agents** (names, colours, providers, model routes — view and configure), **Signals** (task-pattern memory), and **Model Routing**. |
+| Security | Posture, capability gates, access policy / targets, auto-apply policy, and credentials. |
+| Administration | **Users**, **Settings** (connection, integrations, system, maintenance), and **Terminal** (admin shell, if enabled). |
 
-Keyboard shortcuts may be available in the UI, such as focusing the mission input or jumping to the Event Log.
+Navigation is fully keyboard-operable — `g`-key jumps, breadcrumbs, contextual sub-navigation, and
+browser back/forward — and screen-reader friendly (ARIA-labelled controls, visible focus states).
 
 ---
 
