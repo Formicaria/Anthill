@@ -133,6 +133,6 @@ public class AutomationRuleTests : IDisposable
         _now = _now.AddMinutes(2);
         var second = engine.EvaluateAll()[0];
         Assert.Equal("skipped_pending", second.Outcome); // loop prevention 3
-        Assert.Single(repo.ListActionProposals(10).Where(p => p.RequestedBy == "automation:r3" && p.State == "pending"));
+        Assert.Single(repo.ListActionProposals(10), p => p.RequestedBy == "automation:r3" && p.State == "pending");
     }
 }
