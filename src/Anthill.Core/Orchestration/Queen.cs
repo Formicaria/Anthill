@@ -77,11 +77,21 @@ public sealed partial class Queen : IDisposable
     /// soon as the row is persisted. Callers running missions concurrently (Phase 3) must use
     /// this callback instead of <see cref="LastMissionId"/>, which is a last-writer-wins
     /// convenience kept for the single-mission CLI path.
+    ///
+    /// <paramref name="cancel"/> lets the caller (e.g. the API job runner) stop a mission mid-flight:
+    /// it is linked with a hard <see cref="AnthillRuntime.MaxMissionSeconds"/> deadline into a single
+    /// token that is (a) published to every model call via <see cref="ModelCallScope"/> so an
+    /// in-flight generation aborts promptly and (b) checked between tasks so the scheduler stops
+    /// dispatching. Without it a hung/slow model call could pin the single-writer queue for minutes.
     /// </summary>
-    public string RunMission(string goal, Action<string>? onMissionCreated)
+    public string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default)
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
+        // One token governs the whole mission: external cancel OR the deadline, whichever comes first.
+        using var missionCts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
+        using var modelScope = ModelCallScope.Enter(missionCts.Token);
         var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
         LastMissionId = mission.Id;
 
@@ -156,8 +166,8 @@ public sealed partial class Queen : IDisposable
         // the mission's tasks while they run — not only after the mission finishes.
         Memory.SaveMission(mission);
 
-        if (AnthillRuntime.EnableParallelExecution) ExecuteTasksParallel(mission, missionStartedAt);
-        else ExecuteTasksSequential(mission, missionStartedAt);
+        if (AnthillRuntime.EnableParallelExecution) ExecuteTasksParallel(mission, missionStartedAt, missionCts.Token);
+        else ExecuteTasksSequential(mission, missionStartedAt, missionCts.Token);
 
         FinalizeMission(mission);
         Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
@@ -217,7 +227,7 @@ public sealed partial class Queen : IDisposable
         return tasks;
     }
 
-    private void ExecuteTasksSequential(Mission mission, DateTime missionStartedAt)
+    private void ExecuteTasksSequential(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -226,9 +236,9 @@ public sealed partial class Queen : IDisposable
 
         while (!scheduler.IsFinished())
         {
-            if (MissionTimedOut(missionStartedAt))
+            if (MissionStopReason(missionStartedAt, missionToken) is { } stop)
             {
-                scheduler.SkipRemaining("Task skipped because mission timed out.", "mission_timeout");
+                scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                 LogSchedulerTransitions(mission, scheduler);
                 return;
             }
@@ -252,7 +262,7 @@ public sealed partial class Queen : IDisposable
         }
     }
 
-    private void ExecuteTasksParallel(Mission mission, DateTime missionStartedAt)
+    private void ExecuteTasksParallel(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -263,11 +273,11 @@ public sealed partial class Queen : IDisposable
 
         while (true)
         {
-            if (MissionTimedOut(missionStartedAt))
+            if (MissionStopReason(missionStartedAt, missionToken) is { } stop)
             {
                 lock (_executionLock)
                 {
-                    scheduler.SkipRemaining("Task skipped because mission timed out.", "mission_timeout");
+                    scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                     LogSchedulerTransitions(mission, scheduler);
                 }
                 return;
@@ -387,6 +397,21 @@ public sealed partial class Queen : IDisposable
 
     private static bool MissionTimedOut(DateTime missionStartedAt) =>
         (AnthillTime.NowUtc() - missionStartedAt).TotalSeconds > AnthillRuntime.MaxMissionSeconds;
+
+    /// <summary>
+    /// Reports why the mission must stop dispatching, or null to continue. The deadline is checked
+    /// first so it is reported as <c>mission_timeout</c>; an external cancel (job cancelled) reached
+    /// before the deadline is reported as <c>mission_cancelled</c>. Both leave the same cancelled
+    /// token that already aborted any in-flight model call.
+    /// </summary>
+    private static (string Message, string ReasonType)? MissionStopReason(DateTime missionStartedAt, CancellationToken missionToken)
+    {
+        if (MissionTimedOut(missionStartedAt))
+            return ("Task skipped because mission timed out.", "mission_timeout");
+        if (missionToken.IsCancellationRequested)
+            return ("Task skipped because the mission was cancelled.", "mission_cancelled");
+        return null;
+    }
 
     private void RunSingleTask(Task task, Mission mission, int index, int total, TaskScheduler? scheduler)
     {

@@ -35,10 +35,16 @@ public sealed class OllamaClient : IModelClient
         var lastError = "";
         for (var attempt = 1; attempt <= retries; attempt++)
         {
+            // Link the mission's ambient token (so a timed-out/cancelled mission aborts this call)
+            // with a hard per-call deadline — the wait is now bounded AND cancellable, never the
+            // old up-to-185s-per-attempt block that could freeze the single-writer job queue.
+            var ambient = ModelCallScope.Current;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
+            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
             try
             {
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-                using var response = Http.PostAsync(url, content).GetAwaiter().GetResult();
+                using var response = Http.PostAsync(url, content, cts.Token).GetAwaiter().GetResult();
                 // v2.4.3: a non-2xx is NOT a connection failure — report what Ollama actually said.
                 // The classic trap: a 404 here almost always means the model is not pulled, which
                 // used to masquerade as "could not connect" and sent operators chasing networking.
@@ -61,9 +67,15 @@ public sealed class OllamaClient : IModelClient
                     + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
                     + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?";
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                lastError = $"ERROR: Ollama request timed out (attempt {attempt}/{retries}).";
+                // The mission itself was stopped (deadline reached or job cancelled) — abort cleanly
+                // and do NOT retry; retrying would just re-hit the already-cancelled token.
+                return "ERROR: Ollama request cancelled because the mission was stopped.";
+            }
+            catch (OperationCanceledException)
+            {
+                lastError = $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
             }
             catch (Exception error)
             {
