@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.6.6";
+    public const string Version = "2.7.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -89,6 +89,8 @@ public static class AnthillRuntime
 
     // ---- Model routing ----------------------------------------------------
     public static bool EnableModelRouting = true;
+    // Fast-fail model calls to a provider that is repeatedly timing out / unreachable (see ModelCircuitBreaker).
+    public static bool EnableModelCircuitBreaker = true;
     public const string DefaultModelProvider = "ollama";
     public static bool UseOllama = true;
     public static string OllamaModel = "llama3.1:8b";
@@ -107,6 +109,11 @@ public static class AnthillRuntime
     // both bounded AND cancellable — a mission that times out or a job that is cancelled aborts an
     // in-flight generation immediately instead of blocking the single-writer queue for minutes.
     public const int ModelCallTimeoutSeconds = 120;
+    // Circuit breaker (v2.6.7): after this many consecutive transport faults (timeout / connection
+    // failure) on one provider route, calls fast-fail for the cooldown window instead of each eating
+    // a full ModelCallTimeoutSeconds — so a dead/slow provider cannot keep re-pinning the queue.
+    public const int ModelCircuitFailureThreshold = 3;
+    public const int ModelCircuitCooldownSeconds = 30;
     public const double TaskTimeoutSweepSeconds = 0.25;
 
     // ---- Long-input / specification-ingestion handling -------------------

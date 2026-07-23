@@ -1,3 +1,4 @@
+using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
@@ -149,5 +150,35 @@ public class PatchOperatorActionTests : IDisposable
         var (ok, _, _) = _queen.ProposeAlternativePatch(p.Id, "edited", "", supersedeOriginal: false);
         Assert.True(ok);
         Assert.Equal("proposed", Status(p.Id));
+    }
+
+    // ---- v2.7.0 manual revert ------------------------------------------------------------------
+
+    [Fact]
+    public void RevertAppliedPatch_RefusesAPatchThatIsNotApplied()
+    {
+        var p = SaveOrphanPatch("src/NotApplied.cs"); // status: proposed
+        var msg = _queen.RevertAppliedPatch(p.Id);
+        Assert.Contains("Only an applied patch can be reverted", msg);
+        Assert.Equal("proposed", Status(p.Id)); // guard did not mutate state
+    }
+
+    [Fact]
+    public void RevertAppliedPatch_UnknownIdIsReportedNotThrown()
+    {
+        var msg = _queen.RevertAppliedPatch(Guid.NewGuid().ToString());
+        Assert.Contains("No patch proposal found", msg);
+    }
+
+    [Fact]
+    public void RevertAppliedPatch_MarksAppliedPatchReverted()
+    {
+        var p = SaveOrphanPatch("src/RevertMe.cs");
+        _memory.UpdatePatchStatus(p.Id, PatchStatus.Applied, AnthillTime.NowUtc().ToIso());
+        Assert.Equal("applied", Status(p.Id));
+
+        var msg = _queen.RevertAppliedPatch(p.Id);
+        Assert.Contains("reverted", msg, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("reverted", Status(p.Id)); // terminal state recorded even with no backup on record
     }
 }

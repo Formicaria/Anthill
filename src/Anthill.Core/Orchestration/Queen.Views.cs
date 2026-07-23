@@ -2,6 +2,7 @@ using System.Text.Json;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Security;
 
 namespace Anthill.Core.Orchestration;
 
@@ -181,6 +182,62 @@ public sealed partial class Queen
             taskId, "director",
             new() { ["patch_id"] = applied.PatchId, ["file_path"] = applied.FilePath, ["change_type"] = applied.ChangeType, ["restored"] = ok, ["reason"] = reason });
         return ok;
+    }
+
+    /// <summary>
+    /// v2.7.0: manually reverts an APPLIED patch on operator request — for an "add" it deletes the
+    /// created file, for a "modify" it restores the pre-apply backup. Marks the patch Reverted and
+    /// logs the action. Mirrors the automation rollback (<see cref="RollbackAutoApplied"/>) but is
+    /// operator-initiated and keyed by patch id, resolving the on-disk path exactly as the apply tool
+    /// did (through the same <see cref="WorkspacePathGuard"/>), so a revert can never escape the
+    /// sandboxed workspace. Idempotent-ish: only an "applied" patch can be reverted.
+    /// </summary>
+    public string RevertAppliedPatch(string patchId)
+    {
+        var patch = Memory.GetPatchProposal(patchId);
+        if (patch is null) return $"No patch proposal found with id: {patchId}";
+        var status = Str(patch, "status");
+        if (status != PatchStatus.Applied.Value())
+            return $"Only an applied patch can be reverted. Patch {patchId} is currently: {status}.";
+
+        var changeType = Str(patch, "change_type");
+        var filePath = Str(patch, "file_path");
+        var backupPath = Str(patch, "backup_path");
+        var missionId = Str(patch, "mission_id");
+        var taskId = Str(patch, "task_id");
+
+        string resolved;
+        try { resolved = new WorkspacePathGuard().ResolveSafePath(filePath); }
+        catch (Exception e) { return $"Cannot revert: path '{filePath}' is unsafe or unresolvable ({e.Message})."; }
+
+        bool restored; string detail;
+        try
+        {
+            if (changeType.Equals("add", StringComparison.OrdinalIgnoreCase))
+            {
+                if (File.Exists(resolved)) { File.Delete(resolved); restored = true; detail = "created file deleted"; }
+                else { restored = false; detail = "created file was already absent"; }
+            }
+            else if (!string.IsNullOrEmpty(backupPath) && File.Exists(backupPath))
+            {
+                File.Copy(backupPath, resolved, overwrite: true); restored = true; detail = "restored from pre-apply backup";
+            }
+            else
+            {
+                restored = false; detail = "no pre-apply backup on record — prior contents could not be restored";
+            }
+        }
+        catch (Exception e)
+        {
+            Memory.LogEvent(missionId, "patch_revert_failed", $"Patch revert FAILED for {filePath}: {e.Message}", taskId, "queen",
+                new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["error"] = e.Message });
+            return $"Patch revert failed.\nPatch ID: {patchId}\nFile: {filePath}\nError: {e.Message}";
+        }
+
+        Memory.UpdatePatchStatus(patchId, PatchStatus.Reverted, lastError: $"Reverted by operator ({detail}).");
+        Memory.LogEvent(missionId, "patch_reverted", $"Patch reverted by operator ({detail}): {filePath}", taskId, "queen",
+            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["restored"] = restored, ["backup_path"] = backupPath });
+        return $"Patch reverted.\nPatch ID: {patchId}\nFile: {filePath}\nChange: {changeType}\nResult: {detail}\nPatch Status: reverted";
     }
 
     // ---- Patch Center 2.0 operator surface (v1.8.24) ----------------------

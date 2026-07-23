@@ -19,6 +19,9 @@ public sealed class ApiMissionJob
     public string? MissionId { get; set; }
     public string? Result { get; set; }
     public string? Error { get; set; }
+    /// <summary>v2.7.0: plain-English "why it ended" (completed / timed_out / cancelled / partial / failed) + a short reason.</summary>
+    public string? Outcome { get; set; }
+    public string? Reason { get; set; }
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
@@ -26,7 +29,8 @@ public sealed class ApiMissionJob
     public Dictionary<string, object?> ToDict() => new()
     {
         ["id"] = Id, ["goal"] = Goal, ["status"] = Status, ["mission_id"] = MissionId,
-        ["result"] = Result, ["error"] = Error, ["created_at"] = CreatedAt.ToIso(),
+        ["result"] = Result, ["error"] = Error, ["outcome"] = Outcome, ["reason"] = Reason,
+        ["created_at"] = CreatedAt.ToIso(),
         ["started_at"] = StartedAt.ToIsoOrNull(), ["finished_at"] = FinishedAt.ToIsoOrNull(),
     };
 }
@@ -87,7 +91,8 @@ public sealed class ApiJobRegistry : IDisposable
                 // The callback stamps the mission id the moment the row exists — both so the id is
                 // visible while the mission is still running and so concurrent workers (Phase 3)
                 // never read another mission's id off the shared Queen.LastMissionId.
-                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId, job.Cts.Token);
+                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId, job.Cts.Token,
+                    outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; });
                 // A cancel that landed mid-mission stops the scheduler cleanly rather than throwing;
                 // reflect that as cancelled rather than a misleading "complete".
                 job.Status = job.Cancelled ? "cancelled" : "complete";

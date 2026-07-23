@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v2.7.0 — Mission Control: circuit breaker, per-task watchdogs, provider health
+
+- **Circuit breaker for model providers.** After `ModelCircuitFailureThreshold` (default 3)
+  consecutive transport faults — timeouts or connection failures — on one provider route, the breaker
+  opens and subsequent calls fast-fail in microseconds for a `ModelCircuitCooldownSeconds` (default
+  30s) window instead of each waiting out a full 120s timeout. This is the capstone to v2.6.6: even a
+  completely dead Ollama can no longer make every queued mission burn a timeout and re-pin the
+  single-writer queue. After the cooldown the breaker half-opens, admits one probe, and closes on the
+  first healthy response (any real answer — even a 401 or "model not pulled" — counts as healthy).
+- **Outcome classification + observability.** Each model call is now classified into a stable outcome
+  (`ok`, `empty`, `cancelled`, `timeout`, `connect_error`, `http_error`, `auth_error`,
+  `not_available`, `config_error`, `error`) and recorded on the `model_call` event alongside a
+  `circuit_open` flag, so operators can see *why* calls fail. Only genuine transport faults count
+  against the breaker — a mission cancellation or a config error never trips it.
+- **Per-task watchdogs.** Each task now runs under its own deadline layered beneath the mission's, so
+  a single task's model calls abort at `MaxTaskSeconds` instead of only being flagged as over-limit
+  after they return. This closes a gap where, in sequential mode, one slow task could consume the
+  whole mission budget. Mission cancel/timeout still propagates through the linked token.
+- **Provider health surface.** A new `GET /providers/health` endpoint, a plain-English line on the
+  `models` view, and a dashboard **operator-attention item** that appears only when a route is degraded
+  ("ollama:llama3.1:8b is cooling down after repeated timeouts, 23s left") — so the reliability state is
+  visible exactly where operators look for problems, in plain language, and silent when all is well.
+- **Console no longer looks stuck when it isn't.** A backgrounded tab serves cached data, so a mission
+  that finished while you were away could keep reading as "running" until a slow background tick caught
+  up. The console now drops status caches and repolls the instant the tab regains focus.
+- **One-click Re-run.** Finished, cancelled, and failed jobs now have a **↻ Re-run** button that
+  re-dispatches the exact same directive (the mode prefix is baked into the stored goal, so the retry
+  runs in the same mode) — retry a timed-out or cancelled mission without retyping it.
+- **"Why it ended" on every job.** Each mission now finishes with a plain-English outcome —
+  *Completed — 4/4 tasks succeeded*, *Cancelled by operator*, *Timed out — exceeded the 600s budget*,
+  *Partial (2 tasks hit the per-task limit)*, or *Failed — <the actual reason>*. The executors report
+  the authoritative stop reason (timeout vs. cancel), the finalized state drives the rest, and it shows
+  right on the Missions job list next to the status — no digging through events to learn what happened.
+- **Manual patch revert — the write-path round-trip is now complete.** The Changes page advertised
+  "roll back" but offered no way to undo a cleanly-applied patch (rollback only fired automatically on
+  a failed build). New `POST /revert/{id}` + a **↺ Revert** button on applied patches: an "add" is
+  undone by deleting the created file, a "modify" by restoring its pre-apply backup, and the patch is
+  marked `reverted`. Path resolution goes through the same `WorkspacePathGuard` as apply, so a revert
+  can never escape the sandboxed workspace. Adds the `reverted` patch status end to end.
+- `models` / router status now reports the per-call timeout and breaker settings. New
+  `EnableModelCircuitBreaker` flag (default on) and `ModelCircuitFailureThreshold` /
+  `ModelCircuitCooldownSeconds` tunables. No breaking API changes.
+
 ## v2.6.6 — Reliability: model calls are bounded and cancellable
 
 - **Fixed a class of "hung mission" that could pin the job queue.** Model HTTP calls were synchronous

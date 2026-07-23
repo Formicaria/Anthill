@@ -84,7 +84,8 @@ public sealed partial class Queen : IDisposable
     /// in-flight generation aborts promptly and (b) checked between tasks so the scheduler stops
     /// dispatching. Without it a hung/slow model call could pin the single-writer queue for minutes.
     /// </summary>
-    public string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default)
+    public string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default,
+        Action<MissionOutcome>? onMissionFinished = null)
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
@@ -166,15 +167,53 @@ public sealed partial class Queen : IDisposable
         // the mission's tasks while they run — not only after the mission finishes.
         Memory.SaveMission(mission);
 
-        if (AnthillRuntime.EnableParallelExecution) ExecuteTasksParallel(mission, missionStartedAt, missionCts.Token);
-        else ExecuteTasksSequential(mission, missionStartedAt, missionCts.Token);
+        // The executors return WHY they stopped dispatching (mission_timeout / mission_cancelled), or
+        // null if the plan ran to its natural end — the authoritative signal for the outcome below.
+        var stopReason = AnthillRuntime.EnableParallelExecution
+            ? ExecuteTasksParallel(mission, missionStartedAt, missionCts.Token)
+            : ExecuteTasksSequential(mission, missionStartedAt, missionCts.Token);
 
         FinalizeMission(mission);
         Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
         Memory.SaveMission(mission);
         Memory.LogEvent(mission.Id, "mission_saved", "Mission saved to ANTHILL memory.", metadata: new() { ["db_path"] = Memory.DbPath });
         Console.WriteLine("Mission saved to ANTHILL memory.");
+
+        // v2.7.0: a plain-English "why it ended" that the API/console can show without re-deriving it.
+        var outcome = ComputeOutcome(mission, stopReason);
+        Memory.LogEvent(mission.Id, "mission_outcome", outcome.Reason,
+            metadata: new() { ["outcome"] = outcome.Outcome, ["reason"] = outcome.Reason, ["mission_status"] = mission.Status.Value() });
+        onMissionFinished?.Invoke(outcome);
         return ComposeCliResult(mission);
+    }
+
+    /// <summary>Plain-English mission result the console surfaces on each job. Keyed status + a short reason.</summary>
+    public sealed record MissionOutcome(string Outcome, string Reason);
+
+    /// <summary>
+    /// Derives the operator-facing outcome from the executor's stop reason (authoritative for
+    /// cancel/timeout) and the finalized mission/task state (for the completed/partial/failed split).
+    /// </summary>
+    internal static MissionOutcome ComputeOutcome(Mission mission, string? stopReason)
+    {
+        var total = mission.Tasks.Count;
+        var done = mission.Tasks.Count(t => t.Status == TaskStatus.Complete);
+        if (stopReason == "mission_cancelled")
+            return new("cancelled", $"Cancelled by operator — {done}/{total} tasks finished before stopping.");
+        if (stopReason == "mission_timeout")
+            return new("timed_out", $"Timed out — exceeded the {AnthillRuntime.MaxMissionSeconds}s mission budget after {done}/{total} tasks.");
+
+        var taskTimeouts = mission.Tasks.Count(t => t.FailureType == "timeout");
+        var timeoutNote = taskTimeouts > 0 ? $" ({taskTimeouts} task{(taskTimeouts == 1 ? "" : "s")} hit the per-task limit)" : "";
+        return mission.Status switch
+        {
+            MissionStatus.Complete => new("completed", $"Completed — {done}/{total} tasks succeeded{timeoutNote}."),
+            MissionStatus.Partial => new("partial", $"Partial — {done}/{total} tasks succeeded; some were skipped or failed{timeoutNote}."),
+            _ => new("failed",
+                (mission.Tasks.FirstOrDefault(t => t.Status == TaskStatus.Failed)?.FailureReason is { Length: > 0 } fr
+                    ? $"Failed — {fr}"
+                    : $"Failed — a critical task did not succeed{timeoutNote}.")),
+        };
     }
 
     private static void AutoWireDependencies(Mission mission)
@@ -227,7 +266,7 @@ public sealed partial class Queen : IDisposable
         return tasks;
     }
 
-    private void ExecuteTasksSequential(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
+    private string? ExecuteTasksSequential(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -240,7 +279,7 @@ public sealed partial class Queen : IDisposable
             {
                 scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                 LogSchedulerTransitions(mission, scheduler);
-                return;
+                return stop.ReasonType; // timed out / cancelled — the mission's "why it stopped"
             }
             var task = scheduler.NextReadyTask();
             LogSchedulerTransitions(mission, scheduler);
@@ -256,13 +295,14 @@ public sealed partial class Queen : IDisposable
                 foreach (var b in blocked)
                     scheduler.MarkSkipped(b.Id, b.BlockedReason ?? "Task skipped because scheduler could not make progress.", "dead_dependency");
                 LogSchedulerTransitions(mission, scheduler);
-                return;
+                return null;
             }
             break;
         }
+        return null;
     }
 
-    private void ExecuteTasksParallel(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
+    private string? ExecuteTasksParallel(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -280,7 +320,7 @@ public sealed partial class Queen : IDisposable
                     scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                     LogSchedulerTransitions(mission, scheduler);
                 }
-                return;
+                return stop.ReasonType;
             }
 
             if (lastSweep.Elapsed.TotalSeconds >= AnthillRuntime.TaskTimeoutSweepSeconds)
@@ -298,7 +338,7 @@ public sealed partial class Queen : IDisposable
             {
                 scheduler.Evaluate();
                 LogSchedulerTransitions(mission, scheduler);
-                if (scheduler.IsFinished() && running.Count == 0) return;
+                if (scheduler.IsFinished() && running.Count == 0) return null;
                 var runningIds = running.Values.Select(t => t.Id).ToHashSet();
                 var eligible = scheduler.ReadyTasks().Where(t => !runningIds.Contains(t.Id)).ToList();
                 LogSchedulerTransitions(mission, scheduler);
@@ -324,7 +364,7 @@ public sealed partial class Queen : IDisposable
                         foreach (var b in blocked)
                             scheduler.MarkSkipped(b.Id, b.BlockedReason ?? "Task skipped because scheduler could not make progress.", "dead_dependency");
                         LogSchedulerTransitions(mission, scheduler);
-                        return;
+                        return null;
                     }
                 }
                 Thread.Sleep(50);
@@ -499,7 +539,17 @@ public sealed partial class Queen : IDisposable
 
         try
         {
-            var result = ant.Run(taskSnapshot, missionSnapshot);
+            string? result;
+            using (var taskCts = CancellationTokenSource.CreateLinkedTokenSource(ModelCallScope.Current))
+            {
+                // Per-task deadline, layered under the mission's (ModelCallScope.Current is the mission
+                // token here). A single task can no longer consume the whole mission budget: its model
+                // calls abort at MaxTaskSeconds instead of only being flagged as over-limit after they
+                // return. The linked source means a mission cancel/timeout still propagates through too.
+                taskCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxTaskSeconds));
+                using var taskScope = ModelCallScope.Enter(taskCts.Token);
+                result = ant.Run(taskSnapshot, missionSnapshot);
+            }
             var finishedAt = AnthillTime.NowUtc();
             var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
             lock (_executionLock)

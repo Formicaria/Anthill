@@ -1107,6 +1107,7 @@ function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
 // Map a mission/objective/job status onto a canonical HUD badge state.
 function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
   if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
+  if(st==='reverted') return 'rejected'; // v2.7.0: undone patch — neutral/terminal styling
   if(['running','active','queued','complete','partial','failed','paused','pending','approved','applied','rejected','completed','stopped','looping','idle','proposed'].includes(st)) return st==='proposed'?'pending':st;
   return 'unknown'; }
 
@@ -1137,11 +1138,13 @@ let CORE_STATE=null; // {state,text,sub,at}
 let GOV=null;        // {load,memFree,lat,backendOk,concEff,concCfg,at}
 async function pollHud(){
   if(!document.getElementById('page-overview')?.classList.contains('active')) return;
-  let st,au,jb,pt,ob,mn;
+  let st,au,jb,pt,ob,mn,ph;
   try{
-    [st,au,jb,pt,ob,mn]=await Promise.all([
+    [st,au,jb,pt,ob,mn,ph]=await Promise.all([
       api('/status'), api('/autonomy/status'), api('/jobs'),
       api('/patches?limit=200'), api('/objectives'), api('/missions/json?limit=8'),
+      // Provider circuit-breaker health. Isolated so a hiccup here can never blank the whole HUD.
+      api('/providers/health').catch(()=>({success:false})),
     ]);
   }catch{ return; } // transient; existing panels keep their last values
   const s=(st&&st.data)||{}, a=(au&&au.data)||{};
@@ -1160,8 +1163,11 @@ async function pollHud(){
   const failedObjectives=objectives.filter(o=>o.end_reason==='failed').length;
   const activeObjectives=objectives.filter(o=>['active','pending'].includes((o.status||'').toLowerCase()) && o.retired_code!=='looping_goals' && (o.status||'')!=='done').length;
   const providerDown = sum.use_ollama && sum.ollama_reachable===false;
+  // Circuit-breaker health: routes that have tripped (open) or are probing back (half_open).
+  const providers=Array.isArray(ph&&ph.data&&ph.data.providers)?ph.data.providers:[];
+  const degradedProviders=providers.filter(p=>['open','half_open'].includes(String(p.state||'').toLowerCase()));
   const autoRunning=!!a.running, autoKilled=!!a.kill_switch_engaged, autoEnabled=!!a.enabled;
-  const warnings=failedMissions+retiredObjectives+failedObjectives+highRiskPatches+(providerDown?1:0);
+  const warnings=failedMissions+retiredObjectives+failedObjectives+highRiskPatches+(providerDown?1:0)+(degradedProviders.length?1:0);
 
   // v2.2.6: the hidden #hud-strip writers are gone (the strip was retired in v2.2.1; rendering
   // into display:none elements every 6s was dead work, and several lookups were unguarded).
@@ -1194,6 +1200,13 @@ async function pollHud(){
   if(pendingApprovals>0) attn.push({sev:'warning',title:`${pendingApprovals} pending patch approval${pendingApprovals===1?'':'s'}`,reason:'Review and approve or reject in Changes.',go:"showPage('patches')"});
   if(highRiskPatches>0) attn.push({sev:'error',title:`${highRiskPatches} high-risk patch waiting`,reason:'High-risk change needs careful review before apply.',go:"openPatches({risk:'high'})"});
   if(providerDown) attn.push({sev:'error',title:'Model backend unreachable',reason:`Ollama at ${escapeHtml(sum.ollama_host||'?')} did not respond.`,go:"showPage('settings')"});
+  if(degradedProviders.length){
+    const d=degradedProviders[0], more=degradedProviders.length>1?` +${degradedProviders.length-1} more`:'';
+    const detail=String(d.state||'').toLowerCase()==='open'
+      ? `${escapeHtml(String(d.route||'a route'))} is cooling down after repeated timeouts (${Math.round(d.seconds_until_close||0)}s left)`
+      : `${escapeHtml(String(d.route||'a route'))} is probing to recover`;
+    attn.push({sev:'warning',title:`Model provider degraded${more}`,reason:`${detail}. Calls fast-fail until it recovers.`,go:"showPage('settings')"});
+  }
   if(failedMissions>0) attn.push({sev:'error',title:`${failedMissions} recent mission failed`,reason:'Open Results to see what went wrong.',go:"showPage('results')"});
   retiredObjectives>0 && attn.push({sev:'warning',title:`${retiredObjectives} objective retired for looping`,reason:'The Director stopped a looping objective.',go:"showPage('autonomy')"});
   failedObjectives>0 && attn.push({sev:'error',title:`${failedObjectives} objective failed`,reason:'Circuit breaker tripped after repeated failures.',go:"showPage('autonomy')"});
@@ -1246,16 +1259,22 @@ function renderJobList(jobs, listId, badgeId, limit){
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
     const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
+    const oc=j.outcome||'';
+    const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
+    let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
         <span class="job-status ${j.status}">${j.status}</span>
         <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
       </div>
-      <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}</div>
+      <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}${dur}</div>
+      ${j.reason?`<div style="font-size:9px;color:${reasonCol};margin-bottom:3px" title="${escapeHtml(j.reason)}">${escapeHtml(j.reason)}</div>`:''}
       <div class="job-actions">
         ${isDone?`<button class="job-btn view" data-onclick="event.stopPropagation();openJobResult('${j.id}','${j.mission_id||''}')">View Result</button>`
           :isRunning?`<button class="job-btn view" data-onclick="event.stopPropagation();selectJob('${j.id}')">View Status</button>`:''}
         ${isRunning?`<button class="job-btn cancel" data-onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
+        ${isDone||j.status==='cancelled'?`<button class="job-btn" data-onclick="event.stopPropagation();reRunJob('${j.id}')" title="Dispatch a new mission with the same directive">↻ Re-run</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1523,6 +1542,16 @@ async function doApproval(id,action,kind){
 async function cancelJob(id){
   if(!await uiConfirm('Cancel this running job?')) return;
   try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
+}
+// v2.7.0: re-dispatch a finished/cancelled mission with the exact same directive (the mode prefix
+// is already baked into the stored goal, so the retry runs in the same mode). One-click retry for a
+// mission that timed out, was cancelled, or failed.
+async function reRunJob(id){
+  let goal='';
+  try{ const r=await api('/jobs/'+id); if(r&&r.success&&r.data) goal=r.data.goal||''; }catch(e){}
+  if(!goal){ if(typeof pcToast==='function') pcToast('Could not load the original directive.',false); return; }
+  if(!await uiConfirm('Re-run this mission with the same directive?\n\n'+goal.slice(0,200)+(goal.length>200?'…':''))) return;
+  submitMissionGoal(goal);
 }
 
 // -- Header status chip + popover ----------------------------------------------
@@ -2039,7 +2068,7 @@ function renderPatchCard(p){
 // diffs, and approve/reject/apply behavior are unchanged.
 let pcGroup=localStorage.getItem('pc-group')||'';
 const PC_GROUPERS={
-  status:{ key:p=>p.status||'unknown', label:k=>k, order:['proposed','pending','approved','applied','rejected','failed','superseded','unknown'] },
+  status:{ key:p=>p.status||'unknown', label:k=>k, order:['proposed','pending','approved','applied','reverted','rejected','failed','superseded','unknown'] },
   risk:{ key:p=>p.risk||'unknown', label:k=>`${k} risk`, order:['high','medium','low','unknown'] },
   file:{ key:p=>p.file_path||'(no file)', label:k=>k, order:null },
   mission:{ key:p=>p.mission_id||'(manual)', label:k=>k==='(manual)'?k:`mission ${k.slice(0,12)}`, order:null },
@@ -2087,6 +2116,7 @@ async function onPatchToggle(det){
     const canApply=(d.status==='approved'||d.approval_status==='approved') && d.approval_id && d.status!=='applied';
     const canVerify=d.status==='proposed';
     const canEdit=d.status==='proposed'||d.status==='approved';
+    const canRevert=d.status==='applied'; // v2.7.0: an applied patch can be undone (add→delete, modify→restore backup)
     const actions=`<div class="pc-actions">
       ${d.mission_id?`<button class="pc-act" data-onclick="openResults('${d.mission_id}')">View Mission</button>`:''}
       ${canApprove?`<button class="pc-act approve" data-onclick="pcApprove('${d.approval_id}','${pid}')">✓ Approve</button>`:''}
@@ -2096,6 +2126,7 @@ async function onPatchToggle(det){
       ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">⚖ Verify &amp; Auto-approve</button>`:''}
       ${canEdit?`<button class="pc-act" data-onclick="pcOpenEdit('${pid}')" title="Edit this patch's content and offer it as an alternative proposal (goes through the same approval gate)">✎ Edit as alternative</button>`:''}
       ${canApply?`<button class="pc-act apply" data-onclick="pcApply('${pid}')">▶ Apply</button>`:''}
+      ${canRevert?`<button class="pc-act reject" data-onclick="pcRevert('${pid}')" title="Undo this applied patch: deletes the created file (add) or restores the pre-apply backup (modify), then marks it reverted. Stays in the sandboxed workspace.">↺ Revert</button>`:''}
     </div>
     <div class="pc-editbox" id="pc-edit-${pid}" style="display:none;"></div>
     <div class="pc-verifyout" id="pc-verifyout-${pid}" style="display:none;"></div>`;
@@ -2173,6 +2204,22 @@ async function pcApply(patchId){
     }
     pcToast('Apply requested — see result in the patch row.'); loadPatches();
   }catch(e){ pcToast('Apply failed: '+e.message,false); }
+}
+// v2.7.0: undo an applied patch. Deletes the created file (add) or restores the pre-apply backup
+// (modify), then the row flips to "reverted". Fulfills the Changes page's "roll back" promise.
+async function pcRevert(patchId){
+  const d=pcDetailCache[patchId]||{};
+  const msg='Revert this applied patch to '+(d.file_path||'the file')+'?\n\n'+
+    (d.change_type==='add'
+      ? 'The file this patch created will be deleted.'
+      : 'The file will be restored from its pre-apply backup (if one was recorded).')+
+    '\n\nThis writes to the sandboxed workspace.';
+  if(!await uiConfirm(msg)) return;
+  try{ const res=await fetch(url('/revert/'+patchId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    const txt=await res.text();
+    if(!res.ok){ let m='HTTP '+res.status; try{ const j=JSON.parse(txt); if(j&&j.message) m=j.message; }catch(e2){} throw new Error(m); }
+    pcToast('Patch reverted.'); apiCacheBust('/patches'); loadPatches();
+  }catch(e){ pcToast('Revert failed: '+e.message,false); }
 }
 // -- Patch Center 2.0 (v1.8.24): approve/reject by patch id, verify, edit-as-alternative --------
 async function pcApproveDirect(patchId){
@@ -2656,6 +2703,17 @@ function startPolling(){
   setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
   setInterval(()=>checkForUpdate(false), 6*60*60*1000); // update check is cached server-side (30m)
+
+  // v2.7.0: a backgrounded tab serves cached data (see api()), so a mission that finished while you
+  // were away could keep reading as "running" until a slow background tick caught up — looking stuck
+  // when it wasn't. On refocus, drop the status-critical caches and repoll at once so what you see is
+  // always current the instant you look. Registered here so it attaches exactly once, after login.
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden||!pollingStarted) return;
+    ['/status','/jobs','/missions','/providers/health','/autonomy'].forEach(apiCacheBust);
+    pollStatus(); pollJobs(); pollHud();
+    if(typeof pollActiveJob==='function' && typeof activeJobId!=='undefined' && activeJobId) pollActiveJob();
+  });
 }
 
 // Bell ? navigate to colony and scroll to approvals card

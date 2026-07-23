@@ -241,6 +241,21 @@ public static partial class ApiHost
         ProtectedText(app, "/models", "read_models", () => Queen.FormatModelStatus());
         ProtectedText(app, "/routes", "read_models", () => Queen.FormatModelRoutes());
 
+        // Per-provider circuit-breaker health: which model routes are healthy vs. open (cooling down
+        // after repeated timeouts) vs. half-open (probing). Powers the console's provider-health chip.
+        app.MapGet("/providers/health", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_models"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["breaker_enabled"] = AnthillRuntime.EnableModelCircuitBreaker,
+                ["failure_threshold"] = AnthillRuntime.ModelCircuitFailureThreshold,
+                ["cooldown_seconds"] = AnthillRuntime.ModelCircuitCooldownSeconds,
+                ["call_timeout_seconds"] = AnthillRuntime.ModelCallTimeoutSeconds,
+                ["providers"] = Queen.Router?.ProviderHealth() ?? new List<Dictionary<string, object?>>(),
+            });
+        });
+
         // Is a newer release published on the public GitHub repo? Cached; ?force=1 bypasses.
         app.MapGet("/update/check", (HttpContext ctx) =>
         {
@@ -482,6 +497,10 @@ public static partial class ApiHost
         });
         app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
+        // v2.7.0: manually revert an APPLIED patch by patch id (delete added file / restore backup).
+        // Same write permission as apply — reverting also writes to the sandboxed workspace.
+        app.MapPost("/revert/{id}", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.RevertAppliedPatch(id), "text/plain"));
 
         // ---- Patch Center 2.0 (v1.8.24): operator actions by PATCH id ----
         // Approve/reject pending patches that have no approval record (the record is created
