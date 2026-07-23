@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Anthill.Core.Configuration;
 
 namespace Anthill.Core.Models;
 
@@ -61,6 +62,9 @@ public sealed class OpenAiCompatibleClient : IModelClient
         var lastError = "";
         for (var attempt = 1; attempt <= retries; attempt++)
         {
+            var ambient = ModelCallScope.Current;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
+            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -69,7 +73,7 @@ public sealed class OpenAiCompatibleClient : IModelClient
                     foreach (var (name, value) in _extraHeaders) request.Headers.TryAddWithoutValidation(name, value);
                 request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                using var response = Http.SendAsync(request).GetAwaiter().GetResult();
+                using var response = Http.SendAsync(request, cts.Token).GetAwaiter().GetResult();
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
@@ -87,9 +91,13 @@ public sealed class OpenAiCompatibleClient : IModelClient
                     content = c.GetString()?.Trim() ?? "";
                 return string.IsNullOrEmpty(content) ? $"{_providerLabel} returned an empty response." : content;
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                lastError = $"ERROR: {_providerLabel} request timed out (attempt {attempt}/{retries}).";
+                return $"ERROR: {_providerLabel} request cancelled because the mission was stopped.";
+            }
+            catch (OperationCanceledException)
+            {
+                lastError = $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
             }
             catch (HttpRequestException error)
             {
@@ -152,6 +160,9 @@ public sealed class AnthropicClient : IModelClient
         var lastError = "";
         for (var attempt = 1; attempt <= retries; attempt++)
         {
+            var ambient = ModelCallScope.Current;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
+            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -159,7 +170,7 @@ public sealed class AnthropicClient : IModelClient
                 request.Headers.TryAddWithoutValidation("anthropic-version", ApiVersion);
                 request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                using var response = Http.SendAsync(request).GetAwaiter().GetResult();
+                using var response = Http.SendAsync(request, cts.Token).GetAwaiter().GetResult();
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
@@ -180,9 +191,13 @@ public sealed class AnthropicClient : IModelClient
                 var result = text.ToString().Trim();
                 return string.IsNullOrEmpty(result) ? "Anthropic returned an empty response." : result;
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                lastError = $"ERROR: Anthropic request timed out (attempt {attempt}/{retries}).";
+                return "ERROR: Anthropic request cancelled because the mission was stopped.";
+            }
+            catch (OperationCanceledException)
+            {
+                lastError = $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
             }
             catch (HttpRequestException error)
             {

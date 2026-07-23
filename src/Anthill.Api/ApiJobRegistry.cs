@@ -12,6 +12,10 @@ public sealed class ApiMissionJob
     public string Status { get; set; } = "queued"; // queued | running | complete | failed | cancelled
     /// <summary>Set by Cancel/CancelAll; a queued job is skipped by the worker instead of running.</summary>
     public volatile bool Cancelled;
+    /// <summary>Cancels a *running* mission mid-flight — its token is handed to <see cref="Queen.RunMission"/>,
+    /// which aborts any in-flight model call and stops the scheduler. No CancelAfter timer is attached
+    /// here (the mission's own linked source owns the deadline), so this source never needs disposal.</summary>
+    public CancellationTokenSource Cts { get; } = new();
     public string? MissionId { get; set; }
     public string? Result { get; set; }
     public string? Error { get; set; }
@@ -67,8 +71,9 @@ public sealed class ApiJobRegistry : IDisposable
     {
         foreach (var job in _queue.GetConsumingEnumerable())
         {
-            // Skip work cancelled while it sat in the queue (a running mission can't be interrupted
-            // mid-flight — it's bounded by MaxMissionSeconds — but queued work is dropped cleanly).
+            // Skip work cancelled while it sat in the queue. A running mission is now interruptible
+            // too: its Cts token is handed to RunMission, which aborts any in-flight model call and
+            // stops the scheduler — so a hung/slow mission no longer pins the single-writer queue.
             if (job.Cancelled)
             {
                 job.Status = "cancelled";
@@ -82,8 +87,14 @@ public sealed class ApiJobRegistry : IDisposable
                 // The callback stamps the mission id the moment the row exists — both so the id is
                 // visible while the mission is still running and so concurrent workers (Phase 3)
                 // never read another mission's id off the shared Queen.LastMissionId.
-                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId);
-                job.Status = "complete";
+                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId, job.Cts.Token);
+                // A cancel that landed mid-mission stops the scheduler cleanly rather than throwing;
+                // reflect that as cancelled rather than a misleading "complete".
+                job.Status = job.Cancelled ? "cancelled" : "complete";
+            }
+            catch (OperationCanceledException)
+            {
+                job.Status = "cancelled";
             }
             catch (Exception error)
             {
@@ -102,12 +113,15 @@ public sealed class ApiJobRegistry : IDisposable
 
     public ApiMissionJob? GetJob(string id) => _jobs.TryGetValue(id, out var job) ? job : null;
 
-    /// <summary>Requests cancellation of one job. Queued work is dropped before it runs; a running mission finishes (bounded by its timeout). Returns true if the job exists and wasn't already terminal.</summary>
+    /// <summary>Requests cancellation of one job. Queued work is dropped before it runs; a running
+    /// mission is signalled to stop mid-flight (its next model call / task boundary aborts). Returns
+    /// true if the job exists and wasn't already terminal.</summary>
     public bool Cancel(string id)
     {
         if (!_jobs.TryGetValue(id, out var job)) return false;
         if (job.Status is "complete" or "failed" or "cancelled") return false;
         job.Cancelled = true;
+        SignalCancel(job);
         if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
         return true;
     }
@@ -120,10 +134,18 @@ public sealed class ApiJobRegistry : IDisposable
         {
             if (job.Status is "complete" or "failed" or "cancelled") continue;
             job.Cancelled = true;
+            SignalCancel(job);
             if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
             n++;
         }
         return n;
+    }
+
+    /// <summary>Fires the job's cancellation token. Guarded against the benign race where the mission
+    /// finished and the source was already disposed between the status check and here.</summary>
+    private static void SignalCancel(ApiMissionJob job)
+    {
+        try { job.Cts.Cancel(); } catch (ObjectDisposedException) { }
     }
 
     private void TrimLocked()

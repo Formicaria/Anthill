@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.6.5";
+    public const string Version = "2.6.6";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -102,6 +102,11 @@ public static class AnthillRuntime
     public const int MaxDynamicTasks = 7;
     public const int MaxMissionSeconds = 600;
     public const int MaxTaskSeconds = 240;
+    // Hard bound on a single model HTTP call. Enforced via a per-call CancellationTokenSource
+    // (see the IModelClient implementations) rather than HttpClient.Timeout alone, so the wait is
+    // both bounded AND cancellable — a mission that times out or a job that is cancelled aborts an
+    // in-flight generation immediately instead of blocking the single-writer queue for minutes.
+    public const int ModelCallTimeoutSeconds = 120;
     public const double TaskTimeoutSweepSeconds = 0.25;
 
     // ---- Long-input / specification-ingestion handling -------------------

@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v2.6.6 — Reliability: model calls are bounded and cancellable
+
+- **Fixed a class of "hung mission" that could pin the job queue.** Model HTTP calls were synchronous
+  and effectively uninterruptible: each attempt could block up to ~185s and, with retries, a single
+  call could run for minutes. Because the mission deadline (`MaxMissionSeconds`) is only checked
+  *between* tasks, an in-flight generation could overshoot it, and with worker concurrency of 1 one
+  slow mission blocked every queued mission behind it.
+- **New ambient cancellation for model calls (`ModelCallScope`).** A mission now publishes a single
+  token — its `MaxMissionSeconds` deadline linked with any external cancel — via an `AsyncLocal`, and
+  every model client (`OllamaClient`, `OpenAiCompatibleClient`, `AnthropicClient`) links it into each
+  request with a hard `ModelCallTimeoutSeconds` (default 120s) bound. An in-flight call now aborts the
+  instant the mission times out or is cancelled, and reports a clean, non-retried error.
+- **Cancelling a *running* job now actually stops it.** `ApiJobRegistry.Cancel`/`CancelAll` signal the
+  mission's token, so the current model call aborts and the scheduler stops dispatching — instead of
+  the job continuing until the deadline. Queued-job cancellation is unchanged.
+- New `AnthillRuntime.ModelCallTimeoutSeconds` tunable. No public API shape changes; the CLI path is
+  unaffected (it runs with no ambient token, exactly as before).
+
 ## v2.6.5 — Housekeeping: docs refresh + test-warning cleanup
 
 - **README "Using the Web UI" refreshed** to the shipped 7-domain information architecture
