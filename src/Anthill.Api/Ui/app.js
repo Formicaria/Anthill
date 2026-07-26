@@ -1511,7 +1511,8 @@ async function pollColonyPheromones(){
   try{
     const r=await api('/pheromones/json'); if(!r||!r.success) return;
     const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));
-    pheromoneTrails=trails.slice(0,6);
+    // v2.14.6: keep enough rows for per-ant emission (the HUD still shows only the top few).
+    pheromoneTrails=trails.slice(0,80);
     const topN=pheromoneTrails.slice(0,3);
     pheromoneIntensity = topN.length ? Math.max(0,Math.min(1, topN.reduce((s,t)=>s+(+t.strength||0),0)/topN.length)) : 0;
     const body=document.getElementById('chud-phero-body'); if(!body) return;
@@ -1526,23 +1527,73 @@ async function pollColonyPheromones(){
 
 // Additive canvas pass: motes drifting from the castes toward the Queen, density + opacity scaled by
 // real pheromone intensity. CSS-cheap, guarded (invisible when there is no colony memory yet).
+/**
+ * v2.14.6: the pheromone field now tells the TRUTH per ant.
+ *
+ * Previously every mote picked a random ant and the only real input was one global average of the
+ * top three trail strengths — so a mote leaving CoderAnt implied nothing about the coder's own
+ * memory. Now each mote is emitted by a SPECIFIC ant whose own `ant:<role>` / `worker:<id>` trail
+ * is strong, with emission share and brightness proportional to that ant's recorded strength.
+ * Reading the map is now sound: heavier drift from an ant means that ant's approaches are the ones
+ * currently working. Data source is unchanged (`/pheromones/json` — real persisted memory); only
+ * the mapping from data to pixels became honest.
+ */
+function antTrailStrengths(){
+  const out={};
+  (pheromoneTrails||[]).forEach(t=>{
+    const key=String(t.trail_key||''), s=Math.max(0,Math.min(1,+t.strength||0));
+    if(s<=0) return;
+    const m=/^(?:ant|worker):(.+)$/.exec(key);
+    if(!m) return;                                  // capability/model/tool trails are not per-ant
+    const id=m[1].trim();
+    out[id]=Math.max(out[id]||0, s);                // strongest signal wins for that ant
+  });
+  return out;
+}
+
 function drawPheromoneField(){
-  if(pheromoneIntensity<=0) return;
   const queen=nodes.find(n=>n.id==='queen'); if(!queen) return;
-  const target=Math.round(6+pheromoneIntensity*14);
-  while(pheroMotes.length<target){
-    const src=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen;
-    pheroMotes.push({from:src,t:Math.random(),speed:.0015+Math.random()*.002});
-  }
-  if(pheroMotes.length>target) pheroMotes.length=target;
+  const strengths=antTrailStrengths();
+  // Emitters are ants that actually HAVE a trail; a worker trail can also credit its parent role.
+  const emitters=nodes.filter(n=>n.id!=='queen'
+    && (strengths[n.id]>0 || (n.worker && strengths[n.worker]>0) || (n.ant && strengths[n.ant]>0)));
+  if(!emitters.length){ pheroMotes.length=0; return; }
+
+  const strengthOf=n=>Math.max(strengths[n.id]||0, strengths[n.worker]||0, strengths[n.ant]||0);
+  const total=emitters.reduce((s,n)=>s+strengthOf(n),0);
+  if(total<=0){ pheroMotes.length=0; return; }
+
+  // Mote budget scales with how much real signal exists, and each ant's share is proportional to
+  // ITS strength — not an average smeared across the colony.
+  const budget=Math.min(28, Math.round(4+total*6));
+  const want={};
+  emitters.forEach(n=>{ want[n.id]=Math.max(1, Math.round(budget*(strengthOf(n)/total))); });
+
+  const have={};
+  pheroMotes.forEach(m=>{ if(m.fromId) have[m.fromId]=(have[m.fromId]||0)+1; });
+  // Retire motes whose emitter lost its trail or over-emitted; then top up the deficits.
+  pheroMotes=pheroMotes.filter(m=>{
+    if(!want[m.fromId]) return false;
+    if(have[m.fromId]>want[m.fromId]){ have[m.fromId]--; return false; }
+    return true;
+  });
+  emitters.forEach(n=>{
+    const deficit=want[n.id]-(pheroMotes.filter(m=>m.fromId===n.id).length);
+    for(let i=0;i<deficit;i++)
+      pheroMotes.push({fromId:n.id, t:Math.random(), speed:.0015+Math.random()*.002});
+  });
+
   const qp=w2s(queen.x,queen.y);
   pheroMotes.forEach(m=>{
-    m.t+=m.speed; if(m.t>=1){ m.t=0; m.from=nodes[1+Math.floor(Math.random()*(nodes.length-1))]||queen; }
-    const fp=w2s(m.from.x,m.from.y);
+    m.t+=m.speed; if(m.t>=1) m.t=0;                 // same emitter every cycle — the path is real
+    const src=nodes.find(n=>n.id===m.fromId); if(!src) return;
+    const fp=w2s(src.x,src.y);
     const x=fp.x+(qp.x-fp.x)*m.t, y=fp.y+(qp.y-fp.y)*m.t;
-    const a=(0.10+pheromoneIntensity*0.22)*(1-Math.abs(m.t-0.5)*1.2);
+    const s=strengthOf(src);
+    // Brightness carries that ant's own strength, so a weak trail reads as a faint thread.
+    const a=(0.08+s*0.30)*(1-Math.abs(m.t-0.5)*1.2);
     if(a<=0) return;
-    ctx.beginPath();ctx.arc(x,y,1.6*camZ,0,Math.PI*2);
+    ctx.beginPath();ctx.arc(x,y,(1.2+s*1.1)*camZ,0,Math.PI*2);
     ctx.fillStyle=`rgba(251,191,36,${a})`;ctx.fill();
   });
 }
