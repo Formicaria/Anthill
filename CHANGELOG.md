@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v2.11.2 — Model Routing Failover Activated (NORTH_STAR V3-track, wiring)
+
+Second hot-path wiring: the model router now uses the v2.11.0 routing intelligence to keep missions
+moving when a provider goes down, without changing healthy-path behavior.
+
+- **`ModelRouter.ResolveRoute`**: `Generate` resolves the effective route through a new
+  `ResolveRoute(role)` instead of `GetRoute` directly. When the configured route's provider circuit
+  breaker is OPEN and a distinct configured `fallback` route is healthy, the decision — made by the
+  deterministic, stability-preferring `ModelRoutingPolicy.Choose` (live breaker state supplies the
+  health signal) — fails over to the fallback route so the call proceeds instead of fast-failing on a
+  dead provider. The chosen reroute reason is recorded in the `model_call` event metadata.
+- **Unchanged healthy path**: `ResolveRoute` is a strict no-op when the breaker is disabled, when the
+  primary route is healthy, or when no distinct fallback is configured — so normal routing, and every
+  existing test, behaves exactly as before. `FormatRoutes` and the operator route views still read the
+  configured routes directly.
+- Still ahead in v2.11.x: the live Command console (Track 3) and, optionally, per-task risk-aware
+  routing once the task contract's risk class is threaded to the router.
+
 ## v2.11.1 — Coder → Sandbox Loop Activated (NORTH_STAR V3-track, wiring)
 
 The first hot-path wiring of the v2.10/v2.11 primitives. `CoderAnt` gains an iterative sandbox path,
