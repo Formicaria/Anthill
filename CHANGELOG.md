@@ -1,6 +1,6 @@
 # ANTHILL Changelog
 
-## Unreleased — Ant Execution Framework (stages A–G; version assigned at final qualification)
+## v2.9.1 — Ant Execution Framework (specialist activation, stages A–H)
 
 Framework-first activation of the specialist colony (spec-driven, staged, each stage gated green
 before the next). Canonical doc: docs/ANT_EXECUTION.md.
