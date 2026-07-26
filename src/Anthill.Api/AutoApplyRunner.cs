@@ -209,13 +209,16 @@ public static class AutoApplyRunner
 
     /// <summary>Runs the verify step in the workspace root: the operator command, or built-in dotnet build+test.
     /// Shared with the operator-triggered patch verification (v1.8.24, <see cref="PatchVerifyRunner"/>).</summary>
-    internal static VerifyResult RunVerify()
+    internal static VerifyResult RunVerify(string? workdir = null)
     {
         var cmd = string.IsNullOrWhiteSpace(AnthillRuntime.AutonomyAutoApplyVerifyCmd)
             ? "dotnet build && dotnet test"
             : AnthillRuntime.AutonomyAutoApplyVerifyCmd;
-        var dir = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
-            ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : Environment.CurrentDirectory;
+        // v2.10.1: an explicit workdir lets verification run inside a disposable sandbox instead
+        // of the live checkout; the default remains the legacy live-root behavior.
+        var dir = workdir is not null && Directory.Exists(workdir) ? Path.GetFullPath(workdir)
+            : Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
+                ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : Environment.CurrentDirectory;
         var (exit, output, timedOut, seconds) = RunShell(cmd, dir, AnthillRuntime.AutonomyAutoApplyVerifyTimeout);
         return new VerifyResult(!timedOut && exit == 0, exit, timedOut, seconds, output);
     }
