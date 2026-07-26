@@ -63,4 +63,19 @@ public static class UiStateStore
         ["ants"] = new Dictionary<string, object?>(),   // antId -> {name,color,x,y}
         ["layout"] = new Dictionary<string, object?>(),
     };
+
+    /// <summary>
+    /// v2.14.2: repair the topology-first dashboard workspace inside a loaded state document.
+    /// Called by the UI-state endpoint with the panel/overlay ids the client actually supports, so
+    /// validation, clamping, and recovery happen server-side where they are unit-tested. Every
+    /// other key — ant names, colours, positions, map preferences — is returned untouched: a
+    /// corrupt panel layout must never cost the operator their colony customization.
+    /// </summary>
+    public static Dictionary<string, object?> WithSanitizedWorkspace(
+        Dictionary<string, object?> state,
+        IReadOnlyCollection<string> knownPanelIds,
+        IReadOnlyCollection<string> knownOverlayIds,
+        int viewportWidth = DashboardWorkspaceState.DefaultViewportWidth,
+        int viewportHeight = DashboardWorkspaceState.DefaultViewportHeight)
+        => DashboardWorkspaceState.SanitizeInto(state, knownPanelIds, knownOverlayIds, viewportWidth, viewportHeight);
 }
