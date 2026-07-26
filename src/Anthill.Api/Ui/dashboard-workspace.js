@@ -40,9 +40,14 @@
   function placement(id) {
     var p = placements()[id];
     if (p) return p;
-    // Server merges new panels on next load; use a safe local default until then.
-    return { display_state: 'visible', placement_mode: 'floating', x: 40, y: 40,
-             width: 380, height: 240, expanded_height: 240, z: 1, pinned: false,
+    // v2.14.9: fall back to the panel's REGISTERED defaultPlacement so a first-run dashboard opens
+    // in its designed layout instead of stacking every panel at one corner. The server still owns
+    // validation/clamping once a layout has been saved.
+    var d = (W.panels[id] && W.panels[id].defaultPlacement) || {};
+    return { display_state: 'visible', placement_mode: d.mode || 'floating',
+             x: d.x != null ? d.x : 40, y: d.y != null ? d.y : 40,
+             width: d.width || 380, height: d.height || 240,
+             expanded_height: d.height || 240, z: 1, pinned: false,
              dock_side: null, tab_group: null, opacity: 'solid' };
   }
 
