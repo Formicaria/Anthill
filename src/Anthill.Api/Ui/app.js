@@ -292,9 +292,10 @@ PAGE_ENTER['overview']=()=>{
   // and the Colony page keeps the canvas exactly as before.
   if(document.getElementById('ws-topology')) topologyMountTo('dashboard');
 };
-// The Colony page reclaims the canvas whenever it is opened, so that route never goes blank —
-// route consolidation is Stage 9's job, not a side effect of this one.
-PAGE_ENTER['colony']=()=>{ topologyMountTo('colony'); };
+// The Colony page reclaims the canvas only when the dashboard is NOT hosting it. With the
+// workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
+// and the topology stays mounted in one place for the whole session.
+PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
 const IAICON = {
@@ -477,8 +478,25 @@ function go(route,push){
   try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
 }
 
+/**
+ * v2.14.15: does the dashboard currently host the topology?
+ *
+ * Keyed off the layer actually existing rather than off the flag, so a workspace that failed to
+ * initialise for any reason leaves the Colony route working exactly as before. This is the whole
+ * safety property of the redirect below.
+ */
+function workspaceHostsTopology(){ return !!document.getElementById('ws-topology'); }
+
 function showPage(id,o){
   o=o||{};
+  // v2.14.15 (Stage 9 groundwork): with the workspace live, the Dashboard IS the colony view — it
+  // holds the topology, the inspector, the jobs list, and the mission bar. Sending /colony there
+  // is what makes the topology PERSISTENT instead of being yanked back and forth between two
+  // hosts every time the operator navigates. With the workspace off this is a no-op.
+  if(id==='colony' && workspaceHostsTopology()){
+    id='overview';
+    o=Object.assign({},o,{route:PAGE_HOME['overview']||o.route});
+  }
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
@@ -985,7 +1003,23 @@ function chamberColor(health){
   return health==='alert' ? 'rgba(255,90,120,'
        : health==='live'  ? 'rgba(34,211,238,'
        : health==='idle'  ? 'rgba(150,175,200,'
-                          : 'rgba(120,135,155,';
+                          : 'rgba(132,150,172,';
+}
+
+/**
+ * v2.14.15: per-health ring opacity.
+ *
+ * Dormant chambers used to draw at stroke .12 / fill .012 against .30 / .035 for everything else,
+ * which read as "this chamber is missing" rather than "this chamber is on standby". Network Watch
+ * is entirely non-executable ants (network_scout, health, security_scout are all Executable:false),
+ * so it was always dormant and always looked broken. Standby is now a STEADY, clearly visible
+ * state — dimmer and cooler than a working chamber, but unmistakably present.
+ */
+function chamberAlpha(health,grabbed){
+  if(grabbed) return {stroke:0.70,fill:0.045,label:1};
+  return health==='dormant'
+    ? {stroke:0.26,fill:0.026,label:0.78}
+    : {stroke:0.34,fill:0.038,label:0.94};
 }
 
 function drawChambers(){
@@ -1000,23 +1034,27 @@ function drawChambers(){
     const base=chamberColor(st.health);
     // Subtle activity pulse, only when something is actually happening (and never under
     // reduced motion / Motion=off).
+    // Only chambers with real activity breathe. Idle and standby are deliberately STEADY: a
+    // pulsing ring means "work is happening here", so pulsing everything would make it meaningless.
     const pulsing = st.health!=='dormant' && st.active>0 && colonyMotion!=='off';
-    const pulse = pulsing ? 0.06*Math.sin(performance.now()/650) : 0;
+    const beat = pulsing ? Math.sin(performance.now()/480) : 0;
+    const pulse = beat*(colonyMotion==='high'?0.20:0.15);
+    const a = chamberAlpha(st.health,grabbed);
 
     ctx.save();
     ctx.beginPath();
     ctx.arc(p.x,p.y,sr,0,Math.PI*2);
-    ctx.strokeStyle=base+(grabbed?0.7:(st.health==='dormant'?0.12:0.30)+pulse)+')';
-    ctx.lineWidth=grabbed?2:1;
+    ctx.strokeStyle=base+Math.max(0.10,a.stroke+pulse)+')';
+    ctx.lineWidth=grabbed?2:(pulsing?1.6:1.2);
     ctx.stroke();
-    ctx.fillStyle=base+((st.health==='dormant'?0.012:0.035)+pulse/3)+')';
+    ctx.fillStyle=base+Math.max(0.008,a.fill+pulse/4)+')';
     ctx.fill();
 
     if(colonyLabels!=='off'){
       const cw=Math.max(9,Math.round(10*camZ));
       ctx.textAlign='center';
       ctx.font=`600 ${cw}px var(--mono,monospace)`;
-      ctx.fillStyle=base+(st.health==='dormant'?0.55:0.92)+')';
+      ctx.fillStyle=base+a.label+')';
       ctx.fillText(chamberLabel(name), p.x, p.y-sr-8);
       // Chamber summary only — the detail lives on the ants themselves.
       const bits=[st.active+'/'+st.members.length+' active'];
@@ -1024,7 +1062,7 @@ function drawChambers(){
       if(st.failed>0) bits.push(st.failed+' failed');
       if(st.health==='dormant') bits.push('standby');
       ctx.font=`${Math.max(8,Math.round(8.5*camZ))}px var(--mono,monospace)`;
-      ctx.fillStyle=base+0.62+')';
+      ctx.fillStyle=base+(st.health==='dormant'?0.55:0.66)+')';
       ctx.fillText(bits.join(' · '), p.x, p.y-sr+cw+2);
     }
     ctx.restore();
@@ -2029,7 +2067,11 @@ let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
 function renderColonyLegend(){
   const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
   const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
-  const want=(roles.length?roles.map(roleId):CHUD_CASTES).slice(0,15);
+  // v2.14.15: no arbitrary cap. This used to .slice(0,15), which silently dropped all eight
+  // homelab ants (inventory, network_scout, health, proxmox, storage, backup, security_scout,
+  // change_archivist) from the legend while they were still drawn on the canvas. The legend is
+  // now a hideable, scrollable overlay, so it can afford to be complete.
+  const want=(roles.length?roles.map(roleId):CHUD_CASTES);
   el.innerHTML=want.map(a=>{
     const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
     const on=(colonyActivity[a]||0)>0;
@@ -6761,6 +6803,13 @@ function registerWorkspacePanels(){
     {id:'resource-usage',  title:'Resource Usage',     body:'ov2-resources-body',x:380, y:270, w:320, h:220},
     {id:'recent-events',   title:'Recent Events',      body:'ov2-events-body',   x:716, y:270, w:320, h:220},
     {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',  x:24,  y:506, w:340, h:200},
+    // v2.14.15: the Colony page's own cards become panels too. Until the dashboard can host the
+    // inspector and the jobs list, "the topology lives on the dashboard" is only half true — you
+    // would still have to leave it to inspect an ant or watch a job. These re-parent the SAME
+    // body elements (wsMountTarget), so there is one renderer per card, exactly as with the
+    // seven panels above.
+    {id:'agent-inspector', title:'Agent Inspector',   body:'agent-detail',      x:1052, y:24,  w:320, h:420},
+    {id:'colony-jobs',     title:'Jobs',              body:'jobs-list',         x:1052, y:462, w:320, h:244},
   ];
   defs.forEach(function(d){
     W.register({

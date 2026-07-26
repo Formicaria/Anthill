@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.14.14) — start here
+## WHERE WE ARE (as of v2.14.15) — start here
 
 **Shipped and working:**
 
@@ -125,6 +125,12 @@ load by `DashboardWorkspaceState.Sanitize`:
   Overlays menu. State is validated server-side.
 - **The workspace sanitizer is actually wired in** — `/ui/state` GET and PUT now run
   `DashboardWorkspaceState`. Until v2.14.14 it was called only from unit tests.
+- **Nine panels, including the Colony page's own** — the Agent Inspector and Jobs list are now
+  workspace panels, so the dashboard hosts everything the Colony page did.
+- **The topology is persistent** — with the workspace live, `/colony/topology` resolves to the
+  dashboard and the canvas stays mounted there for the whole session instead of being re-parented
+  on every navigation. Keyed off the topology layer existing, not off the flag, so a workspace that
+  fails to initialise leaves the Colony route working exactly as before.
 
 **The flag is still `dashboard_workspace_enabled: false` by default.** With it on, the dashboard now
 renders the live topology full-bleed behind the floating panels; with it off nothing changes.
@@ -136,7 +142,8 @@ definitions), so the feature stages shifted. The table below is the corrected ma
 
 **Next, in order:**
 
-1. **v2.14.15 — Tab groups (Stage 4).**
+1. **v2.14.16 — Tab groups (Stage 4).** Now lands on a dashboard that already hosts all nine
+   panels, so grouping is the last piece of "modular and customizable".
 2. **v2.15.0 — Unified workspace, default layout, and the Stage 8 lifecycle audit.** That audit now
    has a specific job: `saveUiState` (app.js) and `save()` (dashboard-workspace.js) are two
    independent debounced writers doing read-modify-write against the same document. Both preserve
@@ -168,12 +175,12 @@ freezes the map, and this repo has paid for that twice, so it is not being guess
 | 3c2 | Sweep the now-unreachable `cmap*` functions and orphaned `#cmap2` CSS (dead code, no behaviour) | v2.14.9 | **done** |
 | 3d | Chamber renaming (double-click, mirroring ant rename; canonical keys unchanged) | v2.14.10 | **done** |
 | 3e | Editable Ant Inspector side panel — see the spec above | v2.14.13 | **done** |
-| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.15 | planned |
+| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.16 | planned |
 | 5 | Migrate existing dashboard cards to registered panels — renderers reused verbatim by re-parenting their own body elements, so there is one implementation per card | v2.14.9 | **done** |
 | 6 | **Topology as the dashboard canvas** — mount the live canvas full-bleed behind `#ws-root`; measure after mount, one render loop, one polling path, verify arbitration | v2.14.13 | **done** |
 | 7 | Topology overlays: view controls, legend, signals, hints — hideable + anchored across six slots, with an Overlays menu (inspector deferred to Stage 9) | v2.14.14 | **done** |
 | 8 | Unified workspace + polished default layout + lifecycle audit (no duplicate timers/listeners) | v2.15.0 | planned |
-| 9 | Route consolidation + legacy Colony redirect (flag still respected) | v2.15.x | planned |
+| 9 | (groundwork done in v2.14.15) Route consolidation + legacy Colony redirect (flag still respected) | v2.15.x | planned |
 | 10 | Responsive (compact profile) + accessibility pass | v2.15.x | planned |
 | 11 | Documentation sync + final verification | — | per release |
 
