@@ -61,6 +61,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
     [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
     [JsonPropertyName("homelab_automation_enabled")] public bool HomelabAutomationEnabled { get; set; } = false;
+    [JsonPropertyName("specialist_ant_execution_enabled")] public bool SpecialistAntExecutionEnabled { get; set; } = false;
+    [JsonPropertyName("tester_ant_enabled")] public bool TesterAntEnabled { get; set; } = false;
+    [JsonPropertyName("soldier_ant_enabled")] public bool SoldierAntEnabled { get; set; } = false;
+    [JsonPropertyName("medic_ant_enabled")] public bool MedicAntEnabled { get; set; } = false;
+    [JsonPropertyName("archivist_ant_enabled")] public bool ArchivistAntEnabled { get; set; } = false;
+    [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
+    [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
     [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
     [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";
