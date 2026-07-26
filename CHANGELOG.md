@@ -1,5 +1,34 @@
 # ANTHILL Changelog
 
+## v2.14.0 — Safe Action Engine and Recovery Orchestration (NORTH_STAR Phase 6)
+
+One safe execution framework for every state-changing system. Honest scope: the engine,
+orchestration, and transaction machinery ship here with full tests; migrating the existing patch
+and homelab executors onto the shared lifecycle is the next slice, so nothing in the working
+pipeline changes mid-flight.
+
+- **Unified lifecycle** (`draft → validated → risk_scored → waiting_for_approval → approved →
+  scheduled → executing → verifying → completed_verified`, with `failed → compensating →
+  compensated` and `rollback_failed → escalated`). Transitions are structurally enforced:
+  approval cannot be skipped, nothing executes from draft, **execution alone can never complete an
+  action — verification is the only door**, and terminal states are terminal.
+- **Risk engine**: deterministic scoring over destructive potential, reversibility, rollback
+  availability, target criticality (unknown scores cautiously), affected systems, dependency
+  depth, prod-vs-lab, backup freshness, maintenance window, unresolved incidents, novelty, skill
+  confidence (v2.13), verifier strength (v2.12), and change size. **A critical change can never be
+  low risk by line count**: critical file classes, irreversibility, or missing rollback floor the
+  level to high and force approval. High-risk operation classes always require approval.
+- **Recovery orchestration**: rollback → retry-after-cooldown → failover → restore-from-backup →
+  escalate, plus quarantine on security implications. **Rollback failure automatically suspends
+  autonomy** for that scope and escalates; "no recovery path" is itself a suspension event.
+- **Circuit breakers** per action type / target / provider / skill / rule: trip after repeated
+  failures, and stay tripped through subsequent successes until an operator resets — a flapping
+  target cannot silently re-arm itself.
+- **Change-set transactions**: ordered steps with checkpoints, verification after each checkpoint,
+  stop-on-failure, compensation in reverse order, and opt-in partial retention. A step that
+  executed but failed verification is still compensated; a missing or failing compensation is
+  recorded and suspends autonomy rather than being ignored.
+
 ## v2.13.0 — Procedural Skills and Evaluated Learning (NORTH_STAR Phase 5)
 
 ANTHILL can now improve from experience — but only from *verified* experience, and never by
