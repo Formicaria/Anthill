@@ -489,6 +489,20 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .ad-section{font-size:9px;font-weight:700;color:var(--dim);margin:8px 0 4px;letter-spacing:.5px;text-transform:uppercase;}
 .ad-bar{height:4px;background:var(--inner);border-radius:2px;overflow:hidden;}
 .ad-bar-fill{height:100%;border-radius:2px;transition:width .5s;}
+/* v2.14.13: editable Ant Inspector. Sits inside the existing Agent Inspector card, so it inherits
+   the card's scrolling and collapse behaviour rather than introducing a second panel. */
+.ad-edit{display:flex;flex-direction:column;gap:2px;padding:6px 0 2px;}
+.ad-lbl{font-size:9px;color:var(--dim);margin-top:4px;}
+.ad-input{background:var(--inner);border:1px solid var(--border);border-radius:4px;color:var(--text);
+  font-size:10px;font-family:var(--mono);padding:4px 6px;width:100%;box-sizing:border-box;}
+.ad-input:focus{outline:2px solid var(--accent,#fbbf24);outline-offset:1px;}
+.ad-input-color{padding:2px;height:24px;cursor:pointer;}
+.ad-edit-actions{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.ad-msg{font-size:9px;font-family:var(--mono);min-height:11px;}
+/* Explains why a control is absent, instead of showing a dead disabled one. */
+.ad-note{font-size:9px;color:var(--muted);line-height:1.5;background:rgba(255,255,255,.03);
+  border:1px solid var(--border);border-left:2px solid var(--dim);border-radius:3px;padding:5px 7px;margin:4px 0;}
+.ad-fine{font-size:10px;line-height:1.5;color:var(--muted);}
 
 /* -- Events Feed ------------------------------------------------------------- */
 .ev{padding:6px 8px;border-radius:4px;margin-bottom:3px;background:var(--inner);border:1px solid transparent;font-size:11px;}
