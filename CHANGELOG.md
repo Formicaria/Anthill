@@ -68,6 +68,51 @@ stays off.
   bounded reason; gate-off does no work; unknown check refused. Routing: stats aggregation, health
   thresholds, low-risk speed preference, high-risk stability, unhealthy-reroute, all-unhealthy fallback.
 
+## v2.12.0 — Independent Verification and Evidence (NORTH_STAR Phase 4)
+
+Execution and verification are now separate: the ant or model that made a change is never the
+entity that decides whether it worked. (Phase renumbered — the v2.11.x line went to sandbox/coder
+wiring; see the NORTH_STAR note.)
+
+- **Framework**: `IVerifier`, `VerificationRequest`, `VerificationResult`, `VerificationEvidence`,
+  `VerificationPolicy`, `VerificationBundle`, `VerificationRunner`.
+- **Deterministic verifiers**: DiffVerifier (scope containment, no-op detection, content hashes),
+  BuildVerifier and TestVerifier (allowlisted checks — real exit codes, test counts, output
+  digests; never a model's claim), SecurityPolicyVerifier (reuses the deterministic policy engine:
+  secrets, permission expansion, blocked paths), ArtifactVerifier (files exist, with hashes).
+- **Per-task-type policy**: code_patch requires diff+build+test+security; docs_patch requires
+  diff+security; unknown task types still require a policy scan — fail closed.
+- **Promotion rule**: a bundle is promotable only when EVERY required verifier ran and passed. A
+  missing or faulting verifier counts as failure, never a pass. Structural completion cannot
+  create a verified success.
+- **Model confidence is never proof**: a bundle with no passing DETERMINISTIC evidence is blocked
+  even if every semantic check "passed" — semantic judgment may supplement, never replace.
+- Verification is independently rerunnable: same request, same deterministic outcome (tested).
+- Honest scope: ServiceHealth / InfrastructureState / Dependency / Rollback / SemanticJudge
+  verifiers are declared in the policy vocabulary and land with the safe-action phase, where their
+  provider state and compensation paths exist.
+
+## v2.10.1 — Sandboxed patch verification (first consumer of the Phase 3 primitives)
+
+Patch verification no longer touches the live checkout.
+
+- **Before**: verifying a patch applied it to the LIVE workspace (with backup), ran build/test
+  there, then restored — so it required the write gates to be on, and a crash or failed restore
+  mid-verify could leave the running install modified.
+- **Now** (when `sandbox_execution_enabled` is on): the workspace is copied to a disposable
+  sandbox, the patched content is written INTO THE COPY, `dotnet build && dotnet test` runs inside
+  it, and the copy is destroyed. Nothing to restore; the live tree is never written to; no write
+  gates required. A path that would escape the sandbox refuses before any write.
+- Copy-mode is deliberate: verification must see the workspace as it is ON DISK, including
+  uncommitted local state the patch was diffed against — a HEAD worktree would test the wrong
+  baseline (`SandboxWorkspace.Create(preferCopy: true)`).
+- Unchanged semantics: a green verify still only AUTO-APPROVES; applying to the real workspace
+  remains the operator's explicit action. A red verify leaves the patch pending with the tail.
+- Legacy live-workspace path is intact and used when the gate is off — fully reversible.
+- `AutoApplyRunner.RunVerify(workdir)` now accepts a target directory (defaults to legacy behavior).
+- Tests: patched content never reaches the source tree (existing + new files), uncommitted state
+  is visible in the copy, sandbox destroyed after use, path-escape detectable before write.
+
 ## v2.10.0 — Sandboxed Agent Execution (NORTH_STAR V3-track Phase 3, primitives)
 
 Ants gain the machinery to work iteratively WITHOUT touching the live installation. Honest scope:

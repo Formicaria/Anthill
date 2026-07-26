@@ -24,10 +24,12 @@ public sealed class SandboxWorkspace : IDisposable
 
     /// <summary>Create a sandbox from <paramref name="sourceRoot"/>. Uses a git worktree when the
     /// source is a git checkout; falls back to a bounded copy (small text-first repos) otherwise.</summary>
-    public static SandboxWorkspace Create(string sourceRoot, int maxCopyFiles = 5000)
+    public static SandboxWorkspace Create(string sourceRoot, int maxCopyFiles = 5000, bool preferCopy = false)
     {
         var target = Path.Combine(Path.GetTempPath(), "anthill-sandbox-" + Guid.NewGuid().ToString("N")[..12]);
-        if (Directory.Exists(Path.Combine(sourceRoot, ".git")))
+        // preferCopy: patch verification must see the workspace AS IT IS ON DISK (a worktree of
+        // HEAD would miss uncommitted local changes the patch may have been diffed against).
+        if (!preferCopy && Directory.Exists(Path.Combine(sourceRoot, ".git")))
         {
             var (ok, err) = Git(sourceRoot, $"worktree add --detach \"{target}\" HEAD");
             if (ok) return new SandboxWorkspace(target, "worktree", sourceRoot);
