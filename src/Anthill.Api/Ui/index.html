@@ -344,7 +344,43 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 #colony-canvas-area{flex:1;position:relative;overflow:hidden;}
 #c{position:absolute;top:0;left:0;}
 /* Colony Live Canvas 2.0 HUD overlay */
-.colony-hud{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:8px;z-index:5;max-width:250px;pointer-events:none;}
+/* v2.14.14: the HUD wrapper stops being a positioned box so its children can be re-parented into
+   anchor slots. display:contents removes the box while keeping the children rendered. */
+.colony-hud{display:contents;}
+.topo-ov-slot{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;max-width:260px;pointer-events:none;}
+.topo-ov-slot>*{pointer-events:auto;}
+.topo-ov-slot[data-ovslot="top-left"]{top:10px;left:10px;}
+.topo-ov-slot[data-ovslot="top-center"]{top:10px;left:50%;transform:translateX(-50%);align-items:center;}
+.topo-ov-slot[data-ovslot="top-right"]{top:10px;right:10px;align-items:flex-end;}
+.topo-ov-slot[data-ovslot="bottom-left"]{bottom:10px;left:10px;flex-direction:column-reverse;}
+.topo-ov-slot[data-ovslot="bottom-center"]{bottom:10px;left:50%;transform:translateX(-50%);align-items:center;flex-direction:column-reverse;}
+.topo-ov-slot[data-ovslot="bottom-right"]{bottom:10px;right:10px;align-items:flex-end;flex-direction:column-reverse;}
+/* Overlays inside a slot are laid out BY the slot, so they must not carry their own anchoring. */
+.topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
+.ov-hidden{display:none !important;}
+
+/* The always-available Overlays control + its menu. */
+#topo-ov-btn{position:absolute;bottom:10px;right:10px;z-index:8;background:rgba(2,6,23,.72);
+  border:1px solid rgba(34,211,238,.22);border-radius:6px;color:var(--muted);font-size:9px;
+  padding:4px 8px;cursor:pointer;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+#topo-ov-btn:hover{color:var(--text);}
+#topo-ov-btn:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:1px;}
+#topo-ov-menu{position:absolute;bottom:38px;right:10px;z-index:9;min-width:236px;display:flex;
+  flex-direction:column;gap:3px;padding:7px;background:rgba(10,14,22,.97);
+  border:1px solid var(--border);border-radius:8px;}
+#topo-ov-menu[hidden]{display:none;}
+.topo-ov-row{display:flex;align-items:center;gap:6px;}
+.topo-ov-toggle{flex:1;display:flex;align-items:center;gap:6px;text-align:left;background:transparent;
+  border:0;color:var(--muted);font-size:10px;padding:4px 5px;border-radius:5px;cursor:pointer;}
+.topo-ov-toggle:hover{background:rgba(255,255,255,.06);color:var(--text);}
+.topo-ov-toggle:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:-2px;}
+.topo-ov-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;}
+.topo-ov-dot.on{background:var(--hud-cyan,#22d3ee);}
+.topo-ov-anchor{background:var(--inner);border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-size:9px;padding:2px 3px;}
+.topo-ov-reset{margin-top:4px;background:transparent;border:1px solid var(--border);border-radius:5px;
+  color:var(--muted);font-size:9px;padding:4px 6px;cursor:pointer;}
+.topo-ov-reset:hover{color:var(--text);}
 .chud-legend{display:flex;flex-wrap:wrap;gap:5px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
 .chud-caste{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);}
 .chud-caste .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -1480,7 +1516,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <!-- Canvas 2.0 HUD overlay: caste legend + live pheromone trails -->
           <div id="colony-hud" class="colony-hud">
             <div class="chud-legend" id="chud-legend"></div>
-            <div class="chud-phero">
+            <div class="chud-phero" id="chud-phero">
               <div class="chud-phero-hd">Colony Learning · Signals</div>
               <div id="chud-phero-body"><div class="chud-empty">Loading trails…</div></div>
             </div>
@@ -1513,6 +1549,19 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="cv-btn" data-colonyact="reset-layout" title="Return dragged ants to the computed layout">⌂ Layout</button>
           </div>
           <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
+          <!-- v2.14.14 Stage 7: six anchor slots. Overlays are re-parented into these, so two
+               overlays sharing an anchor stack instead of overlapping. -->
+          <div class="topo-ov-slot" data-ovslot="top-left"></div>
+          <div class="topo-ov-slot" data-ovslot="top-center"></div>
+          <div class="topo-ov-slot" data-ovslot="top-right"></div>
+          <div class="topo-ov-slot" data-ovslot="bottom-left"></div>
+          <div class="topo-ov-slot" data-ovslot="bottom-center"></div>
+          <div class="topo-ov-slot" data-ovslot="bottom-right"></div>
+          <!-- Deliberately NOT an overlay: if this could be hidden, hiding everything would be
+               unrecoverable without hand-editing ui_state.json. -->
+          <button id="topo-ov-btn" title="Show or hide topology overlays"
+                  aria-haspopup="true" aria-expanded="false" aria-controls="topo-ov-menu">Overlays</button>
+          <div id="topo-ov-menu" role="menu" aria-label="Topology overlays" hidden></div>
           <!-- Mission bar overlays the bottom of the canvas -->
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">
