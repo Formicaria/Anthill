@@ -14,19 +14,19 @@ namespace Anthill.Tests;
 public class SandboxedCoderRunnerTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "anthill_scr_" + Guid.NewGuid().ToString("N"));
-    private readonly bool _gateWas = AnthillRuntime.EnableSandboxExecution;
 
     public SandboxedCoderRunnerTests()
     {
         // Allowlisted, SDK-free checks: git --version always succeeds; an unknown subcommand fails.
         CheckCatalog.Register(new CheckDefinition("sbx_ok", "git", "--version", 30, true, "test: passing probe"));
         CheckCatalog.Register(new CheckDefinition("sbx_fail", "git", "not-a-real-subcommand", 30, true, "test: failing probe"));
-        AnthillRuntime.EnableSandboxExecution = true;
     }
 
+    // The gate is injected per-test (enabledOverride) rather than mutating the shared global
+    // AnthillRuntime.EnableSandboxExecution — otherwise a parallel test collection flipping that
+    // static races this run (observed as a "disabled" result on windows-latest CI).
     public void Dispose()
     {
-        AnthillRuntime.EnableSandboxExecution = _gateWas;
         try { Directory.Delete(_dir, true); } catch { }
     }
 
@@ -52,9 +52,8 @@ public class SandboxedCoderRunnerTests : IDisposable
     [Fact]
     public void GateOff_DoesNoWork_AndReportsDisabled()
     {
-        AnthillRuntime.EnableSandboxExecution = false;
         var repo = ThrowawayGitRepo();
-        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "x"), "sbx_ok");
+        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "x"), "sbx_ok", enabledOverride: false);
 
         var report = runner.Run(repo, "m1", "t1");
 
@@ -68,7 +67,7 @@ public class SandboxedCoderRunnerTests : IDisposable
     public void GreenCheck_Completes_AndLiveTreeIsUntouched()
     {
         var repo = ThrowawayGitRepo();
-        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "hello from sandbox"), "sbx_ok");
+        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "hello from sandbox"), "sbx_ok", enabledOverride: true);
 
         var report = runner.Run(repo, "m1", "t1");
 
@@ -85,7 +84,7 @@ public class SandboxedCoderRunnerTests : IDisposable
     public void FailingCheck_StopsBounded_WithExplicableReason()
     {
         var repo = ThrowawayGitRepo();
-        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "hello"), "sbx_fail");
+        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "hello"), "sbx_fail", enabledOverride: true);
 
         var report = runner.Run(repo, "m1", "t1");
 
@@ -98,7 +97,7 @@ public class SandboxedCoderRunnerTests : IDisposable
     public void UnknownCheck_RefusedBeforeAnyWork()
     {
         var repo = ThrowawayGitRepo();
-        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "x"), "not_allowlisted");
+        var runner = new SandboxedCoderRunner((_, _) => AddFileJson("generated.txt", "x"), "not_allowlisted", enabledOverride: true);
 
         var report = runner.Run(repo, "m1", "t1");
 

@@ -34,19 +34,26 @@ public sealed class SandboxedCoderRunner
     private readonly Func<int, string, string> _propose;
     private readonly string _checkId;
     private readonly LoopBudget _budget;
+    private readonly bool? _enabledOverride;
     private readonly PatchProposalParser _parser = new();
 
-    public SandboxedCoderRunner(Func<int, string, string> propose, string checkId = "dotnet_build", LoopBudget? budget = null)
+    /// <param name="enabledOverride">When null (production default) the gate is read from
+    /// <see cref="AnthillRuntime.EnableSandboxExecution"/> at run time. Tests pass an explicit value
+    /// so they never depend on — or mutate — the shared global gate (which would race across the
+    /// parallel test collections).</param>
+    public SandboxedCoderRunner(Func<int, string, string> propose, string checkId = "dotnet_build",
+        LoopBudget? budget = null, bool? enabledOverride = null)
     {
         _propose = propose ?? throw new ArgumentNullException(nameof(propose));
         _checkId = string.IsNullOrWhiteSpace(checkId) ? "dotnet_build" : checkId;
         _budget = budget ?? new LoopBudget();
+        _enabledOverride = enabledOverride;
     }
 
     public SandboxRunReport Run(string sourceRoot, string missionId, string taskId,
         CancellationToken ct = default, Func<DateTime>? now = null)
     {
-        if (!AnthillRuntime.EnableSandboxExecution)
+        if (!(_enabledOverride ?? AnthillRuntime.EnableSandboxExecution))
             return SandboxRunReport.Disabled(_checkId);
 
         if (CheckCatalog.Get(_checkId) is null)
