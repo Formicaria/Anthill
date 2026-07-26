@@ -1,5 +1,68 @@
 # ANTHILL Changelog
 
+## v2.14.9 — Seven functional chambers
+
+Live feedback on v2.14.5: chambers were derived from each role's `Colony` string, which produced
+~14 near-singleton chambers (a chamber for the verifier, one for the soldier, one for the medic…).
+Replaced with a fixed functional taxonomy of **seven** chambers:
+
+| Chamber | Ants |
+|---|---|
+| Queen's Core | Queen, Director, Planner, Constraint |
+| Intelligence Nexus | Researcher, File, Web, UICartographer |
+| The Forge | Coder, Builder, Scribe |
+| Validation Bastion | Verifier, Tester, Soldier, Medic |
+| Memory Vault | Archivist, ChangeArchivist |
+| Infrastructure Works | Quartermaster, Inventory, Proxmox, Storage, Backup |
+| Network Watch | NetworkScout, Health, SecurityScout |
+
+Verified against the registry: all 25 roles map to exactly one chamber, no gaps, no duplicates.
+Unknown or future roles fall into Infrastructure Works rather than spawning a chamber of their own —
+so adding an ant can never fragment the map again.
+
+- **Chamber summary only**, per the display rules: name, active/total, running count, failed count,
+  and a standby marker when a chamber is entirely visible-only. Detail stays on the ants — hover or
+  click an ant for its own state, workers, and activity.
+- **One dominant status colour** per chamber, resolved by precedence: alert (any failures) → live
+  (any active ant) → idle → dormant. No competing colours inside one ring.
+- **Subtle activity pulse** only when a chamber actually has active ants, and never when Motion is
+  off (so it also respects reduced-motion).
+- **Visible-only ants read as STANDBY** — dimmed with a small "standby" marker rather than styled
+  like a failure. They are present and inspectable, just clearly not executing.
+- Chamber membership is now carried on each node (`chamber`), so dragging, hit-testing, and
+  persistence no longer depend on the registry's `Colony` string at all.
+
+One judgement call worth flagging: **HealthAnt** sits in Network Watch rather than Validation
+Bastion. Service health is closer to observability/exposure than to change validation, so Network
+Watch reads as the "what's out there and is it well" chamber. If you'd rather it sat with the
+validators, it's a one-line move in `CHAMBER_MAP`.
+
+Also swept: the orphaned `#cmap2` CSS selectors left behind by v2.14.8 (32 lines, including two
+continuation lines whose selectors had been removed — they would have left the stylesheet
+unbalanced, caught by a brace check before shipping).
+
+### Stage 5 — the dashboard cards are now registered workspace panels
+
+The workspace runtime shipped a shell (v2.14.3) and drag/resize (v2.14.4) with **nothing registered
+in it**, so enabling the flag produced an empty surface. Now seven panels are registered — Colony
+Health, System Core, Missions, Pending Approvals, Resource Usage, Recent Events, Operator Attention
+— each in its designed default position.
+
+- **The existing renderers are reused verbatim.** Rather than reimplementing each card, a panel
+  body re-parents the element the renderer already writes to (`ov2-health-body`, `ov2-core-body`,
+  `hud-attn-list`, …). One implementation per card, one data path, and `pollOv2`/`pollHud` keep
+  filling them unchanged — no duplicated polling, which is the failure the plan's performance
+  section warns about.
+- **Registered `defaultPlacement` is now honoured** by the runtime; previously every panel would
+  have stacked at one corner on first run, because the shell had no notion of a designed layout.
+- The classic grid hides itself when the workspace mounts, so the two shells never render the same
+  card twice; with the flag off, nothing changes at all.
+- Mounting happens once on dashboard entry and only after `/health` confirms the flag — an
+  unreachable `/health` leaves the classic dashboard in place rather than failing open.
+
+Still ahead: tab groups, the topology moving under the panels as the persistent canvas, overlay
+controls, and route consolidation.
+
 ## v2.14.8 — The chamber SVG view is gone from the console
 
 The separate chamber map is removed from the UI. Everything it did now lives on the live colony
