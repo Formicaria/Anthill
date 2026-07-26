@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.14.13) — start here
+## WHERE WE ARE (as of v2.14.14) — start here
 
 **Shipped and working:**
 
@@ -120,6 +120,11 @@ load by `DashboardWorkspaceState.Sanitize`:
   strength, and workspace path allowlists.
 - **Topology as the dashboard canvas** (Stage 6) — `#colony-canvas-area` is re-parented between the
   Colony page and a `#ws-topology` layer behind `#ws-root`. One canvas, one loop, one polling path.
+- **Topology overlays** (Stage 7) — view controls, caste legend, learning signals, and interaction
+  hints are independently hideable and re-anchorable across six slots, with an always-available
+  Overlays menu. State is validated server-side.
+- **The workspace sanitizer is actually wired in** — `/ui/state` GET and PUT now run
+  `DashboardWorkspaceState`. Until v2.14.14 it was called only from unit tests.
 
 **The flag is still `dashboard_workspace_enabled: false` by default.** With it on, the dashboard now
 renders the live topology full-bleed behind the floating panels; with it off nothing changes.
@@ -131,11 +136,17 @@ definitions), so the feature stages shifted. The table below is the corrected ma
 
 **Next, in order:**
 
-1. **v2.14.14 — Topology overlays (Stage 7).** Make the canvas viewbar, legend/keys, hints, and the
-   inspector independently hideable and anchor-positioned, with a Topology Overlays menu.
-2. **v2.14.15 — Tab groups (Stage 4).**
-3. **v2.15.0 — Unified workspace, default layout, lifecycle audit (Stage 8), then route
-   consolidation with the legacy Colony redirect (Stage 9) and the responsive/a11y pass (Stage 10).**
+1. **v2.14.15 — Tab groups (Stage 4).**
+2. **v2.15.0 — Unified workspace, default layout, and the Stage 8 lifecycle audit.** That audit now
+   has a specific job: `saveUiState` (app.js) and `save()` (dashboard-workspace.js) are two
+   independent debounced writers doing read-modify-write against the same document. Both preserve
+   each other's keys as of v2.14.14, but last-PUT-wins remains. Collapsing them into one owner is
+   Stage 8's work.
+3. **Then** route consolidation with the legacy Colony redirect (Stage 9) and the responsive/a11y
+   pass (Stage 10).
+
+**Deferred deliberately:** the inspector is not an overlay. On the Colony page it is a sidebar card
+rather than canvas chrome, so anchoring it belongs with Stage 9, when that sidebar layout goes away.
 
 **Known gap, stated honestly:** the render loop currently suppresses drawing only when the tab is
 backgrounded or the canvas measures zero (i.e. its page is `display:none`). Occlusion-based
@@ -160,7 +171,7 @@ freezes the map, and this repo has paid for that twice, so it is not being guess
 | 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.15 | planned |
 | 5 | Migrate existing dashboard cards to registered panels — renderers reused verbatim by re-parenting their own body elements, so there is one implementation per card | v2.14.9 | **done** |
 | 6 | **Topology as the dashboard canvas** — mount the live canvas full-bleed behind `#ws-root`; measure after mount, one render loop, one polling path, verify arbitration | v2.14.13 | **done** |
-| 7 | Topology overlays: view controls, legends/keys, inspector, prefs, hints — all hideable + anchored, with a Topology Overlays menu | v2.14.14 | planned |
+| 7 | Topology overlays: view controls, legend, signals, hints — hideable + anchored across six slots, with an Overlays menu (inspector deferred to Stage 9) | v2.14.14 | **done** |
 | 8 | Unified workspace + polished default layout + lifecycle audit (no duplicate timers/listeners) | v2.15.0 | planned |
 | 9 | Route consolidation + legacy Colony redirect (flag still respected) | v2.15.x | planned |
 | 10 | Responsive (compact profile) + accessibility pass | v2.15.x | planned |
