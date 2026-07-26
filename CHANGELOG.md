@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.14.8 — The chamber SVG view is gone from the console
+
+The separate chamber map is removed from the UI. Everything it did now lives on the live colony
+canvas (chambers via the **Chambers** button, plus motion/labels/pheromones and the reset controls
+from v2.14.5–v2.14.7).
+
+Removed:
+
+- the chamber control bar (view switcher, motion/labels/pheromones selects, idle-ants checkbox,
+  reset view/layout buttons) — all superseded by the canvas viewbar;
+- the `#cmap2` SVG surface and its side inspector;
+- the colony page-enter plumbing that loaded and re-rendered the chamber map, **including its 20s
+  polling interval** — one less recurring request on the colony page.
+
+Kept working, deliberately:
+
+- **Colony search** was the one real coupling — it drove chamber selection. It now targets the
+  canvas: it finds the ant by label, id, or worker id, selects it, opens the inspector, and centres
+  the camera on it without changing zoom. Same outcome, surviving renderer.
+- Every canvas capability is untouched: Command/Expanded/Active/Chambers/Handoffs views, ant and
+  chamber dragging, pan/zoom, pulses, pheromone field, tooltips, inspector, role colours.
+
+Honest remainder: the `cmap*` JavaScript functions and the `#cmap2` CSS rules are now
+**unreachable** — nothing in the console can call or match them. They are dead weight, not dead
+behaviour, and get swept in v2.14.9 as a pure-deletion commit. Removing ~145 references in the
+same change that repoints search would have made any regression hard to attribute, which is the
+same reasoning that kept the earlier stages separable.
+
 ## v2.14.7 — Chambers are draggable as a unit
 
 Live feedback on v2.14.5: the chamber ring resized but never moved, and grabbing it panned the
