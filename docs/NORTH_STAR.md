@@ -270,7 +270,7 @@ V2.9.x   Ant Execution Framework (specialist activation) [see docs/ANT_EXECUTION
 V2.10.0  Sandboxed Agent Execution                    [SHIPPED v2.10.0 — sandbox + loop primitives; agent wiring v2.10.x]
 V2.11.x  Sandbox/coder/model-routing wiring (unplanned insertion) [SHIPPED v2.11.0–v2.11.2]
 V2.12.0  Independent Verification and Evidence (was V2.11.0)  [SHIPPED v2.12.0 — deterministic verifiers + bundles]
-V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)
+V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)  [SHIPPED v2.13.0 — skill registry + evidence-gated promotion]
 V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
 
