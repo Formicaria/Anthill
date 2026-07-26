@@ -685,121 +685,28 @@ function visibleRoles(){
 // 'group' arc-spread only nudged roles along one arc; real chambers cluster each colony around
 // its own centre so the structure reads at a glance — and every canvas capability (drag, pan,
 // zoom, pulses, pheromones, inspector, handoff edges) keeps working unchanged underneath.
-const CHAMBER_ORDER=['Command','Command / Safety','Context','Workspace','External Research','UI',
-  'Code','Testing','Verification','Security','Repair','Memory','Resources','Communication / Docs'];
+// v2.14.9: SEVEN functional chambers, fixed by purpose rather than derived from each role's
+// Colony string (which produced ~14 near-singleton chambers). Every registry role maps to exactly
+// one chamber; unknown/future roles land in Infrastructure Works rather than spawning their own.
+const CHAMBER_MAP = {
+  "Queen's Core":        ['queen','director','planner','constraint'],
+  'Intelligence Nexus':  ['researcher','file','web','ui_cartographer'],
+  'The Forge':           ['coder','builder','scribe'],
+  'Validation Bastion':  ['verifier','tester','soldier','medic'],
+  'Memory Vault':        ['archivist','change_archivist'],
+  'Infrastructure Works':['quartermaster','inventory','proxmox','storage','backup'],
+  'Network Watch':       ['network_scout','health','security_scout'],
+};
+const CHAMBER_ORDER = Object.keys(CHAMBER_MAP);
+const CHAMBER_FALLBACK = 'Infrastructure Works';
+const ROLE_CHAMBER = (()=>{
+  const m={};
+  CHAMBER_ORDER.forEach(c=>CHAMBER_MAP[c].forEach(r=>{ m[r]=c; }));
+  return m;
+})();
+/** Chamber for a role id — never invents a chamber for an unmapped role. */
+function chamberFor(roleIdStr){ return ROLE_CHAMBER[String(roleIdStr||'').toLowerCase()]||CHAMBER_FALLBACK; }
 
-// v2.14.5: map preferences move OFF the retired chamber SVG and onto the live canvas, where they
-// now actually govern rendering. Persisted per operator; unknown values fall back safely.
-let colonyMotion = 'normal';      // off | low | normal | high
-let colonyLabels = 'all';         // off | active | all
-let colonyPheromones = 'all';     // off | active | all
-function loadColonyPrefs(){
-  try{
-    const m=localStorage.getItem('anthill.colony.motion');
-    const l=localStorage.getItem('anthill.colony.labels');
-    const p=localStorage.getItem('anthill.colony.pheromones');
-    if(['off','low','normal','high'].includes(m)) colonyMotion=m;
-    if(['off','active','all'].includes(l)) colonyLabels=l;
-    if(['off','active','all'].includes(p)) colonyPheromones=p;
-  }catch(e){}
-}
-function setColonyPref(key,value){
-  if(key==='motion') colonyMotion=value;
-  else if(key==='labels') colonyLabels=value;
-  else if(key==='pheromones') colonyPheromones=value;
-  try{ localStorage.setItem('anthill.colony.'+key, value); }catch(e){}
-}
-/** Reset the camera only — ant positions and preferences are untouched. */
-function colonyResetView(){ tZ=1; tX=0; tY=0; }
-/** Reset dragged ant positions back to the computed layout; camera and prefs untouched. */
-function colonyResetLayout(){
-  try{ Object.keys(uiState.positions||{}).forEach(k=>delete uiState.positions[k]); }catch(e){}
-  try{ uiState.chambers={}; }catch(e){}   // v2.14.7: dragged chambers return home too
-  buildNodes();
-  if(typeof saveUiState==='function') saveUiState();
-}
-loadColonyPrefs();
-
-// Delegated wiring for the canvas map controls (CSP: no inline handlers anywhere in the console).
-document.addEventListener('change', e=>{
-  const sel=e.target.closest && e.target.closest('[data-colonypref]');
-  if(!sel) return;
-  setColonyPref(sel.getAttribute('data-colonypref'), sel.value);
-});
-document.addEventListener('click', e=>{
-  const btn=e.target.closest && e.target.closest('[data-colonyact]');
-  if(!btn) return;
-  const act=btn.getAttribute('data-colonyact');
-  if(act==='reset-view') colonyResetView();
-  else if(act==='reset-layout') colonyResetLayout();
-});
-// Reflect persisted preferences in the controls once the page is parsed.
-document.addEventListener('DOMContentLoaded', ()=>{
-  const m=document.getElementById('cv-motion'); if(m) m.value=colonyMotion;
-  const l=document.getElementById('cv-labels'); if(l) l.value=colonyLabels;
-  const p=document.getElementById('cv-pher'); if(p) p.value=colonyPheromones;
-});
-
-/** Distinct chamber centres on a ring around the Queen, plus any operator-dragged offset.
- *  Deterministic: same colony + same offset = same spot, every rebuild. */
-function chamberCentres(colonies){
-  const centres={},n=Math.max(1,colonies.length),ring=Math.min(W,H)*0.33;
-  const saved=(typeof uiState==='object'&&uiState&&uiState.chambers)||{};
-  colonies.forEach((c,i)=>{
-    const a=(-90 + i*(360/n))*Math.PI/180;
-    const off=saved[c]||{dx:0,dy:0};
-    centres[c]={
-      x:cx+Math.cos(a)*ring+(+off.dx||0),
-      y:cy+Math.sin(a)*ring*0.86+(+off.dy||0),
-      label:c,
-    };
-  });
-  return centres;
-}
-
-/** v2.14.7: the drawn radius of a chamber — shared by rendering and hit-testing so what you
- *  click is exactly what you see. */
-function chamberRadius(name){
-  const c=CHAMBERS[name]; if(!c) return 0;
-  const members=nodes.filter(n=>n.colony===name&&n.nodeType!=='core');
-  if(!members.length) return 0;
-  let rad=60;
-  members.forEach(m=>{ rad=Math.max(rad, Math.hypot(m.x-c.x, m.y-c.y)+26); });
-  return rad;
-}
-
-/** Chamber under a world point, if any — innermost first so nested rings behave sensibly. */
-function chamberAt(wx,wy){
-  if(colonyView!=='group') return null;
-  let best=null,bestR=Infinity;
-  Object.keys(CHAMBERS||{}).forEach(name=>{
-    const c=CHAMBERS[name], r=chamberRadius(name);
-    if(!r) return;
-    if(Math.hypot(wx-c.x, wy-c.y)<=r && r<bestR){ best=name; bestR=r; }
-  });
-  return best;
-}
-
-/** Move a whole chamber: its centre and every ant inside it travel together. */
-function moveChamber(name,dx,dy){
-  const c=CHAMBERS[name]; if(!c) return;
-  c.x+=dx; c.y+=dy;
-  nodes.forEach(n=>{ if(n.colony===name&&n.nodeType!=='core'){ n.x+=dx; n.y+=dy; } });
-}
-
-/** Persist a dragged chamber: the centre offset AND each member's position, so a rebuild keeps it. */
-function persistChamber(name){
-  const colonies=[...new Set(visibleRoles().map(r=>roleColony(r)))]
-    .sort((a,b)=>CHAMBER_ORDER.indexOf(a)-CHAMBER_ORDER.indexOf(b));
-  const i=colonies.indexOf(name); if(i<0) return;
-  const n=Math.max(1,colonies.length), ring=Math.min(W,H)*0.33;
-  const a=(-90 + i*(360/n))*Math.PI/180;
-  const baseX=cx+Math.cos(a)*ring, baseY=cy+Math.sin(a)*ring*0.86;
-  uiState.chambers=uiState.chambers||{};
-  uiState.chambers[name]={dx:Math.round(CHAMBERS[name].x-baseX), dy:Math.round(CHAMBERS[name].y-baseY)};
-  nodes.forEach(nd=>{ if(nd.colony===name&&nd.nodeType!=='core') persistNodePosition(nd); });
-  saveUiState();
-}
 let CHAMBERS={};   // colony -> {x,y,label}; rebuilt by buildNodes in chamber mode, drawn by drawBg
 
 function colonyAngleFor(role,index,total){
@@ -820,8 +727,8 @@ async function loadColonyRegistry(){
 function buildNodes(){
   nodes=[]; edges=[];
   const bR=Math.min(W,H)*0.27;
-  nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core' });
-  nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core' });
+  nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core',chamber:"Queen's Core" });
+  nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core',chamber:"Queen's Core" });
   edges.push({from:'queen',to:'director'});
   if(!colonyRegistry){
     const fallback=['researcher','file','web','coder','builder','verifier'].map(id=>({RoleId:id,DisplayName:ANT_MAP[id].label,Colony:ANT_MAP[id].role,Purpose:'Legacy executable ant',Enabled:true,Executable:true,Workers:[]}));
@@ -831,19 +738,16 @@ function buildNodes(){
   // v2.14.5 chamber mode: cluster each colony around its own centre. Roles fan out inside their
   // chamber instead of sharing one global ring, so groups are visually distinct on the SAME canvas.
   const chamberMode=colonyView==='group';
-  CHAMBERS = chamberMode
-    ? chamberCentres([...new Set(roles.map(r=>roleColony(r)))].sort(
-        (a,b)=>CHAMBER_ORDER.indexOf(a)-CHAMBER_ORDER.indexOf(b)))
-    : {};
+  CHAMBERS = chamberMode ? chamberCentres(CHAMBER_ORDER) : {};
   const perChamber={};
-  roles.forEach(r=>{ const c=roleColony(r); perChamber[c]=(perChamber[c]||0)+1; });
+  roles.forEach(r=>{ const c=chamberFor(roleId(r)); perChamber[c]=(perChamber[c]||0)+1; });
   const seen={};
 
   roles.forEach((r,i)=>{
     const id=roleId(r),rad=colonyAngleFor(r,i,roles.length)*Math.PI/180;
     let bx=cx+Math.cos(rad)*bR, by=cy+Math.sin(rad)*bR;
     if(chamberMode){
-      const c=roleColony(r), centre=CHAMBERS[c];
+      const c=chamberFor(id), centre=CHAMBERS[c];
       if(centre){
         const k=(seen[c]=(seen[c]||0)), n=perChamber[c];
         const inner=n===1?0:Math.min(46,18+n*7);
@@ -853,7 +757,7 @@ function buildNodes(){
       }
     }
     const color=ROLE_COLORS[id]||'#7fa0bc';
-    nodes.push({id,ant:id,x:bx,y:by,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,r:ANT_R,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r)});
+    nodes.push({id,ant:id,x:bx,y:by,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,r:ANT_R,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r),chamber:chamberFor(id)});
     edges.push({from:id==='planner'||id==='constraint'?'queen':'director',to:id});
     const showWorkers=colonyView==='expanded'||colonyView==='group'||colonyView==='active';
     if(showWorkers){
@@ -863,7 +767,7 @@ function buildNodes(){
         const spread=ws.length===1?0:(wi-(ws.length-1)/2)*24;
         const cr=(colonyAngleFor(r,i,roles.length)+spread)*Math.PI/180;
         const wid=workerId(w);
-        nodes.push({id:wid,ant:id,worker:wid,x:bx+Math.cos(cr)*sR,y:by+Math.sin(cr)*sR,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id});
+        nodes.push({id:wid,ant:id,worker:wid,x:bx+Math.cos(cr)*sR,y:by+Math.sin(cr)*sR,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});
         edges.push({from:id,to:wid});
       });
     }
@@ -894,33 +798,67 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
  * ants like the rest of the map. Only rendered in chamber mode; every other view is untouched.
  * This replaces the separate SVG chamber map — same information, one renderer.
  */
+function chamberStats(name){
+  const members=nodes.filter(n=>n.chamber===name);
+  const counts=lastGraphData||{};
+  let running=0, failed=0, active=0, dormant=0;
+  members.forEach(m=>{
+    if(m.activity>0.05) active++;
+    if(m.executable===false) dormant++;
+    const key=m.nodeType==='worker'?m.worker:m.ant;
+    running+=(counts.running_counts&&counts.running_counts[key])||0;
+    failed+=(counts.failed_counts&&counts.failed_counts[key])||0;
+  });
+  const health = failed>0 ? 'alert' : active>0 ? 'live' : dormant===members.length ? 'dormant' : 'idle';
+  return {members,running,failed,active,dormant,health};
+}
+
+/** One dominant status colour per chamber — alert wins, then live, then idle, then dormant. */
+function chamberColor(health){
+  return health==='alert' ? 'rgba(255,90,120,'
+       : health==='live'  ? 'rgba(34,211,238,'
+       : health==='idle'  ? 'rgba(150,175,200,'
+                          : 'rgba(120,135,155,';
+}
+
 function drawChambers(){
   if(colonyView!=='group'||!CHAMBERS) return;
-  const names=Object.keys(CHAMBERS);
-  if(!names.length) return;
-  names.forEach(name=>{
+  Object.keys(CHAMBERS).forEach(name=>{
     const c=CHAMBERS[name];
-    const members=nodes.filter(n=>n.colony===name&&n.nodeType!=='core');
-    if(!members.length) return;
-    // Radius follows the cluster so a big chamber isn't clipped by its own ring; hit-testing uses
-    // the SAME function, so what you click is exactly the ring you see.
+    const st=chamberStats(name);
+    if(!st.members.length) return;
     const rad=chamberRadius(name);
     const p=w2s(c.x,c.y), sr=rad*camZ;
     const grabbed=draggingChamber===name;
-    const live=members.some(m=>m.activity>0.05);
+    const base=chamberColor(st.health);
+    // Subtle activity pulse, only when something is actually happening (and never under
+    // reduced motion / Motion=off).
+    const pulsing = st.health!=='dormant' && st.active>0 && colonyMotion!=='off';
+    const pulse = pulsing ? 0.06*Math.sin(performance.now()/650) : 0;
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(p.x,p.y,sr,0,Math.PI*2);
-    ctx.strokeStyle=grabbed?'rgba(34,211,238,.65)':live?'rgba(34,211,238,.30)':'rgba(120,150,180,.14)';
+    ctx.strokeStyle=base+(grabbed?0.7:(st.health==='dormant'?0.12:0.30)+pulse)+')';
     ctx.lineWidth=grabbed?2:1;
     ctx.stroke();
-    ctx.fillStyle=grabbed?'rgba(34,211,238,.06)':live?'rgba(34,211,238,.035)':'rgba(120,150,180,.02)';
+    ctx.fillStyle=base+((st.health==='dormant'?0.012:0.035)+pulse/3)+')';
     ctx.fill();
+
     if(colonyLabels!=='off'){
-      ctx.fillStyle=live?'rgba(190,225,240,.85)':'rgba(150,170,190,.55)';
-      ctx.font=`${Math.max(9,Math.round(10*camZ))}px var(--mono,monospace)`;
+      const cw=Math.max(9,Math.round(10*camZ));
       ctx.textAlign='center';
-      ctx.fillText(`${name} · ${members.length}`, p.x, p.y-sr-6);
+      ctx.font=`600 ${cw}px var(--mono,monospace)`;
+      ctx.fillStyle=base+(st.health==='dormant'?0.55:0.92)+')';
+      ctx.fillText(name, p.x, p.y-sr-8);
+      // Chamber summary only — the detail lives on the ants themselves.
+      const bits=[st.active+'/'+st.members.length+' active'];
+      if(st.running>0) bits.push(st.running+' running');
+      if(st.failed>0) bits.push(st.failed+' failed');
+      if(st.health==='dormant') bits.push('standby');
+      ctx.font=`${Math.max(8,Math.round(8.5*camZ))}px var(--mono,monospace)`;
+      ctx.fillStyle=base+0.62+')';
+      ctx.fillText(bits.join(' · '), p.x, p.y-sr+cw+2);
     }
     ctx.restore();
   });
@@ -1045,9 +983,20 @@ function drawNode(n,ts){
     // v2.14.5: label density is an operator preference (off | active-only | all). Hovered and
     // selected ants always keep their label so inspection never goes blind.
     const showLabel = colonyLabels==='all' || hov || (colonyLabels==='active' && act>0);
+    // v2.14.9: visible-only ants (gate closed / not executable) read as STANDBY — dimmed and
+    // marked, deliberately not styled like a failure.
+    const standby = n.executable===false && n.nodeType!=='core';
     if(showLabel){
       ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
-      ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},.45)`;ctx.fillText(n.label,sp.x,sp.y+r*1.8);
+      ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},${standby?.30:.45})`;
+      ctx.fillText(n.label,sp.x,sp.y+r*1.8);
+      if(standby&&(hov||colonyLabels==='all')){
+        ctx.save();
+        ctx.font=`${Math.max(7,Math.round(7.5*camZ))}px var(--mono,monospace)`;
+        ctx.fillStyle='rgba(150,170,190,.55)';
+        ctx.fillText('standby',sp.x,sp.y+r*1.8+Math.max(8,9*camZ));
+        ctx.restore();
+      }
     }
   }
   if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
@@ -6137,7 +6086,8 @@ function renderTelemetryBar(containerId){
 // Wire into page lifecycle without touching existing enter handlers.
 (function(){
   const prevOv=PAGE_ENTER['overview'];
-  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2(); };
+  PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2();
+    if(!window.__wsBooted){ window.__wsBooted=true; initDashboardWorkspace(); } };
   const prevCo=PAGE_ENTER['colony'];
   PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
   setInterval(pollTelemetry,15000);
@@ -6165,6 +6115,68 @@ async function pollOv2(){
   renderOv2Health(); renderOv2Active(jobs,missions);
   renderOv2Approvals(approvals); renderOv2Core(roles,jobs,missions,approvals);
   renderOv2Resources(); renderOv2Events(events);
+}
+
+
+// -- v2.14.9 Stage 5: the dashboard cards become registered workspace panels -----------------
+// The workspace runtime (v2.14.3/2.14.4) had a shell, drag, and resize but nothing registered in
+// it — turning the flag on produced an empty surface. These registrations reuse the EXISTING
+// renderers verbatim: each panel body borrows the element id the renderer already writes to, so
+// there is one implementation of every card and no duplicated data path. pollOv2/pollHud keep
+// filling them exactly as they fill the classic grid, so the two shells can coexist while the
+// flag decides which one is mounted.
+function wsMountTarget(bodyId, el){
+  // Re-parent the renderer's own element into the panel body: same node, same id, same writer.
+  var existing=document.getElementById(bodyId);
+  if(existing){ el.appendChild(existing); return; }
+  var made=document.createElement('div'); made.id=bodyId; el.appendChild(made);
+}
+
+function registerWorkspacePanels(){
+  if(!window.AnthillWorkspace) return;
+  var W=window.AnthillWorkspace;
+  var defs=[
+    {id:'colony-health',   title:'Colony Health',      body:'ov2-health-body',   x:24,  y:24,  w:300, h:230},
+    {id:'system-core',     title:'System Core',        body:'ov2-core-body',     x:340, y:24,  w:360, h:230},
+    {id:'missions',        title:'Missions',           body:'ov2-active-body',   x:716, y:24,  w:320, h:230},
+    {id:'approvals',       title:'Pending Approvals',  body:'ov2-approvals-body',x:24,  y:270, w:340, h:220},
+    {id:'resource-usage',  title:'Resource Usage',     body:'ov2-resources-body',x:380, y:270, w:320, h:220},
+    {id:'recent-events',   title:'Recent Events',      body:'ov2-events-body',   x:716, y:270, w:320, h:220},
+    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',  x:24,  y:506, w:340, h:200},
+  ];
+  defs.forEach(function(d){
+    W.register({
+      id:d.id, title:d.title,
+      defaultPlacement:{mode:'floating',x:d.x,y:d.y,width:d.w,height:d.h},
+      collapsible:true, minimizable:true, hideable:true, pinnable:true,
+      refreshPolicy:'visible',
+      render:function(el){ wsMountTarget(d.body, el); },
+    });
+  });
+}
+
+/** Mount the workspace on the dashboard when the server says the flag is on. */
+async function initDashboardWorkspace(){
+  if(!window.AnthillWorkspace) return;
+  var enabled=false;
+  try{
+    var h=await (await fetch(url('/health'))).json();
+    enabled=!!(h&&h.data&&h.data.dashboard_workspace_enabled);
+  }catch(e){ return; }                       // unreachable /health: keep the classic dashboard
+  if(!enabled) return;
+  var page=document.getElementById('page-overview'); if(!page) return;
+  var root=document.getElementById('ws-root');
+  if(!root){
+    root=document.createElement('div'); root.id='ws-root';
+    page.insertBefore(root, page.firstChild);
+  }
+  // The classic grid steps aside; its card bodies are re-parented into panels, so every renderer
+  // keeps writing to the same ids and nothing is duplicated.
+  var grid=document.getElementById('ov2-grid'); if(grid) grid.style.display='none';
+  registerWorkspacePanels();
+  await window.AnthillWorkspace.init(root, true);
+  if(typeof pollOv2==='function') pollOv2();
+  if(typeof pollHud==='function') pollHud();
 }
 
 // v2.2.3: restored — the events feed anchors row 3 of the balanced grid (uses data already
