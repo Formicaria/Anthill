@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v2.11.1 — Coder → Sandbox Loop Activated (NORTH_STAR V3-track, wiring)
+
+The first hot-path wiring of the v2.10/v2.11 primitives. `CoderAnt` gains an iterative sandbox path,
+gated off by default so the standard install is unchanged.
+
+- **`CoderAnt` sandbox path**: when `sandbox_execution_enabled` is true, the coder no longer emits a
+  single one-shot proposal — it runs `SandboxedCoderRunner` over the agent workspace root. Each turn
+  proposes a patch, applies it INSIDE a disposable git-worktree sandbox, runs the allowlisted
+  `dotnet_build` check there, and — on failure — feeds the check output back into the prompt for a
+  corrected attempt, all bounded by `BoundedAgentLoop`. The run returns the coder's best patch JSON
+  (verified in-sandbox when the loop completed) as the SAME structure `ProcessPatchProposals` already
+  parses, so approval/apply is unchanged.
+- **Fail-safe by construction**: the entire previous one-shot path is preserved and used as the
+  default AND as the fallback whenever the sandbox path is unavailable — gate off, no usable
+  workspace root, or the check is refused. The live workspace is never modified (writes stay in the
+  sandbox; dispose destroys it), and every proposal remains human-approval-gated before apply.
+- **Prompt**: `CoderAnt`'s prompt builder is factored into `BuildPrompt(task, mission, context,
+  feedback)`; the feedback block is appended only on sandbox retries, so the one-shot prompt is
+  byte-identical to v2.11.0.
+- Still ahead in v2.11.x: wiring `ModelRouter.GetRoute` to consult `ModelRoutingPolicy` with a
+  persisted stats snapshot, and the live Command console.
+
 ## v2.11.0 — Sandboxed Coder Loop + Model Routing Intelligence (NORTH_STAR V3-track, wiring-ready)
 
 Turns the inert v2.10.0 primitives into usable engines. Honest scope: both land as ADDITIVE,
