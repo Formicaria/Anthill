@@ -15,7 +15,9 @@ namespace Anthill.Core.Planning;
 /// </summary>
 public sealed class Planner
 {
-    private static readonly HashSet<string> AllowedAnts = new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
+    // Stage D: derived per access (never cached) so specialist rollout gates apply immediately —
+    // one canonical role catalog, no duplicated executable lists (spec §7.1).
+    private static HashSet<string> AllowedAnts => new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
 
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
@@ -212,10 +214,36 @@ Required JSON:
             }
             valid.Add(task);
         }
+        // Execution framework Stage E: deterministic specialist routing. For a UI-modification
+        // goal, the UI cartographer maps the real frontend BEFORE the coder proposes changes —
+        // but only when its rollout gates are open, and never for backend-only work (spec §7.3/§7.4).
+        valid = InjectSpecialistRouting(valid, goal);
+
         // v2.9.0 contract gate (NORTH_STAR V3-track Phase 2): every path out of the planner funnels
         // through here — planner output is schema-validated against its TaskContract projection and
         // invalid tasks cannot enter the execution queue. Rejections are loud, never silent.
         return Contracts.ContractGate.Admit(valid, reason => Console.Error.WriteLine(reason));
+    }
+
+    internal static List<Task> InjectSpecialistRouting(List<Task> tasks, string goal)
+    {
+        var lowered = goal.ToLowerInvariant();
+        var uiGoal = new[] { "ui", "frontend", "page", "css", "html", "javascript", "dashboard", "canvas" }.Any(lowered.Contains);
+        var hasCoder = tasks.Any(t => t.AssignedAnt == "coder");
+        var hasMapper = tasks.Any(t => t.AssignedAnt == "ui_cartographer");
+        if (uiGoal && hasCoder && !hasMapper && AntRegistry.ExecutableRoleIds.Contains("ui_cartographer"))
+        {
+            var mapTask = new Task
+            {
+                Title = "Map the frontend (read-only)",
+                Description = $"Produce a structured UI map (routes, functions, API calls, modification points) before any UI change: {goal}",
+                AssignedAnt = "ui_cartographer", TaskType = "ui_mapping",
+            };
+            var coderIndex = tasks.FindIndex(t => t.AssignedAnt == "coder");
+            tasks.Insert(coderIndex, mapTask);
+            tasks[coderIndex + 1].DependsOn.Add(mapTask.Id); // coder waits for the real map
+        }
+        return tasks;
     }
 
     private List<Task> TasksFromJson(JsonObject parsed, string goal)

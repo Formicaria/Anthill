@@ -95,6 +95,11 @@ V2.7.0   Full homelab operations layer                 [BASELINE]
 
 V2.8.0   Durable Mission Runtime                       [SHIPPED v2.8.0]
 V2.9.0   Contracted Tasks and Typed Capability Tools   [SHIPPED v2.9.0]
+V2.9.x   Ant Execution Framework tactical track (docs/ANT_EXECUTION.md):
+         runtime classification · execution contracts · structured results ·
+         capability-enforced dispatch · canary activation (ui_cartographer, tester,
+         soldier, scribe, medic, archivist — gated off by default) · planner routing ·
+         bounded handoffs · truthful UI status · validation gates
 V2.10.0  Sandboxed Agent Execution
 V2.11.0  Independent Verification and Evidence
 V2.12.0  Procedural Skills and Evaluated Learning

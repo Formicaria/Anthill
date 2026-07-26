@@ -47,6 +47,19 @@ public sealed class ToolRegistry
             return missing;
         }
 
+        // Execution framework Stage B: enforce the caller's declared boundary BEFORE the tool runs.
+        // A denial is a structured failure with an audit event and zero side effects; spoofing an
+        // unknown ant name is refused outright.
+        var decision = ToolAuthorization.Evaluate(antName, name);
+        if (!decision.Allowed)
+        {
+            var denied = new ToolResult(name, false, "", $"authorization_denied: {decision.Reason}");
+            if (missionId is not null)
+                _memory.LogEvent(missionId, "tool_denied", $"Tool DENIED: {name}", taskId, antName,
+                    new() { ["tool_name"] = name, ["ant_name"] = antName, ["reason"] = decision.Reason });
+            return denied;
+        }
+
         ToolResult result;
         try
         {

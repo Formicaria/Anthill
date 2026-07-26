@@ -329,6 +329,27 @@ public static partial class ApiHost
                 ["view_modes"] = new[] { "command", "expanded", "active", "group" },
                 ["executable_roles"] = AntRegistry.ExecutableRoleIds.ToList(),
                 ["worker_telemetry"] = Queen.Memory.SummarizeWorkerTelemetry(),
+                // Execution framework Stage F: truthful per-role runtime state — the UI must never
+                // reduce "not running" to a single ambiguous 'inactive'.
+                ["runtime_status"] = AntExecutorCatalog.Snapshot.Values.Select(a => new Dictionary<string, object?>
+                {
+                    ["role_id"] = a.RoleId,
+                    ["runtime_kind"] = a.RuntimeKind.ToString(),
+                    ["implemented"] = a.Implemented,
+                    ["enabled"] = a.Enabled,
+                    ["planner_eligible"] = a.PlannerEligible,
+                    ["runtime_available"] = a.RuntimeAvailable,
+                    ["unavailability_reason"] = a.UnavailabilityReason,
+                    ["status_label"] = a.RuntimeKind switch
+                    {
+                        Anthill.Core.Agents.AntRuntimeKind.ControlPlane => "Control Plane — Online",
+                        Anthill.Core.Agents.AntRuntimeKind.DeterministicService => "Deterministic Service — Online",
+                        Anthill.Core.Agents.AntRuntimeKind.VisualScaffold => "Visual Scaffold — Not Implemented",
+                        _ when a.RuntimeAvailable => "Mission Agent — Idle",
+                        _ when a.Implemented => $"Mission Agent — {(a.UnavailabilityReason.Contains("disabled") ? "Disabled" : "Unavailable")}",
+                        _ => "Unavailable — Missing Runtime Handler",
+                    },
+                }).ToList(),
             }));
         app.MapGet("/colony/workers/telemetry", (HttpContext ctx) =>
             RequireAuth(ctx, "read_graph") ?? ApiJson.Ok(Queen.Memory.SummarizeWorkerTelemetry()));

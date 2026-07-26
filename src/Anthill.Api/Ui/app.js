@@ -2438,9 +2438,13 @@ async function loadAntObs(){
 // can be inspected here, matching the colony map inspector.
 async function loadAntObsDirectory(grid){
   try{
-    const r=await api('/colony/registry'); if(!(r&&r.success&&r.data))return;
+    // Stage F: truthful runtime state per role — never a bare 'inactive'.
+    const [r,g]=await Promise.all([api('/colony/registry'),api('/colony/graph')]);
+    if(!(r&&r.success&&r.data))return;
     const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
     if(!roles.length)return;
+    const rt={};
+    ((g&&g.success&&g.data&&g.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
     const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
     const html=roles.map(role=>{
       const rid=antRoleId(role), rname=antRoleName(role);
@@ -2448,9 +2452,12 @@ async function loadAntObsDirectory(grid){
       if(label==='Other')label=getRoleLabel(rname);
       const color=getRoleColor(label==='Other'?rid:label);
       const workers=antWorkers(role);
+      const s=rt[String(rid).toLowerCase()];
+      const stateColor=s? (s.runtime_available||s.runtime_kind!=='MissionAgent'?'var(--green)':(s.implemented?'var(--orange)':'var(--dim)')) : 'var(--dim)';
       return `<div class="ant-card" style="border-left-color:${color}">
         <div class="ac-hd"><span class="ac-dot" style="color:${color};background:${color}"></span>
           <span class="ac-name">${escapeHtml(rname)}</span><span class="ac-role">${escapeHtml(label)}</span></div>
+        ${s?`<div style="font-size:9px;font-weight:700;color:${stateColor};margin:2px 0;" title="${escapeHtml(s.unavailability_reason||'')}">${escapeHtml(s.status_label||'')}</div>`:''}
         ${antPurpose(role)?`<div class="ac-sub" style="margin:4px 0 6px;">${escapeHtml(antPurpose(role))}</div>`:''}
         ${workers.length?`<div style="font-size:9px;color:var(--dim);margin-bottom:2px;">WORKERS · ${workers.length}</div>`+
           workers.map(w=>`<div style="padding:3px 0;border-bottom:1px solid rgba(30,51,84,.4);font-size:10px;">
