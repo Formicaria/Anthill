@@ -681,11 +681,79 @@ function visibleRoles(){
   }
   return roles;
 }
+// v2.14.5: chambers are a LAYOUT of the live colony canvas, not a second renderer. The old
+// 'group' arc-spread only nudged roles along one arc; real chambers cluster each colony around
+// its own centre so the structure reads at a glance — and every canvas capability (drag, pan,
+// zoom, pulses, pheromones, inspector, handoff edges) keeps working unchanged underneath.
+const CHAMBER_ORDER=['Command','Command / Safety','Context','Workspace','External Research','UI',
+  'Code','Testing','Verification','Security','Repair','Memory','Resources','Communication / Docs'];
+
+// v2.14.5: map preferences move OFF the retired chamber SVG and onto the live canvas, where they
+// now actually govern rendering. Persisted per operator; unknown values fall back safely.
+let colonyMotion = 'normal';      // off | low | normal | high
+let colonyLabels = 'all';         // off | active | all
+let colonyPheromones = 'all';     // off | active | all
+function loadColonyPrefs(){
+  try{
+    const m=localStorage.getItem('anthill.colony.motion');
+    const l=localStorage.getItem('anthill.colony.labels');
+    const p=localStorage.getItem('anthill.colony.pheromones');
+    if(['off','low','normal','high'].includes(m)) colonyMotion=m;
+    if(['off','active','all'].includes(l)) colonyLabels=l;
+    if(['off','active','all'].includes(p)) colonyPheromones=p;
+  }catch(e){}
+}
+function setColonyPref(key,value){
+  if(key==='motion') colonyMotion=value;
+  else if(key==='labels') colonyLabels=value;
+  else if(key==='pheromones') colonyPheromones=value;
+  try{ localStorage.setItem('anthill.colony.'+key, value); }catch(e){}
+}
+/** Reset the camera only — ant positions and preferences are untouched. */
+function colonyResetView(){ tZ=1; tX=0; tY=0; }
+/** Reset dragged ant positions back to the computed layout; camera and prefs untouched. */
+function colonyResetLayout(){
+  try{ Object.keys(uiState.positions||{}).forEach(k=>delete uiState.positions[k]); }catch(e){}
+  buildNodes();
+  if(typeof saveUiState==='function') saveUiState();
+}
+loadColonyPrefs();
+
+// Delegated wiring for the canvas map controls (CSP: no inline handlers anywhere in the console).
+document.addEventListener('change', e=>{
+  const sel=e.target.closest && e.target.closest('[data-colonypref]');
+  if(!sel) return;
+  setColonyPref(sel.getAttribute('data-colonypref'), sel.value);
+});
+document.addEventListener('click', e=>{
+  const btn=e.target.closest && e.target.closest('[data-colonyact]');
+  if(!btn) return;
+  const act=btn.getAttribute('data-colonyact');
+  if(act==='reset-view') colonyResetView();
+  else if(act==='reset-layout') colonyResetLayout();
+});
+// Reflect persisted preferences in the controls once the page is parsed.
+document.addEventListener('DOMContentLoaded', ()=>{
+  const m=document.getElementById('cv-motion'); if(m) m.value=colonyMotion;
+  const l=document.getElementById('cv-labels'); if(l) l.value=colonyLabels;
+  const p=document.getElementById('cv-pher'); if(p) p.value=colonyPheromones;
+});
+
+/** Distinct chamber centres on a ring around the Queen. Deterministic: same colony, same spot. */
+function chamberCentres(colonies){
+  const centres={},n=Math.max(1,colonies.length),ring=Math.min(W,H)*0.33;
+  colonies.forEach((c,i)=>{
+    const a=(-90 + i*(360/n))*Math.PI/180;
+    centres[c]={x:cx+Math.cos(a)*ring, y:cy+Math.sin(a)*ring*0.86, label:c};
+  });
+  return centres;
+}
+let CHAMBERS={};   // colony -> {x,y,label}; rebuilt by buildNodes in chamber mode, drawn by drawBg
+
 function colonyAngleFor(role,index,total){
   if(colonyView!=='group') return -90 + index*(360/Math.max(1,total));
-  const order=['Command','Command / Safety','Context','Workspace','External Research','UI','Code','Testing','Verification','Security','Repair','Memory','Resources','Communication / Docs'];
-  const c=roleColony(role),ci=Math.max(0,order.indexOf(c));
-  return -115 + ci*(230/Math.max(1,order.length-1)) + (index%3-1)*7;
+  const c=roleColony(role),ci=Math.max(0,CHAMBER_ORDER.indexOf(c));
+  return -115 + ci*(230/Math.max(1,CHAMBER_ORDER.length-1)) + (index%3-1)*7;
 }
 async function loadColonyRegistry(){
   try{
@@ -708,9 +776,30 @@ function buildNodes(){
     colonyRegistry={roles:fallback};
   }
   const roles=visibleRoles();
+  // v2.14.5 chamber mode: cluster each colony around its own centre. Roles fan out inside their
+  // chamber instead of sharing one global ring, so groups are visually distinct on the SAME canvas.
+  const chamberMode=colonyView==='group';
+  CHAMBERS = chamberMode
+    ? chamberCentres([...new Set(roles.map(r=>roleColony(r)))].sort(
+        (a,b)=>CHAMBER_ORDER.indexOf(a)-CHAMBER_ORDER.indexOf(b)))
+    : {};
+  const perChamber={};
+  roles.forEach(r=>{ const c=roleColony(r); perChamber[c]=(perChamber[c]||0)+1; });
+  const seen={};
+
   roles.forEach((r,i)=>{
     const id=roleId(r),rad=colonyAngleFor(r,i,roles.length)*Math.PI/180;
-    const bx=cx+Math.cos(rad)*bR,by=cy+Math.sin(rad)*bR;
+    let bx=cx+Math.cos(rad)*bR, by=cy+Math.sin(rad)*bR;
+    if(chamberMode){
+      const c=roleColony(r), centre=CHAMBERS[c];
+      if(centre){
+        const k=(seen[c]=(seen[c]||0)), n=perChamber[c];
+        const inner=n===1?0:Math.min(46,18+n*7);
+        const a=(k/Math.max(1,n))*Math.PI*2;
+        bx=centre.x+Math.cos(a)*inner; by=centre.y+Math.sin(a)*inner;
+        seen[c]=k+1;
+      }
+    }
     const color=ROLE_COLORS[id]||'#7fa0bc';
     nodes.push({id,ant:id,x:bx,y:by,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,r:ANT_R,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r)});
     edges.push({from:id==='planner'||id==='constraint'?'queen':'director',to:id});
@@ -748,6 +837,42 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
   });
 });
 
+/**
+ * v2.14.5: chamber rings + labels, drawn in WORLD space so they pan, zoom, and sit beneath the
+ * ants like the rest of the map. Only rendered in chamber mode; every other view is untouched.
+ * This replaces the separate SVG chamber map — same information, one renderer.
+ */
+function drawChambers(){
+  if(colonyView!=='group'||!CHAMBERS) return;
+  const names=Object.keys(CHAMBERS);
+  if(!names.length) return;
+  names.forEach(name=>{
+    const c=CHAMBERS[name];
+    const members=nodes.filter(n=>n.colony===name&&n.nodeType!=='core');
+    if(!members.length) return;
+    // Radius follows the cluster so a big chamber isn't clipped by its own ring.
+    let rad=60;
+    members.forEach(m=>{ rad=Math.max(rad, Math.hypot(m.x-c.x, m.y-c.y)+26); });
+    const p=w2s(c.x,c.y), sr=rad*camZ;
+    const live=members.some(m=>m.activity>0.05);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,sr,0,Math.PI*2);
+    ctx.strokeStyle=live?'rgba(34,211,238,.30)':'rgba(120,150,180,.14)';
+    ctx.lineWidth=1;
+    ctx.stroke();
+    ctx.fillStyle=live?'rgba(34,211,238,.035)':'rgba(120,150,180,.02)';
+    ctx.fill();
+    if(colonyLabels!=='off'){
+      ctx.fillStyle=live?'rgba(190,225,240,.85)':'rgba(150,170,190,.55)';
+      ctx.font=`${Math.max(9,Math.round(10*camZ))}px var(--mono,monospace)`;
+      ctx.textAlign='center';
+      ctx.fillText(`${name} · ${members.length}`, p.x, p.y-sr-6);
+    }
+    ctx.restore();
+  });
+}
+
 function updateNodeActivity(){
   nodes.forEach(n=>{
     if(n.id==='queen'){n.activity=colonyRunning?1:.3;return;}
@@ -768,7 +893,9 @@ function spawnParticle(e){
 let lastSpawn=0;
 function maybeSpawn(ts){
   if(!colonyRunning) return;
-  const dt=200-modelCallRate*80;
+  if(colonyMotion==='off') return;                    // v2.14.5: motion preference governs particles
+  const rate = colonyMotion==='low' ? 0.4 : colonyMotion==='high' ? 1.6 : 1;
+  const dt=(200-modelCallRate*80)/rate;
   if(ts-lastSpawn<Math.max(80,dt)) return;
   lastSpawn=ts;
   const active=edges.filter(e=>{const tn=nodes.find(n=>n.id===e.to);return tn&&tn.activity>0;});
@@ -862,8 +989,13 @@ function drawNode(n,ts){
   ctx.beginPath();ctx.arc(sp.x,sp.y,r*.45,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${act>0?.1:.03})`;ctx.fill();
   if(r>7&&camZ>.42){
     ctx.font=`${Math.max(9,10*camZ)}px 'Segoe UI',sans-serif`;ctx.textAlign='center';
-    ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
-    ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},.45)`;ctx.fillText(n.label,sp.x,sp.y+r*1.8);
+    // v2.14.5: label density is an operator preference (off | active-only | all). Hovered and
+    // selected ants always keep their label so inspection never goes blind.
+    const showLabel = colonyLabels==='all' || hov || (colonyLabels==='active' && act>0);
+    if(showLabel){
+      ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
+      ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},.45)`;ctx.fillText(n.label,sp.x,sp.y+r*1.8);
+    }
   }
   if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
 }
@@ -1013,8 +1145,9 @@ function loop(ts){
   requestAnimationFrame(loop);
   camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
   drawBg();
+  drawChambers();                  // v2.14.5: chamber grouping lives on this canvas, under the edges
   edges.forEach(e=>drawEdge(e));
-  drawPheromoneField();            // Real-pheromone drift under the structural edges
+  if(colonyPheromones!=='off') drawPheromoneField(); // Real-pheromone drift under structural edges
   if(showHandoffs) dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
   maybeSpawn(ts);
   particles=particles.filter(p=>(p.t+=p.speed)<=1);

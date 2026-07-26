@@ -147,6 +147,10 @@
    #colony-viewbar instead, which is already correctly positioned top-right. */
 #page-colony:not(.cmap-mode) #cmap2-bar{display:none !important;}
 .cv-sep{width:1px;height:14px;background:var(--border);margin:0 3px;}
+.cv-lbl{font-size:8px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-left:4px;}
+.cv-sel{background:rgba(2,6,23,.7);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;border-radius:4px;padding:2px 4px;cursor:pointer;}
+.cv-sel:focus-visible{outline:2px solid var(--hud-cyan);outline-offset:1px;}
 #page-colony.cmap-mode #cmap2-wrap{flex:1;min-height:0;}
 #page-colony.cmap-mode #cmap2{height:calc(100vh - 250px);min-height:480px;cursor:grab;}
 #page-colony.cmap-mode #cmap2:active{cursor:grabbing;}
@@ -1525,11 +1529,28 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="cv-btn on" data-view="command" title="Queen, Director, and main ant hubs">Command</button>
             <button class="cv-btn" data-view="expanded" title="Show specialized sub-ants">Expanded</button>
             <button class="cv-btn" data-view="active" title="Only current mission path">Active</button>
-            <button class="cv-btn" data-view="group" title="Group by colony">Groups</button>
+            <button class="cv-btn" data-view="group" title="Organize the ants into their chambers, in place on this canvas">Chambers</button>
             <button class="cv-btn on" data-toggle="handoffs" title="Show active handoff edges">Handoffs</button>
             <span class="cv-sep"></span>
-            <button class="cv-btn" data-onclick="cmapSetView('chamber')" title="Switch to the role-grouped chamber map">🗺 Chamber Map</button>
-            <button class="cv-btn" data-onclick="cmapSetView('expanded')" title="Switch to the chamber map with every ant visible">🗺 Expanded Map</button>
+            <!-- v2.14.5: map preferences live on the live colony canvas. The separate chamber SVG
+                 is being retired — "Groups" above organizes the same ants into chambers in place. -->
+            <label class="cv-lbl" for="cv-motion">Motion</label>
+            <select class="cv-sel" id="cv-motion" data-colonypref="motion" title="Particle/animation density">
+              <option value="off">Off</option><option value="low">Low</option>
+              <option value="normal" selected>Normal</option><option value="high">High</option>
+            </select>
+            <label class="cv-lbl" for="cv-labels">Labels</label>
+            <select class="cv-sel" id="cv-labels" data-colonypref="labels" title="Ant label density">
+              <option value="off">Off</option><option value="active">Active</option>
+              <option value="all" selected>All</option>
+            </select>
+            <label class="cv-lbl" for="cv-pher">Pheromones</label>
+            <select class="cv-sel" id="cv-pher" data-colonypref="pheromones" title="Pheromone trail visibility">
+              <option value="off">Off</option><option value="active">Active</option>
+              <option value="all" selected>All</option>
+            </select>
+            <button class="cv-btn" data-colonyact="reset-view" title="Reset pan and zoom">⤾ View</button>
+            <button class="cv-btn" data-colonyact="reset-layout" title="Return dragged ants to the computed layout">⌂ Layout</button>
           </div>
           <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
           <!-- Mission bar overlays the bottom of the canvas -->
