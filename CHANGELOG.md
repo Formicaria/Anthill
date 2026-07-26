@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.14.6 — The pheromone field now tells the truth per ant
+
+The pheromone data was always real — persisted trail strengths in SQLite, reinforced +0.02 on tool
+success and decayed −0.04 on failure, with `ant:<role>` and `worker:<id>` trails recorded per
+mission. The *visualization* was not: every mote picked a **random** ant, and the only real input
+was a single average of the top three trails. So drift from CoderAnt implied nothing about the
+coder's own memory — the honest reading was "some trails somewhere are strong."
+
+Now the picture is sound:
+
+- Motes are emitted by **specific ants that actually have a trail** (`ant:` / `worker:` keys,
+  with a worker's trail also crediting its parent role).
+- Each ant's **share of the motes is proportional to its own recorded strength**, so heavier drift
+  from an ant means that ant's approaches are the ones currently working.
+- **Brightness and size carry that ant's strength**, so a weak trail reads as a faint thread
+  instead of borrowing the colony average.
+- Emitters that lose their trail have their motes retired; ants with no trail emit nothing (the
+  field goes quiet on a cold colony rather than inventing motion).
+- The poll keeps enough rows for per-ant emission; the HUD trail bars still show the top few.
+
+Data source is unchanged (`/pheromones/json`), and the Pheromones control from v2.14.5 still only
+hides the visualization — pheromone memory keeps recording and feeding the learning loop either way.
+
+Scope note: retiring the now-redundant chamber SVG (`cmap2`) is deliberately **not** in this
+release. It is 15 functions and ~145 references across `app.js` and `index.html`; bundling a
+deletion that size with a rendering change would make a regression hard to attribute. It lands in
+v2.14.7 as its own reviewable commit.
+
 ## v2.14.5 — Topology consolidation: chambers become a layout of the live colony canvas
 
 The console had two topology renderers — the mature canvas and the chamber SVG — with two sets of
