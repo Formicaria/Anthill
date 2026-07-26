@@ -26,6 +26,11 @@ public sealed class DashboardWorkspaceState
     /// <summary>Workspace bounds used for clamping when the client hasn't reported its size.</summary>
     public const int DefaultViewportWidth = 1600;
     public const int DefaultViewportHeight = 900;
+    /// <summary>Bounds used to sanity-check the compact profile when it is NOT the active one.</summary>
+    public const int DefaultCompactWidth = 430;
+    public const int DefaultCompactHeight = 900;
+    /// <summary>Viewports narrower than this are the compact profile.</summary>
+    public const int CompactBreakpoint = 900;
     /// <summary>A panel must keep at least this much of its header reachable on screen.</summary>
     public const int MinVisibleEdge = 64;
 
@@ -105,17 +110,20 @@ public sealed class DashboardWorkspaceState
         TabGroups ??= new();
         TopologyOverlays ??= new();
 
-        foreach (var (_, panels) in Profiles)
+        foreach (var (profile, panels) in Profiles)
         {
+            // Each profile is clamped against ITS OWN form factor, never the caller's. Loading the
+            // console on a phone must not squash the desktop arrangement into 390px.
+            var (pw, ph) = BoundsFor(profile, vw, vh);
             foreach (var id in panels.Keys.ToList())
             {
                 if (!knownPanelIds.Contains(id)) { panels.Remove(id); continue; } // no renderer
                 var p = panels[id] ?? new PanelPlacement();
-                panels[id] = SanitizePanel(p, vw, vh);
+                panels[id] = SanitizePanel(p, pw, ph);
             }
             // Newly shipped panels join the layout WITHOUT disturbing customized ones.
             foreach (var id in knownPanelIds.Where(k => !panels.ContainsKey(k)))
-                panels[id] = SanitizePanel(new PanelPlacement { X = 40, Y = 40 }, vw, vh);
+                panels[id] = SanitizePanel(new PanelPlacement { X = 40, Y = 40 }, pw, ph);
         }
 
         SanitizeTabGroups(knownPanelIds, vw, vh);
@@ -131,6 +139,21 @@ public sealed class DashboardWorkspaceState
             TopologyOverlays[id] = new OverlayState();
 
         return this;
+    }
+
+    /// <summary>
+    /// Clamping bounds for a profile. The profile matching the caller's viewport uses the real
+    /// measurements; the other profile is checked against its own defaults so switching device
+    /// never rewrites the layout you built on the other one.
+    /// </summary>
+    private static (int W, int H) BoundsFor(string profile, int vw, int vh)
+    {
+        var viewportIsCompact = vw < CompactBreakpoint;
+        var profileIsCompact = profile == "compact";
+        if (profileIsCompact == viewportIsCompact) return (vw, vh);
+        return profileIsCompact
+            ? (DefaultCompactWidth, DefaultCompactHeight)
+            : (DefaultViewportWidth, DefaultViewportHeight);
     }
 
     private static PanelPlacement SanitizePanel(PanelPlacement p, int vw, int vh)
