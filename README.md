@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.8.0
+**Current version:** v2.9.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -110,7 +110,7 @@ Recent important changes:
 | `v1.8.15` | Gated auto-apply path with verification and rollback controls. |
 | `v1.8.12` | ResourceGovernor and concurrent mission handling. |
 
-For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** — the canonical build order.
+For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** — the canonical build order. Since v2.9.0, planner output is schema-validated against machine-readable task contracts with capability-based permissions — see **[docs/CONTRACTS.md](docs/CONTRACTS.md)**.
 
 ---
 
