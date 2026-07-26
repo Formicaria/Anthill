@@ -101,41 +101,46 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.14.10) — start here
+## WHERE WE ARE (as of v2.14.13) — start here
 
 **Shipped and working:**
 
 - Server-side workspace state model with validation, clamping, off-screen recovery, and
   desktop/compact profile isolation (`DashboardWorkspaceState`, 20 xUnit tests).
-- Panel shell runtime (`dashboard-workspace.js/.css`, CSP-safe, no inline JS) with collapse,
-  minimize-to-tray, hide + Modules-menu restore, pin, layout lock, focus mode, reset layout.
-- Pointer-event drag and resize with map arbitration, edge snapping (Alt/Cmd bypass), rAF movement,
-  save-once-at-pointerup.
+- Panel shell runtime (`dashboard-workspace.js/.css`, CSP-safe) with collapse, minimize-to-tray,
+  hide + Modules-menu restore, pin, layout lock, focus mode, reset layout.
+- Pointer-event drag and resize with map arbitration, edge snapping, rAF movement, save-at-pointerup.
 - **One** topology renderer: the live colony canvas. The chamber SVG is fully deleted.
-- Chambers as a canvas layout: seven fixed functional chambers, draggable as a unit, renamable by
-  double-click, summary-only rings, standby marking for visible-only ants.
-- Canvas map preferences (motion / labels / pheromones, reset view, reset layout) with persistence.
+- Chambers as a canvas layout: seven fixed chambers, draggable as a unit, renamable by double-click.
+- Canvas map preferences (motion / labels / pheromones, reset view, reset layout).
 - Per-ant truthful pheromone field.
 - Seven dashboard cards registered as workspace panels reusing the existing renderers.
+- **Editable Ant Inspector** (Stage 3e) — the existing `#colony-right` card now edits name, accent
+  colour, and model route, and shows chamber, runtime status, planner eligibility, pheromone
+  strength, and workspace path allowlists.
+- **Topology as the dashboard canvas** (Stage 6) — `#colony-canvas-area` is re-parented between the
+  Colony page and a `#ws-topology` layer behind `#ws-root`. One canvas, one loop, one polling path.
 
-**The flag is still `dashboard_workspace_enabled: false` by default.** Turning it on shows the panel
-workspace over the *classic dashboard page* — the topology is **not yet** the background. That is
-the next milestone.
+**The flag is still `dashboard_workspace_enabled: false` by default.** With it on, the dashboard now
+renders the live topology full-bleed behind the floating panels; with it off nothing changes.
 
-**Next three sessions, in order:**
+### Release numbering correction
 
-1. **v2.14.11 — Editable Ant Inspector** (spec below under "Queued: editable Ant Inspector side
-   panel"). Self-contained; does not block the topology work.
-2. **v2.14.12 — Topology as the dashboard canvas (Stage 6).** The big one. Move the canvas mount so
-   the dashboard renders it full-bleed behind `#ws-root`, with panels above. Watch for: the canvas
-   sizes from its container (`resize()`), so it must be measured after the workspace mounts; keep
-   ONE render loop and one `PAGE_ENTER` polling path; verify pointer arbitration end-to-end (panel
-   drag must not pan the map, and empty canvas must still pan).
-3. **v2.14.13 — Topology overlays (Stage 7).** Make the canvas viewbar, legend/keys, hints, and the
+v2.14.11 and v2.14.12 were both consumed by hotfixes (colony layout, then the missing colony/chamber
+definitions), so the feature stages shifted. The table below is the corrected mapping.
+
+**Next, in order:**
+
+1. **v2.14.14 — Topology overlays (Stage 7).** Make the canvas viewbar, legend/keys, hints, and the
    inspector independently hideable and anchor-positioned, with a Topology Overlays menu.
+2. **v2.14.15 — Tab groups (Stage 4).**
+3. **v2.15.0 — Unified workspace, default layout, lifecycle audit (Stage 8), then route
+   consolidation with the legacy Colony redirect (Stage 9) and the responsive/a11y pass (Stage 10).**
 
-Then: tab groups (Stage 4), route consolidation with the legacy Colony redirect (Stage 9),
-responsive/a11y pass (Stage 10). Docking and split-panels remain deferred and optional.
+**Known gap, stated honestly:** the render loop currently suppresses drawing only when the tab is
+backgrounded or the canvas measures zero (i.e. its page is `display:none`). Occlusion-based
+throttling — "mostly covered by panels" — is **not** implemented. A wrong "it's hidden" silently
+freezes the map, and this repo has paid for that twice, so it is not being guessed at.
 
 ## Build order and status
 
@@ -149,13 +154,13 @@ responsive/a11y pass (Stage 10). Docking and split-panels remain deferred and op
 | 3b2 | Pheromone field tells per-ant truth (emission and brightness from each ant's own trail) | v2.14.6 | **done** |
 | 3b3 | Chambers draggable as a unit (centre + member ants, persisted) | v2.14.7 | **done** |
 | 3c | Retire the chamber SVG: markup, control bar, inspector, page plumbing removed; search repointed at the canvas | v2.14.8 | **done** |
-| 3c2 | Sweep the now-unreachable `cmap*` functions and orphaned `#cmap2` CSS (dead code, no behaviour) | v2.14.9 | planned |
+| 3c2 | Sweep the now-unreachable `cmap*` functions and orphaned `#cmap2` CSS (dead code, no behaviour) | v2.14.9 | **done** |
 | 3d | Chamber renaming (double-click, mirroring ant rename; canonical keys unchanged) | v2.14.10 | **done** |
-| 3e | Editable Ant Inspector side panel — see the spec above | v2.14.11 | planned |
-| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.12 | planned |
+| 3e | Editable Ant Inspector side panel — see the spec above | v2.14.13 | **done** |
+| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.15 | planned |
 | 5 | Migrate existing dashboard cards to registered panels — renderers reused verbatim by re-parenting their own body elements, so there is one implementation per card | v2.14.9 | **done** |
-| 6 | **Topology as the dashboard canvas** — mount the live canvas full-bleed behind `#ws-root`; measure after mount, one render loop, one polling path, verify arbitration | v2.14.12 | **next after 3e** |
-| 7 | Topology overlays: view controls, legends/keys, inspector, prefs, hints — all hideable + anchored, with a Topology Overlays menu | v2.14.13 | planned |
+| 6 | **Topology as the dashboard canvas** — mount the live canvas full-bleed behind `#ws-root`; measure after mount, one render loop, one polling path, verify arbitration | v2.14.13 | **done** |
+| 7 | Topology overlays: view controls, legends/keys, inspector, prefs, hints — all hideable + anchored, with a Topology Overlays menu | v2.14.14 | planned |
 | 8 | Unified workspace + polished default layout + lifecycle audit (no duplicate timers/listeners) | v2.15.0 | planned |
 | 9 | Route consolidation + legacy Colony redirect (flag still respected) | v2.15.x | planned |
 | 10 | Responsive (compact profile) + accessibility pass | v2.15.x | planned |
@@ -164,10 +169,22 @@ responsive/a11y pass (Stage 10). Docking and split-panels remain deferred and op
 Docking/split-panel layouts are explicitly **deferred** past stage 10 and are not required for the
 feature to be considered delivered.
 
-## Queued: editable Ant Inspector side panel (operator request, next release)
+## Delivered in v2.14.13: editable Ant Inspector side panel (operator request)
 
-Clicking an ant on the live colony canvas must open a right-side inspector that both **shows** and
-**edits** that ant. Specified here so it is built once, correctly:
+Clicking an ant on the live colony canvas opens the right-side inspector, which both **shows** and
+**edits** that ant. Built into the existing `#colony-right` Agent Inspector card — no second panel.
+
+Two deviations from the spec below, both deliberate:
+
+- **Execution contract detail** (supported task types, required capabilities, side-effect and risk
+  class, compensation) is *not* shown, because `/colony/registry` does not expose it. What the
+  endpoint does expose — runtime kind, implemented, enabled, planner-eligible, runtime-available,
+  and the unavailability reason — is shown in full. Inventing the rest was not an option.
+- **Name and colour are caste-level.** Worker nodes derive their label and colour from their caste
+  in `applyUiState`, so a worker's inspector edits the caste and says so, rather than pretending to
+  offer a per-worker name that nothing would read.
+
+Original specification:
 
 **Shows (read-only):** role id and display name, chamber, runtime kind, implemented / enabled /
 planner-eligible / runtime-available with the unavailability reason, execution contract (supported
