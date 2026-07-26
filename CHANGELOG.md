@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v2.9.0 — Contracted Tasks + Typed Capability Tools (NORTH_STAR V3-track Phase 2)
+
+Machine-readable contracts replace loose prompt tasks and string-parsed results as the control
+surface. New `src/Anthill.Core/Contracts/`, documented in `docs/CONTRACTS.md`.
+
+- **Admission gate**: every path out of the planner funnels through `ContractGate.Admit` — planner
+  output is projected to a `TaskContract` and schema-validated; invalid tasks (missing
+  title/objective, out-of-schema enums, self-dependencies, zero declared capabilities) CANNOT
+  enter the execution queue, and every rejection is logged with its full error list.
+- **Capability model**: permissions attach to capabilities (`repo.read`, `repo.patch.propose`,
+  `network.http.public`, `proxmox.vm.start`, …), not ant names. `ToolCatalog` gives every
+  executable caste a typed declaration (capabilities, side-effect class, risk class, idempotency,
+  cancellation/timeout, compensation — every state-changing tool declares recovery), and
+  `CanRun(ant, grants)` evaluates permission BEFORE execution; unknown tools and partial grants
+  refuse.
+- **Fail toward caution, never silently break planning**: an ant unknown to both catalog and
+  registry projects as destructive/critical with no capabilities → rejected; a role the registry
+  says is executable but the catalog doesn't know yet gets a cautious fallback declaration
+  (reversible/high/manual-compensation) so newly enabled roles remain plannable.
+- **Structured results + failure taxonomy**: `ToolResult` with typed `FailureClass` (12 classes);
+  retry decisions come from `FailureClassify.IsRetryable` (transient/rate-limit/timeout/conflict
+  only), never from parsing error text.
+- Docs: new `docs/CONTRACTS.md`; NORTH_STAR + ROADMAP sequence tables marked for v2.8.0/v2.9.0.
+- Tests: admission matrix (valid admitted, unknown/malformed rejected loudly), capability
+  evaluation incl. partial grants, every-caste-declared guard, retry-class theory over the
+  taxonomy.
+
 ## v2.8.0 — Durable Mission Runtime (NORTH_STAR V3-track Phase 1)
 
 Mission execution no longer depends on in-memory job state for operational correctness. The
