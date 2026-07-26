@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.8.0 — Durable Mission Runtime (NORTH_STAR V3-track Phase 1)
+
+Mission execution no longer depends on in-memory job state for operational correctness. The
+in-memory registry remains the dispatcher; new `mission_jobs`/`mission_attempts` tables are the
+source of operational truth.
+
+- **Persist-first submission**: every accepted mission lands in SQLite before it is queued;
+  optional idempotency key (unique-indexed) makes replayed delivery return the ORIGINAL job —
+  never a duplicate mission.
+- **Atomic claims + worker leases**: a single guarded UPDATE claims a queued job (two Directors on
+  one database cannot double-launch — tested with parallel claimants and with two separate store
+  instances); a heartbeat renews the 90s lease at one-third intervals while the mission runs.
+- **Write-through state**: running/mission-id/result/error/outcome/cancel-requested/finished all
+  hit the durable row as they happen, and every run records an attempt (worker, reason, error,
+  duration) preserving mission identity across retries.
+- **Startup reconciliation**: on boot the runtime classifies incomplete work — queued → resumable
+  (re-dispatched), running-at-boot → retryable (attempt++, re-queued, attempt history explains
+  why) while attempts remain, else orphaned → failed for operator review; cancel-requested →
+  cancelled. Completed work is never touched and can never be re-claimed.
+- **Required tests implemented** (process death simulated by reopening the same database file):
+  killed-while-queued survives; killed-mid-lease retried with new attempt; attempts exhausted →
+  operator review, never silent loss; two-claimant race → exactly one winner; idempotency replay →
+  one row; completed job untouched and unclaimable; pre-crash cancel honored; heartbeat renews
+  only for the owning worker.
+- Scope note (honest): mission-level durability + idempotent submission ship here. Side-effect
+  idempotency for infra actions already exists via the v2.3 proposal dedupe; contracted per-tool
+  idempotency keys arrive with V2.9.0 typed capability tools, per the roadmap.
+
 ## v2.7.0 — Mission Control: circuit breaker, per-task watchdogs, provider health
 
 - **Circuit breaker for model providers.** After `ModelCircuitFailureThreshold` (default 3)
