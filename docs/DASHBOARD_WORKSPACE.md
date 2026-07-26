@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.14.15) — start here
+## WHERE WE ARE (as of v2.15.0) — TRACK COMPLETE
 
 **Shipped and working:**
 
@@ -132,15 +132,29 @@ load by `DashboardWorkspaceState.Sanitize`:
   on every navigation. Keyed off the topology layer existing, not off the flag, so a workspace that
   fails to initialise leaves the Colony route working exactly as before.
 
-**The flag is still `dashboard_workspace_enabled: false` by default.** With it on, the dashboard now
-renders the live topology full-bleed behind the floating panels; with it off nothing changes.
+**v2.15.0: `dashboard_workspace_enabled` now defaults to ON — the workspace is the console.** It
+remains a kill switch: set it false to restore the classic Overview grid and standalone Colony page
+instantly, with no migration and no data loss. The config property is `bool?` so an explicit false
+survives the default flip; only an unset value takes the new default.
+
+Also shipped in v2.15.0: tab groups, docking to all four edges, the single-writer fix, the default
+layout, and the responsive/accessibility pass.
 
 ### Release numbering correction
 
 v2.14.11 and v2.14.12 were both consumed by hotfixes (colony layout, then the missing colony/chamber
 definitions), so the feature stages shifted. The table below is the corrected mapping.
 
-**Next, in order:**
+**The build order below is complete.** Remaining work on this surface is ordinary maintenance, not
+a staged track. Known follow-ups:
+
+- Occlusion-based render throttling is still not implemented (the loop suppresses only on a
+  backgrounded tab or a zero-sized canvas). A wrong "it's hidden" freezes the map, so it is not
+  being guessed at.
+- Two debounced writers became one in v2.15.0, but the single writer is still last-write-wins
+  against a concurrent second browser tab. Nobody has hit that; it is recorded, not fixed.
+
+**Superseded plan (kept for provenance):**
 
 1. **v2.14.16 — Tab groups (Stage 4).** Now lands on a dashboard that already hosts all nine
    panels, so grouping is the last piece of "modular and customizable".
@@ -175,7 +189,7 @@ freezes the map, and this repo has paid for that twice, so it is not being guess
 | 3c2 | Sweep the now-unreachable `cmap*` functions and orphaned `#cmap2` CSS (dead code, no behaviour) | v2.14.9 | **done** |
 | 3d | Chamber renaming (double-click, mirroring ant rename; canonical keys unchanged) | v2.14.10 | **done** |
 | 3e | Editable Ant Inspector side panel — see the spec above | v2.14.13 | **done** |
-| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.16 | planned |
+| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.15.0 | **done** |
 | 5 | Migrate existing dashboard cards to registered panels — renderers reused verbatim by re-parenting their own body elements, so there is one implementation per card | v2.14.9 | **done** |
 | 6 | **Topology as the dashboard canvas** — mount the live canvas full-bleed behind `#ws-root`; measure after mount, one render loop, one polling path, verify arbitration | v2.14.13 | **done** |
 | 7 | Topology overlays: view controls, legend, signals, hints — hideable + anchored across six slots, with an Overlays menu (inspector deferred to Stage 9) | v2.14.14 | **done** |

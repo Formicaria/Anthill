@@ -4201,34 +4201,64 @@ async function loadUiState(){
   applyOverlayState();
 }
 
-let uiSaveTimer=null;
-/**
- * v2.14.14: read-modify-write, matching how dashboard-workspace.js already saves.
+/* ---------------------------------------------------------------------------------------------
+ * v2.15.0 Stage 8 — ONE writer for ui_state.json.
  *
- * This used to PUT a literal with only its own six keys, so ui_state.json is a WHOLE-DOCUMENT
- * store and every ant rename, ant drag, chamber drag, or inspector save silently deleted
- * `dashboard_workspace` — i.e. the operator's entire panel layout — because the key simply was not
- * in the payload. Same shape as the model_routes defect: a partial write to a whole-document sink.
+ * Until now two independent debounced writers did read-modify-write against the same document:
+ * saveUiState() here (350ms) and save() in dashboard-workspace.js (600ms). Each preserved the
+ * other's keys as of v2.14.14, but they still raced — a panel drag landing inside an ant rename's
+ * window meant one of the two reads was stale and the later PUT silently discarded the other's
+ * change.
  *
- * Both writers now GET before PUT, so each preserves the other's keys. The residual race is the
- * one the workspace module already had (two debounced writers, last PUT wins); collapsing them
- * into a single owner is Stage 8's lifecycle audit, not a change to smuggle in here.
- */
-function saveUiState(){
-  clearTimeout(uiSaveTimer);
-  uiSaveTimer=setTimeout(async()=>{
-    try{
+ * Both now register a MUTATOR with this single writer. One debounce, one GET, every pending
+ * mutator applied to that one freshly-read document, one PUT — and writes are chained so a second
+ * flush cannot start before the first finishes. Two surfaces, one owner, no lost updates.
+ * ------------------------------------------------------------------------------------------- */
+const UiStateWriter = (function(){
+  let timer=null, mutators=[], chain=Promise.resolve();
+
+  function flush(){
+    const batch=mutators; mutators=[];
+    if(!batch.length) return chain;
+    chain=chain.then(async()=>{
       let doc={};
       try{ const cur=await api('/ui/state'); if(cur&&cur.success&&cur.data) doc=cur.data; }catch{}
-      doc.version=1;
-      doc.castes=uiState.castes; doc.positions=uiState.positions; doc.widgets=uiState.widgets;
-      doc.chambers=uiState.chambers||{}; doc.chamberNames=uiState.chamberNames||{};
-      // Overlay visibility lives inside the workspace subtree so the C# sanitizer validates it.
-      doc.dashboard_workspace=doc.dashboard_workspace||{};
-      doc.dashboard_workspace.topology_overlays=uiState.overlays||{};
-      await api('/ui/state','PUT',doc);
-    }catch(e){console.error('saveUiState',e);}
-  },350);
+      batch.forEach(m=>{ try{ m(doc); }catch(e){ console.error('ui state mutator',e); } });
+      try{ await api('/ui/state','PUT',doc); }
+      catch(e){ console.error('ui state save',e); }
+    });
+    return chain;
+  }
+
+  return {
+    /** Register a change. `mutate(doc)` is applied to the freshly-read document at flush time. */
+    queue(mutate){
+      if(typeof mutate!=='function') return;
+      mutators.push(mutate);
+      clearTimeout(timer);
+      timer=setTimeout(flush,350);
+    },
+    /** Force a write now — used on pagehide so an in-flight arrangement is not lost. */
+    flushNow(){ clearTimeout(timer); return flush(); },
+  };
+})();
+// dashboard-workspace.js persists through this same writer rather than owning a second one.
+window.AnthillUiState = UiStateWriter;
+window.addEventListener('pagehide',()=>{ UiStateWriter.flushNow(); });
+
+function saveUiState(){
+  UiStateWriter.queue(doc=>{
+    doc.version=1;
+    doc.castes=uiState.castes;
+    doc.positions=uiState.positions;
+    doc.widgets=uiState.widgets;
+    doc.chambers=uiState.chambers||{};
+    doc.chamberNames=uiState.chamberNames||{};
+    // Overlay visibility lives inside the workspace subtree so the C# sanitizer validates it.
+    // Only this key is touched here; panel placements belong to the workspace module's mutator.
+    doc.dashboard_workspace=doc.dashboard_workspace||{};
+    doc.dashboard_workspace.topology_overlays=uiState.overlays||{};
+  });
 }
 
 function registryRoleById(id){return (colonyRegistry?.roles||colonyRegistry?.Roles||[]).find(r=>roleId(r)===id);}
@@ -6795,26 +6825,34 @@ function wsMountTarget(bodyId, el){
 function registerWorkspacePanels(){
   if(!window.AnthillWorkspace) return;
   var W=window.AnthillWorkspace;
+  // v2.15.0 default layout. The topology is the POINT of this dashboard, so the default keeps the
+  // centre of the map clear and lines panels up the left and right edges. Four secondary panels
+  // start hidden rather than tiled across the map — they are one click away in the Modules menu,
+  // and an operator who wants the dense grid can place them once and it persists.
+  //
+  // These coordinates are a first-run fallback only: once a layout is saved the server's clamped
+  // placements win, so nothing here can strand a panel off-screen on a smaller display.
   var defs=[
-    {id:'colony-health',   title:'Colony Health',      body:'ov2-health-body',   x:24,  y:24,  w:300, h:230},
-    {id:'system-core',     title:'System Core',        body:'ov2-core-body',     x:340, y:24,  w:360, h:230},
-    {id:'missions',        title:'Missions',           body:'ov2-active-body',   x:716, y:24,  w:320, h:230},
-    {id:'approvals',       title:'Pending Approvals',  body:'ov2-approvals-body',x:24,  y:270, w:340, h:220},
-    {id:'resource-usage',  title:'Resource Usage',     body:'ov2-resources-body',x:380, y:270, w:320, h:220},
-    {id:'recent-events',   title:'Recent Events',      body:'ov2-events-body',   x:716, y:270, w:320, h:220},
-    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',  x:24,  y:506, w:340, h:200},
-    // v2.14.15: the Colony page's own cards become panels too. Until the dashboard can host the
-    // inspector and the jobs list, "the topology lives on the dashboard" is only half true — you
-    // would still have to leave it to inspect an ant or watch a job. These re-parent the SAME
-    // body elements (wsMountTarget), so there is one renderer per card, exactly as with the
-    // seven panels above.
-    {id:'agent-inspector', title:'Agent Inspector',   body:'agent-detail',      x:1052, y:24,  w:320, h:420},
-    {id:'colony-jobs',     title:'Jobs',              body:'jobs-list',         x:1052, y:462, w:320, h:244},
+    // Left rail: the two things worth glancing at continuously.
+    {id:'colony-health',      title:'Colony Health',      body:'ov2-health-body',    x:24,   y:24,  w:300, h:224},
+    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',      x:24,   y:264, w:300, h:214},
+    // Right rail: the inspector is tall because it is the deepest panel, with jobs beneath it.
+    {id:'agent-inspector',    title:'Agent Inspector',    body:'agent-detail',       x:1060, y:24,  w:320, h:430},
+    {id:'colony-jobs',        title:'Jobs',               body:'jobs-list',          x:1060, y:470, w:320, h:236},
+    // Bottom left, clear of the map's centre of mass.
+    {id:'missions',           title:'Missions',           body:'ov2-active-body',    x:24,   y:494, w:300, h:212},
+
+    // Available, not shown. Everything below is one click away in the Modules menu.
+    {id:'system-core',        title:'System Core',        body:'ov2-core-body',      x:352,  y:24,  w:360, h:224, hidden:true},
+    {id:'approvals',          title:'Pending Approvals',  body:'ov2-approvals-body', x:352,  y:264, w:340, h:214, hidden:true},
+    {id:'resource-usage',     title:'Resource Usage',     body:'ov2-resources-body', x:728,  y:24,  w:320, h:224, hidden:true},
+    {id:'recent-events',      title:'Recent Events',      body:'ov2-events-body',    x:728,  y:264, w:320, h:214, hidden:true},
   ];
   defs.forEach(function(d){
     W.register({
       id:d.id, title:d.title,
-      defaultPlacement:{mode:'floating',x:d.x,y:d.y,width:d.w,height:d.h},
+      defaultPlacement:{mode:'floating',x:d.x,y:d.y,width:d.w,height:d.h,
+                        display_state:d.hidden?'hidden':'visible'},
       collapsible:true, minimizable:true, hideable:true, pinnable:true,
       refreshPolicy:'visible',
       render:function(el){ wsMountTarget(d.body, el); },
