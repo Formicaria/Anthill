@@ -177,13 +177,48 @@ public sealed class ModelRouter
     public IModelClient GetClientForProvider(string provider, string? model = null) =>
         GetClient(provider, model ?? ProviderCatalog.Find(provider)?.DefaultModel ?? "");
 
+    /// <summary>
+    /// v2.11.2 — resolves the effective route for a role. Normally this is the configured route, but
+    /// if that provider's circuit breaker is OPEN and a distinct configured <c>fallback</c> route is
+    /// healthy, it fails over to the fallback so the mission keeps moving instead of erroring on a
+    /// dead provider. The decision runs through the deterministic <see cref="ModelRoutingPolicy"/>
+    /// (stability-preferring: the configured route is only abandoned when proven unhealthy). This is
+    /// a no-op when the breaker is disabled or when no distinct fallback is configured.
+    /// </summary>
+    public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
+    {
+        var primary = GetRoute(role);
+        if (_breaker is null) return (primary.Provider, primary.Model, null);
+
+        var fallback = GetRoute("fallback");
+        if (fallback.Provider == primary.Provider && fallback.Model == primary.Model)
+            return (primary.Provider, primary.Model, null); // nothing distinct to fail over to
+
+        // Health straight from live breaker state: an open breaker == proven-unhealthy for this
+        // decision. Unknown routes are left out of the map, which the policy reads as healthy.
+        var stats = new Dictionary<string, RouteHealth>(StringComparer.Ordinal);
+        void Mark((string Provider, string Model) r)
+        {
+            var key = ModelStats.Key(r.Provider, r.Model);
+            if (_breaker!.Blocked(key) is not null)
+                stats[key] = new RouteHealth(key, RouteHealth.MinCallsForVerdict, 0, 0d, 0d);
+        }
+        Mark(primary);
+        Mark(fallback);
+
+        var choice = ModelRoutingPolicy.Choose("high", primary, new[] { fallback }, stats);
+        return choice.Provider == primary.Provider && choice.Model == primary.Model
+            ? (primary.Provider, primary.Model, null)
+            : (choice.Provider, choice.Model, choice.Reason);
+    }
+
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
         string? antName = null, int retries = 2)
     {
         if (!AnthillRuntime.UseOllama && AnthillRuntime.DefaultModelProvider == "ollama")
             return "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.";
 
-        var (provider, model) = GetRoute(role);
+        var (provider, model, rerouteReason) = ResolveRoute(role);
         var routeKey = $"{provider}:{model}";
         var started = DateTime.UtcNow;
 
@@ -221,6 +256,7 @@ public sealed class ModelRouter
                 {
                     ["role"] = role, ["provider"] = provider, ["model"] = model, ["success"] = success,
                     ["outcome"] = outcome.Name(), ["circuit_open"] = blockedReason is not null,
+                    ["reroute_reason"] = rerouteReason,
                     ["duration_ms"] = durationMs, ["prompt_chars"] = prompt.Length, ["response_chars"] = response.Length,
                     ["pheromone_delta"] = pheromoneDelta,
                 });
