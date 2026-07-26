@@ -172,6 +172,97 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("position: static !important", css);
     }
 
+    // ---- Stage 3: drag, resize, pointer arbitration ---------------------------------------------------
+
+    [Fact]
+    public void Gestures_UsePointerEvents_NotSeparateMouseAndTouchPaths()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("pointerdown", js);
+        Assert.Contains("pointermove", js);
+        Assert.Contains("pointerup", js);
+        Assert.Contains("pointercancel", js);          // a cancelled gesture must not strand state
+        Assert.DoesNotContain("mousedown", js);        // one code path only — no double-fire
+        Assert.DoesNotContain("touchstart", js);
+    }
+
+    [Fact]
+    public void LockedLayout_EngagesNoGesture_SoTheMapKeepsIt()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var begin = js[js.IndexOf("function beginGesture", StringComparison.Ordinal)..];
+        begin = begin[..Math.Min(begin.Length, 400)];
+        Assert.Contains("W.state.locked", begin);
+        Assert.Contains("return", begin);
+    }
+
+    [Fact]
+    public void DragStoppsPropagation_SoTheTopologyNeverPans()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("stopPropagation", js);
+        Assert.Contains("preventDefault", js);
+    }
+
+    [Fact]
+    public void HeaderButtons_AreExcludedFromDragging()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("closest('button')", js);      // a control click is never a drag
+    }
+
+    [Fact]
+    public void MovementUsesAnimationFrame_AndPersistsOnceAtEnd()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("requestAnimationFrame", js);
+        Assert.Contains("cancelAnimationFrame", js);
+        var end = js[js.IndexOf("function endGesture", StringComparison.Ordinal)..];
+        end = end[..Math.Min(end.Length, 600)];
+        Assert.Contains("setPlacement", end);          // saved at pointerup, not per frame
+        var move = js[js.IndexOf("function moveGesture", StringComparison.Ordinal)..];
+        move = move[..Math.Min(move.Length, 1400)];
+        Assert.DoesNotContain("setPlacement", move);
+    }
+
+    [Fact]
+    public void SnappingCanBeBypassedWithAModifier()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("altKey", js);
+        Assert.Contains("metaKey", js);
+        Assert.Contains("bypass", js);
+    }
+
+    [Fact]
+    public void DraggedPanel_CannotBeLostOffScreen()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var move = js[js.IndexOf("if (drag.mode === 'move')", StringComparison.Ordinal)..];
+        move = move[..Math.Min(move.Length, 600)];
+        Assert.Contains("Math.max", move);
+        Assert.Contains("Math.min", move);
+        Assert.Contains("64", move);                   // grabbable header edge stays reachable
+    }
+
+    [Fact]
+    public void ResizeRespectsMinimums()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("MIN_W", js);
+        Assert.Contains("MIN_H", js);
+    }
+
+    [Fact]
+    public void ResizeHandlesAppearOnlyInCustomizeMode()
+    {
+        var css = Ui("dashboard-workspace.css");
+        Assert.Contains(".ws-resize", css);
+        Assert.Contains(".ws-customize .ws-resize { display: block; }", css);
+        Assert.Contains("display: none", css);
+        Assert.Contains("touch-action: none", css);    // browser gestures don't fight the drag
+    }
+
     [Fact]
     public void ProfileBreakpoint_MatchesTheServerConstant()
     {
