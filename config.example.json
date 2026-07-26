@@ -45,6 +45,7 @@
   "homelab_proxmox_protocol":              "https",
   "homelab_proxmox_write_actions_enabled": false,
   "homelab_automation_enabled": false,
+  "sandbox_execution_enabled": false,
   "specialist_ant_execution_enabled": false,
   "tester_ant_enabled": false,
   "soldier_ant_enabled": false,
