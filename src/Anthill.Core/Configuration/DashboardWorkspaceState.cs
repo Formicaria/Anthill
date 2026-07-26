@@ -48,6 +48,17 @@ public sealed class DashboardWorkspaceState
     public static readonly string[] DisplayStates = { "visible", "collapsed", "minimized", "hidden" };
     public static readonly string[] PlacementModes = { "floating", "docked", "tabbed" };
     public static readonly string[] DockSides = { "left", "right", "top", "bottom" };
+    /// <summary>
+    /// v2.15.0: the largest share of the viewport a single docked edge may consume.
+    ///
+    /// This is a product invariant, not a style preference. The whole premise of the topology-first
+    /// dashboard is that the colony map is the persistent background; a dock strip allowed to grow
+    /// to 100% would let the operator hide the map completely and leave no obvious way back. The
+    /// clamp is enforced here rather than in CSS so a hand-edited ui_state.json cannot bypass it.
+    /// </summary>
+    public const double MaxDockFraction = 0.60;
+    public const int MinDockSize = 180;
+
     public static readonly string[] Anchors =
         { "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right" };
 
@@ -90,6 +101,13 @@ public sealed class DashboardWorkspaceState
         [JsonPropertyName("z")] public int Z { get; set; } = 1;
         [JsonPropertyName("pinned")] public bool Pinned { get; set; }
         [JsonPropertyName("dock_side")] public string? DockSide { get; set; }
+        /// <summary>
+        /// Thickness of the docked strip: width for left/right, height for top/bottom. Clamped so
+        /// docking can never swallow the whole viewport — see MaxDockFraction.
+        /// </summary>
+        [JsonPropertyName("dock_size")] public int DockSize { get; set; } = 320;
+        /// <summary>Position among the panels sharing this edge, low to high.</summary>
+        [JsonPropertyName("dock_order")] public int DockOrder { get; set; }
         [JsonPropertyName("tab_group")] public string? TabGroup { get; set; }
         [JsonPropertyName("opacity")] public string Opacity { get; set; } = "solid"; // scrim strength, never text
     }
@@ -102,6 +120,9 @@ public sealed class DashboardWorkspaceState
         [JsonPropertyName("y")] public int Y { get; set; }
         [JsonPropertyName("width")] public int Width { get; set; } = 460;
         [JsonPropertyName("height")] public int Height { get; set; } = 280;
+        // v2.15.0: groups share the panel stacking order, so a group can be raised above a panel
+        // and vice versa. Clamped like any other placement value rather than trusted from JSON.
+        [JsonPropertyName("z")] public int Z { get; set; } = 1;
     }
 
     public sealed class OverlayState
@@ -153,6 +174,7 @@ public sealed class DashboardWorkspaceState
         }
 
         SanitizeTabGroups(knownPanelIds, vw, vh);
+        SanitizeDockRails(vw, vh);
 
         foreach (var id in TopologyOverlays.Keys.ToList())
         {
@@ -188,6 +210,15 @@ public sealed class DashboardWorkspaceState
         if (!PlacementModes.Contains(p.PlacementMode ?? "")) p.PlacementMode = "floating";
         if (p.DockSide is not null && !DockSides.Contains(p.DockSide)) p.DockSide = null;
         if (p.PlacementMode == "docked" && p.DockSide is null) p.PlacementMode = "floating";
+        if (p.PlacementMode != "docked") { p.DockSide = null; p.DockOrder = 0; }
+        else
+        {
+            // A panel cannot be docked AND tabbed: it would render in two places at once.
+            p.TabGroup = null;
+            var axis = p.DockSide is "left" or "right" ? vw : vh;
+            p.DockSize = Clamp(p.DockSize, MinDockSize, Math.Max(MinDockSize, (int)(axis * MaxDockFraction)));
+            p.DockOrder = Clamp(p.DockOrder, 0, 99);
+        }
 
         p.Width = Clamp(p.Width, 200, Math.Max(200, vw));
         p.Height = Clamp(p.Height, 80, Math.Max(80, vh));
@@ -199,6 +230,61 @@ public sealed class DashboardWorkspaceState
         p.Z = Clamp(p.Z, 0, 9999);
         if (p.Opacity is not ("solid" or "high" or "medium" or "low")) p.Opacity = "solid";
         return p;
+    }
+
+    /// <summary>
+    /// v2.15.0: clamp OPPOSING dock rails together, not just individually.
+    ///
+    /// Per-panel clamping caps each edge at MaxDockFraction, which is not enough: left at 60% plus
+    /// right at 60% is 120% of the width, so the two rails overlap and the topology — the entire
+    /// point of this dashboard — disappears with no visible way back. The pair on each axis must
+    /// therefore fit within MaxDockFraction combined.
+    ///
+    /// When a pair is over budget both rails are scaled down proportionally rather than one being
+    /// truncated, so the operator's relative sizing survives instead of one edge being punished
+    /// for being processed second.
+    /// </summary>
+    private void SanitizeDockRails(int vw, int vh)
+    {
+        foreach (var (_, panels) in Profiles)
+        {
+            ClampAxis(panels, "left", "right", vw);
+            ClampAxis(panels, "top", "bottom", vh);
+        }
+
+        static void ClampAxis(Dictionary<string, PanelPlacement> panels, string a, string b, int extent)
+        {
+            var budget = Math.Max(MinDockSize * 2, (int)(extent * MaxDockFraction));
+            var sizeA = RailSize(panels, a);
+            var sizeB = RailSize(panels, b);
+            var total = sizeA + sizeB;
+            if (total <= budget || total <= 0) return;
+
+            // Proportional scale-down, with each surviving rail kept at or above MinDockSize.
+            var scale = (double)budget / total;
+            var newA = Math.Max(MinDockSize, (int)(sizeA * scale));
+            var newB = Math.Max(MinDockSize, (int)(sizeB * scale));
+            // If both floors together still exceed the budget the viewport is simply too small for
+            // two opposing rails; the second axis-end gives way so at least one stays usable.
+            if (newA + newB > budget) newB = Math.Max(0, budget - newA);
+
+            SetRail(panels, a, newA);
+            SetRail(panels, b, newB);
+        }
+
+        static int RailSize(Dictionary<string, PanelPlacement> panels, string side)
+        {
+            var max = 0;
+            foreach (var (_, p) in panels)
+                if (p.PlacementMode == "docked" && p.DockSide == side) max = Math.Max(max, p.DockSize);
+            return max;
+        }
+
+        static void SetRail(Dictionary<string, PanelPlacement> panels, string side, int size)
+        {
+            foreach (var (_, p) in panels)
+                if (p.PlacementMode == "docked" && p.DockSide == side) p.DockSize = size;
+        }
     }
 
     private void SanitizeTabGroups(IReadOnlyCollection<string> knownPanelIds, int vw, int vh)
@@ -224,6 +310,7 @@ public sealed class DashboardWorkspaceState
             g.Height = Clamp(g.Height, 80, Math.Max(80, vh));
             g.X = Clamp(g.X, -(g.Width - MinVisibleEdge), Math.Max(0, vw - MinVisibleEdge));
             g.Y = Clamp(g.Y, 0, Math.Max(0, vh - MinVisibleEdge));
+            g.Z = Clamp(g.Z, 1, 9999);
         }
 
         // Panels pointing at a group that no longer exists return to floating.
