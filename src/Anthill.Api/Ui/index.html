@@ -125,6 +125,13 @@
 /* Classic (Live Colony) mode: the original row layout must be byte-for-byte untouched — the
    telemetry bar hides (it would break the row) and the view-switch bar floats over the canvas. */
 #page-colony{position:relative;}
+/* v2.14.11 HOTFIX: the v2.14.9 CSS sweep removed `#page-colony:not(.cmap-mode) #tb-colony`
+   along with the cmap rules, because the selector mentioned cmap-mode. #page-colony is a flex
+   ROW, so an unhidden #tb-colony became a ~900px column — the black void that squeezed the
+   canvas and collapsed the ants toward a point. The colony page has never shown the telemetry
+   bar (the canvas has its own HUD), and .cmap-mode no longer exists, so the rule is now
+   unconditional. */
+#page-colony #tb-colony{display:none;}
 /* v2.2.4: in classic (Live Colony) mode the map toolbar is hidden entirely — floating it was
    fragile (clipped at the top-left). The map-view switches live inside the classic canvas's own
    #colony-viewbar instead, which is already correctly positioned top-right. */
