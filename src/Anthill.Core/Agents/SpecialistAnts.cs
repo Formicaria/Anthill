@@ -305,3 +305,99 @@ public sealed class ScribeAnt : BaseAnt
 
     private static string Truncate(string s) => s.Length <= 160 ? s : s[..160] + "…";
 }
+
+/// <summary>
+/// Execution framework Stage D-5: MedicAnt — diagnoses real failures and recommends ONE bounded
+/// repair route; it never repairs anything itself and never applies changes. Loop control is hard:
+/// at most <see cref="MaxDiagnosesPerMission"/> diagnoses per mission, and a repeated diagnosis of
+/// the same failure escalates to the operator (via builder) instead of looping. Classification is
+/// deterministic keyword→FailureClass mapping; retryability comes from the v2.9 taxonomy.
+/// </summary>
+public sealed class MedicAnt : BaseAnt
+{
+    public const int MaxDiagnosesPerMission = 2;
+    public MedicAnt() : base("medic") { }
+
+    public override string Run(Task task, Mission mission)
+    {
+        var contract = AntExecutionCatalog.ContractFor("medic")!;
+        if (!contract.SupportsTaskType(task.TaskType))
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the medic execution contract"));
+
+        // Only diagnose actual failures (spec: never invoke medic before failure).
+        var failed = mission.Tasks
+            .Where(t => t.Id != task.Id && (t.Status == TaskStatus.Failed || t.FailureReason is not null
+                || (t.Result?.Contains("\"status\":\"failed", StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.Result?.Contains(": FAIL") ?? false)))
+            .OrderByDescending(t => t.FailedAt ?? t.FinishedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+        if (failed is null)
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked("no failed task in this mission — nothing to diagnose"));
+
+        // Loop control 1: diagnosis budget per mission.
+        var priorDiagnoses = mission.Tasks.Count(t => t.Id != task.Id && t.AssignedAnt == "medic" && t.Result is not null);
+        if (priorDiagnoses >= MaxDiagnosesPerMission)
+            return UiCartographerAnt.Compat(new AntExecutionResult
+            {
+                Success = true, StatusCode = "succeeded_with_warnings",
+                Summary = $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}) — escalating to operator, no further repair loops.",
+                Artifacts = { new AntArtifact("failure_diagnosis", "Escalation", "repeated failures exceed the repair budget; operator review required") },
+                Handoffs = { new AntHandoff("medic", "builder", "escalation: repair budget exhausted", "build", new[] { "failure_diagnosis" }, true, 1, $"medic-esc:{mission.Id}") },
+                Warnings = { "escalated" },
+            });
+
+        // Deterministic classification.
+        var text = (failed.FailureReason ?? "") + " " + (failed.Result ?? "");
+        var (cls, cause, confidence) = Classify(text);
+        var retryable = Contracts.FailureClassify.IsRetryable(cls);
+
+        // Loop control 2: identical diagnosis already issued → escalate, don't repeat the route.
+        var dedupe = $"{failed.Id}:{cls}";
+        var repeated = mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
+            && (t.Result?.Contains(dedupe) ?? false));
+
+        var targetRole = repeated ? "builder"
+            : text.Contains("ui", StringComparison.OrdinalIgnoreCase) || text.Contains(".html") || text.Contains("app.js") ? "ui_cartographer"
+            : retryable ? "tester"
+            : "coder";
+        var targetType = targetRole switch
+        {
+            "builder" => "build", "ui_cartographer" => "ui_mapping",
+            "tester" => "test_execution", _ => "code_change",
+        };
+
+        var diagnosis =
+            $"dedupe: {dedupe}\nfailure_classification: {cls}\nprobable_cause: {cause}\nconfidence: {confidence}\n" +
+            $"retryable: {retryable}\nrecommended_role: {targetRole}\nrecommended_task_type: {targetType}\n" +
+            $"verification_plan: re-run the failed check via tester, then verifier\n" +
+            $"source_task: {failed.Id} ({failed.Title})";
+
+        return UiCartographerAnt.Compat(new AntExecutionResult
+        {
+            Success = true,
+            StatusCode = "succeeded",
+            Summary = $"Diagnosis: {cls} ({cause}) — route to {targetRole}{(repeated ? " [escalated: repeat diagnosis]" : "")}.",
+            Artifacts =
+            {
+                new AntArtifact("failure_diagnosis", "Failure diagnosis", diagnosis),
+                new AntArtifact("repair_recommendation", "Bounded repair route", $"{targetRole}:{targetType} (single attempt, then re-test)"),
+            },
+            Evidence = { new AntEvidence("failure_id", failed.Id, failed.FailureReason ?? "structured failure in result") },
+            Handoffs = { new AntHandoff("medic", targetRole, repeated ? "escalation: repeat diagnosis" : $"repair route for {cls}",
+                targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{dedupe}") },
+        });
+    }
+
+    private static (Contracts.FailureClass, string, string) Classify(string text)
+    {
+        var t = text.ToLowerInvariant();
+        if (t.Contains("timed out") || t.Contains("timeout")) return (Contracts.FailureClass.Timeout, "operation exceeded its time budget", "high");
+        if (t.Contains("rate limit") || t.Contains("429")) return (Contracts.FailureClass.RateLimit, "provider rate limiting", "high");
+        if (t.Contains("unreachable") || t.Contains("connection") || t.Contains("transient")) return (Contracts.FailureClass.TransientProviderFailure, "backing service unavailable", "medium");
+        if (t.Contains("authorization_denied") || t.Contains("permission")) return (Contracts.FailureClass.AuthorizationFailure, "capability/tool boundary denied the operation", "high");
+        if (t.Contains("exit_code=") || t.Contains(": fail") || t.Contains("build") || t.Contains("test")) return (Contracts.FailureClass.VerificationFailure, "deterministic check failed", "high");
+        if (t.Contains("invalid") || t.Contains("validation")) return (Contracts.FailureClass.ValidationFailure, "input failed validation", "medium");
+        return (Contracts.FailureClass.InternalDefect, "unclassified failure — treated as internal defect (not retryable)", "low");
+    }
+}
