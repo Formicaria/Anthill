@@ -30,6 +30,8 @@ public static partial class ApiHost
     private static RateLimiter AuthLimiter = null!;
     private static string UiHtml = "";
     private static string UiAppJs = "";
+    private static string UiWorkspaceJs = "";
+    private static string UiWorkspaceCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
     // reuses connections. Per-call timeouts are applied via CancellationToken.
@@ -63,6 +65,8 @@ public static partial class ApiHost
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
         UiHtml = LoadUi();
         UiAppJs = LoadUiAsset("app.js");
+        UiWorkspaceJs = LoadUiAsset("dashboard-workspace.js");
+        UiWorkspaceCss = LoadUiAsset("dashboard-workspace.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
         var app = builder.Build();
@@ -197,10 +201,24 @@ public static partial class ApiHost
             return Results.Content(UiAppJs, "text/javascript; charset=utf-8");
         });
 
+        // v2.14.3: workspace runtime + styles, same-origin like app.js so CSP stays script-src 'self'.
+        app.MapGet("/ui/dashboard-workspace.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiWorkspaceJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/dashboard-workspace.css", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiWorkspaceCss, "text/css; charset=utf-8");
+        });
+
         app.MapGet("/health", () => ApiJson.Ok(new Dictionary<string, object?>
         {
             ["status"] = "ok", ["version"] = AnthillRuntime.Version,
             ["native_kernel"] = Anthill.Core.Native.NativeKernel.UsingNative ? "active" : "managed-fallback",
+            // v2.14.3: UI feature flag (not a secret — it only decides which console shell renders).
+            ["dashboard_workspace_enabled"] = AnthillRuntime.EnableDashboardWorkspace,
         }));
 
         ProtectedJson(app, "/status", "read_status", _ =>
