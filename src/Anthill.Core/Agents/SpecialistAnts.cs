@@ -204,7 +204,7 @@ public sealed class SoldierAnt : BaseAnt
             $"required_approvals: {(blocked.Count > 0 ? "operator review required before any apply" : "standard patch approval")}\n" +
             $"recommended_next: {(blocked.Count > 0 ? "route to operator via builder; do NOT proceed" : "proceed to verifier")}";
 
-        var result = new AntExecutionResult
+        var soldierResult = new AntExecutionResult
         {
             Success = true, // the REVIEW succeeded; the verdict lives in the artifact + evidence
             StatusCode = blocked.Count > 0 ? "succeeded_with_warnings" : "succeeded",
@@ -221,6 +221,87 @@ public sealed class SoldierAnt : BaseAnt
             },
             Warnings = blocked.Select(b => b.RuleId).ToList(),
         };
+        return UiCartographerAnt.Compat(soldierResult);
+    }
+}
+
+/// <summary>
+/// Execution framework Stage D-4: ScribeAnt — operator documentation, release notes, changelog
+/// entries, and DOCUMENTATION-ONLY patch proposals. Deterministic assembly from real mission
+/// results (no model required). The docs-path restriction is enforced HERE, fail closed: any
+/// proposed path outside docs/, README.md, or CHANGELOG.md (or any non-.md file) refuses the
+/// whole proposal — ScribeAnt can never propose a source-code patch, and it has no apply
+/// permission anywhere in the system. Docs containing security-sensitive instructions hand off to
+/// the soldier for review; everything else goes to the verifier.
+/// </summary>
+public sealed class ScribeAnt : BaseAnt
+{
+    public ScribeAnt() : base("scribe") { }
+
+    private static readonly System.Text.RegularExpressions.Regex DocsPath =
+        new(@"^(?:docs/[\w./\-]+\.md|README\.md|CHANGELOG\.md)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public override string Run(Task task, Mission mission)
+    {
+        var contract = AntExecutionCatalog.ContractFor("scribe")!;
+        if (!contract.SupportsTaskType(task.TaskType))
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the scribe execution contract"));
+
+        var priorResults = mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null)
+            .Select(t => $"[{t.AssignedAnt}] {t.Title}: {t.ResultSummary ?? Truncate(t.Result!)}").ToList();
+        var changedFiles = System.Text.RegularExpressions.Regex
+            .Matches(string.Join("\n", priorResults) + "\n" + task.Description, @"\b(?:src|docs|tests)/[\w./\-]+|README\.md|CHANGELOG\.md")
+            .Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var artifacts = new List<AntArtifact>
+        {
+            new("release_notes", "Operator summary",
+                $"Mission: {mission.Goal}\nCompleted stages: {priorResults.Count}\n" +
+                (changedFiles.Count > 0 ? $"Referenced files: {string.Join(", ", changedFiles.Take(10))}\n" : "") +
+                string.Join("\n", priorResults.Take(10))),
+        };
+        var warnings = new List<string>();
+
+        // Documentation patch proposals: docs paths only, structurally validated, never applied.
+        if (task.TaskType == "docs_patch_proposal")
+        {
+            var targets = System.Text.RegularExpressions.Regex
+                .Matches(task.Description, @"target:\s*([^\s,]+)")
+                .Select(m => m.Groups[1].Value.Replace('\\', '/')).ToList();
+            if (targets.Count == 0)
+                return UiCartographerAnt.Compat(AntExecutionResult.Failed(
+                    Contracts.FailureClass.ValidationFailure, "docs_patch_proposal requires explicit 'target: <docs path>' entries"));
+            var illegal = targets.Where(t => !DocsPath.IsMatch(t)).ToList();
+            if (illegal.Count > 0)
+                return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                    $"documentation-only restriction: refused non-docs target(s) {string.Join(", ", illegal)}"));
+            artifacts.Add(new AntArtifact("docs_patch_set", "Documentation patch proposal (requires approval; scribe holds no apply permission)",
+                System.Text.Json.JsonSerializer.Serialize(new { targets, source_mission = mission.Id, requires_approval = true })));
+        }
+
+        var sensitive = System.Text.RegularExpressions.Regex.IsMatch(
+            task.Description + string.Join("\n", priorResults),
+            @"credential|secret|token|password|authentication|firewall", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (sensitive) warnings.Add("security-sensitive documentation — soldier review required");
+
+        var result = new AntExecutionResult
+        {
+            Success = true,
+            StatusCode = warnings.Count > 0 ? "succeeded_with_warnings" : "succeeded",
+            Summary = $"Documentation produced: {artifacts.Count} artifact(s) from {priorResults.Count} mission result(s).",
+            Artifacts = artifacts,
+            Evidence = changedFiles.Select(f => new AntEvidence("file_path", f)).ToList(),
+            Handoffs =
+            {
+                sensitive
+                    ? new AntHandoff("scribe", "soldier", "docs contain security-sensitive instructions", "security_review", new[] { "release_notes" }, true, 1, $"scribe-sec:{mission.Id}:{task.Id}")
+                    : new AntHandoff("scribe", "verifier", "documentation ready for verification", "verification", new[] { "release_notes" }, false, 1, $"scribe-ok:{mission.Id}:{task.Id}"),
+            },
+            Warnings = warnings,
+        };
         return UiCartographerAnt.Compat(result);
     }
+
+    private static string Truncate(string s) => s.Length <= 160 ? s : s[..160] + "…";
 }
