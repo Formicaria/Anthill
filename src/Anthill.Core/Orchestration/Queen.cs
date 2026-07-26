@@ -49,7 +49,20 @@ public sealed partial class Queen : IDisposable
             ["coder"] = new CoderAnt(AnthillRuntime.UseOllama, Router),
             ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
             ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
+            // Stage D canary 1: handler registered unconditionally (implemented), but the role only
+            // becomes executable/plannable when its rollout gates are open — the catalog and the
+            // registry gate agree by construction.
+            ["ui_cartographer"] = new UiCartographerAnt(Tools),
+            ["tester"] = new TesterAnt(Tools),
+            ["soldier"] = new SoldierAnt(),
+            ["scribe"] = new ScribeAnt(),
+            ["medic"] = new MedicAnt(),
+            ["archivist"] = new ArchivistAnt(),
         };
+        // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
+        // the affected role unavailable (fail closed) and is loud, never silent.
+        foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))
+            Console.Error.WriteLine($"[startup-validation] {problem}");
     }
 
     private ToolRegistry BuildToolRegistry()
@@ -57,6 +70,8 @@ public sealed partial class Queen : IDisposable
         var registry = new ToolRegistry(Memory);
         var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
         registry.Register(new SystemInfoTool());
+        // Stage D-2: TesterAnt's ONLY execution surface — declared checks, never arbitrary commands.
+        registry.Register(new RunAllowlistedCheckTool(AnthillRuntime.AllowedWorkspaceRoot));
         if (AnthillRuntime.EnableFileTools)
         {
             registry.Register(new DirectoryListTool(guard));
