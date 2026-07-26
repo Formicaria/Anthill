@@ -382,6 +382,61 @@ public class RegressionGuardTests : IDisposable
             ".ws-toolbar must re-enable pointer events.");
     }
 
+    /// <summary>
+    /// v2.14.14: the /ui/state endpoints must actually RUN the workspace sanitizer.
+    ///
+    /// Stage 1 built DashboardWorkspaceState with 20 unit tests and the stated decision that
+    /// "layout correctness lives in C#" — but nothing ever called it. GET returned the raw file and
+    /// PUT persisted the request body verbatim, so validation, clamping, off-screen recovery, and
+    /// desktop/compact profile isolation were all inert in the running system while every test
+    /// stayed green. Same shape as the v2.14.12 defect: tested code with no call site.
+    /// </summary>
+    [Fact]
+    public void Workspace_SanitizerIsWiredIntoTheUiStateEndpoints()
+    {
+        var api = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+
+        var getIdx = api.IndexOf("MapGet(\"/ui/state\"", StringComparison.Ordinal);
+        var putIdx = api.IndexOf("MapPut(\"/ui/state\"", StringComparison.Ordinal);
+        Assert.True(getIdx >= 0 && putIdx >= 0, "The /ui/state endpoints are missing.");
+
+        // Look inside each handler only, so a call somewhere else in the file cannot satisfy this.
+        var getBody = api.Substring(getIdx, Math.Min(900, api.Length - getIdx));
+        var putBody = api.Substring(putIdx, Math.Min(1200, api.Length - putIdx));
+
+        Assert.True(getBody.Contains("WithSanitizedWorkspace"),
+            "GET /ui/state must return sanitized workspace state, or a hand-edited ui_state.json "
+            + "reaches the browser unvalidated.");
+        Assert.True(putBody.Contains("WithSanitizedWorkspace"),
+            "PUT /ui/state must sanitize, or the client is told its unrepaired layout was accepted.");
+    }
+
+    /// <summary>
+    /// v2.14.14: the server's canonical panel/overlay ids must match what the client registers.
+    /// If they drift, Sanitize() silently deletes real panels as "unknown" and invents placements
+    /// for panels that have no renderer.
+    /// </summary>
+    [Fact]
+    public void Workspace_CanonicalIdsMatchTheClientRegistrations()
+    {
+        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+
+        var registered = Regex.Matches(appJs, @"\{\s*id\s*:\s*'([a-z0-9-]+)'\s*,\s*title\s*:")
+            .Select(m => m.Groups[1].Value).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.True(registered.Count > 0, "Could not find any workspace panel registrations in app.js.");
+        Assert.Equal(
+            DashboardWorkspaceState.KnownPanelIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
+            registered);
+
+        var overlays = Regex.Matches(appJs, @"TOPOLOGY_OVERLAYS\s*=\s*\{(.*?)\n\};", RegexOptions.Singleline);
+        Assert.True(overlays.Count == 1, "app.js must declare exactly one TOPOLOGY_OVERLAYS registry.");
+        var overlayIds = Regex.Matches(overlays[0].Groups[1].Value, @"^\s*([a-z]+)\s*:", RegexOptions.Multiline)
+            .Select(m => m.Groups[1].Value).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.Equal(
+            DashboardWorkspaceState.KnownOverlayIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
+            overlayIds);
+    }
+
     [Fact]
     public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
     {

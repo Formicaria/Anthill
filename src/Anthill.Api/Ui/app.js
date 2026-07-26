@@ -1418,6 +1418,132 @@ document.getElementById('agent-detail').addEventListener('change',e=>{
   const modEl=document.getElementById('ins-model');
   if(modEl){ modEl.dataset.provider=sel.value; modEl.innerHTML=antcfgModelOptions(sel.value,''); }
 });
+/* ---------------------------------------------------------------------------------------------
+ * v2.14.14 Stage 7 — topology overlays.
+ *
+ * The canvas chrome is a set of independently hideable, re-anchorable overlays rather than fixed
+ * furniture. State lives in dashboard_workspace.topology_overlays so the C# sanitizer validates
+ * it (unknown ids dropped, unknown anchors reset to top-left), and it applies on the Colony page
+ * and on the dashboard alike — the chrome belongs to the topology, not to either host.
+ *
+ * The Overlays button is itself NOT an overlay. If it could be hidden, hiding everything would be
+ * unrecoverable without editing ui_state.json by hand.
+ * ------------------------------------------------------------------------------------------- */
+const TOPOLOGY_OVERLAYS = {
+  viewbar: { el:'colony-viewbar', label:'View controls',     anchor:'top-right'     },
+  legend:  { el:'chud-legend',    label:'Caste legend',      anchor:'top-left'      },
+  signals: { el:'chud-phero',     label:'Learning signals',  anchor:'top-left'      },
+  hints:   { el:'zoom-hint',      label:'Interaction hints', anchor:'bottom-center' },
+};
+const OVERLAY_ANCHORS=['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right'];
+
+/** Read persisted overlay state out of a /ui/state document, falling back to the defaults. */
+function overlayStateFrom(doc){
+  const saved=((doc||{}).dashboard_workspace||{}).topology_overlays||{};
+  const out={};
+  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>{
+    const def=TOPOLOGY_OVERLAYS[id], got=saved[id]||{};
+    out[id]={
+      visible: got.visible!==false,
+      anchor: OVERLAY_ANCHORS.indexOf(got.anchor)>=0 ? got.anchor : def.anchor,
+    };
+  });
+  return out;
+}
+
+function overlayState(id){
+  uiState.overlays=uiState.overlays||{};
+  if(!uiState.overlays[id]){
+    const def=TOPOLOGY_OVERLAYS[id];
+    uiState.overlays[id]={visible:true,anchor:def?def.anchor:'top-left'};
+  }
+  return uiState.overlays[id];
+}
+
+/**
+ * Overlays are moved into one of six anchor SLOTS rather than positioned individually. Two
+ * overlays sharing an anchor then stack in the slot's flex flow instead of drawing on top of each
+ * other — which is what the legend and the signals panel do by default, exactly as they always
+ * looked when they were hard-coded siblings.
+ */
+function applyOverlayState(){
+  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>{
+    const el=document.getElementById(TOPOLOGY_OVERLAYS[id].el);
+    if(!el) return;
+    const st=overlayState(id);
+    el.classList.add('topo-ov');
+    el.classList.toggle('ov-hidden',!st.visible);
+    // Hidden chrome must leave the tab order, or keyboard users tab into invisible controls.
+    el.setAttribute('aria-hidden',st.visible?'false':'true');
+    const slot=document.querySelector('[data-ovslot="'+st.anchor+'"]');
+    if(slot&&el.parentElement!==slot) slot.appendChild(el);
+  });
+  renderOverlayMenu();
+}
+
+function setOverlay(id,changes){
+  if(!TOPOLOGY_OVERLAYS[id]) return;
+  const st=overlayState(id);
+  if(typeof changes.visible==='boolean') st.visible=changes.visible;
+  if(changes.anchor&&OVERLAY_ANCHORS.indexOf(changes.anchor)>=0) st.anchor=changes.anchor;
+  applyOverlayState();
+  saveUiState();
+}
+
+function resetOverlays(){
+  uiState.overlays={};
+  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>overlayState(id));
+  applyOverlayState();
+  saveUiState();
+}
+
+/** The menu is the non-drag equivalent for every overlay capability (accessibility rule). */
+function renderOverlayMenu(){
+  const box=document.getElementById('topo-ov-menu');
+  if(!box||box.hidden) return;
+  box.innerHTML=Object.keys(TOPOLOGY_OVERLAYS).map(id=>{
+    const def=TOPOLOGY_OVERLAYS[id], st=overlayState(id);
+    return `<div class="topo-ov-row">
+      <button class="topo-ov-toggle" data-ovtoggle="${id}" aria-pressed="${st.visible?'true':'false'}">
+        <span class="topo-ov-dot${st.visible?' on':''}" aria-hidden="true"></span>${escapeHtml(def.label)}
+      </button>
+      <select class="topo-ov-anchor" data-ovanchor="${id}" aria-label="Anchor for ${escapeHtml(def.label)}">
+        ${OVERLAY_ANCHORS.map(a=>`<option value="${a}"${a===st.anchor?' selected':''}>${a}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('')+`<button class="topo-ov-reset" data-ovact="reset">Reset overlays</button>`;
+}
+
+function toggleOverlayMenu(force){
+  const box=document.getElementById('topo-ov-menu'), btn=document.getElementById('topo-ov-btn');
+  if(!box||!btn) return;
+  const open=typeof force==='boolean'?force:box.hidden;
+  box.hidden=!open;
+  btn.setAttribute('aria-expanded',open?'true':'false');
+  if(open) renderOverlayMenu();
+}
+
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('#topo-ov-btn');
+  if(btn){ toggleOverlayMenu(); return; }
+  const t=e.target.closest('[data-ovtoggle]');
+  if(t){ const id=t.dataset.ovtoggle; setOverlay(id,{visible:!overlayState(id).visible}); return; }
+  const act=e.target.closest('[data-ovact="reset"]');
+  if(act){ resetOverlays(); return; }
+  // Clicking anywhere else closes the menu, matching the Modules menu's behaviour.
+  const box=document.getElementById('topo-ov-menu');
+  if(box&&!box.hidden&&!e.target.closest('#topo-ov-menu')) toggleOverlayMenu(false);
+});
+document.addEventListener('change',e=>{
+  const sel=e.target.closest('[data-ovanchor]');
+  if(sel) setOverlay(sel.dataset.ovanchor,{anchor:sel.value});
+});
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  const box=document.getElementById('topo-ov-menu');
+  if(box&&!box.hidden){ toggleOverlayMenu(false); const b=document.getElementById('topo-ov-btn'); if(b) b.focus(); }
+});
+
 
 function showInspector(n){
   selectedNode=n;
@@ -4014,7 +4140,7 @@ function renderActivity(){
 PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
 
 // -- UI State ------------------------------------------------------------------
-let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{},chamberNames:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
+let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{},chamberNames:{},overlays:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
 const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
 const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
@@ -4023,17 +4149,43 @@ uiReady=true;
 async function loadUiState(){
   try{
     const r=await api('/ui/state');
-    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; uiState.chambers=r.data.chambers||{}; uiState.chamberNames=r.data.chamberNames||{}; }
+    if(r.success&&r.data){
+      uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{};
+      uiState.chambers=r.data.chambers||{}; uiState.chamberNames=r.data.chamberNames||{};
+      uiState.overlays=overlayStateFrom(r.data);
+    }
   }catch{}
   applyUiState();
+  applyOverlayState();
 }
 
 let uiSaveTimer=null;
+/**
+ * v2.14.14: read-modify-write, matching how dashboard-workspace.js already saves.
+ *
+ * This used to PUT a literal with only its own six keys, so ui_state.json is a WHOLE-DOCUMENT
+ * store and every ant rename, ant drag, chamber drag, or inspector save silently deleted
+ * `dashboard_workspace` — i.e. the operator's entire panel layout — because the key simply was not
+ * in the payload. Same shape as the model_routes defect: a partial write to a whole-document sink.
+ *
+ * Both writers now GET before PUT, so each preserves the other's keys. The residual race is the
+ * one the workspace module already had (two debounced writers, last PUT wins); collapsing them
+ * into a single owner is Stage 8's lifecycle audit, not a change to smuggle in here.
+ */
 function saveUiState(){
   clearTimeout(uiSaveTimer);
   uiSaveTimer=setTimeout(async()=>{
-    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets,chambers:uiState.chambers||{},chamberNames:uiState.chamberNames||{}});}
-    catch(e){console.error('saveUiState',e);}
+    try{
+      let doc={};
+      try{ const cur=await api('/ui/state'); if(cur&&cur.success&&cur.data) doc=cur.data; }catch{}
+      doc.version=1;
+      doc.castes=uiState.castes; doc.positions=uiState.positions; doc.widgets=uiState.widgets;
+      doc.chambers=uiState.chambers||{}; doc.chamberNames=uiState.chamberNames||{};
+      // Overlay visibility lives inside the workspace subtree so the C# sanitizer validates it.
+      doc.dashboard_workspace=doc.dashboard_workspace||{};
+      doc.dashboard_workspace.topology_overlays=uiState.overlays||{};
+      await api('/ui/state','PUT',doc);
+    }catch(e){console.error('saveUiState',e);}
   },350);
 }
 
