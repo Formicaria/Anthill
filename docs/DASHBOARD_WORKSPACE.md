@@ -53,6 +53,28 @@ These are deliberate departures from the original brief, taken after review:
 10. **Performance has a number.** The topology now renders permanently instead of only on the
     Colony page; it must throttle when occluded or backgrounded.
 
+## One renderer, chambers as a layout (v2.14.5 decision)
+
+The original brief kept Live Colony, Chamber, and Expanded as separate *views* while also demanding
+"one canonical topology instance" — those two requirements fight each other, and the repo carried
+the cost: two renderers (canvas + `cmap2` SVG), two sets of map preferences, two inspectors, two
+pan/zoom states, and duplicate polling.
+
+Resolved by collapsing to **one renderer — the live colony canvas**, which is the mature, stable
+implementation. Chambers are now a *layout mode* of that canvas: the same ants, same drag, same
+pulses, same pheromones, same inspector, clustered into role chambers with rings and labels drawn
+in world space. Map preferences (motion, labels, pheromones) and reset view / reset layout moved
+onto the canvas viewbar, where they now genuinely govern rendering rather than a parallel SVG.
+
+Consequences:
+
+- The **Chambers** button replaces the old "Groups" view and does not route anywhere — it
+  reorganizes in place.
+- The chamber SVG becomes redundant and is retired in the following release, once parity has been
+  confirmed in real use rather than assumed.
+- Stage 6 ("extract canonical topology surface") gets much smaller and safer: there is only one
+  surface left to move under the panels.
+
 ## Pointer-event arbitration
 
 The single largest implementation risk. Rules:
@@ -87,7 +109,9 @@ load by `DashboardWorkspaceState.Sanitize`:
 | 1 | Workspace state model (C#, tested), kill switch, this document | v2.14.2 | **done** |
 | 2 | Panel shell: register/render, header controls, collapse · minimize · hide · pin, Modules menu, layout lock | v2.14.3 | **done** |
 | 3 | Drag, resize, snap guides, z-order, clamping, debounced save | v2.14.4 | **done** |
-| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.5 | planned |
+| 3b | **Topology consolidation**: chambers become a LAYOUT of the live canvas (not a second renderer); map preferences (motion, labels, pheromones) and reset view/layout move onto the canvas viewbar | v2.14.5 | **done** |
+| 3c | Retire the chamber SVG (`cmap2`) and its route/plumbing once parity is confirmed in use | v2.14.6 | planned |
+| 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.7 | planned |
 | 5 | Migrate existing dashboard cards to registered panels (incremental) | v2.15.0 | planned |
 | 6 | Extract the canonical topology surface as the workspace canvas | v2.15.x | planned |
 | 7 | Topology overlays: view controls, legends/keys, inspector, prefs, hints — all hideable + anchored | v2.15.x | planned |
