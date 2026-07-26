@@ -437,6 +437,47 @@ public class RegressionGuardTests : IDisposable
             overlayIds);
     }
 
+    /// <summary>
+    /// v2.15.0 Stage 8: ui_state.json has exactly ONE writer.
+    ///
+    /// app.js and dashboard-workspace.js used to run independent debounced read-modify-write
+    /// cycles against the same document on different timers (350ms and 600ms). Each preserved the
+    /// other's keys, but they still raced: a panel drag landing inside an ant rename's window read
+    /// a stale document, and whichever PUT finished second silently discarded the other's change.
+    ///
+    /// Both surfaces now register mutators with UiStateWriter in app.js — one debounce, one read,
+    /// one write, chained so flushes cannot interleave.
+    /// </summary>
+    [Fact]
+    public void UiState_HasASingleWriter()
+    {
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
+        var wsJs = File.ReadAllText(Path.Combine(dir, "dashboard-workspace.js"));
+
+        Assert.Contains("const UiStateWriter", appJs);
+        Assert.Contains("window.AnthillUiState = UiStateWriter", appJs);
+
+        // app.js must not keep a second ad-hoc PUT alongside the writer.
+        var appPuts = Regex.Matches(appJs, @"'/ui/state'\s*,\s*'PUT'").Count;
+        Assert.True(appPuts == 1,
+            $"app.js should PUT /ui/state from exactly one place (UiStateWriter); found {appPuts}.");
+
+        // The workspace module must prefer the shared writer, and its own PUT may only survive as
+        // the guarded fallback for app.js being absent.
+        var saveIdx = wsJs.IndexOf("function save()", StringComparison.Ordinal);
+        Assert.True(saveIdx >= 0, "dashboard-workspace.js no longer defines save().");
+        var saveBody = wsJs.Substring(saveIdx, Math.Min(1400, wsJs.Length - saveIdx));
+        Assert.True(saveBody.Contains("window.AnthillUiState"),
+            "dashboard-workspace.js save() must route through the shared writer, not its own cycle.");
+        Assert.True(saveBody.IndexOf("window.AnthillUiState", StringComparison.Ordinal)
+                    < saveBody.IndexOf("'/ui/state', 'PUT'", StringComparison.Ordinal),
+            "The shared writer must be tried BEFORE the fallback PUT, or the race returns.");
+
+        // Overlays belong to app.js; the workspace must drop its stale copy on load.
+        Assert.Contains("delete W.state.topology_overlays", wsJs);
+    }
+
     [Fact]
     public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
     {
