@@ -15,7 +15,9 @@ namespace Anthill.Core.Planning;
 /// </summary>
 public sealed class Planner
 {
-    private static readonly HashSet<string> AllowedAnts = new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
+    // Stage D: derived per access (never cached) so specialist rollout gates apply immediately —
+    // one canonical role catalog, no duplicated executable lists (spec §7.1).
+    private static HashSet<string> AllowedAnts => new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
 
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
