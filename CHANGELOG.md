@@ -22,11 +22,22 @@ Kept working, deliberately:
 - Every canvas capability is untouched: Command/Expanded/Active/Chambers/Handoffs views, ant and
   chamber dragging, pan/zoom, pulses, pheromone field, tooltips, inspector, role colours.
 
-Honest remainder: the `cmap*` JavaScript functions and the `#cmap2` CSS rules are now
-**unreachable** — nothing in the console can call or match them. They are dead weight, not dead
-behaviour, and get swept in v2.14.9 as a pure-deletion commit. Removing ~145 references in the
-same change that repoints search would have made any regression hard to attribute, which is the
-same reasoning that kept the earlier stages separable.
+Also deleted, because the repo's own guard insisted: **the entire `cmap*` JavaScript block — 319
+lines** covering CMAP state, the chamber layout table, the SVG renderer, chamber/ant/trail
+selection, the inspector, pan/zoom, drag, and prefs. I had planned to defer this, but
+`UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds` (added in v2.14.2's hardening pass)
+correctly failed the build: functions still calling `getElementById('cmap2…')` against removed
+markup are exactly the drift that guard exists to catch. Deferring would have meant weakening or
+suppressing my own test to ship — so the code went instead.
+
+Preserved from that block, because other code genuinely uses them: the case-tolerant registry
+accessors (`antRoleId`, `antRoleName`, `antWorkers`, `antWorkerId`, `antWorkerName`, `antPurpose`)
+used by the Ant Inspector colony directory, and `attrSafe`, which keeps ids safe when embedded in
+delegated handler attributes. Each was verified as referenced outside the deleted block before the
+cut, not assumed.
+
+Remaining: ~23 orphaned `#cmap2` CSS selectors that now match nothing. Harmless (dead styling, not
+dead behaviour, and invisible to the guard) — swept in v2.14.9.
 
 ## v2.14.7 — Chambers are draggable as a unit
 
