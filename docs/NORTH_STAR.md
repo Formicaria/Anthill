@@ -265,7 +265,7 @@ ANTHILL must always operate within operator-defined permissions, budgets, target
 V2.7.0   Full homelab operations layer                 [CURRENT BASELINE]
 
 V2.8.0   Durable Mission Runtime                       [SHIPPED v2.8.0]
-V2.9.0   Contracted Tasks and Typed Capability Tools
+V2.9.0   Contracted Tasks and Typed Capability Tools   [SHIPPED v2.9.0]
 V2.10.0  Sandboxed Agent Execution
 V2.11.0  Independent Verification and Evidence
 V2.12.0  Procedural Skills and Evaluated Learning
