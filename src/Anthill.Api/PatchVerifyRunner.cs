@@ -1,6 +1,7 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Sandbox;
 
 namespace Anthill.Api;
 
@@ -31,15 +32,22 @@ public static class PatchVerifyRunner
         if (status != PatchStatus.Proposed.Value() && status != PatchStatus.Approved.Value())
             return Fail($"Patch status is '{status}' — only pending or approved patches can be verified.", "bad_status");
 
-        // Verification temporarily writes the patch to the workspace, so the same write gates
-        // that guard Apply must be on. This is not a bypass: the change never persists here.
-        if (!AnthillRuntime.EnablePatchApplication || !AnthillRuntime.EnableFileWriting)
-            return Fail("Write gates are off (patch_application_enabled / file_writing_enabled) — " +
-                        "verification needs to temporarily apply the patch to build against it.", "write_gates_off");
-
         var missionId = patch.GetValueOrDefault("mission_id")?.ToString() ?? AnthillRuntime.SystemApiMissionId;
         var taskId = patch.GetValueOrDefault("task_id")?.ToString();
         var filePath = patch.GetValueOrDefault("file_path")?.ToString() ?? "";
+
+        // v2.10.1 (NORTH_STAR Phase 3): when sandboxed execution is enabled, verification happens
+        // in a DISPOSABLE COPY of the workspace — the live checkout is never written to, so no
+        // write gates are required and no restore step can ever leave the install modified.
+        if (AnthillRuntime.EnableSandboxExecution)
+            return VerifyInSandbox(queen, patchId, patch, missionId, taskId, filePath, Fail);
+
+        // Legacy path: verification temporarily writes the patch to the LIVE workspace, so the same
+        // write gates that guard Apply must be on. Not a bypass — the change never persists here.
+        if (!AnthillRuntime.EnablePatchApplication || !AnthillRuntime.EnableFileWriting)
+            return Fail("Write gates are off (patch_application_enabled / file_writing_enabled) — " +
+                        "verification needs to temporarily apply the patch to build against it. " +
+                        "Enable sandbox_execution_enabled to verify without touching the workspace.", "write_gates_off");
 
         queen.Memory.LogEvent(missionId, "patch_verify_started",
             $"Operator requested unbiased verification of patch {patchId} ({filePath}).", taskId, "operator",
@@ -85,6 +93,77 @@ public static class PatchVerifyRunner
         {
             ["verified"] = false, ["approved"] = false, ["exit_code"] = verify.ExitCode,
             ["timed_out"] = verify.TimedOut, ["seconds"] = verify.Seconds, ["output_tail"] = tail,
+        };
+    }
+
+    /// <summary>
+    /// v2.10.1 sandboxed verification (NORTH_STAR Phase 3): copy the workspace, write the patched
+    /// content INTO THE COPY, build/test there, destroy the copy. The live checkout is never
+    /// written to — there is nothing to restore and no way for a crash mid-verify to leave the
+    /// running install modified. A green verify still only APPROVES; applying remains the
+    /// operator's explicit action against the real workspace.
+    /// </summary>
+    private static Dictionary<string, object?> VerifyInSandbox(
+        Queen queen, string patchId, Dictionary<string, object?> patch,
+        string missionId, string? taskId, string filePath,
+        Func<string, string, Dictionary<string, object?>> fail)
+    {
+        var newContent = patch.GetValueOrDefault("new_content")?.ToString();
+        if (string.IsNullOrEmpty(newContent))
+            return fail("Patch has no new_content to verify.", "empty_patch");
+
+        var liveRoot = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
+            ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : Environment.CurrentDirectory;
+
+        queen.Memory.LogEvent(missionId, "patch_verify_started",
+            $"Sandboxed verification of patch {patchId} ({filePath}) — live workspace is not modified.",
+            taskId, "operator", new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["sandboxed"] = true });
+
+        AutoApplyRunner.VerifyResult verify;
+        try
+        {
+            // preferCopy: verify against the workspace AS IT IS ON DISK, including uncommitted
+            // local state the patch was diffed against — a HEAD worktree could miss it.
+            using var sandbox = SandboxWorkspace.Create(liveRoot, preferCopy: true);
+            var target = Path.GetFullPath(Path.Combine(sandbox.Root, filePath));
+            if (!target.StartsWith(Path.GetFullPath(sandbox.Root), StringComparison.OrdinalIgnoreCase))
+                return fail($"Patch path escapes the sandbox: {filePath}", "path_escape");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, newContent);
+            verify = AutoApplyRunner.RunVerify(sandbox.Root);
+        }
+        catch (Exception e)
+        {
+            return fail($"Sandboxed verification could not run: {e.Message}", "sandbox_failed");
+        }
+
+        var tail = AutoApplyRunner.Tail(verify.Output, 2000);
+        if (verify.Green)
+        {
+            var approveMsg = queen.ApprovePatchDirect(patchId, "verify_runner_sandboxed");
+            queen.Memory.LogEvent(missionId, "patch_verified_approved",
+                $"Sandboxed verification PASSED for {filePath} (exit {verify.ExitCode}, {verify.Seconds}s) — patch auto-approved. Apply still requires the operator.",
+                taskId, "queen",
+                new() { ["patch_id"] = patchId, ["verify_exit"] = verify.ExitCode, ["verify_seconds"] = verify.Seconds, ["sandboxed"] = true });
+            return new()
+            {
+                ["verified"] = true, ["approved"] = true, ["exit_code"] = verify.ExitCode,
+                ["seconds"] = verify.Seconds, ["output_tail"] = tail, ["approve_message"] = approveMsg,
+                ["sandboxed"] = true,
+            };
+        }
+
+        var reason = verify.TimedOut ? "verify timed out" : $"verify failed (exit {verify.ExitCode})";
+        queen.Memory.UpdatePatchStatus(patchId, PatchStatus.Proposed, lastError: $"Sandboxed verification failed: {reason}.");
+        queen.Memory.LogEvent(missionId, "patch_verify_failed",
+            $"Sandboxed verification FAILED for {filePath} — {reason}. Patch stays pending; live workspace was never touched.",
+            taskId, "queen",
+            new() { ["patch_id"] = patchId, ["verify_exit"] = verify.ExitCode, ["timed_out"] = verify.TimedOut, ["sandboxed"] = true, ["verify_tail"] = AutoApplyRunner.Tail(verify.Output, 1000) });
+        return new()
+        {
+            ["verified"] = false, ["approved"] = false, ["exit_code"] = verify.ExitCode,
+            ["timed_out"] = verify.TimedOut, ["seconds"] = verify.Seconds, ["output_tail"] = tail,
+            ["sandboxed"] = true,
         };
     }
 
