@@ -188,7 +188,10 @@ public class RegressionGuardTests : IDisposable
     public void UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds()
     {
         var ui = UiSource(); // index.html (static ids) + app.js (getElementById + template-built ids)
-        var dynamicIds = new HashSet<string> { "pc-toast" }; // created via document.createElement at runtime
+        // Created via document.createElement at runtime, so they legitimately have no static id=.
+        // ws-root only exists when dashboard_workspace_enabled is on — which is precisely why it is
+        // built rather than declared in markup.
+        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root" };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
         var duplicates = declared.GroupBy(i => i).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
