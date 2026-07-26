@@ -850,7 +850,7 @@ function drawChambers(){
       ctx.textAlign='center';
       ctx.font=`600 ${cw}px var(--mono,monospace)`;
       ctx.fillStyle=base+(st.health==='dormant'?0.55:0.92)+')';
-      ctx.fillText(name, p.x, p.y-sr-8);
+      ctx.fillText(chamberLabel(name), p.x, p.y-sr-8);
       // Chamber summary only — the detail lives on the ants themselves.
       const bits=[st.active+'/'+st.members.length+' active'];
       if(st.running>0) bits.push(st.running+' running');
@@ -1086,7 +1086,10 @@ canvas.addEventListener('mouseup',e=>{
 canvas.addEventListener('dblclick',e=>{
   const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
-  if(hit) openRename(hit,e.clientX,e.clientY);
+  if(hit){ openRename(hit,e.clientX,e.clientY); return; }
+  // v2.14.10: double-clicking a chamber renames it, mirroring ant rename exactly.
+  const ch=chamberAt(wp.x,wp.y);
+  if(ch) openChamberRename(ch,e.clientX,e.clientY);
 });
 
 canvas.addEventListener('wheel',e=>{
@@ -3609,7 +3612,7 @@ function renderActivity(){
 PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
 
 // -- UI State ------------------------------------------------------------------
-let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
+let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{},chamberNames:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
 const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
 const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
@@ -3618,7 +3621,7 @@ uiReady=true;
 async function loadUiState(){
   try{
     const r=await api('/ui/state');
-    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; uiState.chambers=r.data.chambers||{}; }
+    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; uiState.chambers=r.data.chambers||{}; uiState.chamberNames=r.data.chamberNames||{}; }
   }catch{}
   applyUiState();
 }
@@ -3627,7 +3630,7 @@ let uiSaveTimer=null;
 function saveUiState(){
   clearTimeout(uiSaveTimer);
   uiSaveTimer=setTimeout(async()=>{
-    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets,chambers:uiState.chambers||{}});}
+    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets,chambers:uiState.chambers||{},chamberNames:uiState.chamberNames||{}});}
     catch(e){console.error('saveUiState',e);}
   },350);
 }
@@ -3667,7 +3670,25 @@ function persistNodePosition(n){uiState.positions[n.id]={x:Math.round(n.x),y:Mat
 let renameCaste=null;
 const renamePop=document.getElementById('rename-pop');
 
+/** v2.14.10: operator-renamed chambers. The canonical key stays the built-in chamber name, so
+ *  role membership, drag offsets, and stats never depend on the label the operator chose. */
+function chamberLabel(name){
+  const c=(uiState.chamberNames||{})[name];
+  return (c&&String(c).trim())||name;
+}
+let renameChamber=null;
+function openChamberRename(name,sx,sy){
+  renameChamber=name; renameCaste=null;
+  const inp=document.getElementById('rename-input');
+  inp.value=chamberLabel(name);
+  renamePop.style.left=Math.min(sx,window.innerWidth-220)+'px';
+  renamePop.style.top=Math.min(sy,window.innerHeight-120)+'px';
+  renamePop.classList.add('show');
+  inp.focus();inp.select();
+}
+
 function openRename(node,sx,sy){
+  renameChamber=null;
   renameCaste=node.ant||'queen';
   const inp=document.getElementById('rename-input');
   inp.value=casteName(renameCaste);
@@ -3678,11 +3699,18 @@ function openRename(node,sx,sy){
 }
 function commitRename(){
   const v=document.getElementById('rename-input').value.trim();
+  if(renameChamber){
+    uiState.chamberNames=uiState.chamberNames||{};
+    if(v&&v!==renameChamber) uiState.chamberNames[renameChamber]=v;
+    else delete uiState.chamberNames[renameChamber];   // empty or unchanged = back to the default
+    saveUiState();
+    renamePop.classList.remove('show'); renameChamber=null; return;
+  }
   if(renameCaste&&v){
     uiState.castes[renameCaste]=Object.assign({},uiState.castes[renameCaste],{name:v});
     applyUiState();saveUiState();
   }
-  renamePop.classList.remove('show');renameCaste=null;
+  renamePop.classList.remove('show');renameCaste=null;renameChamber=null;
 }
 document.getElementById('rename-save').addEventListener('click',commitRename);
 document.getElementById('rename-cancel').addEventListener('click',()=>{renamePop.classList.remove('show');renameCaste=null;});
