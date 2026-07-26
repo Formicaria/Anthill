@@ -9,6 +9,7 @@ namespace Anthill.Tests;
 /// specialists stay unavailable with explicit reasons, missing handlers are loud and fail closed,
 /// and all rollout gates default OFF.
 /// </summary>
+[Collection("specialist-gates")]
 public class AntExecutorCatalogTests
 {
     private static readonly string[] CurrentSix = { "researcher", "web", "file", "coder", "builder", "verifier" };

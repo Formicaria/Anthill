@@ -56,8 +56,22 @@ public static class AntRegistry
     public static readonly IReadOnlyDictionary<string, AntWorkerDefinition> ByWorker =
         Roles.SelectMany(r => r.Workers).ToDictionary(w => w.WorkerId, StringComparer.OrdinalIgnoreCase);
 
-    public static readonly IReadOnlySet<string> ExecutableRoleIds =
+    private static readonly IReadOnlySet<string> BaseExecutableRoleIds =
         Roles.Where(r => r.Executable && r.Enabled).Select(r => r.RoleId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Execution framework Stage D: executability is COMPUTED — the registry's static
+    /// Executable flag plus any specialist whose canary rollout gates are open. A property (not a
+    /// cached field) so config gates apply without initialization-order traps.</summary>
+    public static IReadOnlySet<string> ExecutableRoleIds
+    {
+        get
+        {
+            var set = new HashSet<string>(BaseExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
+            foreach (var specialist in AntExecutionCatalog.Contracts.Keys)
+                if (AntExecutorCatalog.SpecialistGateOpen(specialist)) set.Add(specialist);
+            return set;
+        }
+    }
 
     public static AntWorkerDefinition? DefaultWorkerFor(string roleId, string taskType = "", string goal = "")
     {
@@ -84,7 +98,7 @@ public static class AntRegistry
             return new(false, $"Unknown ant role: {task.AssignedAnt}");
         if (!role.Enabled)
             return new(false, $"Ant role is disabled: {task.AssignedAnt}");
-        if (!role.Executable)
+        if (!role.Executable && !AntExecutorCatalog.SpecialistGateOpen(role.RoleId))
             return new(false, $"Ant role is visible-only in this revision: {task.AssignedAnt}");
         if (string.IsNullOrWhiteSpace(task.AssignedWorker))
             task.AssignedWorker = DefaultWorkerFor(task.AssignedAnt, task.TaskType, task.Description)?.WorkerId;

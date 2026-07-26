@@ -49,6 +49,10 @@ public sealed partial class Queen : IDisposable
             ["coder"] = new CoderAnt(AnthillRuntime.UseOllama, Router),
             ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
             ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
+            // Stage D canary 1: handler registered unconditionally (implemented), but the role only
+            // becomes executable/plannable when its rollout gates are open — the catalog and the
+            // registry gate agree by construction.
+            ["ui_cartographer"] = new UiCartographerAnt(Tools),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
         // the affected role unavailable (fail closed) and is loud, never silent.

@@ -10,6 +10,7 @@ namespace Anthill.Tests;
 /// roles must be planner-ineligible, scaffolds fail closed, and no contract ever permits
 /// apply_patch. (Spec §15 registry tests, Stage A subset.)
 /// </summary>
+[Collection("specialist-gates")]
 public class AntExecutionFrameworkTests
 {
     private static readonly string[] Specialists =
