@@ -110,7 +110,8 @@ load by `DashboardWorkspaceState.Sanitize`:
 | 2 | Panel shell: register/render, header controls, collapse · minimize · hide · pin, Modules menu, layout lock | v2.14.3 | **done** |
 | 3 | Drag, resize, snap guides, z-order, clamping, debounced save | v2.14.4 | **done** |
 | 3b | **Topology consolidation**: chambers become a LAYOUT of the live canvas (not a second renderer); map preferences (motion, labels, pheromones) and reset view/layout move onto the canvas viewbar | v2.14.5 | **done** |
-| 3c | Retire the chamber SVG (`cmap2`) and its route/plumbing once parity is confirmed in use | v2.14.6 | planned |
+| 3b2 | Pheromone field tells per-ant truth (emission and brightness from each ant's own trail) | v2.14.6 | **done** |
+| 3c | Retire the chamber SVG (`cmap2`) and its route/plumbing once parity is confirmed in use — 15 functions, ~105 JS refs, ~41 markup refs; deliberately its own commit | v2.14.7 | planned |
 | 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.7 | planned |
 | 5 | Migrate existing dashboard cards to registered panels (incremental) | v2.15.0 | planned |
 | 6 | Extract the canonical topology surface as the workspace canvas | v2.15.x | planned |
