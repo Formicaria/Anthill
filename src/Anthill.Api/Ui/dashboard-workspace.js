@@ -152,6 +152,11 @@
       var body = el('div', 'ws-body');
       body.id = 'ws-body-' + def.id;
       frame.appendChild(body);
+      // Resize grip: visible only while unlocked (CSS), keyboard users resize via the panel menu.
+      var grip = el('div', 'ws-resize');
+      grip.setAttribute('data-wsresize', def.id);
+      grip.setAttribute('aria-hidden', 'true');
+      frame.appendChild(grip);
       try {
         def.render(body);
       } catch (e) {
@@ -252,6 +257,10 @@
       var node = renderPanel(W.panels[id]);
       if (node) layer.appendChild(node);
     });
+    var guides = el('div', 'ws-guides');       // alignment guides drawn during a drag
+    guides.id = 'ws-guides';
+    guides.setAttribute('aria-hidden', 'true');
+    layer.appendChild(guides);
     W.root.appendChild(layer);
     W.root.appendChild(renderTray());
   }
@@ -312,6 +321,146 @@
     e.preventDefault();
     action(target.getAttribute('data-wsid'));
   }
+
+  /* ---- Stage 3: drag, resize, snap ------------------------------------------------------------
+   * Pointer Events only (one code path for mouse/pen/touch — no synthesized double-fire).
+   * Arbitration rules, per the design doc:
+   *   - a gesture starting on a panel header moves that panel and never pans the map;
+   *   - a gesture starting on a resize handle resizes and never drags;
+   *   - header BUTTONS keep their clicks (drag ignores them entirely);
+   *   - while locked, nothing here engages, so the topology beneath receives the gesture.
+   * Movement is applied with requestAnimationFrame against a live style transform; state is
+   * written once at pointerup (never per frame), then clamped by the server on the next load.  */
+
+  var SNAP = 8;            // px: alignment threshold
+  var MIN_W = 200, MIN_H = 80;
+  var drag = null;         // {id,mode,startX,startY,origin,frame,pending,raf,guides}
+
+  function workspaceRect() {
+    var layer = document.getElementById('ws-panel-layer');
+    return layer ? layer.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+  }
+
+  /** Edges of every other visible panel — the candidates a dragged panel can align to. */
+  function snapTargets(exceptId) {
+    var out = { x: [0], y: [0] };
+    var r = workspaceRect();
+    out.x.push(Math.round(r.width));
+    out.y.push(Math.round(r.height));
+    panelIds().forEach(function (id) {
+      if (id === exceptId) return;
+      var p = placement(id);
+      if (p.display_state === 'hidden' || p.display_state === 'minimized') return;
+      out.x.push(p.x, p.x + p.width);
+      out.y.push(p.y, p.y + p.height);
+    });
+    return out;
+  }
+
+  /** Snap unless the operator holds a modifier (spec: snapping must be bypassable). */
+  function applySnap(value, candidates, bypass) {
+    if (bypass) return { value: value, guide: null };
+    for (var i = 0; i < candidates.length; i++) {
+      if (Math.abs(candidates[i] - value) <= SNAP) return { value: candidates[i], guide: candidates[i] };
+    }
+    return { value: value, guide: null };
+  }
+
+  function clearGuides() {
+    var g = document.getElementById('ws-guides');
+    if (g) g.textContent = '';
+  }
+
+  function drawGuides(gx, gy) {
+    var g = document.getElementById('ws-guides');
+    if (!g) return;
+    g.textContent = '';
+    if (gx != null) { var v = el('div', 'ws-guide ws-guide-v'); v.style.left = gx + 'px'; g.appendChild(v); }
+    if (gy != null) { var h = el('div', 'ws-guide ws-guide-h'); h.style.top = gy + 'px'; g.appendChild(h); }
+  }
+
+  function beginGesture(e, id, mode) {
+    if (W.state.locked) return;              // locked: the map owns every gesture
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest && e.target.closest('button')) return;  // header controls keep their clicks
+    var frame = document.getElementById('ws-panel-' + id);
+    if (!frame) return;
+
+    var p = placement(id);
+    drag = {
+      id: id, mode: mode, frame: frame,
+      startX: e.clientX, startY: e.clientY,
+      origin: { x: p.x, y: p.y, w: p.width, h: p.height },
+      pending: { x: p.x, y: p.y, w: p.width, h: p.height },
+      raf: 0,
+    };
+    bringToFront(id);
+    frame.style.zIndex = String((placement(id).z || 1));
+    frame.classList.add('ws-dragging');
+    try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+    e.stopPropagation();                      // the topology never sees this gesture
+  }
+
+  function moveGesture(e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+    var bypass = e.altKey || e.metaKey;       // hold Alt/Cmd to place freely
+    var t = snapTargets(drag.id);
+    var r = workspaceRect();
+
+    if (drag.mode === 'move') {
+      var nx = applySnap(drag.origin.x + dx, t.x, bypass);
+      var ny = applySnap(drag.origin.y + dy, t.y, bypass);
+      // Never lose a panel: keep a grabbable header edge inside the workspace.
+      drag.pending.x = Math.max(-(drag.origin.w - 64), Math.min(nx.value, Math.round(r.width) - 64));
+      drag.pending.y = Math.max(0, Math.min(ny.value, Math.round(r.height) - 64));
+      drag.guides = { x: nx.guide, y: ny.guide };
+    } else {
+      var nw = applySnap(drag.origin.w + dx, t.x.map(function (v) { return v - drag.origin.x; }), bypass);
+      var nh = applySnap(drag.origin.h + dy, t.y.map(function (v) { return v - drag.origin.y; }), bypass);
+      drag.pending.w = Math.max(MIN_W, Math.min(nw.value, Math.round(r.width)));
+      drag.pending.h = Math.max(MIN_H, Math.min(nh.value, Math.round(r.height)));
+      drag.guides = { x: null, y: null };
+    }
+
+    if (!drag.raf) {
+      drag.raf = requestAnimationFrame(function () {
+        drag.raf = 0;
+        if (!drag) return;
+        drag.frame.style.left = drag.pending.x + 'px';
+        drag.frame.style.top = drag.pending.y + 'px';
+        drag.frame.style.width = drag.pending.w + 'px';
+        drag.frame.style.height = drag.pending.h + 'px';
+        drawGuides(drag.guides && drag.guides.x, drag.guides && drag.guides.y);
+      });
+    }
+  }
+
+  function endGesture() {
+    if (!drag) return;
+    if (drag.raf) cancelAnimationFrame(drag.raf);
+    drag.frame.classList.remove('ws-dragging');
+    clearGuides();
+    // Persist ONCE, at the end of the interaction — never per frame.
+    setPlacement(drag.id, {
+      x: Math.round(drag.pending.x), y: Math.round(drag.pending.y),
+      width: Math.round(drag.pending.w), height: Math.round(drag.pending.h),
+      expanded_height: Math.round(drag.pending.h),
+    });
+    drag = null;
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (!W.enabled || !W.root) return;
+    var handle = e.target.closest && e.target.closest('[data-wsresize]');
+    if (handle && W.root.contains(handle)) { beginGesture(e, handle.getAttribute('data-wsresize'), 'resize'); return; }
+    var head = e.target.closest && e.target.closest('[data-wsdrag]');
+    if (head && W.root.contains(head)) beginGesture(e, head.getAttribute('data-wsdrag'), 'move');
+  });
+  document.addEventListener('pointermove', moveGesture);
+  document.addEventListener('pointerup', endGesture);
+  document.addEventListener('pointercancel', endGesture);
 
   /* ---- Boot ---------------------------------------------------------------------------------- */
 
