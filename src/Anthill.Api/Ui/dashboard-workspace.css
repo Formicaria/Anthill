@@ -73,6 +73,23 @@
 .ws-customize .ws-panel { border-style: dashed; border-color: rgba(34,211,238,.45); }
 .ws-locked .ws-panel { border-style: solid; }
 
+/* ---- Stage 3: drag, resize, alignment guides ---- */
+.ws-panel.ws-dragging { opacity: .92; box-shadow: 0 14px 34px -14px rgba(0,0,0,.85); }
+.ws-locked .ws-panel.ws-dragging { opacity: 1; }        /* locked never drags anyway */
+
+.ws-resize {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize; touch-action: none; display: none;
+  background: linear-gradient(135deg, transparent 45%, var(--border) 45%, var(--border) 55%, transparent 55%);
+}
+.ws-customize .ws-resize { display: block; }            /* handles appear only in customize mode */
+.ws-customize .ws-head { touch-action: none; }          /* pointer drag owns the header gesture */
+
+.ws-guides { position: absolute; inset: 0; pointer-events: none; }
+.ws-guide { position: absolute; background: rgba(34,211,238,.55); }
+.ws-guide-v { top: 0; bottom: 0; width: 1px; }
+.ws-guide-h { left: 0; right: 0; height: 1px; }
+
 /* ---- Minimized tray ---- */
 .ws-tray {
   position: absolute; left: 12px; bottom: 10px; z-index: 40;
