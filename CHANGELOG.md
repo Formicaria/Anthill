@@ -1,5 +1,30 @@
 # ANTHILL Changelog
 
+## v2.14.4 — Topology-first Dashboard, Stage 3: drag, resize, alignment
+
+The workspace becomes interactive. Still behind `dashboard_workspace_enabled` (default off).
+
+- **Pointer Events only** — one code path for mouse, pen, and touch, with `pointercancel`
+  handled so an interrupted gesture never strands a panel mid-drag. No parallel mouse/touch
+  listeners, so nothing double-fires.
+- **Pointer arbitration**, the design doc's named landmine, implemented explicitly: a gesture
+  starting on a header moves that panel and calls `stopPropagation` so the topology never pans;
+  a gesture on the resize grip resizes only; header buttons keep their clicks and are excluded
+  from dragging; and while the layout is **locked** no gesture engages at all, so the map beneath
+  receives everything.
+- **Alignment without a grid prison**: panels snap to other panels' edges and the workspace bounds
+  within 8px, guides render during the drag, and holding **Alt/Cmd bypasses snapping** for free
+  placement.
+- **Movement runs on `requestAnimationFrame`** against live styles; state is written **once at
+  pointerup**, never per frame, and then clamped by the server on next load.
+- **Panels cannot be lost**: dragging always leaves a grabbable header edge inside the workspace,
+  and resizing respects per-panel minimums.
+- Resize grips and dashed outlines appear only in customize mode; `touch-action: none` keeps
+  browser gestures from fighting the drag.
+- Tests: 9 new static-integrity assertions (Pointer Events exclusively, locked-mode inertness,
+  propagation stopped, buttons excluded, rAF movement with save-at-end-only, modifier bypass,
+  off-screen protection, resize minimums, customize-only handles) — 25 workspace tests total.
+
 ## v2.14.3 — Topology-first Dashboard, Stage 2: panel shell runtime
 
 The workspace gains its panel machinery. Still behind `dashboard_workspace_enabled` (default off),
