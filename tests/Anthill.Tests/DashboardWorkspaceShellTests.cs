@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Anthill.Core.Configuration;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -47,12 +48,45 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("/ui/dashboard-workspace.css", page);
     }
 
+    /// <summary>
+    /// v2.15.0: this assertion INVERTS deliberately. It previously required the workspace to
+    /// default OFF, which was correct while the track was mid-build. The track is now complete and
+    /// the topology-first workspace is the console, so the default is ON.
+    ///
+    /// This is a behaviour change that was asked for, not a test relaxed to get a green build — so
+    /// the guard is strengthened rather than dropped: the flag must still be exposed to the client,
+    /// must still be settable, and turning it off must still be a real rollback path.
+    /// </summary>
     [Fact]
-    public void FeatureFlag_IsExposedToTheClient_AndDefaultsOff()
+    public void FeatureFlag_IsExposedToTheClient_AndDefaultsOn()
     {
         Assert.Contains("dashboard_workspace_enabled", Src("src", "Anthill.Api", "ApiHost.cs"));
-        Assert.Contains("EnableDashboardWorkspace = false", Src("src", "Anthill.Core", "Configuration", "AnthillRuntime.cs"));
-        Assert.Contains("\"dashboard_workspace_enabled\": false", Src("config.example.json"));
+        Assert.Contains("EnableDashboardWorkspace = true", Src("src", "Anthill.Core", "Configuration", "AnthillRuntime.cs"));
+        Assert.Contains("\"dashboard_workspace_enabled\": true", Src("config.example.json"));
+
+        // The switch must remain a switch. If these disappear, "default on" has quietly become
+        // "always on" and the documented instant rollback no longer exists.
+        var runtime = Src("src", "Anthill.Core", "Configuration", "AnthillRuntime.cs");
+        Assert.Contains("config.DashboardWorkspaceEnabled ?? true", runtime);
+        Assert.Contains("dashboard_workspace_enabled", Src("src", "Anthill.Core", "Configuration", "AnthillConfig.cs"));
+    }
+
+    /// <summary>
+    /// An operator who deliberately turned the workspace off must not have it switched back on by
+    /// an upgrade. The config property is nullable so "absent" (pre-dates the setting, take the
+    /// new default) is distinguishable from "explicitly false" (respect it).
+    /// </summary>
+    [Fact]
+    public void ExplicitlyDisabledWorkspace_SurvivesTheDefaultFlip()
+    {
+        var cfg = Src("src", "Anthill.Core", "Configuration", "AnthillConfig.cs");
+        Assert.Contains("public bool? DashboardWorkspaceEnabled", cfg);
+
+        var config = new AnthillConfig { DashboardWorkspaceEnabled = false };
+        Assert.False(config.DashboardWorkspaceEnabled ?? true);      // explicit off stays off
+        var unset = new AnthillConfig();
+        Assert.Null(unset.DashboardWorkspaceEnabled);                // unset means unset
+        Assert.True(unset.DashboardWorkspaceEnabled ?? true);        // and resolves to the new default
     }
 
     // ---- CSP: the console must carry no inline JavaScript -----------------------------------------
@@ -112,9 +146,7 @@ public class DashboardWorkspaceShellTests
     {
         var js = Ui("dashboard-workspace.js");
         // Target the ACTION HANDLER specifically — the same literal also appears on the toolbar button.
-        var start = js.IndexOf("'reset-layout': function", StringComparison.Ordinal);
-        Assert.True(start > 0, "reset-layout handler not found");
-        var reset = js[start..Math.Min(js.Length, start + 600)];
+        var reset = BodyOf(js, "'reset-layout': function");
         // Assert against CODE, not prose: the handler's comment legitimately names the things it
         // must never touch, and a comment mentioning them is not the same as code touching them.
         var code = string.Join("\n", reset.Split('\n')
@@ -128,9 +160,177 @@ public class DashboardWorkspaceShellTests
     public void SavePreservesOtherUiStateKeys()
     {
         var js = Ui("dashboard-workspace.js");
-        // The save path reads the current document and replaces ONLY dashboard_workspace.
-        Assert.Contains("doc.dashboard_workspace = W.state", js);
-        Assert.Contains("await window.api('/ui/state')", js);
+        var save = BodyOf(js, "function save()");
+
+        // v2.15.0: save() no longer runs its own GET/PUT cycle — it registers a mutator with the
+        // single writer in app.js, because two independent debounced writers on the same document
+        // raced and the later PUT discarded the earlier one's change.
+        //
+        // The invariant this test protects is unchanged, and now checked more strictly than the
+        // old literal-match allowed: only the dashboard_workspace key is written, keys already
+        // inside it survive (topology_overlays belongs to app.js), and the document is never
+        // replaced wholesale on any path.
+        Assert.Contains("window.AnthillUiState", save);
+        Assert.Contains("doc.dashboard_workspace = Object.assign({}, doc.dashboard_workspace, W.state)", save);
+        Assert.DoesNotContain("doc = W.state", save);
+        Assert.Contains("await window.api('/ui/state')", js);   // the fallback still reads before writing
+    }
+
+    // ---- Stage 4: tab groups ------------------------------------------------------------------------
+
+    /// <summary>
+    /// v2.15.0: groups reuse the Stage 3 gesture machinery through a "g:&lt;id&gt;" reference rather
+    /// than getting a second drag/resize/snap implementation. If placement()/setPlacement() stop
+    /// translating those refs, groups become undraggable and unresizable in a way no unit test of
+    /// the C# state model would notice.
+    /// </summary>
+    [Fact]
+    public void TabGroups_ReuseTheExistingGestureMachinery()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("function isGroupRef", js);
+        Assert.Contains("'g:' + gid", js);
+        // Both translators must handle the ref, or dragging a group silently writes nowhere.
+        var pl = js[js.IndexOf("function placement(id)", StringComparison.Ordinal)..];
+        Assert.Contains("isGroupRef(id)", pl[..400]);
+        var sp = js[js.IndexOf("function setPlacement(id, changes)", StringComparison.Ordinal)..];
+        Assert.Contains("isGroupRef(id)", sp[..400]);
+        // z-order must consider groups, else a group can never be raised above a floating panel.
+        var bf = js[js.IndexOf("function bringToFront(id)", StringComparison.Ordinal)..];
+        Assert.Contains("tabGroups()", bf[..400]);
+    }
+
+    /// <summary>
+    /// Only the active tab's body is rendered. Rendering hidden tabs would quietly break the
+    /// refreshPolicy:'visible' contract — a stacked panel must be genuinely paused, not just
+    /// covered up, or grouping panels would multiply polling instead of reducing it.
+    /// </summary>
+    [Fact]
+    public void TabGroups_RenderOnlyTheActivePanel()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var body = BodyOf(js, "function renderTabGroup");
+        Assert.Contains("var def = W.panels[active]", body);
+        Assert.Contains("def.render(body)", body);
+        // Exactly one render call in the group frame: the active panel's.
+        Assert.Equal(1, Regex.Matches(body, @"\.render\(body\)").Count);
+    }
+
+    /// <summary>
+    /// Every drag-only capability needs a non-drag equivalent (accessibility rule), and the
+    /// tablist must follow the WAI-ARIA tabs pattern.
+    /// </summary>
+    [Fact]
+    public void TabGroups_AreKeyboardOperable()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("'role', 'tablist'", js);
+        Assert.Contains("'role', 'tab'", js);
+        Assert.Contains("'aria-selected'", js);
+        Assert.Contains("'role', 'tabpanel'", js);
+        Assert.Contains("tabindex", js);                       // roving tabindex
+        Assert.Contains("function onTabKeydown", js);
+        Assert.Contains("ArrowLeft", js);
+        Assert.Contains("ArrowRight", js);
+        // Grouping and detaching must both be reachable without a pointer drag.
+        Assert.Contains("'group-with'", js);
+        Assert.Contains("'tab-detach'", js);
+        Assert.Contains("ws-module-sub", js);                  // the menu entries that expose them
+    }
+
+    /// <summary>
+    /// The client must mirror the server rule that a group below two members dissolves, rather
+    /// than leaving a one-tab stack on screen until the next reload repairs it.
+    /// </summary>
+    [Fact]
+    public void TabGroups_DissolveBelowTwoMembers_OnTheClientToo()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("function dissolveGroup", js);
+        var detach = js[js.IndexOf("'tab-detach': function", StringComparison.Ordinal)..];
+        Assert.Contains("dissolveGroup(gid)", detach[..900]);
+        Assert.Contains("g.panels.length < 2", detach[..900]);
+    }
+
+    // ---- Docking (v2.15.0) -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Docking was deferred in the original plan precisely because hand-rolled dock geometry is
+    /// where window managers accumulate bugs. It shipped only because the geometry that matters —
+    /// how thick a rail may get — lives in tested C#. The client must therefore keep its own
+    /// arithmetic thin: rails lay out with flexbox and the only stored number is dock_size.
+    /// </summary>
+    [Fact]
+    public void DockRails_KeepGeometryInTheServer()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var rail = BodyOf(js, "function renderDockRail");
+        // The rail sets ONE dimension from state; everything else is flex.
+        Assert.Contains("railSize(side)", rail);
+        Assert.Contains("rail.style.width", rail);
+        Assert.Contains("rail.style.height", rail);
+        // Docked panels must not carry absolute placement — the rail positions them.
+        Assert.DoesNotContain("frame.style.left", rail);
+        Assert.DoesNotContain("frame.style.top", rail);
+        var css = Ui("dashboard-workspace.css");
+        Assert.Contains(".ws-panel.ws-docked", css);
+        Assert.Contains("position: relative", css);
+    }
+
+    /// <summary>
+    /// A dock rail must never be able to bury the topology. The server clamp is authoritative, but
+    /// the client mirrors it during the drag so the rail feels bounded instead of snapping back
+    /// after the round trip — and the two limits must agree.
+    /// </summary>
+    [Fact]
+    public void DockRailResize_MirrorsTheServerFractionLimit()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("0.60", js);
+        Assert.Contains("Math.max(180", js);
+        // The same numbers the server enforces.
+        Assert.Equal(0.60, DashboardWorkspaceState.MaxDockFraction);
+        Assert.Equal(180, DashboardWorkspaceState.MinDockSize);
+    }
+
+    /// <summary>
+    /// Docking is offered on an explicit aim at an edge, and must be resolved BEFORE tab grouping:
+    /// a panel header sitting under the edge zone is incidental, the edge is deliberate.
+    /// </summary>
+    [Fact]
+    public void DropIntoEdgeZone_DocksBeforeItConsidersTabGrouping()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var end = BodyOf(js, "function endGesture");
+        var dockAt = end.IndexOf("dockZoneAt(", StringComparison.Ordinal);
+        var groupAt = end.IndexOf("dropTargetPanel(", StringComparison.Ordinal);
+        Assert.True(dockAt > 0 && groupAt > 0, "endGesture must consider both docking and grouping");
+        Assert.True(dockAt < groupAt, "the dock zone must be checked before the tab-group target");
+    }
+
+    /// <summary>Every drag-only capability needs a non-drag equivalent (accessibility rule).</summary>
+    [Fact]
+    public void DockingIsReachableWithoutADrag()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("'dock-to'", js);
+        Assert.Contains("'undock'", js);
+        var menu = BodyOf(js, "function renderModules");
+        Assert.Contains("dock-to", menu);
+        Assert.Contains("undock", menu);
+    }
+
+    /// <summary>Drop hints appear only during a drag, and are cleared on every exit path.</summary>
+    [Fact]
+    public void DockHints_AreTransient()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("function clearDockHint", js);
+        Assert.Contains("clearDockHint()", BodyOf(js, "function endGesture"));
+        var css = Ui("dashboard-workspace.css");
+        Assert.Contains(".ws-dockzones { position: absolute; inset: 0;", css.Replace("\r", ""));
+        Assert.Contains("opacity: 0", css);          // invisible until a drag turns them on
+        Assert.Contains(".ws-dockzones.on", css);
     }
 
     // ---- Accessibility --------------------------------------------------------------------------------
@@ -190,8 +390,7 @@ public class DashboardWorkspaceShellTests
     public void LockedLayout_EngagesNoGesture_SoTheMapKeepsIt()
     {
         var js = Ui("dashboard-workspace.js");
-        var begin = js[js.IndexOf("function beginGesture", StringComparison.Ordinal)..];
-        begin = begin[..Math.Min(begin.Length, 400)];
+        var begin = BodyOf(js, "function beginGesture");
         Assert.Contains("W.state.locked", begin);
         Assert.Contains("return", begin);
     }
@@ -211,18 +410,45 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("closest('button')", js);      // a control click is never a drag
     }
 
+    /// <summary>
+    /// Slice a braced body (function OR block) out of dashboard-workspace.js by matching braces
+    /// from the signature, rather than by a fixed character count.
+    ///
+    /// v2.15.0: this used to take a magic 600/1400 characters, which silently stopped covering the
+    /// intended function the moment anything was added to it — the assertion then passed or failed
+    /// on where the window happened to land rather than on the behaviour it names.
+    /// </summary>
+    private static string BodyOf(string js, string signature)
+    {
+        var start = js.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, signature + " not found");
+        var open = js.IndexOf('{', start);
+        Assert.True(open > 0, signature + " has no body");
+        var depth = 0;
+        for (var i = open; i < js.Length; i++)
+        {
+            if (js[i] == '{') depth++;
+            else if (js[i] == '}' && --depth == 0) return js[start..(i + 1)];
+        }
+        Assert.Fail(signature + " body is unbalanced");
+        return string.Empty;
+    }
+
     [Fact]
     public void MovementUsesAnimationFrame_AndPersistsOnceAtEnd()
     {
         var js = Ui("dashboard-workspace.js");
         Assert.Contains("requestAnimationFrame", js);
         Assert.Contains("cancelAnimationFrame", js);
-        var end = js[js.IndexOf("function endGesture", StringComparison.Ordinal)..];
-        end = end[..Math.Min(end.Length, 600)];
-        Assert.Contains("setPlacement", end);          // saved at pointerup, not per frame
-        var move = js[js.IndexOf("function moveGesture", StringComparison.Ordinal)..];
-        move = move[..Math.Min(move.Length, 1400)];
+
+        // Saved at pointerup, exactly once — never per frame.
+        var end = BodyOf(js, "function endGesture");
+        Assert.Contains("setPlacement", end);
+        Assert.Equal(1, Regex.Matches(end, @"setPlacement\(").Count);
+
+        var move = BodyOf(js, "function moveGesture");
         Assert.DoesNotContain("setPlacement", move);
+        Assert.DoesNotContain("save(", move);          // nor any other write path
     }
 
     [Fact]
@@ -238,8 +464,8 @@ public class DashboardWorkspaceShellTests
     public void DraggedPanel_CannotBeLostOffScreen()
     {
         var js = Ui("dashboard-workspace.js");
-        var move = js[js.IndexOf("if (drag.mode === 'move')", StringComparison.Ordinal)..];
-        move = move[..Math.Min(move.Length, 600)];
+        // The clamp lives in moveGesture's move branch; BodyOf brace-matches that block.
+        var move = BodyOf(js, "if (drag.mode === 'move')");
         Assert.Contains("Math.max", move);
         Assert.Contains("Math.min", move);
         Assert.Contains("64", move);                   // grabbable header edge stays reachable
