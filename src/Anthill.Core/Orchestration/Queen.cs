@@ -54,6 +54,7 @@ public sealed partial class Queen : IDisposable
             // registry gate agree by construction.
             ["ui_cartographer"] = new UiCartographerAnt(Tools),
             ["tester"] = new TesterAnt(Tools),
+            ["soldier"] = new SoldierAnt(),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
         // the affected role unavailable (fail closed) and is loud, never silent.
