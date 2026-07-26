@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v2.14.10 — Chamber renaming
+
+- **Double-click a chamber to rename it**, exactly like renaming an ant — same popover, same
+  Enter/Escape behaviour. Ant hit-testing still wins, so double-clicking an ant inside a chamber
+  renames the ant.
+- The **canonical chamber name never changes**: renaming stores a label in a separate
+  `chamberNames` map, so role membership, drag offsets, and per-chamber stats keep working off the
+  built-in identity. Clearing the field (or typing the original) restores the default name.
+- Persists with the rest of the console layout in `ui_state.json`.
+
+Deferred with a written spec rather than rushed: the **editable Ant Inspector side panel** (click an
+ant → permissions, contract, workers, activity, with inline name/colour/model editing). It is
+specified in `docs/DASHBOARD_WORKSPACE.md` under "Queued: editable Ant Inspector side panel",
+including which persistence path each editable field must use — notably that per-role **model**
+selection belongs to model-routing config and must go through the existing settings endpoint with
+its normal auth, not a new write path. Building it half-way would have meant either a control that
+silently does nothing or a bypass of routing config; both are worse than waiting a release.
+
 ## v2.14.9 — Seven functional chambers
 
 Live feedback on v2.14.5: chambers were derived from each role's `Colony` string, which produced
