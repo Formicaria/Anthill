@@ -184,6 +184,155 @@ public class RegressionGuardTests : IDisposable
     /// elements up (silent dead work). Every getElementById target must exist as a static id in
     /// the markup, ids created at runtime are allow-listed, and no id may be declared twice.
     /// </summary>
+    /// <summary>
+    /// Strip JS string literals, comments, and regex literals so identifier scans cannot be fooled
+    /// by prose in a template string, a URL's "//", or an apostrophe inside "Queen's Core".
+    /// </summary>
+    private static string StripJsLiteralsAndComments(string src)
+    {
+        var sb = new System.Text.StringBuilder(src.Length);
+        var prev = '\0';   // last non-whitespace emitted char, for regex-literal detection
+        int i = 0, n = src.Length;
+        while (i < n)
+        {
+            var ch = src[i];
+            if (ch == '"' || ch == '\'' || ch == '`')
+            {
+                var quote = ch;
+                i++;
+                while (i < n)
+                {
+                    if (src[i] == '\\') { i += 2; continue; }
+                    if (src[i] == quote) { i++; break; }
+                    i++;
+                }
+                sb.Append("\"\""); prev = '"'; continue;
+            }
+            if (ch == '/' && i + 1 < n && src[i + 1] == '/')
+            {
+                while (i < n && src[i] != '\n') i++;
+                continue;
+            }
+            if (ch == '/' && i + 1 < n && src[i + 1] == '*')
+            {
+                i += 2;
+                while (i + 1 < n && !(src[i] == '*' && src[i + 1] == '/')) i++;
+                i += 2; continue;
+            }
+            if (ch == '/' && "=(,:[!&|?{};".IndexOf(prev) >= 0)
+            {
+                i++;
+                while (i < n && src[i] != '/' && src[i] != '\n') i += src[i] == '\\' ? 2 : 1;
+                i++;
+                while (i < n && char.IsLetter(src[i])) i++;
+                sb.Append("/x/"); prev = '/'; continue;
+            }
+            sb.Append(ch);
+            if (!char.IsWhiteSpace(ch)) prev = ch;
+            i++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// v2.14.12: every colony*/chamber*-prefixed symbol app.js REFERENCES must also be DECLARED.
+    ///
+    /// This guard exists because v2.14.5-v2.14.10 shipped call sites whose definitions were never
+    /// written: drawChambers/drawNode/maybeSpawn read colonyMotion and colonyLabels, loop() read
+    /// colonyPheromones, buildNodes called chamberCentres, and the mouse handlers called
+    /// chamberAt/moveChamber/persistChamber - none of which existed. An undeclared identifier is a
+    /// runtime ReferenceError, not a syntax error, so `node --check` passed and CI stayed green
+    /// while the live colony canvas rendered edges and no ants at all: loop() threw every frame
+    /// after edges.forEach and before nodes.forEach.
+    ///
+    /// Scoped to the colony/chamber prefixes deliberately. A whole-file undeclared-global scan
+    /// drowns in false positives from object keys and HTML attribute names inside template strings;
+    /// this narrow rule covers the subsystem that actually broke and stays trustworthy.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_ColonyAndChamberSymbolsAreDeclared()
+    {
+        var appJs = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js");
+        var code = StripJsLiteralsAndComments(File.ReadAllText(appJs));
+
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(code, @"\bfunction\s+([A-Za-z_$][\w$]*)"))
+            declared.Add(m.Groups[1].Value);
+
+        // Declaration lists: `let a=1,b={x:0},c;` - split on top-level commas, then take each LHS.
+        foreach (Match m in Regex.Matches(code, @"\b(?:const|let|var)\s+((?:[^;\n]|\n(?=\s*[A-Za-z_$]))*)"))
+        {
+            var depth = 0;
+            var body = m.Groups[1].Value;
+            var parts = new List<string>();
+            var cur = new System.Text.StringBuilder();
+            foreach (var ch in body)
+            {
+                if (ch == '(' || ch == '[' || ch == '{') depth++;
+                else if (ch == ')' || ch == ']' || ch == '}') depth--;
+                if (ch == ',' && depth == 0) { parts.Add(cur.ToString()); cur.Clear(); }
+                else cur.Append(ch);
+            }
+            parts.Add(cur.ToString());
+            foreach (var part in parts)
+            {
+                var lhs = part.Split('=')[0];
+                foreach (Match id in Regex.Matches(lhs, @"[A-Za-z_$][\w$]*")) declared.Add(id.Value);
+            }
+        }
+
+        // References: prefixed identifiers that are not property access (`obj.chamberX`) and not
+        // object-literal keys (`chambers:{}`), since neither is a binding lookup.
+        var undeclared = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(code, @"(?<![.\w$])((?:colony|chamber|CHAMBER|COLONY)[A-Za-z_$][\w$]*)(?![\w$])"))
+        {
+            var name = m.Groups[1].Value;
+            if (Regex.IsMatch(code.Substring(m.Index + m.Length), @"^\s*:")) continue;
+            if (declared.Contains(name)) continue;
+            if (!undeclared.ContainsKey(name))
+                undeclared[name] = code.Take(m.Index).Count(c => c == '\n') + 1;
+        }
+
+        Assert.True(undeclared.Count == 0,
+            "src/Anthill.Api/Ui/app.js references colony/chamber symbols that are never declared, " +
+            "which throws a ReferenceError at runtime while `node --check` still passes: " +
+            string.Join("; ", undeclared.Select(kv => $"{kv.Key} (line {kv.Value})")));
+    }
+
+    /// <summary>
+    /// v2.14.12: every colony canvas control in the markup must have a handler in app.js. The
+    /// Motion/Labels/Pheromones selects and the View/Layout reset buttons shipped as inert markup
+    /// because the listeners were never written. CSP is `script-src 'self'` with no unsafe-inline,
+    /// so a control's only route to behaviour is a data-attribute dispatch in app.js.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
+    {
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var html = File.ReadAllText(Path.Combine(dir, "index.html"));
+        var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
+        var missing = new List<string>();
+
+        foreach (var attr in new[] { "colonyact", "colonypref" })
+        {
+            var values = Regex.Matches(html, "data-" + attr + "=\"([^\"]+)\"")
+                              .Select(m => m.Groups[1].Value).Distinct().ToList();
+            if (values.Count == 0) continue;
+
+            // The dispatch must read the attribute at all...
+            if (!appJs.Contains("dataset." + attr) && !appJs.Contains("data-" + attr))
+                missing.Add($"data-{attr} is used in index.html but app.js never reads it");
+
+            // ...and each distinct value must be named somewhere in app.js.
+            foreach (var v in values)
+                if (!appJs.Contains("'" + v + "'") && !appJs.Contains("\"" + v + "\""))
+                    missing.Add($"data-{attr}=\"{v}\" has no handler in app.js");
+        }
+
+        Assert.True(missing.Count == 0,
+            "Colony canvas controls exist in markup but do nothing: " + string.Join("; ", missing));
+    }
+
     [Fact]
     public void UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds()
     {
