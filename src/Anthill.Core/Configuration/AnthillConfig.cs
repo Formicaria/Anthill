@@ -61,6 +61,7 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
     [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
     [JsonPropertyName("homelab_automation_enabled")] public bool HomelabAutomationEnabled { get; set; } = false;
+    [JsonPropertyName("dashboard_workspace_enabled")] public bool DashboardWorkspaceEnabled { get; set; } = false;
     [JsonPropertyName("sandbox_execution_enabled")] public bool SandboxExecutionEnabled { get; set; } = false;
     [JsonPropertyName("specialist_ant_execution_enabled")] public bool SpecialistAntExecutionEnabled { get; set; } = false;
     [JsonPropertyName("tester_ant_enabled")] public bool TesterAntEnabled { get; set; } = false;

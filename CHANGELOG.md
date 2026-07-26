@@ -1,5 +1,51 @@
 # ANTHILL Changelog
 
+## v2.14.2 — Topology-first Dashboard, Stage 1: workspace state model + kill switch
+
+Start of the console track that makes the live colony map the Dashboard's persistent canvas, with
+customizable floating panels above it. Canonical plan: **docs/DASHBOARD_WORKSPACE.md**. This
+release is foundations only — no visible UI change yet, and the classic Overview + Colony pages
+are untouched.
+
+Plan revisions taken before building (rationale in the doc):
+
+- **Kill switch first**: everything ships behind `dashboard_workspace_enabled` (default **false**).
+  Flipping it off is the instant rollback.
+- **Small releases, not one 50-item gate** — the mega-patch failure mode this project avoids.
+- **Docking and split-panels deferred** past the responsive/a11y pass, and optional: free
+  positioning + snap guides + tab groups carry most of the value without the geometry bug surface.
+- **Layout correctness lives in C#, not the browser.** This repo has no browser test harness and
+  adding one contradicts the no-build-system rule, so validation/clamping/migration/recovery are
+  server-side and unit-tested; JS keeps interaction, verified by the manual walkthrough (stated
+  honestly rather than dressed up as automated coverage).
+- **Desktop and compact are separate profiles** — a phone visit can no longer clobber the desktop
+  arrangement.
+- **Opacity dims a backdrop scrim, never text** (contrast against a moving map).
+- **Auto-save + Reset Layout**, no "Save Layout" button; **two flags** (`locked`, `focus_mode`)
+  instead of three overlapping modes.
+- **Pointer-event arbitration is a named design item** — the canvas already drags ants, drags
+  chambers, and pans, so panel dragging above it needs explicit hit-testing rules.
+- **Performance has a number**: the topology now renders permanently, so it must throttle when
+  occluded, backgrounded, or under reduced motion.
+
+Shipped here:
+
+- `DashboardWorkspaceState`: versioned schema (panels, tab groups, overlays, desktop/compact
+  profiles) with `Sanitize` — independent per-entry validation, coordinate/size clamping,
+  off-screen recovery with a grabbable header edge, unknown-panel drop, new-panel merge that never
+  moves customized ones, tab-group repair (a group under two members dissolves and its survivor
+  floats), overlay anchor fallback, and idempotence.
+- **The invariant**: a corrupt workspace resets *only* `dashboard_workspace` — ant names, colours,
+  positions, and map preferences are never touched. Proven by test.
+- `UiStateStore.WithSanitizedWorkspace` for the UI-state endpoint; `dashboard_workspace_enabled`
+  gate in runtime/config/example.
+- 20 xUnit tests covering the spec's persistence matrix (missing state, legacy v1 state, invalid
+  positions/sizes/enums, unknown/missing panels, broken tab references, invalid anchors, corrupt
+  workspace, profile isolation, future-key survival, idempotence).
+- Docs: new `docs/DASHBOARD_WORKSPACE.md` (design, decisions, pointer arbitration, persistence,
+  staged build order with status, performance budget, a11y, security); NORTH_STAR console track
+  entry; supersession notes in UI_ROADMAP, CONSOLE_REDESIGN, CONSOLE_REFIT; README pointer.
+
 ## v2.14.0 — Safe Action Engine and Recovery Orchestration (NORTH_STAR Phase 6)
 
 One safe execution framework for every state-changing system. Honest scope: the engine,

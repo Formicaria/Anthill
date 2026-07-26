@@ -9,6 +9,12 @@ reorganizing around user workflows rather than build history.
 Reference products for the target feel: Azure Portal, Microsoft Defender, CrowdStrike Falcon,
 vCenter, Proxmox VE, Grafana, GitHub Enterprise, Kubernetes Dashboard, Datadog, Rancher.
 
+> **Dashboard supersession (v2.14.2 →):** the Dashboard destination specifically is being rebuilt
+> as a **topology-first workspace** — the live colony map becomes the persistent canvas rather than
+> one card among many, with customizable floating panels above it and the standalone Colony page
+> eventually folding in. That work is canonical for the Dashboard and Colony routes; the IA below
+> still governs the rest of the console. See **[docs/DASHBOARD_WORKSPACE.md](DASHBOARD_WORKSPACE.md)**.
+
 ---
 
 ## Implementation status (living)

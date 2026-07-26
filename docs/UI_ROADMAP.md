@@ -2,6 +2,12 @@
 
 > **Status:** Retained as subsystem history — the UI roadmap (Phases 1–10) is **complete** as of v1.8.25.
 > For the current ordered build order, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap.
+>
+> **Superseded for the Dashboard (v2.14.2 →):** the Dashboard is being rebuilt as a topology-first
+> workspace — the live colony map becomes the persistent canvas, with customizable floating panels
+> above it and the standalone Colony page eventually folding in. Canonical design, decisions, and
+> staged build order: **[docs/DASHBOARD_WORKSPACE.md](DASHBOARD_WORKSPACE.md)**. Everything ships
+> behind `dashboard_workspace_enabled` (default off) until each stage is proven.
 
 Forward direction for the console HUD. **v1.8.17 ships Phases 1–2**; Phases 3–10 are documented
 direction, not yet built. The console is a single embedded `Ui/index.html` (vanilla HTML/CSS/JS,
