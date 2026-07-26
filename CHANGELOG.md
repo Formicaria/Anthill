@@ -1,5 +1,38 @@
 # ANTHILL Changelog
 
+## v2.14.3 — Topology-first Dashboard, Stage 2: panel shell runtime
+
+The workspace gains its panel machinery. Still behind `dashboard_workspace_enabled` (default off),
+so the console is unchanged until an operator opts in.
+
+- **`dashboard-workspace.js` / `.css`**, embedded and served same-origin like `app.js`. The CSP is
+  `script-src 'self'` with no `unsafe-inline`, so the runtime carries **no inline JavaScript and no
+  `on*=` handlers** — every control is a real `<button>` with `data-wsact`, dispatched by one
+  delegated listener registered once (not per panel). No `innerHTML` anywhere in the runtime.
+- **Panel registry + shell**: `AnthillWorkspace.register({id,title,render,…})`, rendered into a
+  panel layer with a compact header, per-panel loading/error containment (a panel that throws
+  reports inside its own body instead of taking down the workspace), and stable z-ordering.
+- **Four distinct states, as specified**: collapse in place (header only, remembers its expanded
+  height), minimize to a tray, hide (gone from workspace and tray, restorable from Modules), and
+  pin (survives focus mode).
+- **Modules menu, layout lock, focus mode, reset layout** on a compact toolbar; the menu stays open
+  while toggling several modules.
+- **Persistence**: debounced save *after* interaction, and the save path reads the current
+  `ui_state` document and replaces **only** `dashboard_workspace` — ant names, colours, positions,
+  and map preferences are never rewritten by a layout change. Server-side
+  `DashboardWorkspaceState` (v2.14.2) remains the authority on validation and clamping.
+- **Profiles**: the client switches desktop/compact at the same 900px breakpoint the server uses,
+  and never copies one profile's placements into the other.
+- **Accessibility**: `aria-label`/`aria-pressed`/`aria-expanded` on controls, visible
+  `:focus-visible` rings, reduced-motion support, and opacity presets that dim a backdrop **scrim**
+  rather than text so contrast holds over the animated map.
+- Tests: 16 static-integrity tests covering CSP compliance (no inline handlers, no `innerHTML`,
+  policy unchanged), full wiring (embedded → served → referenced), every declared action having a
+  handler, distinct collapse/minimize/hide states, debounced saving, reset-layout scope, the
+  ant-customization invariant in the save path, a11y affordances, and client/server breakpoint
+  agreement. Interaction remains verified by the manual walkthrough — stated plainly, since this
+  repo has no browser harness and adding one would contradict the no-build-system constraint.
+
 ## v2.14.2 — Topology-first Dashboard, Stage 1: workspace state model + kill switch
 
 Start of the console track that makes the live colony map the Dashboard's persistent canvas, with
