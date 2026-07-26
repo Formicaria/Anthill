@@ -389,7 +389,7 @@ public sealed class MedicAnt : BaseAnt
         });
     }
 
-    private static (Contracts.FailureClass, string, string) Classify(string text)
+    internal static (Contracts.FailureClass, string, string) Classify(string text)
     {
         var t = text.ToLowerInvariant();
         if (t.Contains("timed out") || t.Contains("timeout")) return (Contracts.FailureClass.Timeout, "operation exceeded its time budget", "high");
@@ -400,4 +400,91 @@ public sealed class MedicAnt : BaseAnt
         if (t.Contains("invalid") || t.Contains("validation")) return (Contracts.FailureClass.ValidationFailure, "input failed validation", "medium");
         return (Contracts.FailureClass.InternalDefect, "unclassified failure — treated as internal defect (not retryable)", "low");
     }
+}
+
+/// <summary>
+/// Execution framework Stage D-6: ArchivistAnt — turns TERMINAL mission history into durable
+/// memory candidates with provenance. The learning semantics are hard rules, not judgment calls:
+/// positive procedural memory comes ONLY from completed_verified (a completed mission whose
+/// verifier passed); completed-but-unverified, partial, failed, and timed_out NEVER reinforce
+/// positively; failures produce negative lessons; cancellation is stored neutrally. Secret-like
+/// content is redacted before anything is written, every candidate carries its source mission and
+/// evidence, and nothing here auto-promotes to a certified skill (that is V2.12 territory).
+/// Candidates are emitted as structured artifacts for the memory pipeline to ingest.
+/// </summary>
+public sealed class ArchivistAnt : BaseAnt
+{
+    public ArchivistAnt() : base("archivist") { }
+
+    private static readonly System.Text.RegularExpressions.Regex SecretLike = new(
+        @"(?:password|passwd|api[_-]?key|token|secret)\s*[:=]\s*['""]?[^'""\s]{4,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public override string Run(Task task, Mission mission)
+    {
+        var contract = AntExecutionCatalog.ContractFor("archivist")!;
+        if (!contract.SupportsTaskType(task.TaskType))
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the archivist execution contract"));
+
+        // Terminal outcome determination — deterministic, from real mission state:
+        // explicit "outcome: x" in the task wins; otherwise Complete + verifier-PASS = verified.
+        var explicitOutcome = System.Text.RegularExpressions.Regex.Match(task.Description, @"outcome:\s*(\w+)").Groups[1].Value;
+        var verifierPassed = mission.Tasks.Any(t => t.AssignedAnt == "verifier"
+            && t.Status == TaskStatus.Complete
+            && (t.Result?.Contains("PASS", StringComparison.OrdinalIgnoreCase) ?? false));
+        var outcome = explicitOutcome.Length > 0 ? explicitOutcome
+            : mission.Status switch
+            {
+                MissionStatus.Complete => verifierPassed ? "completed_verified" : "completed_unverified",
+                MissionStatus.Partial => "partial",
+                MissionStatus.Failed => "failed",
+                _ => "unknown",
+            };
+        if (outcome is "unknown" or "" || mission.Status == MissionStatus.Running)
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked("mission is not terminal — archival runs only after a terminal outcome"));
+
+        var candidates = new List<Dictionary<string, object?>>
+        {
+            Candidate("episodic", $"Mission '{Redact(mission.Goal)}' ended {outcome}.", mission, outcome, "high"),
+        };
+        switch (outcome)
+        {
+            case "completed_verified": // the ONLY source of positive procedural memory
+                var steps = string.Join(" -> ", mission.Tasks.Where(t => t.Status == TaskStatus.Complete).Select(t => t.AssignedAnt).Distinct());
+                candidates.Add(Candidate("procedural_candidate", $"Verified route for similar goals: {steps}", mission, outcome, "medium"));
+                break;
+            case "failed":
+            case "partial":
+            case "timed_out":
+                var failures = mission.Tasks.Where(t => t.Status == TaskStatus.Failed)
+                    .Select(t => Redact($"{t.AssignedAnt}: {t.FailureReason ?? t.Title}")).ToList();
+                candidates.Add(Candidate("negative",
+                    $"Do not repeat: {(failures.Count > 0 ? string.Join("; ", failures.Take(3)) : $"mission ended {outcome} without verified success")}",
+                    mission, outcome, "medium"));
+                break;
+            case "cancelled": break; // neutral — the episodic record above is the whole story
+        }
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(candidates);
+        return UiCartographerAnt.Compat(new AntExecutionResult
+        {
+            Success = true,
+            StatusCode = "succeeded",
+            Summary = $"Archived terminal outcome '{outcome}': {candidates.Count} memory candidate(s)"
+                + (outcome == "completed_verified" ? " (incl. positive procedural)" : outcome is "failed" or "partial" or "timed_out" ? " (incl. negative lesson)" : " (neutral)") + ".",
+            Artifacts = { new AntArtifact("memory_candidate", "Memory candidates with provenance", payload) },
+            Evidence = { new AntEvidence("mission_id", mission.Id, $"outcome={outcome} verifier_passed={verifierPassed}") },
+        });
+    }
+
+    private static Dictionary<string, object?> Candidate(string cls, string summary, Mission m, string outcome, string confidence) => new()
+    {
+        ["memory_class"] = cls, ["summary"] = summary, ["source_mission"] = m.Id,
+        ["outcome"] = outcome, ["confidence"] = confidence,
+        ["evidence"] = m.Tasks.Where(t => t.Result is not null).Select(t => t.Id).ToList(),
+        ["auto_promote"] = false, // never a certified skill without the V2.12 evaluation pipeline
+    };
+
+    private static string Redact(string s) => SecretLike.Replace(s ?? "", "[REDACTED]");
 }

@@ -57,6 +57,7 @@ public sealed partial class Queen : IDisposable
             ["soldier"] = new SoldierAnt(),
             ["scribe"] = new ScribeAnt(),
             ["medic"] = new MedicAnt(),
+            ["archivist"] = new ArchivistAnt(),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
         // the affected role unavailable (fail closed) and is loud, never silent.
