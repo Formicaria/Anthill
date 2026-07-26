@@ -111,11 +111,17 @@ public class DashboardWorkspaceShellTests
     public void ResetLayout_TouchesOnlyTheWorkspaceKey()
     {
         var js = Ui("dashboard-workspace.js");
-        var reset = js[js.IndexOf("'reset-layout'", StringComparison.Ordinal)..];
-        reset = reset[..Math.Min(reset.Length, 600)];
-        Assert.Contains("profiles", reset);
-        Assert.DoesNotContain("ants", reset);      // colony customization is never in scope
-        Assert.DoesNotContain("positions", reset);
+        // Target the ACTION HANDLER specifically — the same literal also appears on the toolbar button.
+        var start = js.IndexOf("'reset-layout': function", StringComparison.Ordinal);
+        Assert.True(start > 0, "reset-layout handler not found");
+        var reset = js[start..Math.Min(js.Length, start + 600)];
+        // Assert against CODE, not prose: the handler's comment legitimately names the things it
+        // must never touch, and a comment mentioning them is not the same as code touching them.
+        var code = string.Join("\n", reset.Split('\n')
+            .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+        Assert.Contains("profiles", code);
+        Assert.DoesNotContain("ants", code);       // colony customization is never in scope
+        Assert.DoesNotContain("positions", code);
     }
 
     [Fact]
