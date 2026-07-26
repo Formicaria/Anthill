@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.14.5 — Topology consolidation: chambers become a layout of the live colony canvas
+
+The console had two topology renderers — the mature canvas and the chamber SVG — with two sets of
+map preferences, two inspectors, two pan/zoom states, and duplicate polling. That also made the
+"one canonical topology instance" requirement impossible to satisfy honestly. Resolved by keeping
+the renderer that works and folding the other one's capabilities into it.
+
+- **Chambers are now a layout mode of the live canvas**, not a separate view. The
+  "Groups" button is now **Chambers**: it clusters each colony around its own centre, draws
+  chamber rings and counts in world space (so they pan and zoom with everything), and highlights a
+  chamber whose ants are active. Nothing routes anywhere — the reorganization happens in place.
+- **Everything the canvas already did keeps working**, untouched: ant dragging, pan/zoom, live
+  pulses, handoff edges, pheromone field, hover/selection, the inspector, and role colours.
+- **Map preferences moved onto the canvas viewbar** and now genuinely govern rendering:
+  - **Motion** (off/low/normal/high) throttles particle spawning — `off` stops it entirely;
+  - **Labels** (off/active/all) sets label density, while hovered ants always keep their label so
+    inspection never goes blind;
+  - **Pheromones** (off/active/all) gates the pheromone field;
+  - **⤾ View** resets pan/zoom only; **⌂ Layout** returns dragged ants to the computed layout.
+  All three preferences persist per operator and fall back safely on unknown values.
+- CSP-safe throughout: the new controls use `data-colonypref` / `data-colonyact` with delegated
+  listeners — no inline handlers.
+- The chamber SVG (`cmap2`) is now redundant. It is **retired in v2.14.6**, once parity has been
+  confirmed in real use rather than assumed — deliberately not deleted in the same release that
+  moves the functionality.
+- Docs: DASHBOARD_WORKSPACE.md gains the one-renderer decision and its consequences; the stage
+  table adds 3b (this release) and 3c (SVG retirement).
+
 ## v2.14.4 — Topology-first Dashboard, Stage 3: drag, resize, alignment
 
 The workspace becomes interactive. Still behind `dashboard_workspace_enabled` (default off).
