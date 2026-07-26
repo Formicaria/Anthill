@@ -1,5 +1,93 @@
 # ANTHILL Changelog
 
+## v2.14.13 — Editable Ant Inspector, topology as the dashboard canvas, UI hardening
+
+Three pieces of work in one release: a hardening pass over the console, the Ant Inspector becoming
+editable, and the live topology becoming the Dashboard's background layer.
+
+### Added — editable Ant Inspector (Stage 3e)
+
+Clicking an ant now opens a **Configure** section inside the *existing* right-side Agent Inspector
+card — no second panel. It edits exactly three things, each through a persistence path that already
+existed:
+
+| Field | Writes to |
+|---|---|
+| Display name | `uiState.castes[role].name` — the same key the double-click rename uses |
+| Accent colour | `uiState.castes[role].color`, via `casteColor`/`applyUiState` |
+| Model route | `POST /settings {model_routes}` with normal auth — no new write path |
+
+It also surfaces information the inspector never had: chamber, runtime status and unavailability
+reason, planner eligibility, live pheromone strength, and the workspace path allowlists that
+`AntRoleDefinition` has always carried but nothing rendered.
+
+The inspector never grants a capability and never edits permissions, tool allowlists, or path
+allowlists — those are contract-owned and display-only. Ants with no model route (control plane,
+or not executable) get a short explanation instead of a dead disabled control.
+
+Two honest deviations from the queued spec: execution-contract detail (task types, required
+capabilities, risk class, compensation) is **not** shown because `/colony/registry` does not expose
+it, and name/colour are caste-level because workers derive both from their caste in `applyUiState`.
+
+### Fixed — `POST /settings` silently reset model routes
+
+`AnthillRuntime.ApplySettingsUpdate` does `dict[key] = value`, so posting `model_routes` **replaces
+the entire route map** rather than merging into it. The Ant Config page only avoided data loss by
+coincidence — it posted every caste it rendered — and still dropped any route it omitted, including
+`strategist`, `fallback`, and any caste with no model selected, silently reverting them to the
+profile default.
+
+Both writers now merge into a shared `modelRoutes` cache and post the whole map. Found while wiring
+the inspector's model control, which would have hit it on every single save.
+
+### Fixed — operator- and model-controlled strings reached markup unescaped
+
+`showInspector` interpolated `n.label`, `n.role`, `n.parent`, `n.colony`, and mission-graph task
+fields (`title`, `status`, `task_type`, assignee) into `innerHTML` without escaping, and pasted
+`n.color` straight into `style=""`. Ant names come from operator input and task titles come from
+model output; `UiStateStore` round-trips both verbatim by design ("the UI owns the shape"), which
+makes the client the only place they can be sanitised.
+
+All of them now go through `escapeHtml`, and colours through a new `cssColor()` that accepts only a
+hex literal, a `var(--token)`, or a bare colour keyword. The console's CSP (`script-src 'self'`,
+no unsafe-inline) blocks the classic payload, but CSP is a second line of defence, not a substitute
+for escaping — markup injection does not require script execution.
+
+### Added — topology as the dashboard canvas (Stage 6)
+
+With `dashboard_workspace_enabled` on, the Dashboard now renders the live colony topology full-bleed
+behind its floating panels. This is done by **re-parenting the single `#colony-canvas-area`** between
+the Colony page and a new `#ws-topology` layer — not by adding a second renderer. One canvas, one
+render loop, one polling path, and every existing interaction (ant drag, chamber drag, pan, zoom,
+inspector) keeps working because it is literally the same element with the same listeners.
+
+The canvas takes its size from its container, so it is re-measured on the frame *after* each move;
+measuring during the move yields 0×0 and collapses every ant onto the origin. The Colony page
+reclaims the canvas whenever it is opened, so that route never goes blank — route consolidation
+stays Stage 9's job.
+
+`.ws-root` is now `pointer-events:none` with panels and toolbar opting back in. Without that the
+workspace root is a full-page invisible shield over a map you can no longer interact with.
+
+### Added — regression guards
+- `UiIntegrity_TopologyHasOneRendererAndPassesPointersThrough`: exactly one `<canvas>`, exactly one
+  render-loop bootstrap, and `.ws-root` must not capture pointer events.
+- `UiIntegrity_OperatorControlledFieldsAreEscapedBeforeMarkup`: node fields may not be interpolated
+  into markup without `escapeHtml`/`cssColor`.
+- `UiIntegrity_ColonyAndChamberSymbolsAreDeclared` widened to cover `topology*` and `overlay*`.
+
+### Audit note
+A whole-file undeclared-identifier scan of `app.js` and `dashboard-workspace.js` produced 22
+candidates; all 22 triaged as false positives (every one properly declared). Without a real JS
+parser — which the no-build-system constraint rules out — a whole-file version of that scan is not
+trustworthy enough to gate a build, so the shipped guard stays prefix-scoped, where it was verified
+to catch exactly the six real v2.14.12 defects with zero false positives.
+
+### Known gap
+The render loop suppresses drawing when the tab is backgrounded or the canvas measures zero (its
+page is `display:none`). Occlusion-based throttling — "mostly covered by panels" — is not
+implemented and is not claimed.
+
 ## v2.14.12 — Hotfix: the live colony canvas rendered no ants
 
 Fixes the Colony topology showing only faint edges radiating from an empty centre, with no ants
