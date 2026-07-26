@@ -85,7 +85,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 |---|---|---|---|
 | 0 | Audit: routes, page ids, topology DOM, polling, `app.js`, UI-state API | — | done |
 | 1 | Workspace state model (C#, tested), kill switch, this document | v2.14.2 | **done** |
-| 2 | Panel shell: register/render, header controls, collapse · minimize · hide · pin, Modules menu, layout lock | v2.14.3 | planned |
+| 2 | Panel shell: register/render, header controls, collapse · minimize · hide · pin, Modules menu, layout lock | v2.14.3 | **done** |
 | 3 | Drag, resize, snap guides, z-order, clamping, debounced save | v2.14.4 | planned |
 | 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.5 | planned |
 | 5 | Migrate existing dashboard cards to registered panels (incremental) | v2.15.0 | planned |
