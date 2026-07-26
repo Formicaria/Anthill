@@ -11,6 +11,10 @@ namespace Anthill.Tests;
 /// </summary>
 public class DashboardWorkspaceStateTests
 {
+    // Deliberately arbitrary fixture ids: these tests prove the repair logic is id-AGNOSTIC, so
+    // they must not be the production list. The production ids live in
+    // DashboardWorkspaceState.KnownPanelIds / KnownOverlayIds and are checked against the client's
+    // registrations by RegressionGuardTests.Workspace_CanonicalIdsMatchTheClientRegistrations.
     private static readonly string[] Panels =
         { "colony-health", "mission-command", "recent-events", "pending-approvals" };
     private static readonly string[] Overlays =
