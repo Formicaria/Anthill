@@ -96,7 +96,7 @@ public sealed class UiCartographerAnt : BaseAnt
 
     /// <summary>TEMPORARY compatibility adapter (spec §16): BaseAnt.Run returns a string, so the
     /// structured result rides along as a tagged JSON block. Removed when BaseAnt goes structured.</summary>
-    private static string Compat(AntExecutionResult r)
+    internal static string Compat(AntExecutionResult r)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -107,5 +107,65 @@ public sealed class UiCartographerAnt : BaseAnt
             warnings = r.Warnings,
         });
         return $"{r.Summary}\n\nUI_MAP_JSON:\n{payload}";
+    }
+}
+
+/// <summary>
+/// Execution framework Stage D-2: TesterAnt — deterministic checks and test evidence, nothing
+/// else. It runs ONLY allowlisted checks through the enforced dispatch path (run_allowlisted_check
+/// is its sole execution tool; shell/write/patch are contract-forbidden and structurally denied),
+/// makes no model calls (its contract says so), and never reports success without a real exit
+/// code as evidence. Success hands to the verifier; failure hands to the medic.
+/// </summary>
+public sealed class TesterAnt : BaseAnt
+{
+    private readonly ToolRegistry _tools;
+    public TesterAnt(ToolRegistry tools) : base("tester") => _tools = tools;
+
+    public override string Run(Task task, Mission mission)
+    {
+        var contract = AntExecutionCatalog.ContractFor("tester")!;
+        if (!contract.SupportsTaskType(task.TaskType))
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the tester execution contract"));
+
+        // Deterministic check selection: catalog ids literally named in the task text; a plain
+        // build/test/validation task defaults to the SDK-probe + build profile. Never free text.
+        var requested = CheckCatalog.Ids
+            .Where(id => task.Description.Contains(id, StringComparison.OrdinalIgnoreCase)
+                      || task.Title.Contains(id, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (requested.Count == 0) requested = new List<string> { "dotnet_version", "dotnet_build" };
+
+        var evidence = new List<AntEvidence>();
+        var lines = new List<string>();
+        var allPassed = true;
+        foreach (var checkId in requested)
+        {
+            var run = _tools.RunTool("run_allowlisted_check", mission.Id, task.Id, Name,
+                new() { ["check_id"] = checkId });
+            var exit = System.Text.RegularExpressions.Regex.Match(run.Output, @"exit_code=(-?\d+)").Groups[1].Value;
+            evidence.Add(new AntEvidence("check", checkId, $"exit_code={(exit.Length > 0 ? exit : "n/a")} success={run.Success}"));
+            lines.Add($"{checkId}: {(run.Success ? "PASS" : "FAIL")}{(run.Success ? "" : $" — {run.Error}")}");
+            if (!run.Success) allPassed = false;
+        }
+
+        var report = new AntArtifact("test_report", "Deterministic check report", string.Join("\n", lines));
+        var result = new AntExecutionResult
+        {
+            Success = allPassed,
+            StatusCode = allPassed ? "succeeded" : "failed_retryable",
+            Summary = $"{requested.Count} check(s): {lines.Count(l => l.Contains(": PASS"))} passed, {lines.Count(l => l.Contains(": FAIL"))} failed.",
+            Artifacts = { report },
+            Evidence = evidence,
+            Handoffs =
+            {
+                allPassed
+                    ? new AntHandoff("tester", "verifier", "checks passed — verify results", "verification", new[] { "test_report" }, false, 1, $"tester-ok:{mission.Id}:{task.Id}")
+                    : new AntHandoff("tester", "medic", "check failure needs diagnosis", "failure_diagnosis", new[] { "test_report" }, true, 1, $"tester-fail:{mission.Id}:{task.Id}"),
+            },
+            Failure = allPassed ? null : new AntFailure(Contracts.FailureClass.VerificationFailure, "one or more checks failed", Retryable: true),
+        };
+        return UiCartographerAnt.Compat(result);
     }
 }

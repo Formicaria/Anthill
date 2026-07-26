@@ -53,6 +53,7 @@ public sealed partial class Queen : IDisposable
             // becomes executable/plannable when its rollout gates are open — the catalog and the
             // registry gate agree by construction.
             ["ui_cartographer"] = new UiCartographerAnt(Tools),
+            ["tester"] = new TesterAnt(Tools),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
         // the affected role unavailable (fail closed) and is loud, never silent.
@@ -65,6 +66,8 @@ public sealed partial class Queen : IDisposable
         var registry = new ToolRegistry(Memory);
         var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
         registry.Register(new SystemInfoTool());
+        // Stage D-2: TesterAnt's ONLY execution surface — declared checks, never arbitrary commands.
+        registry.Register(new RunAllowlistedCheckTool(AnthillRuntime.AllowedWorkspaceRoot));
         if (AnthillRuntime.EnableFileTools)
         {
             registry.Register(new DirectoryListTool(guard));
