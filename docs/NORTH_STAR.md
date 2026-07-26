@@ -273,16 +273,25 @@ V2.12.0  Independent Verification and Evidence (was V2.11.0)  [SHIPPED v2.12.0 �
 V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)  [SHIPPED v2.13.0 — skill registry + evidence-gated promotion]
 V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)  [SHIPPED v2.14.0 — engine + orchestration; executor migration next]
 V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V3 track)
-         [IN PROGRESS through v2.14.10 — see docs/DASHBOARD_WORKSPACE.md for status + next steps]
+         [IN PROGRESS through v2.14.15 — see docs/DASHBOARD_WORKSPACE.md for status + next steps]
          Shipped: workspace state model + kill switch (v2.14.2) · panel shell (v2.14.3) ·
          drag/resize/snap (v2.14.4) · chambers as a canvas layout + map prefs moved onto the
          canvas (v2.14.5) · per-ant truthful pheromone field (v2.14.6) · draggable chambers
          (v2.14.7) · chamber SVG retired, one renderer (v2.14.8) · seven functional chambers +
-         dashboard cards as panels (v2.14.9/v2.14.10) · chamber renaming (v2.14.10)
-         Next: editable Ant Inspector (v2.14.11) · topology becomes the dashboard canvas
-         (v2.14.12) · hideable topology overlays (v2.14.13) · tab groups, route consolidation,
-         responsive/a11y (v2.15.x). Docking/split-panels deliberately deferred.
-         Gate: dashboard_workspace_enabled (default off) — the classic console is untouched.
+         dashboard cards as panels (v2.14.9/v2.14.10) · chamber renaming (v2.14.10) ·
+         editable Ant Inspector + topology as the dashboard canvas (v2.14.13) ·
+         topology overlays, hideable and re-anchorable (v2.14.14) ·
+         persistent topology + inspector/jobs as panels + readable standby chambers (v2.14.15)
+         Hotfixes in this line: v2.14.11 colony layout · v2.14.12 restored the colony/chamber
+         definitions whose call sites had shipped without them. Both consumed their version
+         numbers, which is why the feature stages shifted.
+         Corrected in-flight: v2.14.14 wired DashboardWorkspaceState into /ui/state — Stage 1
+         had shipped it with 20 passing tests and NO call site, so every guarantee it made was
+         inert; and fixed saveUiState deleting the whole panel layout on any ant rename.
+         COMPLETE at v2.15.0: tab groups · docking to all four edges · single-writer +
+         lifecycle audit · polished default layout · responsive/a11y pass ·
+         dashboard_workspace_enabled now DEFAULT ON (still an instant rollback when set false).
+         Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
 
 > Renumbering note: the v2.11.x line was consumed by sandbox/coder wiring releases, so the
@@ -1386,16 +1395,27 @@ These may not be added indirectly through plugins, prompts, skills, or generated
 ## Canonical documents
 
 ```text
-docs/NORTH_STAR.md       Ordered project roadmap
-docs/AUTONOMY.md         Autonomy runtime and operator controls
-docs/HOMELAB.md          Homelab architecture
-docs/APPROVALS.md        Approval and authorization model
-docs/TOOLS.md            Capability and tool contracts
-docs/VERIFICATION.md     Verifier framework and evidence rules
-docs/SKILLS.md           Procedural skill lifecycle
-docs/RECOVERY.md         Rollback and compensation architecture
-docs/QUALIFICATION.md    V3 readiness and fault-injection plan
+docs/NORTH_STAR.md            Ordered project roadmap
+docs/ROADMAP.md               Release map
+docs/AUTONOMY.md              Autonomy runtime and operator controls
+docs/HOMELAB.md               Homelab architecture
+docs/APPROVALS.md             Approval and authorization model
+docs/CONTRACTS.md             Task contracts, capability tools, recovery and compensation
+docs/ANT_EXECUTION.md         Ant runtime classification, execution contracts, verification
+docs/DASHBOARD_WORKSPACE.md   Topology-first dashboard workspace
+docs/DEPLOYMENT.md            Deployment and LXC operations
 ```
+
+> **v2.15.0 correction.** This list previously named `TOOLS.md`, `VERIFICATION.md`, `SKILLS.md`,
+> `RECOVERY.md`, and `QUALIFICATION.md` — none of which exist. The section immediately below
+> claims automated tests verify that "required canonical documents exist", and no such test was
+> ever written, so the list drifted unchecked. It now names only documents that are really in the
+> repo, and `DocsConsistencyTests.CanonicalDocuments_AllExist` enforces that.
+>
+> Still genuinely undocumented, tracked as debt rather than pretended away: the **procedural skill
+> lifecycle** (shipped v2.13.0) has no dedicated document, and **V3 qualification / fault-injection**
+> lives only in §6 of this file. Verification and recovery are covered by `ANT_EXECUTION.md` and
+> `CONTRACTS.md` respectively.
 
 ## Roadmap consistency
 

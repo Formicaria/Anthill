@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.14.15";
+    public const string Version = "2.15.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -164,10 +164,18 @@ public static class AnthillRuntime
     // AND its canary stage (contract, handler, tests) completed.
     /// <summary>V2.10.0: gate for routing agent iteration through disposable sandboxes. Default
     /// OFF; the primitives are inert until an agent path opts in behind this flag.</summary>
-    /// <summary>v2.14.2: kill switch for the topology-first dashboard workspace. Default OFF —
-    /// the classic Overview + Colony pages stay canonical until the operator opts in, and flipping
-    /// this back off is the instant rollback if the workspace misbehaves.</summary>
-    public static bool EnableDashboardWorkspace = false;
+    /// <summary>
+    /// v2.14.2: kill switch for the topology-first dashboard workspace.
+    ///
+    /// v2.15.0: default flipped ON. The track is complete — the topology is the persistent canvas,
+    /// all nine panels including the inspector and jobs list live on it, and panels can be moved,
+    /// grouped into tabs, or docked to an edge. This is now the console.
+    ///
+    /// It remains a kill switch, not a vestige: setting dashboard_workspace_enabled=false restores
+    /// the classic Overview grid and the standalone Colony page immediately, with no migration and
+    /// no data loss — saved panel layouts simply go unread until it is turned back on.
+    /// </summary>
+    public static bool EnableDashboardWorkspace = true;
     public static bool EnableSandboxExecution = false;
     public static bool EnableSpecialistAntExecution = false;
     public static bool EnableTesterAnt = false;
@@ -544,7 +552,9 @@ public static class AnthillRuntime
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
         EnableHomelabAutomation = config.HomelabAutomationEnabled;
-        EnableDashboardWorkspace = config.DashboardWorkspaceEnabled;
+        // v2.15.0: unset resolves to the shipping default (on); an explicit false is respected.
+        EnableDashboardWorkspace = config.DashboardWorkspaceEnabled ?? true;
+        config.DashboardWorkspaceEnabled = EnableDashboardWorkspace;   // make it explicit on next save
         EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         EnableTesterAnt = config.TesterAntEnabled;
