@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.14.0";
+    public const string Version = "2.14.2";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -164,6 +164,10 @@ public static class AnthillRuntime
     // AND its canary stage (contract, handler, tests) completed.
     /// <summary>V2.10.0: gate for routing agent iteration through disposable sandboxes. Default
     /// OFF; the primitives are inert until an agent path opts in behind this flag.</summary>
+    /// <summary>v2.14.2: kill switch for the topology-first dashboard workspace. Default OFF —
+    /// the classic Overview + Colony pages stay canonical until the operator opts in, and flipping
+    /// this back off is the instant rollback if the workspace misbehaves.</summary>
+    public static bool EnableDashboardWorkspace = false;
     public static bool EnableSandboxExecution = false;
     public static bool EnableSpecialistAntExecution = false;
     public static bool EnableTesterAnt = false;
@@ -540,6 +544,7 @@ public static class AnthillRuntime
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
         EnableHomelabAutomation = config.HomelabAutomationEnabled;
+        EnableDashboardWorkspace = config.DashboardWorkspaceEnabled;
         EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         EnableTesterAnt = config.TesterAntEnabled;
