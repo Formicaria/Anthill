@@ -21,6 +21,9 @@
   <ItemGroup>
     <EmbeddedResource Include="Ui\index.html" />
     <EmbeddedResource Include="Ui\app.js" />
+    <!-- v2.14.3: topology-first workspace runtime, served 'self' like app.js (no inline JS). -->
+    <EmbeddedResource Include="Ui\dashboard-workspace.js" />
+    <EmbeddedResource Include="Ui\dashboard-workspace.css" />
   </ItemGroup>
 
 </Project>
