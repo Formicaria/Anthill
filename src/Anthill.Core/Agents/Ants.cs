@@ -5,6 +5,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Models;
+using Anthill.Core.Sandbox;
 using Anthill.Core.Tools;
 
 namespace Anthill.Core.Agents;
@@ -337,6 +338,49 @@ public sealed class CoderAnt : BaseAnt
         if (!_useOllama || _router is null)
             return FallbackPatchJson("CoderAnt fallback mode produced no patch proposals because model routing/LLM generation is unavailable.");
 
+        // v2.11.1: when the sandbox gate is on, iterate inside a disposable sandbox (propose ->
+        // apply IN THE SANDBOX -> build -> refine on failure) and return proposals that verified —
+        // the same patch JSON the approval pipeline already consumes. The live workspace is never
+        // touched; any unavailability falls through to the unchanged one-shot path below.
+        if (AnthillRuntime.EnableSandboxExecution)
+        {
+            var sandboxed = TryRunSandboxed(task, mission, codeContext);
+            if (sandboxed is not null) return sandboxed;
+        }
+
+        var response = _router.Generate("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name);
+        return response.StartsWith("ERROR:")
+            ? FallbackPatchJson($"CoderAnt could not reach the routed model, so no patch proposals were created. Model error: {response}")
+            : response;
+    }
+
+    /// <summary>Runs the bounded sandbox loop for this coder task. Returns the coder's best patch
+    /// JSON (verified in-sandbox when the loop completed) for the existing approval pipeline, or
+    /// null to fall back to the one-shot path (gate off/refused, or no usable workspace root).</summary>
+    private string? TryRunSandboxed(Task task, Mission mission, string codeContext)
+    {
+        var sourceRoot = AnthillRuntime.AllowedWorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(sourceRoot) || !Directory.Exists(sourceRoot)) return null;
+
+        var lastProposalJson = FallbackPatchJson("CoderAnt sandbox run produced no verified proposals.");
+        var runner = new SandboxedCoderRunner(
+            (turn, feedback) =>
+            {
+                var resp = _router!.Generate("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name);
+                if (!resp.StartsWith("ERROR:")) lastProposalJson = resp;
+                return resp.StartsWith("ERROR:") ? FallbackPatchJson($"Model error during sandbox iteration: {resp}") : resp;
+            },
+            checkId: "dotnet_build");
+
+        var report = runner.Run(sourceRoot, mission.Id, task.Id, ModelCallScope.Current);
+        if (report.StopReason is "disabled" or "refused") return null; // let the caller do the one-shot
+        // Verified (built green inside the sandbox) or best-effort on budget exhaustion — either way
+        // these proposals remain human-approval-gated before anything touches the live tree.
+        return lastProposalJson;
+    }
+
+    private static string BuildPrompt(Task task, Mission mission, string codeContext, string feedback)
+    {
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: coder | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
 You are concise. Do not explain your reasoning unless asked.
@@ -408,10 +452,16 @@ Rules:
 - Every proposal requires approval.
 - If context is incomplete, return an empty proposals list.
 ";
-        var response = _router.Generate("coder", prompt, mission.Id, task.Id, Name);
-        return response.StartsWith("ERROR:")
-            ? FallbackPatchJson($"CoderAnt could not reach the routed model, so no patch proposals were created. Model error: {response}")
-            : response;
+        if (!string.IsNullOrWhiteSpace(feedback))
+            prompt += $@"
+
+Your previous patch attempt was applied in an isolated sandbox and the verification check FAILED.
+Fix the underlying cause and return a corrected patch (exact old_content for modify; add only for
+new files). Do not repeat the same change that just failed.
+--- sandbox check feedback ---
+{feedback}
+";
+        return prompt;
     }
 
     private static string FallbackPatchJson(string summary) =>
