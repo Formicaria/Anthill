@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.14.9
+**Current version:** v2.14.10
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -121,8 +121,13 @@ enforcement, contracts, and rollout rules: **[docs/ANT_EXECUTION.md](docs/ANT_EX
 
 **Console direction:** the Dashboard is being rebuilt as a topology-first workspace — the live
 colony map becomes the persistent canvas with customizable floating panels above it, shipped in
-small stages behind `dashboard_workspace_enabled` (default off). Design, decisions, and build
-order: **[docs/DASHBOARD_WORKSPACE.md](docs/DASHBOARD_WORKSPACE.md)**.
+small stages behind `dashboard_workspace_enabled` (default off). Design, decisions, current status,
+and next steps: **[docs/DASHBOARD_WORKSPACE.md](docs/DASHBOARD_WORKSPACE.md)**.
+
+Through v2.14.10 the colony has **one** topology renderer (the live canvas; the old chamber SVG is
+gone) with seven functional chambers you can drag and rename, canvas-owned map preferences, and the
+dashboard's cards registered as movable panels. The topology becomes the dashboard background in
+v2.14.12.
 
 For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** — the canonical build order. Since v2.9.0, planner output is schema-validated against machine-readable task contracts with capability-based permissions — see **[docs/CONTRACTS.md](docs/CONTRACTS.md)**.
 
