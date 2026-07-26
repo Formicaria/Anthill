@@ -273,7 +273,16 @@ V2.12.0  Independent Verification and Evidence (was V2.11.0)  [SHIPPED v2.12.0 �
 V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)  [SHIPPED v2.13.0 — skill registry + evidence-gated promotion]
 V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)  [SHIPPED v2.14.0 — engine + orchestration; executor migration next]
 V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V3 track)
-         [IN PROGRESS — stage 1 shipped v2.14.2; see docs/DASHBOARD_WORKSPACE.md]
+         [IN PROGRESS through v2.14.10 — see docs/DASHBOARD_WORKSPACE.md for status + next steps]
+         Shipped: workspace state model + kill switch (v2.14.2) · panel shell (v2.14.3) ·
+         drag/resize/snap (v2.14.4) · chambers as a canvas layout + map prefs moved onto the
+         canvas (v2.14.5) · per-ant truthful pheromone field (v2.14.6) · draggable chambers
+         (v2.14.7) · chamber SVG retired, one renderer (v2.14.8) · seven functional chambers +
+         dashboard cards as panels (v2.14.9/v2.14.10) · chamber renaming (v2.14.10)
+         Next: editable Ant Inspector (v2.14.11) · topology becomes the dashboard canvas
+         (v2.14.12) · hideable topology overlays (v2.14.13) · tab groups, route consolidation,
+         responsive/a11y (v2.15.x). Docking/split-panels deliberately deferred.
+         Gate: dashboard_workspace_enabled (default off) — the classic console is untouched.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
 
 > Renumbering note: the v2.11.x line was consumed by sandbox/coder wiring releases, so the
