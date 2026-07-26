@@ -1,5 +1,49 @@
 # ANTHILL Changelog
 
+## v2.14.15 — Persistent topology, nine panels, and readable chambers
+
+### Fixed — standby chambers looked broken rather than idle
+
+Network Watch appeared unlit next to every other chamber. Not a Network Watch bug: its three roles
+(`network_scout`, `health`, `security_scout`) are all declared `Executable: false`, so
+`chamberStats` classified the whole chamber as `dormant`, which drew at stroke alpha **0.12** and
+fill **0.012** against **0.30 / 0.035** for everything else. Any all-non-executable chamber did the
+same — Infrastructure Works and Memory Vault included.
+
+Standby is now a **steady, clearly visible** state (stroke 0.26 / fill 0.026), dimmer and cooler
+than a working chamber but unmistakably present, and still labelled `standby` in its summary line.
+
+### Changed — chamber pulse means something
+
+Active chambers now breathe noticeably harder (amplitude 0.06 → 0.15, and 0.20 under Motion=High,
+with a slightly faster period and a thicker ring). Idle and standby chambers are deliberately
+**steady**: a pulsing ring means "work is happening here", so pulsing everything would make it say
+nothing. Motion=Off still stops all of it.
+
+### Fixed — the caste legend silently hid eight ants
+
+`renderColonyLegend` capped itself at `.slice(0,15)`, which dropped every homelab ant — inventory,
+network_scout, health, proxmox, storage, backup, security_scout, change_archivist — from the legend
+while they were still drawn on the canvas. The legend now lists the full registry and scrolls; as of
+v2.14.14 it is a hideable overlay, so it can afford to be complete.
+
+### Added — the Agent Inspector and Jobs list are workspace panels
+
+Two more panels registered against the same re-parenting pattern as the other seven, so there is
+still exactly one renderer per card. This is the prerequisite for the change below: until the
+dashboard could host the inspector and the jobs list, "the topology lives on the dashboard" was
+only half true, because inspecting an ant still meant leaving it.
+
+### Added — the topology is genuinely persistent (Stage 9 groundwork)
+
+With the workspace live, `/colony/topology` now resolves to the Dashboard, which holds the topology,
+the inspector, the jobs list, and the mission bar. The canvas stays mounted in one place for the
+whole session instead of being re-parented on every navigation.
+
+The redirect is keyed off the topology layer **existing**, not off the config flag — so if the
+workspace fails to initialise for any reason, the Colony route behaves exactly as it always has.
+With `dashboard_workspace_enabled` off, none of this engages.
+
 ## v2.14.14 — Topology overlays, and the layout validator that was never called
 
 ### Fixed — `DashboardWorkspaceState` was dead code in the running system

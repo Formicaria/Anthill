@@ -64,6 +64,9 @@ public sealed class DashboardWorkspaceState
     {
         "colony-health", "system-core", "missions", "approvals",
         "resource-usage", "recent-events", "operator-attention",
+        // v2.14.15: the Colony page's inspector and jobs list, so the dashboard can host
+        // everything the Colony page does and the topology no longer has to be left behind.
+        "agent-inspector", "colony-jobs",
     };
 
     /// <summary>
