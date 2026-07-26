@@ -848,8 +848,28 @@ public static partial class ApiHost
         });
 
         // Console display state: custom ant names, accent colours, node positions, layout prefs.
+        //
+        // v2.14.14: both directions now run the workspace layout through DashboardWorkspaceState.
+        // Before this, SanitizeInto was called only from unit tests, so validation, clamping,
+        // off-screen recovery, and profile isolation were all dead code in the running system.
+        // Ant names, colours, positions, and map preferences pass through untouched either way —
+        // a corrupt panel layout must never cost the operator their colony.
+        static (int W, int H) ViewportOf(HttpContext ctx)
+        {
+            var q = ctx.Request.Query;
+            return (int.TryParse(q["vw"], out var w) && w > 0 ? w : DashboardWorkspaceState.DefaultViewportWidth,
+                    int.TryParse(q["vh"], out var h) && h > 0 ? h : DashboardWorkspaceState.DefaultViewportHeight);
+        }
+
         app.MapGet("/ui/state", (HttpContext ctx) =>
-            RequireAuth(ctx, "read_ui_state") ?? ApiJson.Ok(UiStateStore.Load()));
+        {
+            var auth = RequireAuth(ctx, "read_ui_state"); if (auth is not null) return auth;
+            var (vw, vh) = ViewportOf(ctx);
+            return ApiJson.Ok(UiStateStore.WithSanitizedWorkspace(
+                UiStateStore.Load(),
+                DashboardWorkspaceState.KnownPanelIds,
+                DashboardWorkspaceState.KnownOverlayIds, vw, vh));
+        });
 
         app.MapPut("/ui/state", async (HttpContext ctx) =>
         {
@@ -857,7 +877,14 @@ public static partial class ApiHost
             System.Text.Json.JsonElement body;
             try { body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
-            return ApiJson.Ok(UiStateStore.Save(body), "Console layout saved.");
+            var saved = UiStateStore.Save(body);
+            var (vw, vh) = ViewportOf(ctx);
+            // Sanitize what we hand back so the client immediately reflects any repair, rather
+            // than believing an off-screen panel is where it asked for.
+            return ApiJson.Ok(UiStateStore.WithSanitizedWorkspace(
+                saved,
+                DashboardWorkspaceState.KnownPanelIds,
+                DashboardWorkspaceState.KnownOverlayIds, vw, vh), "Console layout saved.");
         });
 
         // ---- Operator shell console (Configuration → Shell) — admin only ----

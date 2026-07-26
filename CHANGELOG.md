@@ -1,5 +1,63 @@
 # ANTHILL Changelog
 
+## v2.14.14 — Topology overlays, and the layout validator that was never called
+
+### Fixed — `DashboardWorkspaceState` was dead code in the running system
+
+Stage 1 (v2.14.2) shipped a server-side workspace validator with 20 unit tests and the explicit
+decision that *"layout correctness lives in C#"*. It was never wired in. `GET /ui/state` returned
+the raw file and `PUT /ui/state` persisted the request body verbatim — `SanitizeInto` was called
+only from the test project. Validation, clamping, off-screen recovery, and desktop/compact profile
+isolation were all inert while every test stayed green.
+
+This is the same shape as the v2.14.12 defect: well-tested code with no call site. Both endpoints
+now run the sanitizer, the canonical panel and overlay ids move into
+`DashboardWorkspaceState.KnownPanelIds` / `KnownOverlayIds`, and a guard asserts the handlers keep
+calling it.
+
+The unit tests had also drifted: they validated against `mission-command` and `pending-approvals`,
+which do not exist, while missing five ids that do. Those fixture ids are deliberately arbitrary —
+they prove the repair logic is id-agnostic — so they stay, now documented as such, with a separate
+guard proving the *production* list matches what the client registers.
+
+### Fixed — every ant rename or drag silently deleted the panel layout
+
+`ui_state.json` is a whole-document store. `dashboard-workspace.js` writes it correctly with
+read-modify-write, but `saveUiState()` in app.js posted a literal containing only its own six keys.
+Because `dashboard_workspace` was simply absent from that payload, **every ant rename, ant drag,
+chamber drag, and inspector save wiped the operator's entire panel arrangement.**
+
+`saveUiState` now does read-modify-write like the workspace module. Residual race — two debounced
+writers, last PUT wins — is unchanged and is written into Stage 8's scope rather than papered over.
+
+This is the second partial-write-to-a-whole-document bug in two releases, after `model_routes`.
+
+### Added — topology overlays (Stage 7)
+
+The canvas chrome is now independently hideable and re-anchorable: **view controls**, **caste
+legend**, **learning signals**, and **interaction hints**. Each can be toggled and moved between six
+anchors, with state persisted in `dashboard_workspace.topology_overlays` and validated server-side
+(unknown ids dropped, unknown anchors reset).
+
+Overlays are re-parented into six anchor **slots** rather than positioned individually, so two
+overlays sharing an anchor stack in flex flow instead of drawing on top of each other — which is
+exactly what the legend and signals panel do by default, preserving how they have always looked.
+
+The **Overlays** button is deliberately not itself an overlay: if it could be hidden, hiding
+everything would be unrecoverable without hand-editing `ui_state.json`. The menu is the non-drag
+equivalent for every overlay capability, hidden overlays get `aria-hidden` so they leave the tab
+order, and Escape closes the menu and returns focus to the button.
+
+The **inspector is deferred** to Stage 9. On the Colony page it is a sidebar card, not canvas
+chrome; anchoring it belongs with route consolidation, when that layout goes away.
+
+### Added — regression guards
+- `Workspace_SanitizerIsWiredIntoTheUiStateEndpoints`: both handlers must call the sanitizer,
+  checked inside each handler body so a call elsewhere in the file cannot satisfy it.
+- `Workspace_CanonicalIdsMatchTheClientRegistrations`: the C# panel and overlay id lists must equal
+  what `app.js` registers, or `Sanitize()` deletes real panels as unknown and invents placements
+  for panels with no renderer.
+
 ## v2.14.13 — Editable Ant Inspector, topology as the dashboard canvas, UI hardening
 
 Three pieces of work in one release: a hardening pass over the console, the Ant Inspector becoming

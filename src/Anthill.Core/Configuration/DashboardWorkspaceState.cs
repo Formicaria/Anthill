@@ -51,6 +51,29 @@ public sealed class DashboardWorkspaceState
     public static readonly string[] Anchors =
         { "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right" };
 
+    /// <summary>
+    /// v2.14.14: the canonical panel ids, owned here rather than only in JavaScript.
+    ///
+    /// Until now nothing in the API called <c>SanitizeInto</c> at all — the /ui/state endpoints
+    /// read and wrote the file verbatim — so every one of this class's guarantees was inert in the
+    /// running system, and the tests validated against a panel set that did not exist
+    /// ("mission-command", "pending-approvals"). Making the server own the list is what lets the
+    /// endpoint sanitize, and lets a regression guard prove the client registers exactly these.
+    /// </summary>
+    public static readonly string[] KnownPanelIds =
+    {
+        "colony-health", "system-core", "missions", "approvals",
+        "resource-usage", "recent-events", "operator-attention",
+    };
+
+    /// <summary>
+    /// Topology chrome that can be independently hidden and re-anchored (Stage 7).
+    /// The inspector is deliberately NOT here: on the Colony page it is a sidebar card rather than
+    /// a canvas overlay, so anchoring it belongs with Stage 9's route consolidation.
+    /// </summary>
+    public static readonly string[] KnownOverlayIds =
+        { "viewbar", "legend", "signals", "hints" };
+
     public sealed class PanelPlacement
     {
         [JsonPropertyName("display_state")] public string DisplayState { get; set; } = "visible";
