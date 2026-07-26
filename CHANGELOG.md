@@ -1,5 +1,72 @@
 # ANTHILL Changelog
 
+## v2.14.12 — Hotfix: the live colony canvas rendered no ants
+
+Fixes the Colony topology showing only faint edges radiating from an empty centre, with no ants
+visible, no ants draggable, no chambers, and the Chambers view collapsed to a single line.
+
+**Root cause — call sites shipped without their definitions.** Releases v2.14.5 through v2.14.10
+added code that *reads* colony map state and chamber geometry, but the declarations were never
+actually written into `app.js`:
+
+| Referenced by | Symbol | Existed? |
+|---|---|---|
+| `loop()` | `colonyPheromones` | no |
+| `drawChambers`, `drawNode` | `colonyLabels` | no |
+| `drawChambers`, `maybeSpawn` | `colonyMotion` | no |
+| `buildNodes()` | `chamberCentres` | no |
+| `drawChambers()` | `chamberRadius` | no |
+| `mousedown` / `mousemove` / `dblclick` | `chamberAt` | no |
+| `mousemove` | `moveChamber` | no |
+| `mouseup` | `persistChamber` | no |
+| viewbar buttons | `colonyResetView`, `colonyResetLayout` | no |
+| viewbar selects | `loadColonyPrefs`, `setColonyPref` | no |
+
+The visible symptoms follow exactly from the evaluation order:
+
+- `loop()` threw a `ReferenceError` on `colonyPheromones` **after** `drawBg()`, `drawChambers()`, and
+  `edges.forEach(...)` but **before** `nodes.forEach(...)`. Structural edges drew; ants never did,
+  activity never decayed, and particles never advanced.
+- `buildNodes()` threw on `chamberCentres` in chamber mode after pushing only Queen and Director —
+  one node pair, one edge, hence "a single white line" on the Chambers tab.
+- The Motion / Labels / Pheromones selects and the reset View / Layout buttons were inert markup
+  with no listener bound.
+
+**Why CI did not catch it.** An undeclared identifier is a runtime `ReferenceError`, not a syntax
+error, so `node --check` passed and every existing UI guard passed. Those guards checked element
+ids, encoding, and duplicate ids — none checked that a symbol a script *uses* is a symbol the
+script *defines*.
+
+### Fixed
+- Declared the three map preferences (`colonyMotion`, `colonyLabels`, `colonyPheromones`) with
+  validated setters, and honoured `prefers-reduced-motion` as a floor that a stored preference
+  cannot override upward.
+- Implemented the chamber geometry: `chamberCentres` (Queen's Core holds the centre as the control
+  plane, the rest ring around it), `chamberRadius`, `chamberAt` (tightest ring wins, so overlaps
+  resolve predictably), `moveChamber` (carries member ants), and `persistChamber` (stores the drag
+  as a `{dx,dy}` offset against the computed base, so a chamber survives resize and reordering).
+- Implemented `colonyResetView` (eases the camera to its targets rather than snapping) and
+  `colonyResetLayout` (drops dragged ant positions and chamber offsets only — never touches caste
+  names, colours, or model routes).
+- Wired the viewbar controls through the existing single `data-*` dispatch path, CSP-safe.
+- `Pheromones = Active` now actually narrows the field to ants working right now. The third option
+  had been accepted by the markup and then ignored, behaving identically to `All`.
+
+### Added — guards for this bug class
+- `UiIntegrity_ColonyAndChamberSymbolsAreDeclared`: tokenizes `app.js` (stripping strings, comments,
+  and regex literals so prose, URLs, and the apostrophe in `"Queen's Core"` cannot fool it), then
+  asserts every `colony*`/`chamber*`-prefixed reference has a declaration. Verified in both
+  directions — zero findings on the fixed file, exactly the six real defects on the broken one.
+- `UiIntegrity_ColonyCanvasControlsHaveHandlers`: every `data-colonyact` / `data-colonypref` value in
+  `index.html` must be named by a handler in `app.js`. Under `script-src 'self'` a data-attribute
+  dispatch is a control's only route to behaviour, so inert markup is always a bug.
+
+### Process note
+Two v2.14.x hotfixes in a row came from edits whose *effects* were never verified — a CSS sweep that
+removed a live rule, and this: patches reported as applied that had silently matched nothing. The
+lesson carried into the guards above is that "the file parses" and "the file works" are different
+claims, and only the second one matters.
+
 ## v2.14.11 — Hotfix: colony topology layout
 
 The colony page rendered as a black void with the canvas squeezed into a narrow strip and the ants

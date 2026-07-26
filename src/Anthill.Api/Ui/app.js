@@ -709,6 +709,145 @@ function chamberFor(roleIdStr){ return ROLE_CHAMBER[String(roleIdStr||'').toLowe
 
 let CHAMBERS={};   // colony -> {x,y,label}; rebuilt by buildNodes in chamber mode, drawn by drawBg
 
+/* ---------------------------------------------------------------------------------------------
+ * v2.14.12 REPAIR: colony map preferences + chamber geometry.
+ *
+ * v2.14.5 through v2.14.10 added CALL SITES for everything below — drawChambers reads
+ * colonyMotion/colonyLabels, drawNode reads colonyLabels, maybeSpawn reads colonyMotion, the
+ * render loop reads colonyPheromones, buildNodes calls chamberCentres, the mouse handlers call
+ * chamberAt/moveChamber/persistChamber, and the viewbar has reset-view/reset-layout buttons —
+ * but the DEFINITIONS were never actually written to this file. The result:
+ *
+ *   - loop() threw a ReferenceError on `colonyPheromones` every frame, AFTER drawing the
+ *     background and edges but BEFORE nodes.forEach — so the map showed edges radiating from an
+ *     empty centre and no ants at all, and nothing downstream (particles, activity decay) ran.
+ *   - buildNodes() threw on `chamberCentres` in chamber mode after pushing only queen+director,
+ *     which is why the Chambers view rendered as a single line.
+ *   - the Motion/Labels/Pheromones selects and the View/Layout reset buttons had no listeners,
+ *     so they were inert.
+ *
+ * `node --check` cannot catch this: an undeclared identifier is a runtime ReferenceError, not a
+ * syntax error. RegressionGuardTests.UiIntegrity_ColonyAndChamberSymbolsAreDeclared now fails the
+ * build on any colony-prefixed or chamber-prefixed symbol used without a declaration.
+ * ------------------------------------------------------------------------------------------- */
+
+const COLONY_PREF_VALUES={
+  motion:['off','low','normal','high'],
+  labels:['off','active','all'],
+  pheromones:['off','active','all'],
+};
+// Reduced motion is honoured as a floor, never overridden upward by a stored preference.
+const colonyReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+let colonyMotion     = colonyReducedMotion ? 'off' : 'normal';
+let colonyLabels     = 'all';
+let colonyPheromones = 'all';
+
+/** Seed the preferences from the markup so the `selected` options stay the single source of truth. */
+function loadColonyPrefs(){
+  const read=(id,fb)=>{ const el=document.getElementById(id); return el&&el.value?el.value:fb; };
+  colonyLabels     = read('cv-labels','all');
+  colonyPheromones = read('cv-pher','all');
+  colonyMotion     = colonyReducedMotion ? 'off' : read('cv-motion','normal');
+  if(colonyReducedMotion){
+    const sel=document.getElementById('cv-motion');
+    if(sel){ sel.value='off'; sel.title='Forced off: your system requests reduced motion'; }
+  }
+}
+
+/** Apply one preference. Values are validated against COLONY_PREF_VALUES — never trusted raw. */
+function setColonyPref(kind,value){
+  const allowed=COLONY_PREF_VALUES[kind];
+  if(!allowed||allowed.indexOf(value)<0) return;
+  if(kind==='motion'){ colonyMotion=colonyReducedMotion?'off':value; if(colonyMotion==='off') particles=[]; }
+  else if(kind==='labels'){ colonyLabels=value; }
+  else if(kind==='pheromones'){ colonyPheromones=value; if(value==='off') pheroMotes.length=0; }
+}
+
+/**
+ * Chamber centres. The Queen's Core holds the middle because it is the control plane, not a peer
+ * cluster; the remaining chambers sit on a ring around it. Operator drags are stored as OFFSETS
+ * (uiState.chambers[name] = {dx,dy}) against the computed base, so a chamber stays where it was
+ * put across resizes and across changes to the chamber order.
+ */
+function chamberCentres(names){
+  const all=Array.isArray(names)?names:[];
+  const ring=all.filter(n=>n!=="Queen's Core");
+  const off=uiState.chambers||{};
+  const R=Math.min(W,H)*0.34;
+  const out={};
+  const place=(name,bx,by)=>{
+    const o=off[name]||{};
+    const dx=Number(o.dx)||0, dy=Number(o.dy)||0;
+    out[name]={x:bx+dx,y:by+dy,bx:bx,by:by,label:name};
+  };
+  if(all.indexOf("Queen's Core")>=0) place("Queen's Core",cx,cy);
+  ring.forEach((name,i)=>{
+    const a=(i/Math.max(1,ring.length))*Math.PI*2 - Math.PI/2;
+    place(name, cx+Math.cos(a)*R, cy+Math.sin(a)*R);
+  });
+  return out;
+}
+
+/** Ring radius that actually encloses the chamber's ants; 0 when the chamber is empty. */
+function chamberRadius(name){
+  const c=CHAMBERS[name];
+  if(!c) return 0;
+  let max=0, count=0;
+  nodes.forEach(n=>{
+    if(n.chamber!==name) return;
+    count++;
+    max=Math.max(max, Math.hypot(n.x-c.x,n.y-c.y)+(n.r||10));
+  });
+  return count ? Math.max(58, max+22) : 0;
+}
+
+/** Chamber under a world point, preferring the tightest ring so overlaps resolve predictably. */
+function chamberAt(wx,wy){
+  if(colonyView!=='group'||!CHAMBERS) return null;
+  let best=null,bestR=Infinity;
+  Object.keys(CHAMBERS).forEach(name=>{
+    const c=CHAMBERS[name], r=chamberRadius(name);
+    if(!r||r>=bestR) return;
+    if(Math.hypot(wx-c.x,wy-c.y)<=r){ best=name; bestR=r; }
+  });
+  return best;
+}
+
+/** Move a chamber and carry its ants, preserving their positions relative to the ring. */
+function moveChamber(name,dx,dy){
+  const c=CHAMBERS[name];
+  if(!c||(!dx&&!dy)) return;
+  c.x+=dx; c.y+=dy;
+  nodes.forEach(n=>{ if(n.chamber===name){ n.x+=dx; n.y+=dy; } });
+}
+
+/** Persist a dragged chamber: the ring offset, plus the ants that travelled with it. */
+function persistChamber(name){
+  const c=CHAMBERS[name];
+  if(!c) return;
+  uiState.chambers=uiState.chambers||{};
+  uiState.chambers[name]={dx:Math.round(c.x-c.bx),dy:Math.round(c.y-c.by)};
+  // The ants moved too, so their own positions are saved as well — matching what a single-ant
+  // drag already does. Without this a reload would snap them out of the ring they were put in.
+  nodes.forEach(n=>{ if(n.chamber===name) uiState.positions[n.id]={x:Math.round(n.x),y:Math.round(n.y)}; });
+  saveUiState();
+}
+
+/** Reset pan and zoom only. Sets the camera TARGETS so the loop eases there instead of snapping. */
+function colonyResetView(){ tX=0; tY=0; tZ=1; }
+
+/**
+ * Reset layout: drops dragged ant positions and chamber offsets, then rebuilds. Deliberately does
+ * NOT touch caste names, colours, or model routes — those are settings, not layout.
+ */
+function colonyResetLayout(){
+  uiState.positions={};
+  uiState.chambers={};
+  buildNodes();
+  colonyResetView();
+  saveUiState();
+}
+
 function colonyAngleFor(role,index,total){
   if(colonyView!=='group') return -90 + index*(360/Math.max(1,total));
   const c=roleColony(role),ci=Math.max(0,CHAMBER_ORDER.indexOf(c));
@@ -780,6 +919,9 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     const view=btn.dataset.view;
     const toggle=btn.dataset.toggle;
+    const act=btn.dataset.colonyact;   // v2.14.12: reset buttons share this one dispatch path
+    if(act==='reset-view'){ colonyResetView(); return; }
+    if(act==='reset-layout'){ colonyResetLayout(); return; }
     if(view){
       colonyView=view;
       document.querySelectorAll('#colony-viewbar [data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
@@ -792,6 +934,12 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
     }
   });
 });
+
+// v2.14.12: CSP-safe preference wiring — delegated by data attribute, no inline handlers.
+document.querySelectorAll('#colony-viewbar [data-colonypref]').forEach(sel=>{
+  sel.addEventListener('change',()=>setColonyPref(sel.dataset.colonypref,sel.value));
+});
+loadColonyPrefs();
 
 /**
  * v2.14.5: chamber rings + labels, drawn in WORLD space so they pan, zoom, and sit beneath the
@@ -1578,7 +1726,9 @@ function drawPheromoneField(){
   const strengths=antTrailStrengths();
   // Emitters are ants that actually HAVE a trail; a worker trail can also credit its parent role.
   const emitters=nodes.filter(n=>n.id!=='queen'
-    && (strengths[n.id]>0 || (n.worker && strengths[n.worker]>0) || (n.ant && strengths[n.ant]>0)));
+    && (strengths[n.id]>0 || (n.worker && strengths[n.worker]>0) || (n.ant && strengths[n.ant]>0))
+    // v2.14.12: "Active" narrows the field to ants doing work right now; "All" shows every trail.
+    && (colonyPheromones!=='active' || n.activity>0));
   if(!emitters.length){ pheroMotes.length=0; return; }
 
   const strengthOf=n=>Math.max(strengths[n.id]||0, strengths[n.worker]||0, strengths[n.ant]||0);
