@@ -285,7 +285,16 @@ const PAGE_TITLES = {
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
-PAGE_ENTER['overview']=()=>{ if(typeof pollHealth==='function') pollHealth(); if(typeof pollHud==='function') pollHud(); };
+PAGE_ENTER['overview']=()=>{
+  if(typeof pollHealth==='function') pollHealth();
+  if(typeof pollHud==='function') pollHud();
+  // v2.14.13: with the workspace on, the dashboard owns the topology. Without it, this is a no-op
+  // and the Colony page keeps the canvas exactly as before.
+  if(document.getElementById('ws-topology')) topologyMountTo('dashboard');
+};
+// The Colony page reclaims the canvas whenever it is opened, so that route never goes blank —
+// route consolidation is Stage 9's job, not a side effect of this one.
+PAGE_ENTER['colony']=()=>{ topologyMountTo('colony'); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
 const IAICON = {
@@ -517,6 +526,9 @@ function showPage(id,o){
       : 'Colony configuration, model routes, and system diagnostics';
   }
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
+  // v2.14.13: one layout read per navigation, so the render loop stops drawing a map that is
+  // sitting inside a display:none page.
+  setTimeout(refreshTopologyAwake,60);
 }
 
 // Breadcrumb + active-nav + contextual sub-nav for the current route.
@@ -625,7 +637,7 @@ function resize(){
   cx=W/2; cy=H/2;
 }
 resize();
-window.addEventListener('resize',()=>{ resize(); buildNodes(); });
+window.addEventListener('resize',()=>{ resize(); buildNodes(); refreshTopologyAwake(); });
 
 let camX=0,camY=0,camZ=1,tX=0,tY=0,tZ=1;
 
@@ -636,6 +648,7 @@ const ROLE_COLORS={
   soldier:'#ef4444',medic:'#34d399',archivist:'#facc15',quartermaster:'#94a3b8',scribe:'#e879f9'
 };
 let colonyRegistry=null,colonyView='command',showHandoffs=true;
+let antRuntimeStatus={};   // v2.14.13: roleId -> /colony/registry runtime_status entry
 const ANT_MAP={
   researcher:{ color:ROLE_COLORS.researcher, label:'ResearcherAnt', role:'CONTEXT' },
   web:       { color:ROLE_COLORS.web,        label:'WebAnt',        role:'EXTERNAL' },
@@ -660,6 +673,8 @@ function roleWorkers(r){return prop(r,'workers','Workers')||[];}
 function rolePerms(r){return prop(r,'permissions','Permissions')||{};}
 function roleAllowedTools(r){return prop(r,'allowedTools','AllowedTools')||[];}
 function roleForbiddenTools(r){return prop(r,'forbiddenTools','ForbiddenTools')||[];}
+function roleAllowedPaths(r){return prop(r,'allowedPaths','AllowedPaths')||[];}
+function roleForbiddenPaths(r){return prop(r,'forbiddenPaths','ForbiddenPaths')||[];}
 function workerId(w){return prop(w,'workerId','WorkerId')||'';}
 function workerName(w){return prop(w,'displayName','DisplayName')||workerId(w);}
 function workerPurpose(w){return prop(w,'purpose','Purpose')||'';}
@@ -857,7 +872,11 @@ async function loadColonyRegistry(){
   try{
     const r=await api('/colony/registry');
     if(r.success){
-      colonyRegistry=r.data;buildNodes();renderColonyLegend();
+      colonyRegistry=r.data;
+      // v2.14.13: truthful per-role runtime state for the inspector, from the same fetch.
+      antRuntimeStatus={};
+      (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
+      buildNodes();renderColonyLegend();
       if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
     }
   }catch(e){console.warn('colony registry unavailable',e);}
@@ -1250,8 +1269,161 @@ canvas.addEventListener('wheel',e=>{
 
 function statusColor(s){return{complete:'var(--green)',failed:'var(--red)',running:'var(--queen)',blocked:'var(--purple)'}[s]||'var(--dim)';}
 
+/* ---------------------------------------------------------------------------------------------
+ * v2.14.13 — Editable Ant Inspector (Stage 3e).
+ *
+ * Clicking an ant opens this in the existing #colony-right Agent Inspector card. It SHOWS the
+ * ant's truthful runtime state and contract, and EDITS exactly three things, each through a
+ * persistence path that already exists:
+ *
+ *   name   -> uiState.castes[role].name   (the same key the double-click rename writes)
+ *   colour -> uiState.castes[role].color  (via casteColor/applyUiState)
+ *   model  -> POST /settings {model_routes} with normal auth — never a new write path
+ *
+ * It never grants a capability and never edits permissions, tool allowlists, or path allowlists;
+ * those are contract-owned and display-only here.
+ * ------------------------------------------------------------------------------------------- */
+
+/** The caste an inspector edit applies to. Workers inherit their caste's name and colour. */
+function inspectorCasteFor(n){
+  if(!n) return null;
+  if(n.id==='queen') return 'queen';
+  return n.ant||null;
+}
+
+function runtimeStatusFor(roleIdStr){
+  return antRuntimeStatus[String(roleIdStr||'').toLowerCase()]||null;
+}
+
+/** This node's real pheromone strength — the same trails the canvas draws, not a proxy. */
+function inspectorTrailStrength(n){
+  const t=antTrailStrengths();
+  return Math.max(t[n.id]||0, t[n.worker]||0, t[n.ant]||0);
+}
+
+/**
+ * Whether this caste has a model route at all. Mirrors the Ant Config rule exactly so the two
+ * surfaces cannot disagree about which ants are routable.
+ */
+function casteIsRoutable(caste){
+  if(caste==='queen'||caste==='director') return false;
+  const reg=registryRoleById(caste);
+  return reg ? roleExecutable(reg)!==false : false;
+}
+
+/** The editor block. Returns '' for nodes with no caste (nothing safe to edit). */
+function inspectorEditorHtml(n){
+  const caste=inspectorCasteFor(n);
+  if(!caste) return '';
+  const name=casteName(caste), color=cssColor(casteColor(caste));
+  const rt=runtimeStatusFor(caste);
+  const routable=casteIsRoutable(caste);
+  const cur=modelRoutes[caste]||{};
+  const provider=uiState.castes[caste]?.provider||cur.provider||'ollama';
+  const model=uiState.castes[caste]?.model||cur.model||'';
+
+  const scope=n.nodeType==='worker'
+    ? `<div class="ad-note">Editing the <b>${escapeHtml(casteName(caste))}</b> caste — workers inherit its name and colour.</div>`
+    : '';
+
+  let modelBlock;
+  if(!routable){
+    // Deliberately not a disabled control that looks editable: say why there is nothing to set.
+    const why = caste==='queen'||caste==='director'
+      ? 'Control plane — routes missions, never runs a model itself.'
+      : (rt&&rt.unavailability_reason) || 'Not executable — no model route applies.';
+    modelBlock=`<div class="ad-note">${escapeHtml(why)}</div>`;
+  } else if(!antRouteCatalogReady){
+    modelBlock=`<div class="ad-note">Loading model catalog…</div>`;
+  } else {
+    modelBlock=`
+      <label class="ad-lbl" for="ins-provider">Provider</label>
+      <select class="ad-input" id="ins-provider" data-insact="provider">${antcfgProviderOptions(provider)}</select>
+      <label class="ad-lbl" for="ins-model">Model route</label>
+      <select class="ad-input" id="ins-model" data-provider="${escapeHtml(provider)}">${antcfgModelOptions(provider,model)}</select>`;
+  }
+
+  return `
+    <div class="ad-edit">
+      ${scope}
+      <label class="ad-lbl" for="ins-name">Display name</label>
+      <input class="ad-input" id="ins-name" type="text" maxlength="28" value="${escapeHtml(name)}"
+             aria-label="Display name for ${escapeHtml(name)}">
+      <label class="ad-lbl" for="ins-color">Accent colour</label>
+      <input class="ad-input ad-input-color" id="ins-color" type="color" value="${cssColor(color)}"
+             aria-label="Accent colour for ${escapeHtml(name)}">
+      ${modelBlock}
+      <div class="ad-edit-actions">
+        <button class="btn btn-ghost" data-insact="save" data-caste="${escapeHtml(caste)}">Save</button>
+        <span class="ad-msg" id="ins-msg" role="status" aria-live="polite"></span>
+      </div>
+    </div>`;
+}
+
+/** Runtime + chamber + pheromone rows. Every value here comes from real state or is omitted. */
+function inspectorFactsHtml(n){
+  const caste=inspectorCasteFor(n);
+  const rt=caste?runtimeStatusFor(caste):null;
+  const strength=inspectorTrailStrength(n);
+  const reg=caste?registryRoleById(caste):null;
+  const paths=reg?(roleAllowedPaths(reg).slice(0,4).join(', ')):'';
+  const forbiddenPaths=reg?(roleForbiddenPaths(reg).slice(0,4).join(', ')):'';
+  return `
+    ${n.chamber?`<div class="ad-row"><span class="ad-key">Chamber</span><span class="ad-val">${escapeHtml(chamberLabel(n.chamber))}</span></div>`:''}
+    ${rt?`<div class="ad-row"><span class="ad-key">Runtime</span><span class="ad-val" title="${escapeHtml(rt.unavailability_reason||'')}">${escapeHtml(rt.status_label||rt.runtime_kind||'')}</span></div>
+    <div class="ad-row"><span class="ad-key">Planner</span><span class="ad-val">${rt.planner_eligible?'eligible':'not eligible'}</span></div>`:''}
+    ${rt&&rt.runtime_available===false&&rt.unavailability_reason?`<div class="ad-note">${escapeHtml(rt.unavailability_reason)}</div>`:''}
+    <div class="ad-row"><span class="ad-key">Pheromone</span><span class="ad-val">${strength>0?strength.toFixed(2):'no trail yet'}</span></div>
+    ${paths?`<div class="ad-section">Workspace Paths</div>
+    <div class="ad-fine">Allowed: ${escapeHtml(paths)}${forbiddenPaths?`<br>Forbidden: ${escapeHtml(forbiddenPaths)}`:''}</div>`:''}`;
+}
+
+async function inspectorSave(caste){
+  const msg=document.getElementById('ins-msg');
+  const set=(t,c)=>{ if(msg){ msg.style.color=c; msg.textContent=t; } };
+  const nameEl=document.getElementById('ins-name');
+  const colEl=document.getElementById('ins-color');
+  const provEl=document.getElementById('ins-provider');
+  const modEl=document.getElementById('ins-model');
+
+  const nm=(nameEl&&nameEl.value||'').trim().slice(0,28);
+  const col=cssColor(colEl&&colEl.value, casteColor(caste));
+  const patch={color:col};
+  if(nm) patch.name=nm;
+
+  if(provEl&&modEl&&modEl.value){
+    const provider=provEl.value||'ollama', model=modEl.value;
+    patch.model=model;
+    patch.provider=provider!=='ollama'?provider:undefined;
+    try{ await saveModelRoute({[caste]:{provider,model}}); }
+    catch(e){ set('Route failed: '+((e&&e.message)||'error'),'var(--red)'); return; }
+  }
+
+  uiState.castes[caste]=Object.assign({},uiState.castes[caste],patch);
+  applyUiState(); saveUiState();
+  set('Saved.','var(--green)');
+  setTimeout(()=>{ const m=document.getElementById('ins-msg'); if(m&&m.textContent==='Saved.') m.textContent=''; },2500);
+  if(selectedNode) showInspector(selectedNode);
+}
+
+// CSP-safe delegated dispatch: the inspector body is re-rendered constantly, so the listener
+// lives on the stable container rather than on the controls themselves.
+document.getElementById('agent-detail').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-insact="save"]');
+  if(btn) inspectorSave(btn.dataset.caste);
+});
+document.getElementById('agent-detail').addEventListener('change',e=>{
+  const sel=e.target.closest('[data-insact="provider"]');
+  if(!sel) return;
+  const modEl=document.getElementById('ins-model');
+  if(modEl){ modEl.dataset.provider=sel.value; modEl.innerHTML=antcfgModelOptions(sel.value,''); }
+});
+
 function showInspector(n){
   selectedNode=n;
+  // The model catalog is only needed once an ant is actually inspected. Re-render exactly once
+  // when it lands, and only if this same node is still the selection.
+  if(!antRouteCatalogReady) ensureAntRouteCatalog().then(()=>{ if(selectedNode===n) showInspector(n); });
   const act=n.activity,pct=Math.round(act*100);
   const tasks=n.nodeType==='worker'
     ? (lastGraphData?.worker_counts?.[n.worker]??0)
@@ -1272,26 +1444,29 @@ function showInspector(n){
   const metricCount=metric.metric_count??metric.metricCount??metric.MetricCount??0;
   const avgElapsed=usage.avg_elapsed_seconds??usage.avgElapsedSeconds??usage.AvgElapsedSeconds??0;
   document.getElementById('agent-detail').innerHTML=`
-    <div class="ad-name">${n.label}</div>
-    <div class="ad-type" style="color:${n.color}">${n.role} · ${n.worker||n.ant||'queen'}</div>
+    <div class="ad-name">${escapeHtml(n.label)}</div>
+    <div class="ad-type" style="color:${cssColor(n.color)}">${escapeHtml(n.role)} · ${escapeHtml(n.worker||n.ant||'queen')}</div>
     <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
-    <div class="ad-row"><span class="ad-key">Type</span><span class="ad-val">${n.nodeType||'role'}</span></div>
-    ${n.parent?`<div class="ad-row"><span class="ad-key">Parent</span><span class="ad-val">${n.parent}</span></div>`:''}
-    ${n.colony?`<div class="ad-row"><span class="ad-key">Colony</span><span class="ad-val">${n.colony}</span></div>`:''}
+    <div class="ad-row"><span class="ad-key">Type</span><span class="ad-val">${escapeHtml(n.nodeType||'role')}</span></div>
+    ${n.parent?`<div class="ad-row"><span class="ad-key">Parent</span><span class="ad-val">${escapeHtml(n.parent)}</span></div>`:''}
+    ${n.colony?`<div class="ad-row"><span class="ad-key">Colony</span><span class="ad-val">${escapeHtml(n.colony)}</span></div>`:''}
     ${n.enabled===false?`<div class="ad-row"><span class="ad-key">Enabled</span><span class="ad-val" style="color:var(--red)">false</span></div>`:''}
+    ${inspectorFactsHtml(n)}
     <div class="ad-row"><span class="ad-key">Activity</span><span class="ad-val">${pct}%</span></div>
     <div class="ad-row"><span class="ad-key">Task Count</span><span class="ad-val">${tasks}</span></div>
     ${n.nodeType==='worker'?`<div class="ad-row"><span class="ad-key">Runtime Tasks</span><span class="ad-val">${totalRuntimeTasks}</span></div>
     <div class="ad-row"><span class="ad-key">Audits</span><span class="ad-val">${auditCount}</span></div>
     <div class="ad-row"><span class="ad-key">Metrics</span><span class="ad-val">${metricCount}</span></div>
     <div class="ad-row"><span class="ad-key">Avg Time</span><span class="ad-val">${avgElapsed}s</span></div>`:''}
+    <div class="ad-section">Configure</div>
+    ${inspectorEditorHtml(n)}
     ${n.purpose?`<div class="ad-section">Purpose</div><div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(n.purpose)}</div>`:''}
     <div class="ad-section">Permissions</div>
     <div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(perms)}</div>
     <div class="ad-section">Tools</div>
     <div style="font-size:10px;line-height:1.5;color:var(--muted)">Allowed: ${escapeHtml(tools)}<br>Forbidden: ${escapeHtml(forbidden)}</div>
     <div class="ad-section">Live Task Load</div>
-    <div class="ad-bar"><div class="ad-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${n.color}88,${n.color})"></div></div>
+    <div class="ad-bar"><div class="ad-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${cssColor(n.color)}88,${cssColor(n.color)})"></div></div>
     <div class="ad-row" style="margin-top:6px"><span class="ad-key">Running</span><span class="ad-val">${tRunning}</span></div>
     <div class="ad-row"><span class="ad-key">Completed</span><span class="ad-val" style="color:${tDone?'var(--green)':''}">${tDone}</span></div>
     <div class="ad-row"><span class="ad-key">Failed</span><span class="ad-val" style="color:${tFailed?'var(--red)':''}">${tFailed}</span></div>
@@ -1305,14 +1480,75 @@ function showInspector(n){
     })()}
     ${antTasks.slice(0,4).map(t=>`
       <div style="margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:4px;border:1px solid var(--border)">
-        <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${t.assigned_worker||t.assigned_ant} · ${t.task_type||'task'} · <span style="color:${statusColor(t.status)}">${t.status}</span></div>
-        <div style="font-size:10px;color:var(--muted)">${(t.title||'').substring(0,55)}</div>
+        <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${escapeHtml(t.assigned_worker||t.assigned_ant)} · ${escapeHtml(t.task_type||'task')} · <span style="color:${cssColor(statusColor(t.status))}">${escapeHtml(t.status)}</span></div>
+        <div style="font-size:10px;color:var(--muted)">${escapeHtml((t.title||'').substring(0,55))}</div>
       </div>`).join('')||''}`;
 }
 
 // -- Render Loop ---------------------------------------------------------------
+/* ---------------------------------------------------------------------------------------------
+ * v2.14.13 Stage 6 — the topology IS the dashboard canvas.
+ *
+ * There is exactly ONE canvas, one render loop, and one polling path. Rather than instantiating a
+ * second renderer for the dashboard, the existing #colony-canvas-area element is RE-PARENTED
+ * between its two hosts: the Colony page and the workspace topology layer. Same node, same
+ * listeners, same state — so ant drag, chamber drag, panning, zoom, and the inspector all keep
+ * working without being reimplemented or duplicated.
+ *
+ * The canvas takes its size from its container, so resize() must run AFTER the move lands, on the
+ * next frame, once layout has settled. Measuring during the move yields 0x0 and collapses every
+ * ant onto the origin.
+ * ------------------------------------------------------------------------------------------- */
+let topologyHost='colony';          // 'colony' | 'dashboard'
+let topologyHome=null;              // original DOM slot, captured before the first move
+
+function topologyCaptureHome(){
+  if(topologyHome) return;
+  const area=document.getElementById('colony-canvas-area');
+  if(area&&area.parentElement) topologyHome={parent:area.parentElement,next:area.nextSibling};
+}
+
+/** Re-measure after the element has actually been laid out in its new host. */
+function topologyRemeasure(){
+  requestAnimationFrame(()=>{ resize(); buildNodes(); refreshTopologyAwake(); });
+}
+
+function topologyMountTo(where){
+  const area=document.getElementById('colony-canvas-area');
+  if(!area) return;
+  topologyCaptureHome();
+  let target=null;
+  if(where==='dashboard') target=document.getElementById('ws-topology');
+  else if(topologyHome) target=topologyHome.parent;
+  if(!target) return;
+  if(area.parentElement===target && where===topologyHost) return;   // already correct: no churn
+  if(where==='dashboard') target.appendChild(area);
+  else target.insertBefore(area, topologyHome.next);
+  topologyHost=where;
+  topologyRemeasure();
+}
+
+/**
+ * Whether the map is worth drawing. Deliberately conservative: only a backgrounded tab and a
+ * zero-sized canvas suppress rendering. Occlusion-based throttling is NOT claimed here — a
+ * wrong "it's hidden" is how the canvas silently freezes, and this repo has paid for that twice.
+ */
+let topologyAwake=true;
+function refreshTopologyAwake(){
+  // Measure the container rather than trusting the last resize(): clientWidth is 0 whenever an
+  // ancestor is display:none, which is exactly the "user navigated away" case. That makes this a
+  // fact about the DOM, not a guess about visibility.
+  const el=document.getElementById('colony-canvas-area');
+  topologyAwake = !document.hidden && !!el && el.clientWidth>0 && el.clientHeight>0;
+}
+document.addEventListener('visibilitychange',refreshTopologyAwake);
+
 function loop(ts){
   requestAnimationFrame(loop);
+  // v2.14.13: the topology now renders on the dashboard too, i.e. effectively always. Skip the
+  // draw when the tab is backgrounded or the canvas has no area; the rAF keeps ticking so the
+  // map resumes instantly with no re-init.
+  if(!topologyAwake) return;
   camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
   drawBg();
   drawChambers();                  // v2.14.5: chamber grouping lives on this canvas, under the edges
@@ -3634,6 +3870,22 @@ document.getElementById('log-reload').addEventListener('click',reloadLogModal);
 
 function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
+/**
+ * v2.14.13: sanitise a colour before it reaches a style="" attribute.
+ *
+ * Ant accent colours come from uiState.castes[caste].color, which the operator sets and which
+ * UiStateStore round-trips verbatim by design ("the UI owns the shape"). That makes the client the
+ * only place validation can happen. Anything that is not a plain hex literal or a CSS custom
+ * property reference falls back to the neutral ant colour rather than being pasted into CSS.
+ */
+function cssColor(v,fallback){
+  const s=String(v==null?'':v).trim();
+  if(/^#[0-9a-fA-F]{3,8}$/.test(s)) return s;
+  if(/^var\(--[a-zA-Z0-9_-]+\)$/.test(s)) return s;
+  if(/^[a-zA-Z]{3,20}$/.test(s)) return s;          // named CSS colours: letters only, no separators
+  return fallback||'#7fa0bc';
+}
+
 const SINCE_MS={'15m':9e5,'1h':36e5,'6h':216e5,'24h':864e5};
 
 async function reloadLogModal(){
@@ -3869,6 +4121,39 @@ document.getElementById('rename-input').addEventListener('keydown',e=>{if(e.key=
 // -- Ant Config page -----------------------------------------------------------
 let availableModels=[];
 let antcfgCatalog=[];       // provider catalog (ollama + keyed providers), from /providers/catalog
+/**
+ * v2.14.13: the live model-route map, shared by the Ant Config page and the Ant Inspector.
+ *
+ * This MUST be kept whole. `AnthillRuntime.ApplySettingsUpdate` does `dict[key] = value`, so
+ * POST /settings {model_routes:{...}} REPLACES the entire route map rather than merging it.
+ * Any caller that posts a partial map silently resets every route it omitted back to the
+ * profile default. Both writers therefore merge into this cache and post all of it.
+ */
+let modelRoutes={};
+let antRouteCatalogReady=false, antRouteCatalogLoading=null;
+
+/** Load the model catalog + current routes once, for whichever surface asks first. */
+async function ensureAntRouteCatalog(){
+  if(antRouteCatalogReady) return;
+  if(!antRouteCatalogLoading){
+    antRouteCatalogLoading=(async()=>{
+      await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
+      try{ const s=await api('/settings'); if(s.success) modelRoutes=s.data.model_routes||{}; }catch{}
+      antRouteCatalogReady=true;
+    })();
+  }
+  await antRouteCatalogLoading;
+}
+
+/** Merge one role's route into the full map and persist the WHOLE map. See modelRoutes above. */
+async function saveModelRoute(updates){
+  const merged=Object.assign({},modelRoutes);
+  Object.keys(updates).forEach(k=>{ merged[k]=updates[k]; });
+  const r=await api('/settings','POST',{model_routes:merged});
+  if(!r||!r.success) throw new Error((r&&r.message)||'route update rejected');
+  modelRoutes=merged;
+  return merged;
+}
 let antcfgConfigured=new Set(); // provider ids that currently have a working key saved
 
 async function fetchModelNames(){
@@ -3910,8 +4195,8 @@ async function openAntConfig(){
   // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
   // mutual-recursion loop, blowing the call stack every single time this page was opened.
   await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
-  let routes={};
-  try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
+  await ensureAntRouteCatalog();
+  const routes=modelRoutes;
   const grid=document.getElementById('antcfg-grid');
   const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
   const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
@@ -3979,7 +4264,10 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
   });
   applyUiState();saveUiState();
   if(Object.keys(routeUpdate).length){
-    try{await api('/settings','POST',{model_routes:routeUpdate});}
+    // v2.14.13: merge, never replace. This used to post ONLY the castes rendered on this page,
+    // which reset every route it omitted (strategist, fallback, and any caste with no model
+    // selected) back to the profile default.
+    try{await saveModelRoute(routeUpdate);}
     catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
   }
   msg.style.color='var(--green)';msg.textContent='Saved ?';setTimeout(()=>msg.textContent='',2500);
@@ -6351,8 +6639,19 @@ async function initDashboardWorkspace(){
   // The classic grid steps aside; its card bodies are re-parented into panels, so every renderer
   // keeps writing to the same ids and nothing is duplicated.
   var grid=document.getElementById('ov2-grid'); if(grid) grid.style.display='none';
+  // Stage 6: the topology layer is a SIBLING placed before #ws-root, so panels stack above the
+  // map by document order without either one needing a z-index arms race.
+  var topo=document.getElementById('ws-topology');
+  if(!topo){
+    topo=document.createElement('div'); topo.id='ws-topology'; topo.className='ws-topology';
+    topo.setAttribute('aria-hidden','true');   // the canvas is decorative here; the ants are
+    page.insertBefore(topo, root);             // reachable through the Colony page and inspector
+  }
   registerWorkspacePanels();
   await window.AnthillWorkspace.init(root, true);
+  // Mount only if the dashboard is the page actually on screen; otherwise wait for PAGE_ENTER so
+  // we never measure a display:none container.
+  if(page.classList.contains('active')) topologyMountTo('dashboard');
   if(typeof pollOv2==='function') pollOv2();
   if(typeof pollHud==='function') pollHud();
 }

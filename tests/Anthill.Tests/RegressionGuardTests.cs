@@ -236,6 +236,7 @@ public class RegressionGuardTests : IDisposable
 
     /// <summary>
     /// v2.14.12: every colony*/chamber*-prefixed symbol app.js REFERENCES must also be DECLARED.
+    /// v2.14.13: widened to topology* and overlay* so Stage 6/7 code is covered as it lands.
     ///
     /// This guard exists because v2.14.5-v2.14.10 shipped call sites whose definitions were never
     /// written: drawChambers/drawNode/maybeSpawn read colonyMotion and colonyLabels, loop() read
@@ -284,7 +285,7 @@ public class RegressionGuardTests : IDisposable
         // References: prefixed identifiers that are not property access (`obj.chamberX`) and not
         // object-literal keys (`chambers:{}`), since neither is a binding lookup.
         var undeclared = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        foreach (Match m in Regex.Matches(code, @"(?<![.\w$])((?:colony|chamber|CHAMBER|COLONY)[A-Za-z_$][\w$]*)(?![\w$])"))
+        foreach (Match m in Regex.Matches(code, @"(?<![.\w$])((?:colony|chamber|topology|overlay|CHAMBER|COLONY|TOPOLOGY|OVERLAY)[A-Za-z_$][\w$]*)(?![\w$])"))
         {
             var name = m.Groups[1].Value;
             if (Regex.IsMatch(code.Substring(m.Index + m.Length), @"^\s*:")) continue;
@@ -305,6 +306,82 @@ public class RegressionGuardTests : IDisposable
     /// because the listeners were never written. CSP is `script-src 'self'` with no unsafe-inline,
     /// so a control's only route to behaviour is a data-attribute dispatch in app.js.
     /// </summary>
+    /// <summary>
+    /// v2.14.13: ant names and accent colours are operator-controlled and are round-tripped
+    /// verbatim by <see cref="UiStateStore"/> ("the UI owns the shape"), so the client is the only
+    /// place they can be sanitised. Any node field that reaches innerHTML must go through
+    /// escapeHtml, and any colour that reaches a style="" attribute must go through cssColor.
+    ///
+    /// The console's CSP is `script-src 'self'` with no unsafe-inline, which blocks the classic
+    /// onerror payload — but CSP is a second line of defence, not a substitute for escaping, and
+    /// markup injection remains possible without script execution.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_OperatorControlledFieldsAreEscapedBeforeMarkup()
+    {
+        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+
+        // Only markup sinks matter. Assigning a template to .textContent or .value sets TEXT, not
+        // HTML — escaping there would be a bug in the other direction, rendering a literal
+        // "&amp;" to the operator. Verified: every such assignment in app.js closes on its own
+        // line, so a line-scoped skip is complete rather than approximate.
+        var raw = appJs.Split('\n')
+            .Where(line => !Regex.IsMatch(line, @"\.(?:textContent|value)\s*="))
+            .SelectMany(line => Regex.Matches(line,
+                @"\$\{[^}]*\b(?:n|hit|node)\.(?:label|color|role|colony|parent)\b[^}]*\}")
+                .Select(m => m.Value))
+            .Where(v => !v.Contains("escapeHtml") && !v.Contains("cssColor"))
+            .Distinct()
+            .ToList();
+
+        Assert.True(raw.Count == 0,
+            "Operator-controlled node fields are interpolated into markup without escapeHtml/cssColor: "
+            + string.Join(" | ", raw));
+
+        Assert.Contains("function cssColor(", appJs);
+    }
+
+    /// <summary>
+    /// v2.14.13 Stage 6: the topology became the dashboard background by RE-PARENTING the single
+    /// canvas, not by adding a second renderer. Two invariants keep that true:
+    ///
+    /// 1. One canvas element and one render-loop bootstrap. A second renderer is how this project
+    ///    previously ended up with two topologies, two sets of map preferences, and two inspectors
+    ///    that disagreed (the cmap2 SVG, retired in v2.14.8).
+    /// 2. `.ws-root` must not capture pointer events. The workspace root covers the entire
+    ///    dashboard and now sits ON TOP of the map; if it captures clicks it becomes an invisible
+    ///    shield over a topology you can no longer pan, drag ants on, or select chambers in —
+    ///    and it would look like the map "went dead" rather than like a CSS bug.
+    /// </summary>
+    [Fact]
+    public void UiIntegrity_TopologyHasOneRendererAndPassesPointersThrough()
+    {
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var html = File.ReadAllText(Path.Combine(dir, "index.html"));
+        var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
+        var wsCss = File.ReadAllText(Path.Combine(dir, "dashboard-workspace.css"));
+
+        var canvases = Regex.Matches(html, @"<canvas\b").Count;
+        Assert.True(canvases == 1, $"Expected exactly one <canvas> in the console markup, found {canvases}.");
+
+        var loopStarts = Regex.Matches(appJs, @"requestAnimationFrame\(loop\)").Count;
+        Assert.True(loopStarts == 2,
+            "Expected exactly two references to requestAnimationFrame(loop) — the self-schedule "
+            + $"inside loop() and the single bootstrap call — found {loopStarts}.");
+
+        var wsRoot = Regex.Match(wsCss, @"\.ws-root\s*\{[^}]*\}").Value;
+        Assert.False(string.IsNullOrEmpty(wsRoot), "dashboard-workspace.css no longer defines .ws-root.");
+        Assert.True(Regex.IsMatch(wsRoot, @"pointer-events\s*:\s*none"),
+            ".ws-root must set pointer-events:none so the topology beneath it stays interactive. "
+            + "Found: " + wsRoot);
+
+        // Panels and toolbar have to opt back in, or the workspace chrome itself stops responding.
+        Assert.True(Regex.IsMatch(wsCss, @"\.ws-panel\s*\{[^}]*pointer-events\s*:\s*auto"),
+            ".ws-panel must re-enable pointer events.");
+        Assert.True(Regex.IsMatch(wsCss, @"\.ws-toolbar[^{]*\{[^}]*pointer-events\s*:\s*auto"),
+            ".ws-toolbar must re-enable pointer events.");
+    }
+
     [Fact]
     public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
     {
@@ -338,9 +415,9 @@ public class RegressionGuardTests : IDisposable
     {
         var ui = UiSource(); // index.html (static ids) + app.js (getElementById + template-built ids)
         // Created via document.createElement at runtime, so they legitimately have no static id=.
-        // ws-root only exists when dashboard_workspace_enabled is on — which is precisely why it is
-        // built rather than declared in markup.
-        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root" };
+        // ws-root and ws-topology only exist when dashboard_workspace_enabled is on — which is
+        // precisely why they are built rather than declared in markup.
+        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root", "ws-topology" };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
         var duplicates = declared.GroupBy(i => i).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
