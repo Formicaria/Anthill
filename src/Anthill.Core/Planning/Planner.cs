@@ -212,7 +212,10 @@ Required JSON:
             }
             valid.Add(task);
         }
-        return valid;
+        // v2.9.0 contract gate (NORTH_STAR V3-track Phase 2): every path out of the planner funnels
+        // through here — planner output is schema-validated against its TaskContract projection and
+        // invalid tasks cannot enter the execution queue. Rejections are loud, never silent.
+        return Contracts.ContractGate.Admit(valid, reason => Console.Error.WriteLine(reason));
     }
 
     private List<Task> TasksFromJson(JsonObject parsed, string goal)
