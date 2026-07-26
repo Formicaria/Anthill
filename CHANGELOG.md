@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.14.7 — Chambers are draggable as a unit
+
+Live feedback on v2.14.5: the chamber ring resized but never moved, and grabbing it panned the
+camera instead. Root cause: there was no chamber drag at all — `mousedown` hit-tested ants and
+everything else fell through to camera panning, while the ring's radius was derived from how far
+members sat from a centre that never changed. So dragging an ant made the circle grow or shrink in
+place, which is exactly the "sticks to one axis" behaviour reported.
+
+- **Grab the chamber body and the whole chamber moves** — centre and every ant inside it travel
+  together, with the ring highlighting while held.
+- **Ant dragging is unchanged**: ants are hit-tested first, so individual ants stay independently
+  draggable inside their chamber; empty canvas still pans the camera.
+- **Hit-testing and rendering share one radius function**, so what you click is exactly the ring
+  you see (previously they could disagree).
+- **Positions persist**: a dragged chamber saves its centre offset *and* each member's position
+  under a new `chambers` key in `ui_state.json`, so a rebuild or reload keeps your arrangement.
+- **⌂ Layout** now also returns dragged chambers home, not just ants.
+
+Also answered from this round of feedback, no code change needed: **the Handoffs toggle looks inert
+on an idle colony because there is nothing to draw.** Handoff edges come from live task-graph data
+and are cleared when no mission is running and no task nodes exist. Run a mission and the layer
+populates. (If you'd rather it showed recent-historical handoffs when idle, that's a real feature,
+not a fix — say so and it gets its own release.)
+
+Scope note: the redundant chamber SVG (`cmap2`) is confirmed replaceable and **queued next** — it
+is 15 functions and ~145 references across `app.js`/`index.html`, including a search hook that the
+console still calls, so it lands as its own reviewable deletion rather than riding along here.
+
 ## v2.14.6 — The pheromone field now tells the truth per ant
 
 The pheromone data was always real — persisted trail strengths in SQLite, reinforced +0.02 on tool

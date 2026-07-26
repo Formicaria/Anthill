@@ -714,6 +714,7 @@ function colonyResetView(){ tZ=1; tX=0; tY=0; }
 /** Reset dragged ant positions back to the computed layout; camera and prefs untouched. */
 function colonyResetLayout(){
   try{ Object.keys(uiState.positions||{}).forEach(k=>delete uiState.positions[k]); }catch(e){}
+  try{ uiState.chambers={}; }catch(e){}   // v2.14.7: dragged chambers return home too
   buildNodes();
   if(typeof saveUiState==='function') saveUiState();
 }
@@ -739,14 +740,65 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const p=document.getElementById('cv-pher'); if(p) p.value=colonyPheromones;
 });
 
-/** Distinct chamber centres on a ring around the Queen. Deterministic: same colony, same spot. */
+/** Distinct chamber centres on a ring around the Queen, plus any operator-dragged offset.
+ *  Deterministic: same colony + same offset = same spot, every rebuild. */
 function chamberCentres(colonies){
   const centres={},n=Math.max(1,colonies.length),ring=Math.min(W,H)*0.33;
+  const saved=(typeof uiState==='object'&&uiState&&uiState.chambers)||{};
   colonies.forEach((c,i)=>{
     const a=(-90 + i*(360/n))*Math.PI/180;
-    centres[c]={x:cx+Math.cos(a)*ring, y:cy+Math.sin(a)*ring*0.86, label:c};
+    const off=saved[c]||{dx:0,dy:0};
+    centres[c]={
+      x:cx+Math.cos(a)*ring+(+off.dx||0),
+      y:cy+Math.sin(a)*ring*0.86+(+off.dy||0),
+      label:c,
+    };
   });
   return centres;
+}
+
+/** v2.14.7: the drawn radius of a chamber — shared by rendering and hit-testing so what you
+ *  click is exactly what you see. */
+function chamberRadius(name){
+  const c=CHAMBERS[name]; if(!c) return 0;
+  const members=nodes.filter(n=>n.colony===name&&n.nodeType!=='core');
+  if(!members.length) return 0;
+  let rad=60;
+  members.forEach(m=>{ rad=Math.max(rad, Math.hypot(m.x-c.x, m.y-c.y)+26); });
+  return rad;
+}
+
+/** Chamber under a world point, if any — innermost first so nested rings behave sensibly. */
+function chamberAt(wx,wy){
+  if(colonyView!=='group') return null;
+  let best=null,bestR=Infinity;
+  Object.keys(CHAMBERS||{}).forEach(name=>{
+    const c=CHAMBERS[name], r=chamberRadius(name);
+    if(!r) return;
+    if(Math.hypot(wx-c.x, wy-c.y)<=r && r<bestR){ best=name; bestR=r; }
+  });
+  return best;
+}
+
+/** Move a whole chamber: its centre and every ant inside it travel together. */
+function moveChamber(name,dx,dy){
+  const c=CHAMBERS[name]; if(!c) return;
+  c.x+=dx; c.y+=dy;
+  nodes.forEach(n=>{ if(n.colony===name&&n.nodeType!=='core'){ n.x+=dx; n.y+=dy; } });
+}
+
+/** Persist a dragged chamber: the centre offset AND each member's position, so a rebuild keeps it. */
+function persistChamber(name){
+  const colonies=[...new Set(visibleRoles().map(r=>roleColony(r)))]
+    .sort((a,b)=>CHAMBER_ORDER.indexOf(a)-CHAMBER_ORDER.indexOf(b));
+  const i=colonies.indexOf(name); if(i<0) return;
+  const n=Math.max(1,colonies.length), ring=Math.min(W,H)*0.33;
+  const a=(-90 + i*(360/n))*Math.PI/180;
+  const baseX=cx+Math.cos(a)*ring, baseY=cy+Math.sin(a)*ring*0.86;
+  uiState.chambers=uiState.chambers||{};
+  uiState.chambers[name]={dx:Math.round(CHAMBERS[name].x-baseX), dy:Math.round(CHAMBERS[name].y-baseY)};
+  nodes.forEach(nd=>{ if(nd.colony===name&&nd.nodeType!=='core') persistNodePosition(nd); });
+  saveUiState();
 }
 let CHAMBERS={};   // colony -> {x,y,label}; rebuilt by buildNodes in chamber mode, drawn by drawBg
 
@@ -850,18 +902,19 @@ function drawChambers(){
     const c=CHAMBERS[name];
     const members=nodes.filter(n=>n.colony===name&&n.nodeType!=='core');
     if(!members.length) return;
-    // Radius follows the cluster so a big chamber isn't clipped by its own ring.
-    let rad=60;
-    members.forEach(m=>{ rad=Math.max(rad, Math.hypot(m.x-c.x, m.y-c.y)+26); });
+    // Radius follows the cluster so a big chamber isn't clipped by its own ring; hit-testing uses
+    // the SAME function, so what you click is exactly the ring you see.
+    const rad=chamberRadius(name);
     const p=w2s(c.x,c.y), sr=rad*camZ;
+    const grabbed=draggingChamber===name;
     const live=members.some(m=>m.activity>0.05);
     ctx.save();
     ctx.beginPath();
     ctx.arc(p.x,p.y,sr,0,Math.PI*2);
-    ctx.strokeStyle=live?'rgba(34,211,238,.30)':'rgba(120,150,180,.14)';
-    ctx.lineWidth=1;
+    ctx.strokeStyle=grabbed?'rgba(34,211,238,.65)':live?'rgba(34,211,238,.30)':'rgba(120,150,180,.14)';
+    ctx.lineWidth=grabbed?2:1;
     ctx.stroke();
-    ctx.fillStyle=live?'rgba(34,211,238,.035)':'rgba(120,150,180,.02)';
+    ctx.fillStyle=grabbed?'rgba(34,211,238,.06)':live?'rgba(34,211,238,.035)':'rgba(120,150,180,.02)';
     ctx.fill();
     if(colonyLabels!=='off'){
       ctx.fillStyle=live?'rgba(190,225,240,.85)':'rgba(150,170,190,.55)';
@@ -1004,6 +1057,7 @@ function drawNode(n,ts){
 let dragging=false,dragStart={x:0,y:0},dragCam={x:0,y:0};
 const tooltip=document.getElementById('tooltip');
 let draggingNode=null,nodeDragOff={x:0,y:0},nodeMoved=false;
+let draggingChamber=null,chamberDragLast={x:0,y:0},chamberMoved=false;
 
 function getCanvasLocal(e){
   const rect=canvas.getBoundingClientRect();
@@ -1015,6 +1069,11 @@ canvas.addEventListener('mousedown',e=>{
   const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
   if(hit){ draggingNode=hit; nodeDragOff={x:wp.x-hit.x,y:wp.y-hit.y}; nodeMoved=false; dragStart={x:e.clientX,y:e.clientY}; canvas.style.cursor='grabbing'; return; }
+  // v2.14.7: grabbing the chamber body (ring interior, not an ant) moves the WHOLE chamber and
+  // carries its ants along. Ant hit-testing runs first, so individual ants stay independently
+  // draggable; empty canvas still pans the camera.
+  const ch=chamberAt(wp.x,wp.y);
+  if(ch){ draggingChamber=ch; chamberDragLast={x:wp.x,y:wp.y}; chamberMoved=false; canvas.style.cursor='grabbing'; return; }
   dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};
 });
 
@@ -1024,10 +1083,16 @@ canvas.addEventListener('mousemove',e=>{
     draggingNode.x=wp.x-nodeDragOff.x; draggingNode.y=wp.y-nodeDragOff.y;
     nodeMoved=true; hoveredNode=null; tooltip.style.display='none'; return;
   }
+  if(draggingChamber){
+    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
+    moveChamber(draggingChamber, wp.x-chamberDragLast.x, wp.y-chamberDragLast.y);
+    chamberDragLast={x:wp.x,y:wp.y}; chamberMoved=true;
+    hoveredNode=null; tooltip.style.display='none'; return;
+  }
   if(dragging){camX=dragCam.x+(e.clientX-dragStart.x);camY=dragCam.y+(e.clientY-dragStart.y);tX=camX;tY=camY;hoveredNode=null;tooltip.style.display='none';return;}
   const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
   const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
-  canvas.style.cursor=hit?'grab':'default';
+  canvas.style.cursor=hit?'grab':(chamberAt(wp.x,wp.y)?'grab':'default');
   if(hit){
     hoveredNode=hit;
     const tasks=hit.nodeType==='worker'
@@ -1052,6 +1117,11 @@ canvas.addEventListener('mouseup',e=>{
   if(draggingNode){
     const n=draggingNode; draggingNode=null; canvas.style.cursor='grab';
     if(nodeMoved){ persistNodePosition(n); } else { showInspector(n); }
+    return;
+  }
+  if(draggingChamber){
+    const name=draggingChamber; draggingChamber=null; canvas.style.cursor='grab';
+    if(chamberMoved) persistChamber(name);
     return;
   }
   const moved=Math.abs(e.clientX-dragStart.x)+Math.abs(e.clientY-dragStart.y);
@@ -3590,7 +3660,7 @@ function renderActivity(){
 PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
 
 // -- UI State ------------------------------------------------------------------
-let uiState={version:1,castes:{},positions:{},widgets:{}}; // widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
+let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
 const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
 const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
@@ -3599,7 +3669,7 @@ uiReady=true;
 async function loadUiState(){
   try{
     const r=await api('/ui/state');
-    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; }
+    if(r.success&&r.data){ uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{}; uiState.chambers=r.data.chambers||{}; }
   }catch{}
   applyUiState();
 }
@@ -3608,7 +3678,7 @@ let uiSaveTimer=null;
 function saveUiState(){
   clearTimeout(uiSaveTimer);
   uiSaveTimer=setTimeout(async()=>{
-    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets});}
+    try{await api('/ui/state','PUT',{version:1,castes:uiState.castes,positions:uiState.positions,widgets:uiState.widgets,chambers:uiState.chambers||{}});}
     catch(e){console.error('saveUiState',e);}
   },350);
 }
