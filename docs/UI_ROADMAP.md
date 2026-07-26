@@ -3,6 +3,12 @@
 > **Status:** Retained as subsystem history — the UI roadmap (Phases 1–10) is **complete** as of v1.8.25.
 > For the current ordered build order, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap.
 >
+> **Status through v2.14.10:** one topology renderer (the live colony canvas — the chamber SVG is
+> deleted), seven functional chambers that drag and rename, canvas-owned map preferences, and the
+> dashboard's cards registered as movable workspace panels behind `dashboard_workspace_enabled`.
+> The topology is not yet the dashboard background; that is v2.14.12. See
+> **[docs/DASHBOARD_WORKSPACE.md](DASHBOARD_WORKSPACE.md)** → "WHERE WE ARE".
+>
 > **Superseded for the Dashboard (v2.14.2 →):** the Dashboard is being rebuilt as a topology-first
 > workspace — the live colony map becomes the persistent canvas, with customizable floating panels
 > above it and the standalone Colony page eventually folding in. Canonical design, decisions, and
