@@ -1439,38 +1439,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- V2.2 Pass A: shared top telemetry bar -->
         <div id="tb-colony"></div>
 
-        <!-- V2.2 Pass C: Living Colony Map (Chamber/Expanded) — Raw Graph keeps the old canvas -->
-        <div id="cmap2-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;position:relative;z-index:2;">
-          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">VIEW</span>
-          <button class="hud-act" id="cmap2-v-raw" data-onclick="cmapSetView('raw')" title="The classic live colony: every ant visible, draggable, pulsing, with the pheromone canvas">🐜 Live Colony</button>
-          <button class="hud-act" id="cmap2-v-chamber" data-onclick="cmapSetView('chamber')" title="Role-grouped chamber overview">Chamber</button>
-          <button class="hud-act" id="cmap2-v-expanded" data-onclick="cmapSetView('expanded')" title="Chamber view with every ant in the selected chamber">Expanded</button>
-          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;margin-left:10px;">MOTION</span>
-          <select class="form-select" id="cmap2-motion" style="width:auto;font-size:9px;" data-onchange="cmapSetPref('motion',this.value)">
-            <option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option>
-          </select>
-          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">LABELS</span>
-          <select class="form-select" id="cmap2-labels" style="width:auto;font-size:9px;" data-onchange="cmapSetPref('labels',this.value)">
-            <option value="minimal">Minimal</option><option value="active">Active Only</option><option value="all" selected>All</option>
-          </select>
-          <span style="font-size:9px;color:var(--anthill-dim);letter-spacing:.1em;">PHEROMONES</span>
-          <select class="form-select" id="cmap2-pher" style="width:auto;font-size:9px;" data-onchange="cmapSetPref('pheromones',this.value)">
-            <option value="off">Off</option><option value="active">Active</option><option value="all" selected>All</option>
-          </select>
-          <label style="font-size:9px;color:var(--anthill-muted);"><input type="checkbox" id="cmap2-idle" checked data-onchange="cmapSetPref('showIdle',this.checked?'1':'0')"> idle ants</label>
-          <button class="hud-act" data-onclick="cmapResetZoom()" title="Reset pan/zoom">⤾ Reset view</button>
-          <button class="hud-act" data-onclick="cmapResetLayout()" title="Return dragged chambers to the default layout">⌂ Reset layout</button>
-          <span style="font-size:8px;color:var(--anthill-dim);">scroll = zoom · drag = pan · dbl-click chamber = expand</span>
-        </div>
-        <div id="cmap2-wrap" style="display:flex;gap:10px;padding:0 8px 8px;min-height:420px;position:relative;z-index:1;">
-          <div class="ath-card" style="flex:1;padding:6px;overflow:hidden;">
-            <svg id="cmap2" width="100%" height="480" style="display:block;min-height:420px;"></svg>
-          </div>
-          <div class="ath-card" id="cmap2-inspector" style="width:230px;flex-shrink:0;overflow-y:auto;">
-            <div class="ath-card-title"><a href="javascript:void(0)" id="cmap2-insp-toggle" data-onclick="cmapToggleInspector()" style="float:right;color:var(--anthill-dim)">⇤</a>Inspector</div>
-            <div id="cmap2-insp-body"><div class="ov2-empty">Select a chamber, ant, or trail.</div></div>
-          </div>
-        </div>
+        <!-- v2.14.8: the chamber SVG map and its control bar are retired. Chambers, motion,
+             labels, pheromones, and the reset controls all live on the live colony canvas
+             (see the Chambers button in #colony-viewbar). One renderer, one set of controls. -->
 
         <!-- Left sidebar: status + approvals + jobs -->
         <div id="colony-left">
