@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v2.14.11 — Hotfix: colony topology layout
+
+The colony page rendered as a black void with the canvas squeezed into a narrow strip and the ants
+collapsed toward a single point.
+
+Cause: the v2.14.9 CSS cleanup swept every selector mentioning `cmap-mode`/`#cmap2`, which caught
+`#page-colony:not(.cmap-mode) #tb-colony{display:none;}` — a rule that styled a **live** element
+while merely *mentioning* the dead class. `#page-colony` is `flex-direction:row`, so the unhidden
+telemetry bar became a ~900px column, starving the canvas of width; `resize()` then computed a tiny
+layout radius and every ant clustered at the centre.
+
+- Restored as an unconditional `#page-colony #tb-colony{display:none;}` (`.cmap-mode` no longer
+  exists, so the guard clause is obsolete). The colony page has never shown the telemetry bar — the
+  canvas carries its own HUD.
+- Audited the other seven `#page-colony` rules the sweep removed: all referenced `.cmap-mode` or
+  `#cmap2` and were genuinely dead.
+
+Process note: a line-based regex sweep is the wrong tool for CSS, because a selector can reference a
+retired class while still styling a live element — and a brace-balance check (which I did run) only
+catches syntax damage, not a valid stylesheet missing a needed rule. Remaining cleanup stages diff
+removed selectors against live element ids before deleting.
+
 ## v2.14.10 — Chamber renaming
 
 - **Double-click a chamber to rename it**, exactly like renaming an ant — same popover, same
