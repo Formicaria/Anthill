@@ -1,5 +1,14 @@
 # ANTHILL — 24/7 Autonomy Design
 
+> **Execution framework note (docs/ANT_EXECUTION.md):** autonomous missions use the same expanded
+> role catalog as operator missions — the Director/Strategist plan against
+> `AntRegistry.ExecutableRoleIds`, which includes gated specialists only when their rollout gates
+> are open. Planner eligibility ≠ UI visibility (visible-only and deterministic-service roles are
+> never planned). Failure handoffs (tester→medic→repair) pass the bounded HandoffGate
+> (depth/budget/dedupe). Post-mission archival runs only on terminal outcomes; partial or
+> unverified completions never reinforce positively. Capability enforcement at tool dispatch
+> applies identically during autonomy.
+
 > Status: **Phase 0–5 IMPLEMENTED — the autonomy roadmap is complete.** For the current ordered build order across the whole project, see **[docs/NORTH_STAR.md](NORTH_STAR.md)** — the canonical roadmap. Rails, Director loop,
 > Strategist, Concurrency, Learning loop, and now Phase 5 gated auto-apply. The colony can now run autonomously:
 > the Director works the objective backlog — up to `autonomy_concurrency` missions at once,

@@ -110,6 +110,12 @@ Recent important changes:
 | `v1.8.15` | Gated auto-apply path with verification and rollback controls. |
 | `v1.8.12` | ResourceGovernor and concurrent mission handling. |
 
+**Ant execution:** six always-on mission agents (researcher, web, file, coder, builder, verifier)
+plus six gated specialists (ui_cartographer, tester, soldier, scribe, medic, archivist — all
+implemented, disabled by default behind `specialist_ant_execution_enabled` + per-role flags).
+Control-plane roles and deterministic homelab services are never mission workers. Capability
+enforcement, contracts, and rollout rules: **[docs/ANT_EXECUTION.md](docs/ANT_EXECUTION.md)**.
+
 For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** — the canonical build order. Since v2.9.0, planner output is schema-validated against machine-readable task contracts with capability-based permissions — see **[docs/CONTRACTS.md](docs/CONTRACTS.md)**.
 
 ---
