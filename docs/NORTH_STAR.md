@@ -267,7 +267,7 @@ V2.7.0   Full homelab operations layer                 [CURRENT BASELINE]
 V2.8.0   Durable Mission Runtime                       [SHIPPED v2.8.0]
 V2.9.0   Contracted Tasks and Typed Capability Tools   [SHIPPED v2.9.0]
 V2.9.x   Ant Execution Framework (specialist activation) [see docs/ANT_EXECUTION.md]
-V2.10.0  Sandboxed Agent Execution
+V2.10.0  Sandboxed Agent Execution                    [SHIPPED v2.10.0 — sandbox + loop primitives; agent wiring v2.10.x]
 V2.11.0  Independent Verification and Evidence
 V2.12.0  Procedural Skills and Evaluated Learning
 V2.13.0  Safe Action Engine and Recovery Orchestration

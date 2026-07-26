@@ -1,5 +1,26 @@
 # ANTHILL Changelog
 
+## v2.10.0 — Sandboxed Agent Execution (NORTH_STAR V3-track Phase 3, primitives)
+
+Ants gain the machinery to work iteratively WITHOUT touching the live installation. Honest scope:
+this release ships the sandbox + bounded-loop primitives with full isolation/budget tests; wiring
+agent code paths (coder iteration) through them lands in v2.10.x behind the gate.
+
+- **`SandboxWorkspace`**: disposable workspaces via git worktree (exact HEAD state, cheap) with a
+  bounded-copy fallback for non-git sources. Writes never touch the source checkout (tested);
+  artifacts leave ONLY via explicit `Harvest` (traversal-guarded, caller-chosen destination —
+  never auto-applied to the live tree); `ChangeSummary` exposes the in-sandbox diff; dispose
+  destroys the worktree and prunes. Deterministic C# — no model in workspace lifecycle.
+- **`BoundedAgentLoop`**: the observe → execute → inspect → replan engine with hard budgets
+  enforced by the LOOP, not agent judgment — max turns, max tool calls, elapsed-time budget
+  (injectable clock), repeated-action detection, cancellation, and step-fault capture. Every exit
+  carries an explicable stop reason; unbounded iteration is structurally impossible.
+- **Gate**: `sandbox_execution_enabled` (default false) reserved for the agent wiring; the
+  primitives are inert until a code path opts in.
+- Tests: worktree isolation + cleanup, copy-fallback isolation, harvest traversal refusal, and a
+  stop-reason matrix covering every budget (completed / max_turns / max_tool_calls / timeout /
+  repeated_action / cancelled / step_fault).
+
 ## v2.9.1 — Ant Execution Framework (specialist activation, stages A–H)
 
 Framework-first activation of the specialist colony (spec-driven, staged, each stage gated green
