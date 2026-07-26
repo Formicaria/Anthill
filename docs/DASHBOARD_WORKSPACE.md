@@ -115,7 +115,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 | 3c | Retire the chamber SVG: markup, control bar, inspector, page plumbing removed; search repointed at the canvas | v2.14.8 | **done** |
 | 3c2 | Sweep the now-unreachable `cmap*` functions and orphaned `#cmap2` CSS (dead code, no behaviour) | v2.14.9 | planned |
 | 4 | Tab groups: create by drag, reorder, detach, active-tab persistence | v2.14.7 | planned |
-| 5 | Migrate existing dashboard cards to registered panels (incremental) | v2.15.0 | planned |
+| 5 | Migrate existing dashboard cards to registered panels — renderers reused verbatim by re-parenting their own body elements, so there is one implementation per card | v2.14.9 | **done** |
 | 6 | Extract the canonical topology surface as the workspace canvas | v2.15.x | planned |
 | 7 | Topology overlays: view controls, legends/keys, inspector, prefs, hints — all hideable + anchored | v2.15.x | planned |
 | 8 | Unified workspace + polished default layout + lifecycle audit | v2.16.0 | planned |
