@@ -1,692 +1,1443 @@
-# OPERATION ANTHILL — MASTER NORTH STAR ROADMAP
+# ANTHILL — NORTH STAR 2.0
 
-**Document type:** Codex / Claude implementation handoff
-**Purpose:** Replace scattered roadmap direction with one ordered roadmap that keeps ANTHILL aligned to the original goal.
-**Status:** This is the canonical, top-level build order. Subsystem docs (`docs/ROADMAP.md`, `docs/UI_ROADMAP.md`, `docs/AUTONOMY.md`, `docs/HOMELAB.md`) are retained as history and must not contradict this file.
-**Current repo baseline used for this consolidation:** v1.8.26
+> **Canonical project roadmap**
+>
+> **Rebased from:** ANTHILL v2.7.0
+> **Target:** ANTHILL v3.0.0 — Bounded Autonomous Homelab Operator
+> **Status:** Active
+>
+> This document replaces the previous ordered roadmap as the canonical source for future ANTHILL development.
+>
+> Older roadmap documents may remain as subsystem design history, but they must link back to this document and must not define a conflicting release order.
 
 ---
 
-## 0. North Star
+# 1. Mission
 
-ANTHILL is a local-first swarm operating system for your own hardware.
+ANTHILL is a local-first autonomous operations platform for software projects and homelab infrastructure.
 
-The end goal is not just a chatbot, not just a dashboard, and not just a Proxmox wrapper. The end goal is a local colony command center that can:
+Its purpose is not merely to generate recommendations, run isolated tools, or display infrastructure status.
 
-1. understand goals,
-2. break them into tasks,
-3. route work through specialized ants,
-4. store mission/task/event/source/patch/approval/objective/pheromone history,
-5. learn from previous outcomes,
-6. show everything in a browser command center,
-7. safely manage a homelab/network,
-8. propose fixes,
-9. require approval for risky actions,
-10. eventually automate low-risk operations under strict guardrails.
+Its purpose is to become a dependable operator that can:
 
-The permanent rule is:
+1. Observe an environment.
+2. Detect meaningful change or failure.
+3. Diagnose the likely cause.
+4. Produce a bounded plan.
+5. Evaluate risk and blast radius.
+6. Select an approved capability.
+7. Execute through deterministic tools.
+8. Verify the real-world result.
+9. Roll back or compensate when necessary.
+10. Record evidence.
+11. Learn from the verified outcome.
+12. Improve future decisions without exceeding operator-defined authority.
+
+ANTHILL must earn autonomy through demonstrated reliability.
+
+The system must never treat autonomy as permission to act without boundaries.
+
+---
+
+# 2. Current Baseline
+
+ANTHILL v2.7.0 already includes substantial foundations.
+
+## Existing autonomy
+
+* Persistent objectives and autonomy run history.
+* Colony Director objective loop.
+* Strategist-generated mission goals.
+* Concurrent mission execution.
+* Resource-aware concurrency reduction.
+* Priority scheduling with anti-starvation aging.
+* Mission budgets and kill switches.
+* Follow-up objective generation.
+* Objective success scoring.
+* Low-value and looping-objective retirement.
+* Patch proposals and approval workflows.
+* Gated autonomous patch application.
+* Build-and-test verification.
+* Rollback of failed auto-applied patches.
+* Pheromone and mission memory.
+* Fresh-install training missions.
+* Model routing and circuit breaking.
+
+## Existing homelab platform
+
+* Host and service inventory.
+* Dependency mapping.
+* Health checks.
+* Notifications.
+* Proxmox integration.
+* Backup awareness.
+* Network and security awareness.
+* Incidents and change history.
+* Approval-gated infrastructure actions.
+* Automation rules.
+* DNS, DHCP, and firewall control foundations.
+* Full homelab operations layer.
+* Permissions, credential storage, target allowlists, and audit records.
+
+These capabilities are valuable, but their existence alone does not make ANTHILL a trustworthy autonomous operator.
+
+The remaining work is primarily framework work:
+
+* durable execution,
+* deterministic task contracts,
+* typed tools,
+* isolated execution,
+* independent verification,
+* real skill learning,
+* recovery,
+* and operator qualification.
+
+---
+
+# 3. Permanent Operating Doctrine
+
+Every autonomous action must follow:
 
 ```text
-OBSERVE -> DIAGNOSE -> PROPOSE -> RISK SCORE -> APPROVAL -> EXECUTE -> VERIFY -> LOG -> LEARN
+Observe
+  ↓
+Classify
+  ↓
+Diagnose
+  ↓
+Plan
+  ↓
+Risk Score
+  ↓
+Authorize
+  ↓
+Execute
+  ↓
+Verify
+  ↓
+Keep, Retry, Compensate, or Roll Back
+  ↓
+Record Evidence
+  ↓
+Learn
 ```
 
-Do not skip directly from diagnose to execute.
+No stage may be skipped merely because a model reports confidence.
+
+## Permanent rules
+
+1. **Partial completion is not success.**
+2. **Model output is not evidence.**
+3. **A completed task is not verified until an independent verifier confirms it.**
+4. **No irreversible action may depend only on an LLM judgment.**
+5. **All autonomous writes occur in an isolated or recoverable environment.**
+6. **Every side effect must have an idempotency strategy.**
+7. **Every destructive or state-changing tool must declare recovery behavior.**
+8. **The operator controls the maximum authority level.**
+9. **Fail closed when authorization, verification, or environment state is uncertain.**
+10. **Learning may influence selection, but may not bypass policy.**
+11. **The system must distinguish recommendation, proposal, execution, and verification.**
+12. **ANTHILL must be able to explain what it observed, what it changed, and how it proved the result.**
 
 ---
 
-## 1. Current Baseline To Preserve
+# 4. Outcome Semantics
 
-The existing repo is already past the original prototype stage. Treat these as preserved foundation, not future work.
+ANTHILL must stop treating broad structural completion as operational success.
 
-### Current active architecture
-
-- .NET 9-first application.
-- Optional C++20 native kernel.
-- Local Ollama default runtime.
-- Web UI at `/ui`.
-- SQLite memory.
-- Mission/task/event/source/patch/approval/objective/pheromone records.
-- Role-based ant routing.
-- Worker runtime and ant capability profiles.
-- Objective/autonomy system.
-- ResourceGovernor and concurrent mission handling.
-- Patch approval/apply safety model.
-- Auto-apply is gated, fail-closed, and configurable.
-- `py.old/` is archive material only and must not be used as active code.
-
-### Existing completed roadmap work to keep intact
-
-These features are considered baseline:
-
-- Objective lifecycle hardening.
-- Visual Patch Review Center.
-- Mission Composer + Plan Preview.
-- Colony Live Canvas 2.0.
-- Objective Command Board.
-- Mission Timeline + Task DAG Viewer.
-- Ant Inspector + Performance Observatory.
-- Memory + Pheromone Explorer.
-- Visual Patch Center 2.0.
-- Full Command Center Polish.
-- CI artifact packaging.
-- Auto-apply git integration.
-
-### Existing docs to consolidate
-
-The following docs should be treated as source material, but this master roadmap is the top-level direction document:
-
-- `docs/ROADMAP.md`
-- `docs/UI_ROADMAP.md`
-- `docs/AUTONOMY.md`
-- future `docs/HOMELAB.md`
-
----
-
-## 2. Roadmap Drift To Fix First
-
-There is roadmap drift in the docs:
-
-1. `docs/UI_ROADMAP.md` says all UI phases are shipped.
-2. `README.md` shows the repo at v1.8.26 with v1.8.25 UI polish and v1.8.26 auto-apply git integration shipped.
-3. Older roadmap language still says some phases are future/not built.
-4. Autonomy docs are largely complete, but some target-version language is stale.
-
-### Required fix
-
-Create one master roadmap file (`docs/NORTH_STAR.md`) and update older docs so they point to it. Each older doc should carry:
+All missions, tasks, actions, and playbook executions must use explicit outcomes.
 
 ```text
-Status: This document is retained as subsystem history. For current ordered work, see docs/NORTH_STAR.md.
+queued
+claimed
+running
+waiting_for_tool
+waiting_for_approval
+waiting_for_verification
+completed_unverified
+completed_verified
+partial
+failed_retryable
+failed_permanent
+timed_out
+cancelled
+compensating
+compensated
+rollback_failed
+orphaned
 ```
 
-Do not delete the older docs. They are useful subsystem history. Just stop treating them as the master build order.
+## Success definition
 
----
+Only the following state may:
 
-## 3. Non-Negotiable Development Rules
-
-### 3.1 Safety rules
-
-1. No destructive infrastructure action without explicit approval.
-2. No VM/LXC/container delete action in early V2.
-3. No firewall changes without preview and approval.
-4. No secrets in logs, UI, memory, test output, event payloads, or error messages.
-5. No SSH/shell execution unless allowlisted and approval-gated.
-6. No automatic repeated restart loops.
-7. No hidden background actions.
-8. No bypassing Queen, ApprovalGuard, or action policy.
-9. No applying patches directly from non-approved ants.
-10. No pretending a service was fixed without verification.
-11. No widening the general SSRF guard for homelab traffic.
-12. No action executes while `.anthill/HOMELAB_STOP` exists.
-13. No Python files written, modified, or treated as active code.
-
-### 3.2 Architecture rules
-
-1. Keep ANTHILL local-first.
-2. Preserve the mission/task/source/patch/event/approval/objective/pheromone model.
-3. Add new systems through clean C# services and interfaces.
-4. Do not bolt homelab features randomly into existing mission code.
-5. Deterministic polling must be plain C# service code, not LLM calls.
-6. Use LLM-backed ants only for judgment, summarization, planning, explanation, or report generation.
-7. Use additive APIs/DTOs. Avoid destructive endpoint changes.
-8. Every new stateful feature needs: model, persistence, API if UI-facing, tests, version note, changelog entry.
-9. Every risky feature needs: capability gate, permission check, audit event, tests proving disabled/default-safe behavior.
-10. Every new integration must be searchable, visible in UI, linkable to missions/incidents, and usable by memory/pheromones.
-
----
-
-## 4. Global Bug-Prevention Gates
-
-Every version from here forward must include regression protection for the classes of bugs that have already appeared.
-
-### Required recurring validations
-
-```bash
-dotnet test Anthill.sln -c Release
-dotnet build Anthill.sln -c Release --no-restore
-dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
-```
-
-*(Centralized in `scripts/validate.sh` / `scripts/validate.ps1` — shipped v1.8.28.)*
-
-### Required CI / test guards
-
-1. **Duplicate route guard** — fail boot/tests if two endpoints register the same route/method (prevents ambiguous-route HTTP 500s). *(Shipped: `AssertNoDuplicateRoutes` at boot, v1.8.23.2.)*
-2. **UI JS syntax check** — `node --check` on embedded UI JavaScript. *(Shipped: `ui-integrity` CI job, v1.8.25.2.)*
-3. **UI glyph/encoding integrity check** — fail on `�`, fail if known icon glyphs collapse to `?`, preserve the legitimate help-shortcut `?`. *(Shipped: `ui-integrity` CI job, v1.8.25.2.)*
-4. **Planner routing tests** — UI/frontend/canvas/CSS goals route to `coder.ui_coder`; verification-only/read-only goals never route to coder patch tasks; file/code goals reach file/coder when appropriate. *(Shipped: `AntRegistryTests` + `LifecycleAndConstraintTests`, confirmed covered in the v1.8.28 audit.)*
-5. **Serialization error guard** — API errors return meaningful JSON, not empty HTTP 500s. *(Shipped: `ApiJson.Envelope` + exception middleware, v1.8.23.1.)*
-6. **Migration idempotence tests** — fresh DB, existing DB, and re-run all pass. *(Shipped: `RegressionGuardTests`, v1.8.28.)*
-7. **Permission boundary tests** — Mission Coordinator denied where appropriate; Homelab Operator allowed only where appropriate; Administrator allowed where appropriate; no role gains dangerous permissions accidentally.
-8. **Secret redaction tests** — credentials never appear in logs, API responses, UI snapshots, events, or test output.
-9. **Approval gate tests** — patch/action cannot execute without approval; rejected cannot execute; superseded/duplicate handled deterministically.
-10. **Kill-switch tests** — `.anthill/STOP` halts autonomy; `.anthill/HOMELAB_STOP` halts homelab actions; each is scoped correctly.
-11. **No-Python guard** — no changes under `py.old/`; no new active Python files unless explicitly approved as non-runtime tooling. *(Shipped: CI `repo-guards` job + `RegressionGuardTests`, v1.8.28.)*
-12. **Release artifact guard** — artifact uploads only after publish + selftest pass; the release workflow must not publish failed builds. *(Shipped: v1.8.23.3.)*
-
----
-
-## 5. Consolidated Build Order
+* reinforce positive learning,
+* increase skill confidence,
+* generate autonomous follow-up work,
+* permit autonomous patch retention,
+* permit autonomous infrastructure change retention,
+* or count toward operator certification:
 
 ```text
-V1.8.27  Roadmap/documentation consolidation                 [SHIPPED v1.8.27]
-V1.8.28  Validation and regression harness hardening         [SHIPPED v1.8.28]
-V1.8.29  Fresh-install training and pheromone bootstrap missions  [SHIPPED v1.8.29]
-V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials, permissions  [SHIPPED v1.9.0]
-V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
-V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
-V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
-V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
-V1.13.0  Network and security awareness                       [SHIPPED v1.13.0]
-V1.14.0  Incident and change memory + IApprovable design      [SHIPPED v1.14.0 — V1.x line complete]
-V2.0.0   Homelab Command Center launch                        [SHIPPED v2.0.0]
-V2.1.0   Multi-hypervisor virtualization inventory (ESXi/Docker/Hyper-V, read-only)  [SHIPPED v2.1.0 — unplanned insertion]
-V2.2.0   Overview + Colony living-console revision + performance/auth/Proxmox stability pass  [SHIPPED v2.2.0 — unplanned insertion]
-V2.2.x   Live-feedback patch series on the v2.2.0 revision    [SHIPPED v2.2.1–v2.2.6]
-         (colony layout + classic Live Colony restored as default; chamber role detection;
-          Overview grid rebalance; chamber tunnels/drag/duties; cleanup + hardening pass with
-          new regression guards. Classic graph remains canonical; the chamber map becomes the
-          default only after functional parity — phased plan recorded in CHANGELOG v2.2.2.)
-V2.3.0   Approval-gated homelab actions                       [SHIPPED v2.3.0 framework + v2.3.1 Proxmox write runner — phase complete]
-V2.4.0   Backup and restore intelligence                      [SHIPPED v2.4.0]
-V2.5.0   Automation rules                                     [SHIPPED v2.5.0]
-V2.6.0   DNS/DHCP/firewall control layer                      (was V2.4.0)
-V2.7.0   Full homelab operations layer                        (was V2.5.0)
-V3.0.0   Bounded autonomous homelab operator
+completed_verified
 ```
 
-> Renumbering note (v2.2.0): two unplanned-but-valuable releases consumed v2.1.0 and v2.2.0, so
-> the remaining planned phases shift by two minor versions. Phase headings below retain their
-> original numbering with their NEW target versions noted — the scope of each phase is unchanged.
+`partial`, `completed_unverified`, or model-reported success must never be treated as verified success.
 
 ---
 
-# PHASE 1 — V1.8.27 ROADMAP / DOC CONSOLIDATION
+# 5. Autonomy Levels
 
-**Status: SHIPPED in v1.8.27.**
+ANTHILL must expose a single consistent autonomy model across code and homelab operations.
 
-## Goal
-Create one canonical roadmap/north-star document and stop roadmap drift.
+## Level 0 — Observe
 
-## Strict scope
-Documentation and tests only. No product behavior changes.
+ANTHILL may:
 
-## Required changes
-1. Add `docs/NORTH_STAR.md`.
-2. Update `docs/ROADMAP.md`, `docs/UI_ROADMAP.md`, `docs/AUTONOMY.md`, `README.md` to reference it.
-3. Add a short "roadmap status" block near the top of each older doc:
-   ```text
-   Status: This document is retained as subsystem history. For current ordered work, see docs/NORTH_STAR.md.
-   ```
-4. Add a roadmap consistency test if possible: README version matches runtime version; no doc claims a shipped phase is still future; `docs/NORTH_STAR.md` exists.
+* collect inventory,
+* run read-only checks,
+* correlate incidents,
+* summarize findings,
+* and record memory.
 
-## Success criteria
-- One document clearly defines the future build order.
-- Older roadmaps no longer conflict with the current version.
-- Codex/Claude has one source to follow.
-- No runtime behavior changes.
+No changes are proposed or executed.
 
----
+## Level 1 — Recommend
 
-# PHASE 2 — V1.8.28 VALIDATION / REGRESSION HARNESS HARDENING
+ANTHILL may:
 
-**Status: SHIPPED in v1.8.28** — `scripts/validate.sh` / `scripts/validate.ps1` centralize the
-validation commands; `RegressionGuardTests` add version-marker consistency, migration idempotence,
-UI glyph integrity, and no-Python guards to `dotnet test`; CI gains the `repo-guards` job
-(py.old immutability + stray-Python scan) and an extended docs/version consistency check.
+* diagnose,
+* produce plans,
+* recommend playbooks,
+* estimate risk,
+* and prepare evidence.
 
-## Goal
-Prevent repeated breakages before adding homelab complexity.
+No action proposal is created automatically.
 
-## Strict scope
-Validation, CI, and test hardening only.
+## Level 2 — Propose
 
-## Required changes
-1. Centralize validation commands.
-2. Add/strengthen tests for: route uniqueness, UI syntax, UI glyph integrity, planner routing, API serialization, migration idempotence, no `py.old` changes, version marker consistency.
-3. Make CI fail loudly for these classes of errors.
+ANTHILL may:
 
-## Success criteria
-- Known bug classes cannot merge again.
-- CI reports actionable failures.
-- No product behavior changes.
+* create patch proposals,
+* create infrastructure action proposals,
+* calculate blast radius,
+* prepare rollback plans,
+* and request approval.
 
----
+Execution requires human approval.
 
-# PHASE 3 — V1.8.29 FRESH-INSTALL TRAINING + PHEROMONE BOOTSTRAP
+## Level 3 — Bounded Auto-Execution
 
-**Status: SHIPPED in v1.8.29** — `docs/TRAINING_MISSIONS.md` documents the nine-mission read-only
-training pack with copy-paste goals wired to the `MissionConstraints` phrases, operator run
-instructions, and the recurring memory-compression pattern.
+ANTHILL may automatically execute actions only when:
 
-## Goal
-Give fresh ANTHILL installs a repeatable way to learn the repo, roles, workflow, UI, memory, and V2 roadmap before doing real patch missions.
+* the capability is explicitly allowlisted,
+* the action is low-risk,
+* the target is allowlisted,
+* verification is deterministic,
+* compensation or rollback exists,
+* the cumulative budget is available,
+* and the action remains inside the configured blast-radius limit.
 
-## Strict scope
-Read-only training missions and memory quality. No file changes by training missions.
+## Level 4 — Supervised Autonomous Operation
 
-## Required features
-1. A documented training mission pack (`docs/TRAINING_MISSIONS.md`).
-2. Operator instructions for running the missions after a fresh install.
-3. Each training mission produces useful memory/pheromone trails.
-4. A memory-compression mission pattern.
+ANTHILL may:
 
-## Training missions to document
-1. **Repo Orientation** — read-only project map (structure, runtime flow, APIs, UI files, tests, config, deploy, version markers).
-2. **Ant Role Training** — ant registry + routing, permissions, allowed/forbidden tools, executable vs visible-only ants.
-3. **Build/Test Workflow Training** — solution/test projects, CI, release/version files, validation order.
-4. **UI Structure Training** — UI file map, colony graph rendering, theme/color system, API endpoints, safe-modification checklist (preserve vanilla HTML/CSS/JS).
-5. **Memory + Pheromone System Training** — schema, scoring, event/source/patch/approval/objective tracking, search/prune flow.
-6. **Patch Proposal Discipline** — patch proposal → approval → verifier → audit lifecycle; unsafe patterns to avoid.
-7. **Failure Drill** — simulated CI-failure incident workflow (which ants, what to collect, how to verify, avoid overpatching).
-8. **V2 Homelab Roadmap Training** — internalize `docs/NORTH_STAR.md` direction and safety rules.
-9. **Daily Memory Compression** — compress recent missions into durable operating lessons.
+* diagnose incidents,
+* select certified playbooks,
+* execute bounded multi-step recovery,
+* verify results,
+* roll back failures,
+* and place itself into cooldown or degraded mode.
 
-All training missions are read-only, must not modify files, and must not create patch proposals.
+High-risk actions continue to require approval.
 
-## Success criteria
-- A fresh install can train itself without modifying files.
-- Future patch missions run faster because memory contains repo structure, validation rules, role boundaries, and roadmap direction.
-- Pheromone memory rewards safe, successful workflows.
+## Level 5 — Reserved
+
+Fully unrestricted autonomy is not a planned project goal.
+
+ANTHILL must always operate within operator-defined permissions, budgets, targets, and recovery rules.
 
 ---
 
-# PHASE 4 — V1.9.0 HOMELAB FOUNDATION
+# 6. Release Sequence
 
-**Status: SHIPPED in v1.9.0** — `HomelabRepository` (15 tables in the colony DB), the seven
-provider interfaces, `HomelabTargetGuard` (D1, SSRF-isolated), `HomelabCredentialStore` (D2,
-write-only secrets + audit), the homelab permission tier + `homelab_operator` role (D3, action
-gates OFF until V2.1), the `HomelabScheduler` skeleton (D4, disabled by default), eight
-visible-only read-only homelab ants, permission-scoped `/homelab/*` endpoints, `docs/HOMELAB.md`
-(D10), and the `Anthill.Tests.Homelab` suite.
-
-## Goal
-Introduce the homelab backend foundation without controlling infrastructure.
-
-## Strict scope
-Read-only schemas, interfaces, permissions, config, and safety scaffolding only. No Proxmox control. No firewall control. No SSH execution. No destructive actions.
-
-## Required backend folders
 ```text
-src/Anthill.Core/Homelab/           src/Anthill.Core/Homelab/Security/
-src/Anthill.Core/Homelab/Scheduling/ src/Anthill.Core/Homelab/Approvals/
-src/Anthill.Core/Homelab/Notifications/
-src/Anthill.Core/Integrations/  src/Anthill.Core/Inventory/  src/Anthill.Core/Health/
-src/Anthill.Core/Security/  src/Anthill.Core/Automation/  src/Anthill.Core/Incidents/
-src/Anthill.Core/Power/  src/Anthill.Core/Backups/
-src/Anthill.Api/Homelab/  src/Anthill.Api/Health/  src/Anthill.Api/Inventory/  src/Anthill.Api/Incidents/
-tests/Anthill.Tests.Homelab/
+V2.7.0   Full homelab operations layer                 [CURRENT BASELINE]
+
+V2.8.0   Durable Mission Runtime
+V2.9.0   Contracted Tasks and Typed Capability Tools
+V2.10.0  Sandboxed Agent Execution
+V2.11.0  Independent Verification and Evidence
+V2.12.0  Procedural Skills and Evaluated Learning
+V2.13.0  Safe Action Engine and Recovery Orchestration
+V2.14.0  Shadow Operations and Operator Qualification
+
+V3.0.0   Bounded Autonomous Homelab Operator
 ```
 
-## Required models
-`HomelabNode, NetworkDevice, ServiceRecord, VmRecord, ContainerRecord, StoragePoolRecord, StorageDeviceRecord, BackupRecord, HealthCheckResult, HomelabEvent, ChangeRecord, IncidentRecord, DependencyRecord, RiskRecord, CredentialRecord, TargetAllowlistRecord`
+V3.0 may not begin until all V2.8–V2.14 release gates are satisfied.
 
-## Required tables
-`homelab_nodes, network_devices, services, vm_inventory, container_inventory, storage_inventory, backup_inventory, health_checks, homelab_events, change_log, incidents, dependencies, risk_records, homelab_credentials, homelab_target_allowlist`
+---
 
-## Required interfaces
-`IInventoryProvider, IHealthCheckProvider, IHomelabEventSink, IHomelabRepository, IIntegrationStatusProvider, IHomelabTargetGuard, ICredentialProvider`
+# PHASE 1 — V2.8.0 DURABLE MISSION RUNTIME
 
-## Required cross-cutting dependencies
-- **D1 — Homelab Target Allowlist.** Operator-maintained allowlist for deterministic homelab providers to reach trusted private hosts. Do NOT loosen the general SSRF guard (which keeps blocking private/loopback/link-local for LLM-directed tools). Tests prove isolation.
-- **D2 — Credential Store Abstraction.** `ICredentialProvider` on existing encryption; typed credentials by ID; UI saves write-only; API returns only configured/last_verified status; audit event on every use; never log or return secret values.
-- **D3 — Homelab Permission Tier.** Permissions `read_homelab`, `manage_homelab_integrations`, `approve_homelab_actions`, `execute_homelab_actions`; recommended role `Homelab Operator` (view + approve, no full admin/provider/shell).
-- **D4 — Homelab Scheduler Skeleton.** Interval background runner owning health checks / Proxmox sync / network polls; jitter/backoff; concurrency cap; persists last-run/last-result; only mock/no-op providers in v1.9.0.
-- **D10 — Canonical Homelab Design Doc.** Create `docs/HOMELAB.md` (phase-status-at-top style like `docs/AUTONOMY.md`).
+## Goal
 
-## Required ants / services (read-only, visible)
-`InventoryAnt, NetworkScoutAnt, HealthAnt, ProxmoxAnt, StorageAnt, BackupAnt, SecurityScoutAnt, ChangeArchivistAnt`
+Make mission execution survive process crashes, service restarts, host reboots, worker loss, and partial execution.
 
-Polling/data-collection is plain C# services — never routed through the model router. LLM-backed ant behavior is used only for explanation, summarization, mission planning, or recommendations.
+The runtime must no longer depend on in-memory job state for operational correctness.
 
-## Success criteria
-Project builds; tests pass; tables migrate cleanly; endpoints are permission-scoped; credentials never returned; allowlist does not weaken general SSRF guard; no real infrastructure actions exist.
+## Required capabilities
+
+### Persistent mission queue
+
+Persist:
+
+* mission ID,
+* objective ID,
+* task graph,
+* current task,
+* mission status,
+* attempt number,
+* assigned worker,
+* claim timestamp,
+* lease expiration,
+* heartbeat timestamp,
+* cancellation request,
+* tool calls,
+* produced artifacts,
+* verifier state,
+* compensation state,
+* and final outcome.
+
+### Atomic objective claims
+
+Selecting an objective and claiming it must occur in one transaction.
+
+Two Directors or workers must not launch the same objective concurrently unless the objective explicitly permits parallelism.
+
+### Worker leases
+
+Workers must:
+
+* claim work for a fixed lease period,
+* renew the lease with heartbeats,
+* release the lease on completion,
+* and allow safe reclamation after expiration.
+
+### Startup reconciliation
+
+At startup, ANTHILL must inspect incomplete work and classify it as:
+
+* resumable,
+* retryable,
+* compensating,
+* orphaned,
+* waiting for operator review,
+* or permanently failed.
+
+### Idempotency
+
+Every mission and side-effecting action must have an idempotency key.
+
+Repeated delivery of the same work must not create duplicate:
+
+* patches,
+* snapshots,
+* VM operations,
+* DNS records,
+* firewall rules,
+* notifications,
+* objectives,
+* incidents,
+* or Git commits.
+
+### Attempt history
+
+Retries must create separate attempts while preserving the original mission identity.
+
+Each attempt must record:
+
+* reason,
+* worker,
+* environment,
+* model,
+* tool versions,
+* inputs,
+* outputs,
+* errors,
+* and duration.
 
 ## Required tests
-migration; ant-registry validation; homelab-summary API; allowlist isolation; credential save/use/redaction; permission matrix.
 
----
-
-# PHASE 5 — V1.9.1 HOMELAB SCHEDULER + MOCK PROVIDER HARNESS
-
-**Status: SHIPPED in v1.9.1** — `FakeHomelabProvider` base + five mocks (Proxmox/DNS/DHCP/
-firewall/health) with `HomelabProviderStatus`, scheduler wiring behind the
-`homelab_mock_providers_enabled` gate (off by default), `GET /homelab/providers`, and the shared
-`MockProviderHarnessTests` fixture covering run/backoff/concurrency-cap/persistence/allowlist.
-
-## Goal
-One shared execution/testing pattern for future homelab providers.
-
-## Required components
-`HomelabScheduler, HomelabScheduledJob, HomelabProviderResult, HomelabProviderStatus, FakeProxmoxProvider, FakeDnsProvider, FakeDhcpProvider, FakeFirewallProvider, FakeHealthProvider`
-
-## Requirements
-Scheduler runs mock providers; shared mock-provider test harness; state survives restart; no check stampede (jitter/backoff + per-provider concurrency cap); consistent status/results; disabled-by-default config gate; no real network calls.
-
-## Validation
-scheduler run; backoff; concurrency cap; persistence; fake-provider fixture.
-
----
-
-# PHASE 6 — V1.10.0 INVENTORY + SERVICE REGISTRY
-
-**Status: SHIPPED in v1.10.0** — dependency mapping + import/export in `HomelabRepository`, the
-full Phase 6 API surface (hosts/services PUT, dependencies GET/POST/DELETE, import/export), the
-Homelab Inventory console page (hosts, services, ports, dependencies, recent changes, JSON
-import/export), operator-editable homelab gates, and `InventoryRegistryTests`. Also fixed in this
-release: the Patch Center apply 403 (apply_patch gate now follows patch_application_enabled).
-
-## Goal
-ANTHILL knows what exists (manual/import-based only; no active scanning required).
-
-## Required features
-Manual host/service registration; import/export inventory JSON; device role tags; service ownership; dependency mapping; ports/protocols/URLs/notes; "what runs where?" and "what depends on this?"; ChangeRecord on edits.
-
-## Required API
-```text
-GET/POST /homelab/hosts    PUT /homelab/hosts/{id}
-GET/POST /homelab/services PUT /homelab/services/{id}
-GET /homelab/dependencies  POST /homelab/import  GET /homelab/export
-```
-Read = `read_homelab`; write = `manage_homelab_integrations`.
-
-## UI panels
-Hosts, Services, Ports, Dependencies, Recent changes.
-
-## Validation
-repository; API; import/export round-trip; permission; UI smoke.
-
----
-
-# PHASE 7 — V1.11.0 HEALTH CHECKS + NOTIFICATIONS
-
-**Status: SHIPPED in v1.11.0** — `HealthCheckRunner` (ping/HTTP/TCP/service-URL + disk/uptime
-placeholders; allowlist-gated before any I/O; strict timeouts), `health_check_schedules` CRUD,
-incident-candidate promotion at 3 consecutive failures, config-gated `NotificationService`
-(Slack/Discord/generic, off by default, URL-free audits), the shared-scheduler `health-checks`
-job, `/homelab/health/*` + `/homelab/notifications/test` endpoints, the Homelab-page Health
-panel, and `HealthAndNotificationTests` on loopback sockets.
-
-## Goal
-ANTHILL can tell what is alive, degraded, or broken. No auto-remediation.
-
-## Required checks
-Ping, HTTP status, TCP port, service URL, disk placeholder, uptime placeholder, failed history.
-
-## Backend
-`HealthCheckRunner, HealthStatus, HealthSummary, AlertRecord, HealthCheckSchedule, HealthCheckResult`
-
-## Notifications (config-gated, disabled-by-default)
-Slack webhook, Discord webhook, generic webhook. Fire on: health-check failure, new incident candidate, pending approval (once V2.1 exists).
-
-## Requirements
-Checks route through the Homelab Target Allowlist; wired into `HomelabScheduler`; strict timeouts so checks cannot hang the app.
-
-## Validation
-health classification; mock HTTP/TCP; timeout; notification; UI smoke.
-
----
-
-# PHASE 8 — V1.12.0 PROXMOX READ-ONLY INTEGRATION
-
-**Status: SHIPPED in v1.12.0** — GET-only `ProxmoxApiClient` (write operations structurally
-impossible; proven by type-surface and wire-traffic tests), `ProxmoxInventoryProvider` (nodes,
-QEMU VMs, LXCs, storage incl. backup-capable pools, failed tasks as stable-id events) +
-`ProxmoxHealthProvider` on the shared scheduler, credential-store + target-allowlist discipline,
-`/homelab/vms|containers|storage|proxmox/*` endpoints, Virtualization panels on the Homelab page,
-and `ProxmoxIntegrationTests` against a mock PVE API. Per-VM snapshot detail and deep backup
-inspection are deferred to V2.2 (backup intelligence).
-
-## Goal
-Connect ANTHILL to Proxmox safely in read-only mode. No start/stop/reboot/migrate/delete/clone/resize/config writes.
-
-## Read-only features
-connection profile, nodes, VMs, LXCs, status, CPU/RAM/storage, uptime, snapshots, backup status, failed Proxmox tasks.
-
-## Backend
-`ProxmoxInventoryProvider, ProxmoxHealthProvider, ProxmoxTaskRecord` — credential via CredentialStore; requests routed through the Target Allowlist; sync wired into `HomelabScheduler`; secrets never exposed.
-
-## Validation
-mock Proxmox API; config validation; no-write permission; credential redaction; UI smoke.
-
----
-
-# PHASE 9 — V1.13.0 NETWORK + SECURITY AWARENESS
-
-**Status: SHIPPED in v1.13.0** — `RiskAnalyzer` with all nine finding kinds and stable-id
-reconciliation (auto-resolve on fix, sticky acknowledgements), the manual/import network-device
-registry (in the export bundle), the `risk-analysis` shared-scheduler job, `/homelab/devices` +
-`/homelab/risks` endpoints, Network & Risk console panels, and socket-free `RiskAwarenessTests`.
-No active scanning exists; the phase is zero-network-I/O by construction.
-
-## Goal
-Understand the network shape and obvious risks. Awareness/reporting only; no firewall/DNS/DHCP writes.
-
-## Features
-Subnet/VLAN/DHCP-static-IP/DNS inventory; open-port registry; unknown-device placeholder; internet-exposed service tracking; risk-finding model. Any active scan is disabled by default and routed through the Target Allowlist.
-
-## Findings
-risky open ports; unknown device joined; ownerless service; un-backed-up host; internally/externally exposed dashboard; duplicate IP; missing DNS name; service without health check; credential configured but never verified.
-
-## Validation
-finding generation; duplicate IP; exposure classification; allowlist; UI smoke.
-
----
-
-# PHASE 10 — V1.14.0 INCIDENT + CHANGE MEMORY
-
-**Status: SHIPPED in v1.14.0 — the V1.x line is complete.** `IncidentManager` (candidate sweep
-with per-subject dedupe, suspect-flagged timelines, similar-incident matching with verbatim fix
-memory, repeat-offender patterns), `/homelab/incidents/*` endpoints, the Incidents console panel
-with timeline drawer, and the full IApprovable design: interface + `ApprovableView`, the unified
-`GET /homelab/approvals/unified` queue projecting today's patch approvals, the inert V2.1
-`ActionProposal` skeleton with blast-radius rubric fields, and `docs/APPROVALS.md` binding V2.1's
-executor to five safety requirements. Next: PHASE 11 — the V2.0.0 Homelab Command Center.
-
-## Goal
-Connect failures to recent changes and past fixes. Incident tracking, timelines, recommendations only. No auto-fixes.
-
-## Features
-`IncidentRecord` + timeline; recent-changes-before-failure; similar-incident matching; repeated-failure pattern detection; pheromone trails for fixes ("this fixed it last time"); root-cause notes; links to hosts/services/VMs/LXCs/health-checks/change-records/mission IDs/objectives/approvals.
-
-## IApprovable design (design here, before V2.1)
-Shared abstraction for future action proposals and existing patch approvals: one pending-approvals UI, one audit trail, one dedupe path, with different renderers (patch diff, action proposal, network change preview).
-
-## Validation
-incident timeline; similar incident; memory search integration; UI smoke; IApprovable design review.
-
----
-
-# PHASE 11 — V2.0.0 HOMELAB COMMAND CENTER LAUNCH
-
-**Status: SHIPPED in v2.0.0** (two passes: functional data layer, then the ANTHILL identity
-layer). `CommandCenter` builder + `GET /homelab/dashboard` aggregation, impact-propagating
-dependency graph with transitive dependents, host/service detail drawers, deterministic
-next-checks, semantic subsystem tokens, colony-mesh background, command summary strip with
-data-derived colony-link pulse, connection cues, reduced-motion support, labeled empty states,
-and `CommandCenterTests`. The console answers all eight questions below. Next: PHASE 12 —
-approval-gated actions (V2.1.0), building on the shipped IApprovable design.
-
-## Goal
-Turn V1 backend foundations into the main homelab dashboard. Mostly read-only — visibility, not full control.
-
-## Questions ANTHILL must answer
-What is broken? Where is it running? What does it depend on? What changed recently? What should I do next? What is not backed up? What is exposed? What is unknown on the network?
-
-## UI rules
-Preserve the single embedded vanilla HTML/CSS/JS UI (no React/Tailwind migration); CSS variables + reusable render helpers; additive only; real data first with labeled fallbacks (never fake operational values); timers cleaned up; reduced-motion aware; no broken glyphs.
-
-## Cards
-Health Summary, Critical Services, Failed Checks, Recent Changes, Active Incidents, Proxmox Nodes, Storage/Backups, Security Findings. Plus dependency graph; service/host/incident detail pages; mission memory linked to incidents; one aggregation endpoint.
-
-## Validation
-dashboard endpoint; health summary; dependency graph; UI syntax/glyph; CI release artifact.
-
----
-
-# PHASE 12 — V2.1.0 APPROVAL-GATED HOMELAB ACTIONS
-
-**Status: SHIPPED in v2.3.0 (renumbered per the v2.2.0 note above).** The full pipeline —
-`ActionProposal` persistence, deterministic `BlastRadius` scorer over the v1.14 rubric fields,
-allowlisted `ActionCatalog` with the forbidden set enforced structurally in the executor,
-TOCTOU-guarded `ActionExecutor` (approve/execute permission split, mandatory rollback note,
-dry-run, post-execution verification, full audit), the `HOMELAB_STOP` kill switch with
-`/homelab/actions/stop|resume`, unified-queue projection, the Actions console panel, and
-`ActionApprovalTests`. v2.3.0 ships LOCAL + MOCK runners only (framework first); the
-narrowly-scoped Proxmox write runner (power/snapshot/backup) is v2.3.1's isolated diff. Both
-action capability gates still default OFF — fail closed.
-
-## Goal
-Controlled low-risk actions only after explicit approval. No autonomous dangerous behavior.
-
-## Allowed initial actions
-restart service/container; start/stop/restart VM/LXC; create snapshot; run backup; mark incident resolved; update inventory; run approved diagnostic command.
-
-## Forbidden in V2.1
-delete VM/LXC/container; delete firewall rules; factory reset; wipe disks; auto-modify secrets; disable backups; open internet exposure without approval.
-
-## Required safety
-IApprovable-based `ActionProposal`; approval required; blast-radius score; rollback/recovery note; audit log; dry-run when possible; permission check; post-execution verification; secret redaction; `.anthill/HOMELAB_STOP`.
-
-## Blast-radius rubric inputs (define before implementation)
-dependency fan-out; service criticality; backup coverage; replica count; maintenance window; host/node role; internet exposure; interrupts current user-facing service; rollback availability.
-
-## Permissions
-`approve_homelab_actions` and `execute_homelab_actions` are separate checks. Endpoints: `POST /homelab/actions/stop`, `POST /homelab/actions/resume`.
-
-## Validation
-approval gate; audit; permission; dry-run; mock executor; kill-switch isolation; rollback note.
-
----
-
-# PHASE 13 — V2.2.0 BACKUP + RESTORE INTELLIGENCE
-
-## Goal
-Know what is protected, what is not, and what recovery looks like.
-
-## Features
-backup coverage map; stale-backup warnings; failed-backup detection; restore priority; restore confidence score; "what dies if this disk/node fails?"; restore runbook generation; backup dependency view; blast-radius simulation for node/disk loss.
-
-## Validation
-backup coverage; stale backup; blast-radius; runbook generation.
-
----
-
-# PHASE 14 — V2.3.0 AUTOMATION RULES
-
-## Goal
-Simple self-healing and alerting. Low-risk automation only; risky actions still require approval.
-
-## Examples
-down → restart once; backup fails twice → alert; disk > 90% → warn; UPS on battery → shut down low-priority VMs (policy/approval); unknown device joins → flag; repeated health failure → incident.
-
-## Backend
-`AutomationRule, AutomationTrigger, AutomationAction, AutomationRunRecord, AutomationPolicy, AutomationCooldown` — reuse `HomelabScheduler`; cooldowns + retry limits + loop prevention; automation audit log; disabled-by-default; risky automation routed through IApprovable/ActionExecutor/HOMELAB_STOP.
-
-## Validation
-rule trigger; cooldown; approval-required; loop prevention; HOMELAB_STOP.
-
----
-
-# PHASE 15 — V2.4.0 NETWORK CONTROL LAYER
-
-## Goal
-Manage DNS/DHCP/firewall safely. All network changes require approval.
-
-## Features
-DNS record management; static IP tracking; DHCP lease awareness; firewall rule explanation; VLAN documentation; proposed firewall changes; exposed-service audit; change preview before apply.
-
-## Implementation
-IApprovable network-action proposals; `IDnsProvider` / `IDhcpProvider` / `IFirewallProvider`; diff/preview; approval-gated apply; rollback/export-config note; reuse the shared mock-provider harness.
-
-## Validation
-mock provider; approval; diff preview; rollback note; allowlist; secret redaction.
-
----
-
-# PHASE 16 — V2.5.0 FULL HOMELAB OPERATIONS LAYER
-
-## Goal
-Make ANTHILL the main operational control plane for the homelab.
-
-## Capabilities
-dependency-aware maintenance; node drain planning; Proxmox migration recommendations; service recovery missions; automatic documentation; power/cost optimization; security hardening missions; recurring health summaries; maintenance windows; action sequencing; operator runbook generation.
-
-## Validation
-dependency planner; maintenance simulation; recovery mission; documentation generation; action sequencing.
-
----
-
-# PHASE 17 — V3.0.0 BOUNDED AUTONOMOUS HOMELAB OPERATOR
-
-## Goal
-A bounded local autonomous homelab operator, bounded by risk, approvals, permissions, budgets, maintenance windows, and kill switches.
-
-## Endgame behavior
-Watches the network; detects issues; creates missions; proposes fixes; applies pre-approved low-risk fixes; requires approval for risky changes; remembers every result; improves with pheromone history; generates operator reports; keeps the homelab documented.
-
-## Autonomy controls
-risk tiers; approval thresholds; emergency stop; HOMELAB_STOP; maintenance windows; safe mode; max action frequency; loop detection; rollback memory; audit export.
+* Kill the process while a mission is queued.
+* Kill it while a worker owns a lease.
+* Kill it during a tool call.
+* Kill it after a side effect but before outcome recording.
+* Kill it during verification.
+* Kill it during rollback.
+* Restart with multiple expired leases.
+* Run two Directors against the same database.
+* Replay the same idempotency key.
+* Confirm no task is silently lost or executed twice.
 
 ## Success criteria
-Detects common failures unprompted; resolves approved low-risk failures; escalates risky failures; never performs dangerous actions silently; uses incident/pheromone memory to improve.
+
+* No accepted mission disappears after restart.
+* No objective is launched twice because of a race.
+* Expired work is reclaimed safely.
+* Completed work is not repeated.
+* Side effects can be correlated to a durable attempt.
+* The runtime can explain every incomplete mission after recovery.
 
 ---
 
-## 6. Recommended Workflow Improvements
+# PHASE 2 — V2.9.0 CONTRACTED TASKS AND TYPED CAPABILITY TOOLS
 
-1. **One approval system** — IApprovable, not separate queues for patches/actions/network changes.
-2. **One scheduler** — `HomelabScheduler`, not per-subsystem timers.
-3. **One mock-provider harness** — one test fixture architecture for Proxmox/DNS/DHCP/firewall/health.
-4. **One credential store** — `ICredentialProvider`, not per-provider storage.
-5. **One event model** — all homelab systems write `homelab_events` + `change_log` so memory/pheromones can learn.
-6. **One master roadmap** — this file. Subsystem docs must not contradict the master build order.
-7. **Read-only before action-gated** — every integration lands read-only first.
-8. **Deterministic code before LLM judgment** — polling/sync/health/scans/provider calls are deterministic C#; LLM ants summarize and recommend, they do not poll infrastructure.
+## Goal
 
----
+Replace loosely defined prompt tasks and string-based tool results with machine-readable contracts.
 
-## 7. Version Completion Template
+## Task contract
 
-Every version must end with:
+Every task must define:
 
-```text
-Version updated.
-CHANGELOG updated.
-README version note updated if applicable.
-docs/NORTH_STAR.md updated if roadmap changed.
-docs/HOMELAB.md phase marker updated if homelab-related.
-Tests added/updated.
-CI passing.
-API documented if applicable.
-UI panel added if applicable.
-Safety boundary documented.
-No secrets exposed.
-Migration tested if database changed.
-Release artifact generated if release workflow exists.
-No py.old changes.
-No conflict markers.
-No old version markers.
+```json
+{
+  "id": "task-id",
+  "title": "Human-readable title",
+  "objective": "What must be achieved",
+  "task_type": "diagnose|change|verify|research|recover",
+  "required_capabilities": [],
+  "inputs": {},
+  "constraints": {},
+  "expected_artifacts": [],
+  "success_criteria": [],
+  "verification_plan": [],
+  "dependencies": [],
+  "side_effect_class": "none|reversible|destructive",
+  "risk_class": "low|medium|high|critical",
+  "idempotency_key": "",
+  "retry_policy": {},
+  "compensation_plan": {},
+  "timeout_seconds": 0
+}
 ```
 
----
+## Typed tool interface
 
-## 8. Final Target
+Every tool must declare:
 
-By **V2.0**, ANTHILL should show: every known host; every known service; where each runs; what each depends on; what is healthy/broken; what changed recently; what is not backed up; what is exposed/risky; what incident is active; what next action is recommended.
+* name,
+* description,
+* version,
+* JSON input schema,
+* JSON output schema,
+* required permissions,
+* supported targets,
+* side-effect class,
+* risk class,
+* whether it is idempotent,
+* idempotency-key support,
+* timeout support,
+* cancellation support,
+* retry behavior,
+* compensation capability,
+* audit fields,
+* and evidence produced.
 
-By **V2.5**, ANTHILL safely helps operate the homelab.
+## Structured tool result
 
-By **V3.0**, ANTHILL becomes a bounded autonomous homelab operator.
+Tools must return structured results:
 
-The original goal stays intact:
+```json
+{
+  "status": "succeeded|failed_retryable|failed_permanent|cancelled",
+  "summary": "",
+  "data": {},
+  "artifacts": [],
+  "evidence": [],
+  "warnings": [],
+  "error": {
+    "code": "",
+    "message": "",
+    "retry_after_seconds": 0
+  },
+  "side_effects": [],
+  "compensation_token": ""
+}
+```
+
+## Capability model
+
+Permissions must attach to capabilities, not ant names.
+
+Examples:
 
 ```text
-Local-first swarm intelligence.
-Visible mission execution.
-Persistent memory.
-Safe patch/action approvals.
-Pheromone learning.
-A command center that eventually runs the homelab like a local Jarvis, without giving up control.
+repo.read
+repo.search
+repo.write.sandbox
+repo.patch.propose
+repo.patch.apply
+process.execute.readonly
+process.execute.workspace
+network.http.public
+network.http.homelab
+proxmox.read
+proxmox.vm.start
+proxmox.vm.stop
+proxmox.snapshot.create
+dns.record.write
+firewall.rule.write
+backup.restore
+credential.use
 ```
+
+Ants may receive temporary capability grants for one mission.
+
+## Failure taxonomy
+
+Errors must be classified consistently:
+
+* validation failure,
+* authorization failure,
+* target rejection,
+* transient provider failure,
+* rate limit,
+* timeout,
+* conflict,
+* dependency failure,
+* verification failure,
+* unsafe state,
+* compensation failure,
+* and internal defect.
+
+## Success criteria
+
+* Planner output is schema validated.
+* Invalid tasks cannot enter the execution queue.
+* Tools no longer depend on unstructured text parsing for control flow.
+* Permissions can be evaluated before execution.
+* Every state-changing tool declares recovery behavior.
+* Retry decisions use typed failure classes.
+
+---
+
+# PHASE 3 — V2.10.0 SANDBOXED AGENT EXECUTION
+
+## Goal
+
+Allow ants to work iteratively without modifying the active ANTHILL installation or uncontrolled host state.
+
+## Required execution environments
+
+### Code missions
+
+Run in one of:
+
+* disposable Git worktree,
+* temporary clone,
+* ephemeral container,
+* or operator-defined isolated workspace.
+
+Never perform autonomous code changes directly in the live production checkout.
+
+### Infrastructure missions
+
+Use:
+
+* read-only observation context,
+* a proposed action plan,
+* a bounded execution session,
+* action-specific credentials,
+* target allowlists,
+* and explicit compensation metadata.
+
+## Agent execution loop
+
+Agents must support bounded iteration:
+
+```text
+Observe
+→ Choose capability
+→ Execute tool
+→ Inspect structured result
+→ Update working state
+→ Replan if necessary
+→ Continue or stop
+```
+
+Each loop must be constrained by:
+
+* maximum turns,
+* maximum tool calls,
+* maximum elapsed time,
+* token budget,
+* action budget,
+* risk budget,
+* repeated-action detection,
+* and cancellation.
+
+## Required agent tools
+
+For code:
+
+* repository tree,
+* semantic code search,
+* exact text search,
+* file reader,
+* diff reader,
+* compiler,
+* test runner,
+* formatter,
+* linter,
+* static analyzer,
+* dependency inspector,
+* Git status,
+* and artifact collector.
+
+For homelab:
+
+* inventory lookup,
+* dependency graph lookup,
+* incident history,
+* change history,
+* health checks,
+* provider status,
+* target validation,
+* action preview,
+* blast-radius calculation,
+* and rollback availability.
+
+## Prompt-injection boundaries
+
+Tool output, repository content, logs, web pages, and infrastructure metadata must be treated as untrusted input.
+
+Untrusted content must not:
+
+* grant capabilities,
+* alter system policy,
+* disable verification,
+* change approval requirements,
+* reveal credentials,
+* or expand target allowlists.
+
+## Loop controls
+
+Detect:
+
+* repeated identical tool calls,
+* no-progress cycles,
+* oscillating edits,
+* repeated failing patches,
+* repeated diagnosis without new evidence,
+* and planner-executor disagreement.
+
+## Success criteria
+
+* Autonomous code edits occur only in isolated workspaces.
+* Agents can inspect, act, test, and revise.
+* The active checkout remains unchanged until promotion.
+* Tool loops stop predictably when budgets expire.
+* Untrusted content cannot elevate authority.
+
+---
+
+# PHASE 4 — V2.11.0 INDEPENDENT VERIFICATION AND EVIDENCE
+
+## Goal
+
+Separate execution from verification and require real evidence before declaring success.
+
+The ant or model that performed a change must not be the only entity deciding whether it worked.
+
+## Verification framework
+
+Introduce:
+
+```text
+IVerifier
+VerificationRequest
+VerificationResult
+VerificationEvidence
+VerificationPolicy
+VerificationBundle
+```
+
+## Required verifier types
+
+### BuildVerifier
+
+Confirms compilation or packaging succeeds.
+
+### TestVerifier
+
+Runs required test suites and records exact results.
+
+### DiffVerifier
+
+Checks that the resulting diff matches approved scope.
+
+### ArtifactVerifier
+
+Confirms required files, reports, backups, snapshots, or outputs exist.
+
+### ServiceHealthVerifier
+
+Checks HTTP, TCP, process, service, or application health.
+
+### InfrastructureStateVerifier
+
+Confirms actual provider state matches the intended state.
+
+### DependencyVerifier
+
+Checks dependent services and systems after a change.
+
+### SecurityPolicyVerifier
+
+Checks:
+
+* secret exposure,
+* permission expansion,
+* unsafe paths,
+* credential leakage,
+* dangerous commands,
+* firewall exposure,
+* and policy violations.
+
+### RollbackVerifier
+
+Proves rollback or compensation restored the expected previous state.
+
+### SemanticJudgeVerifier
+
+Uses a model for semantic review only when deterministic verification is insufficient.
+
+A semantic judge may supplement deterministic evidence but must not replace it for state-changing operations.
+
+## Evidence requirements
+
+Verification evidence may include:
+
+* command,
+* exit code,
+* stdout and stderr digests,
+* test counts,
+* file hashes,
+* diffs,
+* API responses,
+* health-check results,
+* provider task IDs,
+* screenshots,
+* timestamps,
+* target identity,
+* and before/after state.
+
+## Verification policy
+
+A task must specify which verifiers are required.
+
+Example:
+
+```text
+Code patch:
+- DiffVerifier
+- BuildVerifier
+- TestVerifier
+- SecurityPolicyVerifier
+
+VM restart:
+- InfrastructureStateVerifier
+- ServiceHealthVerifier
+- DependencyVerifier
+
+Firewall change:
+- InfrastructureStateVerifier
+- ConnectivityVerifier
+- SecurityPolicyVerifier
+- RollbackVerifier availability
+```
+
+## Promotion rule
+
+A code or configuration change may be promoted from its sandbox only after:
+
+* all required verifiers pass,
+* the final diff remains within approved scope,
+* cumulative risk remains within policy,
+* no secret is detected,
+* and the evidence bundle is persisted.
+
+## Success criteria
+
+* Structural task completion cannot create a verified success.
+* Every retained autonomous change has an evidence bundle.
+* Verification can be rerun independently.
+* Failed verification causes retry, compensation, rollback, or escalation.
+* Model confidence is never stored as proof.
+
+---
+
+# PHASE 5 — V2.12.0 PROCEDURAL SKILLS AND EVALUATED LEARNING
+
+## Goal
+
+Make ANTHILL improve from verified experience without allowing uncontrolled self-training.
+
+## Learning layers
+
+### Episodic memory
+
+Store what occurred during a specific mission:
+
+* context,
+* plan,
+* tool calls,
+* decisions,
+* evidence,
+* outcome,
+* and operator feedback.
+
+### Semantic memory
+
+Store stable facts:
+
+* repository architecture,
+* environment inventory,
+* service ownership,
+* dependency relationships,
+* policies,
+* and known constraints.
+
+### Procedural memory
+
+Store reusable methods:
+
+* diagnosis sequences,
+* repair playbooks,
+* verification routines,
+* rollback routines,
+* and environment-specific runbooks.
+
+### Causal memory
+
+Store supported relationships:
+
+* change X preceded failure Y,
+* action A restored service B,
+* rollback C reversed side effect D.
+
+Causal claims must include evidence strength and provenance.
+
+### Negative memory
+
+Store:
+
+* failed fixes,
+* unsafe approaches,
+* rejected patches,
+* false diagnoses,
+* expired procedures,
+* and environment incompatibilities.
+
+## Hybrid retrieval
+
+Memory search must combine:
+
+* exact filters,
+* FTS/BM25,
+* embeddings,
+* metadata,
+* freshness,
+* environment compatibility,
+* source reliability,
+* and prior verified success.
+
+## Skill registry
+
+Introduce versioned skills:
+
+```text
+Skill ID
+Version
+Purpose
+Supported environments
+Required capabilities
+Inputs
+Preconditions
+Procedure
+Expected evidence
+Verification policy
+Compensation plan
+Success count
+Failure count
+Confidence
+Last validated
+Status
+```
+
+Statuses:
+
+```text
+candidate
+experimental
+certified
+degraded
+retired
+blocked
+```
+
+## Skill promotion
+
+A candidate skill becomes certified only after:
+
+* repeated verified successes,
+* no unresolved rollback failures,
+* acceptable environment coverage,
+* passing regression scenarios,
+* and operator-defined confidence thresholds.
+
+## Skill demotion
+
+Skills must be degraded or retired when:
+
+* the environment changes,
+* provider versions become incompatible,
+* repeated failures occur,
+* verification becomes unreliable,
+* or a safer skill replaces them.
+
+## Planner use
+
+The Planner should prefer:
+
+1. certified compatible skills,
+2. experimental skills in sandbox or shadow mode,
+3. generated plans when no suitable skill exists.
+
+## Model routing learning
+
+Outcome history may influence:
+
+* role-to-model routing,
+* prompt selection,
+* tool ordering,
+* retrieval weighting,
+* and retry strategy.
+
+It may not:
+
+* grant new permissions,
+* skip approvals,
+* weaken verification,
+* or expand allowed targets.
+
+## Model training policy
+
+ANTHILL must not continuously fine-tune its active production model from its own unreviewed outputs.
+
+Any future adapter or fine-tuning pipeline must be:
+
+* offline,
+* secret-scrubbed,
+* based on verified trajectories,
+* split into train and holdout sets,
+* evaluated against a stable baseline,
+* tested for regression and policy compliance,
+* deployed as a canary,
+* and reversible.
+
+Production self-replacement is outside the V3.0 scope.
+
+## Success criteria
+
+* ANTHILL learns reusable procedures rather than only scalar scores.
+* Certified skills contain deterministic verification.
+* Failed approaches reduce future selection probability.
+* Retrieval accounts for environment and freshness.
+* Learning cannot bypass authorization policy.
+
+---
+
+# PHASE 6 — V2.13.0 SAFE ACTION ENGINE AND RECOVERY ORCHESTRATION
+
+## Goal
+
+Unify code changes and homelab actions behind one safe execution framework.
+
+## Action lifecycle
+
+```text
+draft
+validated
+risk_scored
+waiting_for_approval
+approved
+scheduled
+executing
+verifying
+completed_verified
+failed
+compensating
+compensated
+rollback_failed
+escalated
+```
+
+## Action proposal
+
+Every action proposal must include:
+
+* target,
+* intended state,
+* current state,
+* capability,
+* exact operation,
+* preconditions,
+* risk class,
+* blast radius,
+* affected dependencies,
+* expected downtime,
+* verification plan,
+* rollback or compensation plan,
+* approval requirement,
+* expiration time,
+* and idempotency key.
+
+## Risk engine
+
+Risk scoring must consider:
+
+* destructive potential,
+* reversibility,
+* target criticality,
+* number of affected systems,
+* dependency depth,
+* credential privilege,
+* production versus lab designation,
+* backup freshness,
+* maintenance window,
+* recent changes,
+* unresolved incidents,
+* action novelty,
+* skill confidence,
+* verifier quality,
+* and cumulative change size.
+
+## High-risk categories
+
+The following require explicit approval unless the operator creates a narrowly scoped exception:
+
+* delete operations,
+* storage destruction,
+* restore operations,
+* firewall exposure,
+* credential or permission changes,
+* authentication changes,
+* network routing changes,
+* database schema migrations,
+* production service shutdown,
+* cluster membership changes,
+* destructive Git operations,
+* and changes without deterministic rollback.
+
+## Recovery orchestration
+
+Recovery must support:
+
+* immediate rollback,
+* compensating action,
+* retry after cooldown,
+* failover,
+* restore from snapshot or backup,
+* quarantine,
+* disable automation,
+* revoke temporary capability,
+* and escalate to the operator.
+
+## Change-set transactions
+
+Multi-step actions must define:
+
+* step order,
+* checkpoints,
+* verification after each checkpoint,
+* stop conditions,
+* compensation order,
+* and whether partial retention is allowed.
+
+## Cooldowns and circuit breakers
+
+Automatically pause an action type, target, provider, skill, or automation rule after:
+
+* repeated failures,
+* repeated verification failures,
+* rollback failure,
+* provider instability,
+* resource pressure,
+* or unexpected blast radius.
+
+## Auto-apply correction
+
+Autonomous patch application must:
+
+* perform branch and workspace safety checks before writing,
+* operate inside an isolated worktree,
+* evaluate cumulative diff risk,
+* inspect critical file classes,
+* block secret-bearing changes,
+* block unsafe dependency changes,
+* block unapproved migrations,
+* and promote verified commits rather than modifying the live checkout first.
+
+## Success criteria
+
+* All state-changing systems use the same lifecycle.
+* Every action has a recovery path or is explicitly marked non-recoverable.
+* Critical changes cannot qualify as low risk by line count alone.
+* Rollback failure automatically suspends related autonomy.
+* Multi-step recovery can stop safely at checkpoints.
+
+---
+
+# PHASE 7 — V2.14.0 SHADOW OPERATIONS AND OPERATOR QUALIFICATION
+
+## Goal
+
+Prove ANTHILL is ready to operate before granting V3 authority.
+
+V2.14 is a qualification release, not a feature expansion release.
+
+## Shadow mode
+
+ANTHILL observes real incidents and produces:
+
+* diagnosis,
+* proposed action,
+* chosen skill,
+* risk score,
+* predicted outcome,
+* verification plan,
+* and rollback plan.
+
+It does not execute.
+
+The operator records what action was actually taken and whether ANTHILL’s recommendation was correct.
+
+## Simulation mode
+
+Run against:
+
+* mocked providers,
+* disposable VMs,
+* containers,
+* test networks,
+* temporary repositories,
+* and replayed incident histories.
+
+## Fault-injection scenarios
+
+Required scenarios include:
+
+* service crash,
+* health-check false positive,
+* full disk,
+* failed backup,
+* stale DNS record,
+* unreachable Proxmox node,
+* VM stuck in transition,
+* firewall rule regression,
+* dependency outage,
+* expired credential,
+* rate-limited provider,
+* interrupted mission,
+* failed verification,
+* failed rollback,
+* duplicate mission delivery,
+* and malicious prompt injection in logs or repository content.
+
+## Reliability metrics
+
+Track:
+
+* diagnosis precision,
+* diagnosis recall,
+* action-selection accuracy,
+* unnecessary-action rate,
+* verification false-positive rate,
+* rollback success rate,
+* duplicate execution rate,
+* mean time to detect,
+* mean time to diagnose,
+* mean time to recover,
+* operator override rate,
+* policy violation count,
+* and unverified-success count.
+
+## Required release thresholds
+
+Before V3.0:
+
+* Zero silent mission loss during recovery testing.
+* Zero duplicate irreversible actions during idempotency testing.
+* Zero unverified outcomes counted as success.
+* Zero critical policy bypasses.
+* Zero credentials exposed in logs, prompts, memory, or evidence.
+* All destructive capabilities fail closed.
+* All Level 3 actions have deterministic verification.
+* All Level 3 actions have rollback or approved compensation.
+* Rollback success rate meets the operator-defined threshold.
+* Shadow-mode recommendations meet the operator-defined accuracy threshold.
+* Repeated fault-injection runs produce stable results.
+* Restart and crash-recovery suites pass.
+* The operator can disable all autonomous execution immediately.
+
+## Operator certification report
+
+ANTHILL must generate a readiness report containing:
+
+* certified capabilities,
+* certified skills,
+* allowed targets,
+* known limitations,
+* unresolved risks,
+* recovery test results,
+* verifier coverage,
+* shadow-mode performance,
+* provider compatibility,
+* and recommended autonomy level.
+
+## Success criteria
+
+* V3 readiness is evidence-based.
+* Autonomy is granted per capability, not globally.
+* Failed qualification areas remain at Level 0–2.
+* The system can prove its recovery behavior.
+* The operator receives a clear go/no-go decision.
+
+---
+
+# 7. V3.0.0 — BOUNDED AUTONOMOUS HOMELAB OPERATOR
+
+## Goal
+
+Allow ANTHILL to autonomously operate approved portions of a homelab through certified capabilities and playbooks.
+
+V3.0 does not mean unrestricted control.
+
+It means ANTHILL may independently complete approved, recoverable, machine-verifiable operations within a defined boundary.
+
+## V3 execution loop
+
+```text
+Observe environment
+→ Detect event or objective
+→ Build evidence-backed diagnosis
+→ Match certified skill
+→ Validate preconditions
+→ Calculate blast radius and cumulative risk
+→ Confirm authority level
+→ Claim durable execution lease
+→ Execute bounded steps
+→ Verify actual state
+→ Roll back or compensate on failure
+→ Enter cooldown when required
+→ Persist evidence and outcome
+→ Update skill and routing confidence
+```
+
+## Allowed V3 action classes
+
+Examples may include:
+
+* restart a noncritical failed service,
+* start a stopped approved VM,
+* renew a known-safe health check,
+* retry a failed backup job,
+* clean an approved temporary directory,
+* restore a known-safe DNS record,
+* revert a recently introduced approved configuration,
+* create a diagnostic snapshot,
+* apply a certified low-risk code patch in an isolated worktree,
+* or execute another operator-certified skill.
+
+Each action class must be enabled separately.
+
+## Actions still requiring approval
+
+By default:
+
+* data deletion,
+* backup restoration,
+* firewall exposure,
+* account or credential changes,
+* privilege escalation,
+* storage reconfiguration,
+* cluster membership changes,
+* network routing changes,
+* database migrations,
+* destructive code operations,
+* and actions without deterministic recovery.
+
+## V3 operator controls
+
+The operator must be able to configure:
+
+* maximum autonomy level,
+* allowed capabilities,
+* allowed targets,
+* maintenance windows,
+* risk threshold,
+* per-action budget,
+* daily action budget,
+* concurrent action limit,
+* required verifiers,
+* cooldown duration,
+* approval exceptions,
+* and emergency stop behavior.
+
+## V3 degraded mode
+
+ANTHILL must automatically reduce authority when:
+
+* a provider is unstable,
+* verification is unavailable,
+* backups are stale,
+* the database is degraded,
+* memory is inconsistent,
+* resource pressure is high,
+* multiple rollbacks occur,
+* a critical incident is active,
+* or the environment differs from the certified profile.
+
+Degraded mode may reduce the system to:
+
+* Observe,
+* Recommend,
+* or Propose.
+
+## V3 definition of done
+
+ANTHILL v3.0 is complete only when it can demonstrate:
+
+1. Durable operation across restart and worker failure.
+2. Typed, permissioned, cancellable tools.
+3. Contracted tasks with explicit success criteria.
+4. Iterative bounded agent execution.
+5. Isolated code and configuration changes.
+6. Independent deterministic verification.
+7. Verified rollback or compensation.
+8. Certified procedural skills.
+9. Evidence-based learning.
+10. Capability-scoped autonomy.
+11. Shadow and fault-injection qualification.
+12. Immediate operator control and emergency shutdown.
+
+---
+
+# 8. Explicit Non-Goals Before V3
+
+The following are not required to declare V3 complete:
+
+* unrestricted autonomous administration,
+* uncontrolled recursive objective generation,
+* online self-fine-tuning,
+* automatic replacement of the production model,
+* unrestricted shell access,
+* unrestricted network access,
+* bypassing approval for critical actions,
+* eliminating human oversight,
+* active exploitation or offensive security,
+* or autonomous expansion of its own permissions.
+
+These may not be added indirectly through plugins, prompts, skills, or generated code.
+
+---
+
+# 9. Documentation and Governance
+
+## Canonical documents
+
+```text
+docs/NORTH_STAR.md       Ordered project roadmap
+docs/AUTONOMY.md         Autonomy runtime and operator controls
+docs/HOMELAB.md          Homelab architecture
+docs/APPROVALS.md        Approval and authorization model
+docs/TOOLS.md            Capability and tool contracts
+docs/VERIFICATION.md     Verifier framework and evidence rules
+docs/SKILLS.md           Procedural skill lifecycle
+docs/RECOVERY.md         Rollback and compensation architecture
+docs/QUALIFICATION.md    V3 readiness and fault-injection plan
+```
+
+## Roadmap consistency
+
+Automated tests must verify:
+
+* runtime version matches documented version,
+* shipped releases are not marked future,
+* future phases appear in the correct order,
+* deprecated roadmap documents link to this file,
+* required canonical documents exist,
+* and V3 cannot be marked shipped unless qualification gates are recorded.
+
+## Architecture decision records
+
+Major changes to:
+
+* outcome semantics,
+* authorization,
+* task contracts,
+* tools,
+* verification,
+* memory,
+* skill learning,
+* model training,
+* rollback,
+* or durable execution
+
+must receive an architecture decision record.
+
+---
+
+# 10. Priority Rule
+
+Until V3.0 qualification is complete, development priority is:
+
+```text
+Reliability
+→ Safety
+→ Verification
+→ Recovery
+→ Learning quality
+→ Operator usability
+→ New integrations
+→ Visual polish
+```
+
+New ants, dashboards, integrations, and visual features must not displace the framework phases required for dependable autonomy.
+
+---
+
+# 11. Final Direction
+
+ANTHILL already has the beginnings of autonomy.
+
+The next stage is not to give the colony more freedom.
+
+The next stage is to make every action:
+
+* durable,
+* bounded,
+* typed,
+* isolated,
+* recoverable,
+* verifiable,
+* evidence-backed,
+* and teachable.
+
+V3.0 is reached when ANTHILL no longer merely says that an operation succeeded.
+
+It reaches V3.0 when it can prove what happened, recover when it is wrong, and stay inside the authority its operator granted.
