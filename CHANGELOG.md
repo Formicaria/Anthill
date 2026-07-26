@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v2.13.0 — Procedural Skills and Evaluated Learning (NORTH_STAR Phase 5)
+
+ANTHILL can now improve from experience — but only from *verified* experience, and never by
+self-certifying.
+
+- **Versioned skill registry**: id, version, purpose, proven environments, required capabilities,
+  procedure, verification policy, compensation plan, success/failure counts, derived confidence,
+  last-validated, and the evidence-bundle ids backing every success.
+- **Lifecycle**: candidate → experimental → certified, with automatic demotion to degraded and
+  then retired. Promotion and demotion are symmetric and both automatic — a skill that stops
+  working loses standing without operator intervention.
+- **Evidence-gated promotion**: a success counts ONLY when its v2.12 verification bundle is
+  promotable (all required verifiers passed, deterministic evidence present). A completed mission
+  with no bundle is a FAILURE for learning purposes, not a success. Confidence is derived from the
+  record, never asserted by a model.
+- **Environment coverage**: successes record the environment they were proven in; a skill is never
+  offered outside its coverage, and environment drift (provider/toolchain change) degrades proven
+  skills until they re-prove themselves.
+- **Planner preference**: certified compatible skills first, then experimental (which
+  `RequiresSandbox` — never straight at production), otherwise nothing and the planner generates a
+  plan. Candidate, degraded, retired, and blocked skills are never offered.
+- **Operator authority**: Blocked is operator-only, and blocked/retired skills ignore incoming
+  outcomes — they cannot silently revive.
+- **No self-training**: this release changes preference ordering only. It grants no permissions,
+  skips no approvals, weakens no verification, and expands no targets; production model
+  fine-tuning remains out of scope per the NORTH_STAR model-training policy.
+
 ## v2.11.2 — Model Routing Failover Activated (NORTH_STAR V3-track, wiring)
 
 Second hot-path wiring: the model router now uses the v2.11.0 routing intelligence to keep missions
