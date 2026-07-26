@@ -1,5 +1,44 @@
 # ANTHILL Changelog
 
+## v2.14.8 — The chamber SVG view is gone from the console
+
+The separate chamber map is removed from the UI. Everything it did now lives on the live colony
+canvas (chambers via the **Chambers** button, plus motion/labels/pheromones and the reset controls
+from v2.14.5–v2.14.7).
+
+Removed:
+
+- the chamber control bar (view switcher, motion/labels/pheromones selects, idle-ants checkbox,
+  reset view/layout buttons) — all superseded by the canvas viewbar;
+- the `#cmap2` SVG surface and its side inspector;
+- the colony page-enter plumbing that loaded and re-rendered the chamber map, **including its 20s
+  polling interval** — one less recurring request on the colony page.
+
+Kept working, deliberately:
+
+- **Colony search** was the one real coupling — it drove chamber selection. It now targets the
+  canvas: it finds the ant by label, id, or worker id, selects it, opens the inspector, and centres
+  the camera on it without changing zoom. Same outcome, surviving renderer.
+- Every canvas capability is untouched: Command/Expanded/Active/Chambers/Handoffs views, ant and
+  chamber dragging, pan/zoom, pulses, pheromone field, tooltips, inspector, role colours.
+
+Also deleted, because the repo's own guard insisted: **the entire `cmap*` JavaScript block — 319
+lines** covering CMAP state, the chamber layout table, the SVG renderer, chamber/ant/trail
+selection, the inspector, pan/zoom, drag, and prefs. I had planned to defer this, but
+`UiIntegrity_NoOrphanedElementLookupsAndNoDuplicateIds` (added in v2.14.2's hardening pass)
+correctly failed the build: functions still calling `getElementById('cmap2…')` against removed
+markup are exactly the drift that guard exists to catch. Deferring would have meant weakening or
+suppressing my own test to ship — so the code went instead.
+
+Preserved from that block, because other code genuinely uses them: the case-tolerant registry
+accessors (`antRoleId`, `antRoleName`, `antWorkers`, `antWorkerId`, `antWorkerName`, `antPurpose`)
+used by the Ant Inspector colony directory, and `attrSafe`, which keeps ids safe when embedded in
+delegated handler attributes. Each was verified as referenced outside the deleted block before the
+cut, not assumed.
+
+Remaining: ~23 orphaned `#cmap2` CSS selectors that now match nothing. Harmless (dead styling, not
+dead behaviour, and invisible to the guard) — swept in v2.14.9.
+
 ## v2.14.7 — Chambers are draggable as a unit
 
 Live feedback on v2.14.5: the chamber ring resized but never moved, and grabbing it panned the
