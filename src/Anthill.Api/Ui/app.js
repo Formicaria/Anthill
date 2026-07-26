@@ -6619,22 +6619,23 @@ function cmapInspect(kind,id){
   }
 }
 
+/**
+ * v2.14.8: colony search now targets the live canvas (the retired chamber SVG previously owned
+ * this). Finds the ant by label or id, selects it, opens the inspector, and centres the camera on
+ * it — the same outcome the old chamber search gave, on the surviving renderer.
+ */
 function colonySearchHook(q){
-  if(!q||CMAP.view==='raw')return;
-  const needle=q.toLowerCase();
-  for(const label of Object.keys(CMAP.chambers)){
-    const hit=CMAP.chambers[label].ants.find(a=>String(a.name).toLowerCase().includes(needle)||String(a.id).toLowerCase().includes(needle));
-    if(hit){ CMAP.selected=label; CMAP.selectedKind='chamber'; CMAP.selectedAnt=hit.id;
-      if(CMAP.view!=='expanded')cmapSetView('expanded'); else renderColonyMap();
-      cmapInspect('ant',hit.id); return; }
-  }
+  if(!q) return;
+  const needle=String(q).toLowerCase();
+  const hit=nodes.find(n=>String(n.label||'').toLowerCase().includes(needle)
+                       || String(n.id||'').toLowerCase().includes(needle)
+                       || String(n.worker||'').toLowerCase().includes(needle));
+  if(!hit) return;
+  selectedNode=hit;
+  // Centre the camera on the match without changing zoom.
+  tX = -(hit.x-cx)*camZ; tY = -(hit.y-cy)*camZ;
+  if(typeof showInspector==='function') showInspector(hit);
 }
-
-(function(){
-  const prev=PAGE_ENTER['colony'];
-  PAGE_ENTER['colony']=()=>{ if(prev)prev(); cmapLoadPrefs(); cmapSetView(CMAP.view); loadColonyMap(); };
-  setInterval(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')&&CMAP.view!=='raw') loadColonyMap(); },20000);
-})();
 
 // -- Boot ----------------------------------------------------------------------
 // v1.9.1.1: the header/title version comes from the API (single source of truth:
