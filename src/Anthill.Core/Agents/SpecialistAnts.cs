@@ -169,3 +169,58 @@ public sealed class TesterAnt : BaseAnt
         return UiCartographerAnt.Compat(result);
     }
 }
+
+/// <summary>
+/// Execution framework Stage D-3: SoldierAnt — security, permission, policy, and risk review.
+/// The deterministic <see cref="PolicyScan"/> is the AUTHORITY: its findings and blocks are
+/// computed before and independent of any model text, so nothing generated can override a
+/// deterministic block. Review input = the task description plus every prior completed task
+/// result in the mission (where patch metadata and changed paths live).
+/// </summary>
+public sealed class SoldierAnt : BaseAnt
+{
+    public SoldierAnt() : base("soldier") { }
+
+    public override string Run(Task task, Mission mission)
+    {
+        var contract = AntExecutionCatalog.ContractFor("soldier")!;
+        if (!contract.SupportsTaskType(task.TaskType))
+            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the soldier execution contract"));
+
+        var input = task.Description + "\n" + string.Join("\n",
+            mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null).Select(t => t.Result));
+
+        var findings = PolicyScan.Scan(input);
+        var scope = PolicyScan.ScopeMismatch(input);
+        if (scope is not null) findings.Add(scope);
+
+        var blocked = findings.Where(f => f.Blocking).ToList();
+        var risk = PolicyScan.OverallRisk(findings);
+        var review =
+            $"risk_level: {risk}\n" +
+            $"blocked: {blocked.Count > 0}\n" +
+            "matched_rules:\n" + (findings.Count == 0 ? "  (none)\n" : string.Join("\n", findings.Select(f => $"  - [{f.Risk}]{(f.Blocking ? " BLOCKING" : "")} {f.RuleId}: {f.Detail}")) + "\n") +
+            $"required_approvals: {(blocked.Count > 0 ? "operator review required before any apply" : "standard patch approval")}\n" +
+            $"recommended_next: {(blocked.Count > 0 ? "route to operator via builder; do NOT proceed" : "proceed to verifier")}";
+
+        var result = new AntExecutionResult
+        {
+            Success = true, // the REVIEW succeeded; the verdict lives in the artifact + evidence
+            StatusCode = blocked.Count > 0 ? "succeeded_with_warnings" : "succeeded",
+            Summary = blocked.Count > 0
+                ? $"SECURITY REVIEW: {blocked.Count} BLOCKING finding(s), risk {risk} — deterministic block, not overridable."
+                : $"Security review passed: {findings.Count} advisory finding(s), risk {risk}.",
+            Artifacts = { new AntArtifact("security_review", "Deterministic policy review", review) },
+            Evidence = findings.Select(f => new AntEvidence("policy_rule", f.RuleId, f.Detail)).ToList(),
+            Handoffs =
+            {
+                blocked.Count > 0
+                    ? new AntHandoff("soldier", "builder", "blocking findings need operator explanation", "build", new[] { "security_review" }, true, 1, $"soldier-block:{mission.Id}:{task.Id}")
+                    : new AntHandoff("soldier", "verifier", "review passed — verify", "verification", new[] { "security_review" }, false, 1, $"soldier-ok:{mission.Id}:{task.Id}"),
+            },
+            Warnings = blocked.Select(b => b.RuleId).ToList(),
+        };
+        return UiCartographerAnt.Compat(result);
+    }
+}
