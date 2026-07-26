@@ -1,5 +1,99 @@
 # ANTHILL Changelog
 
+## v2.15.0 — The topology-first dashboard, complete and on by default
+
+The console track that began at v2.14.2 is finished. The live colony topology is the persistent
+canvas of the Dashboard, and the panels above it can be moved, resized, grouped into tabs, or docked
+to an edge.
+
+### Changed — `dashboard_workspace_enabled` now defaults to ON
+
+This is the release where the workspace becomes the console. It is still a kill switch, not a
+vestige: setting it false restores the classic Overview grid and the standalone Colony page
+immediately, with no migration and no data loss — saved layouts simply go unread.
+
+The config property is now `bool?` on purpose. A plain bool cannot distinguish "this config predates
+the setting" from "the operator turned it off", so an upgrade would have silently re-enabled the
+workspace for someone who had deliberately disabled it. Null resolves to the new default; an
+explicit `false` is always respected, and the resolved value is written back so it becomes explicit
+on the next save.
+
+`DashboardWorkspaceShellTests.FeatureFlag_...` inverts to assert default-ON. That is a requested
+behaviour change, not a test relaxed for a green build, so the guard was strengthened rather than
+dropped: the flag must still be exposed to the client, still be settable, and still be a real
+rollback path.
+
+### Added — tab groups (Stage 4)
+
+Drag a panel onto another panel's header to stack them into tabs. Reorder, detach, and switch tabs
+with the keyboard; active tab persists.
+
+Groups are addressed internally as `g:<id>`, which means they reuse the entire existing drag,
+resize, snap-guide and z-order implementation instead of getting a parallel one. **Only the active
+tab renders** — inactive tabs are not merely hidden, so grouping panels reduces polling instead of
+multiplying it, and the `refreshPolicy:'visible'` contract keeps holding. The client mirrors the
+server rule that a group below two members dissolves, so you never stare at a one-tab stack waiting
+for a reload to repair it.
+
+### Added — docking (previously deferred)
+
+Panels dock to any of the four edges with drop-zone previews, drag back out to refloat, and rails
+resize as a unit. Docking was deferred in the original plan because hand-rolled dock geometry is
+where window managers accumulate bugs; it shipped because **the geometry that matters lives in
+tested C#** and the client does almost none of it — rails lay out with flexbox and the only stored
+number is `dock_size`.
+
+Two invariants, both enforced server-side so a hand-edited `ui_state.json` cannot bypass them:
+
+- **A dock rail may not exceed 60% of its axis** (`MaxDockFraction`). The premise of this dashboard
+  is that the map is the persistent background; a rail reaching 100% would let it be buried with no
+  obvious way back.
+- **Opposing rails are clamped together, not just individually.** Per-edge clamping alone still
+  allows left 60% + right 60% = 120%, overlapping the rails and erasing the map. Over-budget pairs
+  scale down proportionally so relative sizing survives. Found during the accessibility audit —
+  precisely the class of bug the deferral was worried about.
+
+A panel can no longer be docked and tabbed simultaneously; it would render in two places.
+
+### Fixed — `ui_state.json` had two racing writers (Stage 8)
+
+`saveUiState` in app.js and `save()` in dashboard-workspace.js were independent debounced
+read-modify-write cycles on the same document, on different timers. Each preserved the other's keys
+as of v2.14.14, but a panel drag landing inside an ant rename's window read a stale document and the
+later PUT discarded the earlier change. Both now register mutators with a single `UiStateWriter`:
+one debounce, one read, one write, chained so flushes cannot interleave, plus a `pagehide` flush.
+
+The lifecycle audit that accompanied it came back clean — `initDashboardWorkspace` is boot-guarded,
+`W.register` dedupes by id, and the multiple delegated listeners are distinct handlers rather than
+duplicates.
+
+### Added — default layout, responsive and accessibility pass (Stage 10)
+
+The first-run layout keeps the centre of the map clear: five panels on the left and right edges,
+four secondary panels available but not shown, one click away in Modules. Below the 900px breakpoint
+side rails become full-width strips, edge drop zones give way to the menu, and touch targets grow —
+against a *separate* server-side placement profile, so a phone visit cannot overwrite the desktop
+arrangement. Escape always exits focus mode, tab groups follow the WAI-ARIA tabs pattern with roving
+tabindex, and every drag-only capability has a menu equivalent.
+
+### Fixed — documentation claimed guarantees nothing enforced
+
+NORTH_STAR §9 stated that automated tests verify "required canonical documents exist". No such test
+existed, and **five of the nine documents it listed had never been created** — `TOOLS.md`,
+`VERIFICATION.md`, `SKILLS.md`, `RECOVERY.md`, `QUALIFICATION.md`. The list now names only real
+files, `DocsConsistencyTests` enforces both that and that the roadmap docs mention the shipping
+version, and NORTH_STAR/ROADMAP are backfilled through v2.15.0.
+
+Remaining documentation debt is recorded rather than papered over: procedural skills (v2.13.0) has
+no dedicated document, and V3 qualification lives only in NORTH_STAR §6.
+
+### Note on test maintenance
+Three test failures during this release were fixed-length source slices (`Math.Min(js.Length, start
++ 600)`) that stopped covering their target function as code was added — the assertion then passed
+or failed on where the window landed rather than on the behaviour it named. All of them are now
+brace-matched via a `BodyOf` helper, and several got stricter in the process. No test was weakened
+to obtain a green build.
+
 ## v2.14.15 — Persistent topology, nine panels, and readable chambers
 
 ### Fixed — standby chambers looked broken rather than idle

@@ -43,6 +43,75 @@
 .ws-module-row:hover { background: rgba(255,255,255,.06); color: var(--text); }
 .ws-module-row:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: -2px; }
 .ws-module-row[aria-pressed="true"] { color: var(--text); }
+.ws-module-sub {
+  text-align: left; background: transparent; border: 0; color: var(--dim);
+  font-size: 10px; font-family: var(--mono, monospace); padding: 3px 8px 5px; border-radius: 5px; cursor: pointer;
+}
+.ws-module-sub:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.ws-module-sub:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: -2px; }
+
+/* ---- v2.15.0: docking ----
+ * Rails are flex strips pinned to an edge of the workspace root. They are the only chrome allowed
+ * to take space away from the topology, which is why their thickness is clamped server-side to
+ * MaxDockFraction rather than being left to CSS. */
+.ws-dock {
+  position: absolute; z-index: 30; display: flex; gap: 8px; padding: 8px;
+  pointer-events: auto; overflow: auto;
+  background: rgba(8, 12, 20, .80); backdrop-filter: blur(3px);
+}
+.ws-dock-left   { left: 0;  top: 0; bottom: 0; flex-direction: column; border-right: 1px solid var(--border); }
+.ws-dock-right  { right: 0; top: 0; bottom: 0; flex-direction: column; border-left: 1px solid var(--border); }
+.ws-dock-top    { left: 0; right: 0; top: 0;    flex-direction: row;    border-bottom: 1px solid var(--border); }
+.ws-dock-bottom { left: 0; right: 0; bottom: 0; flex-direction: row;    border-top: 1px solid var(--border); }
+/* Docked panels are laid out BY the rail, so they must not carry absolute placement. */
+.ws-panel.ws-docked { position: relative; left: auto; top: auto; width: auto; height: auto; flex: 1 1 auto; min-height: 120px; }
+.ws-dock-top .ws-panel.ws-docked, .ws-dock-bottom .ws-panel.ws-docked { min-width: 220px; }
+
+/* Rail resize grip — hidden while the layout is locked, like the panel grips. */
+.ws-dock-grip { position: absolute; z-index: 2; }
+.ws-dock-left   .ws-dock-grip { right: -3px; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+.ws-dock-right  .ws-dock-grip { left: -3px;  top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+.ws-dock-top    .ws-dock-grip { bottom: -3px; left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.ws-dock-bottom .ws-dock-grip { top: -3px;    left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.ws-dock-grip:hover { background: rgba(34,211,238,.35); }
+.ws-locked .ws-dock-grip { display: none; }
+
+/* Drop zones: invisible until a drag is in progress, so they never clutter a static screen. */
+.ws-dockzones { position: absolute; inset: 0; z-index: 35; pointer-events: none; opacity: 0; }
+.ws-dockzones.on { opacity: 1; }
+.ws-dockzone { position: absolute; border: 1px dashed transparent; transition: background .12s, border-color .12s; }
+.ws-dockzone-left   { left: 0;  top: 0; bottom: 0; width: 56px; }
+.ws-dockzone-right  { right: 0; top: 0; bottom: 0; width: 56px; }
+.ws-dockzone-top    { left: 0; right: 0; top: 0;    height: 56px; }
+.ws-dockzone-bottom { left: 0; right: 0; bottom: 0; height: 56px; }
+.ws-dockzone.hot { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.55); }
+@media (prefers-reduced-motion: reduce) { .ws-dockzone { transition: none; } }
+
+/* ---- Stage 4: tab groups ---- */
+/* A group is a normal panel frame whose header is a tablist. It reuses .ws-panel wholesale, so
+   drag, resize, snap, z-order and the locked/focus states all behave identically. */
+.ws-group > .ws-group-head { gap: 6px; align-items: flex-end; padding-bottom: 0; }
+.ws-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ws-tabs::-webkit-scrollbar { display: none; }
+.ws-tab {
+  background: transparent; border: 1px solid transparent; border-bottom: 0;
+  border-radius: 6px 6px 0 0; color: var(--muted); cursor: pointer;
+  font-size: 10px; font-family: var(--mono, monospace);
+  padding: 4px 9px; white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+  /* Touch target: the visual tab stays compact, the hit area does not. */
+  min-height: 28px;
+}
+.ws-tab:hover { color: var(--text); background: rgba(255,255,255,.05); }
+.ws-tab:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: -2px; }
+.ws-tab.on {
+  color: var(--text); background: rgba(255,255,255,.07);
+  border-color: var(--border); box-shadow: inset 0 2px 0 var(--hud-cyan);
+}
+/* The panel being dragged reads as "about to stack" when it is over a header. */
+.ws-panel.ws-dragging { opacity: .92; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-tab, .ws-panel { transition: none !important; }
+}
 
 /* ---- Panel layer + panels ---- */
 .ws-panel-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -136,4 +205,32 @@
     margin: 0 0 8px 0; max-height: 60vh;
   }
   .ws-customize .ws-head { cursor: default; }
+}
+
+
+/* ---- v2.15.0: compact profile (Stage 10) ----
+ * Below the 900px breakpoint the server keeps a SEPARATE placement profile, so a phone visit can
+ * never overwrite the desktop arrangement. These rules only handle what CSS should own: on a
+ * narrow screen a side rail would leave the map a sliver, so rails go full width and cap their
+ * height, and panels stop being free-floating furniture. */
+@media (max-width: 900px) {
+  .ws-dock-left, .ws-dock-right {
+    left: 0; right: 0; top: auto; bottom: 0;
+    width: auto !important; max-height: 45vh; flex-direction: row;
+    border: 0; border-top: 1px solid var(--border);
+  }
+  .ws-dock-top, .ws-dock-bottom { max-height: 45vh; }
+  .ws-dock { overflow: auto; }
+  .ws-panel { min-width: 0; }
+  /* Edge drop zones are a pointer affordance; on touch the Modules menu is the reliable path. */
+  .ws-dockzones { display: none; }
+  /* Comfortable touch targets without changing the visual weight of the chrome. */
+  .ws-tbtn, .ws-tab, .ws-module-row, .ws-module-sub { min-height: 40px; }
+  .ws-controls button { min-width: 34px; min-height: 34px; }
+}
+
+/* Honour reduced motion across everything the workspace animates, not just the pieces that
+   happened to declare it individually. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-panel, .ws-dock, .ws-dockzone, .ws-tab, .ws-tray-item { transition: none !important; animation: none !important; }
 }

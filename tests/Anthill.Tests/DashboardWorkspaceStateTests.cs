@@ -148,7 +148,178 @@ public class DashboardWorkspaceStateTests
         Assert.Equal(320, Desktop(s, "colony-health").ExpandedHeight);
     }
 
+    // ---- Docking (v2.15.0) -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Docking must never be able to hide the colony map. The topology is the persistent
+    /// background of this dashboard; a dock strip allowed to reach the full viewport would let an
+    /// operator (or a corrupt state file) bury it with no obvious way back.
+    /// </summary>
+    [Fact]
+    public void DockedPanel_CannotSwallowTheViewport()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 999999 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "top", DockSize = 999999 },
+        };
+        Sane(s, 1600, 900);
+
+        var left = Desktop(s, "colony-health");
+        var top = Desktop(s, "recent-events");
+        Assert.True(left.DockSize <= (int)(1600 * DashboardWorkspaceState.MaxDockFraction),
+            $"left dock {left.DockSize} exceeds the max fraction of a 1600px viewport");
+        Assert.True(top.DockSize <= (int)(900 * DashboardWorkspaceState.MaxDockFraction),
+            $"top dock {top.DockSize} exceeds the max fraction of a 900px viewport");
+    }
+
+    /// <summary>Left/right clamp against WIDTH, top/bottom against HEIGHT — not one shared axis.</summary>
+    [Fact]
+    public void DockSize_ClampsAgainstTheCorrectAxis()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 900 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "bottom", DockSize = 900 },
+        };
+        Sane(s, 2000, 800);   // wide and short: the two sides must clamp differently
+        Assert.Equal(900, Desktop(s, "colony-health").DockSize);              // 900 < 60% of 2000
+        Assert.True(Desktop(s, "recent-events").DockSize <= 480);             // 60% of 800
+    }
+
+    /// <summary>A panel cannot be docked and tabbed at once — it would render in two places.</summary>
+    [Fact]
+    public void DockedPanel_IsNeverAlsoTabbed()
+    {
+        var s = new DashboardWorkspaceState();
+        s.TabGroups["g1"] = new() { Panels = { "colony-health", "recent-events" }, Active = "colony-health" };
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "right", TabGroup = "g1" },
+        };
+        Sane(s);
+        Assert.Null(Desktop(s, "colony-health").TabGroup);
+    }
+
+    /// <summary>Dock fields are cleared when a panel returns to floating, so nothing lingers.</summary>
+    [Fact]
+    public void UndockedPanel_LosesItsDockFields()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "floating", DockSide = "left", DockOrder = 4 },
+        };
+        Sane(s);
+        var p = Desktop(s, "colony-health");
+        Assert.Null(p.DockSide);
+        Assert.Equal(0, p.DockOrder);
+    }
+
+    /// <summary>A dock side that is not a real edge falls back to floating rather than throwing.</summary>
+    [Fact]
+    public void GarbageDockSide_FallsBackToFloating()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "diagonal" },
+        };
+        Sane(s);
+        var p = Desktop(s, "colony-health");
+        Assert.Equal("floating", p.PlacementMode);
+        Assert.Null(p.DockSide);
+    }
+
+    /// <summary>
+    /// Opposing rails must fit the axis TOGETHER. Clamping each edge to 60% independently still
+    /// lets left+right reach 120% of the width, which overlaps the two rails and buries the map.
+    /// </summary>
+    [Fact]
+    public void OpposingDockRails_CannotCombineToBuryTheMap()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 900 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "right", DockSize = 900 },
+        };
+        Sane(s, 1600, 900);
+
+        var left = Desktop(s, "colony-health").DockSize;
+        var right = Desktop(s, "recent-events").DockSize;
+        var budget = (int)(1600 * DashboardWorkspaceState.MaxDockFraction);
+        Assert.True(left + right <= budget,
+            $"left({left}) + right({right}) = {left + right} exceeds the {budget}px budget for a 1600px viewport");
+        Assert.True(left > 0 && right > 0, "neither rail should be erased outright");
+    }
+
+    /// <summary>Top and bottom clamp against height, independently of the horizontal pair.</summary>
+    [Fact]
+    public void OpposingDockRails_ClampPerAxis()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "top", DockSize = 600 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "bottom", DockSize = 600 },
+            // Fixture ids only — this file's Panels list is deliberately arbitrary, so a real
+            // production id like "missions" is "unknown" here and Sanitize correctly drops it.
+            ["pending-approvals"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 300 },
+        };
+        Sane(s, 1600, 900);
+
+        var vertical = Desktop(s, "colony-health").DockSize + Desktop(s, "recent-events").DockSize;
+        Assert.True(vertical <= (int)(900 * DashboardWorkspaceState.MaxDockFraction),
+            $"top+bottom = {vertical} exceeds the vertical budget");
+        // The lone horizontal rail was already within budget and must be left alone.
+        Assert.Equal(300, Desktop(s, "pending-approvals").DockSize);
+    }
+
+    /// <summary>A pair already within budget is not shrunk — the clamp only intervenes when needed.</summary>
+    [Fact]
+    public void OpposingDockRails_WithinBudget_AreUntouched()
+    {
+        var s = new DashboardWorkspaceState();
+        s.Profiles["desktop"] = new()
+        {
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 300 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "right", DockSize = 400 },
+        };
+        Sane(s, 1600, 900);          // 700 <= 960 budget
+        Assert.Equal(300, Desktop(s, "colony-health").DockSize);
+        Assert.Equal(400, Desktop(s, "recent-events").DockSize);
+    }
+
     // ---- Tab groups --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// v2.15.0: groups joined the panel stacking order so a group can be raised above a floating
+    /// panel. Z is clamped like every other placement value — a garbage z from a hand-edited or
+    /// corrupt ui_state.json must not be able to park a group permanently above the toolbar.
+    /// </summary>
+    [Fact]
+    public void TabGroup_ZOrder_IsClamped()
+    {
+        var s = new DashboardWorkspaceState();
+        s.TabGroups["g1"] = new() { Panels = { "recent-events", "pending-approvals" }, Z = 999999 };
+        s.TabGroups["g2"] = new() { Panels = { "colony-health", "mission-command" }, Z = -40 };
+        Sane(s);
+        Assert.InRange(s.TabGroups["g1"].Z, 1, 9999);
+        Assert.InRange(s.TabGroups["g2"].Z, 1, 9999);
+    }
+
+    /// <summary>A sane z survives untouched — clamping must not flatten real arrangements.</summary>
+    [Fact]
+    public void TabGroup_ZOrder_PreservesReasonableValues()
+    {
+        var s = new DashboardWorkspaceState();
+        s.TabGroups["g1"] = new() { Panels = { "recent-events", "pending-approvals" }, Z = 7 };
+        Sane(s);
+        Assert.Equal(7, s.TabGroups["g1"].Z);
+    }
 
     [Fact]
     public void TabGroup_WithBrokenMemberReference_DropsOnlyTheGhost()

@@ -95,15 +95,18 @@ V2.7.0   Full homelab operations layer                 [BASELINE]
 
 V2.8.0   Durable Mission Runtime                       [SHIPPED v2.8.0]
 V2.9.0   Contracted Tasks and Typed Capability Tools   [SHIPPED v2.9.0]
-V2.14.x  Topology-first Dashboard console track  [IN PROGRESS through v2.14.10]
+V2.14.x  Topology-first Dashboard console track  [COMPLETE at v2.15.0]
          Canonical status + next steps: docs/DASHBOARD_WORKSPACE.md ("WHERE WE ARE").
          Done: workspace state model + kill switch · panel shell · drag/resize/snap · chambers as
          a canvas layout · map prefs on the canvas · per-ant pheromone truth · draggable +
          renamable chambers · chamber SVG retired (one renderer) · seven functional chambers ·
-         dashboard cards registered as panels.
-         Next: editable Ant Inspector (v2.14.11) → topology becomes the dashboard canvas
-         (v2.14.12) → hideable topology overlays (v2.14.13) → tab groups, route consolidation,
-         responsive/a11y (v2.15.x).
+         dashboard cards registered as panels · editable Ant Inspector · topology as the
+         dashboard canvas · hideable/re-anchorable topology overlays · workspace sanitizer wired
+         into /ui/state · nine panels incl. inspector + jobs · persistent topology via the Colony
+         redirect · standby chambers legible.
+         v2.15.0 completed the track: tab groups · docking to all four edges with server-enforced
+         rail budgets · one writer for ui_state.json · default layout · responsive/a11y ·
+         dashboard_workspace_enabled DEFAULT ON, still an instant rollback when set false.
 
 V2.9.x   Ant Execution Framework tactical track (docs/ANT_EXECUTION.md):
          runtime classification · execution contracts · structured results ·
