@@ -1,5 +1,29 @@
 # ANTHILL Changelog
 
+## v2.9.1 — Ant Execution Framework (specialist activation, stages A–H)
+
+Framework-first activation of the specialist colony (spec-driven, staged, each stage gated green
+before the next). Canonical doc: docs/ANT_EXECUTION.md.
+
+- Runtime classification (ControlPlane / DeterministicService / MissionAgent / VisualScaffold),
+  versioned execution contracts, structured results/artifacts/evidence/handoffs (Stage A).
+- Capability enforcement at tool dispatch: spoofed identities refused; apply_patch/shell/write
+  structurally denied to every mission agent; audited structured denials (Stage B).
+- Validated executor catalog + startup validation + rollout gates, ALL default off (Stage C).
+- Six specialists implemented as canaries, each with contract, handler, and tests (Stage D):
+  ui_cartographer (read-only UI mapper), tester (allowlisted checks only, deterministic evidence),
+  soldier (deterministic policy engine, blocks not model-overridable), scribe (docs-only outputs
+  and docs-path-only patch proposals), medic (bounded diagnosis, loop brakes), archivist
+  (positive learning ONLY from completed_verified; secrets redacted).
+- Roles intentionally left non-executable: quartermaster (no deterministic metrics contract yet),
+  control-plane roles, all homelab deterministic services (never LLM-directed).
+- Bounded handoff gate (depth/budget/dedupe) + deterministic specialist planner routing (Stage E).
+- Truthful role status in /colony/graph and the Ant Inspector (Stage F).
+- Docs: ANT_EXECUTION.md added; NORTH_STAR pre-V3 requirements, ROADMAP tactical track,
+  AUTONOMY note, README summary (Stage G).
+- Compatibility: existing six roles and all mission flows unchanged; structured results ride a
+  temporary tagged-JSON adapter until BaseAnt goes structured (documented removal plan).
+
 ## v2.9.0 — Contracted Tasks + Typed Capability Tools (NORTH_STAR V3-track Phase 2)
 
 Machine-readable contracts replace loose prompt tasks and string-parsed results as the control
