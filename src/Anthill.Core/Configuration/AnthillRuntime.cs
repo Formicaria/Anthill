@@ -158,6 +158,17 @@ public static class AnthillRuntime
     /// <summary>v2.5.0: master gate for automation rules — default OFF, and every rule is
     /// additionally disabled by default (Phase 14 rule: nothing self-heals until opted in twice).</summary>
     public static bool EnableHomelabAutomation = false;
+
+    // Execution framework Stage C: specialist-ant rollout gates. Master gate + per-role, ALL
+    // default false — a specialist runs only when the framework gate AND its own gate are open
+    // AND its canary stage (contract, handler, tests) completed.
+    public static bool EnableSpecialistAntExecution = false;
+    public static bool EnableTesterAnt = false;
+    public static bool EnableSoldierAnt = false;
+    public static bool EnableMedicAnt = false;
+    public static bool EnableArchivistAnt = false;
+    public static bool EnableUiCartographerAnt = false;
+    public static bool EnableScribeAnt = false;
     public static string HomelabSlackWebhook = "";
     public static string HomelabDiscordWebhook = "";
     public static string HomelabGenericWebhook = "";
@@ -526,6 +537,13 @@ public static class AnthillRuntime
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
         EnableHomelabAutomation = config.HomelabAutomationEnabled;
+        EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
+        EnableTesterAnt = config.TesterAntEnabled;
+        EnableSoldierAnt = config.SoldierAntEnabled;
+        EnableMedicAnt = config.MedicAntEnabled;
+        EnableArchivistAnt = config.ArchivistAntEnabled;
+        EnableUiCartographerAnt = config.UiCartographerAntEnabled;
+        EnableScribeAnt = config.ScribeAntEnabled;
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
         HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
         HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();

@@ -50,6 +50,10 @@ public sealed partial class Queen : IDisposable
             ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
             ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
         };
+        // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
+        // the affected role unavailable (fail closed) and is loud, never silent.
+        foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))
+            Console.Error.WriteLine($"[startup-validation] {problem}");
     }
 
     private ToolRegistry BuildToolRegistry()
