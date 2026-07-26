@@ -1,5 +1,9 @@
 # Console Refit — Integration Platform + UX Architecture Program (v2.5.x → v2.6)
 
+> **Dashboard successor (v2.14.2 →):** the widget/page-agnostic direction below continues in the
+> topology-first workspace — see **[docs/DASHBOARD_WORKSPACE.md](DASHBOARD_WORKSPACE.md)** for the
+> canonical panel model, persistence schema, and staged build order.
+
 Status: Canonical plan for the UX/architecture refinement + integration expansion mission
 (operator brief, 2026-07). Ordered like NORTH_STAR: each phase is one reviewable release.
 Read-only before action-gated; one credential store; one scheduler; one allowlist (D1);
