@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v2.11.0 — Sandboxed Coder Loop + Model Routing Intelligence (NORTH_STAR V3-track, wiring-ready)
+
+Turns the inert v2.10.0 primitives into usable engines. Honest scope: both land as ADDITIVE,
+independently-tested units; the hot-path wiring into `CoderAnt`/`ModelRouter` follows in v2.11.x so
+this release cannot change existing behavior. Default install is byte-identical — `sandbox_execution_enabled`
+stays off.
+
+- **`SandboxedCoderRunner`** (`src/Anthill.Core/Sandbox/`): the first code path that composes
+  `SandboxWorkspace` + `BoundedAgentLoop` into real iterative work — propose (model) → apply INTO
+  THE SANDBOX ONLY → run one allowlisted check (`CheckCatalog`) in the sandbox → inspect → done on
+  green, else feed the failure back for the next bounded turn. Safety invariants, all tested: the
+  `EnableSandboxExecution` gate is checked first (off = no work); a `WorkspacePathGuard` rooted at
+  the sandbox refuses traversal so writes never escape it; iteration is bounded by the LOOP with an
+  explicable stop reason; nothing auto-applies — the result is the in-sandbox diff plus proposals
+  handed to the EXISTING approve-then-apply gate; the sandbox is destroyed on dispose and the live
+  checkout is never touched. The model call is injected, so the loop is deterministic and testable
+  without a live model.
+- **`ModelRoutingPolicy` + `ModelStats`** (`src/Anthill.Core/Models/`): pure, deterministic
+  per-task route selection. `ModelStats.Aggregate` folds recorded `ModelCallRecord`s into per-route
+  health (success rate + average latency; low-sample routes get the benefit of the doubt).
+  `ModelRoutingPolicy.Choose` picks among candidate routes given the task risk class — favor the
+  fastest healthy route for low/medium-risk work, keep the configured route's stability for
+  high/critical work until it is proven unhealthy — and returns a human-readable REASON for the
+  Console/audit ("chose ollama:fast — 100% success, 150ms avg over 10 calls").
+- Tests: sandbox green-path completes and the live tree is untouched; failing check stops with a
+  bounded reason; gate-off does no work; unknown check refused. Routing: stats aggregation, health
+  thresholds, low-risk speed preference, high-risk stability, unhealthy-reroute, all-unhealthy fallback.
+
 ## v2.10.0 — Sandboxed Agent Execution (NORTH_STAR V3-track Phase 3, primitives)
 
 Ants gain the machinery to work iteratively WITHOUT touching the live installation. Honest scope:
