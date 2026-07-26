@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v2.11.1
+**Current version:** v2.11.2
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -59,6 +59,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v2.11.2` | **Model routing failover activated.** `ModelRouter.Generate` now resolves its route through `ResolveRoute`: when a provider's circuit breaker is open and a distinct configured `fallback` route is healthy, the call fails over to the fallback (via the deterministic, stability-preferring `ModelRoutingPolicy`) so a mission keeps moving instead of erroring on a dead provider — with the reroute reason recorded on the `model_call` event. Naturally gated by the circuit breaker being enabled; no reroute when the primary is healthy or no distinct fallback is configured, so normal routing is unchanged. |
 | `v2.11.1` | **Coder → sandbox loop activated (behind the gate).** `CoderAnt` now routes through `SandboxedCoderRunner` when `sandbox_execution_enabled` is on: it iterates in a disposable git-worktree sandbox — propose → apply-in-sandbox → `dotnet build` → refine on failure with the check output fed back into the prompt — and returns the verified proposals as the same patch JSON the approval pipeline already consumes. The entire prior one-shot path is preserved as the default and as the fallback for any unavailability (gate off, no workspace root, refused check); the live workspace is never touched and every proposal stays human-approval-gated. Model-router wiring for capability/health-aware routing still follows in v2.11.x. |
 | `v2.11.0` | **Sandboxed coder loop + model routing intelligence (additive, gated).** `SandboxedCoderRunner` wraps the coder in `BoundedAgentLoop` inside a disposable git-worktree `SandboxWorkspace` — propose → apply-in-sandbox → run one allowlisted check → inspect → replan on failure, bounded so every run ends with an explicable stop reason and the live checkout is never touched (result is a diff + proposals for the existing approve-then-apply gate). `ModelRoutingPolicy` + `ModelStats` add deterministic, explainable per-task route selection over recorded call health (favor healthy/fast routes for low-risk work; keep the configured route's stability for high/critical). Both land as additive units behind `sandbox_execution_enabled` (default off); the hot-path wiring into `CoderAnt`/`ModelRouter` follows in v2.11.x. |
 | `v2.5.4` | **Console Refit R4 — allow/blocklist management + collections framework.** Blocklist lands first-class in the D1 target list (`list_kind` column, idempotent migration): deny beats allow, and every guard consumer — integration clients, health checks, the approval-gated action executor — honors it with zero changes of their own. Full CRUD API: create with kind, `PUT /homelab/allowlist/{id}` edit-in-place, bulk enable/disable/remove (one audited change per batch). New reusable collection-manager UI component (search, filter, sortable columns, row selection, bulk + per-row actions) debuts as the Targets surface on the Networking sub-page with kind/origin/timestamps/notes visible. |
