@@ -50,9 +50,30 @@ public sealed class ApiJobRegistry : IDisposable
     private readonly List<Thread> _workers = new();
     private readonly object _trimLock = new();
 
+    private readonly Anthill.Core.Memory.SqliteMemory _mem;
+    private const int LeaseSeconds = 90; // heartbeat renews at LeaseSeconds/3
+
     public ApiJobRegistry(Queen queen, int workers)
     {
         _queen = queen;
+        _mem = queen.Memory;
+
+        // v2.8.0 startup reconciliation: classify what the last process left behind, then re-queue
+        // everything recoverable. The durable table is the source of truth — an accepted mission
+        // cannot disappear because the process died.
+        var (resumable, retried, orphaned, cancelled) = _mem.ReconcileJobsAtStartup();
+        foreach (var row in _mem.ListMissionJobs(500).Where(r => r.Status == "queued").OrderBy(r => r.CreatedAt))
+        {
+            var job = new ApiMissionJob { Id = row.Id, Goal = row.Goal };
+            _jobs[job.Id] = job;
+            _order.Enqueue(job.Id);
+            _queue.Add(job);
+        }
+        if (resumable + retried + orphaned + cancelled > 0)
+            _mem.RecordJobAttempt("startup-reconcile", 0, Environment.MachineName,
+                $"recovery: {resumable} resumable, {retried} retried, {orphaned} orphaned, {cancelled} cancelled", null, 0,
+                AnthillTime.NowUtc().ToIso(), AnthillTime.NowUtc().ToIso());
+
         for (var i = 0; i < Math.Max(1, workers); i++)
         {
             var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"anthill-job-worker-{i}" };
@@ -61,9 +82,19 @@ public sealed class ApiJobRegistry : IDisposable
         }
     }
 
-    public ApiMissionJob Submit(string goal)
+    public ApiMissionJob Submit(string goal, string? idempotencyKey = null)
     {
-        var job = new ApiMissionJob { Goal = goal };
+        // v2.8.0: persist FIRST (durability), with idempotent replay — the same key never creates
+        // a duplicate mission, it returns the original job.
+        var (row, replayed) = _mem.PersistNewJob(Guid.NewGuid().ToString(), goal, idempotencyKey);
+        if (replayed)
+        {
+            if (_jobs.TryGetValue(row.Id, out var known)) return known;
+            var ghost = new ApiMissionJob { Id = row.Id, Goal = row.Goal };
+            ghost.Status = row.Status; ghost.MissionId = row.MissionId; ghost.Result = row.Result;
+            return ghost; // terminal or owned elsewhere — never re-queued
+        }
+        var job = new ApiMissionJob { Id = row.Id, Goal = goal };
         _jobs[job.Id] = job;
         _order.Enqueue(job.Id);
         TrimLocked();
@@ -82,8 +113,16 @@ public sealed class ApiJobRegistry : IDisposable
             {
                 job.Status = "cancelled";
                 job.FinishedAt = AnthillTime.NowUtc();
+                _mem.UpdateJobState(job.Id, "cancelled", reason: "cancelled while queued", finished: true);
                 continue;
             }
+            // v2.8.0 atomic claim + lease: only the claim winner runs (two Directors on one DB
+            // cannot double-launch), and a heartbeat renews the lease while the mission works.
+            var workerName = Thread.CurrentThread.Name ?? "worker";
+            if (_mem.TryClaimJob(job.Id, workerName, LeaseSeconds) is null)
+                continue; // claimed elsewhere, cancelled, or already terminal — never run it twice
+            using var heartbeat = new Timer(_ => _mem.HeartbeatJob(job.Id, workerName, LeaseSeconds),
+                null, TimeSpan.FromSeconds(LeaseSeconds / 3.0), TimeSpan.FromSeconds(LeaseSeconds / 3.0));
             job.Status = "running";
             job.StartedAt = AnthillTime.NowUtc();
             try
@@ -91,7 +130,9 @@ public sealed class ApiJobRegistry : IDisposable
                 // The callback stamps the mission id the moment the row exists — both so the id is
                 // visible while the mission is still running and so concurrent workers (Phase 3)
                 // never read another mission's id off the shared Queen.LastMissionId.
-                job.Result = _queen.RunMission(job.Goal, missionId => job.MissionId = missionId, job.Cts.Token,
+                job.Result = _queen.RunMission(job.Goal,
+                    missionId => { job.MissionId = missionId; _mem.UpdateJobState(job.Id, "running", missionId: missionId); },
+                    job.Cts.Token,
                     outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; });
                 // A cancel that landed mid-mission stops the scheduler cleanly rather than throwing;
                 // reflect that as cancelled rather than a misleading "complete".
@@ -109,12 +150,31 @@ public sealed class ApiJobRegistry : IDisposable
             finally
             {
                 job.FinishedAt = AnthillTime.NowUtc();
+                // v2.8.0 write-through: the durable row always reflects the final state + attempt.
+                var row = _mem.GetMissionJob(job.Id);
+                _mem.UpdateJobState(job.Id, job.Status, missionId: job.MissionId, result: job.Result,
+                    error: job.Error, outcome: job.Outcome, reason: job.Reason, finished: true);
+                _mem.RecordJobAttempt(job.Id, row?.Attempt ?? 1, workerName, "run:" + job.Status, job.Error,
+                    (long)((job.FinishedAt - job.StartedAt)?.TotalMilliseconds ?? 0),
+                    job.StartedAt.ToIsoOrNull(), job.FinishedAt.ToIsoOrNull());
             }
         }
     }
 
+    // v2.8.0: reads come from the durable table (survives restart); live in-memory jobs overlay
+    // their current status so nothing appears stale mid-run.
     public List<Dictionary<string, object?>> ListJobs(int limit = 50) =>
-        _jobs.Values.OrderByDescending(j => j.CreatedAt).Take(limit).Select(j => j.ToDict()).ToList();
+        _mem.ListMissionJobs(limit).Select(row =>
+        {
+            if (_jobs.TryGetValue(row.Id, out var live)) return live.ToDict();
+            return new Dictionary<string, object?>
+            {
+                ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = row.Status, ["mission_id"] = row.MissionId,
+                ["result"] = row.Result, ["error"] = row.Error, ["outcome"] = row.Outcome, ["reason"] = row.Reason,
+                ["created_at"] = row.CreatedAt, ["started_at"] = row.StartedAt, ["finished_at"] = row.FinishedAt,
+                ["attempt"] = row.Attempt,
+            };
+        }).ToList();
 
     public ApiMissionJob? GetJob(string id) => _jobs.TryGetValue(id, out var job) ? job : null;
 
@@ -126,8 +186,13 @@ public sealed class ApiJobRegistry : IDisposable
         if (!_jobs.TryGetValue(id, out var job)) return false;
         if (job.Status is "complete" or "failed" or "cancelled") return false;
         job.Cancelled = true;
+        _mem.UpdateJobState(id, job.Status, cancelRequested: true); // durable: survives restart mid-cancel
         SignalCancel(job);
-        if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
+        if (job.Status == "queued")
+        {
+            job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc();
+            _mem.UpdateJobState(id, "cancelled", reason: "cancelled while queued", finished: true);
+        }
         return true;
     }
 
