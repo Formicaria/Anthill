@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.9.1";
+    public const string Version = "2.10.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -162,6 +162,9 @@ public static class AnthillRuntime
     // Execution framework Stage C: specialist-ant rollout gates. Master gate + per-role, ALL
     // default false — a specialist runs only when the framework gate AND its own gate are open
     // AND its canary stage (contract, handler, tests) completed.
+    /// <summary>V2.10.0: gate for routing agent iteration through disposable sandboxes. Default
+    /// OFF; the primitives are inert until an agent path opts in behind this flag.</summary>
+    public static bool EnableSandboxExecution = false;
     public static bool EnableSpecialistAntExecution = false;
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
@@ -537,6 +540,7 @@ public static class AnthillRuntime
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
         EnableHomelabAutomation = config.HomelabAutomationEnabled;
+        EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         EnableTesterAnt = config.TesterAntEnabled;
         EnableSoldierAnt = config.SoldierAntEnabled;

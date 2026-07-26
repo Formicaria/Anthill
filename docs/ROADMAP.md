@@ -100,7 +100,7 @@ V2.9.x   Ant Execution Framework tactical track (docs/ANT_EXECUTION.md):
          capability-enforced dispatch · canary activation (ui_cartographer, tester,
          soldier, scribe, medic, archivist — gated off by default) · planner routing ·
          bounded handoffs · truthful UI status · validation gates
-V2.10.0  Sandboxed Agent Execution
+V2.10.0  Sandboxed Agent Execution                    [SHIPPED v2.10.0 — primitives; agent wiring v2.10.x]
 V2.11.0  Independent Verification and Evidence
 V2.12.0  Procedural Skills and Evaluated Learning
 V2.13.0  Safe Action Engine and Recovery Orchestration
