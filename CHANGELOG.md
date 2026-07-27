@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v2.17.0 — Shadow Operations & Operator Qualification (NORTH_STAR Phase 7, Stage 1)
+
+The qualification gate before V3.0 grants any real authority. Stage 1 ships the recommendation
+engine and the scoreboard as an additive, deterministic library — shadow mode observes and advises
+but, by construction, cannot execute.
+
+- **`ShadowOperator.Recommend`** (`src/Anthill.Core/Shadow/`): given an observed incident it produces
+  the full bundle the phase mandates — diagnosis, proposed action, chosen skill, risk score,
+  predicted outcome, verification plan, and rollback plan — and returns it. There is no execution
+  path. The bundle is assembled from the already-shipped subsystems rather than fresh judgment:
+  `RiskEngine.Score` (v2.14) for the risk assessment, `VerificationPolicy.For` (v2.12) for the
+  verification plan, the `SkillRegistry` (v2.13) for the chosen skill and its derived confidence, and
+  `RecoveryOrchestrator.Decide` (v2.14) for the rollback plan — so a recommendation is reproducible
+  and consults no model at decision time. Outcome prediction is deterministic: approval-required
+  dominates; an operation with no proven skill predicts failure; otherwise skill confidence and the
+  risk score set the expectation. A high-risk operation is always flagged for approval and never
+  marked as recommend-to-execute.
+- **`QualificationScoreboard.Compute`**: turns recommendation/operator-outcome pairs into the core
+  reliability rates — diagnosis precision and recall, action-selection accuracy, unnecessary-action
+  rate, and predicted-success accuracy — plus two safety counters (policy violations, unverified
+  success claims) that must stay zero. Every rate is division-guarded, so an empty or partial sample
+  yields zeros rather than throwing or fabricating a perfect score. Ground truth comes from the
+  operator; ANTHILL never scores its own success.
+- Tests: high-risk → needs-approval + never-recommend; proven skill on a low-risk op → predicted
+  success + would-recommend; unproven op → predicted failure; scoreboard rates computed on a fixed
+  sample; empty sample is all-zero.
+- Still ahead in Phase 7: wiring shadow mode to live incidents, the fault-injection scenario harness
+  (service crash, stale DNS, expired credential, prompt injection in logs, …), timing metrics
+  (MTTD/MTTDiagnose/MTTR), and the V3.0 release thresholds.
+
 ## v2.16.0 — Missions read like a conversation
 
 ### Added — a plain-English answer, not the winning task's raw output
