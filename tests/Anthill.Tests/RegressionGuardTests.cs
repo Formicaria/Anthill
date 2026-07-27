@@ -113,10 +113,17 @@ public class RegressionGuardTests : IDisposable
     /// </summary>
     private static string UiSource()
     {
+        // v2.15.2: dashboard-workspace.js joins the scan. It was excluded simply because it did not
+        // exist when this helper was written, which left an entire UI file — by now the one that
+        // builds most of the console's chrome — outside every guard that uses UiSource.
         var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
-        var html = File.ReadAllText(Path.Combine(dir, "index.html"));
-        var appJs = Path.Combine(dir, "app.js");
-        return html + "\n" + (File.Exists(appJs) ? File.ReadAllText(appJs) : "");
+        var parts = new List<string> { File.ReadAllText(Path.Combine(dir, "index.html")) };
+        foreach (var js in new[] { "app.js", "dashboard-workspace.js" })
+        {
+            var path = Path.Combine(dir, js);
+            if (File.Exists(path)) parts.Add(File.ReadAllText(path));
+        }
+        return string.Join("\n", parts);
     }
 
     [Fact]
@@ -511,9 +518,17 @@ public class RegressionGuardTests : IDisposable
     {
         var ui = UiSource(); // index.html (static ids) + app.js (getElementById + template-built ids)
         // Created via document.createElement at runtime, so they legitimately have no static id=.
-        // ws-root and ws-topology only exist when dashboard_workspace_enabled is on — which is
-        // precisely why they are built rather than declared in markup.
-        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root", "ws-topology", "ws-topbar" };
+        // ws-root, ws-topology, ws-topbar and ws-bottombar only exist when
+        // dashboard_workspace_enabled is on — which is precisely why they are built at runtime
+        // rather than declared in markup.
+        var dynamicIds = new HashSet<string>
+        {
+            "pc-toast",
+            // The workspace shell is built at runtime and only exists when the kill switch is on,
+            // which is precisely why these carry no static id= in the markup.
+            "ws-root", "ws-topology", "ws-topbar", "ws-bottombar",
+            "ws-panel-layer", "ws-guides", "ws-snapzones", "ws-modules",
+        };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
         var duplicates = declared.GroupBy(i => i).Where(g => g.Count() > 1).Select(g => g.Key).ToList();

@@ -469,6 +469,48 @@
         });
       }
     });
+
+    /* v2.15.2: topology overlays live in this same list. They were previously managed from a
+       separate button pinned to the canvas, which meant two places to control what is on screen.
+       Each row hides/shows the overlay; the select re-anchors it. app.js owns the state — this
+       reads and writes it through window.AnthillTopologyOverlays so neither module keeps a copy. */
+    var ov = window.AnthillTopologyOverlays;
+    if (ov) {
+      var sep = el('div', 'ws-module-sep', 'Topology overlays');
+      menu.appendChild(sep);
+      ov.list().forEach(function (o) {
+        var row = el('div', 'ws-module-ovrow');
+
+        var toggle = el('button', 'ws-module-row ws-module-ovtoggle');
+        toggle.type = 'button';
+        toggle.setAttribute('data-wsact', 'toggle-overlay');
+        toggle.setAttribute('data-wsid', o.id);
+        toggle.setAttribute('aria-pressed', o.visible ? 'true' : 'false');
+        toggle.textContent = (o.visible ? '✓ ' : '  ') + o.label;
+        row.appendChild(toggle);
+
+        var sel = el('select', 'ws-module-ovanchor');
+        sel.setAttribute('data-wsanchor', o.id);
+        sel.setAttribute('aria-label', 'Anchor for ' + o.label);
+        ov.anchors().forEach(function (a) {
+          var opt = el('option', null, a);
+          opt.value = a;
+          if (a === o.anchor) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        // A hidden overlay has nowhere to be anchored to; say so rather than offering a dead control.
+        sel.disabled = !o.visible;
+        row.appendChild(sel);
+
+        menu.appendChild(row);
+      });
+
+      var reset = el('button', 'ws-module-sub');
+      reset.type = 'button';
+      reset.setAttribute('data-wsact', 'reset-overlays');
+      reset.textContent = '    ⟲ Reset overlays';
+      menu.appendChild(reset);
+    }
     return menu;
   }
 
@@ -521,6 +563,18 @@
       render();
     },
     'toggle-pin': function (id) { setPlacement(id, { pinned: !placement(id).pinned }); render(); },
+
+    /* ---- Topology overlay actions (v2.15.2) ---- */
+    'toggle-overlay': function (id) {
+      var ov = window.AnthillTopologyOverlays;
+      if (!ov) return;
+      var cur = ov.list().filter(function (o) { return o.id === id; })[0];
+      if (cur) ov.set(id, { visible: !cur.visible });   // set() re-renders through the bridge
+    },
+    'reset-overlays': function () {
+      var ov = window.AnthillTopologyOverlays;
+      if (ov) ov.reset();
+    },
 
     /* Non-drag snapping, from the Modules menu. Ids arrive as "<panelId>|<zone>". */
     'snap-to': function (ref) {
@@ -869,6 +923,12 @@
 
   // One delegated listener for the whole workspace — registered once, never per panel.
   document.addEventListener('click', onClick);
+  document.addEventListener('change', function (e) {
+    var sel = e.target.closest && e.target.closest('[data-wsanchor]');
+    if (!sel || !W.root || !W.root.contains(sel)) return;
+    var ov = window.AnthillTopologyOverlays;
+    if (ov) ov.set(sel.getAttribute('data-wsanchor'), { anchor: sel.value });
+  });
   document.addEventListener('keydown', onTabKeydown);
   /* Focus mode hides every unpinned panel, so its exit must never depend on finding a specific
      button. Escape always leaves it, and the toolbar toggle stays tab-reachable regardless. */
@@ -898,6 +958,7 @@
     init: init,
     register: register,
     render: render,
+    rerender: function () { if (W.enabled) render(); },   // used by the topology overlay bridge
     panelIds: panelIds,
     _state: function () { return W.state; },     // test/debug surface only
     _placement: placement,
