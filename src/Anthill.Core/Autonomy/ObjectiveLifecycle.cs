@@ -12,6 +12,10 @@ public static class ObjectiveEndReason
     public const string StoppedNoFollowupRequired = "stopped_no_followup_required";
     public const string RetiredLooping = "retired_looping";
     public const string Failed = "failed";
+    /// <summary>v2.22.0: the run budget ran out and NOT ONE run reached a verified success.
+    /// Distinct from CompletedSuccessfully, which previously covered both — reporting exhaustion
+    /// as completion turns a failed objective into an achievement in every summary that reads it.</summary>
+    public const string ExhaustedWithoutSuccess = "exhausted_without_success";
     public const string ManuallyPaused = "manually_paused";
     public const string ManuallyStopped = "manually_stopped";
 
@@ -22,6 +26,7 @@ public static class ObjectiveEndReason
         StoppedNoFollowupRequired => "Stopped — no follow-up required",
         RetiredLooping => "Retired — looping",
         Failed => "Failed",
+        ExhaustedWithoutSuccess => "Exhausted — never achieved",
         ManuallyPaused => "Paused by operator",
         ManuallyStopped => "Stopped by operator",
         _ => code ?? "",
@@ -57,15 +62,16 @@ public static class ObjectiveLifecycle
     /// failed run falls through to the circuit-breaker / retirement rails.
     /// </summary>
     public static ObjectiveEndDecision? EvaluateCompletion(
-        Objective o, bool success, int followUpsCreated, bool alreadyDone)
+        Objective o, bool success, int followUpsCreated, bool alreadyDone,
+        ObjectiveProgress.Summary? progress = null)
     {
         // Respect the operator's opt-out. Disabled → behave exactly as pre-v1.8.16 (no clean completion;
         // objectives run until the run budget, circuit breaker, or loop detection stops them). The
         // run-budget end reason is still labelled even when disabled, since the status is already Done.
-        if (!AnthillRuntime.AutonomyOneShotCompletion) return alreadyDone ? BudgetCompletion(o, success) : null;
+        if (!AnthillRuntime.AutonomyOneShotCompletion) return alreadyDone ? BudgetCompletion(o, success, progress) : null;
 
         // The run budget already moved it to Done — label the end reason by the final run's outcome.
-        if (alreadyDone) return BudgetCompletion(o, success);
+        if (alreadyDone) return BudgetCompletion(o, success, progress);
 
         // Only a genuinely successful run with no newly-discovered work can end an objective cleanly.
         if (!success || followUpsCreated > 0) return null;
@@ -88,10 +94,23 @@ public static class ObjectiveLifecycle
         return null;
     }
 
-    private static ObjectiveEndDecision BudgetCompletion(Objective o, bool success) =>
-        new(ObjectiveStatus.Done,
-            success ? ObjectiveEndReason.CompletedSuccessfully : ObjectiveEndReason.Failed,
-            success
-                ? $"Completed its run budget ({o.RunCount}/{o.MaxRuns} runs)."
-                : $"Reached its run budget ({o.RunCount}/{o.MaxRuns}) but the final run failed.");
+    /// <summary>
+    /// v2.22.0: judged by the objective's EVIDENCE, not by whether the last run happened to
+    /// succeed. An objective that succeeded on run 1 and failed on run 5 has still achieved its
+    /// goal; one that failed all five has not, and must not be labelled Completed.
+    ///
+    /// <paramref name="progress"/> is null only for callers that have no run history to hand, in
+    /// which case the final run's outcome is the best evidence available.
+    /// </summary>
+    private static ObjectiveEndDecision BudgetCompletion(Objective o, bool success,
+        ObjectiveProgress.Summary? progress = null)
+    {
+        var achieved = progress?.Achieved ?? success;
+        var reason = achieved ? ObjectiveEndReason.CompletedSuccessfully : ObjectiveEndReason.ExhaustedWithoutSuccess;
+        var detail = progress is null
+            ? (achieved ? "the final run succeeded" : "the final run did not succeed")
+            : ObjectiveProgress.Explain(progress);
+        return new(ObjectiveStatus.Done, reason,
+            $"Reached its run budget ({o.RunCount}/{o.MaxRuns}): {detail}.");
+    }
 }

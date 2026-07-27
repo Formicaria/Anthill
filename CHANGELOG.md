@@ -1,5 +1,90 @@
 # ANTHILL Changelog
 
+## v2.22.0 — The skills loop closes
+
+v2.21.0 made skills durable and let a certified procedure INFORM a plan. Nothing recorded whether
+following one actually worked, so standing could only ever be earned in the shadow simulator — the
+loop could read, but not write.
+
+### Provenance, then credit
+
+A task now records the procedure it was planned from (`tasks.skill_id`, migration 13). When the
+mission finishes, `CreditSkills` reports the outcome back to the registry and persists the result,
+so standing outlives the process that earned it.
+
+The credit rule is the one everything else obeys: **only `completed_verified` counts**. An
+unverified mission passes no evidence bundle, which `RecordOutcome` treats as a non-success — a
+procedure that cannot be shown to have worked has not been shown to work. It does not reinforce,
+but it does not pretend the attempt never happened either: the same asymmetry v2.19.0 established.
+
+### A claimed skill must have been offered
+
+A `skill_id` is honoured only if it names a procedure that appeared in the context the planner was
+actually shown. A model cannot invent an id, or name one it was never offered, and have a mission's
+success credited to it. The offered set is parsed from the rendered block rather than passed in
+separately — two sources of truth with nothing checking they agree is how these drift apart
+silently — and a test pins that the formatter and the parser still match.
+
+### An objective that never succeeded is no longer "Completed"
+
+`RecordObjectiveRunOutcome` moved an objective to `Done` the moment `RunCount >= MaxRuns`. An
+objective that failed every single attempt therefore ended in exactly the same state as one that
+succeeded on its first run: **Done meant the budget ran out, not that the goal was met**, and every
+report reading that status turned failure into achievement.
+
+`ObjectiveProgress` now derives achievement from the run history — a run counts only when its
+recorded outcome is `completed_verified`, the same standard mission grading, pheromones and skill
+credit use. Budget exhaustion with no verified run ends as the new `exhausted_without_success`
+rather than `completed_successfully`.
+
+It also fixes the converse, which the old rule got wrong in the other direction: an objective that
+achieved its goal early but whose FINAL run failed was labelled a failure. Achievement is not
+undone by a later failure, so that is a completion.
+
+Runs recorded before v2.19.0 hold raw statuses and cannot be confirmed as verified, so they fail
+closed — the same stance the v2.20.0 learning reset took toward pre-boundary evidence. No new
+storage: the evidence was always in `autonomy_runs`.
+
+### Specialist activation is one dial
+
+Six independent booleans plus a master switch meant turning the colony up required knowing which
+flags existed and setting the right combination, with nothing to read to answer "what is switched
+on?". `activation_tier` is now `core` | `adaptive` | `full`.
+
+It is a **ceiling, not a switch**. `SpecialistGateOpen` requires all three of the master switch, the
+tier, and the role's own rollout flag — so raising the tier can never turn a role on by itself, and
+every existing gate stays exactly as binding. Narrowing it *can* turn a flagged role off, which is
+the point. Unrecognised values fail closed to `core`: a typo must narrow, never widen.
+
+The adaptive set is tester, medic and ui_cartographer — detect, diagnose, and read-only mapping.
+Soldier, scribe and archivist are excluded on purpose: they issue security verdicts, write
+operator-facing documentation, and write durable memory, none of which the adaptive loop needs and
+each of which deserves a separate decision.
+
+**The default is `full`**, which means "defer entirely to the per-role flags" — precisely the
+behaviour before this setting existed. Defaulting to `core` would have silently stopped specialists
+in every deployment that had already enabled them, on upgrade, with nothing announcing it. The
+safety continues to come from the per-role flags, all of which remain off by default.
+
+### Dashboard: the Modules list stops being furniture
+
+The list was already collapsible, but the toggle was built with `aria-expanded` hardcoded to
+`'false'`. Every re-render while the menu was open told assistive technology it was collapsed, and
+nothing on the control indicated it could be closed again — so it read as permanent. The toggle now
+reports the state it is actually in, and shows it (▸ / ▾).
+
+Focus mode now closes the list and keeps it closed. Focus hides every unpinned panel; leaving a
+checklist open on top of that is the opposite of focus, and the list would be enumerating panels
+that are all hidden anyway. The rule is enforced in `setModulesOpen` as well as at render time, so
+no caller can reopen it behind focus mode's back.
+
+### Also fixed
+
+The planner prompt still carried a hardcoded rule line, `assigned_ant must be one of: researcher,
+web, file, coder, builder, verifier`, directly contradicting the runtime-derived roster printed
+immediately above it. An enabled specialist was listed as available and forbidden in the same
+prompt.
+
 ## v2.21.0 — Adaptive mission control
 
 Specialists have emitted structured handoffs since v2.19.0 — tester to medic, soldier to builder,
