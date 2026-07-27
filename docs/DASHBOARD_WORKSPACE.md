@@ -10,6 +10,11 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.22.0 note: the Modules toggle now reports its real state (▸ / ▾ and a truthful
+> `aria-expanded`, previously hardcoded to `'false'`), and Focus mode closes the module list and
+> keeps it closed — enforced in the setter as well as at render. Skill credit is recorded as
+> `skill_outcome_recorded` events; no other new surface.
+
 > v2.21.0 note: handoff-created tasks appear in the mission task graph like any other task —
 > they carry a `Handoff: source -> destination` title and a depth marker. No new surface.
 

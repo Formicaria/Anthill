@@ -271,7 +271,13 @@ public sealed class ColonyDirector : IDisposable
 
         // 1) Clean completion — the normal ending path for one-shot / verification-only objectives
         //    (and for run-budget exhaustion). This deliberately runs BEFORE loop detection.
-        var completion = ObjectiveLifecycle.EvaluateCompletion(objective, success, followUpsCreated, alreadyDone);
+        //
+        // v2.22.0: the objective's own run history decides whether budget exhaustion counts as
+        // completion. Previously "Done" fired on RunCount >= MaxRuns regardless, so an objective
+        // that failed every attempt ended in the same state as one that succeeded on the first —
+        // reporting exhaustion as achievement.
+        var progress = ObjectiveProgress.Assess(_queen.Memory.ListAutonomyRuns(objective.Id, limit: 200));
+        var completion = ObjectiveLifecycle.EvaluateCompletion(objective, success, followUpsCreated, alreadyDone, progress);
         if (completion is not null) { StampObjectiveEnd(objective, completion, "objective_completed"); return; }
 
         // 2) Circuit breaker already paused it for repeated failures — record that as the end reason.

@@ -410,12 +410,16 @@
     lock.title = W.state.locked ? 'Unlock to customize the workspace' : 'Lock the layout';
     bar.appendChild(lock);
 
+    // The toggle must report the state it is ACTUALLY in. This was hardcoded 'false', so every
+    // re-render while the menu was open told assistive tech it was collapsed, and nothing on the
+    // button showed the menu could be closed again.
     var modules = el('button', 'ws-tbtn');
     modules.type = 'button';
     modules.setAttribute('data-wsact', 'toggle-modules');
-    modules.setAttribute('aria-expanded', 'false');
+    modules.setAttribute('aria-expanded', W.modulesOpen ? 'true' : 'false');
     modules.setAttribute('aria-controls', 'ws-modules');
-    modules.textContent = '☰ Modules';
+    modules.textContent = (W.modulesOpen ? '▾' : '▸') + ' ☰ Modules';
+    modules.title = W.modulesOpen ? 'Collapse the module list' : 'Choose which modules are shown';
     bar.appendChild(modules);
 
     var focus = el('button', 'ws-tbtn');
@@ -438,7 +442,8 @@
   function renderModules() {
     var menu = el('div', 'ws-modules');
     menu.id = 'ws-modules';
-    menu.hidden = !W.modulesOpen;
+    // Focus mode is authoritative: the list stays closed while it is on, whatever modulesOpen says.
+    menu.hidden = !W.modulesOpen || !!(W.state && W.state.focus_mode);
     menu.setAttribute('role', 'group');
     menu.setAttribute('aria-label', 'Dashboard modules');
     panelIds().forEach(function (id) {
@@ -630,7 +635,14 @@
       render();
     },
     'toggle-lock': function () { W.state.locked = !W.state.locked; save(); render(); },
-    'toggle-focus': function () { W.state.focus_mode = !W.state.focus_mode; save(); render(); },
+    'toggle-focus': function () {
+      W.state.focus_mode = !W.state.focus_mode;
+      // Focus mode hides every unpinned panel. Leaving the module checklist open on top of that
+      // is the opposite of focus, and the list would be describing panels that are all hidden.
+      if (W.state.focus_mode) W.modulesOpen = false;
+      save();
+      render();
+    },
     'toggle-modules': function () { setModulesOpen(!W.modulesOpen); },
     'reset-layout': function () {
       // Layout only. Ant names, colours, positions, and map preferences are a different key and
@@ -702,7 +714,9 @@
    * re-render during a drag would be visible.
    */
   function setModulesOpen(open) {
-    W.modulesOpen = !!open;
+    // Refuse to open while focus mode is on — one rule, enforced in the setter, so no caller can
+    // reopen the list behind focus mode's back.
+    W.modulesOpen = !!open && !(W.state && W.state.focus_mode);
     var menu = document.getElementById('ws-modules');
     if (menu) menu.hidden = !W.modulesOpen;
     var btn = document.querySelector('[data-wsact="toggle-modules"]');

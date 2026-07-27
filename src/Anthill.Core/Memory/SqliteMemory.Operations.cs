@@ -133,10 +133,10 @@ public sealed partial class SqliteMemory
                 parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
                 result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
                 skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
-                skipped_reason, blocked_reason)
+                skipped_reason, blocked_reason, skill_id)
               VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @status, @result, @summary,
                 @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
-                @max, @freason, @ftype, @sreason, @breason)",
+                @max, @freason, @ftype, @sreason, @breason, @skill)",
             ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
             ("@ant", task.AssignedAnt), ("@worker", task.AssignedWorker), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
             ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
@@ -147,7 +147,8 @@ public sealed partial class SqliteMemory
             ("@failed", task.FailedAt.ToIsoOrNull()), ("@skipped", task.SkippedAt.ToIsoOrNull()),
             ("@elapsed", task.ElapsedSeconds), ("@attempts", task.AttemptCount),
             ("@max", Math.Max(1, task.MaxAttempts)), ("@freason", task.FailureReason),
-            ("@ftype", task.FailureType), ("@sreason", task.SkippedReason), ("@breason", task.BlockedReason));
+            ("@ftype", task.FailureType), ("@sreason", task.SkippedReason), ("@breason", task.BlockedReason),
+            ("@skill", task.SkillId));
 
     public void SavePatchSet(PatchSet patchSet)
     {
@@ -736,7 +737,8 @@ public sealed partial class SqliteMemory
         Query(@"SELECT id, mission_id, title, description, assigned_ant, assigned_worker, task_type, parent_task_id,
                   parent_task_ids_json, depends_on_json, status, result, result_summary, result_chars,
                   estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at, skipped_at,
-                  elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason
+                  elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason,
+                  skill_id
                 FROM tasks WHERE mission_id = @mid ORDER BY COALESCE(started_at, finished_at, id) ASC LIMIT @lim",
             ("@mid", missionId), ("@lim", limit));
 
