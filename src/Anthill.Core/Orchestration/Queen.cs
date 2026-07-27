@@ -9,6 +9,7 @@ using Anthill.Core.Models;
 using Anthill.Core.Pheromones;
 using Anthill.Core.Planning;
 using Anthill.Core.Scheduling;
+using Anthill.Core.Skills;
 using Anthill.Core.Security;
 using Anthill.Core.Tools;
 
@@ -32,6 +33,15 @@ public sealed partial class Queen : IDisposable
     private readonly PheromoneEngine _pheromones = new();
     private readonly PatchProposalParser _patchParser = new();
     private readonly object _executionLock = new();
+    private readonly AdaptiveMissionController _adaptive = new();
+
+    /// <summary>
+    /// v2.21.0 Phase C: the skills registry, hydrated from the database rather than constructed
+    /// empty. Before this the V2.12 evaluation model had no production instantiation at all — a
+    /// skill could earn Certified and nothing anywhere would ever see it.
+    /// </summary>
+    private SkillRegistry Skills => _skills ??= Memory.LoadSkillRegistry();
+    private SkillRegistry? _skills;
     private readonly Dictionary<string, BaseAnt> _ants;
     public string? LastMissionId { get; private set; }
 
@@ -140,7 +150,7 @@ public sealed partial class Queen : IDisposable
         var memoryContext =
             $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
+        mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
 
         var constraints = MissionConstraints.Parse(goal);
         foreach (var task in mission.Tasks)
@@ -264,7 +274,7 @@ public sealed partial class Queen : IDisposable
         var memoryContext =
             $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        var tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8));
+        var tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
         foreach (var task in tasks)
         {
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
@@ -301,10 +311,17 @@ public sealed partial class Queen : IDisposable
             LogSchedulerTransitions(mission, scheduler);
             if (task is not null)
             {
+                var before = AdaptiveMissionController.Fingerprint(mission);
                 RunSingleTask(task, mission, taskIndex.GetValueOrDefault(task.Id), mission.Tasks.Count, scheduler);
                 LogSchedulerTransitions(mission, scheduler);
+                // Assess after every task: this loop's "wave" is one task.
+                if (ApplyAdaptiveDecision(mission, scheduler, before)) return "adaptive_stop";
                 continue;
             }
+            // Nothing ready. Before declaring dead dependencies, let the controller decide whether
+            // a bounded delta plan or repair can supply what is missing.
+            if (ApplyAdaptiveDecision(mission, scheduler, previousFingerprint: null)) return "adaptive_stop";
+            if (scheduler.NextReadyTask() is not null) continue;   // the controller admitted work
             var blocked = mission.Tasks.Where(t => t.Status == TaskStatus.Blocked).ToList();
             if (blocked.Count > 0)
             {
@@ -326,6 +343,7 @@ public sealed partial class Queen : IDisposable
         var running = new Dictionary<System.Threading.Tasks.Task, Task>();
         var taskIndex = mission.Tasks.Select((t, i) => (t.Id, Index: i + 1)).ToDictionary(x => x.Id, x => x.Index);
         var lastSweep = Stopwatch.StartNew();
+        string? waveFingerprint = null;   // null on the first wave: nothing to compare against yet
 
         while (true)
         {
@@ -412,8 +430,17 @@ public sealed partial class Queen : IDisposable
                     }
                 }
             }
-            scheduler.Evaluate();
-            LogSchedulerTransitions(mission, scheduler);
+            lock (_executionLock)
+            {
+                scheduler.Evaluate();
+                LogSchedulerTransitions(mission, scheduler);
+                // A "wave" here is the batch of futures that just completed. Assess once per wave
+                // rather than per task, so parallel completions cannot each trigger their own
+                // replan for the same unmet criterion.
+                if (running.Count == 0 && ApplyAdaptiveDecision(mission, scheduler, waveFingerprint))
+                    return "adaptive_stop";
+                waveFingerprint = AdaptiveMissionController.Fingerprint(mission);
+            }
         }
     }
 
@@ -597,8 +624,8 @@ public sealed partial class Queen : IDisposable
                     return;
                 }
                 // Everything the ant reported is persisted BEFORE the status decision, so evidence
-                // survives even when the task fails. Handoffs are recorded here but not yet
-                // ingested — that is stage 4 (HandoffGate is still not wired to the scheduler).
+                // survives even when the task fails. Handoffs are recorded here and, on the
+                // completion path below, admitted through HandoffGate as real follow-up tasks.
                 PersistExecutionRecord(mission, task, runtimeSelection, execution, elapsed);
 
                 var decision = TaskOutcomeMapper.Map(execution);
@@ -620,6 +647,7 @@ public sealed partial class Queen : IDisposable
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
                 if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
+                IngestHandoffs(mission, task, execution, runtimeSelection, scheduler);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds }));
@@ -785,8 +813,8 @@ public sealed partial class Queen : IDisposable
     /// They are recorded here as a structured event BEFORE the status decision, so a failed task's
     /// evidence survives — which is what makes a later diagnosis or repair possible at all.
     ///
-    /// Handoffs are recorded but NOT acted on: ingestion through HandoffGate is stage 4. Writing
-    /// them down now means the gate has real proposals to admit when it is wired.
+    /// Handoffs are recorded here as the proposal record; IngestHandoffs decides which of them
+    /// become real tasks. A rejected handoff therefore still leaves a trace.
     /// </summary>
     private void PersistExecutionRecord(Mission mission, Task task, AntRuntimeSelection runtimeSelection,
         AntExecutionResult execution, double elapsed)
@@ -880,6 +908,206 @@ public sealed partial class Queen : IDisposable
                 task.Id, task.AssignedAnt, Outcomes.MemoryCandidateIngest.EventMetadata(candidate));
         if (candidates.Count > 0)
             Console.WriteLine($"Archived {candidates.Count} memory candidate(s) for mission {mission.Id}.");
+    }
+
+    /// <summary>
+    /// v2.21.0 Phase A: turn a completed task's proposed handoffs into real follow-up tasks.
+    ///
+    /// Every admitted task passes the SAME gates as an initial-plan task — HandoffGate (depth,
+    /// mission task budget, runtime eligibility, contract task-type support, dedupe) and then
+    /// AntRegistry.ValidateTask, the identical authorization check CreateTasks applies. There is
+    /// deliberately no admission path that skips them, and a handoff can never grant a capability:
+    /// it can only ask for a role that is already runtime-eligible for a task type its contract
+    /// already supports.
+    ///
+    /// Depth is computed from the SOURCE task's lineage, never from the handoff's self-reported
+    /// Depth — see HandoffGate.NextDepthFrom for why that distinction is what actually bounds
+    /// recursion.
+    ///
+    /// Rejections are logged with their reason. Nothing is dropped silently.
+    /// </summary>
+    /// <remarks>Internal rather than private so the admission path itself is testable — a source
+    /// guard proving the call site exists is not the same as proving the gates actually run.</remarks>
+    internal void IngestHandoffs(Mission mission, Task sourceTask, AntExecutionResult execution,
+        AntRuntimeSelection runtimeSelection, TaskScheduler? scheduler)
+    {
+        if (!AnthillRuntime.EnableHandoffIngestion || execution.Handoffs.Count == 0) return;
+
+        var depth = HandoffGate.NextDepthFrom(sourceTask);
+        var constraints = MissionConstraints.Parse(mission.Goal);
+
+        foreach (var proposed in execution.Handoffs)
+        {
+            var handoff = proposed with { Depth = depth };
+            var admission = HandoffGate.Evaluate(handoff, mission);
+            if (!admission.Accepted || admission.CreatedTask is null)
+            {
+                LogHandoffRejected(mission, sourceTask, handoff, admission.Reason, runtimeSelection);
+                continue;
+            }
+
+            var created = admission.CreatedTask;
+            created.ParentTaskIds = new List<string> { sourceTask.Id };
+
+            if (TryAdmitDynamicTask(mission, scheduler, created, constraints) is { Length: > 0 } refusal)
+            {
+                LogHandoffRejected(mission, sourceTask, handoff, refusal, runtimeSelection);
+                continue;
+            }
+
+            Memory.LogEvent(mission.Id, "handoff_admitted",
+                $"Handoff admitted: {handoff.SourceRole} -> {handoff.DestinationRole} ({created.Title})",
+                created.Id, handoff.DestinationRole,
+                MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
+                {
+                    ["source_task_id"] = sourceTask.Id, ["destination_role"] = handoff.DestinationRole,
+                    ["required_task_type"] = handoff.RequiredTaskType, ["depth"] = depth,
+                    ["dedupe_key"] = handoff.DedupeKey, ["required"] = handoff.Required,
+                    ["reason"] = handoff.Reason,
+                }));
+            Console.WriteLine($"Handoff admitted: {handoff.SourceRole} -> {handoff.DestinationRole} (depth {depth})");
+        }
+    }
+
+    private void LogHandoffRejected(Mission mission, Task sourceTask, AntHandoff handoff, string reason,
+        AntRuntimeSelection runtimeSelection) =>
+        Memory.LogEvent(mission.Id, "handoff_rejected",
+            $"Handoff refused: {handoff.SourceRole} -> {handoff.DestinationRole} — {reason}",
+            sourceTask.Id, handoff.SourceRole,
+            MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
+            {
+                ["destination_role"] = handoff.DestinationRole, ["required_task_type"] = handoff.RequiredTaskType,
+                ["depth"] = handoff.Depth, ["dedupe_key"] = handoff.DedupeKey, ["rejection_reason"] = reason,
+            }));
+
+    /// <summary>
+    /// The single admission path for every task created DURING a run — handoff, delta plan, or
+    /// repair. ADR §6: "Every runtime-added task passes the SAME authorization, contract and
+    /// permission gates as an initial-plan task. There is no admission path that skips them."
+    /// Having exactly one function makes that checkable rather than aspirational.
+    ///
+    /// Returns null when admitted, or the refusal reason.
+    /// </summary>
+    private string? TryAdmitDynamicTask(Mission mission, TaskScheduler? scheduler, Task created,
+        MissionConstraints constraints)
+    {
+        created.AssignedWorker ??= AntRegistry.DefaultWorkerFor(
+            created.AssignedAnt, created.TaskType, $"{mission.Goal} {created.Title}")?.WorkerId;
+
+        var selection = AntRegistry.ValidateTask(created, constraints);
+        if (!selection.Allowed) return $"ant registry denied: {selection.Reason}";
+
+        if (scheduler is not null && !scheduler.AddDynamicTask(created))
+            return "scheduler refused the task (duplicate id)";
+
+        // ALWAYS also add to mission.Tasks. TaskScheduler copies the list it is constructed with
+        // (Tasks = tasks.ToList()), so scheduler admission alone leaves the task invisible to
+        // everything that reads the mission: outcome grading, MissionVerification, the archivist —
+        // and HandoffGate's dedupe check, which scans mission.Tasks and would otherwise re-admit
+        // the same handoff on every later completion.
+        mission.Tasks.Add(created);
+        Memory.SaveTask(mission.Id, created);   // survives restart like any planned task
+        return null;
+    }
+
+    /// <summary>
+    /// v2.21.0 Phase B2: consult the adaptive controller after a wave and act on its decision.
+    ///
+    /// Budgets are derived by COUNTING the mission's own audit events rather than held in memory,
+    /// so a restart cannot silently hand a mission a fresh allowance — the durability requirement
+    /// comes free from the event log, with no schema change and a readable trail of every replan
+    /// and repair the mission spent.
+    ///
+    /// Returns true when the mission should stop.
+    /// </summary>
+    private bool ApplyAdaptiveDecision(Mission mission, TaskScheduler? scheduler, string? previousFingerprint)
+    {
+        if (!AnthillRuntime.EnableAdaptiveMissionControl) return false;
+
+        var budget = new AdaptiveBudget(
+            ReplansUsed: Memory.GetRecentEvents(200, "adaptive_delta_plan", mission.Id).Count,
+            RepairCyclesUsed: Memory.GetRecentEvents(200, "adaptive_repair", mission.Id).Count);
+
+        var decision = _adaptive.Assess(mission, budget, previousFingerprint);
+        if (decision.Action is AdaptiveAction.Continue or AdaptiveAction.Finish) return false;
+
+        var constraints = MissionConstraints.Parse(mission.Goal);
+
+        if (decision.Action == AdaptiveAction.Repair)
+        {
+            var broken = mission.Tasks.First(t => t.Critical && t.Status == TaskStatus.Failed);
+            var repair = new Task
+            {
+                Title = $"Repair: {TextUtil.Truncate(broken.Title, 80)}",
+                Description = $"Diagnose and route a bounded repair for the failed task '{broken.Title}': "
+                            + $"{TextUtil.Truncate(broken.FailureReason ?? "no reason recorded", 400)} "
+                            + $"[adaptive repair cycle:{budget.RepairCyclesUsed + 1}]",
+                AssignedAnt = "medic",
+                TaskType = "failure_diagnosis",
+                Critical = false,   // the repair attempt must not itself fail the mission
+                ParentTaskIds = new List<string> { broken.Id },
+            };
+            return !RecordAdaptiveAdmission(mission, scheduler, repair, constraints, "adaptive_repair", decision);
+        }
+
+        if (decision.Action == AdaptiveAction.DeltaPlan)
+        {
+            // Delta ONLY: the missing verification step, never a re-plan of work already done.
+            // The ADR rejected free replanning precisely because it is unbounded task creation
+            // under another name.
+            if (mission.Tasks.Any(t => MissionVerification.IsVerificationTask(t) && t.Status != TaskStatus.Failed))
+            {
+                LogAdaptiveStop(mission, decision, "verification already present — a delta plan would duplicate it");
+                return true;
+            }
+            var verify = new Task
+            {
+                Title = "Verify mission outcome",
+                Description = $"Independently verify that the mission goal was met: {TextUtil.Truncate(mission.Goal, 400)} "
+                            + $"[adaptive delta generation:{budget.ReplansUsed + 1}]",
+                AssignedAnt = "verifier",
+                TaskType = "verify",
+                Critical = true,
+            };
+            return !RecordAdaptiveAdmission(mission, scheduler, verify, constraints, "adaptive_delta_plan", decision);
+        }
+
+        LogAdaptiveStop(mission, decision, decision.Reason);
+        return true;   // Escalate
+    }
+
+    /// <summary>Admit an adaptive task and record it; returns false when it could not be admitted.</summary>
+    private bool RecordAdaptiveAdmission(Mission mission, TaskScheduler? scheduler, Task created,
+        MissionConstraints constraints, string eventType, AdaptiveDecision decision)
+    {
+        var refusal = TryAdmitDynamicTask(mission, scheduler, created, constraints);
+        if (refusal is not null)
+        {
+            // A refused adaptive task must stop the mission, not be silently skipped: the
+            // controller said work was required and the mission cannot supply it.
+            LogAdaptiveStop(mission, decision, $"adaptive task refused: {refusal}");
+            return false;
+        }
+
+        Memory.LogEvent(mission.Id, eventType, $"{decision.Action}: {created.Title}", created.Id, created.AssignedAnt,
+            new()
+            {
+                ["action"] = decision.Action.ToString(), ["reason"] = decision.Reason,
+                ["unmet_criteria"] = decision.UnmetCriteria, ["task_type"] = created.TaskType,
+            });
+        Console.WriteLine($"Adaptive {decision.Action}: {created.Title}");
+        return true;
+    }
+
+    private void LogAdaptiveStop(Mission mission, AdaptiveDecision decision, string reason)
+    {
+        Memory.LogEvent(mission.Id, "adaptive_escalated", $"Mission stopped by the adaptive controller: {reason}",
+            metadata: new()
+            {
+                ["action"] = decision.Action.ToString(), ["reason"] = reason,
+                ["unmet_criteria"] = decision.UnmetCriteria,
+            });
+        Console.WriteLine($"Adaptive stop: {reason}");
     }
 
     private void RecordAgentMessage(string missionId, string? taskId, string sender, string recipient, string messageType,

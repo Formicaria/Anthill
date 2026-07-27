@@ -118,6 +118,26 @@ public static class Json
     }
 
     /// <summary>Tolerantly parses a stored JSON object string into a dictionary; empty on null/invalid input.</summary>
+    /// <summary>
+    /// A JSON string array as a list, tolerating null, empty, malformed input, and non-string
+    /// elements. Persisted collections must never be able to throw during a load — a corrupt row
+    /// should degrade to an empty list, not prevent the process from starting.
+    /// </summary>
+    public static List<string> TryParseStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json, LenientDoc);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return new List<string>();
+            return doc.RootElement.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Select(e => e.GetString() ?? "")
+                .ToList();
+        }
+        catch (JsonException) { return new List<string>(); }
+    }
+
     public static Dictionary<string, object?> TryParseObject(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return new();
