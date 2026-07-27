@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.15.2) — TRACK COMPLETE
+## WHERE WE ARE (as of v2.15.3) — TRACK COMPLETE
 
 **Shipped and working:**
 
@@ -149,6 +149,10 @@ quadrants. Saved docked layouts migrate to the equivalent snap rather than break
 `position: relative`, without which every absolute layer resolved against the viewport and rendered
 under the nav sidebar. The fixed chrome now has an explicit vertical budget (status bar 0-52,
 toolbar 58-90, overlay slots from 96, mission bar pinned at the bottom above the panel layer).
+
+**v2.15.3** fixed a hotfix regression from that change: the classic-page hide rule was an id
+allow-list, so the newly added status bar and mission bar were both `display:none`. It excludes by
+`.ws-layer` class now, which is additive-safe.
 
 ### Release numbering correction
 
