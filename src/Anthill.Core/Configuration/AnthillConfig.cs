@@ -81,6 +81,12 @@ public sealed class AnthillConfig
     [JsonPropertyName("soldier_ant_enabled")] public bool SoldierAntEnabled { get; set; } = false;
     [JsonPropertyName("medic_ant_enabled")] public bool MedicAntEnabled { get; set; } = false;
     [JsonPropertyName("archivist_ant_enabled")] public bool ArchivistAntEnabled { get; set; } = false;
+    /// <summary>v2.21.0 Phase A: admit specialist handoffs as real follow-up tasks. Off by default
+    /// — this is the first feature that lets a mission grow its own task list at runtime.</summary>
+    [JsonPropertyName("handoff_ingestion_enabled")] public bool HandoffIngestionEnabled { get; set; } = false;
+    /// <summary>v2.21.0 Phase B: the adaptive controller may add bounded repair/verification tasks
+    /// and stop a stalled mission. Off by default — it changes when a mission ends.</summary>
+    [JsonPropertyName("adaptive_mission_control_enabled")] public bool AdaptiveMissionControlEnabled { get; set; } = false;
     [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
     [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
