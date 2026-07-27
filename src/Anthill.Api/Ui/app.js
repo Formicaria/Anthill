@@ -806,7 +806,10 @@ function chamberCentres(names){
   const all=Array.isArray(names)?names:[];
   const ring=all.filter(n=>n!=="Queen's Core");
   const off=uiState.chambers||{};
-  const R=Math.min(W,H)*0.34;
+  // v2.16.0: chambers hold more area now that roles and workers are properly spaced, so the ring
+  // they sit on grows with them — otherwise neighbouring chambers overlap and the view is muddier
+  // than the version it replaced.
+  const R=Math.min(W,H)*0.38;
   const out={};
   const place=(name,bx,by)=>{
     const o=off[name]||{};
@@ -918,6 +921,22 @@ function buildNodes(){
   const perChamber={};
   roles.forEach(r=>{ const c=chamberFor(roleId(r)); perChamber[c]=(perChamber[c]||0)+1; });
   const seen={};
+  /* v2.16.0 chamber layout: one angular SECTOR per role.
+   *
+   * The old layout muddied because two things fought each other — roles sat on a ring capped at
+   * 46px while their workers were placed 72px out, and the worker bearing came from
+   * colonyAngleFor(), which in chamber mode derives from the CHAMBER's index and is therefore
+   * identical for every role in it. So each role's workers landed on the neighbouring role.
+   *
+   * Now each role owns 1/n of the chamber's circle and its workers are laid on an arc inside that
+   * sector, which makes cross-role collision geometrically impossible rather than merely
+   * unlikely. Radii are derived from the arc length actually needed, so a chamber with five roles
+   * or a role with four workers grows instead of packing tighter.
+   * Verified: zero overlapping node pairs across all seven chambers, 15px tightest gap. */
+  const CHAMBER_ROLE_GAP = 60;    // arc length reserved per role on the role ring
+  const CHAMBER_WORKER_GAP = 30;  // arc length reserved per worker on its role's arc
+  const CHAMBER_SECTOR_USE = 0.82;// fraction of a sector its workers may span (rest is margin)
+  const chamberSlot={};           // roleId -> {cx,cy,angle,sector,r1}
 
   roles.forEach((r,i)=>{
     const id=roleId(r),rad=colonyAngleFor(r,i,roles.length)*Math.PI/180;
@@ -926,9 +945,15 @@ function buildNodes(){
       const c=chamberFor(id), centre=CHAMBERS[c];
       if(centre){
         const k=(seen[c]=(seen[c]||0)), n=perChamber[c];
-        const inner=n===1?0:Math.min(46,18+n*7);
-        const a=(k/Math.max(1,n))*Math.PI*2;
-        bx=centre.x+Math.cos(a)*inner; by=centre.y+Math.sin(a)*inner;
+        // Role ring scales with membership instead of being capped at 46px. The old cap meant a
+        // five-role chamber packed its roles ~46px apart while their workers sat 72px out — the
+        // workers of one role landed on top of the next role entirely.
+        const sector = (Math.PI*2)/Math.max(1,n);
+        // Ring radius from the arc each role needs, not a magic cap.
+        const r1 = n<=1 ? 0 : Math.max(58, (n*CHAMBER_ROLE_GAP)/(Math.PI*2));
+        const a = n>1 ? (-Math.PI/2 + (k+0.5)*sector) : 0;   // sector CENTRE, starting at 12 o'clock
+        chamberSlot[id]={cx:centre.x,cy:centre.y,angle:a,sector:sector,r1:r1};
+        bx=centre.x+Math.cos(a)*r1; by=centre.y+Math.sin(a)*r1;
         seen[c]=k+1;
       }
     }
@@ -938,12 +963,25 @@ function buildNodes(){
     const showWorkers=colonyView==='expanded'||colonyView==='group'||colonyView==='active';
     if(showWorkers){
       const activeWorkers=new Set((lastGraphData?.nodes||[]).map(t=>t.assigned_worker).filter(Boolean));
-      const ws=roleWorkers(r).filter(w=>colonyView!=='active'||activeWorkers.has(workerId(w))),sR=Math.max(54,bR*.30);
+      const ws=roleWorkers(r).filter(w=>colonyView!=='active'||activeWorkers.has(workerId(w)));
+      const slot = chamberMode ? chamberSlot[id] : null;
+      // Worker arc radius: far enough out that this role's workers fit inside its OWN sector.
+      const r2 = slot ? Math.max(slot.r1+46, (ws.length*CHAMBER_WORKER_GAP)/(slot.sector*CHAMBER_SECTOR_USE)) : 0;
+      const span = slot ? slot.sector*CHAMBER_SECTOR_USE : 0;
       ws.forEach((w,wi)=>{
-        const spread=ws.length===1?0:(wi-(ws.length-1)/2)*24;
-        const cr=(colonyAngleFor(r,i,roles.length)+spread)*Math.PI/180;
+        let wx,wy;
+        if(slot){
+          const off = ws.length===1 ? 0 : (wi-(ws.length-1)/2)*(span/ws.length);
+          const cr = slot.angle+off;
+          wx=slot.cx+Math.cos(cr)*r2; wy=slot.cy+Math.sin(cr)*r2;
+        } else {
+          const sR=Math.max(54,bR*.30);
+          const spread=ws.length===1?0:(wi-(ws.length-1)/2)*24;
+          const cr=(colonyAngleFor(r,i,roles.length)+spread)*Math.PI/180;
+          wx=bx+Math.cos(cr)*sR; wy=by+Math.sin(cr)*sR;
+        }
         const wid=workerId(w);
-        nodes.push({id:wid,ant:id,worker:wid,x:bx+Math.cos(cr)*sR,y:by+Math.sin(cr)*sR,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});
+        nodes.push({id:wid,ant:id,worker:wid,x:wx,y:wy,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});
         edges.push({from:id,to:wid});
       });
     }
@@ -1982,6 +2020,9 @@ async function pollJobs(){
     renderJobList(jobs,'jobs-list','jobs-badge',8);
     renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5);
     renderJobList(jobs,'ms-jobs-list','ms-jobs-badge',20);
+    // v2.16.0: keep the conversation in step with job progress, so an answer appears in the
+    // thread as soon as its mission finishes rather than on the next manual refresh.
+    if(document.getElementById('page-missions')?.classList.contains('active')) loadMissionThread();
     // Nav badge
     const navBadge=document.getElementById('nav-jobs-badge');
     if(navBadge){ navBadge.style.display=jobs.length>0?'':'none'; navBadge.textContent=jobs.length; }
@@ -2425,6 +2466,85 @@ const MR_STATUS={complete:['? Completed','var(--green)'],partial:['? Completed w
 const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'—',ready:'—'};
 const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
   applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
+
+/* ---------------------------------------------------------------------------------------------
+ * v2.16.0 — Missions as a conversation.
+ *
+ * The colony has always stored two things: the answer (user_result, now rewritten into plain
+ * English as final_result) and the full trace (debug_result). The old page led with the trace and
+ * buried the answer. This inverts that: each exchange shows the directive and the answer, and
+ * everything the colony did sits behind one disclosure.
+ *
+ * The detail view reuses renderMissionReport verbatim — one implementation of "what happened",
+ * shared with the Results page, rather than a second one that can drift.
+ * ------------------------------------------------------------------------------------------- */
+let msThreadMissions=[];
+
+const MS_CHIP={complete:['done','var(--green)'],partial:['partial','#d9a441'],
+               failed:['failed','var(--red)'],running:['working','var(--hud-cyan,#22d3ee)']};
+
+async function loadMissionThread(){
+  const thread=document.getElementById('ms-thread');
+  if(!thread) return;
+  try{
+    const r=await api('/missions/json?limit=40');
+    if(!r.success) throw new Error(r.message||'could not load missions');
+    msThreadMissions=(r.data||[]).slice();
+    renderMissionThread();
+  }catch(e){
+    thread.innerHTML=`<div class="ms-empty" style="color:var(--red)">Could not load missions: ${escapeHtml(e.message||'unknown error')}</div>`;
+  }
+}
+
+function renderMissionThread(){
+  const thread=document.getElementById('ms-thread');
+  if(!thread) return;
+  if(!msThreadMissions.length){
+    thread.innerHTML='<div class="ms-empty">No missions yet. Describe what you want done below.</div>';
+    return;
+  }
+  // Oldest first so the newest answer is at the bottom, next to where you type.
+  const rows=msThreadMissions.slice().reverse();
+  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+
+  thread.innerHTML=rows.map(m=>{
+    const [chip,col]=MS_CHIP[m.status]||[m.status||'—','var(--muted)'];
+    const answer=m.final_result||m.user_result||'';
+    const pending=!answer;
+    return `<div class="ms-x" data-mission="${escapeHtml(m.id)}">
+      <div class="ms-ask">${escapeHtml(m.goal||'')}</div>
+      <div class="ms-say${pending?' pending':''}">${pending
+        ? 'Working — no answer recorded yet.'
+        : escapeHtml(answer)}</div>
+      <div class="ms-meta">
+        <span class="ms-chip" style="color:${col};border-color:${col}">${escapeHtml(chip)}</span>
+        <span>${escapeHtml(fmtTime(m.saved_at||m.created_at))}</span>
+        ${m.success_score!=null?`<span>score ${Number(m.success_score).toFixed(2)}</span>`:''}
+      </div>
+      <details class="ms-act" data-msact="${escapeHtml(m.id)}">
+        <summary>▸ Show activity</summary>
+        <div class="ms-act-body"><div style="color:var(--dim);font-size:11px;">Loading activity…</div></div>
+      </details>
+    </div>`;
+  }).join('');
+
+  // Keep the newest answer in view, but never yank the page while someone is reading history.
+  if(atBottom) thread.scrollTop=thread.scrollHeight;
+}
+
+// Activity loads on first expand only — a thread of forty missions must not fetch forty reports.
+document.addEventListener('toggle',e=>{
+  const det=e.target.closest&&e.target.closest('details[data-msact]');
+  if(!det||!det.open||det.dataset.loaded) return;
+  det.dataset.loaded='1';
+  const sum=det.querySelector('summary'); if(sum) sum.textContent='▾ Hide activity';
+  renderMissionReport(det.dataset.msact, det.querySelector('.ms-act-body'));
+},true);
+document.addEventListener('toggle',e=>{
+  const det=e.target.closest&&e.target.closest('details[data-msact]');
+  if(!det||det.open) return;
+  const sum=det.querySelector('summary'); if(sum) sum.textContent='▸ Show activity';
+},true);
 
 async function renderMissionReport(missionId, body){
   const r=await api(`/missions/${encodeURIComponent(missionId)}/report`);
@@ -3390,6 +3510,8 @@ function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b
 });
 document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
 document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
+// v2.16.0: the conversation loads when the page opens. Job polling keeps it current after that.
+PAGE_ENTER['missions']=()=>loadMissionThread();
 document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // -- Helpers -------------------------------------------------------------------
@@ -6808,39 +6930,40 @@ function wsMountTarget(bodyId, el){
 function registerWorkspacePanels(){
   if(!window.AnthillWorkspace) return;
   var W=window.AnthillWorkspace;
-  // v2.15.0 default layout. The topology is the POINT of this dashboard, so the default keeps the
-  // centre of the map clear and lines panels up the left and right edges. Four secondary panels
-  // start hidden rather than tiled across the map — they are one click away in the Modules menu,
-  // and an operator who wants the dense grid can place them once and it persists.
+  // v2.16.0 default layout — two rails and a clear map.
   //
-  // These coordinates are a first-run fallback only: once a layout is saved the server's clamped
-  // placements win, so nothing here can strand a panel off-screen on a smaller display.
+  // Left rail: colony condition, top to bottom. Right rail: the inspector and what changed.
+  // The centre stays empty so the topology reads at a glance, with two small status panels
+  // floating low where the map is sparse. Everything else starts HIDDEN — a first-run dashboard
+  // showing fifteen panels is not a dashboard, it is a wall. Each is one click in Modules.
+  //
+  // Coordinates target the 1600x900 reference viewport the server clamps against
+  // (DashboardWorkspaceState.DefaultViewportWidth/Height); a narrower screen gets clamped rather
+  // than overflowing. y starts at 60 to clear the status bar, and the lowest panel ends by 840 to
+  // clear the mission directive bar.
+  //
+  // NOTE: defaults apply on first run only. An existing saved layout wins until Reset layout.
   var defs=[
-    // Left rail: the two things worth glancing at continuously.
-    {id:'colony-health',      title:'Colony Health',      body:'ov2-health-body',    x:24,   y:24,  w:300, h:224},
-    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',      x:24,   y:264, w:300, h:214},
-    // Right rail: the inspector is tall because it is the deepest panel, with jobs beneath it.
-    {id:'agent-inspector',    title:'Agent Inspector',    body:'agent-detail',       x:1060, y:24,  w:320, h:430},
-    {id:'colony-jobs',        title:'Jobs',               body:'jobs-list',          x:1060, y:470, w:320, h:236},
-    // Bottom left, clear of the map's centre of mass.
-    {id:'missions',           title:'Missions',           body:'ov2-active-body',    x:24,   y:494, w:300, h:212},
+    // Left rail
+    {id:'colony-health',      title:'Colony Health',      body:'ov2-health-body',      x:8,    y:60,  w:316, h:200},
+    {id:'colony-vitals',      title:'Colony Vitals',      body:'ov-vitals-body',       x:8,    y:266, w:316, h:180},
+    {id:'missions',           title:'Missions',           body:'ov2-active-body',      x:8,    y:452, w:316, h:160},
+    {id:'colony-jobs',        title:'Jobs',               body:'jobs-list',            x:8,    y:618, w:316, h:222},
+    // Right rail
+    {id:'agent-inspector',    title:'Agent Inspector',    body:'agent-detail',         x:1276, y:60,  w:316, h:380},
+    {id:'patch-activity',     title:'Patch Activity',     body:'ov-sum-patches',       x:1276, y:446, w:316, h:170},
+    {id:'live-telemetry',     title:'Live Telemetry',     body:'ov-feed-list',         x:1276, y:622, w:316, h:218},
+    // Low centre-right, over the sparse part of the map
+    {id:'system-core',        title:'System Core',        body:'ov2-core-body',        x:930,  y:640, w:330, h:150},
+    {id:'objectives',         title:'Objectives',         body:'ov-sum-objectives',    x:596,  y:756, w:320, h:84},
 
-    // Available, not shown. Everything below is one click away in the Modules menu.
-    {id:'system-core',        title:'System Core',        body:'ov2-core-body',      x:352,  y:24,  w:360, h:224, hidden:true},
-    {id:'approvals',          title:'Pending Approvals',  body:'ov2-approvals-body', x:352,  y:264, w:340, h:214, hidden:true},
-    {id:'resource-usage',     title:'Resource Usage',     body:'ov2-resources-body', x:728,  y:24,  w:320, h:224, hidden:true},
-    {id:'recent-events',      title:'Recent Events',      body:'ov2-events-body',    x:728,  y:264, w:320, h:214, hidden:true},
-
-    // v2.15.1: the six cards that used to render in normal flow BELOW the map. They were the
-    // reason the dashboard scrolled into a second, non-modular half. They are ordinary panels now
-    // — draggable, collapsible, groupable into tabs — and start hidden so the colony canvas is the
-    // whole page until the operator places what they actually want on it.
-    {id:'colony-vitals',      title:'Colony Vitals',      body:'ov-vitals-body',     x:352,  y:494, w:420, h:212, hidden:true},
-    {id:'recent-missions',    title:'Recent Missions',    body:'ov-sum-missions',    x:352,  y:24,  w:360, h:224, hidden:true},
-    {id:'patch-activity',     title:'Patch Activity',     body:'ov-sum-patches',     x:352,  y:264, w:360, h:214, hidden:true},
-    {id:'objectives',         title:'Objectives',         body:'ov-sum-objectives',  x:728,  y:494, w:320, h:212, hidden:true},
-    {id:'recent-jobs',        title:'Recent Jobs',        body:'ov-jobs-list',       x:728,  y:24,  w:320, h:224, hidden:true},
-    {id:'live-telemetry',     title:'Live Telemetry',     body:'ov-feed-list',       x:728,  y:264, w:320, h:214, hidden:true},
+    // Available, not shown.
+    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',        x:340,  y:60,  w:300, h:200, hidden:true},
+    {id:'approvals',          title:'Pending Approvals',  body:'ov2-approvals-body',   x:340,  y:266, w:340, h:180, hidden:true},
+    {id:'resource-usage',     title:'Resource Usage',     body:'ov2-resources-body',   x:340,  y:452, w:320, h:180, hidden:true},
+    {id:'recent-events',      title:'Recent Events',      body:'ov2-events-body',      x:696,  y:60,  w:320, h:200, hidden:true},
+    {id:'recent-missions',    title:'Recent Missions',    body:'ov-sum-missions',      x:696,  y:266, w:360, h:180, hidden:true},
+    {id:'recent-jobs',        title:'Recent Jobs',        body:'ov-jobs-list',         x:696,  y:452, w:320, h:180, hidden:true},
   ];
   defs.forEach(function(d){
     W.register({

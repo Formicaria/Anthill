@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.15.3";
+    public const string Version = "2.16.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -176,6 +176,9 @@ public static class AnthillRuntime
     /// no data loss — saved panel layouts simply go unread until it is turned back on.
     /// </summary>
     public static bool EnableDashboardWorkspace = true;
+    /// <summary>v2.16.0: synthesize a plain-English mission answer. Degrades to the raw best-task
+    /// output whenever the model is unavailable, so a mission is never left answerless.</summary>
+    public static bool EnableAnswerSynthesis = true;
     public static bool EnableSandboxExecution = false;
     public static bool EnableSpecialistAntExecution = false;
     public static bool EnableTesterAnt = false;
@@ -555,6 +558,7 @@ public static class AnthillRuntime
         // v2.15.0: unset resolves to the shipping default (on); an explicit false is respected.
         EnableDashboardWorkspace = config.DashboardWorkspaceEnabled ?? true;
         config.DashboardWorkspaceEnabled = EnableDashboardWorkspace;   // make it explicit on next save
+        EnableAnswerSynthesis = config.AnswerSynthesisEnabled;
         EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         EnableTesterAnt = config.TesterAntEnabled;
@@ -660,6 +664,7 @@ public static class AnthillRuntime
         "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
         "max_context_packet_chars", "max_agent_message_content_chars",
+        "answer_synthesis_enabled",
         "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
         "max_db_backups", "event_retention_days",
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
