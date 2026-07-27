@@ -513,7 +513,7 @@ public class RegressionGuardTests : IDisposable
         // Created via document.createElement at runtime, so they legitimately have no static id=.
         // ws-root and ws-topology only exist when dashboard_workspace_enabled is on — which is
         // precisely why they are built rather than declared in markup.
-        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root", "ws-topology" };
+        var dynamicIds = new HashSet<string> { "pc-toast", "ws-root", "ws-topology", "ws-topbar" };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
         var duplicates = declared.GroupBy(i => i).Where(g => g.Count() > 1).Select(g => g.Key).ToList();

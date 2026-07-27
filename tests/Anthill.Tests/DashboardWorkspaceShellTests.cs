@@ -252,85 +252,103 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("g.panels.length < 2", detach[..900]);
     }
 
-    // ---- Docking (v2.15.0) -------------------------------------------------------------------------
+    // ---- Snapping + full-bleed layout (v2.15.1) ----------------------------------------------------
 
     /// <summary>
-    /// Docking was deferred in the original plan precisely because hand-rolled dock geometry is
-    /// where window managers accumulate bugs. It shipped only because the geometry that matters —
-    /// how thick a rail may get — lives in tested C#. The client must therefore keep its own
-    /// arithmetic thin: rails lay out with flexbox and the only stored number is dock_size.
+    /// v2.15.1: docking is gone from the client entirely. Leaving half of it behind is how a
+    /// codebase ends up with two overlapping concepts and a menu full of dead entries.
     /// </summary>
     [Fact]
-    public void DockRails_KeepGeometryInTheServer()
+    public void DockingIsFullyRemovedFromTheClient()
     {
         var js = Ui("dashboard-workspace.js");
-        var rail = BodyOf(js, "function renderDockRail");
-        // The rail sets ONE dimension from state; everything else is flex.
-        Assert.Contains("railSize(side)", rail);
-        Assert.Contains("rail.style.width", rail);
-        Assert.Contains("rail.style.height", rail);
-        // Docked panels must not carry absolute placement — the rail positions them.
-        Assert.DoesNotContain("frame.style.left", rail);
-        Assert.DoesNotContain("frame.style.top", rail);
         var css = Ui("dashboard-workspace.css");
-        Assert.Contains(".ws-panel.ws-docked", css);
-        Assert.Contains("position: relative", css);
+        foreach (var token in new[] { "DOCK_SIDES", "dockedOn", "renderDockRail", "dockPanel",
+                                      "dockZoneAt", "railDrag", "data-wsdockresize", "'dock-to'", "'undock'" })
+            Assert.False(js.Contains(token), $"dashboard-workspace.js still references removed docking: {token}");
+        Assert.DoesNotContain(".ws-dock", css);
+    }
+
+    /// <summary>The client's snap arithmetic must match the server's, or a snap jumps on reload.</summary>
+    [Fact]
+    public void ClientSnapRegions_MatchTheServer()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("function snapRegion(zone, vw, vh)", js);
+        Assert.Contains("MIN_PANEL_W = 200", js);
+        Assert.Contains("MIN_PANEL_H = 80", js);
+        Assert.Equal(200, DashboardWorkspaceState.MinPanelWidth);
+        Assert.Equal(80, DashboardWorkspaceState.MinPanelHeight);
+
+        // Every zone the server knows must be handled by the client and vice versa.
+        var body = BodyOf(js, "function snapRegion(zone, vw, vh)");
+        foreach (var zone in DashboardWorkspaceState.SnapZones)
+            Assert.Contains("case '" + zone + "'", body);
+        Assert.Contains("SNAP_ZONES = ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right']", js);
+    }
+
+    /// <summary>A corner is a deliberate aim at a quadrant, and sits inside both edge bands.</summary>
+    [Fact]
+    public void CornerSnapZones_WinOverEdges()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var hit = BodyOf(js, "function snapZoneAt(pt)");
+        var firstCorner = hit.IndexOf("'top-left'", StringComparison.Ordinal);
+        var firstEdge = hit.IndexOf("return 'left'", StringComparison.Ordinal);
+        Assert.True(firstCorner > 0 && firstEdge > 0, "snapZoneAt must resolve both corners and edges");
+        Assert.True(firstCorner < firstEdge, "corners must be tested before edges or they are unreachable");
+    }
+
+    /// <summary>Every snap zone reachable without a drag (accessibility rule).</summary>
+    [Fact]
+    public void SnappingIsReachableWithoutADrag()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.Contains("'snap-to'", js);
+        Assert.Contains("snap-to", BodyOf(js, "function renderModules"));
     }
 
     /// <summary>
-    /// A dock rail must never be able to bury the topology. The server clamp is authoritative, but
-    /// the client mirrors it during the drag so the rail feels bounded instead of snapping back
-    /// after the round trip — and the two limits must agree.
+    /// v2.15.1: with the workspace live the Dashboard is not a scrolling document. Every classic
+    /// section must be taken out of flow by ONE rule — enumerating them is how the six hud-panel
+    /// cards were missed in v2.15.0 and left rendering below the map.
     /// </summary>
     [Fact]
-    public void DockRailResize_MirrorsTheServerFractionLimit()
+    public void WorkspaceDashboard_TakesAllClassicContentOutOfFlow()
     {
-        var js = Ui("dashboard-workspace.js");
-        Assert.Contains("0.60", js);
-        Assert.Contains("Math.max(180", js);
-        // The same numbers the server enforces.
-        Assert.Equal(0.60, DashboardWorkspaceState.MaxDockFraction);
-        Assert.Equal(180, DashboardWorkspaceState.MinDockSize);
+        var html = Ui("index.html");
+        Assert.Contains("#page-overview.ws-active", html);
+        Assert.Contains("#page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}", html);
+        Assert.Contains("classList.add('ws-active')", Ui("app.js"));
     }
 
     /// <summary>
-    /// Docking is offered on an explicit aim at an edge, and must be resolved BEFORE tab grouping:
-    /// a panel header sitting under the edge zone is incidental, the edge is deliberate.
+    /// The status bar belongs above the colony view controls, not stranded mid-page below the map,
+    /// and it must be re-parented rather than duplicated.
     /// </summary>
     [Fact]
-    public void DropIntoEdgeZone_DocksBeforeItConsidersTabGrouping()
+    public void StatusBar_IsPinnedAboveTheColonyViewControls()
     {
-        var js = Ui("dashboard-workspace.js");
-        var end = BodyOf(js, "function endGesture");
-        var dockAt = end.IndexOf("dockZoneAt(", StringComparison.Ordinal);
-        var groupAt = end.IndexOf("dropTargetPanel(", StringComparison.Ordinal);
-        Assert.True(dockAt > 0 && groupAt > 0, "endGesture must consider both docking and grouping");
-        Assert.True(dockAt < groupAt, "the dock zone must be checked before the tab-group target");
+        var app = Ui("app.js");
+        var html = Ui("index.html");
+        Assert.Contains("ws-topbar", app);
+        Assert.Contains("topbar.appendChild(tb)", app);          // moved, not cloned
+        Assert.Contains("#ws-topbar", html);
+        // Top-anchored topology overlays must clear the bar instead of hiding under it.
+        Assert.Contains("#ws-topology .topo-ov-slot[data-ovslot=\"top-left\"]", html);
     }
 
-    /// <summary>Every drag-only capability needs a non-drag equivalent (accessibility rule).</summary>
+    /// <summary>
+    /// The colony view bar rendered starting at "Handoffs" because the anchor slot capped width at
+    /// 260px and clipped it. Width belongs to the overlays that need it, not to the slot.
+    /// </summary>
     [Fact]
-    public void DockingIsReachableWithoutADrag()
+    public void ColonyViewBar_IsNotClippedByItsAnchorSlot()
     {
-        var js = Ui("dashboard-workspace.js");
-        Assert.Contains("'dock-to'", js);
-        Assert.Contains("'undock'", js);
-        var menu = BodyOf(js, "function renderModules");
-        Assert.Contains("dock-to", menu);
-        Assert.Contains("undock", menu);
-    }
-
-    /// <summary>Drop hints appear only during a drag, and are cleared on every exit path.</summary>
-    [Fact]
-    public void DockHints_AreTransient()
-    {
-        var js = Ui("dashboard-workspace.js");
-        Assert.Contains("function clearDockHint", js);
-        Assert.Contains("clearDockHint()", BodyOf(js, "function endGesture"));
-        var css = Ui("dashboard-workspace.css");
-        Assert.Contains(".ws-dockzones { position: absolute; inset: 0;", css.Replace("\r", ""));
-        Assert.Contains("opacity: 0", css);          // invisible until a drag turns them on
-        Assert.Contains(".ws-dockzones.on", css);
+        var html = Ui("index.html");
+        Assert.Contains(".topo-ov-slot{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;max-width:none;", html);
+        Assert.Contains("#chud-legend,#chud-phero{max-width:260px;}", html);
+        Assert.Contains("#colony-viewbar{flex-wrap:nowrap;", html);
     }
 
     // ---- Accessibility --------------------------------------------------------------------------------
