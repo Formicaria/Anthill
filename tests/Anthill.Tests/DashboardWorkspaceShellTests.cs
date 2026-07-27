@@ -865,6 +865,39 @@ public class DashboardWorkspaceShellTests
     }
 
     /// <summary>
+    /// v2.24.0: the bug that made two previous fixes invisible.
+    ///
+    /// `hidden` carries display:none from the USER AGENT stylesheet only. `.ws-modules` and
+    /// `.ws-tray` both set `display:flex`, and an author rule outranks the UA sheet — so
+    /// `el.hidden = true` set the attribute correctly and changed nothing on screen. The modules
+    /// menu stayed open through the v2.19.0 "collapsible" work AND the v2.22.0 focus-mode fix:
+    /// correct JavaScript, defeated by one line of CSS. The empty minimized-panel tray had the
+    /// same defect.
+    ///
+    /// Every element the workspace hides via the `hidden` property needs a matching `[hidden]`
+    /// rule, because every one of them also sets `display`.
+    /// </summary>
+    [Fact]
+    public void EveryElementHiddenFromScript_HasACssRuleThatActuallyHidesIt()
+    {
+        var js = Ui("dashboard-workspace.js");
+        var css = Ui("dashboard-workspace.css");
+
+        // The classes the script hides by setting .hidden.
+        foreach (var cls in new[] { "ws-modules", "ws-tray" })
+        {
+            Assert.True(css.Contains($".{cls}[hidden]", StringComparison.Ordinal),
+                $".{cls} is hidden from script but has no [hidden] rule — it sets display, so the "
+                + "UA stylesheet's display:none is overridden and the element stays visible.");
+            Assert.Contains($".{cls}[hidden] {{ display: none !important; }}", css);
+        }
+
+        // And the script really does hide them this way, so the guard tracks reality.
+        Assert.Contains("menu.hidden = !W.modulesOpen", js);
+        Assert.Contains("tray.hidden = true", js);
+    }
+
+    /// <summary>
     /// v2.22.0: the toggle reports the state it is actually in.
     ///
     /// `aria-expanded` was hardcoded to 'false' when the button was built, so every re-render

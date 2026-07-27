@@ -222,7 +222,25 @@ public sealed class ColonyDirector : IDisposable
 
         // Only a successful mission's discoveries are worth enqueuing — a failed run's follow-ups
         // are, by construction, follow-ups to work that didn't actually land.
-        var enqueuedFollowUps = success ? SaveFollowUps(strategy.FollowUps, job.MissionId, run.Id) : 0;
+        // v2.24.0 Phase C6: follow-ups derived from what verification FOUND, not only from what the
+        // Strategist proposed. The verifier records "Missing Steps:" — a concrete list of what the
+        // mission did not do — and until now nothing read it. Evidence-derived follow-ups carry
+        // their own budget and a depth cap, so a finding can never extend an objective forever.
+        var evidenceFollowUps = success && job.MissionId is { Length: > 0 } evidenceMissionId
+            ? EvidenceFollowUps.From(_queen.Memory.GetTasksForMission(evidenceMissionId, 200),
+                                     evidenceMissionId, objective, missionStatus)
+            : (IReadOnlyList<Objective>)Array.Empty<Objective>();
+        var enqueuedFollowUps = success
+            ? SaveFollowUps(strategy.FollowUps.Concat(evidenceFollowUps).ToList(), job.MissionId, run.Id)
+            : 0;
+        if (evidenceFollowUps.Count > 0)
+            _queen.Memory.LogEvent(SystemMissionId, "evidence_follow_ups_created",
+                $"{evidenceFollowUps.Count} follow-up(s) created from verification findings.", antName: "director",
+                metadata: new()
+                {
+                    ["objective_id"] = objective.Id, ["mission_id"] = job.MissionId,
+                    ["titles"] = evidenceFollowUps.Select(f => f.Title).ToList(),
+                });
         run.FollowUpsCreated = enqueuedFollowUps;
         _queen.Memory.SaveAutonomyRun(run);
 
