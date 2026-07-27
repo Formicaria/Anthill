@@ -69,15 +69,24 @@ public class TesterAntTests : IDisposable
 
     // ---- TesterAnt behavior --------------------------------------------------------------------
 
+    // v2.19.0: these three asserted against the JSON that Compat() embedded in the returned
+    // string. TesterAnt now returns a real AntExecutionResult, so they assert on structure
+    // instead of substring-matching serialised prose. The behaviour proven is unchanged and the
+    // assertions are stronger — a handoff is now checked by field, not by hoping the right text
+    // appears somewhere in the output.
+
     [Fact]
     public void PassingCheck_ProducesReportEvidence_AndVerifierHandoff()
     {
         var ant = Harness();
         var (t, m) = CheckTask("run dotnet_version only");
-        var output = ant.Run(t, m);
-        Assert.Contains("dotnet_version: PASS", output);
-        Assert.Contains("test_report", output);
-        Assert.Contains("\"DestinationRole\":\"verifier\"", output.Replace(" ", ""));
+        var result = ant.Execute(t, m);
+
+        Assert.Equal("succeeded", result.StatusCode);
+        Assert.True(result.Success);
+        Assert.Contains(result.Artifacts, a => a.Kind == "test_report" && a.Content.Contains("dotnet_version: PASS"));
+        Assert.Contains(result.Evidence, e => e.Kind == "check" && e.Value == "dotnet_version");
+        Assert.Contains(result.Handoffs, h => h.DestinationRole == "verifier");
     }
 
     [Fact]
@@ -86,10 +95,17 @@ public class TesterAntTests : IDisposable
         CheckCatalog.Register(new CheckDefinition("always_fails", "dotnet", "not-a-real-verb", 60, true, "fails on purpose"));
         var ant = Harness();
         var (t, m) = CheckTask("run always_fails");
-        var output = ant.Run(t, m);
-        Assert.Contains("always_fails: FAIL", output);
-        Assert.Contains("\"status\":\"failed_retryable\"", output.Replace(" ", ""));
-        Assert.Contains("\"DestinationRole\":\"medic\"", output.Replace(" ", ""));
+        var result = ant.Execute(t, m);
+
+        Assert.False(result.Success);
+        Assert.Equal("failed_retryable", result.StatusCode);
+        Assert.Contains(result.Artifacts, a => a.Content.Contains("always_fails: FAIL"));
+
+        var medic = Assert.Single(result.Handoffs, h => h.DestinationRole == "medic");
+        Assert.True(medic.Required, "a failure diagnosis handoff is required, not advisory");
+
+        // v2.19.0: and it can no longer be recorded as a completed task.
+        Assert.False(Anthill.Core.Outcomes.TaskOutcomeMapper.IsCompleting(result));
     }
 
     [Fact]
@@ -97,8 +113,11 @@ public class TesterAntTests : IDisposable
     {
         var ant = Harness();
         var (t, m) = CheckTask("whatever", type: "ui_mapping");
-        var output = ant.Run(t, m);
-        Assert.Contains("\"status\":\"blocked\"", output.Replace(" ", ""));
+        var result = ant.Execute(t, m);
+
+        Assert.Equal("blocked", result.StatusCode);
+        Assert.False(result.Success);
+        Assert.Equal(Anthill.Core.Contracts.FailureClass.AuthorizationFailure, result.Failure!.Class);
     }
 
     // ---- Boundaries + gates --------------------------------------------------------------------

@@ -3,6 +3,7 @@ using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Outcomes;
 
 namespace Anthill.Api;
 
@@ -380,8 +381,18 @@ public sealed class ColonyDirector : IDisposable
         double? score = null;
         var rawScore = mission?.GetValueOrDefault("success_score");
         if (rawScore is not null && double.TryParse(rawScore.ToString(), out var s)) score = s;
-        var success = status is "complete" or "partial";
-        return (status, score, success);
+        // v2.19.0: `partial` is NOT success. This single flag drives objective EMA, follow-up
+        // creation, objective lifecycle closure, and AUTO-APPLY — so treating a partially-failed
+        // mission as successful meant partial work could automatically apply code. Every positive
+        // path now routes through MissionOutcome.IsPositiveSuccess, which admits only
+        // completed_verified.
+        var taskRows = job.MissionId is { Length: > 0 } mid
+            ? _queen.Memory.GetTasksForMission(mid, 200)
+            : new List<Dictionary<string, object?>>();
+        var verified = MissionVerification.IsSatisfiedFromRows(taskRows);
+        var outcome = MissionOutcome.ResolveFromStatusText(status, verified);
+        var success = MissionOutcome.IsPositiveSuccess(outcome);
+        return (outcome, score, success);
     }
 
     private static void Backoff() => Thread.Sleep(TimeSpan.FromSeconds(AnthillRuntime.AutonomyPollSeconds));

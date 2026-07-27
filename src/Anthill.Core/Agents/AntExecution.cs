@@ -51,6 +51,22 @@ public sealed record AntHandoff(
 
 /// <summary>Structured execution result (spec §4.3). Mission control flow reads these fields;
 /// the prose Narrative remains only for operators and backward compatibility.</summary>
+/// <summary>
+/// v2.19.0: what an execution cost. Recorded for observability and budget accounting; deliberately
+/// separate from <see cref="AntExecutionResult.StatusCode"/> so cost can never imply an outcome.
+/// </summary>
+public sealed record AntMetrics
+{
+    public int ModelCalls { get; init; }
+    public int ToolCalls { get; init; }
+    public double ElapsedSeconds { get; init; }
+    public int InputChars { get; init; }
+    public int OutputChars { get; init; }
+    public int RetryCount { get; init; }
+    /// <summary>Stable description of where this ran, for reproducing a result later.</summary>
+    public string? EnvironmentFingerprint { get; init; }
+}
+
 public sealed record AntExecutionResult
 {
     public required bool Success { get; init; }
@@ -64,12 +80,26 @@ public sealed record AntExecutionResult
     public List<AntHandoff> Handoffs { get; init; } = new();
     public List<string> Warnings { get; init; } = new();
     public AntFailure? Failure { get; init; }
+    /// <summary>
+    /// v2.19.0: typed execution metrics. Observability only — these never influence task status,
+    /// which is decided solely by <see cref="StatusCode"/>.
+    /// </summary>
+    public AntMetrics Metrics { get; init; } = new();
 
     public static AntExecutionResult Succeeded(string summary, string? narrative = null) =>
         new() { Success = true, StatusCode = "succeeded", Summary = summary, Narrative = narrative };
     public static AntExecutionResult Blocked(string reason) =>
         new() { Success = false, StatusCode = "blocked", Summary = reason,
                 Failure = new AntFailure(FailureClass.AuthorizationFailure, reason, Retryable: false) };
+    /// <summary>Completed, but with caveats the operator should see. Still a success.</summary>
+    public static AntExecutionResult SucceededWithWarnings(string summary, IEnumerable<string> warnings, string? narrative = null) =>
+        new() { Success = true, StatusCode = "succeeded_with_warnings", Summary = summary, Narrative = narrative,
+                Warnings = warnings?.Where(w => !string.IsNullOrWhiteSpace(w)).ToList() ?? new() };
+
+    /// <summary>Nothing to do — not a failure, and never reinforced as a success.</summary>
+    public static AntExecutionResult Skipped(string reason) =>
+        new() { Success = false, StatusCode = "skipped", Summary = reason };
+
     public static AntExecutionResult Failed(FailureClass cls, string reason) =>
         new() { Success = false, StatusCode = FailureClassify.IsRetryable(cls) ? "failed_retryable" : "failed_permanent",
                 Summary = reason, Failure = new AntFailure(cls, reason, FailureClassify.IsRetryable(cls)) };
