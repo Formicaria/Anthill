@@ -41,10 +41,13 @@ The system must never treat autonomy as permission to act without boundaries.
 
 # 2. Current Baseline
 
-**Shipping release: v2.19.0** — the adaptive mission runtime, part 1. Ants now return structured
-execution results instead of prose, task outcomes are mapped from a declared status rather than
-inferred from text, and a mission is only `completed_verified` when its verifier actually returned
-a pass. See `docs/ADAPTIVE_RUNTIME_STATUS.md` for what shipped, what did not, and why.
+**Shipping release: v2.20.0** — the adaptive mission runtime, complete. v2.19.0 (part 1) made
+ants return structured execution results, mapped task outcomes from declared status rather than
+inferred prose, and required an actual verifier PASS for `completed_verified`. v2.20.0 (part 2)
+reset the learning state derived under the old rule at a durable, backed-up, audited boundary:
+objective EMA to neutral, pre-boundary pheromone trails to neutral strength and marked
+`legacy_unverified` — retained for reporting, excluded from planning until they earn a post-reset
+success. See `docs/ADAPTIVE_RUNTIME_STATUS.md` for the full staged record.
 
 ANTHILL v2.7.0 already includes substantial foundations.
 
