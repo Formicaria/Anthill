@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v2.18.2 — Hotfix: the mission answer was never in the payload
+
+The Missions conversation showed **"Working — no answer recorded yet"** on every exchange, forever,
+including long-finished missions.
+
+**Cause.** `/missions/json` projected six fields:
+
+```csharp
+["id"], ["goal"], ["status"], ["success_score"], ["created_at"], ["saved_at"]
+```
+
+`final_result` and `user_result` were never in the response. The client read
+`m.final_result || m.user_result`, which was therefore always empty, and the thread correctly
+concluded there was no answer to show.
+
+This dates from **v2.16.0**, when the conversation view was introduced — the answer has never once
+displayed there. It survived the v2.18.1 reconciliation rewrite because that rewrite faithfully
+preserved the client's behaviour: both versions read fields the endpoint does not return. The
+v2.18.1 tests all passed because their fixtures were built from `final_result`, matching the client
+rather than the server.
+
+**Fix.** `/missions/json` now returns `answer` (preferring the synthesized `final_result`, falling
+back to the raw `user_result`) plus an `answer_truncated` flag. The value is capped at
+`MissionAnswerPreviewChars` (4000) because this endpoint serves up to 100 rows and a raw result can
+be an entire diff; the untruncated text is unchanged in `/missions/{id}/report`, which the activity
+disclosure already loads. When clipped, the exchange says so and points at Show activity instead of
+ending mid-sentence.
+
+**Tests.** The JS fixtures were rebuilt to match the real endpoint shape rather than the client's
+assumption — the flaw that let this hide. Three regression tests cover reading the field the server
+returns, an arriving answer registering as a change, and the truncation flag; reverting `answerOf`
+fails two of them. A C# guard asserts the endpoint contract directly, since no amount of client
+testing catches a missing column.
+
 ## v2.18.1 — Missions conversation: the three-second poll was destroying the thread
 
 The OpenWebUI-style Missions view shipped in v2.16.0 was unusable in practice. Every symptom traced
