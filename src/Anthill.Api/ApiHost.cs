@@ -1086,6 +1086,15 @@ public static partial class ApiHost
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["query"] = query,
+                // v2.20.0 Stage 7: reports must identify the learning reset boundary, so a rate
+                // measured after it is never silently compared against one measured before it.
+                ["learning_reset"] = Queen.Memory.LearningResetDate() is { } resetDate
+                    ? new Dictionary<string, object?>
+                    {
+                        ["date"] = resetDate,
+                        ["note"] = "derived learning state was reset at the v2.19.0 boundary; legacy trails re-enter planning after a post-reset success",
+                    }
+                    : null,
                 ["summary"] = new Dictionary<string, object?>
                 {
                     ["missions"] = missions.Count,

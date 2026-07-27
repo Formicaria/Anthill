@@ -619,6 +619,7 @@ public sealed partial class Queen : IDisposable
                 Memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
+                if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds }));
@@ -862,6 +863,23 @@ public sealed partial class Queen : IDisposable
                 ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
             }));
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
+    }
+
+    /// <summary>
+    /// v2.20.0: the archivist's memory candidates finally have a consumer. Each well-formed
+    /// candidate becomes a durable memory_candidate event with provenance — queryable by reporting,
+    /// never fed to planning, never certified here (auto_promote is recorded, not acted on).
+    /// Runs only on the completion path: a blocked or failed archival produced no candidates.
+    /// </summary>
+    private void IngestMemoryCandidates(Mission mission, Task task, AntExecutionResult execution)
+    {
+        var candidates = Outcomes.MemoryCandidateIngest.Extract(execution);
+        foreach (var candidate in candidates)
+            Memory.LogEvent(mission.Id, Outcomes.MemoryCandidateIngest.EventType,
+                $"Memory candidate [{candidate.MemoryClass}] {TextUtil.Truncate(candidate.Summary, 300)}",
+                task.Id, task.AssignedAnt, Outcomes.MemoryCandidateIngest.EventMetadata(candidate));
+        if (candidates.Count > 0)
+            Console.WriteLine($"Archived {candidates.Count} memory candidate(s) for mission {mission.Id}.");
     }
 
     private void RecordAgentMessage(string missionId, string? taskId, string sender, string recipient, string messageType,
