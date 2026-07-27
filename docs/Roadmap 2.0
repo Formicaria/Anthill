@@ -1,0 +1,93 @@
+NORTH_STAR phases 1–6 (V2.8–V2.13 lines): shipped. Dashboard console track: complete — maintenance only. Adaptive mission runtime stages 1–2 + learning reset: shipped (v2.19.0 / v2.20.0). Phase 7 (Shadow Operations): stages 1–2 of ~5 shipped (v2.17.0 / v2.18.0). Autonomy level in operation: Level 2 (Propose). Levels 3–4 are V3.
+
+Everything below is what remains between here and V3.0.0, in dependency order.
+
+Phase A — Handoff ingestion (target: v2.21.0)
+
+Source: ADR §5 Stage 3; ADAPTIVE_RUNTIME_STATUS §5.3.
+
+The specialists already emit structured AntHandoffs; the Queen records them and acts on nothing. This phase makes a handoff able to create a real follow-up task — the first genuinely adaptive behaviour, and the smallest remaining stage with the most already built.
+
+ TryAddDynamicTask: admit a handoff-derived task through the SAME authorization, contract, and permission gates as an initial-plan task (ADR §6: no admission path may skip them).
+ Wire HandoffGate.Evaluate as the admission control — its first production call site (currently zero; the codebase's recurring "tested code with no call site" defect).
+ Honour the handoff contract: Required vs advisory, Depth bounds, DedupeKey so a repeated handoff cannot spawn duplicate work.
+ Persistence + restart: dynamic tasks survive process restart exactly like planned tasks (Phase 1 durable-runtime guarantees apply to them, unchanged).
+ Guard test on the call site, not just the gate logic.
+
+Exit gate: a tester handoff to the medic demonstrably creates a bounded, deduplicated, gate-checked medic task — and a handoff can never grant a capability (ADR §6).
+
+Phase B — Adaptive mission control (target: v2.22.0)
+
+Source: ADR §5 Stages 4–5 (originally one release; keep them together).
+
+ AdaptiveMissionController: post-task assessment, typed decisions (continue / replan / repair / escalate / stop), bounded delta planning, no-progress detection. Replanning may not increase its own bounds (ADR §6).
+ Runtime-aware Planner: planning consults which roles are actually executable (gates, runtime health) instead of assuming the static roster.
+ Deterministic routing policies: same mission state ⇒ same routing decision; no model call in the routing path.
+ Distinguish, with separate budgets: static plan · handoff · delta plan · retry · repair loop · objective follow-up · separate mission (ADR's seven-way distinction).
+
+Exit gate: a mission with a failed non-critical branch visibly replans within bounds instead of running its dead static plan to the end; a mission making no progress stops instead of looping.
+
+Phase C — Learning that feeds forward (target: v2.23.0)
+
+Source: ADR §5 Stages 6–7; ADAPTIVE_RUNTIME_STATUS §5.3 (candidate pipeline, objective-level verification); Phase 5 (V2.12 skills line) integration debt.
+
+ Skill selection in normal planning: certified skills become candidate routes for ordinary missions — selection only; certification stays with the evaluation pipeline.
+ Objective progress model: objective state derived from verified evidence, not run counts.
+ Evidence-derived follow-ups: follow-up objectives created from what verification actually found, with their own budgets (never confused with retries).
+ Connect the stored memory_candidate events (v2.20.0) to the Phase 5 evaluation pipeline: candidates become evaluated skill inputs. auto_promote remains inert; promotion still requires verified evidence per the V2.12 rules.
+ Replace the interim MissionVerification gate with objective-level verification: "the goal was met", not merely "a verifier ran and passed". The interim gate stays as the floor.
+
+Exit gate: a skill earns its way into a plan through verified history; an objective closes because evidence says so; nothing promotes without the evaluation pipeline.
+
+Phase D — Controlled specialist activation (target: v2.24.0)
+
+Source: ADR §5 Stage 8; standing constraint "keep existing rollout gates" (v2.19.0 mandate).
+
+ Activation tiers: core / adaptive / full — a deliberate dial, not six ad-hoc flags.
+ Per-role activation still required on top of the tier (both gates, as today).
+ Activation state surfaced in the dashboard (truthful UI status — the V2.9.x tactical track's last open item).
+ Rollback: any tier change is one config write away from reversal, like the workspace flag.
+
+Exit gate: specialists execute live under the tier the operator chose, their failures are recorded as failures (guaranteed by v2.19.0), and one setting turns it all off.
+
+Phase E — Shadow Operations completion (target: v2.25.x, parallel-friendly)
+
+Source: NORTH_STAR Phase 7 (release-map note lists the remaining stages verbatim); DASHBOARD_WORKSPACE cross-reference ("currently headless").
+
+Stages 1–2 (recommendation engine, scoreboard, fault catalog, simulation harness) shipped in v2.17.0/v2.18.0. Remaining:
+
+ Live-incident wiring: ShadowOperator observes REAL incidents as they occur and records recommendations alongside what the operator actually did — still never executing. VerificationPolicy (today used only by the simulator) gets its production call site here.
+ Timing metrics: mean time to detect / diagnose / recover, per Phase 7's reliability-metrics list (13 metrics; the scoreboard covers four today).
+ Shadow dashboard panel: diagnosis / prediction / rollback bundle + qualification scoreboard + fault-simulation report, as a workspace panel like the other fifteen.
+ Automation conversation view (NORTH_STAR v2.16.0 "Next:" item) — console work, slots naturally alongside the panel build.
+ Safe Action Engine executor migration (NORTH_STAR release map, V2.14.0 note): route the homelab ActionExecutor path through the engine's lifecycle so Level 3 actions get its verification/rollback guarantees. Required before any V3 threshold about Level 3 actions can be measured honestly.
+ Fault-injection runs repeated on a schedule with stable results (a V3 threshold — start measuring early).
+
+Exit gate: the qualification scoreboard fills from live operation, not only replayed scenarios, and every Phase 7 reliability metric has a real number.
+
+Phase F — V3.0.0 readiness gate (no target until E is done)
+
+Source: NORTH_STAR Phase 7 "Required release thresholds" + §5 Autonomy Levels.
+
+Not a feature phase — an evaluation. V3 work may not begin until every threshold holds:
+
+ Zero silent mission loss during recovery testing.
+ Zero duplicate irreversible actions during idempotency testing.
+ Zero unverified outcomes counted as success (the v2.19/v2.20 releases exist to make this measurable at all).
+ Zero critical policy bypasses; zero credentials exposed in logs, prompts, memory, evidence.
+ All destructive capabilities fail closed.
+ All Level 3 actions have deterministic verification AND rollback or approved compensation.
+ Rollback success rate and shadow-recommendation accuracy meet operator-defined thresholds.
+ Repeated fault-injection runs stable; restart/crash-recovery suites pass.
+ The operator can disable all autonomous execution immediately.
+ Operator certification report produced.
+Not scheduled — trigger-based, by design
+
+These are recorded so they are never mistaken for forgotten work:
+
+Core ant Execute migrations (Researcher, Web, File, Coder, Builder). Only when one needs structured handoffs/artifacts or its text starts carrying a control decision (ADAPTIVE_RUNTIME_STATUS §4). Phase B may trigger Coder/Builder naturally.
+Autonomy Level 5. Reserved in NORTH_STAR; intentionally undefined.
+Dashboard track. Complete; remaining work is ordinary maintenance (DASHBOARD_WORKSPACE "build order is complete").
+Standing rules that bind every phase above
+
+From the permanent doctrine — restated because every phase here touches them: no test deleted, skipped, or weakened to force green; mission agents never receive apply_patch or unrestricted shell; a handoff may never grant a capability; auto-apply never precedes independent verification; control-plane roles stay non-executable; homelab collectors remain deterministic providers; every release bumps all version markers and keeps NORTH_STAR / ROADMAP / DASHBOARD_WORKSPACE naming the shipping version; assert the call site, not only the implementation.
