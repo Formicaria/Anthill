@@ -106,7 +106,7 @@ V2.14.x  Topology-first Dashboard console track  [COMPLETE at v2.15.0]
          redirect · standby chambers legible.
          v2.15.0 completed the track: tab groups · docking to all four edges with server-enforced
          rail budgets · one writer for ui_state.json · default layout · responsive/a11y ·
-         dashboard_workspace_enabled DEFAULT ON; v2.15.1 made the map full-page, promoted the last six cards to panels, and replaced docking with edge/corner snapping, still an instant rollback when set false.
+         dashboard_workspace_enabled DEFAULT ON; v2.15.1 made the map full-page, promoted the last six cards to panels, and replaced docking with edge/corner snapping; v2.15.2 fixed the workspace containing block and the fixed-chrome vertical budget, still an instant rollback when set false.
 
 V2.9.x   Ant Execution Framework tactical track (docs/ANT_EXECUTION.md):
          runtime classification · execution contracts · structured results ·

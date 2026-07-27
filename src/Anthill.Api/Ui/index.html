@@ -340,7 +340,12 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
    below the map (the telemetry bar, the card grid, Colony Vitals, and the summary panels) is taken
    out of flow here; each of those cards is now a workspace panel instead, so nothing is lost.
    Scoped to .ws-active so the classic page is untouched when the kill switch is off. */
-#page-overview.ws-active{overflow:hidden;padding:0;gap:0;}
+/* v2.15.2: THE containing block. #main-area and .page carry no position, so without this the
+   workspace's absolutely-positioned layers (#ws-topology, #ws-topbar, #ws-bottombar) resolve
+   against the initial containing block — the whole viewport — and slide under the nav sidebar and
+   past the bottom edge. That is what clipped the caste legend and the colony view bar on the left
+   and pushed the mission directive box off screen. */
+#page-overview.ws-active{position:relative;overflow:hidden;padding:0;gap:0;}
 #page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}
 #page-overview.ws-active #ws-root{flex:1;min-height:0;}
 
@@ -349,10 +354,29 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
   background:rgba(8,12,20,.82);border-bottom:1px solid var(--border);
   backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
 #ws-topbar > #tb-overview{display:block !important;margin:0;padding:4px 10px;}
-/* Top-anchored topology overlays clear the status bar instead of hiding beneath it. */
+/* The mission directive box is primary chrome, not map decoration: it gets its own bar at the
+   bottom of the workspace so a floating panel can never cover it. */
+#ws-bottombar{position:absolute;left:0;right:0;bottom:0;z-index:46;pointer-events:auto;}
+#ws-bottombar > #mission-bar{position:static;}
+/* Bottom-anchored topology overlays sit above it rather than behind it. */
+#ws-topology .topo-ov-slot[data-ovslot="bottom-left"],
+#ws-topology .topo-ov-slot[data-ovslot="bottom-center"],
+#ws-topology .topo-ov-slot[data-ovslot="bottom-right"]{bottom:62px;}
+
+/* The workspace toolbar (Locked / Modules / Focus / Reset) also clears the status bar — the bar
+   has the higher z-index, so without this it simply hides the toolbar. */
+#page-overview.ws-active .ws-toolbar{top:58px;}
+#page-overview.ws-active .ws-modules{top:94px;max-height:calc(100vh - 170px);overflow-y:auto;}
+
+/* Top-anchored topology overlays clear BOTH the status bar (0-52) and the workspace toolbar
+   (58-90). Applied to every top slot rather than to the view bar specifically, so an overlay the
+   operator re-anchors cannot land underneath the chrome either. */
 #ws-topology .topo-ov-slot[data-ovslot="top-left"],
 #ws-topology .topo-ov-slot[data-ovslot="top-center"],
-#ws-topology .topo-ov-slot[data-ovslot="top-right"]{top:52px;}
+#ws-topology .topo-ov-slot[data-ovslot="top-right"]{top:96px;}
+/* Left/centre slots hug their content instead of stretching to the widest sibling. */
+#ws-topology .topo-ov-slot[data-ovslot="top-left"],
+#ws-topology .topo-ov-slot[data-ovslot="bottom-left"]{align-items:flex-start;}
 
 /* -- Colony Page Layout ------------------------------------------------------ */
 #page-colony{flex-direction:row !important;overflow:hidden;}
@@ -384,28 +408,6 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
-/* The always-available Overlays control + its menu. */
-#topo-ov-btn{position:absolute;bottom:10px;right:10px;z-index:8;background:rgba(2,6,23,.72);
-  border:1px solid rgba(34,211,238,.22);border-radius:6px;color:var(--muted);font-size:9px;
-  padding:4px 8px;cursor:pointer;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
-#topo-ov-btn:hover{color:var(--text);}
-#topo-ov-btn:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:1px;}
-#topo-ov-menu{position:absolute;bottom:38px;right:10px;z-index:9;min-width:236px;display:flex;
-  flex-direction:column;gap:3px;padding:7px;background:rgba(10,14,22,.97);
-  border:1px solid var(--border);border-radius:8px;}
-#topo-ov-menu[hidden]{display:none;}
-.topo-ov-row{display:flex;align-items:center;gap:6px;}
-.topo-ov-toggle{flex:1;display:flex;align-items:center;gap:6px;text-align:left;background:transparent;
-  border:0;color:var(--muted);font-size:10px;padding:4px 5px;border-radius:5px;cursor:pointer;}
-.topo-ov-toggle:hover{background:rgba(255,255,255,.06);color:var(--text);}
-.topo-ov-toggle:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:-2px;}
-.topo-ov-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;}
-.topo-ov-dot.on{background:var(--hud-cyan,#22d3ee);}
-.topo-ov-anchor{background:var(--inner);border:1px solid var(--border);border-radius:4px;
-  color:var(--muted);font-size:9px;padding:2px 3px;}
-.topo-ov-reset{margin-top:4px;background:transparent;border:1px solid var(--border);border-radius:5px;
-  color:var(--muted);font-size:9px;padding:4px 6px;cursor:pointer;}
-.topo-ov-reset:hover{color:var(--text);}
 .chud-legend{display:flex;flex-wrap:wrap;gap:5px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   /* v2.14.15: the legend now lists every registry ant instead of the first 15, so it scrolls
      rather than growing past the canvas. */
@@ -1585,11 +1587,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="topo-ov-slot" data-ovslot="bottom-left"></div>
           <div class="topo-ov-slot" data-ovslot="bottom-center"></div>
           <div class="topo-ov-slot" data-ovslot="bottom-right"></div>
-          <!-- Deliberately NOT an overlay: if this could be hidden, hiding everything would be
-               unrecoverable without hand-editing ui_state.json. -->
-          <button id="topo-ov-btn" title="Show or hide topology overlays"
-                  aria-haspopup="true" aria-expanded="false" aria-controls="topo-ov-menu">Overlays</button>
-          <div id="topo-ov-menu" role="menu" aria-label="Topology overlays" hidden></div>
+          <!-- v2.15.2: overlay show/hide and anchoring moved into the workspace Modules menu,
+               so there is one place to control everything that is on screen. That menu lives in
+               the always-present toolbar, so hiding every overlay is still recoverable. -->
           <!-- Mission bar overlays the bottom of the canvas -->
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">

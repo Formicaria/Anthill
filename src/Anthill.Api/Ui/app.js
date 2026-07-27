@@ -1516,7 +1516,7 @@ function applyOverlayState(){
     const slot=document.querySelector('[data-ovslot="'+st.anchor+'"]');
     if(slot&&el.parentElement!==slot) slot.appendChild(el);
   });
-  renderOverlayMenu();
+  refreshOverlayMenu();
 }
 
 function setOverlay(id,changes){
@@ -1535,52 +1535,35 @@ function resetOverlays(){
   saveUiState();
 }
 
-/** The menu is the non-drag equivalent for every overlay capability (accessibility rule). */
-function renderOverlayMenu(){
-  const box=document.getElementById('topo-ov-menu');
-  if(!box||box.hidden) return;
-  box.innerHTML=Object.keys(TOPOLOGY_OVERLAYS).map(id=>{
-    const def=TOPOLOGY_OVERLAYS[id], st=overlayState(id);
-    return `<div class="topo-ov-row">
-      <button class="topo-ov-toggle" data-ovtoggle="${id}" aria-pressed="${st.visible?'true':'false'}">
-        <span class="topo-ov-dot${st.visible?' on':''}" aria-hidden="true"></span>${escapeHtml(def.label)}
-      </button>
-      <select class="topo-ov-anchor" data-ovanchor="${id}" aria-label="Anchor for ${escapeHtml(def.label)}">
-        ${OVERLAY_ANCHORS.map(a=>`<option value="${a}"${a===st.anchor?' selected':''}>${a}</option>`).join('')}
-      </select>
-    </div>`;
-  }).join('')+`<button class="topo-ov-reset" data-ovact="reset">Reset overlays</button>`;
+/**
+ * v2.15.2: overlay control moved into the workspace Modules menu.
+ *
+ * It previously lived in a separate "Overlays" button pinned to the canvas, which meant two
+ * different places to manage what is on screen. The Modules menu already lists every panel, so
+ * overlays belong in the same list — and that menu lives in the always-present workspace toolbar,
+ * so hiding every overlay is still recoverable, which was the standalone button's only real job.
+ *
+ * dashboard-workspace.js renders the rows; this is the bridge it reads and writes through. Kept
+ * deliberately small so the two modules share state rather than each keeping their own copy.
+ */
+window.AnthillTopologyOverlays = {
+  list: function(){
+    return Object.keys(TOPOLOGY_OVERLAYS).map(function(id){
+      var st=overlayState(id);
+      return { id:id, label:TOPOLOGY_OVERLAYS[id].label, visible:st.visible, anchor:st.anchor };
+    });
+  },
+  anchors: function(){ return OVERLAY_ANCHORS.slice(); },
+  set: function(id,changes){ setOverlay(id,changes); },
+  reset: function(){ resetOverlays(); },
+};
+
+/** Re-render whichever surface is currently showing overlay rows. */
+function refreshOverlayMenu(){
+  if(window.AnthillWorkspace && typeof window.AnthillWorkspace.rerender==='function')
+    window.AnthillWorkspace.rerender();
 }
 
-function toggleOverlayMenu(force){
-  const box=document.getElementById('topo-ov-menu'), btn=document.getElementById('topo-ov-btn');
-  if(!box||!btn) return;
-  const open=typeof force==='boolean'?force:box.hidden;
-  box.hidden=!open;
-  btn.setAttribute('aria-expanded',open?'true':'false');
-  if(open) renderOverlayMenu();
-}
-
-document.addEventListener('click',e=>{
-  const btn=e.target.closest('#topo-ov-btn');
-  if(btn){ toggleOverlayMenu(); return; }
-  const t=e.target.closest('[data-ovtoggle]');
-  if(t){ const id=t.dataset.ovtoggle; setOverlay(id,{visible:!overlayState(id).visible}); return; }
-  const act=e.target.closest('[data-ovact="reset"]');
-  if(act){ resetOverlays(); return; }
-  // Clicking anywhere else closes the menu, matching the Modules menu's behaviour.
-  const box=document.getElementById('topo-ov-menu');
-  if(box&&!box.hidden&&!e.target.closest('#topo-ov-menu')) toggleOverlayMenu(false);
-});
-document.addEventListener('change',e=>{
-  const sel=e.target.closest('[data-ovanchor]');
-  if(sel) setOverlay(sel.dataset.ovanchor,{anchor:sel.value});
-});
-document.addEventListener('keydown',e=>{
-  if(e.key!=='Escape') return;
-  const box=document.getElementById('topo-ov-menu');
-  if(box&&!box.hidden){ toggleOverlayMenu(false); const b=document.getElementById('topo-ov-btn'); if(b) b.focus(); }
-});
 
 
 function showInspector(n){
@@ -6903,6 +6886,17 @@ async function initDashboardWorkspace(){
   }
   var tb=document.getElementById('tb-overview');
   if(tb && tb.parentElement!==topbar) topbar.appendChild(tb);
+
+  // v2.15.2: the mission directive box is how work is started — it must never be behind a panel
+  // or off the bottom of the screen. Re-parented out of the canvas into its own bar, same
+  // move-don't-duplicate approach as the status bar above.
+  var bottombar=document.getElementById('ws-bottombar');
+  if(!bottombar){
+    bottombar=document.createElement('div'); bottombar.id='ws-bottombar';
+    page.appendChild(bottombar);
+  }
+  var mb=document.getElementById('mission-bar');
+  if(mb && mb.parentElement!==bottombar) bottombar.appendChild(mb);
   // Stage 6: the topology layer is a SIBLING placed before #ws-root, so panels stack above the
   // map by document order without either one needing a z-index arms race.
   var topo=document.getElementById('ws-topology');

@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.15.1) — TRACK COMPLETE
+## WHERE WE ARE (as of v2.15.2) — TRACK COMPLETE
 
 **Shipped and working:**
 
@@ -144,6 +144,11 @@ responsive/accessibility pass.
 rule), promoted the last six cards to panels for fifteen total, fixed the clipped colony view bar
 and the mid-page status bar, and **replaced docking with edge/corner snapping** — halves and
 quadrants. Saved docked layouts migrate to the equivalent snap rather than breaking.
+
+**v2.15.2** fixed the workspace chrome positioning: `#page-overview.ws-active` needed
+`position: relative`, without which every absolute layer resolved against the viewport and rendered
+under the nav sidebar. The fixed chrome now has an explicit vertical budget (status bar 0-52,
+toolbar 58-90, overlay slots from 96, mission bar pinned at the bottom above the panel layer).
 
 ### Release numbering correction
 
