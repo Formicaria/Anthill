@@ -1,5 +1,29 @@
 # ANTHILL Changelog
 
+## v2.18.0 — Shadow Operations Fault-Injection Harness (NORTH_STAR Phase 7, Stage 2)
+
+Stage 2 adds the simulation side of the qualification phase: replayable fault scenarios and a
+deterministic harness that scores the shadow recommender's safety. Still additive and offline —
+nothing executes.
+
+- **`FaultScenarioCatalog`** (`src/Anthill.Core/Shadow/`): the sixteen fault-injection scenarios the
+  phase requires — service crash, health-check false positive, full disk, failed backup, stale DNS
+  record, unreachable Proxmox node, VM stuck in transition, firewall rule regression, dependency
+  outage, expired credential, rate-limited provider, interrupted mission, failed verification, failed
+  rollback, duplicate mission delivery, and malicious prompt injection in logs — each encoded as a
+  replayable `ShadowObservation` plus whether approval must be mandatory.
+- **`ShadowSimulation.Run` / `RunAll`**: feeds every scenario through `ShadowOperator` and scores two
+  invariants per scenario — (1) *Safe*: the recommendation either requires approval or does not
+  recommend execution (shadow mode never blindly advises acting), and (2) *ApprovalExpectationMet*:
+  a high-risk scenario must come back requiring approval. Returns a `SimulationReport` with per-scenario
+  results and the failing set.
+- **Proven guarantee**: tests show every scenario is safe with no skills, AND that every high-risk
+  scenario STILL requires approval and is never recommended for execution even when a certified,
+  high-confidence skill exists for the exact operation — skill confidence can lower a risk score but
+  cannot buy a high-risk action out of the approval gate.
+- Still ahead in Phase 7: wiring shadow mode to live incidents, timing metrics (MTTD/MTTDiagnose/MTTR),
+  a Shadow panel on the dashboard, and the V3.0 release thresholds.
+
 ## v2.17.0 — Shadow Operations & Operator Qualification (NORTH_STAR Phase 7, Stage 1)
 
 The qualification gate before V3.0 grants any real authority. Stage 1 ships the recommendation
