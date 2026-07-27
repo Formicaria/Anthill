@@ -41,7 +41,7 @@ The system must never treat autonomy as permission to act without boundaries.
 
 # 2. Current Baseline
 
-**Shipping release: v2.22.0** — the skills loop closes: a task records the procedure it followed, and a verified mission credits it. Previously v2.21.0 — Phases A–C of `docs/REMAINING_WORK.md`. Handoff ingestion: a
+**Shipping release: v2.23.0** — observed routes become skill candidates: a hypothesis that must still earn certification through verified use. Previously v2.22.0 — the skills loop closes: a task records the procedure it followed, and a verified mission credits it. Previously v2.21.0 — Phases A–C of `docs/REMAINING_WORK.md`. Handoff ingestion: a
 specialist's handoff becomes a real gated follow-up task. Adaptive mission control: the Queen
 consults a bounded decision layer after each wave and may add a focused repair or the missing
 verification, or stop a mission that has stopped progressing. Runtime-aware planning: the planner
