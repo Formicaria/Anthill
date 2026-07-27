@@ -909,6 +909,22 @@ public sealed partial class Queen : IDisposable
                 task.Id, task.AssignedAnt, Outcomes.MemoryCandidateIngest.EventMetadata(candidate));
         if (candidates.Count > 0)
             Console.WriteLine($"Archived {candidates.Count} memory candidate(s) for mission {mission.Id}.");
+
+        // v2.23.0 Phase C4: a verified route the archivist observed becomes a skill CANDIDATE —
+        // a hypothesis, usable for nothing, appearing in no plan. It earns standing only by being
+        // followed and verified again through RecordOutcome. Registering an observation as
+        // evidence is exactly the mistake v2.19.0 exists to prevent.
+        var outcome = Outcomes.MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks));
+        var routes = ProceduralCandidatePromotion.Register(Skills, candidates, outcome);
+        if (routes.Count > 0)
+        {
+            Memory.SaveSkillRegistry(Skills);
+            foreach (var id in routes)
+                Memory.LogEvent(mission.Id, "skill_candidate_registered",
+                    $"Observed route registered as a skill candidate (usable for nothing until verified): {id}",
+                    task.Id, "archivist",
+                    new() { ["skill_id"] = id, ["mission_outcome"] = outcome, ["status"] = "Candidate" });
+        }
     }
 
     /// <summary>
