@@ -167,6 +167,24 @@ public sealed partial class SqliteMemory : IDisposable
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, task_id TEXT, ant_name TEXT,
             event_type TEXT NOT NULL, message TEXT NOT NULL, metadata_json TEXT,
             created_at TEXT NOT NULL, FOREIGN KEY (mission_id) REFERENCES missions(id))",
+        // v2.24.0: the Shadow Operations line had no storage at all, so a recommendation could
+        // never be compared with what the operator actually did — qualification could only ever be
+        // computed over replayed scenarios. Recommendation and outcome are separate tables because
+        // they arrive at different times; joining them is what produces a scoreable pair.
+        @"CREATE TABLE IF NOT EXISTS shadow_recommendations (
+            incident_id TEXT PRIMARY KEY, diagnosis TEXT NOT NULL DEFAULT '',
+            proposed_action TEXT NOT NULL DEFAULT '', chosen_skill_id TEXT,
+            chosen_skill_confidence REAL NOT NULL DEFAULT 0, risk_level TEXT,
+            risk_score INTEGER NOT NULL DEFAULT 0, risk_requires_approval INTEGER NOT NULL DEFAULT 0,
+            risk_reasons_json TEXT,
+            predicted_outcome TEXT NOT NULL DEFAULT '', verification_plan_json TEXT,
+            rollback_plan TEXT, rollback_reason TEXT,
+            would_recommend_execution INTEGER NOT NULL DEFAULT 0, observed_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS shadow_outcomes (
+            incident_id TEXT PRIMARY KEY, diagnosis_correct INTEGER NOT NULL DEFAULT 0,
+            action_was_needed INTEGER NOT NULL DEFAULT 0, action_matched INTEGER NOT NULL DEFAULT 0,
+            would_have_succeeded INTEGER NOT NULL DEFAULT 0, operator_note TEXT,
+            resolved_at TEXT NOT NULL)",
         // v2.21.0: the V2.12 skills line was in-memory only — every promotion a skill earned was
         // lost on exit, which is why nothing could safely plan with skills or feed them candidates.
         @"CREATE TABLE IF NOT EXISTS skills (
@@ -280,6 +298,16 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v2.24.0: the first cut of this table stored only the risk LABEL. `QualificationMetrics`
+        // counts a policy violation as "would have recommended execution while approval was
+        // required" — with the approval flag unpersisted, that count could only ever rehydrate as
+        // zero, i.e. the safety invariant would have reported itself permanently satisfied.
+        AddMissing("shadow_recommendations", new()
+        {
+            ["risk_score"] = "INTEGER NOT NULL DEFAULT 0",
+            ["risk_requires_approval"] = "INTEGER NOT NULL DEFAULT 0",
+            ["risk_reasons_json"] = "TEXT",
+        });
         // v2.20.0 Stage 7: pre-reset trails are marked legacy — retained for reporting, excluded
         // from planning until they earn a post-reset success, protected from pruning.
         AddMissing("pheromone_trails", new() { ["legacy"] = "INTEGER NOT NULL DEFAULT 0" });
@@ -322,6 +350,7 @@ public sealed partial class SqliteMemory : IDisposable
             (11, "autonomy_learning", "Phase 4 learning loop: per-objective success EMA column (objectives.success_ema) verified."),
             (12, "durable_skills", "V2.12 skills line persisted (skills table) — promotion state now survives restart."),
             (13, "skill_provenance", "tasks.skill_id records which proven procedure a task followed, closing the learning loop."),
+            (14, "shadow_qualification", "Shadow recommendations and operator outcomes persisted — qualification can accumulate from live incidents, not only replayed scenarios."),
         };
         foreach (var (id, name, description) in migrations)
         {

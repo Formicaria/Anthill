@@ -99,7 +99,7 @@ running its dead static plan to the end; a mission making no progress stops inst
 
 ---
 
-## Phase C — Learning that feeds forward (target: v2.21.0, same release)
+## Phase C — Learning that feeds forward
 
 *Source: ADR §5 Stages 6–7; ADAPTIVE_RUNTIME_STATUS §5.3 (candidate pipeline, objective-level
 verification); Phase 5 (V2.12 skills line) integration debt.*
@@ -134,10 +134,9 @@ while appearing to work. A fifth instance of "tested code with no call site", in
 
 ### C2 — recording outcomes back into skills (target: next release)
 
-- [ ] Record verified mission outcomes against the skill that was used, so standing is earned from
-      live work rather than only from the shadow simulator. Needs a skill reference on the task
-      (schema change) — a plan can currently be *informed* by a skill without recording which one
-      it followed, so the loop reads but does not yet write.
+- [x] **SHIPPED v2.22.0.** Record verified mission outcomes against the skill that was used:
+      `tasks.skill_id` (migration 13) carries provenance and `Queen.CreditSkills` reports the
+      outcome back at mission finalisation, gated on `completed_verified`.
 - [x] **C3 — Objective progress model — SHIPPED v2.22.0.** `ObjectiveProgress` derives what an
       objective ACHIEVED from its run history instead of from how many times it ran. The defect:
       `RecordObjectiveRunOutcome` moved an objective to Done the moment `RunCount >= MaxRuns`, so
@@ -146,16 +145,23 @@ while appearing to work. A fifth instance of "tested code with no call site", in
       draws the distinction, judged on evidence rather than on whether the FINAL run happened to
       succeed (achievement is not undone by a later failure). Pre-v2.19 runs fail closed. No new
       storage — the evidence was always in `autonomy_runs`, it was simply never asked.
-- [ ] Evidence-derived follow-ups: follow-up objectives created from what verification actually
-      found, with their own budgets (never confused with retries).
+- [x] **C6 — evidence-derived follow-ups — SHIPPED v2.24.0.** `EvidenceFollowUps` reads the
+      verifier's "Missing Steps:" findings — which nothing had ever consumed — into objectives
+      with their own budget and a depth cap, traceable to the sentence that caused each one. Only
+      verified missions produce them.
 - [x] **C4 — memory candidates into the evaluation pipeline — SHIPPED v2.23.0.**
       `ProceduralCandidatePromotion` registers a verified mission's observed route as a skill
       **Candidate** — usable for nothing, in no plan, no permission, no success count.
       Registration records no outcome, so observation can never promote; standing is still earned
       only through `RecordOutcome` with a promotable bundle. Route ids derive from the route so the
       same sequence converges on one skill. `auto_promote` remains inert throughout.
-- [ ] Replace the interim `MissionVerification` gate with objective-level verification: "the goal
-      was met", not merely "a verifier ran and passed". The interim gate stays as the floor.
+- [x] **C5 — objective-level verification — SHIPPED v2.24.0.** `ObjectiveVerification` requires
+      the deliverable the goal asked for on top of the interim gate, which remains the floor.
+      Deliberately modest: only a deterministic check (a goal plainly asking for a file change must
+      have proposed one), because a model asserting "the goal was met" is the evidence v2.19.0
+      stopped accepting. Unreadable goals fall back to the floor; read-only goals never require a
+      change. Additive — proven by test to never admit what the floor rejects. Off by default
+      (`objective_verification_enabled`).
 
 **Exit gate:** a skill earns its way into a plan through verified history; an objective closes
 because evidence says so; nothing promotes without the evaluation pipeline.
@@ -178,8 +184,9 @@ because evidence says so; nothing promotes without the evaluation pipeline.
       behaviour. Defaulting to `core` would have silently stopped specialists in every deployment
       that had already enabled them, on upgrade, with nothing announcing it. Safety comes from the
       per-role flags, which remain off by default.
-- [ ] Activation state surfaced in the dashboard (truthful UI status — the V2.9.x tactical track's
-      last open item).
+- [x] **SHIPPED v2.24.0.** `/colony/registry` reports the activation tier, its explanation, and
+      per-role `admitted_by_tier` / `gate_open`, so the console can distinguish "the role's flag is
+      off" from "the tier does not admit it".
 - [x] Rollback: `activation_tier` is one config write away from reversal.
 
 **Exit gate:** specialists execute live under the tier the operator chose, their failures are
@@ -195,13 +202,25 @@ DASHBOARD_WORKSPACE cross-reference ("currently headless").*
 Stages 1–2 (recommendation engine, scoreboard, fault catalog, simulation harness) shipped in
 v2.17.0/v2.18.0. Remaining:
 
-- [ ] Live-incident wiring: `ShadowOperator` observes REAL incidents as they occur and records
-      recommendations alongside what the operator actually did — still never executing.
-      `VerificationPolicy` (today used only by the simulator) gets its production call site here.
-- [ ] Timing metrics: mean time to detect / diagnose / recover, per Phase 7's reliability-metrics
-      list (13 metrics; the scoreboard covers four today).
-- [ ] Shadow dashboard panel: diagnosis / prediction / rollback bundle + qualification scoreboard
-      + fault-simulation report, as a workspace panel like the other fifteen.
+- [~] **E0 — shadow persistence + surface — SHIPPED v2.24.0** (the unscoped prerequisite). The
+      shadow line had no table, no endpoint and no production call site. Recommendations and
+      operator outcomes now persist (migration 14), `/shadow/json` exposes the scoreboard, timing
+      metrics and the unjudged backlog, and an empty scoreboard reports "not qualified" rather than
+      a passing rate.
+- [x] **Live-incident wiring — SHIPPED v2.24.0.** `LiveIncidentObserver` is called from
+      `IncidentManager.Open` (via an optional hook wired at the composition root, so the homelab
+      layer stays decoupled). Records what shadow would have done, never executes, cannot throw,
+      fires only for genuinely new incidents. `VerificationPolicy` reaches production through
+      `ShadowOperator.Recommend`'s verification plan. Off by default
+      (`shadow_observation_enabled`).
+- [~] Timing metrics: `ShadowTimingMetrics` computes median/P90 resolution time from stored
+      timestamps. Mean-time-to-**detect** and **diagnose** need the live-incident wiring above to
+      record those moments separately; resolution time is measurable today.
+- [x] **Shadow dashboard panel — SHIPPED v2.24.0.** Homelab → Automation shows the
+      diagnosis / prediction / rollback bundle beside the qualification scoreboard, computed by
+      `QualificationScoreboard.Compute` over rehydrated stored pairs (its first production call
+      site). Zero scored incidents renders as "not qualified", never as a pass. Persisting the
+      risk approval flag fixed `PolicyViolations`, which could otherwise only ever read as 0.
 - [ ] Automation conversation view (NORTH_STAR v2.16.0 "Next:" item) — console work, slots
       naturally alongside the panel build.
 - [ ] Safe Action Engine executor migration (NORTH_STAR release map, V2.14.0 note): route the

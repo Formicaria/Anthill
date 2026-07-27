@@ -30,6 +30,43 @@ public sealed record QualificationMetrics(
     int PolicyViolations,             // recommended execution while approval was required (must be 0)
     int UnverifiedSuccessClaims);     // predicted success with no verification plan (must be 0)
 
+/// <summary>
+/// v2.24.0: the timing half of the phase's reliability metrics. Kept separate from the accuracy
+/// metrics because they answer a different question and come from a different source — accuracy is
+/// judged by the operator, timing is measured from timestamps.
+///
+/// Reported as a MEDIAN rather than a mean: one incident left open over a weekend would drag an
+/// average far enough to make the number meaningless, and the threshold this feeds is about
+/// typical behaviour, not total elapsed time.
+/// </summary>
+public sealed record ShadowTimingMetrics(int Sample, double MedianResolutionSeconds, double P90ResolutionSeconds)
+{
+    public static readonly ShadowTimingMetrics Empty = new(0, 0, 0);
+
+    /// <summary>
+    /// Compute from observed→resolved spans. An empty sample reports zeros rather than throwing or
+    /// fabricating — the same division-guard stance the accuracy metrics take, so a system with no
+    /// history never reports a flattering number.
+    /// </summary>
+    public static ShadowTimingMetrics From(IReadOnlyList<double>? seconds)
+    {
+        if (seconds is null || seconds.Count == 0) return Empty;
+        var sorted = seconds.Where(s => s >= 0).OrderBy(s => s).ToList();
+        if (sorted.Count == 0) return Empty;
+        return new ShadowTimingMetrics(sorted.Count, Percentile(sorted, 0.50), Percentile(sorted, 0.90));
+    }
+
+    private static double Percentile(List<double> sorted, double p)
+    {
+        if (sorted.Count == 1) return Math.Round(sorted[0], 3);
+        var rank = p * (sorted.Count - 1);
+        var lo = (int)Math.Floor(rank);
+        var hi = (int)Math.Ceiling(rank);
+        var value = lo == hi ? sorted[lo] : sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
+        return Math.Round(value, 3);
+    }
+}
+
 public static class QualificationScoreboard
 {
     public static QualificationMetrics Compute(
