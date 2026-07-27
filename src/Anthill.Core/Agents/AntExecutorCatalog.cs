@@ -26,9 +26,18 @@ public static class AntExecutorCatalog
 
     public static IReadOnlyDictionary<string, RoleAvailability> Snapshot { get { lock (Lock) return _snapshot; } }
 
-    /// <summary>Specialist roles arriving via the framework (Stage D canaries) and their gates.</summary>
+    /// <summary>
+    /// Specialist roles arriving via the framework (Stage D canaries) and their gates.
+    ///
+    /// v2.22.0: THREE conditions, all required — the master switch, the activation tier's ceiling,
+    /// and the role's own rollout flag. The tier can only ever narrow: a role whose flag is off
+    /// stays off at `full`, so raising the tier never switches anything on by itself and every
+    /// existing rollout gate remains exactly as binding as before.
+    /// </summary>
     public static bool SpecialistGateOpen(string roleId) =>
-        AnthillRuntime.EnableSpecialistAntExecution && roleId switch
+        AnthillRuntime.EnableSpecialistAntExecution
+        && ActivationTiers.Admits(AnthillRuntime.ActivationTier, roleId)
+        && roleId switch
         {
             "tester" => AnthillRuntime.EnableTesterAnt,
             "soldier" => AnthillRuntime.EnableSoldierAnt,

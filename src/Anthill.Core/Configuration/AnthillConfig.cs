@@ -87,6 +87,22 @@ public sealed class AnthillConfig
     /// <summary>v2.21.0 Phase B: the adaptive controller may add bounded repair/verification tasks
     /// and stop a stalled mission. Off by default — it changes when a mission ends.</summary>
     [JsonPropertyName("adaptive_mission_control_enabled")] public bool AdaptiveMissionControlEnabled { get; set; } = false;
+    /// <summary>
+    /// v2.22.0 Phase D: how much of the colony may run — "core" | "adaptive" | "full".
+    ///
+    /// A CEILING, not a switch: per-role rollout flags still apply on top, so raising the tier can
+    /// never turn a role on by itself. Narrowing it CAN turn roles off, which is the point.
+    ///
+    /// Defaults to "full" — meaning "defer entirely to the per-role flags", i.e. exactly the
+    /// behaviour before this setting existed. Defaulting to "core" would have silently stopped
+    /// specialists in every deployment that had already enabled them, on upgrade, with nothing
+    /// announcing it. Safety here comes from the per-role flags, which are all off by default;
+    /// the tier exists so an operator can additionally say "never run anything beyond X",
+    /// whatever those flags say.
+    ///
+    /// Unrecognised values resolve to "core" — a typo must narrow, never widen.
+    /// </summary>
+    [JsonPropertyName("activation_tier")] public string ActivationTier { get; set; } = "full";
     [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
     [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";

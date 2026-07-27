@@ -19,6 +19,13 @@ public sealed class Planner
     // one canonical role catalog, no duplicated executable lists (spec §7.1).
     private static HashSet<string> AllowedAnts => new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The skill ids offered to the model for THIS plan. A claimed skill_id is honoured only if it
+    /// is in here: credit must attach to a procedure the planner was actually shown, never to one
+    /// a model named from nowhere.
+    /// </summary>
+    private HashSet<string> _offeredSkillIds = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
 
@@ -62,6 +69,10 @@ public sealed class Planner
         // v1.8.16: read explicit mission constraints up front. A verification-only / read-only /
         // "do not modify files" mission must never have coder patch-proposal tasks planned for it.
         var constraints = MissionConstraints.Parse(goal);
+
+        // v2.22.0: remember exactly which skills this plan was shown, so a claimed skill_id can be
+        // checked against what was offered rather than taken on the model's word.
+        _offeredSkillIds = SkillContextIds(skillContext);
 
         // Long specification / architecture / framework documents are never sent into a single
         // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
@@ -108,7 +119,7 @@ Rules:
 - Return ONLY valid JSON.
 Do not wrap JSON in markdown code fences.
 - Create between {AnthillRuntime.MinDynamicTasks} and {AnthillRuntime.MaxDynamicTasks} tasks.
-- assigned_ant must be one of: researcher, web, file, coder, builder, verifier.
+- assigned_ant must be one of the ants listed above.
 - assigned_worker is optional but, when present, must be a registered worker under assigned_ant.
   Prefer these worker IDs: researcher.repo_researcher, researcher.mission_researcher,
   web.source_finder, web.source_verifier, file.file_scout, file.file_reader,
@@ -123,6 +134,9 @@ Do not wrap JSON in markdown code fences.
 - Use file/coder for code, scripts, patches, folders, repos, bugs, refactors, and creating or editing any file.
 - Final task should usually be verifier.
 - depends_on should usually be [] because ANTHILL auto-wires safe dependencies.
+- skill_id is optional. Set it ONLY to the exact id of a proven procedure listed above that this
+  task follows. It records which procedure was used so its track record can be updated; it grants
+  no extra permission. Never invent an id.
 
 Required JSON:
 {{
@@ -266,6 +280,25 @@ Required JSON:
         return tasks;
     }
 
+    /// <summary>
+    /// The ids inside a rendered skill-context block. Parsing the block the model actually saw
+    /// keeps "what was offered" and "what may be claimed" from drifting apart — the alternative,
+    /// passing the registry in separately, has two sources of truth and no check that they agree.
+    /// </summary>
+    internal static HashSet<string> SkillContextIds(string? skillContext)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in (skillContext ?? "").Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+            if (!trimmed.StartsWith("- ", StringComparison.Ordinal)) continue;
+            var rest = trimmed[2..];
+            var stop = rest.IndexOf(" [", StringComparison.Ordinal);
+            if (stop > 0) ids.Add(rest[..stop].Trim());
+        }
+        return ids;
+    }
+
     private List<Task> TasksFromJson(JsonObject parsed, string goal)
     {
         if (parsed["tasks"] is not JsonArray rawTasks) return new();
@@ -284,7 +317,12 @@ Required JSON:
             var taskType = (obj["task_type"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             if (taskType.Length == 0) taskType = TextUtil.InferTaskType(assignedAnt, title, description);
             var dependsOn = (obj["depends_on"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? new();
-            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn });
+            // v2.22.0: skill provenance. Accepted ONLY when it names a procedure the registry
+            // actually offered for this plan — a model must not be able to invent an id and have
+            // the outcome credited to it, or to a skill it was never shown.
+            var claimedSkill = (obj["skill_id"]?.GetValue<string>() ?? "").Trim();
+            var skillId = _offeredSkillIds.Contains(claimedSkill) ? claimedSkill : null;
+            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId });
         }
 
         // LLMs often emit non-ID dependency references: integer indices ([0],[1]) or task titles.
