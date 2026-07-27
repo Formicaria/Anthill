@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.20.0";
-    public const int SchemaVersion = 11;
+    public const string Version = "2.21.0";
+    public const int SchemaVersion = 12;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -185,6 +185,10 @@ public static class AnthillRuntime
     public static bool EnableSoldierAnt = false;
     public static bool EnableMedicAnt = false;
     public static bool EnableArchivistAnt = false;
+    /// <summary>v2.21.0 Phase A: handoff ingestion (dynamic task admission). Off by default.</summary>
+    public static bool EnableHandoffIngestion = false;
+    /// <summary>v2.21.0 Phase B: adaptive mission control (bounded replan/repair, stall stop).</summary>
+    public static bool EnableAdaptiveMissionControl = false;
     public static bool EnableUiCartographerAnt = false;
     public static bool EnableScribeAnt = false;
     public static string HomelabSlackWebhook = "";
@@ -565,6 +569,8 @@ public static class AnthillRuntime
         EnableSoldierAnt = config.SoldierAntEnabled;
         EnableMedicAnt = config.MedicAntEnabled;
         EnableArchivistAnt = config.ArchivistAntEnabled;
+        EnableHandoffIngestion = config.HandoffIngestionEnabled;
+        EnableAdaptiveMissionControl = config.AdaptiveMissionControlEnabled;
         EnableUiCartographerAnt = config.UiCartographerAntEnabled;
         EnableScribeAnt = config.ScribeAntEnabled;
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();

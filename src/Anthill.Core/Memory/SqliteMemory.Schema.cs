@@ -167,6 +167,16 @@ public sealed partial class SqliteMemory : IDisposable
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, task_id TEXT, ant_name TEXT,
             event_type TEXT NOT NULL, message TEXT NOT NULL, metadata_json TEXT,
             created_at TEXT NOT NULL, FOREIGN KEY (mission_id) REFERENCES missions(id))",
+        // v2.21.0: the V2.12 skills line was in-memory only — every promotion a skill earned was
+        // lost on exit, which is why nothing could safely plan with skills or feed them candidates.
+        @"CREATE TABLE IF NOT EXISTS skills (
+            id TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, purpose TEXT NOT NULL DEFAULT '',
+            environments_json TEXT, required_capabilities_json TEXT, procedure_json TEXT,
+            verification_policy TEXT NOT NULL DEFAULT 'code_patch', compensation_plan TEXT,
+            success_count INTEGER NOT NULL DEFAULT 0, failure_count INTEGER NOT NULL DEFAULT 0,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'Candidate', last_validated TEXT,
+            evidence_bundles_json TEXT, notes_json TEXT, saved_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS pheromone_trails (
             id TEXT PRIMARY KEY, trail_key TEXT UNIQUE NOT NULL, trail_type TEXT NOT NULL,
             strength REAL NOT NULL, success_count INTEGER NOT NULL, failure_count INTEGER NOT NULL,
@@ -308,6 +318,7 @@ public sealed partial class SqliteMemory : IDisposable
             (9, "user_accounts", "Operator accounts (users) with password login and roles verified."),
             (10, "model_provider_connections", "Encrypted API-key storage for external model providers (provider_credentials) verified."),
             (11, "autonomy_learning", "Phase 4 learning loop: per-objective success EMA column (objectives.success_ema) verified."),
+            (12, "durable_skills", "V2.12 skills line persisted (skills table) — promotion state now survives restart."),
         };
         foreach (var (id, name, description) in migrations)
         {

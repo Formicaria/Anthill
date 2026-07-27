@@ -10,6 +10,9 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.21.0 note: handoff-created tasks appear in the mission task graph like any other task —
+> they carry a `Handoff: source -> destination` title and a depth marker. No new surface.
+
 > v2.19.0 note: the workspace Modules checklist is now collapsible (it was persistent and in the
 > way), and mission results are unchanged on this surface — the adaptive-runtime work in v2.19.0
 > deliberately preserved every operator-facing narrative. v2.20.0 adds the learning-reset boundary

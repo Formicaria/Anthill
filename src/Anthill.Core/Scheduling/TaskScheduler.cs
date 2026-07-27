@@ -54,6 +54,29 @@ public sealed partial class TaskScheduler
                         .GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
     }
 
+    /// <summary>
+    /// v2.21.0: admit a task created DURING the run (handoff ingestion). The scheduler was built
+    /// around a fixed task list, so this is the one sanctioned way to grow it — everything else
+    /// still reads <see cref="Tasks"/> and <see cref="TaskById"/>, which must stay consistent.
+    ///
+    /// Refuses a duplicate id rather than overwriting: <see cref="TaskById"/> deliberately omits
+    /// duplicated ids so execution can never become ambiguous, and silently replacing an entry
+    /// would resurrect exactly that ambiguity. Returns false when the task was not admitted.
+    ///
+    /// Callers hold the orchestrator's execution lock; this does not lock on its own behalf,
+    /// matching every other mutating scheduler method.
+    /// </summary>
+    public bool AddDynamicTask(Task task)
+    {
+        if (task is null || string.IsNullOrWhiteSpace(task.Id)) return false;
+        if (TaskById.ContainsKey(task.Id) || DuplicateTaskIds.Contains(task.Id)) return false;
+
+        Tasks.Add(task);
+        TaskById[task.Id] = task;
+        Evaluate();   // the new task becomes ready (or blocked) by the same rules as any other
+        return true;
+    }
+
     public List<TaskGraphIssue> ValidateGraph()
     {
         var issues = new List<TaskGraphIssue>();
