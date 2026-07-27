@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Anthill.Core.Agents;
+using Anthill.Core.Outcomes;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
@@ -555,6 +556,7 @@ public sealed partial class Queen : IDisposable
         try
         {
             string? result;
+            AntExecutionResult execution;
             using (var taskCts = CancellationTokenSource.CreateLinkedTokenSource(ModelCallScope.Current))
             {
                 // Per-task deadline, layered under the mission's (ModelCallScope.Current is the mission
@@ -563,7 +565,11 @@ public sealed partial class Queen : IDisposable
                 // return. The linked source means a mission cancel/timeout still propagates through too.
                 taskCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxTaskSeconds));
                 using var taskScope = ModelCallScope.Enter(taskCts.Token);
-                result = ant.Run(taskSnapshot, missionSnapshot);
+                // v2.19.0: the STRUCTURED contract. The ant declares its outcome; the orchestrator
+                // no longer infers one from the absence of an exception. The narrative is kept for
+                // the operator but carries no control meaning.
+                execution = ant.Execute(taskSnapshot, missionSnapshot);
+                result = execution.Narrative ?? execution.Summary;
             }
             var finishedAt = AnthillTime.NowUtc();
             var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
@@ -590,11 +596,28 @@ public sealed partial class Queen : IDisposable
                     Console.WriteLine(task.Result);
                     return;
                 }
+                // Everything the ant reported is persisted BEFORE the status decision, so evidence
+                // survives even when the task fails. Handoffs are recorded here but not yet
+                // ingested — that is stage 4 (HandoffGate is still not wired to the scheduler).
+                PersistExecutionRecord(mission, task, runtimeSelection, execution, elapsed);
+
+                var decision = TaskOutcomeMapper.Map(execution);
+                if (decision.Action != TaskOutcomeAction.Complete)
+                {
+                    ApplyNonCompletingOutcome(mission, task, runtimeSelection, execution, decision, finishedAt, elapsed, scheduler);
+                    return;
+                }
+
+                if (decision.Warnings.Count > 0)
+                    Memory.LogEvent(mission.Id, "task_completed_with_warnings",
+                        $"Task completed with {decision.Warnings.Count} warning(s): {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
+                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["warnings"] = decision.Warnings }));
+
                 if (scheduler is not null) scheduler.MarkComplete(task.Id, result, finishedAt, elapsed);
                 else { task.Status = TaskStatus.Complete; task.CompletedAt = finishedAt; }
                 FinalizeTaskResult(mission, task);
                 Memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
-                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
+                    MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
@@ -751,6 +774,94 @@ public sealed partial class Queen : IDisposable
             ["skipped_tasks"] = mission.Tasks.Where(t => t.Status == TaskStatus.Skipped).Select(t => t.Id).ToList(),
             ["best_output_task_id"] = mission.BestOutputTaskId,
         });
+    }
+
+    /// <summary>
+    /// v2.19.0: persist everything the ant reported, regardless of outcome.
+    ///
+    /// Artifacts, evidence, warnings, metrics and proposed handoffs used to be serialised into the
+    /// result string (the old Compat helper) and were therefore unreadable by anything downstream.
+    /// They are recorded here as a structured event BEFORE the status decision, so a failed task's
+    /// evidence survives — which is what makes a later diagnosis or repair possible at all.
+    ///
+    /// Handoffs are recorded but NOT acted on: ingestion through HandoffGate is stage 4. Writing
+    /// them down now means the gate has real proposals to admit when it is wired.
+    /// </summary>
+    private void PersistExecutionRecord(Mission mission, Task task, AntRuntimeSelection runtimeSelection,
+        AntExecutionResult execution, double elapsed)
+    {
+        Memory.LogEvent(mission.Id, "task_execution_recorded",
+            $"Structured result recorded: {execution.StatusCode}", task.Id, runtimeSelection.RuntimeNodeId,
+            MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
+            {
+                ["status_code"] = execution.StatusCode,
+                ["success"] = execution.Success,
+                ["summary"] = TextUtil.Truncate(execution.Summary, 500),
+                ["artifacts"] = execution.Artifacts.Select(a => new Dictionary<string, object?>
+                {
+                    ["kind"] = a.Kind, ["title"] = a.Title, ["path"] = a.Path,
+                    ["chars"] = a.Content.Length,
+                }).ToList(),
+                ["evidence"] = execution.Evidence.Select(e => new Dictionary<string, object?>
+                {
+                    ["kind"] = e.Kind, ["value"] = e.Value, ["detail"] = e.Detail,
+                }).ToList(),
+                ["warnings"] = execution.Warnings,
+                ["failure_class"] = execution.Failure?.Class.ToString(),
+                ["failure_reason"] = execution.Failure?.Reason,
+                ["failure_retryable"] = execution.Failure?.Retryable,
+                ["handoffs_proposed"] = execution.Handoffs.Select(h => new Dictionary<string, object?>
+                {
+                    ["destination_role"] = h.DestinationRole, ["reason"] = h.Reason,
+                    ["required_task_type"] = h.RequiredTaskType,
+                }).ToList(),
+                ["metrics"] = new Dictionary<string, object?>
+                {
+                    ["model_calls"] = execution.Metrics.ModelCalls, ["tool_calls"] = execution.Metrics.ToolCalls,
+                    ["elapsed_seconds"] = elapsed, ["input_chars"] = execution.Metrics.InputChars,
+                    ["output_chars"] = execution.Metrics.OutputChars, ["retry_count"] = execution.Metrics.RetryCount,
+                    ["environment"] = execution.Metrics.EnvironmentFingerprint,
+                },
+            }));
+    }
+
+    /// <summary>
+    /// v2.19.0: apply a non-completing decision. Before this release there was no such path for a
+    /// normally-returned result — everything that did not throw was marked complete.
+    /// </summary>
+    private void ApplyNonCompletingOutcome(Mission mission, Task task, AntRuntimeSelection runtimeSelection,
+        AntExecutionResult execution, TaskOutcomeDecision decision, DateTime finishedAt, double elapsed,
+        TaskScheduler? scheduler)
+    {
+        task.Result = decision.Reason;
+        if (decision.Action == TaskOutcomeAction.Skip)
+        {
+            if (scheduler is not null) scheduler.MarkSkipped(task.Id, decision.Reason, decision.FailureType);
+            else { task.Status = TaskStatus.Skipped; task.SkippedAt = finishedAt; task.SkippedReason = decision.Reason; }
+        }
+        else
+        {
+            // The scheduler owns the retry decision: it knows the attempt budget. Retryable here
+            // means "eligible", not "guaranteed".
+            if (scheduler is not null)
+                scheduler.MarkFailed(task.Id, decision.Reason, decision.FailureType, decision.Retryable, finishedAt, elapsed);
+            else
+            {
+                task.Status = TaskStatus.Failed; task.FailedAt = finishedAt;
+                task.FailureReason = decision.Reason; task.FailureType = decision.FailureType;
+            }
+        }
+
+        FinalizeTaskResult(mission, task);
+        Memory.LogEvent(mission.Id, "task_outcome_applied",
+            $"Task did not complete ({execution.StatusCode}): {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
+            MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
+            {
+                ["status_code"] = execution.StatusCode, ["action"] = decision.Action.ToString(),
+                ["retryable"] = decision.Retryable, ["failure_type"] = decision.FailureType,
+                ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
+            }));
+        Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
     }
 
     private void RecordAgentMessage(string missionId, string? taskId, string sender, string recipient, string messageType,
