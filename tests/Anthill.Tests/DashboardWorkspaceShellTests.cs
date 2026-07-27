@@ -549,13 +549,21 @@ public class DashboardWorkspaceShellTests
     public void MissionThread_LeadsWithTheAnswer_NotTheTrace()
     {
         var js = Ui("app.js");
-        var render = BodyOf(js, "function renderMissionThread()");
+        var mt = Ui("mission-thread.js");
 
-        // The answer prefers the synthesized final_result, falling back to the raw best output.
-        Assert.Contains("m.final_result||m.user_result", render);
-        // The trace must NOT be rendered inline — it belongs behind the disclosure.
-        Assert.DoesNotContain("debug_result", render);
-        Assert.Contains("Show activity", render);
+        // v2.18.1: the answer selection moved into the reconciler (answerOf) and the row patcher,
+        // because rendering is no longer a single string-building pass. The property asserted is
+        // unchanged: the synthesized answer is preferred, falling back to the raw best output.
+        Assert.Contains("m.final_result || m.user_result", mt);
+
+        var patch = BodyOf(js, "function msPatchExchange(row,m)");
+        Assert.Contains("MT.answerOf(m)", patch);
+        Assert.Contains("Working — no answer recorded yet.", patch);
+
+        // The trace must never be rendered inline — it belongs behind the disclosure.
+        Assert.DoesNotContain("debug_result", patch);
+        Assert.DoesNotContain("debug_result", BodyOf(js, "function renderMissionThread()"));
+        Assert.Contains("Show activity", BodyOf(js, "function msBuildExchange(m)"));
     }
 
     /// <summary>
@@ -566,27 +574,47 @@ public class DashboardWorkspaceShellTests
     {
         var js = Ui("app.js");
         Assert.Contains("data-msact", js);
-        Assert.Contains("det.dataset.loaded", js);
-        // Detail rendering reuses the Results page implementation rather than a second copy.
-        Assert.Contains("renderMissionReport(det.dataset.msact", js);
-        var render = BodyOf(js, "function renderMissionThread()");
-        Assert.DoesNotContain("renderMissionReport", render);   // never during the list render
+
+        // v2.18.1: the DOM latch (dataset.loaded) was replaced by msActivity, because a latch set
+        // before the request resolved could never be retried. Laziness is now expressed by
+        // begin() refusing a second fetch — see MissionActivity_TracksStateOutsideTheDom.
+        Assert.Contains("msActivity.begin(missionId)", BodyOf(js, "async function msLoadActivity(missionId,det)"));
+
+        // Detail rendering still reuses the Results page implementation rather than a second copy.
+        Assert.Contains("renderMissionReport(missionId,body)", js);
+
+        // The list render must never fetch a report — forty exchanges must not mean forty requests.
+        Assert.DoesNotContain("renderMissionReport", BodyOf(js, "function renderMissionThread()"));
+        Assert.DoesNotContain("renderMissionReport", BodyOf(js, "function msBuildExchange(m)"));
+        Assert.DoesNotContain("renderMissionReport", BodyOf(js, "async function loadMissionThread(opts)"));
     }
 
     /// <summary>
-    /// The thread must not yank the view while history is being read, and must stay live-region
-    /// announced so an answer arriving is perceivable without sight.
+    /// The thread must not yank the view while history is being read.
+    ///
+    /// v2.18.1: this used to also assert `aria-live="polite"` on #ms-thread. That assertion was
+    /// itself describing the bug — a live region on the thread re-announced all forty exchanges
+    /// on every three-second poll. The announcement contract now lives in
+    /// MissionThread_AnnouncesOneResult_NotTheWholeThread, which asserts the opposite and is
+    /// correct. The scroll contract below is unchanged, only renamed.
     /// </summary>
     [Fact]
-    public void MissionThread_IsPoliteAboutScrollingAndAnnouncement()
+    public void MissionThread_IsPoliteAboutScrolling()
     {
-        var render = BodyOf(Ui("app.js"), "function renderMissionThread()");
-        Assert.Contains("atBottom", render);
-        Assert.Contains("if(atBottom) thread.scrollTop=thread.scrollHeight;", render);
+        var js = Ui("app.js");
+        var render = BodyOf(js, "function renderMissionThread()");
+
+        // Measured BEFORE the update and applied after, so reading history is never interrupted.
+        Assert.Contains("MT.shouldFollowBottom(", render);
+        Assert.Contains("if(follow) thread.scrollTop=thread.scrollHeight;", render);
+        Assert.Contains("else thread.scrollTop=prevTop;", render);
+        Assert.Contains("const prevTop=thread.scrollTop;", render);
+
+        // The threshold itself is exercised in tests/ui/mission-thread.test.js, both directions.
+        Assert.Contains("FOLLOW_THRESHOLD_PX", Ui("mission-thread.js"));
 
         var html = Ui("index.html");
         Assert.Contains("id=\"ms-thread\"", html);
-        Assert.Contains("aria-live=\"polite\"", html);
         Assert.Contains("role=\"log\"", html);
         // The composer stays pinned: the THREAD scrolls, not the page.
         Assert.Contains("#page-missions.page-scroll{overflow:hidden;}", html);
@@ -602,6 +630,167 @@ public class DashboardWorkspaceShellTests
         var api = Src("src", "Anthill.Api", "ApiHost.cs");
         Assert.Contains("[\"final_output\"] = mission.GetValueOrDefault(\"final_result\")", api);
         Assert.Contains("[\"raw_output\"] = mission.GetValueOrDefault(\"user_result\")", api);
+    }
+
+    // ---- Missions conversation stability (v2.17.1) -------------------------------------------------
+
+    /// <summary>
+    /// v2.17.1: the thread must never be rebuilt wholesale.
+    ///
+    /// v2.16.0 rendered with `thread.innerHTML = rows.map(...).join('')` on every jobs poll — every
+    /// three seconds — which destroyed open activity disclosures, loaded reports, focus, selection
+    /// and scroll position, and re-announced all forty exchanges. Replacing innerHTML also clamps
+    /// scrollTop to 0, so reading history threw you to the top of the thread on every poll.
+    ///
+    /// The behavioural proof lives in tests/ui/mission-thread.test.js (node --test). This guards
+    /// the one thing C# can see: that the destructive pattern has not come back.
+    /// </summary>
+    [Fact]
+    public void MissionThread_IsNeverRebuiltWholesale()
+    {
+        var js = Ui("app.js");
+        var render = BodyOf(js, "function renderMissionThread()");
+
+        // The only innerHTML writes allowed here would be a full-thread replacement.
+        Assert.DoesNotContain("thread.innerHTML", render);
+        Assert.DoesNotContain("rows.map(", render);
+
+        // Unchanged data must short-circuit before touching the DOM at all.
+        Assert.Contains("if(!plan.changed", render);
+        Assert.Contains("reconcileThread", render);
+
+        var load = BodyOf(js, "async function loadMissionThread(opts)");
+        Assert.DoesNotContain("thread.innerHTML", load);
+    }
+
+    /// <summary>
+    /// Server text reaches the thread through textContent, never parsed as HTML. Escaping by hand
+    /// into an innerHTML string is what this replaces.
+    /// </summary>
+    [Fact]
+    public void MissionThread_WritesServerTextAsTextNotMarkup()
+    {
+        var js = Ui("app.js");
+        var patch = BodyOf(js, "function msPatchExchange(row,m)");
+        Assert.DoesNotContain("innerHTML", patch);
+        Assert.Contains(".textContent=m.goal", patch);
+        Assert.Contains("say.textContent", patch);
+    }
+
+    /// <summary>
+    /// Stale responses must be rejected. Page entry and the three-second poll can both have a
+    /// request in flight; without a generation token a slow older one overwrites newer state.
+    /// </summary>
+    [Fact]
+    public void MissionThread_RejectsStaleResponses()
+    {
+        var js = Ui("app.js");
+        var load = BodyOf(js, "async function loadMissionThread(opts)");
+        Assert.Contains("msGate.next()", load);
+        Assert.Contains("if(!msGate.isCurrent(token)) return;", load);
+    }
+
+    /// <summary>
+    /// Activity state lives outside the DOM so it survives updates, and a report is marked loaded
+    /// only after it succeeds — v2.16.0 set dataset.loaded before the request resolved, stranding
+    /// any report that failed.
+    /// </summary>
+    [Fact]
+    public void MissionActivity_TracksStateOutsideTheDom_AndIsRetryable()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("msActivity", js);
+        Assert.Contains("MT.ActivityStore()", js);
+
+        var load = BodyOf(js, "async function msLoadActivity(missionId,det)");
+        Assert.Contains("msActivity.begin(missionId)", load);   // duplicate-request guard
+        Assert.Contains("msActivity.succeed(missionId)", load); // only after success
+        Assert.Contains("msActivity.fail(missionId", load);
+        Assert.Contains("data-msretry", js);                    // a visible retry control
+
+        // The Missions path must not use a DOM latch at all — its state is in msActivity, which
+        // is what lets it survive a re-render and be retried. (The Results page still uses
+        // dataset.loaded, but only after success; that is asserted separately.)
+        Assert.DoesNotContain("dataset.loaded", load);
+    }
+
+    /// <summary>
+    /// renderMissionReport reports success so callers can decide whether to latch. Both callers —
+    /// the Missions thread and the Results page — must honour it.
+    /// </summary>
+    [Fact]
+    public void MissionReport_ReportsSuccess_AndBothCallersHonourIt()
+    {
+        var js = Ui("app.js");
+        var report = BodyOf(js, "async function renderMissionReport(missionId, body)");
+        Assert.Contains("return false;", report);
+        Assert.Contains("return true;", report);
+
+        var toggle = BodyOf(js, "async function onResultToggle(det)");
+        Assert.Contains("if(ok) det.dataset.loaded='1';", toggle);
+    }
+
+    /// <summary>
+    /// The live region must not be the thread itself, or every poll re-announces all forty
+    /// exchanges. One dedicated status element announces one finished mission.
+    /// </summary>
+    [Fact]
+    public void MissionThread_AnnouncesOneResult_NotTheWholeThread()
+    {
+        var html = Ui("index.html");
+        var threadTag = Regex.Match(html, @"<div id=""ms-thread""[^>]*>").Value;
+        Assert.False(string.IsNullOrEmpty(threadTag), "#ms-thread not found");
+        Assert.DoesNotContain("aria-live", threadTag);
+
+        Assert.Contains("id=\"ms-announce\"", html);
+        Assert.Contains("aria-live=\"polite\"", html);
+        Assert.Contains("announcementFor", Ui("app.js"));
+    }
+
+    /// <summary>
+    /// A rejected dispatch must show the error and hand the directive back, not clear the box and
+    /// go quiet. v2.16.0 did `input.value=''` before the request and swallowed the failure.
+    /// </summary>
+    [Fact]
+    public void Dispatch_SurfacesFailures_AndKeepsTheTypedDirective()
+    {
+        var js = Ui("app.js");
+        var dispatch = BodyOf(js, "async function dispatchMission(inputId)");
+        Assert.Contains("const typed=input.value;", dispatch);
+        Assert.Contains("else { input.value=typed; }", dispatch);
+        Assert.Contains("msDispatchInFlight", dispatch);          // double-submit guard
+
+        var submit = BodyOf(js, "async function submitMissionGoal(goal)");
+        Assert.Contains("msShowDispatchError", submit);
+        Assert.Contains("return true;", submit);
+        Assert.Contains("return false;", submit);
+
+        Assert.Contains("id=\"ms-error\"", Ui("index.html"));
+    }
+
+    /// <summary>The reconciler is a served asset, embedded and loaded before app.js.</summary>
+    [Fact]
+    public void MissionThreadModule_IsShippedAndLoaded()
+    {
+        Assert.Contains("Ui\\mission-thread.js", Src("src", "Anthill.Api", "Anthill.Api.csproj"));
+        var host = Src("src", "Anthill.Api", "ApiHost.cs");
+        Assert.Contains("LoadUiAsset(\"mission-thread.js\")", host);
+        Assert.Contains("/ui/mission-thread.js", host);
+
+        var html = Ui("index.html");
+        Assert.Contains("/ui/mission-thread.js", html);
+        Assert.True(html.IndexOf("/ui/mission-thread.js", StringComparison.Ordinal)
+                    < html.IndexOf("/ui/app.js", StringComparison.Ordinal),
+            "mission-thread.js must load before app.js, which consumes it at parse time.");
+    }
+
+    /// <summary>The node --test suite must actually run in CI, or it proves nothing.</summary>
+    [Fact]
+    public void MissionThreadTests_RunInCiAndValidate()
+    {
+        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src(".github", "workflows", "ci.yml"));
+        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src("scripts", "validate.ps1"));
+        Assert.True(File.Exists(Path.Combine(Root(), "tests", "ui", "mission-thread.test.js")));
     }
 
     // ---- Accessibility --------------------------------------------------------------------------------

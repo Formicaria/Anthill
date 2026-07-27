@@ -1,5 +1,110 @@
 # ANTHILL Changelog
 
+## v2.18.1 — Missions conversation: the three-second poll was destroying the thread
+
+The OpenWebUI-style Missions view shipped in v2.16.0 was unusable in practice. Every symptom traced
+to one line.
+
+### Root cause — the whole conversation DOM was rebuilt every three seconds
+
+`pollJobs()` runs on a 3s interval. While Operations → Missions was open it called
+`loadMissionThread()`, which ended in:
+
+```js
+thread.innerHTML = rows.map(...).join('');
+```
+
+That destroyed and recreated every exchange on every poll, **whether or not the data had changed**.
+The `/missions/json` response is cached for 10s, so most rebuilds were driven by byte-identical
+data — caching the request never prevented the destructive render.
+
+Confirmed consequences:
+
+- Open **Show activity** disclosures snapped shut.
+- Already-loaded reports were discarded, along with their `data-loaded` markers.
+- Keyboard focus and text selection were lost.
+- The live region (`aria-live` on `#ms-thread`) re-announced **all forty exchanges** every poll.
+- **Scroll position was lost entirely.** Replacing `innerHTML` clamps `scrollTop` to 0, so the
+  `atBottom` check — measured before the replacement — could only ever restore the *bottom*.
+  Anyone reading history was thrown to the **top** of the thread every three seconds. This was
+  worse than "the scroll jumps": there was no path that preserved position.
+
+### Root cause — a failed activity report could never be retried
+
+```js
+det.dataset.loaded = '1';
+renderMissionReport(...);
+```
+
+The disclosure was latched *before* the request resolved, and `renderMissionReport` swallowed
+failures into the panel body and returned `undefined`. A report that timed out was stuck forever:
+closing and reopening saw the latch and never retried.
+
+### Root cause — dispatch discarded the directive and hid the error
+
+`dispatchMission` cleared the textarea *before* posting, and `submitMissionGoal` did
+`if(!r.success){enableInput(true);return;}` — so a rejected mission lost what the operator had
+typed and told them nothing.
+
+### Root cause — overlapping refreshes had no ordering
+
+Page entry and the poll could both have a `/missions/json` request in flight with no generation
+token, so a slow earlier response could land after a newer one and overwrite current state.
+
+### The fix
+
+**Incremental, keyed updates.** The thread is now reconciled by mission id: new exchanges are
+appended, changed exchanges are patched in place, and rows are removed only when the server stops
+returning them. Unchanged data does **no DOM work at all**.
+
+Comparison uses a fingerprint of the seven fields that actually affect rendering — deliberately not
+`JSON.stringify(mission)`, which is sensitive to property order and to fields the thread never
+shows, and would reintroduce the rebuild it exists to prevent.
+
+**All decision logic is DOM-free** and lives in the new `src/Anthill.Api/Ui/mission-thread.js`:
+reconciliation, the activity state machine (`idle → loading → loaded → error`), the stale-response
+gate, scroll-follow, announcements, and the composer reducer. This repo has no browser test
+harness, so the logic was isolated specifically to be provable — see below.
+
+**Activity state moved out of the DOM** into a store keyed by mission id, so open/loaded state
+survives updates. `renderMissionReport` now returns success/failure; the report is marked loaded
+only on success, a failure shows the reason with a **Retry** button, and reopening a failed
+disclosure retries. Duplicate concurrent report requests are refused. Both callers — the Missions
+thread and the Results page — were updated.
+
+**Scroll anchoring** is measured before the update and applied after. Because rows are patched
+rather than replaced, position is naturally preserved; the thread follows new content only when
+the viewer was already within 96px of the bottom.
+
+**Announcements** moved off `#ms-thread` onto a dedicated visually-hidden `role="status"` region
+that speaks one newly finished mission, instead of the entire thread on every poll.
+
+**Dispatch** holds the typed directive until the colony accepts it, restores it and refocuses on
+failure, shows the error in a `role="alert"` slot, guards double-submit (button *and* Enter), and
+refreshes the thread from source so a new mission appears immediately rather than after the cache
+expires. The shared Overview and Colony inputs use the same path and are unaffected.
+
+### Tests
+
+`tests/ui/mission-thread.test.js` — 18 behavioural tests on `node --test`, built into the Node 20
+CI already installs. No framework, no `package.json`, no build pipeline. Covers: unchanged data
+causing no rebuild, non-displayed fields not counting as changes, single-row updates, appends,
+removals, queued→running→complete transitions, open/loaded activity surviving updates, duplicate
+report suppression, retry after failure, stale-response rejection, scroll-follow in both
+directions, one-result announcements, and dispatch failure restoring a usable composer.
+
+Both are wired into `scripts/validate.ps1` and the CI `ui-integrity` job. Nine C# guards in
+`DashboardWorkspaceShellTests` pin what C# can see — chiefly that `thread.innerHTML` and
+`rows.map(` have not returned to the render path.
+
+The suite was mutation-checked: reverting the fingerprint to `JSON.stringify` and marking reports
+loaded before resolution each cause a specific test to fail.
+
+### Not verified here
+The reconciliation logic is proven deterministically, but **no browser walkthrough was performed**
+in this environment. The manual scenarios are listed in the PR description and should be run
+against a deployed build before this is considered closed.
+
 ## v2.18.0 — Shadow Operations Fault-Injection Harness (NORTH_STAR Phase 7, Stage 2)
 
 Stage 2 adds the simulation side of the qualification phase: replayable fault scenarios and a
