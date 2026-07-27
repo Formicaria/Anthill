@@ -1,5 +1,137 @@
 # ANTHILL Changelog
 
+## v2.21.0 — Adaptive mission control
+
+Specialists have emitted structured handoffs since v2.19.0 — tester to medic, soldier to builder,
+scribe to verifier. The Queen recorded them and acted on none. `HandoffGate.Evaluate` was fully
+implemented and fully tested with **zero production call sites**, the same "tested code with no
+call site" pattern as v2.14.12, `SanitizeInto`, `/missions/json`, and the archivist's memory
+candidates.
+
+A handoff now creates a real follow-up task.
+
+### The bound that was not actually bounding
+
+Every specialist hardcodes `Depth: 1` when it builds a handoff — nothing about a task's position in
+a handoff chain ever reaches the ant. Had the orchestrator trusted that number, a handoff from a
+dynamically-created task would also have arrived at depth 1, `MaxHandoffDepth` would never have
+been reached, and unbounded recursive task creation would have been possible **while the gate
+appeared to enforce a limit**.
+
+Depth is therefore derived from the source task's lineage (`HandoffGate.NextDepthFrom`), never from
+the handoff's self-report. It is written into the task description, so it survives persistence and
+a restart — the tasks table has no depth column, and a bound that resets on restart is not a bound.
+
+### Admission
+
+Every runtime-added task passes the **same** gates as an initial-plan task: `HandoffGate` (depth,
+mission task budget, runtime eligibility, contract task-type support, dedupe) and then
+`AntRegistry.ValidateTask`, the identical authorization check the planner's own tasks go through.
+There is no admission path that skips them. A handoff can only request a role that is *already*
+runtime-eligible for a task type its contract *already* supports — it can never grant a capability.
+
+Admitted tasks are persisted immediately and enter the scheduler through `AddDynamicTask`, which
+refuses a duplicate id rather than overwriting: `TaskById` deliberately omits duplicated ids so
+execution can never be ambiguous, and silently replacing an entry would resurrect that ambiguity.
+
+Rejections are recorded as `handoff_rejected` events with their reason. Nothing is dropped silently.
+
+### Off by default
+
+`handoff_ingestion_enabled` defaults to false. This is the first feature that lets a mission grow
+its own task list at runtime, and it ships behind a switch — one config write from off.
+
+### The adaptive decision layer
+
+v2.21.0 let a handoff create a follow-up task. That is one specific way a mission can adapt. This
+release adds the component that decides whether a mission should adapt at all, and how.
+
+`AdaptiveMissionController` assesses a mission after a wave of execution and returns a typed
+decision: **continue**, **delta-plan**, **repair**, **escalate**, or **finish**. It is deliberately
+pure — no database, no model call, no scheduler mutation — so the same mission state always yields
+the same decision, and the rules can be tested without running a mission.
+
+### Bounded, because "replanning" is where unbounded task creation hides
+
+The ADR rejected letting the planner re-plan freely on each wave: that is recursive task creation
+wearing a different word. So:
+
+- **Replans and repairs have separate counters that do not lend to each other.** A mission out of
+  replan generations can still repair a broken step, and one out of repair cycles can still plan a
+  missing step. Exhausting one budget never borrows from the other.
+- **A wave that changed nothing escalates instead of continuing.** Progress is measured by a
+  fingerprint over every task's id and status, ordered so task sequence cannot make a stalled
+  mission look like it moved. Two identical fingerprints mean nothing happened.
+- **Order of assessment is deliberate.** Terminal state is checked first, so a finished mission is
+  never diagnosed as stalled merely because two waves look alike. Then real failures, then unmet
+  criteria, then the stall check.
+
+### A failed step is repaired before the plan is rewritten
+
+A failed critical task means one step broke, not that the plan was wrong — repair is focused,
+delta planning is not. Only when every task has finished and a criterion is still unmet does the
+controller call for a delta plan, and then only for what is missing.
+
+Unmet criteria are computed against the same `MissionVerification` standard the gate applies. An
+assessment using a weaker rule than the gate would keep proposing work the gate would never accept,
+or stop short of work it requires — including the v2.19.0 case where a verifier ran to completion
+and reported failure.
+
+### The loop obeys it
+
+Both execution loops — sequential and parallel — consult the controller after each wave. Sequential
+assesses per task; parallel assesses once per completed batch, so simultaneous completions cannot
+each trigger their own replan for the same unmet criterion.
+
+A **repair** admits one focused medic task for the failed step, deliberately **non-critical**: a
+critical repair task that failed would itself become a new critical failure requesting another
+repair — the exact loop the bounds exist to prevent, arriving through the back door. A **delta
+plan** admits only the missing verification step, and refuses to duplicate one that already exists,
+because a verifier that already ran and reported failure will not pass by being run again.
+
+Every runtime-created task — handoff, repair, or delta — goes through one shared admission helper
+that always runs `AntRegistry.ValidateTask`, adds to both the mission and the scheduler, and
+persists. A test asserts the scheduler's dynamic-admission API is called from exactly one place, so
+"no admission path skips the gates" stays checkable rather than aspirational.
+
+**Budgets are derived by counting the mission's own audit events**, not held in memory. A restart
+therefore cannot hand a mission a fresh allowance, the durability requirement comes with no schema
+change, and every replan and repair a mission spent is readable in its event log.
+
+### Off by default
+
+`adaptive_mission_control_enabled` defaults to false. It changes when a mission ends, which is not
+a behaviour to switch on silently.
+
+### Skills stop being amnesiac
+
+Starting Phase C surfaced a prerequisite nobody had scoped. `SkillRegistry` — the whole V2.12
+evaluation model, candidate to certified with automatic symmetric demotion — had **zero production
+instantiations and no database table**. It lived in a dictionary and was discarded when the process
+exited. Only the shadow simulator ever built one.
+
+That made "skill selection in planning" unbuildable as written: selection would have read an empty
+registry at every process start. Wiring it first would have been worse than leaving it alone —
+planning decisions taken from state that vanishes.
+
+So skills became durable first. A `skills` table (migration 12), with status restored **as
+recorded** rather than recomputed, because recomputing under current policy would let a threshold
+change silently re-grade history the evidence no longer backs. Unreadable data fails closed: an
+unrecognised status restores as `Candidate`, never `Certified`, and malformed columns degrade to
+empty rather than blocking startup.
+
+Then selection: `SkillPlanningContext` renders proven procedures into the planner prompt, from a
+registry hydrated out of the database. It offers only Certified and Experimental skills, only
+within an environment they were actually proven in, ordered by the evidence behind them — because
+"certified" alone cannot distinguish three verified successes from thirty. It does not certify, and
+it does not execute. The prompt says outright that a skill is a route to consider rather than a
+script, since a planner treating certification as authorisation would bypass the gates every
+planned task is required to pass.
+
+Recording outcomes back against the skill that was used needs a skill reference on the task, and
+lands next release. The loop reads today; it does not yet write.
+
+
 ## v2.20.0 — Adaptive mission runtime, part 2: the learning reset
 
 v2.19.0 fixed how outcomes are graded going forward. This release deals with what the old rule
