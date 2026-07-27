@@ -5,7 +5,7 @@ customizable command workspace. Status is tracked per stage; nothing is claimed 
 gate passes.
 
 > Cross-reference: Shadow Operations & Operator Qualification (Phase 7) is currently headless —
-> v2.17.0 (recommendation engine + scoreboard) and v2.18.0 (v2.18.1 fixed the Missions conversation being rebuilt by the 3s jobs poll) (fault-injection catalog + simulation
+> v2.17.0 (recommendation engine + scoreboard) and v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) (fault-injection catalog + simulation
 > harness) are backend releases with **no dashboard surface yet**. A Shadow panel (diagnosis /
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.

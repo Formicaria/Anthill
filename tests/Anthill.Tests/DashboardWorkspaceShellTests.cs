@@ -213,7 +213,7 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("var def = W.panels[active]", body);
         Assert.Contains("def.render(body)", body);
         // Exactly one render call in the group frame: the active panel's.
-        Assert.Equal(1, Regex.Matches(body, @"\.render\(body\)").Count);
+        Assert.Single(Regex.Matches(body, @"\.render\(body\)"));
     }
 
     /// <summary>
@@ -403,7 +403,7 @@ public class DashboardWorkspaceShellTests
         var html = Ui("index.html");
         Assert.Contains("bottombar.appendChild(mb)", app);
         Assert.Contains("#ws-bottombar{position:absolute;left:0;right:0;bottom:0;z-index:46", html);
-        Assert.Equal(1, Regex.Matches(html, @"id=""mission-bar""").Count);   // one instance, re-parented
+        Assert.Single(Regex.Matches(html, @"id=""mission-bar"""));           // one instance, re-parented
     }
 
     /// <summary>
@@ -793,6 +793,43 @@ public class DashboardWorkspaceShellTests
         Assert.True(File.Exists(Path.Combine(Root(), "tests", "ui", "mission-thread.test.js")));
     }
 
+    /// <summary>
+    /// v2.18.2: /missions/json must carry the ANSWER.
+    ///
+    /// It projected only id/goal/status/success_score/created_at/saved_at — final_result and
+    /// user_result were never in the payload — so the conversation view had nothing to display and
+    /// every finished exchange read "Working — no answer recorded yet" indefinitely. The bug was
+    /// present from v2.16.0 and survived the v2.18.1 rewrite because the client faithfully
+    /// reproduced it: both versions read fields the endpoint does not return.
+    ///
+    /// This is a server-side contract, which is why it is asserted here rather than only in the
+    /// JS suite — no amount of client testing would have caught a missing column.
+    /// </summary>
+    [Fact]
+    public void MissionsJson_CarriesTheAnswer()
+    {
+        var api = Src("src", "Anthill.Api", "ApiHost.cs");
+        var idx = api.IndexOf("MapGet(\"/missions/json\"", StringComparison.Ordinal);
+        Assert.True(idx > 0, "/missions/json endpoint not found");
+        var handler = api.Substring(idx, Math.Min(2200, api.Length - idx));
+
+        Assert.Contains("[\"answer\"]", handler);
+        Assert.Contains("[\"answer_truncated\"]", handler);
+        // Prefers the synthesized answer, falls back to the raw best-task output.
+        Assert.Contains("final_result", handler);
+        Assert.Contains("user_result", handler);
+
+        // Bounded: this endpoint serves up to 100 rows and a raw result can be a whole diff.
+        Assert.Contains("MissionAnswerPreviewChars", handler);
+        Assert.Contains("public const int MissionAnswerPreviewChars", api);
+
+        // The client must read the field the endpoint actually returns.
+        var mt = Ui("mission-thread.js");
+        Assert.Contains("m.answer === 'string'", mt);
+        Assert.Contains("'answer'", mt);              // included in the render fingerprint
+        Assert.Contains("'answer_truncated'", mt);
+    }
+
     // ---- Accessibility --------------------------------------------------------------------------------
 
     [Fact]
@@ -904,7 +941,7 @@ public class DashboardWorkspaceShellTests
         // Saved at pointerup, exactly once — never per frame.
         var end = BodyOf(js, "function endGesture");
         Assert.Contains("setPlacement", end);
-        Assert.Equal(1, Regex.Matches(end, @"setPlacement\(").Count);
+        Assert.Single(Regex.Matches(end, @"setPlacement\("));
 
         var move = BodyOf(js, "function moveGesture");
         Assert.DoesNotContain("setPlacement", move);

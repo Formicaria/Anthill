@@ -12,9 +12,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const MT = require('../../src/Anthill.Api/Ui/mission-thread.js');
 
+// Shaped like a real /missions/json row: that endpoint returns `answer`, NOT final_result.
 const mission = (id, over = {}) => Object.assign({
   id, goal: 'goal ' + id, status: 'complete',
-  final_result: 'answer ' + id, user_result: 'raw ' + id,
+  answer: 'answer ' + id, answer_truncated: false,
   success_score: 1, created_at: '2026-07-26T10:00:00Z',
 }, over);
 
@@ -223,4 +224,47 @@ test('mission text is compared by value, so injected markup cannot smuggle a fal
   assert.notEqual(
     MT.missionFingerprint({ goal: 'ab', status: '' }),
     MT.missionFingerprint({ goal: 'a', status: 'b' }));
+});
+
+
+test('the answer comes from the field /missions/json actually returns', () => {
+  // v2.18.2 regression: /missions/json projects id/goal/status/score/timestamps plus `answer`.
+  // It has never returned final_result or user_result, so reading only those yielded '' for every
+  // mission and the thread showed "Working — no answer recorded yet" forever.
+  const row = { id: 'm1', goal: 'g', status: 'complete', answer: 'the backups are healthy' };
+  assert.equal(MT.answerOf(row), 'the backups are healthy');
+
+  // A mission with no answer yet is still correctly treated as pending.
+  assert.equal(MT.answerOf({ id: 'm2', status: 'running' }), '');
+  assert.equal(MT.answerOf({ id: 'm3', status: 'running', answer: '' }), '');
+
+  // Fallbacks retained for the shapes that DO carry them (report endpoint, memory views).
+  assert.equal(MT.answerOf({ final_result: 'synthesized' }), 'synthesized');
+  assert.equal(MT.answerOf({ user_result: 'raw' }), 'raw');
+  assert.equal(MT.answerOf({ final_result: 'synthesized', user_result: 'raw' }), 'synthesized');
+  assert.equal(MT.answerOf(null), '');
+});
+
+test('an arriving answer is detected as a change', () => {
+  // The exact sequence that looked broken: a running mission finishes and gains its answer.
+  const running = { id: 'm1', goal: 'check backups', status: 'running', answer: '' };
+  const done = { id: 'm1', goal: 'check backups', status: 'complete', answer: 'all healthy' };
+
+  const first = MT.reconcileThread(new Map(), [running]);
+  assert.equal(MT.answerOf(running), '');
+
+  const second = MT.reconcileThread(first.fingerprints, [done]);
+  assert.equal(second.changed, true, 'the arriving answer must register as a change');
+  assert.deepEqual(second.updated, ['m1']);
+  assert.equal(MT.answerOf(done), 'all healthy');
+});
+
+test('a truncated answer is flagged so the UI can point at the full output', () => {
+  assert.equal(MT.answerIsTruncated({ answer: 'x', answer_truncated: true }), true);
+  assert.equal(MT.answerIsTruncated({ answer: 'x', answer_truncated: false }), false);
+  assert.equal(MT.answerIsTruncated({ answer: 'x' }), false);
+  // Flipping only the truncation flag still counts as a render change.
+  const a = MT.reconcileThread(new Map(), [{ id: 'm1', answer: 'x', answer_truncated: false }]);
+  const b = MT.reconcileThread(a.fingerprints, [{ id: 'm1', answer: 'x', answer_truncated: true }]);
+  assert.equal(b.changed, true);
 });

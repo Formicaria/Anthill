@@ -4,7 +4,7 @@
 > **Rebased from:** ANTHILL v2.7.0
 > **Target:** ANTHILL v3.0.0 — Bounded Autonomous Homelab Operator
 > **Status:** Active
-> **Latest:** v2.18.0 (v2.18.1 fixed the Missions conversation being rebuilt by the 3s jobs poll) — Shadow Operations & Operator Qualification (Phase 7) Stage 2: the fault-injection scenario catalog + simulation harness (Stage 1, v2.17.0, shipped the non-executing recommendation engine + qualification scoreboard).
+> **Latest:** v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) — Shadow Operations & Operator Qualification (Phase 7) Stage 2: the fault-injection scenario catalog + simulation harness (Stage 1, v2.17.0, shipped the non-executing recommendation engine + qualification scoreboard).
 >
 > This document replaces the previous objective-lifecycle and patch-review roadmap.
 >
