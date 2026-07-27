@@ -290,98 +290,84 @@
     return frame;
   }
 
-  /* ---- Docking (v2.15.0) ------------------------------------------------------------------ *
-   * Docked panels live in one of four edge rails. Geometry is deliberately thin here: the rail
-   * lays panels out with flexbox and the ONLY number the client stores is dock_size, which the
-   * server clamps to MaxDockFraction so a dock can never bury the topology. That split is the
-   * whole reason docking was safe to add — the plan deferred it because hand-rolled dock geometry
-   * is where window managers accumulate bugs, so the geometry that matters lives in tested C#.
-   * ------------------------------------------------------------------------------------------ */
-  var DOCK_SIDES = ['left', 'right', 'top', 'bottom'];
+  /* ---- Snapping (v2.15.1) --------------------------------------------------------------- *
+   * Replaces v2.15.0's dock rails. Dragging to an edge or corner snaps the panel to a bounded
+   * region — halves and quadrants — instead of stretching it the full length of an edge. The
+   * server performs the same arithmetic when it migrates a v2.15.0 docked layout, and clamps
+   * whatever the client writes, so the two cannot drift apart unnoticed.
+   * ---------------------------------------------------------------------------------------- */
+  var SNAP_ZONES = ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+  var MIN_PANEL_W = 200, MIN_PANEL_H = 80;
 
-  function dockedOn(side) {
-    return panelIds().filter(function (id) {
-      var p = placement(id);
-      return p.placement_mode === 'docked' && p.dock_side === side
-          && p.display_state !== 'hidden' && p.display_state !== 'minimized';
-    }).sort(function (a, b) { return (placement(a).dock_order || 0) - (placement(b).dock_order || 0); });
+  /** Mirrors DashboardWorkspaceState.SnapRegion exactly. */
+  function snapRegion(zone, vw, vh) {
+    var halfW = Math.max(MIN_PANEL_W, Math.floor(vw / 2));
+    var halfH = Math.max(MIN_PANEL_H, Math.floor(vh / 2));
+    var restW = Math.max(MIN_PANEL_W, vw - halfW);
+    var restH = Math.max(MIN_PANEL_H, vh - halfH);
+    switch (zone) {
+      case 'left':         return { x: 0,     y: 0,     w: halfW, h: vh };
+      case 'right':        return { x: halfW, y: 0,     w: restW, h: vh };
+      case 'top':          return { x: 0,     y: 0,     w: vw,    h: halfH };
+      case 'bottom':       return { x: 0,     y: halfH, w: vw,    h: restH };
+      case 'top-left':     return { x: 0,     y: 0,     w: halfW, h: halfH };
+      case 'top-right':    return { x: halfW, y: 0,     w: restW, h: halfH };
+      case 'bottom-left':  return { x: 0,     y: halfH, w: halfW, h: restH };
+      case 'bottom-right': return { x: halfW, y: halfH, w: restW, h: restH };
+      default: return null;
+    }
   }
 
-  /** Rail thickness = the largest dock_size any of its members asked for. */
-  function railSize(side) {
-    var ids = dockedOn(side);
-    if (!ids.length) return 0;
-    return ids.reduce(function (m, id) { return Math.max(m, placement(id).dock_size || 320); }, 0);
-  }
-
-  function renderDockRail(side) {
-    var ids = dockedOn(side);
-    if (!ids.length) return null;
-    if (W.state.focus_mode) return null;
-
-    var rail = el('div', 'ws-dock ws-dock-' + side);
-    rail.id = 'ws-dock-' + side;
-    rail.setAttribute('data-wsdock', side);
-    var size = railSize(side);
-    if (side === 'left' || side === 'right') rail.style.width = size + 'px';
-    else rail.style.height = size + 'px';
-
-    ids.forEach(function (id) {
-      var def = W.panels[id];
-      var frame = el('section', 'ws-panel ws-docked');
-      frame.id = 'ws-panel-' + id;
-      frame.setAttribute('data-wspanel', id);
-      frame.setAttribute('aria-label', def.title + ' (docked ' + side + ')');
-
-      var head = el('header', 'ws-head');
-      head.setAttribute('data-wsdrag', id);       // drag out of the rail to refloat
-      head.appendChild(el('h3', 'ws-title', def.title));
-      var controls = el('div', 'ws-controls');
-      controls.appendChild(headerButton('undock', id, 'Undock ' + def.title, '⇱'));
-      if (def.minimizable) controls.appendChild(headerButton('minimize', id, 'Minimize panel', '—'));
-      if (def.hideable) controls.appendChild(headerButton('hide', id, 'Hide panel', '✕'));
-      head.appendChild(controls);
-      frame.appendChild(head);
-
-      var body = el('div', 'ws-body');
-      body.id = 'ws-body-' + id;
-      frame.appendChild(body);
-      try { def.render(body); }
-      catch (e) {
-        body.textContent = '';
-        body.appendChild(el('div', 'ws-error', 'Panel failed to render: ' + (e && e.message ? e.message : 'unknown error')));
+  function snapPanelTo(id, zone) {
+    var r = workspaceRect();
+    var g = snapRegion(zone, Math.round(r.width), Math.round(r.height));
+    if (!g) return;
+    // Leaving a tab group is implicit — a snapped panel is a floating panel.
+    var gid = groupOf(id);
+    if (gid) {
+      var grp = tabGroups()[gid];
+      if (grp) {
+        grp.panels = grp.panels.filter(function (x) { return x !== id; });
+        if (grp.panels.length < 2) dissolveGroup(gid);
+        else if (grp.active === id) grp.active = grp.panels[0];
       }
-      rail.appendChild(frame);
-    });
-
-    // Rail resize grip: adjusts dock_size for every panel on this edge at once.
-    var grip = el('div', 'ws-dock-grip');
-    grip.setAttribute('data-wsdockresize', side);
-    grip.setAttribute('aria-hidden', 'true');
-    rail.appendChild(grip);
-    return rail;
+    }
+    setPlacement(id, { placement_mode: 'floating', tab_group: null, dock_side: null,
+                       x: g.x, y: g.y, width: g.w, height: g.h, expanded_height: g.h });
   }
 
-  /** Drop-zone hints, shown only while a panel is being dragged. */
-  function renderDockZones() {
-    var wrap = el('div', 'ws-dockzones');
-    wrap.id = 'ws-dockzones';
+    /** Rail thickness = the largest dock_size any of its members asked for. */
+      /** Drop-zone hints, shown only while a panel is being dragged. */
+    /** Which dock zone is the pointer in? Null when it is nowhere near an edge. */
+    /** Snap-zone hints, shown only while a panel is being dragged. */
+  function renderSnapZones() {
+    var wrap = el('div', 'ws-snapzones');
+    wrap.id = 'ws-snapzones';
     wrap.setAttribute('aria-hidden', 'true');
-    DOCK_SIDES.forEach(function (side) {
-      var z = el('div', 'ws-dockzone ws-dockzone-' + side);
-      z.setAttribute('data-wsdockzone', side);
+    SNAP_ZONES.forEach(function (zone) {
+      var z = el('div', 'ws-snapzone ws-snapzone-' + zone);
+      z.setAttribute('data-wssnapzone', zone);
       wrap.appendChild(z);
     });
     return wrap;
   }
 
-  /** Which dock zone is the pointer in? Null when it is nowhere near an edge. */
-  function dockZoneAt(pt) {
+  /**
+   * Which snap zone is the pointer in? Corners win over edges, because a corner is a deliberate
+   * aim at a quadrant and it sits inside both edge bands.
+   */
+  function snapZoneAt(pt) {
     if (!pt) return null;
     var r = workspaceRect();
     var x = pt.x - r.left, y = pt.y - r.top;
     if (x < 0 || y < 0 || x > r.width || y > r.height) return null;
-    var edge = 56;
+    var edge = 56, corner = 120;
+    var nearL = x <= corner, nearR = x >= r.width - corner;
+    var nearT = y <= corner, nearB = y >= r.height - corner;
+    if (nearT && nearL) return 'top-left';
+    if (nearT && nearR) return 'top-right';
+    if (nearB && nearL) return 'bottom-left';
+    if (nearB && nearR) return 'bottom-right';
     if (x <= edge) return 'left';
     if (x >= r.width - edge) return 'right';
     if (y <= edge) return 'top';
@@ -472,20 +458,15 @@
         g.textContent = gid ? '    ⧉ Detach from group' : '    ⧉ Group with another panel';
         menu.appendChild(g);
 
-        var d = el('button', 'ws-module-sub');
-        d.type = 'button';
-        if (p.placement_mode === 'docked') {
-          d.setAttribute('data-wsact', 'undock');
-          d.setAttribute('data-wsid', id);
-          d.textContent = '    ⇱ Undock';
-        } else {
-          // Cycle through the edges so every dock side is reachable without a pointer.
-          var nextSide = DOCK_SIDES[(DOCK_SIDES.indexOf(p.dock_side) + 1) % DOCK_SIDES.length];
-          d.setAttribute('data-wsact', 'dock-to');
-          d.setAttribute('data-wsid', id + '|' + nextSide);
-          d.textContent = '    ⇲ Dock ' + nextSide;
-        }
-        menu.appendChild(d);
+        // Every snap zone reachable without a pointer, one row per zone.
+        SNAP_ZONES.forEach(function (zone) {
+          var d = el('button', 'ws-module-sub');
+          d.type = 'button';
+          d.setAttribute('data-wsact', 'snap-to');
+          d.setAttribute('data-wsid', id + '|' + zone);
+          d.textContent = '    ⇲ Snap ' + zone;
+          menu.appendChild(d);
+        });
       }
     });
     return menu;
@@ -516,11 +497,7 @@
     guides.id = 'ws-guides';
     guides.setAttribute('aria-hidden', 'true');
     layer.appendChild(guides);
-    DOCK_SIDES.forEach(function (side) {
-      var rail = renderDockRail(side);
-      if (rail) W.root.appendChild(rail);
-    });
-    W.root.appendChild(renderDockZones());
+    W.root.appendChild(renderSnapZones());
     W.root.appendChild(layer);
     W.root.appendChild(renderTray());
   }
@@ -545,17 +522,10 @@
     },
     'toggle-pin': function (id) { setPlacement(id, { pinned: !placement(id).pinned }); render(); },
 
-    /* ---- Dock actions ---- */
-    'undock': function (id) {
-      var p = placement(id);
-      setPlacement(id, { placement_mode: 'floating', dock_side: null, dock_order: 0,
-                         x: 120, y: 120, width: p.width || 380, height: p.height || 240 });
-      render();
-    },
-    /* Non-drag docking, from the Modules menu. Ids arrive as "<panelId>|<side>". */
-    'dock-to': function (ref) {
+    /* Non-drag snapping, from the Modules menu. Ids arrive as "<panelId>|<zone>". */
+    'snap-to': function (ref) {
       var parts = String(ref).split('|');
-      dockPanel(parts[0], parts[1]);
+      snapPanelTo(parts[0], parts[1]);
       render();
     },
 
@@ -621,25 +591,7 @@
     },
   };
 
-  function dockPanel(id, side) {
-    if (DOCK_SIDES.indexOf(side) < 0) return;
-    // Leaving a tab group is implicit: a panel cannot be docked and tabbed at once (the server
-    // enforces the same rule, so the two can never disagree about where a panel lives).
-    var gid = groupOf(id);
-    if (gid) {
-      var g = tabGroups()[gid];
-      if (g) {
-        g.panels = g.panels.filter(function (x) { return x !== id; });
-        if (g.panels.length < 2) dissolveGroup(gid);
-        else if (g.active === id) g.active = g.panels[0];
-      }
-    }
-    setPlacement(id, { placement_mode: 'docked', dock_side: side, tab_group: null,
-                       dock_order: dockedOn(side).length,
-                       dock_size: placement(id).dock_size || 320 });
-  }
-
-  function moveTab(ref, delta) {
+    function moveTab(ref, delta) {
     var parts = String(ref).split('|'), g = tabGroups()[parts[0]];
     if (!g) return;
     var i = g.panels.indexOf(parts[1]), j = i + delta;
@@ -745,16 +697,16 @@
     return { value: value, guide: null };
   }
 
-  function showDockHint(side) {
-    var wrap = document.getElementById('ws-dockzones');
+  function showSnapHint(zone) {
+    var wrap = document.getElementById('ws-snapzones');
     if (!wrap) return;
-    wrap.classList.toggle('on', !!side);
-    DOCK_SIDES.forEach(function (s2) {
-      var z = wrap.querySelector('[data-wsdockzone="' + s2 + '"]');
-      if (z) z.classList.toggle('hot', s2 === side);
+    wrap.classList.toggle('on', !!zone);
+    SNAP_ZONES.forEach(function (z2) {
+      var z = wrap.querySelector('[data-wssnapzone="' + z2 + '"]');
+      if (z) z.classList.toggle('hot', z2 === zone);
     });
   }
-  function clearDockHint() { showDockHint(null); }
+  function clearSnapHint() { showSnapHint(null); }
 
   function clearGuides() {
     var g = document.getElementById('ws-guides');
@@ -815,7 +767,7 @@
     }
 
     drag.last = { x: e.clientX, y: e.clientY };   // where the drop lands (tab grouping / docking)
-    if (drag.mode === 'move' && !isGroupRef(drag.id)) showDockHint(dockZoneAt(drag.last));
+    if (drag.mode === 'move' && !isGroupRef(drag.id)) showSnapHint(snapZoneAt(drag.last));
     if (!drag.raf) {
       drag.raf = requestAnimationFrame(function () {
         drag.raf = 0;
@@ -852,16 +804,16 @@
     if (drag.raf) cancelAnimationFrame(drag.raf);
     drag.frame.classList.remove('ws-dragging');
     clearGuides();
-    clearDockHint();
+    clearSnapHint();
 
-    // Dropping into an edge zone docks. Checked BEFORE tab grouping: an edge zone is an explicit
-    // aim at the edge, whereas a header underneath it may just be what happens to be there.
+    // Dropping into an edge or corner zone snaps. Checked BEFORE tab grouping: aiming at an edge
+    // is deliberate, whereas a header that happens to be under the pointer is incidental.
     if (drag.mode === 'move' && !isGroupRef(drag.id)) {
-      var zone = dockZoneAt(drag.last);
+      var zone = snapZoneAt(drag.last);
       if (zone) {
-        dockPanel(drag.id, zone);
+        snapPanelTo(drag.id, zone);
         drag = null;
-        clearDockHint();
+        clearSnapHint();
         render();
         return;
       }
@@ -892,44 +844,8 @@
     drag = null;
   }
 
-  /* Rail resizing writes dock_size for every panel on that edge, so it is its own small gesture
-     rather than a special case threaded through the panel drag path. */
-  var railDrag = null;
-  document.addEventListener('pointermove', function (e) {
-    if (!railDrag) return;
-    var r = workspaceRect();
-    var size = railDrag.side === 'left'   ? e.clientX - r.left
-             : railDrag.side === 'right'  ? r.right - e.clientX
-             : railDrag.side === 'top'    ? e.clientY - r.top
-             :                              r.bottom - e.clientY;
-    // Mirror the server's invariant locally so the drag feels bounded instead of snapping back
-    // after the round trip. The server clamp remains authoritative.
-    var axis = (railDrag.side === 'left' || railDrag.side === 'right') ? r.width : r.height;
-    railDrag.size = Math.max(180, Math.min(Math.round(size), Math.round(axis * 0.60)));
-    var rail = document.getElementById('ws-dock-' + railDrag.side);
-    if (rail) {
-      if (railDrag.side === 'left' || railDrag.side === 'right') rail.style.width = railDrag.size + 'px';
-      else rail.style.height = railDrag.size + 'px';
-    }
-    e.preventDefault();
-  });
-  document.addEventListener('pointerup', function () {
-    if (!railDrag) return;
-    dockedOn(railDrag.side).forEach(function (id) { setPlacement(id, { dock_size: railDrag.size }); });
-    railDrag = null;
-    render();
-  });
-
   document.addEventListener('pointerdown', function (e) {
     if (!W.enabled || !W.root) return;
-    if (!W.state.locked) {
-      var railHandle = e.target.closest && e.target.closest('[data-wsdockresize]');
-      if (railHandle && W.root.contains(railHandle)) {
-        railDrag = { side: railHandle.getAttribute('data-wsdockresize'), size: 0 };
-        e.preventDefault();
-        return;
-      }
-    }
     var handle = e.target.closest && e.target.closest('[data-wsresize]');
     if (handle && W.root.contains(handle)) { beginGesture(e, handle.getAttribute('data-wsresize'), 'resize'); return; }
     var head = e.target.closest && e.target.closest('[data-wsdrag]');

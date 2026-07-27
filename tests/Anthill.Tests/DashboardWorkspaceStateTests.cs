@@ -127,14 +127,28 @@ public class DashboardWorkspaceStateTests
         Assert.Equal("floating", Desktop(s, "colony-health").PlacementMode);
     }
 
+    /// <summary>
+    /// Was `ValidDockSurvives` (v2.14.2), which asserted a valid dock is preserved. v2.15.1 removed
+    /// docking at the operator's request, so that intent is obsolete — the guarantee now is that a
+    /// valid dock MIGRATES predictably instead of being silently dropped or left in a dead mode.
+    /// Converted rather than deleted so the lineage of the behaviour stays visible.
+    /// </summary>
     [Fact]
-    public void ValidDockSurvives()
+    public void ValidDock_MigratesToTheEquivalentSnap()
     {
         var s = new DashboardWorkspaceState();
         s.Profiles["desktop"] = new() { ["colony-health"] = new() { PlacementMode = "docked", DockSide = "right" } };
-        Sane(s);
-        Assert.Equal("docked", Desktop(s, "colony-health").PlacementMode);
-        Assert.Equal("right", Desktop(s, "colony-health").DockSide);
+        Sane(s, 1600, 900);
+
+        var p = Desktop(s, "colony-health");
+        Assert.Equal("floating", p.PlacementMode);   // docking no longer exists as a mode
+        Assert.Null(p.DockSide);                     // and the legacy field is cleared
+
+        // "right" becomes the right half — the closest honest equivalent of a right-edge dock.
+        var expected = DashboardWorkspaceState.SnapRegion("right", 1600, 900)!.Value;
+        Assert.Equal(expected.X, p.X);
+        Assert.Equal(expected.Width, p.Width);
+        Assert.Equal(expected.Height, p.Height);
     }
 
     [Fact]
@@ -148,149 +162,105 @@ public class DashboardWorkspaceStateTests
         Assert.Equal(320, Desktop(s, "colony-health").ExpandedHeight);
     }
 
-    // ---- Docking (v2.15.0) -------------------------------------------------------------------------
+    // ---- Snapping (v2.15.1, replaces docking) ------------------------------------------------------
 
     /// <summary>
-    /// Docking must never be able to hide the colony map. The topology is the persistent
-    /// background of this dashboard; a dock strip allowed to reach the full viewport would let an
-    /// operator (or a corrupt state file) bury it with no obvious way back.
+    /// v2.15.1: docking was removed at the operator's request — an edge dock "extends it super
+    /// long instead of into a confined space". Halves and quadrants replace it.
+    ///
+    /// The v2.15.0 dock tests are gone with the feature they covered, not deleted to obtain a
+    /// green build; every invariant that still applies is re-asserted here against snapping.
     /// </summary>
     [Fact]
-    public void DockedPanel_CannotSwallowTheViewport()
+    public void SnapRegions_TileTheViewportExactly()
+    {
+        // Halves must cover the axis with no dead strip, including on an odd viewport.
+        var l = DashboardWorkspaceState.SnapRegion("left", 1601, 901)!.Value;
+        var r = DashboardWorkspaceState.SnapRegion("right", 1601, 901)!.Value;
+        Assert.Equal(0, l.X);
+        Assert.Equal(l.Width, r.X);
+        Assert.Equal(1601, l.Width + r.Width);
+        Assert.Equal(901, l.Height);
+
+        var t = DashboardWorkspaceState.SnapRegion("top", 1601, 901)!.Value;
+        var b = DashboardWorkspaceState.SnapRegion("bottom", 1601, 901)!.Value;
+        Assert.Equal(901, t.Height + b.Height);
+        Assert.Equal(1601, t.Width);
+
+        // The four quadrants must tile the viewport with no overlap and no gap.
+        var area = 0;
+        foreach (var z in new[] { "top-left", "top-right", "bottom-left", "bottom-right" })
+        {
+            var q = DashboardWorkspaceState.SnapRegion(z, 1600, 900)!.Value;
+            area += q.Width * q.Height;
+        }
+        Assert.Equal(1600 * 900, area);
+    }
+
+    /// <summary>A viewport too small to halve still yields a usable panel, never a zero-size one.</summary>
+    [Fact]
+    public void SnapRegions_RespectMinimumsOnATinyViewport()
+    {
+        foreach (var z in DashboardWorkspaceState.SnapZones)
+        {
+            var g = DashboardWorkspaceState.SnapRegion(z, 300, 120)!.Value;
+            Assert.True(g.Width >= DashboardWorkspaceState.MinPanelWidth, $"{z} width {g.Width}");
+            Assert.True(g.Height >= DashboardWorkspaceState.MinPanelHeight, $"{z} height {g.Height}");
+        }
+    }
+
+    /// <summary>An unknown zone yields nothing rather than a bogus rectangle.</summary>
+    [Fact]
+    public void SnapRegion_UnknownZone_IsNull()
+    {
+        Assert.Null(DashboardWorkspaceState.SnapRegion("diagonal", 1600, 900));
+        Assert.Null(DashboardWorkspaceState.SnapRegion(null, 1600, 900));
+        Assert.Null(DashboardWorkspaceState.SnapRegion("", 1600, 900));
+    }
+
+    /// <summary>
+    /// A layout saved by v2.15.0 with docked panels must MIGRATE, not break. A docked panel
+    /// becomes a floating panel snapped to the same edge, and the legacy dock fields are cleared.
+    /// </summary>
+    [Fact]
+    public void DockedPanelsFrom_v2_15_0_MigrateToSnapped()
     {
         var s = new DashboardWorkspaceState();
         s.Profiles["desktop"] = new()
         {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 999999 },
-            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "top", DockSize = 999999 },
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 400, DockOrder = 2 },
+            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "bottom", DockSize = 300 },
         };
         Sane(s, 1600, 900);
 
         var left = Desktop(s, "colony-health");
-        var top = Desktop(s, "recent-events");
-        Assert.True(left.DockSize <= (int)(1600 * DashboardWorkspaceState.MaxDockFraction),
-            $"left dock {left.DockSize} exceeds the max fraction of a 1600px viewport");
-        Assert.True(top.DockSize <= (int)(900 * DashboardWorkspaceState.MaxDockFraction),
-            $"top dock {top.DockSize} exceeds the max fraction of a 900px viewport");
+        Assert.Equal("floating", left.PlacementMode);
+        Assert.Null(left.DockSide);
+        Assert.Equal(0, left.DockOrder);
+        Assert.Equal(0, left.X);
+        Assert.Equal(800, left.Width);      // the left half
+        Assert.Equal(900, left.Height);
+
+        var bottom = Desktop(s, "recent-events");
+        Assert.Equal("floating", bottom.PlacementMode);
+        Assert.Equal(450, bottom.Y);        // the bottom half
     }
 
-    /// <summary>Left/right clamp against WIDTH, top/bottom against HEIGHT — not one shared axis.</summary>
+    /// <summary>A docked panel with a nonsense side still lands somewhere valid.</summary>
     [Fact]
-    public void DockSize_ClampsAgainstTheCorrectAxis()
+    public void DockedPanel_WithGarbageSide_StillMigratesSafely()
     {
         var s = new DashboardWorkspaceState();
         s.Profiles["desktop"] = new()
         {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 900 },
-            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "bottom", DockSize = 900 },
+            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "diagonal", Width = 400, Height = 200 },
         };
-        Sane(s, 2000, 800);   // wide and short: the two sides must clamp differently
-        Assert.Equal(900, Desktop(s, "colony-health").DockSize);              // 900 < 60% of 2000
-        Assert.True(Desktop(s, "recent-events").DockSize <= 480);             // 60% of 800
-    }
-
-    /// <summary>A panel cannot be docked and tabbed at once — it would render in two places.</summary>
-    [Fact]
-    public void DockedPanel_IsNeverAlsoTabbed()
-    {
-        var s = new DashboardWorkspaceState();
-        s.TabGroups["g1"] = new() { Panels = { "colony-health", "recent-events" }, Active = "colony-health" };
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "right", TabGroup = "g1" },
-        };
-        Sane(s);
-        Assert.Null(Desktop(s, "colony-health").TabGroup);
-    }
-
-    /// <summary>Dock fields are cleared when a panel returns to floating, so nothing lingers.</summary>
-    [Fact]
-    public void UndockedPanel_LosesItsDockFields()
-    {
-        var s = new DashboardWorkspaceState();
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "floating", DockSide = "left", DockOrder = 4 },
-        };
-        Sane(s);
-        var p = Desktop(s, "colony-health");
-        Assert.Null(p.DockSide);
-        Assert.Equal(0, p.DockOrder);
-    }
-
-    /// <summary>A dock side that is not a real edge falls back to floating rather than throwing.</summary>
-    [Fact]
-    public void GarbageDockSide_FallsBackToFloating()
-    {
-        var s = new DashboardWorkspaceState();
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "diagonal" },
-        };
-        Sane(s);
+        Sane(s, 1600, 900);
         var p = Desktop(s, "colony-health");
         Assert.Equal("floating", p.PlacementMode);
         Assert.Null(p.DockSide);
-    }
-
-    /// <summary>
-    /// Opposing rails must fit the axis TOGETHER. Clamping each edge to 60% independently still
-    /// lets left+right reach 120% of the width, which overlaps the two rails and buries the map.
-    /// </summary>
-    [Fact]
-    public void OpposingDockRails_CannotCombineToBuryTheMap()
-    {
-        var s = new DashboardWorkspaceState();
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 900 },
-            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "right", DockSize = 900 },
-        };
-        Sane(s, 1600, 900);
-
-        var left = Desktop(s, "colony-health").DockSize;
-        var right = Desktop(s, "recent-events").DockSize;
-        var budget = (int)(1600 * DashboardWorkspaceState.MaxDockFraction);
-        Assert.True(left + right <= budget,
-            $"left({left}) + right({right}) = {left + right} exceeds the {budget}px budget for a 1600px viewport");
-        Assert.True(left > 0 && right > 0, "neither rail should be erased outright");
-    }
-
-    /// <summary>Top and bottom clamp against height, independently of the horizontal pair.</summary>
-    [Fact]
-    public void OpposingDockRails_ClampPerAxis()
-    {
-        var s = new DashboardWorkspaceState();
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "top", DockSize = 600 },
-            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "bottom", DockSize = 600 },
-            // Fixture ids only — this file's Panels list is deliberately arbitrary, so a real
-            // production id like "missions" is "unknown" here and Sanitize correctly drops it.
-            ["pending-approvals"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 300 },
-        };
-        Sane(s, 1600, 900);
-
-        var vertical = Desktop(s, "colony-health").DockSize + Desktop(s, "recent-events").DockSize;
-        Assert.True(vertical <= (int)(900 * DashboardWorkspaceState.MaxDockFraction),
-            $"top+bottom = {vertical} exceeds the vertical budget");
-        // The lone horizontal rail was already within budget and must be left alone.
-        Assert.Equal(300, Desktop(s, "pending-approvals").DockSize);
-    }
-
-    /// <summary>A pair already within budget is not shrunk — the clamp only intervenes when needed.</summary>
-    [Fact]
-    public void OpposingDockRails_WithinBudget_AreUntouched()
-    {
-        var s = new DashboardWorkspaceState();
-        s.Profiles["desktop"] = new()
-        {
-            ["colony-health"] = new() { PlacementMode = "docked", DockSide = "left", DockSize = 300 },
-            ["recent-events"] = new() { PlacementMode = "docked", DockSide = "right", DockSize = 400 },
-        };
-        Sane(s, 1600, 900);          // 700 <= 960 budget
-        Assert.Equal(300, Desktop(s, "colony-health").DockSize);
-        Assert.Equal(400, Desktop(s, "recent-events").DockSize);
+        Assert.InRange(p.Width, DashboardWorkspaceState.MinPanelWidth, 1600);
+        Assert.InRange(p.Height, DashboardWorkspaceState.MinPanelHeight, 900);
     }
 
     // ---- Tab groups --------------------------------------------------------------------------------

@@ -335,6 +335,25 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .page.active{display:flex;}
 .page-scroll{overflow-y:auto;padding:20px 22px;gap:14px;}
 
+/* v2.15.1: with the workspace live the Dashboard is not a scrolling document — the colony map is
+   the whole page and panels float over it. Everything the classic Overview rendered in normal flow
+   below the map (the telemetry bar, the card grid, Colony Vitals, and the summary panels) is taken
+   out of flow here; each of those cards is now a workspace panel instead, so nothing is lost.
+   Scoped to .ws-active so the classic page is untouched when the kill switch is off. */
+#page-overview.ws-active{overflow:hidden;padding:0;gap:0;}
+#page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}
+#page-overview.ws-active #ws-root{flex:1;min-height:0;}
+
+/* The status bar is pinned to the very top of the workspace, above the colony view controls. */
+#ws-topbar{position:absolute;top:0;left:0;right:0;z-index:45;pointer-events:auto;
+  background:rgba(8,12,20,.82);border-bottom:1px solid var(--border);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+#ws-topbar > #tb-overview{display:block !important;margin:0;padding:4px 10px;}
+/* Top-anchored topology overlays clear the status bar instead of hiding beneath it. */
+#ws-topology .topo-ov-slot[data-ovslot="top-left"],
+#ws-topology .topo-ov-slot[data-ovslot="top-center"],
+#ws-topology .topo-ov-slot[data-ovslot="top-right"]{top:52px;}
+
 /* -- Colony Page Layout ------------------------------------------------------ */
 #page-colony{flex-direction:row !important;overflow:hidden;}
 #colony-left{
@@ -347,7 +366,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* v2.14.14: the HUD wrapper stops being a positioned box so its children can be re-parented into
    anchor slots. display:contents removes the box while keeping the children rendered. */
 .colony-hud{display:contents;}
-.topo-ov-slot{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;max-width:260px;pointer-events:none;}
+/* v2.15.1: no max-width on the SLOT. It clipped the colony view bar so the row began at
+   "Handoffs" with Command/Expanded/Active/Chambers cut off the left edge. Width belongs to the
+   overlays that actually need constraining (the legend and signals panels), not to the slot. */
+.topo-ov-slot{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;max-width:none;pointer-events:none;}
+#chud-legend,#chud-phero{max-width:260px;}
+/* The view bar is a single row and must never wrap or clip. */
+#colony-viewbar{flex-wrap:nowrap;white-space:nowrap;max-width:none;}
 .topo-ov-slot>*{pointer-events:auto;}
 .topo-ov-slot[data-ovslot="top-left"]{top:10px;left:10px;}
 .topo-ov-slot[data-ovslot="top-center"]{top:10px;left:50%;transform:translateX(-50%);align-items:center;}
@@ -1390,7 +1415,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="hud-hd"><span class="hud-hd-title">Colony Vitals</span>
             <span class="hud-hd-sub" id="ov-events-sub">— events logged</span>
             <span class="hud-hd-action"><span id="ov-health-alert" style="font-size:10px;color:var(--queen);display:none;"></span></span></div>
-          <div class="health-grid">
+          <div class="health-grid" id="ov-vitals-body">
             <div class="health-tile">
               <div class="health-hd"><span class="health-dot" id="ov-h-auto-dot"></span>Automation</div>
               <div class="health-main" id="ov-h-auto">—</div>
