@@ -1,5 +1,36 @@
 # ANTHILL Changelog
 
+## v2.23.0 — Observed routes become hypotheses
+
+v2.20.0 gave the archivist's memory candidates a consumer: they became durable events with
+provenance. The *procedural* ones went no further. The archivist would observe "this route worked
+on a verified mission", write it down, and the V2.12 evaluation model would never hear about it —
+both halves of learning present, and not connected.
+
+A verified route now registers as a skill **Candidate**.
+
+### A hypothesis, not evidence
+
+A candidate is usable for nothing. It appears in no plan (`SkillPlanningContext` offers only
+Certified and Experimental), confers no permission, and carries no success count. Registration
+records **no outcome at all** — standing is earned only through `RecordOutcome` with a promotable
+verification bundle, exactly as before. A route observed ten times is still a candidate; treating
+an observation as proof is precisely the mistake v2.19.0 exists to correct.
+
+Only `completed_verified` missions propose routes. The archivist already enforces that, and it is
+re-checked at registration rather than assumed — a defence that lives in one place is a defence
+that moves.
+
+### One route, one skill
+
+Route ids are derived from the route itself, so the same sequence observed across many missions
+converges on a single skill accumulating evidence. Per-observation ids would have produced a pile
+of single-observation skills that could never reach the success count certification requires:
+learning that looks busy and proves nothing.
+
+So the loop is now closed end to end: observe a verified route → register it as a hypothesis → it
+earns standing only by being followed and verified again. No step is skipped.
+
 ## v2.22.0 — The skills loop closes
 
 v2.21.0 made skills durable and let a certified procedure INFORM a plan. Nothing recorded whether
