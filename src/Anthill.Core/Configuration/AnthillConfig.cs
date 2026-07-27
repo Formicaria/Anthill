@@ -69,6 +69,12 @@ public sealed class AnthillConfig
     /// ProjectConfig writes the resolved value back, so it becomes explicit on the next save.
     /// </summary>
     [JsonPropertyName("dashboard_workspace_enabled")] public bool? DashboardWorkspaceEnabled { get; set; }
+    /// <summary>
+    /// v2.16.0: write a concise plain-English answer at mission completion instead of surfacing
+    /// the best task's raw output verbatim. Costs one model call per mission; turning it off
+    /// restores the previous behaviour exactly.
+    /// </summary>
+    [JsonPropertyName("answer_synthesis_enabled")] public bool AnswerSynthesisEnabled { get; set; } = true;
     [JsonPropertyName("sandbox_execution_enabled")] public bool SandboxExecutionEnabled { get; set; } = false;
     [JsonPropertyName("specialist_ant_execution_enabled")] public bool SpecialistAntExecutionEnabled { get; set; } = false;
     [JsonPropertyName("tester_ant_enabled")] public bool TesterAntEnabled { get; set; } = false;

@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.15.3) — TRACK COMPLETE
+## WHERE WE ARE (as of v2.16.0) — TRACK COMPLETE
 
 **Shipped and working:**
 
@@ -153,6 +153,10 @@ toolbar 58-90, overlay slots from 96, mission bar pinned at the bottom above the
 **v2.15.3** fixed a hotfix regression from that change: the classic-page hide rule was an id
 allow-list, so the newly added status bar and mission bar were both `display:none`. It excludes by
 `.ws-layer` class now, which is additive-safe.
+
+**v2.16.0** changed the default panel arrangement (two rails, clear centre, six panels hidden) and
+rewrote the chamber layout so each role owns an angular sector — zero overlapping nodes, verified.
+Missions moved to a conversation view; the same treatment for Automation is queued.
 
 ### Release numbering correction
 
