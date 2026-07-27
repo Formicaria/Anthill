@@ -1159,7 +1159,7 @@ public sealed partial class Queen : IDisposable
         // Outcomes.MissionOutcome vocabulary class inside this type. Two different things wearing
         // the same name — qualify or get the wrong one.
         var verified = Outcomes.MissionOutcome.IsPositiveSuccess(
-            Outcomes.MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks)));
+            Outcomes.MissionOutcome.Resolve(mission.Status, MissionIsVerified(mission)));
 
         // A promotable bundle is the ONLY thing RecordOutcome counts as a verified success, so an
         // unverified mission passes null rather than a bundle — it must not be able to promote.
@@ -1178,6 +1178,37 @@ public sealed partial class Queen : IDisposable
                 });
         }
         Memory.SaveSkillRegistry(Skills);   // standing must outlive the process that earned it
+    }
+
+    /// <summary>
+    /// v2.24.0 Phase C5: the single place that decides whether a mission counts as verified.
+    ///
+    /// The interim gate (a verification step ran and returned a pass) is the FLOOR and is never
+    /// relaxed. When objective verification is enabled, the mission must additionally have
+    /// produced the deliverable its goal asked for — a mission whose goal was "add a CHANGELOG
+    /// entry" can plan a researcher and a builder, describe the change, pass verification honestly,
+    /// and deliver no file change at all.
+    ///
+    /// Additive by construction: this can only ever narrow. Nothing that fails today can newly
+    /// pass because of it.
+    /// </summary>
+    private bool MissionIsVerified(Mission mission)
+    {
+        if (!MissionVerification.IsSatisfied(mission.Tasks)) return false;
+        if (!AnthillRuntime.EnableObjectiveVerification) return true;
+
+        var proposals = Memory.CountPatchProposalsForMission(mission.Id);
+        if (ObjectiveVerification.IsSatisfied(mission, proposals)) return true;
+
+        Memory.LogEvent(mission.Id, "objective_verification_failed",
+            ObjectiveVerification.Explain(mission, proposals),
+            metadata: new()
+            {
+                ["goal"] = TextUtil.Truncate(mission.Goal, 300),
+                ["patch_proposals"] = proposals,
+                ["required"] = ObjectiveVerification.Required(mission.Goal, MissionConstraints.Parse(mission.Goal)).ToString(),
+            });
+        return false;
     }
 
     /// <summary>

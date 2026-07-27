@@ -446,6 +446,15 @@ public sealed partial class SqliteMemory
     }
 
     /// <summary>Patch status counts (proposed/approved/applied/rejected/failed/superseded + total) for one mission.</summary>
+    /// <summary>
+    /// How many patch proposals a mission produced, any status. v2.24.0 objective verification
+    /// asks "did the mission deliver the file change its goal asked for" — PROPOSED, not applied,
+    /// because ants propose and a human (or gated auto-apply) applies. Requiring an applied change
+    /// would fail every correctly operating mission awaiting approval.
+    /// </summary>
+    public int CountPatchProposalsForMission(string missionId) =>
+        (int)AsLong(Scalar("SELECT COUNT(*) FROM patch_proposals WHERE mission_id = @m", ("@m", missionId)));
+
     public Dictionary<string, object?> PatchCountsForMission(string missionId) =>
         NormalizePatchCounts(Query(
             "SELECT status, COUNT(*) AS n FROM patch_proposals WHERE mission_id = @m GROUP BY status", ("@m", missionId)));
@@ -828,7 +837,18 @@ public sealed partial class SqliteMemory
         var resetNote = LearningResetDate() is { } reset
             ? $"[learning reset {reset}: pre-reset trails are legacy_unverified and re-enter planning only after a post-reset success]\n"
             : "";
-        if (trails.Count == 0) return resetNote + "No pheromone trail memory found.";
+        if (trails.Count == 0)
+        {
+            // Distinguish "never had memory" from "memory exists but is all pre-boundary". After
+            // the reset every trail is legacy with a restarted success count, so planning memory
+            // reads as empty — and an operator seeing "no memory found" beside a full trail table
+            // would reasonably conclude the subsystem is broken.
+            var held = (int)AsLong(Scalar("SELECT COUNT(*) FROM pheromone_trails WHERE legacy = 1"));
+            return resetNote + (held > 0
+                ? $"No trails have earned post-reset standing yet ({held} held as legacy_unverified; "
+                  + "each re-enters planning after one completed_verified mission)."
+                : "No pheromone trail memory found.");
+        }
         return resetNote + string.Join("\n", trails.Select(t =>
             $"{t.GetValueOrDefault("trail_key")} | type={t.GetValueOrDefault("trail_type")} | strength={t.GetValueOrDefault("strength")} | " +
             $"success={t.GetValueOrDefault("success_count")} | failure={t.GetValueOrDefault("failure_count")}"));

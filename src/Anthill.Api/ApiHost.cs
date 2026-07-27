@@ -1,5 +1,6 @@
 using System.Reflection;
 using Anthill.Core.Agents;
+using Anthill.Core.Shadow;
 using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
@@ -377,6 +378,22 @@ public static partial class ApiHost
                 ["validation_errors"] = AntRegistry.ValidateRegistry(),
                 ["view_modes"] = new[] { "command", "expanded", "active", "group" },
                 ["executable_roles"] = AntRegistry.ExecutableRoleIds.ToList(),
+                // v2.24.0 Phase D: the activation ceiling, stated plainly. Without this the console
+                // could show a role as gated-off with no way to tell whether its own flag or the
+                // tier was responsible — two different fixes wearing the same symptom.
+                ["activation"] = new Dictionary<string, object?>
+                {
+                    ["tier"] = ActivationTiers.Name(AnthillRuntime.ActivationTier),
+                    ["explanation"] = ActivationTiers.Explain(AnthillRuntime.ActivationTier),
+                    ["specialist_execution_enabled"] = AnthillRuntime.EnableSpecialistAntExecution,
+                    ["roles"] = AntExecutionCatalog.Contracts.Keys.OrderBy(r => r, StringComparer.Ordinal)
+                        .Select(role => new Dictionary<string, object?>
+                        {
+                            ["role_id"] = role,
+                            ["admitted_by_tier"] = ActivationTiers.Admits(AnthillRuntime.ActivationTier, role),
+                            ["gate_open"] = AntExecutorCatalog.SpecialistGateOpen(role),
+                        }).ToList(),
+                },
                 ["worker_telemetry"] = Queen.Memory.SummarizeWorkerTelemetry(),
                 // Execution framework Stage F: truthful per-role runtime state — the UI must never
                 // reduce "not running" to a single ambiguous 'inactive'.
@@ -995,11 +1012,86 @@ public static partial class ApiHost
         });
 
         // Pheromone memory: list (with net scores) and prune the unusable/errored trails.
+        // v2.24.0 Phase E: the Shadow Operations line's first production surface. Two releases
+        // built a recommendation engine and a fault-simulation harness that nothing could reach —
+        // no endpoint, no storage, no call site. Qualification now reads REAL recorded pairs.
+        app.MapGet("/shadow/json", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_graph"); if (auth is not null) return auth;
+
+            var pairs = Queen.Memory.LoadScoreablePairs(500);
+            var timing = ShadowTimingMetrics.From(Queen.Memory.ShadowResolutionSeconds(500));
+            var pending = Queen.Memory.CountUnresolvedShadowRecommendations();
+
+            // The scoreboard is computed from REHYDRATED stored pairs, not from anything held in
+            // memory during this process. Before v2.24.0 `QualificationScoreboard.Compute` had no
+            // production caller at all — it could only be handed pairs built by the simulator or by
+            // its own tests, so the qualification evidence V3 requires did not exist.
+            var metrics = QualificationScoreboard.Compute(Queen.Memory.LoadScoreableRecommendations(500));
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["pairs"] = pairs,
+                // Projected explicitly rather than serialising the records directly: no naming
+                // policy is configured, so a record would go out PascalCase while the joined rows
+                // above are snake_case. Renaming a metric property must not silently rename a
+                // field the dashboard reads.
+                ["timing"] = new Dictionary<string, object?>
+                {
+                    ["sample"] = timing.Sample,
+                    ["median_resolution_seconds"] = timing.MedianResolutionSeconds,
+                    ["p90_resolution_seconds"] = timing.P90ResolutionSeconds,
+                },
+                ["metrics"] = new Dictionary<string, object?>
+                {
+                    ["sample"] = metrics.Sample,
+                    ["diagnosis_precision"] = metrics.DiagnosisPrecision,
+                    ["diagnosis_recall"] = metrics.DiagnosisRecall,
+                    ["action_selection_accuracy"] = metrics.ActionSelectionAccuracy,
+                    ["unnecessary_action_rate"] = metrics.UnnecessaryActionRate,
+                    ["predicted_success_accuracy"] = metrics.PredictedSuccessAccuracy,
+                    ["policy_violations"] = metrics.PolicyViolations,
+                    ["unverified_success_claims"] = metrics.UnverifiedSuccessClaims,
+                },
+                // Structural invariants. Both must be zero; a non-zero value is a regression in the
+                // recommender, not a score to be interpreted.
+                ["invariants_hold"] = metrics.PolicyViolations == 0 && metrics.UnverifiedSuccessClaims == 0,
+                // Stated explicitly: an empty scoreboard means "not yet qualified", never "passing".
+                // A qualification gate that reads as satisfied because nothing was measured is the
+                // most dangerous possible failure for this subsystem.
+                ["qualified_sample"] = pairs.Count,
+                ["awaiting_operator_judgment"] = pending,
+                ["status"] = pairs.Count == 0
+                    ? "no scored incidents yet — shadow mode has not qualified anything"
+                    : $"{pairs.Count} scored incident(s); {pending} awaiting operator judgment",
+            });
+        });
+
         app.MapGet("/pheromones/json", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
             int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var limit);
-            return ApiJson.Ok(Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000)));
+            var trails = Queen.Memory.ListPheromoneTrails(Math.Clamp(limit <= 0 ? 300 : limit, 1, 2000));
+
+            // v2.24.0: the colony dashboard reads THIS endpoint, and v2.20.0 surfaced the learning
+            // reset everywhere except here. After the reset every pre-boundary trail sits at the
+            // neutral 0.5 with its success count restarted, so the HUD renders a wall of identical
+            // 50% bars and the field looks dead. That is the reset working, not the pheromone
+            // system failing — but with nothing saying so it is indistinguishable from a break.
+            //
+            // The client reads `data` as the trail array, so that shape is preserved exactly and
+            // the reset travels beside it.
+            var legacyCount = trails.Count(t => Convert.ToInt64(t.GetValueOrDefault("legacy") ?? 0L) != 0);
+            return ApiJson.Ok(trails, new Dictionary<string, object?>
+            {
+                ["learning_reset"] = Queen.Memory.LearningResetDate(),
+                ["legacy_trails"] = legacyCount,
+                ["total_trails"] = trails.Count,
+                ["note"] = legacyCount > 0
+                    ? "Trails marked legacy were reset to neutral strength at the learning boundary; "
+                      + "they re-differentiate as missions reach completed_verified."
+                    : null,
+            });
         });
 
         // v1.8.23 Phase 9: one composed read model for the Memory + Pheromone Explorer.
@@ -1928,6 +2020,24 @@ public static class ApiJson
 
     public static IResult Ok(object? data = null, string message = "ok") =>
         Envelope(new Dictionary<string, object?> { ["success"] = true, ["message"] = TextUtil.SanitizeUtf16(message), ["data"] = SanitizeJson(data) }, 200);
+
+    /// <summary>
+    /// v2.24.0: a response that carries context ALONGSIDE its data rather than inside it.
+    ///
+    /// Needed because some payloads cannot be explained by the rows alone. The colony pheromone
+    /// view is the case that forced it: after the learning reset every trail sits at neutral
+    /// strength, so the display is a wall of identical bars that is indistinguishable from a
+    /// broken subsystem. `data` keeps its exact shape — every existing client reads it unchanged —
+    /// and the explanation travels beside it.
+    /// </summary>
+    public static IResult Ok(object? data, Dictionary<string, object?> meta, string message = "ok") =>
+        Envelope(new Dictionary<string, object?>
+        {
+            ["success"] = true,
+            ["message"] = TextUtil.SanitizeUtf16(message),
+            ["data"] = SanitizeJson(data),
+            ["meta"] = SanitizeJson(meta),
+        }, 200);
 
     public static IResult Error(string message, string? error = null, object? data = null) =>
         Envelope(new Dictionary<string, object?> { ["success"] = false, ["message"] = TextUtil.SanitizeUtf16(message), ["error"] = error, ["data"] = SanitizeJson(data) },

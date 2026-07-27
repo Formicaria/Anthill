@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.23.0";
-    public const int SchemaVersion = 13;
+    public const string Version = "2.24.0";
+    public const int SchemaVersion = 14;
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
@@ -200,6 +200,10 @@ public static class AnthillRuntime
     /// an operator narrows it deliberately. See AnthillConfig.ActivationTier.
     /// </summary>
     public static Agents.ActivationTier ActivationTier = Agents.ActivationTier.Full;
+    /// <summary>v2.24.0: objective-level verification on top of the interim gate. Off by default.</summary>
+    public static bool EnableObjectiveVerification = false;
+    /// <summary>v2.24.0 Phase E: shadow observation of live incidents. Never executes. Off by default.</summary>
+    public static bool EnableShadowObservation = false;
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
     public static bool EnableMedicAnt = false;
@@ -585,6 +589,8 @@ public static class AnthillRuntime
         EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         ActivationTier = Agents.ActivationTiers.Parse(config.ActivationTier);
+        EnableObjectiveVerification = config.ObjectiveVerificationEnabled;
+        EnableShadowObservation = config.ShadowObservationEnabled;
         EnableTesterAnt = config.TesterAntEnabled;
         EnableSoldierAnt = config.SoldierAntEnabled;
         EnableMedicAnt = config.MedicAntEnabled;

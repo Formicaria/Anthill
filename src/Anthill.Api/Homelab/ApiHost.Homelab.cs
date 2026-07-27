@@ -1,4 +1,5 @@
 using Anthill.Core.Configuration;
+using Anthill.Core.Shadow;
 using Anthill.Core.Health;
 using Anthill.Core.Homelab;
 using Anthill.Core.Homelab.Approvals;
@@ -53,7 +54,12 @@ public static partial class ApiHost
         HomelabNotifier = new NotificationService(Homelab);
         HomelabHealth = new HealthCheckRunner(Homelab, HomelabTargets, HomelabNotifier);
         HomelabRisks = new RiskAnalyzer(Homelab);
-        HomelabIncidents = new IncidentManager(Homelab);
+        // v2.24.0 Phase E: shadow mode observes real incidents here — the composition root, where
+        // the incident layer and colony memory both exist. Shadow NEVER executes; it records what
+        // it would have done so the recommendation can be scored against what the operator
+        // actually did. Gated off by default (`shadow_observation_enabled`).
+        HomelabIncidents = new IncidentManager(Homelab, incident =>
+            LiveIncidentObserver.Observe(Queen.Memory, Queen.Memory.LoadSkillRegistry(), incident));
         // v2.3.0 (NORTH_STAR Phase 12): the approval-gated action pipeline. Local + mock runners
         // only in this release; both action capability gates remain OFF by default (fail closed).
         InitHomelabActions();

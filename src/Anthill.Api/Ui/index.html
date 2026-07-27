@@ -2123,6 +2123,18 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="hl-auto-runs" style="margin-top:8px;font-size:10px;"></div>
         </div>
 
+        <!-- v2.24.0 Phase E: shadow qualification. Shadow mode watches real incidents, records what
+             it WOULD have done, and never executes. This panel shows the track record that
+             comparison produces — it is the evidence a V3 executor would have to earn. -->
+        <div class="card" id="hl-shadow-card" data-hlsub="automation" style="padding:10px 16px;">
+          <div class="section-head" style="margin-top:0;">Shadow Qualification
+            <span id="hl-shadow-state" style="font-weight:normal;font-size:10px;color:var(--dim);margin-left:8px;"></span>
+            <button class="btn btn-ghost" style="float:right;" data-onclick="hlLoadShadow()" title="Refresh">↺</button>
+          </div>
+          <div id="hl-shadow-kpis" style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;margin-bottom:8px;"></div>
+          <div id="hl-shadow-body" style="font-size:11px;color:var(--muted);">Loading shadow record…</div>
+        </div>
+
         <!-- V2.0 Entity detail drawer (host/service) -->
         <div class="card" id="hl-entity-detail" style="display:none;padding:10px 16px;">
           <div class="section-head" style="margin-top:0;">Detail — <span id="hl-ent-title"></span>

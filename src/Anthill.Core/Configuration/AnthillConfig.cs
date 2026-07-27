@@ -103,6 +103,14 @@ public sealed class AnthillConfig
     /// Unrecognised values resolve to "core" — a typo must narrow, never widen.
     /// </summary>
     [JsonPropertyName("activation_tier")] public string ActivationTier { get; set; } = "full";
+    /// <summary>v2.24.0: also require the deliverable the goal asked for before calling a mission
+    /// verified. Additive — it can only narrow. Off by default: a change to what counts as success
+    /// must be switched on deliberately, not arrive with an upgrade.</summary>
+    [JsonPropertyName("objective_verification_enabled")] public bool ObjectiveVerificationEnabled { get; set; } = false;
+    /// <summary>v2.24.0 Phase E: shadow mode observes real incidents and records what it WOULD have
+    /// done. It never executes. Off by default — an observer that silently starts writing
+    /// recommendations about production incidents should not arrive with an upgrade.</summary>
+    [JsonPropertyName("shadow_observation_enabled")] public bool ShadowObservationEnabled { get; set; } = false;
     [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
     [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";

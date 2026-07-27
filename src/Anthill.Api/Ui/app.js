@@ -2128,6 +2128,16 @@ async function pollColonyPheromones(){
       const key=(t.trail_key||'—').split(':').slice(-1)[0];
       return `<div class="chud-trail"><div class="tk" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(key)}</div><div class="tb"><i style="width:${pct}%;background:${col}"></i></div></div>`;
     }).join('') : '<div class="chud-empty">No trails yet — run missions to build colony memory.</div>';
+    // v2.24.0: after the learning reset every pre-boundary trail sits at the neutral 0.5, so this
+    // list is a wall of identical bars. Without saying so it reads as a broken subsystem rather
+    // than as memory awaiting re-verification.
+    const m=r.meta||{};
+    if(m.legacy_trails>0){
+      body.insertAdjacentHTML('beforeend',
+        `<div class="chud-empty">${m.legacy_trails}/${m.total_trails} trails reset to neutral on `
+        + `${escapeHtml(String(m.learning_reset||'the learning boundary').slice(0,10))} — they re-differentiate `
+        + `as missions reach completed_verified.</div>`);
+    }
   }catch{}
 }
 
@@ -6203,6 +6213,9 @@ function hlSubShow(name,fromRoute){
   try{ localStorage.setItem('hl3.subpage',name); }catch(e){}
   document.querySelectorAll('#page-homelab [data-hlsub]').forEach(c=>{ c.style.display=(c.dataset.hlsub===name)?'':'none'; });
   document.querySelectorAll('#hl-subnav .hl-sub-btn').forEach(b=>b.classList.toggle('active',b.dataset.sub===name));
+  // v2.24.0: the shadow panel loads with its sub-page rather than on every homelab open — it joins
+  // two tables and nothing else on the page needs it.
+  if(name==='automation' && typeof hlLoadShadow==='function') hlLoadShadow();
   // v2.6 Phase 2: when the in-page sub-nav or a keyboard shortcut drives the change, sync the router
   // chrome (breadcrumb, sidebar highlight, URL). fromRoute=true means go()/showPage() already did.
   if(!fromRoute && typeof HLSUB_ROUTE!=='undefined' && document.getElementById('page-homelab')?.classList.contains('active')){
@@ -7531,3 +7544,87 @@ bootAuth();
     }).observe(document.body, {childList:true, subtree:true});
   }catch(e){}
 })();
+
+
+// -- v2.24.0 Phase E: shadow qualification panel -------------------------------------------------
+// Shadow mode never executes. This panel reports what it WOULD have done and how that compared to
+// what the operator actually did — the qualification evidence a V3 executor has to earn first.
+//
+// The one rule this view must never break: an empty scoreboard reads as "not qualified", never as
+// a pass. A gate that looks satisfied because nothing was measured is the most dangerous possible
+// failure for this subsystem, so zero samples renders as an explicit "no evidence yet".
+function hlShadowPct(v){ return (v==null||isNaN(v))?'—':(Math.round(v*1000)/10).toFixed(1)+'%'; }
+
+function hlShadowDuration(seconds){
+  const s=Number(seconds)||0;
+  if(s<=0) return '—';
+  if(s<90) return Math.round(s)+'s';
+  if(s<5400) return (s/60).toFixed(1)+'m';
+  return (s/3600).toFixed(1)+'h';
+}
+
+async function hlLoadShadow(){
+  const body=document.getElementById('hl-shadow-body');
+  const kpis=document.getElementById('hl-shadow-kpis');
+  const state=document.getElementById('hl-shadow-state');
+  if(!body) return;
+  try{
+    const r=await api('/shadow/json');
+    if(!(r&&r.success&&r.data)){
+      body.innerHTML='<span style="color:var(--dim)">Shadow record unavailable.</span>';
+      if(kpis) kpis.innerHTML=''; return;
+    }
+    const d=r.data, m=d.metrics||{}, t=d.timing||{}, pairs=d.pairs||[];
+    const sample=Number(d.qualified_sample)||0;
+    const pending=Number(d.awaiting_operator_judgment)||0;
+
+    if(state) state.textContent=d.status||'';
+
+    // Sample first, and stated as a count: every rate below is meaningless without it.
+    const kpi=(label,value,tone)=>'<span style="padding:3px 8px;border:1px solid var(--border);border-radius:4px;">'+
+      '<span style="color:var(--dim)">'+escapeHtml(label)+'</span> '+
+      '<b'+(tone?' style="color:'+tone+'"':'')+'>'+escapeHtml(value)+'</b></span>';
+
+    if(kpis) kpis.innerHTML = sample===0
+      ? kpi('Scored incidents','0 — not qualified','var(--dim)')+kpi('Awaiting judgment',String(pending))
+      : [ kpi('Scored incidents',String(sample)),
+          kpi('Awaiting judgment',String(pending)),
+          kpi('Diagnosis precision',hlShadowPct(m.diagnosis_precision)),
+          kpi('Action accuracy',hlShadowPct(m.action_selection_accuracy)),
+          kpi('Unnecessary actions',hlShadowPct(m.unnecessary_action_rate)),
+          kpi('Median resolve',hlShadowDuration(t.median_resolution_seconds)),
+          kpi('Invariants', d.invariants_hold?'hold':'VIOLATED',
+              d.invariants_hold?'var(--green)':'var(--red)'),
+        ].join('');
+
+    if(sample===0){
+      body.innerHTML='<span style="color:var(--dim)">No scored incidents yet — shadow mode has not '+
+        'qualified anything. It records a recommendation when an incident opens and stays unscored '+
+        'until an operator says what actually happened'+
+        (pending>0?('; '+pending+' recommendation(s) are waiting on that judgment.'):'. ')+
+        ' Observation is off by default (shadow_observation_enabled).</span>';
+      return;
+    }
+
+    const yn=(v,good)=>'<span style="color:'+((!!v===good)?'var(--green)':'var(--red)')+'">'+(v?'yes':'no')+'</span>';
+    body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:10px;">'+
+      '<tr style="color:var(--dim);text-align:left;"><th>Incident</th><th>Diagnosis</th>'+
+      '<th>Proposed</th><th>Predicted</th><th>Risk</th><th>Rollback</th>'+
+      '<th>Would advise</th><th>Dx right</th><th>Action matched</th></tr>'+
+      pairs.map(p=>'<tr style="border-top:1px solid var(--border);">'+
+        '<td>'+escapeHtml(p.incident_id)+'</td>'+
+        '<td>'+escapeHtml(p.diagnosis)+'</td>'+
+        '<td>'+escapeHtml(p.proposed_action)+'</td>'+
+        '<td>'+escapeHtml(p.predicted_outcome)+'</td>'+
+        '<td>'+escapeHtml(p.risk_level)+(Number(p.risk_requires_approval)?' <span style="color:var(--amber)">(approval)</span>':'')+'</td>'+
+        '<td>'+escapeHtml(p.rollback_plan)+'</td>'+
+        '<td>'+(Number(p.would_recommend_execution)?'yes':'no')+'</td>'+
+        '<td>'+yn(Number(p.diagnosis_correct),true)+'</td>'+
+        '<td>'+yn(Number(p.action_matched),true)+'</td>'+
+      '</tr>').join('')+'</table>'+
+      '<div style="margin-top:6px;font-size:9px;color:var(--dim);">Shadow mode has no action pathway — '+
+      'nothing in this table was executed.</div>';
+  }catch(e){
+    body.innerHTML='<span style="color:var(--dim)">Shadow record unavailable.</span>';
+  }
+}

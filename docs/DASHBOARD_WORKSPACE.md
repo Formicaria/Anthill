@@ -10,6 +10,18 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.24.0 note: the Modules menu now actually collapses. `hidden` only carries `display:none`
+> from the UA stylesheet, and `.ws-modules` sets `display:flex` — so two earlier fixes set the
+> attribute correctly and changed nothing on screen. `.ws-modules[hidden]` and `.ws-tray[hidden]`
+> rules restore it, with a guard test over every script-hidden element.
+>
+> v2.24.0 note: objective-verification failures appear as `objective_verification_failed` events.
+> v2.24.0 note: **Homelab → Automation** gains a Shadow Qualification panel — the recommendation
+> bundle shadow mode would have produced for each real incident, beside the scoreboard comparing it
+> with what the operator actually did. Nothing in that table was executed; shadow mode has no action
+> pathway. An empty scoreboard reads "not qualified", never as a pass. Off by default
+> (`shadow_observation_enabled`).
+
 > v2.23.0 note: no new surface — route registration is recorded as `skill_candidate_registered` events.
 
 > v2.22.0 note: the Modules toggle now reports its real state (▸ / ▾ and a truthful

@@ -47,7 +47,25 @@ public sealed class IncidentManager
     public const int PatternThreshold = 3;
     public const int PatternWindowDays = 14;
 
-    public IncidentManager(IHomelabRepository repository) => _repository = repository;
+    /// <summary>
+    /// v2.24.0: an optional hook invoked when an incident OPENS.
+    ///
+    /// Shadow observation needs to see real incidents, but the incident layer must not know about
+    /// colony memory or the skill registry — wiring those in here would couple the homelab
+    /// subsystem to the orchestrator. The hook lets the composition root connect them instead, and
+    /// keeps this class exactly as testable as it was.
+    ///
+    /// It is invoked only for a genuinely NEW incident, after the repository has accepted it. A
+    /// deduplicated re-open is not a new observation, and observing it would inflate the
+    /// qualification sample with repeats of the same event.
+    /// </summary>
+    private readonly Action<IncidentRecord>? _onOpened;
+
+    public IncidentManager(IHomelabRepository repository, Action<IncidentRecord>? onOpened = null)
+    {
+        _repository = repository;
+        _onOpened = onOpened;
+    }
 
     // ---- Opening (manual + candidate sweep) ------------------------------------------------------
 
@@ -76,6 +94,12 @@ public sealed class IncidentManager
                 Severity = "error",
                 Message = $"Repeated-failure pattern: '{subjectId}' has produced {PatternThreshold}+ incidents in {PatternWindowDays} days",
             });
+        // v2.24.0: shadow observation sees the incident AFTER the repository has accepted it, and
+        // only for a genuinely new one. Never allowed to affect the incident: a shadow failure must
+        // not become a second failure at the worst possible moment.
+        try { _onOpened?.Invoke(incident); }
+        catch (Exception ex) { Console.Error.WriteLine($"[IncidentManager] incident-opened hook failed: {ex.Message}"); }
+
         return incident;
     }
 

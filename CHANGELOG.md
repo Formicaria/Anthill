@@ -1,5 +1,180 @@
 # ANTHILL Changelog
 
+## v2.24.0 — Was the goal met, and does shadow mode have a track record?
+
+`MissionVerification` answers whether a verification step ran and returned a pass. That is
+necessary and not sufficient. A mission whose goal is "add a CHANGELOG entry" can plan a researcher
+and a builder, produce a careful description of the change, have the verifier honestly pass — every
+task did exactly what it said — and deliver no file change at all. `completed_verified` then flows
+to pheromones, objective EMA, skill credit, and the auto-apply precondition.
+
+`ObjectiveVerification` adds a deliverable check: when a goal plainly asks for a file change, a
+file change must have been PROPOSED. Proposed, not applied — ants propose and a human or gated
+auto-apply applies, so requiring application would fail every correctly operating mission awaiting
+approval.
+
+### Additive by construction
+
+The interim gate remains the floor and is never relaxed. This can only narrow: nothing that fails
+today can newly pass because of it, and a test asserts that property across every combination of
+goal, verification state, and proposal count.
+
+### Deliberately modest
+
+Deciding "was the goal met" in general is a judgment call, and a model asserting it is precisely
+the evidence v2.19.0 stopped accepting. So the only claim made is one that can be checked
+deterministically, from a narrow list of verbs that plainly ask for a file change. A goal whose
+intent cannot be read falls back to the interim gate alone — an unreadable goal must not fail a
+mission that otherwise verified, or work would be punished for the phrasing of its request.
+
+A read-only or verification-only mission never requires a change, since it is forbidden from making
+one; requiring it would make the two rules contradict, and this one would win by failing every such
+mission.
+
+### Follow-ups from findings, not from opinions
+
+The verifier has always reported "Missing Steps:" — a concrete list of what a mission did NOT do —
+and nothing read it. Follow-up objectives came instead from the Strategist's free-form proposal
+about what might be worth doing next: a model's opinion, generated on the strength of a success.
+
+`EvidenceFollowUps` reads the findings. Each one becomes an objective traceable to the sentence
+that caused it, with **its own budget** (a follow-up must never draw on the parent's remaining
+runs, or an objective could extend itself indefinitely by discovering more work) and a **depth
+cap**, so findings cannot generate an unbounded objective tree. Only verified missions produce
+them: an unverified mission's "missing steps" describe work that may not be missing at all, since
+the thing that was supposed to check is what failed.
+
+A bug worth recording, found by simulating the parser against the real verifier text: `StaticVerify`
+writes the clean case inline — `Missing Steps: None identified by static verification.` — so the
+findings block is empty and the next line is `Risk Notes: ...`. Stopping at "a line containing a
+colon" did not fire with no steps collected yet, and the parser produced a follow-up objective
+titled "Risk Notes: none" — work invented from a section header, on a verification that found
+nothing wrong. It now stops at the verifier's known section headers.
+
+### Shadow Operations gets a production surface
+
+The Shadow line shipped across two releases — a non-executing recommendation engine (v2.17.0) and
+a sixteen-scenario fault catalog with a simulation harness (v2.18.0) — with **no table, no
+endpoint, and no production call site**. `ShadowOperator.Recommend` was invoked only by its own
+tests and the simulator. The sixth instance of this codebase's signature defect, and the largest.
+
+That made Phase E's "live-incident wiring" unbuildable as written. Shadow mode's purpose is to
+accumulate a track record: recommend, wait, compare against what the operator actually did, score
+the difference. A recommendation that vanishes when the process exits cannot be compared to
+anything, so qualification could only ever run over replayed scenarios. Wiring live observation
+without storage would have produced a system that appeared to be qualifying itself while measuring
+nothing.
+
+Recommendations and outcomes now persist (migration 14) in separate tables, because they arrive at
+different times — the recommendation when an incident is observed, the outcome when a human later
+says what really happened. Joining them produces a scoreable pair; an unjudged recommendation is
+excluded, since it proves nothing and must not move the score in either direction.
+
+`/shadow/json` exposes the scoreboard, timing metrics, and the backlog awaiting operator judgment.
+Timing is reported as a **median**, not a mean: one incident left open over a weekend would drag an
+average far enough to make the number meaningless. And an empty scoreboard reports "has not
+qualified anything" rather than a passing rate — a qualification gate that reads as satisfied
+because nothing was measured is the most dangerous failure this subsystem could have.
+
+### Shadow mode observes real incidents
+
+With storage in place, the other half: `LiveIncidentObserver` watches an incident open, records
+what shadow mode WOULD have done, and stops.
+
+It never executes — there is no action pathway, and the recorded event says `executed: false`
+explicitly. Observation is best-effort and cannot throw: an incident is the worst possible moment
+to add a second failure, so a shadow error is logged and the incident proceeds exactly as it would
+have.
+
+The proposed operation is derived from the incident's **subject kind**, not from its title. Reading
+intent out of prose would make the recommendation a function of how the title happened to be
+worded, and the qualification score would then be measuring wording. An unrecognised subject gets
+`investigate` — the least invasive operation there is.
+
+`IncidentManager` gained an optional opened-hook rather than a dependency on colony memory, so the
+homelab subsystem stays decoupled and the composition root does the wiring. The hook fires only for
+a genuinely new incident: `Open` deduplicates by subject, and observing a deduplicated re-open
+would inflate the qualification sample with repeats of the same event.
+
+Off by default (`shadow_observation_enabled`). An observer that silently starts writing
+recommendations about production incidents should not arrive with an upgrade.
+
+### The qualification scoreboard gets a production caller
+
+`QualificationScoreboard.Compute` takes typed pairs; storage returns rows. So even with a table in
+place, the scoreboard could only ever be handed pairs built in memory by the simulator or by its own
+tests — the same defect one layer up. `LoadScoreableRecommendations` rehydrates stored history into
+the records it scores, and `/shadow/json` computes the scoreboard from that.
+
+Rehydrating exposed a real hole: the first cut of the table stored only the risk **label**.
+`PolicyViolations` counts "would have recommended execution while approval was required" — with the
+approval flag unpersisted, that count could only ever come back zero, and the safety invariant would
+have reported itself permanently satisfied no matter what the recommender did. The risk score,
+approval flag and reasons are now persisted, and a test pins the round trip.
+
+Malformed rows are skipped rather than defaulted, because a fabricated pair would move a
+qualification metric with no evidence behind it. An unreadable rollback plan resolves to `Escalate`;
+there is no no-op recovery action, and a soft default would read as recoverable.
+
+The dashboard panel (Homelab → Automation) shows the diagnosis / prediction / rollback bundle
+alongside the scoreboard. Zero scored incidents renders as **"not qualified"**, never as a pass — a
+gate that looks satisfied because nothing was measured is the most dangerous failure this subsystem
+has. The wire shape is projected explicitly rather than serialised from the records, since no naming
+policy is configured and a record would go out PascalCase beside snake_case joined rows.
+
+### Why the colony pheromones looked dead
+
+Not a break in the pheromone system — the v2.20.0 learning reset, showing through a surface that
+never explained it.
+
+`ApplyLearningReset` sets every pre-boundary trail to the neutral 0.5 with its success count
+restarted. On a real database that means the colony HUD renders a wall of identical 50% bars,
+sorting by strength is meaningless, and the canvas field is uniform. The pre-reset values are still
+held in each trail's metadata; nothing was lost.
+
+v2.20.0 was supposed to surface the reset wherever rates are read. It reached `/memory/explorer`
+and the Strategist's context — and missed `/pheromones/json`, which is exactly what the colony
+dashboard reads. That endpoint now carries the reset date and legacy counts beside its data (a new
+`ApiJson.Ok(data, meta)` overload, so `data` keeps its shape and every existing client is
+unaffected), and the HUD says how many trails are awaiting re-verification.
+
+The planning read had a sharper version of the same problem: with every trail legacy and at zero
+successes, `GetTopPheromoneTrails` returns nothing, so planning memory is genuinely empty until a
+mission reaches `completed_verified`. That is the intended boundary, but it reported itself as "No
+pheromone trail memory found" — indistinguishable from never having had any. It now says how many
+trails are held and what releases them.
+
+### The Modules menu actually closes now
+
+Two previous releases "fixed" this and neither worked, because the bug was never in the JavaScript.
+
+`hidden` carries `display:none` from the **user agent** stylesheet only. `.ws-modules` sets
+`display:flex`, and an author rule outranks the UA sheet — so `menu.hidden = true` set the
+attribute correctly and changed nothing on screen. The v2.19.0 collapsible work and the v2.22.0
+focus-mode fix were both correct, and both invisible.
+
+`.ws-modules[hidden] { display: none !important; }` restores it. The minimized-panel tray had the
+identical defect — `.ws-tray` also sets `display:flex`, so an empty tray chrome has been sitting on
+the canvas whenever the script hid it — and is fixed the same way.
+
+A guard test now checks that **every** element the workspace hides from script has a matching
+`[hidden]` rule, since every one of them also sets `display`. The previous tests asserted the
+JavaScript said the right thing; none of them could see that the CSS ignored it.
+
+### Activation state is visible
+
+`/colony/registry` reports the activation tier, its explanation, and per-role `admitted_by_tier` /
+`gate_open`. Without it the console could show a specialist as unavailable with no way to tell
+whether its own rollout flag or the tier was responsible — two different fixes wearing the same
+symptom.
+
+### Off by default
+
+`objective_verification_enabled` defaults to false. A change to what counts as success is switched
+on deliberately, not delivered by an upgrade. Failures are recorded as
+`objective_verification_failed` with the goal, the proposal count, and what was required — never a
+silent downgrade.
+
 ## v2.23.0 — Observed routes become hypotheses
 
 v2.20.0 gave the archivist's memory candidates a consumer: they became durable events with
