@@ -2574,6 +2574,13 @@ function msPatchExchange(row,m){
   const say=row.querySelector('.ms-say');
   say.classList.toggle('pending',pending);
   say.textContent = pending ? 'Working — no answer recorded yet.' : answer;
+  // v2.18.2: say so when the inline answer is clipped, rather than quietly ending mid-sentence.
+  if(!pending && MT.answerIsTruncated(m)){
+    const more=document.createElement('div');
+    more.className='ms-clip';
+    more.textContent='… answer truncated — open Show activity for the full output.';
+    say.appendChild(more);
+  }
 
   const meta=row.querySelector('.ms-meta');
   meta.textContent='';
