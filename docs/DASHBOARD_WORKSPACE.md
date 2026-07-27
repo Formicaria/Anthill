@@ -10,6 +10,8 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.23.0 note: no new surface — route registration is recorded as `skill_candidate_registered` events.
+
 > v2.22.0 note: the Modules toggle now reports its real state (▸ / ▾ and a truthful
 > `aria-expanded`, previously hardcoded to `'false'`), and Focus mode closes the module list and
 > keeps it closed — enforced in the setter as well as at render. Skill credit is recorded as

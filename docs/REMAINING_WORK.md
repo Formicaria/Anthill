@@ -148,9 +148,12 @@ while appearing to work. A fifth instance of "tested code with no call site", in
       storage — the evidence was always in `autonomy_runs`, it was simply never asked.
 - [ ] Evidence-derived follow-ups: follow-up objectives created from what verification actually
       found, with their own budgets (never confused with retries).
-- [ ] Connect the stored `memory_candidate` events (v2.20.0) to the Phase 5 evaluation pipeline:
-      candidates become *evaluated* skill inputs. `auto_promote` remains inert; promotion still
-      requires verified evidence per the V2.12 rules.
+- [x] **C4 — memory candidates into the evaluation pipeline — SHIPPED v2.23.0.**
+      `ProceduralCandidatePromotion` registers a verified mission's observed route as a skill
+      **Candidate** — usable for nothing, in no plan, no permission, no success count.
+      Registration records no outcome, so observation can never promote; standing is still earned
+      only through `RecordOutcome` with a promotable bundle. Route ids derive from the route so the
+      same sequence converges on one skill. `auto_promote` remains inert throughout.
 - [ ] Replace the interim `MissionVerification` gate with objective-level verification: "the goal
       was met", not merely "a verifier ran and passed". The interim gate stays as the floor.
 

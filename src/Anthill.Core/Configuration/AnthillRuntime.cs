@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.22.0";
+    public const string Version = "2.23.0";
     public const int SchemaVersion = 13;
 
     /// <summary>
