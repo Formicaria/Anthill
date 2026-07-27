@@ -481,6 +481,19 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
   color:var(--dim);padding:6px 2px;user-select:none;display:flex;align-items:center;gap:8px;}
 .ms-active > summary::-webkit-details-marker{display:none;}
 .ms-composer{flex-shrink:0;border-top:1px solid var(--border);padding-top:10px;}
+/* Visually hidden but announced. */
+.ms-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;}
+/* v2.17.1: dispatch failures are shown, not swallowed. */
+.ms-error{margin-bottom:8px;padding:7px 10px;border-radius:6px;font-size:11px;line-height:1.5;
+  color:#fecaca;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);}
+.ms-error[hidden]{display:none;}
+.ms-act-err{font-size:11px;line-height:1.6;color:#fecaca;}
+.ms-retry{margin-left:6px;background:transparent;border:1px solid rgba(239,68,68,.45);border-radius:5px;
+  color:#fecaca;font-size:10px;padding:2px 8px;cursor:pointer;}
+.ms-retry:hover{background:rgba(239,68,68,.16);}
+.ms-retry:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:1px;}
+.ms-thread:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:-2px;}
 @media (prefers-reduced-motion: reduce){.ms-thread{scroll-behavior:auto;}}
 
 .mission-bar-wrap{
@@ -1690,7 +1703,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- v2.16.0: a conversation, not a form plus a log. The answer is the content; everything
              the colony did to produce it is one disclosure away per exchange. -->
         <div class="ms-conv">
-          <div id="ms-thread" class="ms-thread" role="log" aria-live="polite" aria-label="Mission conversation">
+          <div id="ms-thread" class="ms-thread" role="log" aria-label="Mission conversation" tabindex="0">
             <div class="ms-empty">No missions yet. Describe what you want done below.</div>
           </div>
 
@@ -1701,7 +1714,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
           </details>
 
+          <!-- v2.17.1: announcements moved OFF the thread. With aria-live on #ms-thread, every
+               three-second poll re-announced all forty exchanges. This speaks one finished
+               mission instead. -->
+          <div id="ms-announce" class="ms-sr" role="status" aria-live="polite"></div>
+
           <div class="ms-composer">
+            <div id="ms-error" class="ms-error" role="alert" hidden></div>
             <div class="mission-row" style="gap:8px;">
               <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
               <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">&#9654;</button>
@@ -2982,6 +3001,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 </div>
 
 <link rel="stylesheet" href="/ui/dashboard-workspace.css">
+<script src="/ui/mission-thread.js" defer></script>
 <script src="/ui/dashboard-workspace.js" defer></script>
 <script src="/ui/app.js" defer></script>
 </body>
