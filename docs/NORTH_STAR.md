@@ -298,6 +298,9 @@ V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V
          layout · new default dashboard arrangement. Next: the same conversation view for Automation.
          Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
+         [Stage 1 SHIPPED v2.17.0 — non-executing recommendation engine (ShadowOperator) +
+          QualificationScoreboard; live-incident wiring, fault-injection harness, timing metrics,
+          and the V3.0 release thresholds are the remaining stages]
 
 > Renumbering note: the v2.11.x line was consumed by sandbox/coder wiring releases, so the
 > remaining planned phases shift by one minor version. Phase headings below keep their original
