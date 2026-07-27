@@ -4,6 +4,7 @@
 > **Rebased from:** ANTHILL v2.7.0
 > **Target:** ANTHILL v3.0.0 — Bounded Autonomous Homelab Operator
 > **Status:** Active
+> **Latest:** v2.17.0 — Shadow Operations & Operator Qualification (Phase 7) Stage 1: the non-executing recommendation engine + qualification scoreboard.
 >
 > This document replaces the previous objective-lifecycle and patch-review roadmap.
 >
