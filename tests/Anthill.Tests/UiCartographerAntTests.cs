@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Anthill.Core.Agents;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
@@ -47,20 +48,74 @@ public class UiCartographerAntTests : IDisposable
         return (t, m);
     }
 
+    private static string[] Arr(JsonElement e, string prop) =>
+        e.GetProperty(prop).EnumerateArray().Select(x => x.GetString()!).ToArray();
+
     [Fact]
     public void ProducesStructuredUiMap_WithRoutesFunctionsApisAndEvidence()
     {
         var (ant, _) = Harness();
         var (t, m) = UiTask();
         _mem!.SaveMission(m); // tool audit events FK onto the mission row, exactly like the real runtime
-        var output = ant.Run(t, m);
-        Assert.Contains("UI_MAP_JSON:", output);
-        Assert.Contains("page-overview", output.Replace("\"", "")); // likely_modification_points
-        Assert.Contains("overview", output);
-        Assert.Contains("colony", output);
-        Assert.Contains("loadColony", output);
-        Assert.Contains("/colony/registry", output);
-        Assert.Contains("index.html", output); // files examined = evidence
+        var o = ant.Execute(t, m);
+
+        // v2.19.0: the map is a parsed artifact, not a substring of a tagged text blob. The old
+        // assertions could not tell a route from a function name from a file path -- every one of
+        // them was satisfied by the token appearing anywhere in the concatenated output.
+        Assert.True(o.Success);
+        var map = JsonDocument.Parse(Assert.Single(o.Artifacts, a => a.Kind == "ui_map").Content).RootElement;
+        Assert.Equal(new[] { "colony", "overview" }, Arr(map, "routes"));
+        Assert.Contains("loadColony", Arr(map, "function_names_sample"));
+        Assert.Contains("/colony/registry", Arr(map, "api_calls"));
+        Assert.Contains("index.html", Arr(map, "files_examined"));
+        Assert.Contains("page-overview", Arr(map, "likely_modification_points"));
+
+        // Evidence is the provenance of the map, and the coder is the downstream consumer.
+        Assert.Contains(o.Evidence, e => e.Kind == "file_path" && e.Value == "index.html");
+        Assert.Contains(o.Handoffs, h => h.DestinationRole == "coder" && h.ArtifactKinds.Contains("ui_map"));
+
+        // The operator record must be readable on its own, not a JSON dump.
+        var recorded = o.Narrative ?? o.Summary;
+        Assert.Contains("routes (2): colony, overview", recorded);
+        Assert.Contains("/colony/registry", recorded);
+    }
+
+    [Fact]
+    public void UnreadableKnownPaths_WarnButDoNotFailTheMap()
+    {
+        // The harness workspace has no src/Anthill.Api/Ui/*, which the ant always probes. Those
+        // misses are warnings, not failures -- a partial map is still usable to the coder, and a
+        // warning must never be recorded as a failed task.
+        var (ant, _) = Harness();
+        var (t, m) = UiTask();
+        _mem!.SaveMission(m);
+        var o = ant.Execute(t, m);
+        Assert.True(o.Success);
+        Assert.Equal("succeeded_with_warnings", o.StatusCode);
+        Assert.Contains(o.Warnings, w => w.StartsWith("unreadable:"));
+        Assert.Null(o.Failure);
+    }
+
+    [Fact]
+    public void WorkspaceWithNoUiFiles_FailsAsDependency_NotSuccess()
+    {
+        Directory.CreateDirectory(_dir);
+        var ws = Path.Combine(_dir, "empty"); Directory.CreateDirectory(ws);
+        _mem = new SqliteMemory(Path.Combine(_dir, "t2.db"));
+        var tools = new ToolRegistry(_mem);
+        var guard = new WorkspacePathGuard(ws);
+        tools.Register(new DirectoryListTool(guard));
+        tools.Register(new ReadTextFileTool(guard));
+        var (t, m) = UiTask();
+        _mem.SaveMission(m);
+        var o = new UiCartographerAnt(tools).Execute(t, m);
+        Assert.False(o.Success);
+        // DependencyFailure is outside the retryable set (transient/rate-limit/timeout/conflict):
+        // re-running against the same empty workspace would fail identically, so retrying it would
+        // only burn the scheduler's budget.
+        Assert.Equal("failed_permanent", o.StatusCode);
+        Assert.NotNull(o.Failure);
+        Assert.False(o.Failure!.Retryable);
     }
 
     [Fact]

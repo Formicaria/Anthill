@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Outcomes;
 
 namespace Anthill.Core.Memory;
 
@@ -685,12 +686,19 @@ public sealed partial class SqliteMemory
 
     public void UpdateMissionPheromones(Mission mission)
     {
-        var success = mission.Status is MissionStatus.Complete or MissionStatus.Partial;
+        // v2.19.0: positive reinforcement requires completed_verified — nothing else. Previously
+        // `complete or partial` counted, so a partially-failed mission strengthened the very
+        // planner/worker/task pattern that had just partly failed. Partial now reinforces NOTHING
+        // (delta 0): it is not punished as a failure either, because partial work is genuinely
+        // ambiguous evidence. Only verified success may pull a trail up.
+        var outcome = MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks));
+        var success = MissionOutcome.IsPositiveSuccess(outcome);
         var score = mission.SuccessScore ?? 0.0;
-        var delta = mission.Status switch
+        var delta = outcome switch
         {
-            MissionStatus.Complete => 0.05 + score * 0.05,
-            MissionStatus.Partial => 0.01 + score * 0.02,
+            MissionOutcome.CompletedVerified => 0.05 + score * 0.05,
+            MissionOutcome.CompletedUnverified => 0.0,   // finished, unproven — no signal either way
+            MissionOutcome.Partial => 0.0,               // ambiguous — no signal either way
             _ => -0.08,
         };
         var antPath = mission.Tasks.Select(t => t.AssignedAnt).ToList();
@@ -698,11 +706,11 @@ public sealed partial class SqliteMemory
         var taskTypePath = mission.Tasks.Select(t => t.TaskType).ToList();
 
         UpdatePheromoneTrail("planner_pattern:" + string.Join("_", antPath), "planner_pattern", success, delta,
-            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["ant_path"] = antPath, ["mission_status"] = mission.Status.Value() });
+            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["ant_path"] = antPath, ["mission_status"] = mission.Status.Value(), ["outcome"] = outcome });
         UpdatePheromoneTrail("worker_pattern:" + string.Join("_", workerPath), "worker_pattern", success, delta,
-            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["worker_path"] = workerPath, ["mission_status"] = mission.Status.Value() });
+            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["worker_path"] = workerPath, ["mission_status"] = mission.Status.Value(), ["outcome"] = outcome });
         UpdatePheromoneTrail("task_pattern:" + string.Join("_", taskTypePath), "task_pattern", success, delta,
-            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["task_type_path"] = taskTypePath, ["mission_status"] = mission.Status.Value() });
+            new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["task_type_path"] = taskTypePath, ["mission_status"] = mission.Status.Value(), ["outcome"] = outcome });
 
         foreach (var task in mission.Tasks)
         {
