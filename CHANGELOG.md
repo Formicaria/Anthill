@@ -1,5 +1,59 @@
 # ANTHILL Changelog
 
+## v2.20.0 — Adaptive mission runtime, part 2: the learning reset
+
+v2.19.0 fixed how outcomes are graded going forward. This release deals with what the old rule
+left behind: learning state — objective EMAs, pheromone strengths, success counters — accumulated
+while structural completion counted as success and nothing required a verifier PASS.
+
+### The one-time reset
+
+On first open of a pre-v2.20 database, `ApplyLearningReset` runs exactly once, at a durable,
+backed-up, audited boundary:
+
+- **objective `success_ema` → neutral/unset**, the old value snapshotted into objective metadata
+  as `legacy_success_ema` for reporting
+- **pheromone trail strength → the neutral 0.5 a fresh trail starts at**; the live success counter
+  restarts at 0; pre-reset strength and counts are snapshotted into trail metadata; the trail is
+  marked `legacy`
+- **failure history preserved in place** — `failure_count` and `consecutive_failures` are evidence
+  of what went wrong, not artifacts of the defective success rule
+- **raw history untouched** — missions, tasks, events, autonomy runs, approvals, patches, sources,
+  agent messages
+
+Safety: an online SQLite backup is taken **before any mutation** and its path recorded; the reset
+is idempotent behind a durable meta marker; a `learning_reset` audit event records before/after
+counts. Fresh databases just get the marker — the reset is a boundary, not a recurring purge, and
+state earned after v2.19 is never touched.
+
+### Legacy semantics
+
+`legacy_unverified` trails are retained for reporting (pruning can never delete them, whatever
+thresholds the operator passes) and excluded from planning reads — until a trail records a success
+under the corrected rule, at which point it re-enters planning on evidence it actually earned.
+
+### The reset is visible
+
+`/memory/explorer` carries a `learning_reset` block (date + note), trail rows expose the `legacy`
+flag, and the Strategist's pheromone context is headed by the reset date — so a success rate
+measured after the boundary is never silently compared against one measured before it.
+
+### Memory candidates get their consumer
+
+`ArchivistAnt` has emitted `memory_candidate` artifacts since Stage D-6 — and nothing ingested
+them: built, serialised, dropped. The fourth instance of the "tested code with no call site"
+pattern (v2.14.12, `SanitizeInto`, `/missions/json`, `HandoffGate.Evaluate`). The Queen now
+ingests each well-formed candidate as a durable `memory_candidate` event with provenance.
+Deliberately narrow: records are stored, never certified, never fed to planning — `auto_promote`
+is recorded, not acted on — and a guard test pins the call site itself, not just the parser.
+
+### Unchanged
+
+Specialist rollout gates stay closed; no additional specialists are activated. `MissionVerification`
+remains the interim gate ("did verification run and pass"), with objective-level verification a
+later phase. Researcher, Web, File, Coder, Builder stay on the default structured wrapper by
+design.
+
 ## v2.19.0 — Adaptive mission runtime, part 1: ants declare outcomes, missions require proof
 
 An ant reported its outcome as prose. Nothing parsed that prose. The orchestrator inferred success

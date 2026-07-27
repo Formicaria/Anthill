@@ -12,7 +12,9 @@ gate passes.
 
 > v2.19.0 note: the workspace Modules checklist is now collapsible (it was persistent and in the
 > way), and mission results are unchanged on this surface — the adaptive-runtime work in v2.19.0
-> deliberately preserved every operator-facing narrative. See `docs/ADAPTIVE_RUNTIME_STATUS.md`.
+> deliberately preserved every operator-facing narrative. v2.20.0 adds the learning-reset boundary
+> to memory surfaces: `/memory/explorer` carries `learning_reset`, and pre-reset pheromone trails
+> appear with a `legacy` flag. See `docs/ADAPTIVE_RUNTIME_STATUS.md`.
 
 Inspired by the *interaction patterns* of Homarr and professional trading/monitoring terminals.
 No proprietary code, design, or branding is copied.

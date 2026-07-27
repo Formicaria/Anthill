@@ -779,10 +779,18 @@ public sealed partial class SqliteMemory
         return scored.OrderByDescending(x => x.Overlap).Take(limit).Select(x => x.Row).ToList();
     }
 
+    /// <summary>
+    /// The PLANNING read (Strategist context). Legacy trails — whose strength and success evidence
+    /// were accumulated under the pre-v2.19 completion rule — are excluded until they record a
+    /// success under the corrected rule (success_count restarts at 0 at the reset, so any positive
+    /// count here is post-reset, verified-success evidence). Reporting reads are unfiltered.
+    /// </summary>
     public List<Dictionary<string, object?>> GetTopPheromoneTrails(int limit = 10) =>
         CacheRead($"top_pheromones::{limit}", () =>
             Query(@"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated
-                    FROM pheromone_trails ORDER BY strength DESC, success_count DESC LIMIT @lim", ("@lim", limit)));
+                    FROM pheromone_trails
+                    WHERE legacy = 0 OR success_count > 0
+                    ORDER BY strength DESC, success_count DESC LIMIT @lim", ("@lim", limit)));
 
     public string FormatRecentMemory(int limit = 3, int maxResultChars = 300)
     {
@@ -815,8 +823,11 @@ public sealed partial class SqliteMemory
     public string FormatPheromoneContext(int limit = 8)
     {
         var trails = GetTopPheromoneTrails(limit);
-        if (trails.Count == 0) return "No pheromone trail memory found.";
-        return string.Join("\n", trails.Select(t =>
+        var resetNote = LearningResetDate() is { } reset
+            ? $"[learning reset {reset}: pre-reset trails are legacy_unverified and re-enter planning only after a post-reset success]\n"
+            : "";
+        if (trails.Count == 0) return resetNote + "No pheromone trail memory found.";
+        return resetNote + string.Join("\n", trails.Select(t =>
             $"{t.GetValueOrDefault("trail_key")} | type={t.GetValueOrDefault("trail_type")} | strength={t.GetValueOrDefault("strength")} | " +
             $"success={t.GetValueOrDefault("success_count")} | failure={t.GetValueOrDefault("failure_count")}"));
     }
