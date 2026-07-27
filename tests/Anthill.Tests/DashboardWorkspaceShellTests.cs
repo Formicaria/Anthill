@@ -351,6 +351,92 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("#colony-viewbar{flex-wrap:nowrap;", html);
     }
 
+    /// <summary>
+    /// v2.15.2: the workspace's absolute layers need a containing block on #page-overview.
+    ///
+    /// Neither #main-area nor .page carries a position, so without this the layers resolved against
+    /// the INITIAL containing block — the whole viewport — and rendered underneath the nav sidebar
+    /// and past the bottom edge. Symptoms were the caste legend and colony view bar clipped on the
+    /// left and the mission directive box pushed off screen. Nothing about that is obvious from
+    /// reading the rules individually, which is why it is pinned here.
+    /// </summary>
+    [Fact]
+    public void WorkspaceLayers_HaveAContainingBlock()
+    {
+        var html = Ui("index.html");
+        Assert.Contains("#page-overview.ws-active{position:relative;", html);
+
+        // The layers that depend on it.
+        foreach (var layer in new[] { "#ws-topbar{position:absolute", "#ws-bottombar{position:absolute" })
+            Assert.Contains(layer, html);
+        Assert.Contains(".ws-topology { position: absolute; inset: 0;", Ui("dashboard-workspace.css"));
+    }
+
+    /// <summary>
+    /// The fixed chrome bands must not overlap. The status bar outranks the toolbar on z-index, so
+    /// an overlap does not look like an overlap — the toolbar simply vanishes.
+    /// </summary>
+    [Fact]
+    public void FixedChromeBands_DoNotOverlap()
+    {
+        var html = Ui("index.html");
+        // status bar occupies 0-52, toolbar starts at 58, overlay slots start at 96.
+        Assert.Contains("#page-overview.ws-active .ws-toolbar{top:58px;}", html);
+        Assert.Contains("#page-overview.ws-active .ws-modules{top:94px;", html);
+        Assert.Contains("#ws-topology .topo-ov-slot[data-ovslot=\"top-right\"]{top:96px;}", html);
+        // and the bottom band clears the mission bar.
+        Assert.Contains("#ws-topology .topo-ov-slot[data-ovslot=\"bottom-right\"]{bottom:62px;}", html);
+    }
+
+    /// <summary>
+    /// The mission directive box starts work, so it must never be coverable by a floating panel.
+    /// It is re-parented into its own bar above the panel layer — moved, not duplicated.
+    /// </summary>
+    [Fact]
+    public void MissionDirective_IsAboveThePanelLayer()
+    {
+        var app = Ui("app.js");
+        var html = Ui("index.html");
+        Assert.Contains("bottombar.appendChild(mb)", app);
+        Assert.Contains("#ws-bottombar{position:absolute;left:0;right:0;bottom:0;z-index:46", html);
+        Assert.Equal(1, Regex.Matches(html, @"id=""mission-bar""").Count);   // one instance, re-parented
+    }
+
+    /// <summary>
+    /// v2.15.2: overlay show/hide and anchoring live in the Modules menu, not a separate button.
+    ///
+    /// Two surfaces controlling what is on screen is how they drift. The menu sits in the
+    /// always-present toolbar, which preserves the one property the standalone button existed for:
+    /// hiding every overlay must stay recoverable.
+    /// </summary>
+    [Fact]
+    public void TopologyOverlays_AreControlledFromTheModulesMenu()
+    {
+        var app = Ui("app.js");
+        var ws = Ui("dashboard-workspace.js");
+        var html = Ui("index.html");
+
+        // The standalone control is gone from every surface.
+        foreach (var token in new[] { "topo-ov-btn", "topo-ov-menu", "toggleOverlayMenu", "renderOverlayMenu" })
+        {
+            Assert.False(app.Contains(token), $"app.js still references the removed overlay menu: {token}");
+            Assert.False(html.Contains(token), $"index.html still references the removed overlay menu: {token}");
+        }
+
+        // A single shared bridge, so neither module keeps its own copy of overlay state.
+        Assert.Contains("window.AnthillTopologyOverlays", app);
+        Assert.Contains("window.AnthillTopologyOverlays", ws);
+
+        // Hide/show AND re-anchor, both from the menu.
+        Assert.Contains("'toggle-overlay'", ws);
+        Assert.Contains("'reset-overlays'", ws);
+        Assert.Contains("data-wsanchor", ws);
+        var menu = BodyOf(ws, "function renderModules");
+        Assert.Contains("toggle-overlay", menu);
+        Assert.Contains("ws-module-ovanchor", menu);
+        Assert.Contains("aria-pressed", menu);
+    }
+
     // ---- Accessibility --------------------------------------------------------------------------------
 
     [Fact]

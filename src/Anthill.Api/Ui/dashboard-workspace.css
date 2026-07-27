@@ -50,6 +50,21 @@
 .ws-module-sub:hover { background: rgba(255,255,255,.06); color: var(--text); }
 .ws-module-sub:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: -2px; }
 
+/* ---- v2.15.2: topology overlays inside the Modules menu ---- */
+.ws-module-sep {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+  padding: 8px 8px 3px; margin-top: 4px; border-top: 1px solid var(--border);
+}
+.ws-module-ovrow { display: flex; align-items: center; gap: 6px; }
+.ws-module-ovtoggle { flex: 1; text-align: left; }
+.ws-module-ovanchor {
+  background: var(--inner); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-size: 9px; padding: 2px 3px; max-width: 104px;
+}
+/* A hidden overlay has nothing to anchor — the control says so instead of doing nothing. */
+.ws-module-ovanchor:disabled { opacity: .4; cursor: not-allowed; }
+.ws-module-ovanchor:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: 1px; }
+
 /* ---- v2.15.1: snapping (replaces v2.15.0 docking) ----
  * Dragging to an edge or corner drops the panel into a bounded region — halves and quadrants —
  * rather than stretching it the full length of an edge. The zone overlays are pure affordance:
