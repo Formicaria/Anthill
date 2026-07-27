@@ -37,6 +37,10 @@ public sealed partial class SqliteMemory : IDisposable
         _cipher = cipher ?? FieldCipher.CreateDefault();
         _cache = cache ?? new MemoryCache(new MemoryCacheOptions());
         InitDb();
+        // v2.20.0 Stage 7: one-time reset of learning state derived under the pre-v2.19 completion
+        // rule. Idempotent (durable meta marker); backs up before mutating; fresh DBs just get the
+        // marker. Runs here so every entry point — API, CLI, tests — passes the same boundary.
+        ApplyLearningReset();
         HardenDbFiles();
     }
 
@@ -266,6 +270,9 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v2.20.0 Stage 7: pre-reset trails are marked legacy — retained for reporting, excluded
+        // from planning until they earn a post-reset success, protected from pruning.
+        AddMissing("pheromone_trails", new() { ["legacy"] = "INTEGER NOT NULL DEFAULT 0" });
         AddMissing("tasks", new()
         {
             ["task_type"] = "TEXT DEFAULT 'general'", ["parent_task_id"] = "TEXT", ["parent_task_ids_json"] = "TEXT",

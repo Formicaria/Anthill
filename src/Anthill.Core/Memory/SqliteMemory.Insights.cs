@@ -109,7 +109,7 @@ public sealed partial class SqliteMemory
     public List<Dictionary<string, object?>> ListPheromoneTrails(int limit = 300)
     {
         var rows = Query(
-            @"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated, metadata_json
+            @"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated, metadata_json, legacy
               FROM pheromone_trails ORDER BY strength DESC, success_count DESC LIMIT @lim",
             ("@lim", Math.Clamp(limit, 1, 2000)));
         foreach (var r in rows)
@@ -135,7 +135,9 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             var conditions = new List<string> { "strength < @minS" };
             if (dropFailureDominant) conditions.Add("(failure_count > success_count AND strength < 0.5)");
-            var sql = "DELETE FROM pheromone_trails WHERE " + string.Join(" OR ", conditions);
+            // Legacy trails are retained-for-reporting by the Stage 7 reset contract: prune may
+            // never delete them, whatever thresholds the operator passes.
+            var sql = "DELETE FROM pheromone_trails WHERE legacy = 0 AND (" + string.Join(" OR ", conditions) + ")";
             using var cmd = conn.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("@minS", minStrength);

@@ -4,7 +4,7 @@
 > **Rebased from:** ANTHILL v2.7.0
 > **Target:** ANTHILL v3.0.0 — Bounded Autonomous Homelab Operator
 > **Status:** Active
-> **Latest:** v2.19.0 — **Adaptive mission runtime, part 1** (structured ant results, declared task outcomes, verdict-gated mission verification). Part 2 (derived-learning migration) is scoped in `docs/ADAPTIVE_RUNTIME_STATUS.md`. Previously v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) — Shadow Operations & Operator Qualification (Phase 7) Stage 2: the fault-injection scenario catalog + simulation harness (Stage 1, v2.17.0, shipped the non-executing recommendation engine + qualification scoreboard).
+> **Latest:** v2.20.0 — **Adaptive mission runtime, part 2**: the one-time derived-learning reset at the v2.19.0 boundary (backed up, audited, idempotent; legacy trails retained for reporting, excluded from planning until re-earned), the learning-reset date surfaced in reports, and the archivist's memory candidates ingested as durable events. Follows v2.19.0 — **part 1** (structured ant results, declared task outcomes, verdict-gated mission verification). Full staged record in `docs/ADAPTIVE_RUNTIME_STATUS.md`. Previously v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) — Shadow Operations & Operator Qualification (Phase 7) Stage 2: the fault-injection scenario catalog + simulation harness (Stage 1, v2.17.0, shipped the non-executing recommendation engine + qualification scoreboard).
 >
 > This document replaces the previous objective-lifecycle and patch-review roadmap.
 >

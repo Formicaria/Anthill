@@ -1,7 +1,6 @@
 # Adaptive Mission Runtime — Staged Status
 
-**Shipping release:** v2.19.0 (part 1)
-**Next release:** v2.20.0 (part 2)
+**Shipping releases:** v2.19.0 (part 1) + v2.20.0 (part 2 — complete)
 **Design record:** `docs/ADR-ADAPTIVE-MISSION-RUNTIME.md`
 
 This document states exactly where the adaptive-runtime work stands: what shipped, what did not,
@@ -42,7 +41,7 @@ outcomes that were never verified.
 | 5a | `VerifierAnt` declares its verdict via `VerificationVerdict` | **Shipped** |
 | 5b | Researcher, Web, File, Coder, Builder migrations | **Deliberately not done — see §4** |
 | 6 | `MissionVerification` requires a real PASS verdict, not mere completion | **Shipped** |
-| 7 | Derived-learning migration at the v2.19.0 boundary | **Not shipped — part 2** |
+| 7 | Derived-learning migration at the v2.19.0 boundary | **Shipped in v2.20.0** |
 
 ### The three behavioural changes that matter
 
@@ -103,54 +102,52 @@ handoffs or artifacts.
 
 ---
 
-## 5. Part 2 — what v2.20.0 must deliver
+## 5. Part 2 — delivered in v2.20.0
 
-### 5.1 Stage 7: the derived-learning migration (the main body of work)
+### 5.1 Stage 7: the derived-learning migration — SHIPPED
 
-Learning state accumulated under the defective completion rule is still active. It must be reset —
-narrowly, once, and reversibly.
+`SqliteMemory.ApplyLearningReset` (`SqliteMemory.LearningReset.cs`), run automatically at
+construction on every entry point. Delivered against every constraint:
 
-**Reset only these, all derived under the old rule:**
+- **Reset:** objective `success_ema` → NULL (snapshotted to metadata as `legacy_success_ema`);
+  trail strength → neutral 0.5 with success counters restarted; no consecutive-success counter
+  existed to reset (`objectives` carries only `consecutive_failures`, which is failure history).
+- **Untouched, proven by test:** missions, tasks, events, autonomy runs, approvals, patches,
+  sources, agent messages; `failure_count` and `consecutive_failures` in place. Persisted skill
+  demotion was moot: `SkillRegistry` is in-memory only — nothing persisted to demote.
+- **Marked, not deleted:** pre-boundary trails carry `legacy = 1` plus a metadata snapshot of
+  their pre-reset strength and counts. Retained for reporting, protected from `PrunePheromones`
+  at any threshold, excluded from `GetTopPheromoneTrails` (the Strategist planning read) until
+  they record a post-reset success — then re-admitted on evidence earned under the corrected rule.
+- **Machinery:** durable meta marker (`learning_reset_v2_19`) for exactly-once; WAL-safe online
+  SQLite backup **before** any mutation, path recorded; counts in meta + a `learning_reset` audit
+  event; `LearningResetTests` proves idempotency, backup-before-mutation (by reading the pre-reset
+  values back out of the backup), raw-history preservation, and the legacy semantics.
+- **The boundary property:** fresh databases get the marker with nothing mutated and no backup,
+  so post-v2.19 learning is never reset — it is a boundary, not a recurring purge.
 
-- objective success EMA → neutral/unset
-- active pheromone strengths derived from mission success
-- consecutive-success and confidence counters that accepted partial or unverified outcomes
+**Known imprecision, accepted:** databases that ran v2.19.0 before upgrading accumulate up to a
+release-cycle of correctly-graded trail updates mixed into pre-boundary rows; the reset marks
+those rows legacy anyway. Over-marking is the fail-closed direction — verified work re-earns its
+standing with one post-reset success.
 
-**Never touch:**
+### 5.2 Surface the reset — SHIPPED
 
-- historical missions, autonomy runs, events, evidence, operator audit records — **preserve all raw
-  history**
-- failure history, policy violations, negative memory, approval history, verified evidence bundles
-- skills whose success records can be proven from promotable verification bundles — do not demote
+`/memory/explorer` carries a `learning_reset` block (date + note); trail rows expose the `legacy`
+flag; `FormatPheromoneContext` (the Strategist's own context) is headed by the reset date.
 
-**Mark, do not delete.** Pre-v2.19.0 learning data that cannot be reconstructed is marked
-`legacy_unverified`: retained for reporting, excluded from active planning, routing, prioritisation,
-certification, and autonomy decisions.
+### 5.3 Carried-forward items — resolved or explicitly kept
 
-**The migration must have:**
-
-- a durable version marker so it runs exactly once
-- a backup taken *before* any mutation
-- before/after counts recorded
-- an audit event
-- tests proving it is idempotent
-- tests proving raw history is untouched
-
-### 5.2 Surface the reset
-
-The UI and reports must visibly identify the learning reset date, so a rate measured after the
-boundary is never silently compared against one measured before it.
-
-### 5.3 Open items carried forward
-
-- **`memory_candidate` artifacts have no consumer.** `ArchivistAnt` emits memory candidates and
-  declares the artifact type in its contract, but nothing ingests them. Same "tested code with no
-  call site" pattern as `HandoffGate.Evaluate` (zero production call sites) and `VerificationPolicy`
-  (used only by the shadow simulator). Decide in part 2 whether to wire or remove.
-- **`MissionVerification` remains the interim gate.** It answers "did verification run and pass",
-  not "was the mission's actual objective met".
-- **Specialist rollout gates stay closed.** No additional specialists are activated globally; each
-  keeps its existing per-role gate.
+- **`memory_candidate` consumer: wired.** `MemoryCandidateIngest.Extract` parses candidates from
+  the archivist's structured result; the Queen ingests each as a durable `memory_candidate` event
+  with provenance on the archivist completion path. Stored, never certified, never fed to
+  planning — `auto_promote` is recorded, not acted on. A guard test pins the call site itself.
+- **`MissionVerification` remains the interim gate** — by design. It answers "did verification run
+  and pass", not "was the mission objective met". Objective-level verification is a later phase.
+- **Specialist rollout gates stay closed.** Unchanged, per the standing constraint.
+- **Still open for a future release:** `HandoffGate.Evaluate` (zero production call sites) and
+  `VerificationPolicy` (used only by the shadow simulator) remain unwired — same pattern, not in
+  the adaptive-runtime scope.
 
 ---
 
