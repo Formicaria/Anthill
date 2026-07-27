@@ -4,10 +4,11 @@ Canonical design + build order for merging the Colony topology and the Dashboard
 customizable command workspace. Status is tracked per stage; nothing is claimed complete until its
 gate passes.
 
-> Cross-reference: v2.17.0 (Shadow Operations & Operator Qualification, Phase 7 Stage 1) is a
-> headless backend release with **no dashboard surface yet** — a Shadow panel (diagnosis /
-> prediction / rollback bundle + the qualification scoreboard) is a planned later stage on this
-> workspace.
+> Cross-reference: Shadow Operations & Operator Qualification (Phase 7) is currently headless —
+> v2.17.0 (recommendation engine + scoreboard) and v2.18.0 (fault-injection catalog + simulation
+> harness) are backend releases with **no dashboard surface yet**. A Shadow panel (diagnosis /
+> prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
+> planned later stage on this workspace.
 
 Inspired by the *interaction patterns* of Homarr and professional trading/monitoring terminals.
 No proprietary code, design, or branding is copied.
