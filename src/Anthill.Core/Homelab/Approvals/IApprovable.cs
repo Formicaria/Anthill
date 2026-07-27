@@ -100,6 +100,13 @@ public sealed class ActionProposal : IApprovable
     [JsonPropertyName("executed_by")] public string ExecutedBy { get; set; } = "";
     [JsonPropertyName("executed_at")] public string ExecutedAt { get; set; } = "";
     [JsonPropertyName("execution_result")] public string ExecutionResult { get; set; } = "";
+
+    // v2.25.0 Safe Action executor migration — additive, like the v2.3.0 fields above. The legacy
+    // `state` strings are untouched (every route and dashboard read keeps working); this records
+    // where the action landed on the CANONICAL ActionLifecycle. In particular it distinguishes
+    // "executed and verified" from "executed and verification FAILED", which the legacy state
+    // collapsed into one value.
+    [JsonPropertyName("lifecycle_state")] public string LifecycleState { get; set; } = "";
 }
 
 /// <summary>
