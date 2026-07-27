@@ -2022,7 +2022,15 @@ async function pollJobs(){
     renderJobList(jobs,'ms-jobs-list','ms-jobs-badge',20);
     // v2.16.0: keep the conversation in step with job progress, so an answer appears in the
     // thread as soon as its mission finishes rather than on the next manual refresh.
-    if(document.getElementById('page-missions')?.classList.contains('active')) loadMissionThread();
+    // v2.17.1: refresh the conversation from the poll, but only bust the mission cache when a
+    // mission actually finished — otherwise the 10s TTL keeps this cheap. Rendering is now
+    // incremental, so an unchanged payload costs no DOM work at all.
+    if(document.getElementById('page-missions')?.classList.contains('active')){
+      const done=jobs.some(j=>['complete','failed','partial','cancelled'].includes(j.status));
+      const settled=done&&msLastSettledCount!==jobs.filter(j=>['complete','failed','partial','cancelled'].includes(j.status)).length;
+      if(settled) msLastSettledCount=jobs.filter(j=>['complete','failed','partial','cancelled'].includes(j.status)).length;
+      loadMissionThread(settled?{fresh:true}:undefined);
+    }
     // Nav badge
     const navBadge=document.getElementById('nav-jobs-badge');
     if(navBadge){ navBadge.style.display=jobs.length>0?'':'none'; navBadge.textContent=jobs.length; }
@@ -2480,75 +2488,241 @@ const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approve
  * ------------------------------------------------------------------------------------------- */
 let msThreadMissions=[];
 
-const MS_CHIP={complete:['done','var(--green)'],partial:['partial','#d9a441'],
-               failed:['failed','var(--red)'],running:['working','var(--hud-cyan,#22d3ee)']};
+/* v2.17.1 — the Missions conversation is updated INCREMENTALLY.
+ *
+ * v2.16.0 rebuilt the whole thread with innerHTML on every jobs poll (every 3s), which destroyed
+ * open activity disclosures, already-loaded reports, focus, selection and scroll position — and
+ * re-announced all forty exchanges through the live region each time. Worse, replacing innerHTML
+ * clamps scrollTop to 0, so anyone reading history was thrown to the TOP of the thread every three
+ * seconds.
+ *
+ * All the decision-making lives in mission-thread.js as pure functions (tested with node --test);
+ * everything here is DOM application only.
+ */
+const MT = window.AnthillMissionThread;
+let msPrints = new Map();          // mission id -> render fingerprint currently on screen
+const msGate = MT.RequestGate();   // rejects stale /missions/json responses
+const msActivity = MT.ActivityStore();
+let msLastAnnounced = '';
+let msLastSettledCount = -1;
 
-async function loadMissionThread(){
+const MS_CHIP={complete:['done','var(--green)'],partial:['partial','#d9a441'],
+               failed:['failed','var(--red)'],running:['working','var(--hud-cyan,#22d3ee)'],
+               queued:['queued','var(--muted)']};
+
+async function loadMissionThread(opts){
   const thread=document.getElementById('ms-thread');
   if(!thread) return;
+  const token=msGate.next();
   try{
+    // A finished mission must not be read from a stale cache — bust it so the answer appears now
+    // rather than up to ten seconds later.
+    if(opts&&opts.fresh) apiCacheBust('/missions/json');
     const r=await api('/missions/json?limit=40');
+    if(!msGate.isCurrent(token)) return;            // a newer request already answered
     if(!r.success) throw new Error(r.message||'could not load missions');
     msThreadMissions=(r.data||[]).slice();
     renderMissionThread();
   }catch(e){
-    thread.innerHTML=`<div class="ms-empty" style="color:var(--red)">Could not load missions: ${escapeHtml(e.message||'unknown error')}</div>`;
+    if(!msGate.isCurrent(token)) return;
+    // Never wipe a thread that is already showing content just because one refresh failed.
+    if(!msPrints.size){
+      thread.textContent='';
+      const err=document.createElement('div');
+      err.className='ms-empty'; err.style.color='var(--red)';
+      err.textContent='Could not load missions: '+(e.message||'unknown error');
+      thread.appendChild(err);
+    }
+    msSetStatus('Could not refresh missions: '+(e.message||'unknown error'));
   }
+}
+
+function msSetStatus(text){
+  const el=document.getElementById('ms-announce');
+  if(el && text && text!==msLastAnnounced){ el.textContent=text; msLastAnnounced=text; }
+}
+
+/** Build one exchange. Called only for missions that are genuinely new to the thread. */
+function msBuildExchange(m){
+  const row=document.createElement('div');
+  row.className='ms-x'; row.dataset.mission=String(m.id);
+
+  const ask=document.createElement('div'); ask.className='ms-ask';
+  const say=document.createElement('div'); say.className='ms-say';
+  const meta=document.createElement('div'); meta.className='ms-meta';
+
+  const det=document.createElement('details');
+  det.className='ms-act'; det.dataset.msact=String(m.id);
+  const sum=document.createElement('summary');
+  sum.textContent='▸ Show activity';
+  const body=document.createElement('div'); body.className='ms-act-body';
+  det.appendChild(sum); det.appendChild(body);
+
+  row.appendChild(ask); row.appendChild(say); row.appendChild(meta); row.appendChild(det);
+  msPatchExchange(row,m);
+  return row;
+}
+
+/** Patch an existing exchange in place. Never touches the activity subtree. */
+function msPatchExchange(row,m){
+  const answer=MT.answerOf(m);
+  const pending=!answer;
+  const [chip,col]=MS_CHIP[m.status]||[m.status||'—','var(--muted)'];
+
+  // textContent throughout: server text is never parsed as HTML, so nothing can be injected.
+  row.querySelector('.ms-ask').textContent=m.goal||'';
+  const say=row.querySelector('.ms-say');
+  say.classList.toggle('pending',pending);
+  say.textContent = pending ? 'Working — no answer recorded yet.' : answer;
+
+  const meta=row.querySelector('.ms-meta');
+  meta.textContent='';
+  const chipEl=document.createElement('span');
+  chipEl.className='ms-chip'; chipEl.style.color=col; chipEl.style.borderColor=col;
+  chipEl.textContent=chip;
+  meta.appendChild(chipEl);
+  const when=document.createElement('span');
+  when.textContent=fmtTime(m.saved_at||m.created_at);
+  meta.appendChild(when);
+  if(m.success_score!=null){
+    const sc=document.createElement('span');
+    sc.textContent='score '+Number(m.success_score).toFixed(2);
+    meta.appendChild(sc);
+  }
+  row.querySelector('details.ms-act').setAttribute('aria-label','Colony activity for: '+(m.goal||'mission'));
 }
 
 function renderMissionThread(){
   const thread=document.getElementById('ms-thread');
   if(!thread) return;
-  if(!msThreadMissions.length){
-    thread.innerHTML='<div class="ms-empty">No missions yet. Describe what you want done below.</div>';
+
+  const plan=MT.reconcileThread(msPrints,msThreadMissions);
+  const byId=new Map(msThreadMissions.map(m=>[MT.missionId(m),m]));
+
+  if(!plan.changed && msPrints.size){
+    return;   // identical data — the three-second poll now costs zero DOM work
+  }
+
+  if(!plan.order.length){
+    thread.textContent='';
+    const empty=document.createElement('div');
+    empty.className='ms-empty';
+    empty.textContent='No missions yet. Describe what you want done below.';
+    thread.appendChild(empty);
+    msPrints=plan.fingerprints;
     return;
   }
-  // Oldest first so the newest answer is at the bottom, next to where you type.
-  const rows=msThreadMissions.slice().reverse();
-  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
 
-  thread.innerHTML=rows.map(m=>{
-    const [chip,col]=MS_CHIP[m.status]||[m.status||'—','var(--muted)'];
-    const answer=m.final_result||m.user_result||'';
-    const pending=!answer;
-    return `<div class="ms-x" data-mission="${escapeHtml(m.id)}">
-      <div class="ms-ask">${escapeHtml(m.goal||'')}</div>
-      <div class="ms-say${pending?' pending':''}">${pending
-        ? 'Working — no answer recorded yet.'
-        : escapeHtml(answer)}</div>
-      <div class="ms-meta">
-        <span class="ms-chip" style="color:${col};border-color:${col}">${escapeHtml(chip)}</span>
-        <span>${escapeHtml(fmtTime(m.saved_at||m.created_at))}</span>
-        ${m.success_score!=null?`<span>score ${Number(m.success_score).toFixed(2)}</span>`:''}
-      </div>
-      <details class="ms-act" data-msact="${escapeHtml(m.id)}">
-        <summary>▸ Show activity</summary>
-        <div class="ms-act-body"><div style="color:var(--dim);font-size:11px;">Loading activity…</div></div>
-      </details>
-    </div>`;
-  }).join('');
+  // Measure BEFORE mutating, and remember what had focus so it can be restored.
+  const follow=MT.shouldFollowBottom({scrollTop:thread.scrollTop,scrollHeight:thread.scrollHeight,clientHeight:thread.clientHeight});
+  const prevTop=thread.scrollTop;
+  const active=document.activeElement;
+  const activeRow=active&&active.closest?active.closest('.ms-x'):null;
+  const activeMission=activeRow?activeRow.dataset.mission:null;
 
-  // Keep the newest answer in view, but never yank the page while someone is reading history.
-  if(atBottom) thread.scrollTop=thread.scrollHeight;
+  const empty=thread.querySelector('.ms-empty'); if(empty) empty.remove();
+
+  plan.removed.forEach(id=>{
+    const el=thread.querySelector('.ms-x[data-mission="'+CSS.escape(id)+'"]');
+    if(el) el.remove();
+    msActivity.forget(id);
+  });
+
+  // Walk the desired order, creating, patching and moving only what needs it.
+  let cursor=null;
+  plan.order.forEach(id=>{
+    const m=byId.get(id);
+    let row=thread.querySelector('.ms-x[data-mission="'+CSS.escape(id)+'"]');
+    if(!row){
+      row=msBuildExchange(m);
+    } else if(plan.updated.indexOf(id)>=0){
+      msPatchExchange(row,m);
+    }
+    const shouldFollow=cursor?cursor.nextElementSibling:thread.firstElementChild;
+    if(shouldFollow!==row) thread.insertBefore(row,shouldFollow||null);
+    cursor=row;
+  });
+
+  msPrints=plan.fingerprints;
+
+  // Restore focus if the element survived; it does, because rows are patched rather than rebuilt.
+  if(activeMission&&active&&!document.contains(active)){
+    const back=thread.querySelector('.ms-x[data-mission="'+CSS.escape(activeMission)+'"] summary');
+    if(back) back.focus();
+  }
+
+  if(follow) thread.scrollTop=thread.scrollHeight;
+  else thread.scrollTop=prevTop;      // incremental updates keep this, but be explicit
+
+  msSetStatus(MT.announcementFor(plan,byId));
 }
 
-// Activity loads on first expand only — a thread of forty missions must not fetch forty reports.
+/* ---- Activity disclosure -------------------------------------------------------------------
+ * State lives in msActivity (outside the DOM), so it survives updates and a failed report can be
+ * retried — v2.16.0 set dataset.loaded before the request resolved, permanently stranding any
+ * report that timed out. */
+async function msLoadActivity(missionId,det){
+  const body=det.querySelector('.ms-act-body');
+  if(!body) return;
+  if(!msActivity.begin(missionId)) return;    // already loading, or already loaded
+
+  body.textContent='';
+  const wait=document.createElement('div');
+  wait.style.cssText='color:var(--dim);font-size:11px;';
+  wait.textContent='Loading activity…';
+  body.appendChild(wait);
+
+  let ok=false, message='';
+  try{ ok=await renderMissionReport(missionId,body); }
+  catch(e){ ok=false; message=(e&&e.message)||'unknown error'; }
+
+  if(ok){ msActivity.succeed(missionId); return; }
+
+  msActivity.fail(missionId,message||'The mission report could not be loaded.');
+  body.textContent='';
+  const err=document.createElement('div');
+  err.className='ms-act-err';
+  err.textContent=msActivity.errorOf(missionId)+' ';
+  const retry=document.createElement('button');
+  retry.type='button'; retry.className='ms-retry';
+  retry.dataset.msretry=String(missionId);
+  retry.textContent='Retry';
+  err.appendChild(retry);
+  body.appendChild(err);
+}
+
+document.addEventListener('click',e=>{
+  const btn=e.target.closest&&e.target.closest('[data-msretry]');
+  if(!btn) return;
+  const id=btn.dataset.msretry;
+  const det=btn.closest('details.ms-act');
+  if(!det) return;
+  msActivity.retry(id);
+  msLoadActivity(id,det);
+});
+
 document.addEventListener('toggle',e=>{
   const det=e.target.closest&&e.target.closest('details[data-msact]');
-  if(!det||!det.open||det.dataset.loaded) return;
-  det.dataset.loaded='1';
-  const sum=det.querySelector('summary'); if(sum) sum.textContent='▾ Hide activity';
-  renderMissionReport(det.dataset.msact, det.querySelector('.ms-act-body'));
-},true);
-document.addEventListener('toggle',e=>{
-  const det=e.target.closest&&e.target.closest('details[data-msact]');
-  if(!det||det.open) return;
-  const sum=det.querySelector('summary'); if(sum) sum.textContent='▸ Show activity';
+  if(!det) return;
+  const id=det.dataset.msact;
+  msActivity.setOpen(id,det.open);
+  const sum=det.querySelector('summary');
+  if(sum) sum.textContent=det.open?'▾ Hide activity':'▸ Show activity';
+  // Reopening after a failure retries; a loaded report is left alone.
+  if(det.open){
+    if(msActivity.stateOf(id)==='error') msActivity.retry(id);
+    msLoadActivity(id,det);
+  }
 },true);
 
+/**
+ * v2.17.1: returns TRUE on success and FALSE on failure so callers can decide whether to mark the
+ * report loaded. Previously it swallowed the failure into the body and returned undefined, which
+ * is why the Missions thread could mark a timed-out report as permanently loaded.
+ */
 async function renderMissionReport(missionId, body){
   const r=await api(`/missions/${encodeURIComponent(missionId)}/report`);
-  if(!r.success){ body.textContent='Could not load the mission report: '+(r.message||'unknown error'); return; }
+  if(!r.success){ body.textContent='Could not load the mission report: '+(r.message||'unknown error'); return false; }
   const rep=r.data, tc=rep.task_counts||{};
   const [stLabel,stColor]=MR_STATUS[rep.status]||[rep.status,'var(--text)'];
   const sec=(title,inner)=>`<div style="margin-bottom:16px"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">${title}</div>${inner}</div>`;
@@ -2651,6 +2825,7 @@ async function renderMissionReport(missionId, body){
   }
 
   body.innerHTML=html;
+  return true;
 }
 
 // -- Mission Timeline + Task DAG viewer (v1.8.23, UI Phase 6) ------------------
@@ -2799,9 +2974,13 @@ function renderResultsList(){
 
 async function onResultToggle(det){
   const caret=det.querySelector('.box-caret'); if(caret) caret.textContent=det.open?'▾':'▸';
-  if(!det.open||det.dataset.loaded) return;
-  det.dataset.loaded='1';
-  await renderMissionReport(det.dataset.mission, det.querySelector('.mr-body'));
+  if(!det.open||det.dataset.loaded||det.dataset.loading) return;
+  // v2.17.1: mark loaded only AFTER the report succeeds, so a failed one can be retried by
+  // closing and reopening — it used to latch on the first attempt whatever the outcome.
+  det.dataset.loading='1';
+  const ok=await renderMissionReport(det.dataset.mission, det.querySelector('.mr-body'));
+  delete det.dataset.loading;
+  if(ok) det.dataset.loaded='1';
 }
 
 // Deep link: open the Results page with one mission expanded (View Result buttons land here).
@@ -3413,27 +3592,67 @@ function composeOvGoal(raw){
 }
 // Core dispatch: POST a goal and start tracking the resulting job. Shared by direct dispatch and
 // by the Mission Composer's Approve & Dispatch, so both submit the exact same goal string.
+/** v2.17.1: surface the failure instead of silently re-enabling the input. */
+function msShowDispatchError(message){
+  const box=document.getElementById('ms-error');
+  if(box){ box.textContent=message; box.hidden=false; }
+  if(typeof pcToast==='function') pcToast(message,false);
+}
+function msClearDispatchError(){
+  const box=document.getElementById('ms-error');
+  if(box){ box.textContent=''; box.hidden=true; }
+}
+
+/**
+ * v2.17.1: returns whether the mission was accepted, so the composer knows whether to clear the
+ * textarea or hand the directive back. Previously a rejected dispatch discarded what the operator
+ * had typed AND told them nothing — `if(!r.success){enableInput(true);return;}`.
+ */
 async function submitMissionGoal(goal){
-  if(!goal) return;
+  if(!goal) return false;
   enableInput(false);
+  msClearDispatchError();
   try{
     const r=await api('/missions','POST',{goal});
-    if(!r.success){enableInput(true);return;}
+    if(!r.success){
+      enableInput(true);
+      msShowDispatchError('Could not dispatch: '+(r.message||'the colony rejected the mission.'));
+      return false;
+    }
     activeJobId=r.data.id;
     selectedJobId=r.data.id;
     if(jobPollTimer) clearInterval(jobPollTimer);
     jobPollTimer=setInterval(pollActiveJob,2500);
     pollJobs();
-  }catch{enableInput(true);}
+    // Show the new mission immediately rather than up to ten seconds later on a cached read.
+    if(document.getElementById('page-missions')?.classList.contains('active'))
+      loadMissionThread({fresh:true});
+    return true;
+  }catch(e){
+    enableInput(true);
+    msShowDispatchError('Could not dispatch: '+((e&&e.message)||'the colony is unreachable.'));
+    return false;
+  }
 }
+let msDispatchInFlight=false;
 async function dispatchMission(inputId){
   const input=document.getElementById(inputId||'mission-input');
   if(!input) return;
-  let val=input.value.trim(); if(!val) return;
+  let val=input.value.trim(); if(!val) return;       // empty directives do nothing
+  if(msDispatchInFlight) return;                      // guards the Enter key as well as the button
   if(inputId==='ov-mission-input'){ val=composeOvGoal(val); hidePlanPreview(); }
-  input.value='';
-  autoGrowMissionInput(input);
-  submitMissionGoal(val);
+
+  // v2.17.1: hold the text until the colony accepts it. It used to be cleared first, so a
+  // rejected dispatch lost the directive entirely.
+  const typed=input.value;
+  msDispatchInFlight=true;
+  try{
+    const accepted=await submitMissionGoal(val);
+    if(accepted){ input.value=''; }
+    else { input.value=typed; }
+    autoGrowMissionInput(input);
+    if(!accepted) input.focus();
+  } finally { msDispatchInFlight=false; }
 }
 
 // -- Mission Composer plan preview (v1.8.23, UI Phase 3) ----------------------
@@ -3511,7 +3730,9 @@ function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b
 document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
 document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
 // v2.16.0: the conversation loads when the page opens. Job polling keeps it current after that.
-PAGE_ENTER['missions']=()=>loadMissionThread();
+// v2.17.1: page entry forces a fresh read (not the 10s cache) so the newest answers are present
+// immediately, and re-announces nothing that was already on screen.
+PAGE_ENTER['missions']=()=>loadMissionThread({fresh:true});
 document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // -- Helpers -------------------------------------------------------------------

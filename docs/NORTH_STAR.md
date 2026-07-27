@@ -299,7 +299,7 @@ V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V
          Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
          [Stage 1 SHIPPED v2.17.0 — non-executing recommendation engine (ShadowOperator) +
-          QualificationScoreboard. Stage 2 SHIPPED v2.18.0 — FaultScenarioCatalog (16 scenarios) +
+          QualificationScoreboard. Stage 2 SHIPPED v2.18.0 (v2.18.1 fixed the Missions conversation being rebuilt by the 3s jobs poll) — FaultScenarioCatalog (16 scenarios) +
           ShadowSimulation harness (safety invariants proven, incl. high-risk-needs-approval even
           with a proven skill). Live-incident wiring, timing metrics, a Shadow dashboard panel, and
           the V3.0 release thresholds are the remaining stages]
