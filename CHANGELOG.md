@@ -1,5 +1,69 @@
 # ANTHILL Changelog
 
+## v2.15.2 — Chrome positioning: one missing containing block
+
+Three reported symptoms, one root cause.
+
+### Fixed — the workspace layers had no containing block
+
+`#ws-topology`, `#ws-topbar` and the panel chrome are `position: absolute`, but neither `#main-area`
+nor `.page` carries a `position`. Absolute elements with no positioned ancestor resolve against the
+**initial containing block** — the whole viewport — so the entire workspace was laid out against the
+window rather than the content area. It therefore rendered *underneath the nav sidebar* and past the
+bottom edge.
+
+That single fact produced everything reported:
+
+- the caste legend and learning-signals panel were cut off on the left (sitting behind the sidebar),
+- the colony view bar was clipped so it began mid-row — Command / Expanded / Active were off-screen,
+- the mission directive box was pushed below the fold, leaving only a sliver.
+
+`#page-overview.ws-active` is now `position: relative`. Nothing else about the layout changed.
+
+### Fixed — the mission directive box could be covered
+
+It lived inside the canvas layer, beneath the floating panel layer, so a panel could sit on top of
+it. Since it is how work is started, it now gets its own bar pinned above the panel layer — the
+existing element re-parented, not duplicated. Bottom-anchored topology overlays and the Overlays
+button offset to clear it.
+
+### Fixed — the toolbar hid behind the status bar
+
+With the status bar correctly positioned it occupies the top 52px, and the workspace toolbar sat at
+`top: 8px` with a *lower* z-index — so it did not overlap visibly, it disappeared. The fixed chrome
+now has an explicit vertical budget: status bar 0–52, toolbar 58–90, Modules menu from 94, topology
+overlay slots from 96, mission bar at the bottom. The offset is applied to every top slot rather
+than to the view bar alone, so an overlay you re-anchor cannot land under the chrome either.
+
+### Changed — overlay control moved into the Modules menu
+
+Topology overlays (view controls, caste legend, learning signals, interaction hints) are now shown,
+hidden, and re-anchored from the same right-hand Modules menu that lists the panels, instead of a
+separate "Overlays" button pinned to the canvas. Two surfaces controlling what is on screen is how
+they drift apart.
+
+The standalone button existed to guarantee that hiding every overlay stayed recoverable; the Modules
+menu lives in the always-present workspace toolbar, so that property is preserved. A hidden
+overlay's anchor control is disabled rather than silently inert, since there is nothing to anchor.
+
+`app.js` keeps ownership of overlay state and exposes `window.AnthillTopologyOverlays`; the
+workspace module reads and writes through it rather than holding a second copy.
+
+### Fixed — a whole UI file was outside the guards
+
+`UiSource()` — the helper every UI regression guard reads — covered `index.html` and `app.js` only.
+`dashboard-workspace.js` was never scanned, simply because it did not exist when the helper was
+written; by now it builds most of the console's chrome. Orphaned element lookups and duplicate ids
+in it were invisible to CI. It is included now, with the workspace's runtime-created ids
+(`ws-panel-layer`, `ws-guides`, `ws-snapzones`, `ws-modules`, `ws-topbar`, `ws-bottombar`)
+allow-listed for what they are.
+
+### Added — guards
+`WorkspaceLayers_HaveAContainingBlock`, `FixedChromeBands_DoNotOverlap`, and
+`MissionDirective_IsAboveThePanelLayer`, and `TopologyOverlays_AreControlledFromTheModulesMenu`.
+The first is the one worth having: a missing `position: relative` is invisible when reading any
+individual rule, and its symptoms look like four unrelated clipping bugs.
+
 ## v2.15.1 — The dashboard is the colony, and it behaves like one
 
 Operator feedback on v2.15.0: the workspace was a good starting point but buggy as a dashboard —

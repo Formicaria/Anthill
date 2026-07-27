@@ -292,6 +292,7 @@ V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V
          lifecycle audit · polished default layout · responsive/a11y pass ·
          dashboard_workspace_enabled now DEFAULT ON (still an instant rollback when set false).
          v2.15.1: full-page topology · fifteen panels · docking replaced by halves/quadrants snap.
+         v2.15.2: workspace containing block + fixed-chrome vertical budget.
          Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
 
