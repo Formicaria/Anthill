@@ -6881,7 +6881,7 @@ async function initDashboardWorkspace(){
   // controls — not stranded mid-page below the map. Re-parented, not duplicated.
   var topbar=document.getElementById('ws-topbar');
   if(!topbar){
-    topbar=document.createElement('div'); topbar.id='ws-topbar';
+    topbar=document.createElement('div'); topbar.id='ws-topbar'; topbar.className='ws-layer';
     page.insertBefore(topbar, page.firstChild);
   }
   var tb=document.getElementById('tb-overview');
@@ -6892,7 +6892,7 @@ async function initDashboardWorkspace(){
   // move-don't-duplicate approach as the status bar above.
   var bottombar=document.getElementById('ws-bottombar');
   if(!bottombar){
-    bottombar=document.createElement('div'); bottombar.id='ws-bottombar';
+    bottombar=document.createElement('div'); bottombar.id='ws-bottombar'; bottombar.className='ws-layer';
     page.appendChild(bottombar);
   }
   var mb=document.getElementById('mission-bar');
@@ -6901,7 +6901,7 @@ async function initDashboardWorkspace(){
   // map by document order without either one needing a z-index arms race.
   var topo=document.getElementById('ws-topology');
   if(!topo){
-    topo=document.createElement('div'); topo.id='ws-topology'; topo.className='ws-topology';
+    topo=document.createElement('div'); topo.id='ws-topology'; topo.className='ws-topology ws-layer';
     topo.setAttribute('aria-hidden','true');   // the canvas is decorative here; the ants are
     page.insertBefore(topo, root);             // reachable through the Colony page and inspector
   }

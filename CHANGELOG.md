@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v2.15.3 — Hotfix: the status bar and mission directive box were invisible
+
+v2.15.2 shipped with two pieces of primary chrome hidden: the ANTHILL status bar and the mission
+directive box — the thing you type a mission into.
+
+**Cause.** The rule that takes the classic Overview out of flow was an id allow-list:
+
+```css
+#page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}
+```
+
+v2.15.2 then added `#ws-topbar` and `#ws-bottombar` as direct children of the same element, so both
+matched the rule and were set to `display:none`. The `#ws-topbar > #tb-overview{display:block}`
+rule could not rescue it — a child of a hidden parent does not render.
+
+Both halves read correctly in isolation. The defect existed only in the relationship between them,
+which is why nothing caught it: an allow-list that must be updated every time a sibling is added is
+a latch waiting to catch the next one.
+
+**Fix.** The rule excludes by class instead. Any workspace layer opts out by carrying `.ws-layer`,
+so adding another cannot reintroduce this. `#ws-root` stays matched by id because the workspace
+module owns and rewrites its `className` on every render.
+
+`EveryWorkspaceLayer_SurvivesTheClassicPageHideRule` now parses what `initDashboardWorkspace`
+attaches to the page and asserts each one carries the class — checking the relationship, not the
+two rules separately.
+
 ## v2.15.2 — Chrome positioning: one missing containing block
 
 Three reported symptoms, one root cause.
