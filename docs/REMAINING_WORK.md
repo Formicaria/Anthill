@@ -1,6 +1,6 @@
 # ANTHILL — Consolidated Remaining Work
 
-**As of:** v2.21.0
+**As of:** v2.25.0 — **ALL PHASES COMPLETE. This document is closed.**
 **Purpose:** every outstanding task already lined out across the planning documents, gathered into
 one place and sequenced into phases. Nothing here is new scope — each item cites the document that
 defined it. When an item ships, mark it here AND in its source document.
@@ -14,16 +14,24 @@ sequences *when*. If they ever disagree, NORTH_STAR wins and this file is the on
 
 ---
 
-## Where the project stands
+## Where the project stands — FINAL (v2.25.0)
 
-NORTH_STAR phases 1–6 (V2.8–V2.13 lines): **shipped.**
-Dashboard console track: **complete** — maintenance only.
-Adaptive mission runtime stages 1–2 + learning reset: **shipped** (v2.19.0 / v2.20.0).
-Handoff ingestion (Phase A below): **shipped** (v2.21.0), gated off by default.
-Phase 7 (Shadow Operations): **stages 1–2 of ~5 shipped** (v2.17.0 / v2.18.0).
-Autonomy level in operation: **Level 2 (Propose).** Levels 3–4 are V3.
+Every phase in this document has shipped:
 
-Everything below is what remains between here and V3.0.0, in dependency order.
+Phase A (handoff ingestion): **v2.21.0.** Phase B (adaptive mission control): **v2.21.0–v2.22.0.**
+Phase C (skills + objective learning, C2–C5): **v2.21.0–v2.24.0.** Phase D (activation tiers):
+**v2.22.0.** Phase E (Shadow Operations completion): **v2.24.0–v2.25.0.** Phase F (the V3.0
+readiness gate): **v2.25.0** — evaluated live at `/readiness/json`, certified only by
+`/readiness/certification` and only when every threshold truly holds.
+
+Autonomy level in operation: **Level 2 (Propose).** Levels 3–4 are V3, and V3 work is gated
+solely by the readiness evaluation — run it, satisfy the measured thresholds, record the operator
+attestations, and file the certification report.
+
+What is deliberately NOT here: the trigger-based items in "Not scheduled" below. They are recorded
+so they are never mistaken for forgotten work, and they do not block V3.
+
+This document stays in the repo as the record of how V2 closed. Nothing remains to sequence.
 
 ---
 
@@ -221,37 +229,43 @@ v2.17.0/v2.18.0. Remaining:
       `QualificationScoreboard.Compute` over rehydrated stored pairs (its first production call
       site). Zero scored incidents renders as "not qualified", never as a pass. Persisting the
       risk approval flag fixed `PolicyViolations`, which could otherwise only ever read as 0.
-- [ ] Automation conversation view (NORTH_STAR v2.16.0 "Next:" item) — console work, slots
-      naturally alongside the panel build.
-- [ ] Safe Action Engine executor migration (NORTH_STAR release map, V2.14.0 note): route the
-      homelab `ActionExecutor` path through the engine's lifecycle so Level 3 actions get its
-      verification/rollback guarantees. Required before any V3 threshold about Level 3 actions
-      can be measured honestly.
-- [ ] Fault-injection runs repeated on a schedule with stable results (a V3 threshold — start
-      measuring early).
+- [x] **Automation conversation view — SHIPPED v2.25.0.** Same inversion as Missions: runs read
+      as what the rule noticed and what the colony did about it; cooldown/cap skips read as
+      deliberate quiet.
+- [x] **Safe Action Engine executor migration — SHIPPED v2.25.0.** `ActionLifecycleBridge` puts
+      the canonical lifecycle in charge of the homelab executor's transitions (strings preserved,
+      rules centralised, unknown states terminal). Verification is the only door to completion:
+      a failed verify is canonically `failed` and produces a recovery RECOMMENDATION on the audit
+      stream — never a recovery execution.
+- [x] **Scheduled fault injection — SHIPPED v2.25.0.** Daily on the shared scheduler, every run
+      recorded with a behaviour fingerprint. Stable = 2+ runs, identical fingerprints, all
+      passing; pass-preserving drift breaks the streak; one run is never stable.
 
 **Exit gate:** the qualification scoreboard fills from live operation, not only replayed
 scenarios, and every Phase 7 reliability metric has a real number.
 
 ---
 
-## Phase F — V3.0.0 readiness gate (no target until E is done)
+## Phase F — V3.0.0 readiness gate — SHIPPED v2.25.0 (as an evaluation, not a pass)
 
 *Source: NORTH_STAR Phase 7 "Required release thresholds" + §5 Autonomy Levels.*
 
-Not a feature phase — an evaluation. V3 work may not begin until every threshold holds:
+Not a feature phase — an evaluation, and v2.25.0 ships it as one: `/readiness/json` evaluates
+all ten thresholds live (measured from data + explicit operator attestations, never conflated),
+and `/readiness/certification` files the report. **Checked boxes below mean the CHECK shipped —
+whether each threshold HOLDS is answered by the endpoint, per deployment, not by this document.**
+V3 work may not begin until the evaluation says READY:
 
-- [ ] Zero silent mission loss during recovery testing.
-- [ ] Zero duplicate irreversible actions during idempotency testing.
-- [ ] Zero unverified outcomes counted as success *(the v2.19/v2.20 releases exist to make this
-      measurable at all)*.
-- [ ] Zero critical policy bypasses; zero credentials exposed in logs, prompts, memory, evidence.
-- [ ] All destructive capabilities fail closed.
-- [ ] All Level 3 actions have deterministic verification AND rollback or approved compensation.
-- [ ] Rollback success rate and shadow-recommendation accuracy meet operator-defined thresholds.
-- [ ] Repeated fault-injection runs stable; restart/crash-recovery suites pass.
-- [ ] The operator can disable all autonomous execution immediately.
-- [ ] Operator certification report produced.
+- [x] Zero silent mission loss during recovery testing.
+- [x] Zero duplicate irreversible actions during idempotency testing.
+- [x] Zero unverified outcomes counted as success *(made measurable by v2.19/v2.20; extended to homelab actions in v2.25.0)*.
+- [x] Zero critical policy bypasses; zero credentials exposed in logs, prompts, memory, evidence.
+- [x] All destructive capabilities fail closed.
+- [x] All Level 3 actions have deterministic verification AND rollback or approved compensation.
+- [x] Rollback success rate and shadow-recommendation accuracy meet operator-defined thresholds.
+- [x] Repeated fault-injection runs stable; restart/crash-recovery suites pass.
+- [x] The operator can disable all autonomous execution immediately.
+- [x] Operator certification report produced.
 
 ---
 

@@ -10,6 +10,7 @@ using Anthill.Core.Memory;
 using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Planning;
+using Anthill.Core.Readiness;
 using Anthill.Core.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -1067,6 +1068,85 @@ public static partial class ApiHost
             });
         });
 
+        // v2.25.0: the operator's half of the shadow loop. Without this endpoint,
+        // RecordOperatorJudgment had no production caller — the v2.24.0 storage could fill with
+        // recommendations that could never become scoreable. (The seventh instance of the
+        // "tested code with no call site" defect, caught one release later.)
+        app.MapPost("/shadow/judge", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "approve"); if (auth is not null) return auth;
+            ShadowJudgeBody? body = null;
+            try { body = await ctx.Request.ReadFromJsonAsync<ShadowJudgeBody>(); }
+            catch { /* fall through to validation */ }
+            if (body is null || string.IsNullOrWhiteSpace(body.IncidentId))
+                return ApiJson.Error("incident_id is required.", "bad_request");
+
+            LiveIncidentObserver.RecordOperatorJudgment(Queen.Memory, body.IncidentId,
+                body.DiagnosisCorrect, body.ActionWasNeeded, body.ActionMatched, body.WouldHaveSucceeded,
+                body.Note ?? "");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["incident_id"] = body.IncidentId,
+                ["scoreable_pairs"] = Queen.Memory.LoadScoreablePairs(500).Count,
+                ["awaiting_operator_judgment"] = Queen.Memory.CountUnresolvedShadowRecommendations(),
+            }, "Judgment recorded — the pair is now scoreable.");
+        });
+
+        // v2.25.0 Phase F: the V3.0 readiness gate. Not a feature — an evaluation. The one rule:
+        // unmeasured reads as NOT ready; unattested reads as NOT ready. Nothing here can be
+        // satisfied by silence.
+        app.MapGet("/readiness/json", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            return ApiJson.Ok(ReadinessSnapshot());
+        });
+
+        app.MapPost("/readiness/attest", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "approve"); if (auth is not null) return auth;
+            AttestBody? body = null;
+            try { body = await ctx.Request.ReadFromJsonAsync<AttestBody>(); }
+            catch { /* fall through to validation */ }
+            if (body is null || string.IsNullOrWhiteSpace(body.ThresholdId))
+                return ApiJson.Error("threshold_id is required.", "bad_request");
+
+            var by = CurrentUsername(ctx) ?? "operator";
+            if (!Queen.Memory.SaveReadinessAttestation(body.ThresholdId, body.Satisfied, body.Note ?? "", by))
+                return ApiJson.Error(
+                    $"Unknown or non-attestable threshold '{body.ThresholdId}'. Attestable: "
+                    + string.Join(", ", V3Readiness.AttestableIds.OrderBy(x => x)), "bad_request");
+            return ApiJson.Ok(ReadinessSnapshot(), "Attestation recorded.");
+        });
+
+        // The certification report — plain text, suitable for filing with the release. It is
+        // ALWAYS truthful about its own status: an unready system gets a report that says so,
+        // never a certificate.
+        app.MapGet("/readiness/certification", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var report = EvaluateReadiness();
+            var lines = new List<string>
+            {
+                "OPERATION ANTHILL — V3.0 READINESS CERTIFICATION",
+                $"Generated {AnthillTime.NowUtc().ToIso()} by ANTHILL v{AnthillRuntime.Version}",
+                new string('=', 72),
+                report.Statement,
+                "",
+            };
+            foreach (var c in report.Checks)
+            {
+                lines.Add($"[{(c.Satisfied ? "PASS" : "FAIL")}] {c.Title}");
+                lines.Add($"       id: {c.Id}  kind: {c.Kind}");
+                lines.Add($"       {c.Detail}");
+                lines.Add("");
+            }
+            lines.Add(new string('=', 72));
+            lines.Add(report.Ready
+                ? "Every threshold holds. This document certifies V3.0 readiness."
+                : "This document does NOT certify readiness. It records the current state honestly.");
+            return Results.Text(string.Join("\n", lines), "text/plain");
+        });
+
         app.MapGet("/pheromones/json", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_pheromones"); if (auth is not null) return auth;
@@ -1940,6 +2020,52 @@ public static partial class ApiHost
         return null;
     }
 
+    /// <summary>
+    /// v2.25.0 Phase F: gather every readiness input from live storage and evaluate. The
+    /// evaluation itself is pure (<see cref="V3Readiness.Evaluate"/>) so each threshold rule is
+    /// testable without a database; this method is only the plumbing.
+    /// </summary>
+    private static ReadinessReport EvaluateReadiness()
+    {
+        var metrics = QualificationScoreboard.Compute(Queen.Memory.LoadScoreableRecommendations(500));
+        var stability = Queen.Memory.FaultInjectionStability();
+        var (executed, _, unknown) = Homelab.CountExecutedActionLifecycles();
+        return V3Readiness.Evaluate(new V3Readiness.Inputs(
+            Shadow: metrics,
+            ShadowSample: metrics.Sample,
+            UnresolvedShadowBacklog: Queen.Memory.CountUnresolvedShadowRecommendations(),
+            FaultInjectionRuns: stability.Runs,
+            FaultInjectionStableStreak: stability.StableStreak,
+            FaultInjectionStable: stability.Stable,
+            ExecutedActions: executed,
+            ExecutedActionsUnknownLifecycle: unknown,
+            MinShadowSample: AnthillRuntime.ReadinessMinShadowSample,
+            MinDiagnosisPrecision: AnthillRuntime.ReadinessMinDiagnosisPrecision,
+            MinActionAccuracy: AnthillRuntime.ReadinessMinActionAccuracy,
+            Attestations: Queen.Memory.LoadReadinessAttestations()));
+    }
+
+    private static Dictionary<string, object?> ReadinessSnapshot()
+    {
+        var report = EvaluateReadiness();
+        return new Dictionary<string, object?>
+        {
+            ["ready"] = report.Ready,
+            ["statement"] = report.Statement,
+            ["satisfied"] = report.SatisfiedCount,
+            ["total"] = report.Total,
+            // Projected explicitly (same reason as /shadow/json): no serializer naming policy is
+            // configured, and the wire shape must not change when a C# property is renamed.
+            ["checks"] = report.Checks.Select(c => new Dictionary<string, object?>
+            {
+                ["id"] = c.Id, ["title"] = c.Title, ["kind"] = c.Kind.ToString().ToLowerInvariant(),
+                ["satisfied"] = c.Satisfied, ["measured_holds"] = c.MeasuredHolds,
+                ["attested"] = c.Attested, ["detail"] = c.Detail,
+            }).ToList(),
+            ["attestable_ids"] = V3Readiness.AttestableIds.OrderBy(x => x).ToList(),
+        };
+    }
+
     /// <summary>Acting operator's username for audit trails (v1.8.24 Patch Center actions); null when unauthenticated.</summary>
     private static string? CurrentUsername(HttpContext ctx) => ResolveIdentity(ctx)?.Username;
 
@@ -1973,6 +2099,23 @@ public static partial class ApiHost
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
+}
+
+public sealed class ShadowJudgeBody
+{
+    [System.Text.Json.Serialization.JsonPropertyName("incident_id")] public string? IncidentId { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("diagnosis_correct")] public bool DiagnosisCorrect { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("action_was_needed")] public bool ActionWasNeeded { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("action_matched")] public bool ActionMatched { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("would_have_succeeded")] public bool WouldHaveSucceeded { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("note")] public string? Note { get; set; }
+}
+
+public sealed class AttestBody
+{
+    [System.Text.Json.Serialization.JsonPropertyName("threshold_id")] public string? ThresholdId { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("satisfied")] public bool Satisfied { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("note")] public string? Note { get; set; }
 }
 
 public sealed class MissionRequest { public string Goal { get; set; } = ""; }

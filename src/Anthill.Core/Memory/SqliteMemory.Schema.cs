@@ -180,6 +180,18 @@ public sealed partial class SqliteMemory : IDisposable
             predicted_outcome TEXT NOT NULL DEFAULT '', verification_plan_json TEXT,
             rollback_plan TEXT, rollback_reason TEXT,
             would_recommend_execution INTEGER NOT NULL DEFAULT 0, observed_at TEXT NOT NULL)",
+        // v2.25.0: fault-injection runs recorded as a series — the V3 "repeated runs stable"
+        // threshold is a property of history, and a harness that keeps no history cannot answer it.
+        @"CREATE TABLE IF NOT EXISTS fault_injection_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at TEXT NOT NULL,
+            total INTEGER NOT NULL DEFAULT 0, passed INTEGER NOT NULL DEFAULT 0,
+            all_passed INTEGER NOT NULL DEFAULT 0, fingerprint TEXT NOT NULL DEFAULT '',
+            results_json TEXT)",
+        // v2.25.0 Phase F: operator attestations for the V3 readiness gate. Absence of a row
+        // means "not attested", which the evaluation reads as NOT satisfied.
+        @"CREATE TABLE IF NOT EXISTS readiness_attestations (
+            threshold_id TEXT PRIMARY KEY, satisfied INTEGER NOT NULL DEFAULT 0,
+            note TEXT, attested_by TEXT, attested_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS shadow_outcomes (
             incident_id TEXT PRIMARY KEY, diagnosis_correct INTEGER NOT NULL DEFAULT 0,
             action_was_needed INTEGER NOT NULL DEFAULT 0, action_matched INTEGER NOT NULL DEFAULT 0,

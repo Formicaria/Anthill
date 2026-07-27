@@ -111,6 +111,13 @@ public sealed class AnthillConfig
     /// done. It never executes. Off by default — an observer that silently starts writing
     /// recommendations about production incidents should not arrive with an upgrade.</summary>
     [JsonPropertyName("shadow_observation_enabled")] public bool ShadowObservationEnabled { get; set; } = false;
+
+    // v2.25.0 Phase F: the operator-defined readiness thresholds (NORTH_STAR: "meet
+    // operator-defined thresholds" — so they are config, not constants). Defaults are deliberately
+    // conservative; loosening them is an explicit operator decision in config, on the record.
+    [JsonPropertyName("readiness_min_shadow_sample")] public int ReadinessMinShadowSample { get; set; } = 10;
+    [JsonPropertyName("readiness_min_diagnosis_precision")] public double ReadinessMinDiagnosisPrecision { get; set; } = 0.8;
+    [JsonPropertyName("readiness_min_action_accuracy")] public double ReadinessMinActionAccuracy { get; set; } = 0.8;
     [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
     [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
     [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";

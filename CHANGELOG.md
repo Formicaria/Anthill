@@ -1,5 +1,81 @@
 # ANTHILL Changelog
 
+## v2.25.0 — V2 closes
+
+The last four items from every roadmap — NORTH_STAR, ROADMAP, REMAINING_WORK — in one closeout
+release, plus one gap of our own making. After this, every phase V2 promised either shipped or is
+explicitly recorded as trigger-based future work. V3 begins from here, gated by the readiness
+evaluation this release ships.
+
+### The Safe Action Engine executor migration
+
+`ActionLifecycle` shipped in v2.14.0 as "the ONE lifecycle every state-changing system shares" —
+and the homelab `ActionExecutor`, the only production system that actually changes external state,
+never consulted it. Its transitions were guarded by string comparisons that happened to agree with
+the lifecycle: agreement by coincidence, not by structure.
+
+`ActionLifecycleBridge` maps the persisted string states onto the canonical machine, and the
+executor's refusals now COME FROM it — deciding a decided proposal or executing anything but an
+approved one is refused by `ActionLifecycle.Transition`, with the string comparison gone. Unknown
+or corrupt states map to a terminal state, so nothing can transition out of them by accident. The
+persisted strings themselves are unchanged: every existing route, approval flow and dashboard read
+keeps working.
+
+The substantive half: **verification is now the only door to completion.** An action whose
+post-execution verify failed used to remain "executed", with the failure buried in the result text
+— an unverified outcome counted as success, the exact defect the V3 thresholds forbid. It now
+lands canonically `failed` (new additive `lifecycle_state` column; legacy rows read as unknown,
+which the readiness gate refuses to count as verified), and produces a `RecoveryOrchestrator`
+decision on the audit stream. The decision is a RECOMMENDATION — nothing executes recovery,
+because recovery that runs itself is exactly the autonomy V3 has not yet earned. The recovery
+context is built only from what the proposal establishes: a rollback NOTE is prose for a human,
+not machinery, so the orchestrator can never recommend an "immediate rollback" nothing can perform.
+
+### Automation as a conversation
+
+The NORTH_STAR v2.16.0 "Next:" item, same inversion as Missions: lead with what happened and what
+the colony did about it, in plain English, with the raw outcome token behind a hover. The
+vocabulary is honest about restraint — a cooldown or cap skip is the engine WORKING, so skips read
+as deliberate quiet, not as failures.
+
+### Fault injection becomes a measured series
+
+The V3 threshold reads "repeated fault-injection runs stable" — which is only measurable if runs
+are repeated and RECORDED. `ShadowSimulation.RunAll` executed inside tests and nowhere else. It
+now runs daily on the shared scheduler (no private timers), and every run persists with a
+behaviour fingerprint hashing every scenario's full outcome tuple. Stability = 2+ runs, identical
+fingerprints, all passing. Two runs that both pass 16/16 but flip WHICH recommendation a scenario
+produced are NOT stable — the pass count would have hidden the drift; the fingerprint does not.
+One run is never stable: stability is a property of repetition.
+
+### The V3.0 readiness gate (Phase F)
+
+Not a feature — an evaluation. All ten NORTH_STAR Phase 7 thresholds, evaluated at
+`/readiness/json` from two sources that are never conflated: **measured** checks computed from
+live data (shadow accuracy vs operator-defined config thresholds, fault-injection stability,
+executed-action verification coverage, policy-violation counts) and **attested** checks recorded
+by an explicit operator judgment (`POST /readiness/attest`) for the things ANTHILL cannot verify
+about itself — that the recovery suites were run and watched, that the kill switch was actually
+pulled and execution actually halted. A measured check can never be attested into passing; an
+attested check can never be inferred into passing; unmeasured and unattested both read NOT ready.
+An attestation may record *not satisfied* — an operator who found the kill switch wanting needs
+that on the record more than one who found it working.
+
+The tenth threshold is the certification report itself (`/readiness/certification`): computed as
+the conjunction of the other nine, not attestable — letting an operator attest it would let the
+report certify itself. An unready system gets a report that says so, never a certificate.
+
+The readiness thresholds are config (`readiness_min_*`) but deliberately NOT editable from the
+settings UI: a release gate should not be loosenable from the console it gates.
+
+### The seventh call-site gap — ours, from last release
+
+v2.24.0 shipped `RecordOperatorJudgment` tested and called by nothing: the storage could fill with
+recommendations that could never become scoreable in production. `POST /shadow/judge` closes it.
+Recorded here because the pattern is this codebase's signature defect and this instance was ours,
+caught one release later by the same discipline that caught the other six: assert the call site,
+not only the implementation.
+
 ## v2.24.0 — Was the goal met, and does shadow mode have a track record?
 
 `MissionVerification` answers whether a verification step ran and returned a pass. That is

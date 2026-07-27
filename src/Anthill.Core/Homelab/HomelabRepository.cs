@@ -146,7 +146,8 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
             rollback_note TEXT, dry_run_available INTEGER NOT NULL DEFAULT 0, payload TEXT,
             blast_radius_score INTEGER DEFAULT 0, blast_radius_explanation TEXT,
             requested_by TEXT, created_at TEXT NOT NULL,
-            decided_by TEXT, decided_at TEXT, executed_by TEXT, executed_at TEXT, execution_result TEXT)",
+            decided_by TEXT, decided_at TEXT, executed_by TEXT, executed_at TEXT, execution_result TEXT,
+            lifecycle_state TEXT NOT NULL DEFAULT '')",
         @"CREATE INDEX IF NOT EXISTS idx_action_proposals_state ON action_proposals(state, created_at)",
         @"CREATE TABLE IF NOT EXISTS node_metrics (
             node_id TEXT PRIMARY KEY, node_name TEXT NOT NULL, source TEXT NOT NULL,
@@ -190,6 +191,9 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
             }
             // v2.5.4 R4: the target list carries allow AND deny entries (deny beats allow).
             EnsureColumn(conn, tx, "homelab_target_allowlist", "list_kind", "TEXT NOT NULL DEFAULT 'allow'");
+            // v2.25.0: canonical lifecycle terminal per action. Existing rows read as '' (unknown),
+            // which downstream treats as "predates the migration" — never as verified.
+            EnsureColumn(conn, tx, "action_proposals", "lifecycle_state", "TEXT NOT NULL DEFAULT ''");
             MigrateArrAppsToIntegrations(conn, tx); // v2.5.1 R1: legacy rows move, UI keeps working
             tx.Commit();
         }
@@ -752,7 +756,7 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
         "id, title, summary, action_type, target_kind, target_id, state, risk_level, dedupe_key, " +
         "dependency_fanout, service_criticality, backup_covered, internet_exposed, rollback_note, " +
         "dry_run_available, payload, blast_radius_score, blast_radius_explanation, requested_by, " +
-        "created_at, decided_by, decided_at, executed_by, executed_at, execution_result";
+        "created_at, decided_by, decided_at, executed_by, executed_at, execution_result, lifecycle_state";
 
     public void SaveActionProposal(ActionProposal p)
     {
@@ -762,7 +766,7 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
             using var conn = Connect();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"INSERT INTO action_proposals ({ActionProposalColumns})
-                VALUES ($id,$title,$summary,$atype,$tkind,$tid,$state,$risk,$dedupe,$fanout,$crit,$backup,$exposed,$rollback,$dry,$payload,$score,$expl,$reqby,$created,$decby,$decat,$exby,$exat,$exres)";
+                VALUES ($id,$title,$summary,$atype,$tkind,$tid,$state,$risk,$dedupe,$fanout,$crit,$backup,$exposed,$rollback,$dry,$payload,$score,$expl,$reqby,$created,$decby,$decat,$exby,$exat,$exres,$lifecycle)";
             BindActionProposal(cmd, p);
             cmd.ExecuteNonQuery();
         }
@@ -780,7 +784,7 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
                 internet_exposed=$exposed, rollback_note=$rollback, dry_run_available=$dry, payload=$payload,
                 blast_radius_score=$score, blast_radius_explanation=$expl, requested_by=$reqby,
                 created_at=$created, decided_by=$decby, decided_at=$decat, executed_by=$exby,
-                executed_at=$exat, execution_result=$exres WHERE id=$id";
+                executed_at=$exat, execution_result=$exres, lifecycle_state=$lifecycle WHERE id=$id";
             BindActionProposal(cmd, p);
             cmd.ExecuteNonQuery();
         }
@@ -822,6 +826,27 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
         Bind(cmd, "$expl", p.BlastRadiusExplanation); Bind(cmd, "$reqby", p.RequestedBy);
         Bind(cmd, "$created", p.CreatedAt); Bind(cmd, "$decby", p.DecidedBy); Bind(cmd, "$decat", p.DecidedAt);
         Bind(cmd, "$exby", p.ExecutedBy); Bind(cmd, "$exat", p.ExecutedAt); Bind(cmd, "$exres", p.ExecutionResult);
+        Bind(cmd, "$lifecycle", p.LifecycleState);
+    }
+
+    /// <summary>
+    /// v2.25.0 Phase F input: of the actions that actually executed, how many carry a canonical
+    /// verification outcome and how many predate the lifecycle column (unknown — which the
+    /// readiness gate refuses to count as verified).
+    /// </summary>
+    public (int Executed, int Verified, int UnknownLifecycle) CountExecutedActionLifecycles()
+    {
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"SELECT
+            COUNT(*),
+            SUM(CASE WHEN lifecycle_state = 'completed_verified' OR lifecycle_state = 'failed' THEN 1 ELSE 0 END),
+            SUM(CASE WHEN lifecycle_state = '' OR lifecycle_state IS NULL THEN 1 ELSE 0 END)
+            FROM action_proposals WHERE state = 'executed'";
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return (0, 0, 0);
+        int I(int i) => r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+        return (I(0), I(1), I(2));
     }
 
     private static ActionProposal ReadActionProposal(SqliteDataReader r)
@@ -838,6 +863,7 @@ public sealed partial class HomelabRepository : IHomelabRepository, IDisposable
             Payload = S(15), BlastRadiusScore = r.IsDBNull(16) ? 0 : r.GetInt32(16),
             BlastRadiusExplanation = S(17), RequestedBy = S(18), CreatedAt = S(19),
             DecidedBy = S(20), DecidedAt = S(21), ExecutedBy = S(22), ExecutedAt = S(23), ExecutionResult = S(24),
+            LifecycleState = S(25),
         };
     }
 

@@ -10,6 +10,11 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.25.0 note: **Homelab → Automation** runs now read as a conversation (the v2.16.0 "Next:"
+> item): what the rule noticed, then what the colony did about it, in plain English — cooldown and
+> cap skips read as deliberate quiet, because restraint is the engine working. The raw outcome
+> token sits behind a hover. The Shadow Qualification panel gains live inputs from `/shadow/judge`
+> (operator judgments) and the readiness gate reads the same stores at `/readiness/json`.
 > v2.24.0 note: the Modules menu now actually collapses. `hidden` only carries `display:none`
 > from the UA stylesheet, and `.ws-modules` sets `display:flex` — so two earlier fixes set the
 > attribute correctly and changed nothing on screen. `.ws-modules[hidden]` and `.ws-tray[hidden]`

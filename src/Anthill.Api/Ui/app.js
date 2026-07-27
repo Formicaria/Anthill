@@ -5496,10 +5496,18 @@ async function hlLoadAutomation(){
         '</tr>').join('')+'</table>';
     const runBox=document.getElementById('hl-auto-runs');
     const rr=(runs&&runs.success&&runs.data)||[];
+    // v2.25.0 — Automation as a conversation (the NORTH_STAR v2.16.0 "Next:" item, same inversion
+    // as Missions): lead with what happened and what the colony did about it in plain English;
+    // the raw outcome token and full trigger detail sit behind a hover/title, not in front.
     if(runBox) runBox.innerHTML=rr.length
-      ? '<div style="color:var(--dim);margin-bottom:2px;">RECENT RUNS</div>'+rr.slice(0,6).map(x=>'<div style="padding:2px 0;border-top:1px dotted var(--border);">'+
-          '<span style="color:var(--dim)">'+escapeHtml((x.fired_at||'').substring(0,16))+'</span> <b>'+escapeHtml(x.rule_name)+'</b> · '+
-          '<span style="color:'+(x.outcome==='fired'?'var(--orange)':'var(--dim)')+'">'+escapeHtml(x.outcome)+'</span> '+escapeHtml((x.action_taken||x.trigger_detail||'').substring(0,80))+'</div>').join('')
+      ? '<div style="color:var(--dim);margin-bottom:2px;">WHAT AUTOMATION HAS BEEN DOING</div>'+rr.slice(0,8).map(x=>{
+          const st=hlAutoStory(x);
+          return '<div style="padding:4px 0;border-top:1px dotted var(--border);" title="'+escapeHtml(x.outcome+' — '+(x.trigger_detail||''))+'">'+
+            '<div><span style="color:var(--dim)">'+escapeHtml((x.fired_at||'').substring(0,16).replace('T',' '))+'</span> '+
+            '<b>'+escapeHtml(x.rule_name||'unnamed rule')+'</b> <span style="color:var(--dim)">noticed:</span> '+escapeHtml((x.trigger_detail||'its trigger condition').substring(0,110))+'</div>'+
+            '<div style="padding-left:14px;color:'+st.tone+';">↳ '+escapeHtml(st.text)+'</div>'+
+          '</div>';
+        }).join('')
       : '';
   }catch(e){ body.innerHTML='<span style="color:var(--red)">Error: '+escapeHtml(e.message||'')+'</span>'; }
 }
@@ -7628,3 +7636,31 @@ async function hlLoadShadow(){
     body.innerHTML='<span style="color:var(--dim)">Shadow record unavailable.</span>';
   }
 }
+
+// v2.25.0: one plain-English sentence per automation run — the conversation's reply line. Pure
+// (data in, {text,tone} out) so it can be tested by reading, like mission-thread's helpers. The
+// vocabulary is honest about restraint: a skip is the engine WORKING (cooldowns and caps are
+// safety features), so skips read as deliberate quiet, not as failures.
+function hlAutoStory(run){
+  const act={propose_restart:'proposed a restart (approval-gated — nothing runs until a human agrees)',
+             open_incident:'opened an incident',
+             alert:'sent an alert',
+             warn_event:'recorded a warning event',
+             flag_risk:'flagged the target as at-risk'};
+  const did=(run.action_taken&&run.action_taken.length)?run.action_taken:null;
+  switch(run.outcome){
+    case 'fired':
+      return {text:did||('it '+(act[run.action_kind]||'acted')+'.'),tone:'var(--orange)'};
+    case 'skipped_cooldown':
+      return {text:'it stayed quiet — it acted on this recently and is still in cooldown.',tone:'var(--dim)'};
+    case 'skipped_cap':
+      return {text:'it stayed quiet — it reached its daily cap for this rule.',tone:'var(--dim)'};
+    case 'skipped_pending':
+      return {text:'it held off — an earlier proposal it made is still waiting for a human decision.',tone:'var(--dim)'};
+    case 'error':
+      return {text:'it tried to act but failed: '+(did||run.trigger_detail||'unknown error'),tone:'var(--red)'};
+    default:
+      return {text:did||('outcome: '+(run.outcome||'unknown')),tone:'var(--muted)'};
+  }
+}
+
