@@ -1,5 +1,63 @@
 # ANTHILL Changelog
 
+## v2.16.0 — Missions read like a conversation
+
+### Added — a plain-English answer, not the winning task's raw output
+
+`ComposeUserResult` has always returned the single best task's output *verbatim*, so the "answer"
+could be JSON, a diff, or a verbose dump depending on which ant happened to win. Mission completion
+now writes a concise plain-English answer into `FinalResult`.
+
+Nothing is replaced: `UserResult` keeps the raw best-task output and `DebugResult` keeps the full
+trace, so the detail behind an answer is always still there. No schema change — the API already
+carried all three.
+
+Every failure path falls back to the previous behaviour, because a mission must never end up
+answerless: no router, `answer_synthesis_enabled=false`, an answer already short enough to be prose
+(under 320 characters), a provider that is down, an `ERROR:` response, an empty response, or a
+thrown exception. Those rules are pure functions with eight tests, proven without a live model.
+
+Synthesis routes under a **`scribe`** role, which resolves through the normal route table, so answer
+writing can be pointed at a cheaper model in Settings → Model Routing without touching code. The
+prompt constrains the model to rephrase what the colony produced — it may not add findings, and a
+failed or partial mission must be reported as such rather than narrated as a success.
+
+### Changed — Operations → Missions is a conversation
+
+Directive in at the bottom, answers in a scrolling thread above, and everything the colony did —
+per-task trace, events, changes, verification — behind **one disclosure per response**.
+
+Activity loads on first expand only, so a forty-mission thread does not fetch forty reports, and the
+detail view reuses `renderMissionReport` verbatim rather than growing a second implementation that
+can drift from the Results page. The thread is a polite live region and only auto-scrolls when you
+are already at the bottom, so reading history is never interrupted by an arriving answer.
+
+### Changed — chamber view no longer muddies
+
+Ants inside a chamber overlapped badly. Three things were compounding: roles sat on a ring capped at
+46px, their workers were placed 72px out, and the worker bearing came from `colonyAngleFor()` —
+which in chamber mode derives from the *chamber's* index and is therefore identical for every role
+in it. Each role's workers landed on its neighbour.
+
+Every role now owns an angular **sector** of its chamber, with its workers on an arc inside that
+sector, so cross-role collision is geometrically impossible rather than merely unlikely. Both radii
+are derived from the arc length actually required, so a five-role chamber or a four-worker role
+grows instead of packing tighter. Measured across all seven chambers: zero overlapping node pairs,
+15px tightest gap, largest chamber 136px against 342px of centre spacing.
+
+An intermediate attempt that only enlarged the radii took overlapping pairs from 9 to **24** — it is
+the shared bearing, not the spacing, that caused the smudge.
+
+### Changed — default dashboard layout
+
+Colony Health / Colony Vitals / Missions / Jobs down the left, Agent Inspector / Patch Activity /
+Live Telemetry down the right, System Core and Objectives floating low, and the centre of the map
+kept clear. The other six panels start hidden, one click away in Modules. Defaults apply on first
+run only — an existing saved layout wins until **Reset layout**.
+
+### Queued
+Bringing the same conversational treatment to the Automation tab.
+
 ## v2.15.3 — Hotfix: the status bar and mission directive box were invisible
 
 v2.15.2 shipped with two pieces of primary chrome hidden: the ANTHILL status bar and the mission

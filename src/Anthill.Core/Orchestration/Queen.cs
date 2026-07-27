@@ -737,7 +737,10 @@ public sealed partial class Queen : IDisposable
         mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
         mission.UserResult = ComposeUserResult(mission);
         mission.DebugResult = ComposeDebugResult(mission);
-        mission.FinalResult = mission.UserResult;
+        // v2.16.0: FinalResult is what the operator reads — a plain-English answer when synthesis
+        // is on and the raw output warrants it. UserResult (raw best task) and DebugResult (full
+        // trace) are untouched, so the detail behind the answer is always still there.
+        mission.FinalResult = ComposeFinalAnswer(mission);
         Memory.LogEvent(mission.Id, "best_output_selected", $"Best output task selected: {mission.BestOutputTaskId}",
             metadata: new() { ["best_output_task_id"] = mission.BestOutputTaskId });
         var eventType = mission.Status == MissionStatus.Complete ? "mission_completed" : mission.Status == MissionStatus.Partial ? "mission_partial" : "mission_failed";

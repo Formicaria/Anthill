@@ -478,6 +478,132 @@ public class DashboardWorkspaceShellTests
         }
     }
 
+    /// <summary>
+    /// v2.16.0: chamber layout gives every role its own angular sector.
+    ///
+    /// Before this, roles sat on a ring capped at 46px while their workers were placed 72px out,
+    /// and the worker bearing came from colonyAngleFor() — which in chamber mode derives from the
+    /// CHAMBER's index and is identical for every role in it. Each role's workers therefore landed
+    /// on the neighbouring role, and the view read as a smudge.
+    ///
+    /// Sectors make cross-role collision geometrically impossible rather than merely unlikely, so
+    /// this test pins the three properties that guarantee it. The radii must stay DERIVED from the
+    /// arc length required; reintroducing a constant cap is what broke it the first time.
+    /// </summary>
+    [Fact]
+    public void ChamberLayout_GivesEachRoleItsOwnSector()
+    {
+        var js = Ui("app.js");
+        var build = BodyOf(js, "function buildNodes()");
+
+        // 1. Sector width is derived from the member count.
+        Assert.Contains("const sector = (Math.PI*2)/Math.max(1,n);", build);
+        // 2. The role sits at its sector's CENTRE, so neighbouring sectors cannot touch.
+        Assert.Contains("(k+0.5)*sector", build);
+        // 3. Both radii come from required arc length, not a magic cap.
+        Assert.Contains("(n*CHAMBER_ROLE_GAP)/(Math.PI*2)", build);
+        Assert.Contains("(ws.length*CHAMBER_WORKER_GAP)/(slot.sector*CHAMBER_SECTOR_USE)", build);
+
+        // Workers are positioned from the CHAMBER centre along their own role's bearing. If this
+        // reverts to the role-relative global fan, the sectors stop containing anything.
+        Assert.Contains("slot.cx+Math.cos(cr)*r2", build);
+        Assert.DoesNotContain("roleAngleInChamber", js);
+
+        // The sector must keep a margin, or adjacent fans meet at the boundary.
+        var use = Regex.Match(js, @"CHAMBER_SECTOR_USE\s*=\s*([0-9.]+)");
+        Assert.True(use.Success, "CHAMBER_SECTOR_USE not found");
+        var fraction = double.Parse(use.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.InRange(fraction, 0.5, 0.9);
+    }
+
+    /// <summary>
+    /// Chambers must not collide with each other either — the contents got larger, so the ring
+    /// they sit on had to grow with them. Six chambers ring a central one, so adjacent centres are
+    /// exactly R apart; the largest chamber measured 136px, needing 272px of clearance.
+    /// </summary>
+    [Fact]
+    public void ChamberRing_LeavesRoomForTheLargestChamber()
+    {
+        var js = Ui("app.js");
+        var centres = BodyOf(js, "function chamberCentres(names)");
+        var m = Regex.Match(centres, @"Math\.min\(W,H\)\s*\*\s*([0-9.]+)");
+        Assert.True(m.Success, "chamberCentres no longer derives its radius from the viewport");
+        var factor = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+
+        // On the shortest supported axis the ring must still clear two chamber radii.
+        const int shortestAxis = 900;
+        var adjacentGap = shortestAxis * factor;   // 2*R*sin(pi/6) == R for six ring positions
+        Assert.True(adjacentGap >= 272,
+            $"ring factor {factor} gives only {adjacentGap:F0}px between adjacent chamber centres; "
+            + "the largest chamber needs 272px to avoid overlapping its neighbour.");
+    }
+
+    // ---- Missions as a conversation (v2.16.0) ------------------------------------------------------
+
+    /// <summary>
+    /// v2.16.0: the answer is the default content of a mission response; the trace is one
+    /// disclosure away. The colony always stored both — this asserts the UI leads with the right
+    /// one, which is the whole point of the change.
+    /// </summary>
+    [Fact]
+    public void MissionThread_LeadsWithTheAnswer_NotTheTrace()
+    {
+        var js = Ui("app.js");
+        var render = BodyOf(js, "function renderMissionThread()");
+
+        // The answer prefers the synthesized final_result, falling back to the raw best output.
+        Assert.Contains("m.final_result||m.user_result", render);
+        // The trace must NOT be rendered inline — it belongs behind the disclosure.
+        Assert.DoesNotContain("debug_result", render);
+        Assert.Contains("Show activity", render);
+    }
+
+    /// <summary>
+    /// Forty missions in a thread must not fetch forty reports. Activity loads on first expand.
+    /// </summary>
+    [Fact]
+    public void MissionActivity_LoadsLazily_OnFirstExpandOnly()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("data-msact", js);
+        Assert.Contains("det.dataset.loaded", js);
+        // Detail rendering reuses the Results page implementation rather than a second copy.
+        Assert.Contains("renderMissionReport(det.dataset.msact", js);
+        var render = BodyOf(js, "function renderMissionThread()");
+        Assert.DoesNotContain("renderMissionReport", render);   // never during the list render
+    }
+
+    /// <summary>
+    /// The thread must not yank the view while history is being read, and must stay live-region
+    /// announced so an answer arriving is perceivable without sight.
+    /// </summary>
+    [Fact]
+    public void MissionThread_IsPoliteAboutScrollingAndAnnouncement()
+    {
+        var render = BodyOf(Ui("app.js"), "function renderMissionThread()");
+        Assert.Contains("atBottom", render);
+        Assert.Contains("if(atBottom) thread.scrollTop=thread.scrollHeight;", render);
+
+        var html = Ui("index.html");
+        Assert.Contains("id=\"ms-thread\"", html);
+        Assert.Contains("aria-live=\"polite\"", html);
+        Assert.Contains("role=\"log\"", html);
+        // The composer stays pinned: the THREAD scrolls, not the page.
+        Assert.Contains("#page-missions.page-scroll{overflow:hidden;}", html);
+    }
+
+    /// <summary>
+    /// The report endpoint must expose the answer and the raw output separately, or the activity
+    /// view cannot show what the winning task actually emitted before it was rewritten.
+    /// </summary>
+    [Fact]
+    public void MissionReport_ExposesAnswerAndRawOutputSeparately()
+    {
+        var api = Src("src", "Anthill.Api", "ApiHost.cs");
+        Assert.Contains("[\"final_output\"] = mission.GetValueOrDefault(\"final_result\")", api);
+        Assert.Contains("[\"raw_output\"] = mission.GetValueOrDefault(\"user_result\")", api);
+    }
+
     // ---- Accessibility --------------------------------------------------------------------------------
 
     [Fact]
