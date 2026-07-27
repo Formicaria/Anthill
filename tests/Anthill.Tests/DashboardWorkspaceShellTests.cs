@@ -318,7 +318,11 @@ public class DashboardWorkspaceShellTests
     {
         var html = Ui("index.html");
         Assert.Contains("#page-overview.ws-active", html);
-        Assert.Contains("#page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}", html);
+        // v2.15.3: the rule excludes by class now, not by an id list — see
+        // EveryWorkspaceLayer_SurvivesTheClassicPageHideRule for why. The property asserted here
+        // is unchanged: ONE rule takes every classic section out of flow, rather than an
+        // enumeration that can miss a card.
+        Assert.Contains("#page-overview.ws-active > *:not(#ws-root):not(.ws-layer){display:none !important;}", html);
         Assert.Contains("classList.add('ws-active')", Ui("app.js"));
     }
 
@@ -435,6 +439,43 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("toggle-overlay", menu);
         Assert.Contains("ws-module-ovanchor", menu);
         Assert.Contains("aria-pressed", menu);
+    }
+
+    /// <summary>
+    /// v2.15.3: every workspace layer appended to #page-overview must survive the "hide the
+    /// classic page" rule.
+    ///
+    /// v2.15.2 shipped with the status bar and the mission directive box invisible: the rule was
+    /// an id allow-list (`:not(#ws-root):not(#ws-topology)`) and both bars are direct children of
+    /// #page-overview, so both were display:none. Nothing caught it, because each rule reads
+    /// correctly on its own — the bug only exists in the relationship between them.
+    ///
+    /// The rule now excludes by class, and this test checks the two halves agree: anything the
+    /// init code attaches to the page must carry .ws-layer.
+    /// </summary>
+    [Fact]
+    public void EveryWorkspaceLayer_SurvivesTheClassicPageHideRule()
+    {
+        var html = Ui("index.html");
+        var app = Ui("app.js");
+
+        Assert.Contains("#page-overview.ws-active > *:not(#ws-root):not(.ws-layer){display:none !important;}", html);
+
+        // Find everything attached directly to `page` during workspace init.
+        var init = BodyOf(app, "async function initDashboardWorkspace()");
+        var attached = Regex.Matches(init, @"page\.(?:appendChild|insertBefore)\(\s*([A-Za-z_$][\w$]*)")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
+        Assert.True(attached.Count >= 3,
+            "Expected the init to attach the topology, status bar and mission bar; found: " + string.Join(", ", attached));
+
+        foreach (var varName in attached)
+        {
+            // #ws-root is matched by id because the workspace module rewrites its className.
+            if (varName == "root") continue;
+            Assert.True(Regex.IsMatch(app, Regex.Escape(varName) + @"\.className\s*=\s*'[^']*\bws-layer\b"),
+                $"'{varName}' is attached to #page-overview but never gets the .ws-layer class, so the "
+                + "classic-page hide rule will make it invisible.");
+        }
     }
 
     // ---- Accessibility --------------------------------------------------------------------------------
