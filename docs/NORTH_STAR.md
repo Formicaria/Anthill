@@ -41,6 +41,11 @@ The system must never treat autonomy as permission to act without boundaries.
 
 # 2. Current Baseline
 
+**Shipping release: v2.19.0** — the adaptive mission runtime, part 1. Ants now return structured
+execution results instead of prose, task outcomes are mapped from a declared status rather than
+inferred from text, and a mission is only `completed_verified` when its verifier actually returned
+a pass. See `docs/ADAPTIVE_RUNTIME_STATUS.md` for what shipped, what did not, and why.
+
 ANTHILL v2.7.0 already includes substantial foundations.
 
 ## Existing autonomy
@@ -1414,6 +1419,7 @@ docs/CONTRACTS.md             Task contracts, capability tools, recovery and com
 docs/ANT_EXECUTION.md         Ant runtime classification, execution contracts, verification
 docs/DASHBOARD_WORKSPACE.md   Topology-first dashboard workspace
 docs/DEPLOYMENT.md            Deployment and LXC operations
+docs/ADAPTIVE_RUNTIME_STATUS.md  Adaptive mission runtime: staged status and remaining work
 ```
 
 > **v2.15.0 correction.** This list previously named `TOOLS.md`, `VERIFICATION.md`, `SKILLS.md`,
@@ -1454,6 +1460,17 @@ Major changes to:
 * or durable execution
 
 must receive an architecture decision record.
+
+**Recorded ADRs:**
+
+```text
+docs/ADR-ADAPTIVE-MISSION-RUNTIME.md   Adaptive mission runtime (audit of v2.18.2; staged v2.19.x-v2.21.0)
+```
+
+> This requirement predates any ADR existing. The first was written for the adaptive mission
+> runtime audit, which found fourteen confirmed integration defects in the execution core —
+> including structured agent failures being recorded as completed tasks, and partial missions
+> reaching auto-apply. See that document before changing execution, outcome, or autonomy semantics.
 
 ---
 

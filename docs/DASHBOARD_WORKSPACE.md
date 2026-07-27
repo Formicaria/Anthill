@@ -10,6 +10,10 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.19.0 note: the workspace Modules checklist is now collapsible (it was persistent and in the
+> way), and mission results are unchanged on this surface — the adaptive-runtime work in v2.19.0
+> deliberately preserved every operator-facing narrative. See `docs/ADAPTIVE_RUNTIME_STATUS.md`.
+
 Inspired by the *interaction patterns* of Homarr and professional trading/monitoring terminals.
 No proprietary code, design, or branding is copied.
 

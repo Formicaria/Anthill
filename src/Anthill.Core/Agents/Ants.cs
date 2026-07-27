@@ -10,12 +10,90 @@ using Anthill.Core.Tools;
 
 namespace Anthill.Core.Agents;
 
-/// <summary>A specialised colony worker. Given a task and a locked mission snapshot, it returns a text result.</summary>
+/// <summary>
+/// A specialised colony worker. Given a task and a locked mission snapshot, it returns a STRUCTURED
+/// outcome.
+///
+/// v2.19.0: <c>Execute</c> replaces the previous <c>string Run</c>. Until now an ant's only channel
+/// back to the orchestrator was prose, so <see cref="AntExecutionResult"/> objects built by the
+/// specialists were serialised into text (the old <c>Compat</c> helper) and the executor — which
+/// never parsed them — marked every non-throwing task complete. A specialist could report
+/// <c>failed_retryable</c> and have the mission record it as a success. Status is now carried by
+/// <see cref="AntExecutionResult.StatusCode"/> and nothing else.
+///
+/// IMPLEMENTATIONS MUST BE STATELESS. One instance per role is shared across the whole colony and
+/// parallel execution runs several tasks through the same object concurrently, so per-run state on
+/// the ant would race. Everything an execution needs is passed in and returned out.
+/// </summary>
 public abstract class BaseAnt
 {
     public string Name { get; }
     protected BaseAnt(string name) => Name = name;
+
+    /// <summary>
+    /// The text an ant produces. Still abstract because for the six original ants the text IS the
+    /// artifact (a research summary, a patch proposal, a verification report).
+    /// </summary>
     public abstract string Run(Task task, Mission mission);
+
+    /// <summary>
+    /// Run the task and report a STRUCTURED outcome. This is the contract the orchestrator uses;
+    /// nothing downstream may infer status from prose.
+    ///
+    /// Virtual, not abstract, and only for the duration of the migration: specialists override it
+    /// to return the result they already build, while the six text-producing ants are carried by
+    /// the default below until each is migrated. Two execution paths must not outlive v2.19.x —
+    /// see docs/ADR-ADAPTIVE-MISSION-RUNTIME.md §5, stage 1.
+    ///
+    /// The default is NOT "no exception means success": it classifies the ant's own known failure
+    /// signal (a routed model call returning an in-band "ERROR:" string) as a dependency failure,
+    /// and empty output as a permanent one.
+    /// </summary>
+    public virtual AntExecutionResult Execute(Task task, Mission mission)
+    {
+        var text = Run(task, mission) ?? "";
+        if (text.StartsWith("ERROR:", StringComparison.Ordinal)) return ModelUnavailable(Name, text);
+        if (string.IsNullOrWhiteSpace(text))
+            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
+                $"{Name}: produced no output.");
+        return TextResult(Name, text);
+    }
+
+    /// <summary>
+    /// Wrap a text-producing ant's output as a structured result.
+    ///
+    /// The six original ants (researcher, web, file, coder, builder, verifier) legitimately produce
+    /// prose or code as their ARTIFACT. What changed is that the ant itself now declares its
+    /// outcome in code rather than the orchestrator inferring one from the text: each caller below
+    /// decides succeeded / failed and says so explicitly. The narrative remains available to the
+    /// operator but carries no control meaning.
+    /// </summary>
+    protected static AntExecutionResult TextResult(string role, string text, string? summaryOverride = null)
+    {
+        var body = text ?? "";
+        var summary = summaryOverride ?? TextUtil.CreateResultSummary(body, AnthillRuntime.MaxResultSummaryChars);
+        // NB: a `with` expression must ASSIGN each member. Collection-initializer syntax
+        // (`Artifacts = { ... }`) is only legal inside an object initializer, which is why the
+        // same shape works in SpecialistAnts.cs but not here.
+        return AntExecutionResult.Succeeded(summary, body) with
+        {
+            Artifacts = new List<AntArtifact> { new("text", $"{role} output", body) },
+            Metrics = new AntMetrics { OutputChars = body.Length },
+        };
+    }
+
+    /// <summary>
+    /// A routed model call came back as an in-band "ERROR:" string. ModelRouter reports provider
+    /// failure that way rather than throwing, so this is the ant recognising its own dependency
+    /// failure — retryable, because the next attempt may reach a healthy provider.
+    /// </summary>
+    protected static AntExecutionResult ModelUnavailable(string role, string response) =>
+        // TransientProviderFailure, not DependencyFailure: FailureClassify.IsRetryable covers only
+        // TransientProviderFailure / RateLimit / Timeout / Conflict, so classifying a temporarily
+        // unreachable provider as a dependency failure would mark it failed_permanent and forbid
+        // the retry that would very likely succeed.
+        AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            $"{role}: routed model call failed — {TextUtil.Truncate(response ?? "", 300)}");
 }
 
 public sealed class ResearcherAnt : BaseAnt
@@ -528,7 +606,40 @@ public sealed class VerifierAnt : BaseAnt
     private readonly ModelRouter? _router;
     public VerifierAnt(bool useOllama, ModelRouter? router) : base("verifier") { _useOllama = useOllama; _router = router; }
 
-    public override string Run(Task task, Mission mission)
+    /// <summary>
+    /// v2.19.0: the verdict is now declared, not left for a reader to infer. Run() still returns
+    /// the identical text (operators and the mission thread depend on the full verdict, reasoning,
+    /// missing steps and risk notes), but Execute() classifies it so MissionVerification can gate
+    /// on a real PASS instead of on "a verification task completed".
+    ///
+    /// A non-passing verdict is NOT a task failure: the verification ran correctly and produced a
+    /// finding. Failing the task would replace the full verdict text with a one-line reason in
+    /// ApplyNonCompletingOutcome, destroying exactly the explanation the operator needs. The
+    /// verdict travels as evidence and warnings instead, and the mission gate reads it.
+    /// </summary>
+    public override AntExecutionResult Execute(Task task, Mission mission)
+    {
+        var text = Compose(task, mission);
+        var verdict = Outcomes.VerificationVerdict.Parse(text);
+        var passed = Outcomes.VerificationVerdict.IsPass(verdict);
+
+        var result = TextResult(Name, text) with
+        {
+            StatusCode = passed ? "succeeded" : "succeeded_with_warnings",
+            Summary = passed
+                ? "Verification passed."
+                : $"Verification did not pass: {Outcomes.VerificationVerdict.Explain(verdict)}.",
+            Warnings = passed ? new List<string>() : new List<string> { Outcomes.VerificationVerdict.Explain(verdict) },
+        };
+        return result with
+        {
+            Evidence = new List<AntEvidence> { new("verification_verdict", verdict, Outcomes.VerificationVerdict.Explain(verdict)) },
+        };
+    }
+
+    public override string Run(Task task, Mission mission) => Compose(task, mission);
+
+    private string Compose(Task task, Mission mission)
     {
         var priorTasks = mission.Tasks.Where(t => t.Id != task.Id).ToList();
         var completed = priorTasks.Where(t => t.Status == TaskStatus.Complete).ToList();
