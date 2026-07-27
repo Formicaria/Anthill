@@ -6847,6 +6847,17 @@ function registerWorkspacePanels(){
     {id:'approvals',          title:'Pending Approvals',  body:'ov2-approvals-body', x:352,  y:264, w:340, h:214, hidden:true},
     {id:'resource-usage',     title:'Resource Usage',     body:'ov2-resources-body', x:728,  y:24,  w:320, h:224, hidden:true},
     {id:'recent-events',      title:'Recent Events',      body:'ov2-events-body',    x:728,  y:264, w:320, h:214, hidden:true},
+
+    // v2.15.1: the six cards that used to render in normal flow BELOW the map. They were the
+    // reason the dashboard scrolled into a second, non-modular half. They are ordinary panels now
+    // — draggable, collapsible, groupable into tabs — and start hidden so the colony canvas is the
+    // whole page until the operator places what they actually want on it.
+    {id:'colony-vitals',      title:'Colony Vitals',      body:'ov-vitals-body',     x:352,  y:494, w:420, h:212, hidden:true},
+    {id:'recent-missions',    title:'Recent Missions',    body:'ov-sum-missions',    x:352,  y:24,  w:360, h:224, hidden:true},
+    {id:'patch-activity',     title:'Patch Activity',     body:'ov-sum-patches',     x:352,  y:264, w:360, h:214, hidden:true},
+    {id:'objectives',         title:'Objectives',         body:'ov-sum-objectives',  x:728,  y:494, w:320, h:212, hidden:true},
+    {id:'recent-jobs',        title:'Recent Jobs',        body:'ov-jobs-list',       x:728,  y:24,  w:320, h:224, hidden:true},
+    {id:'live-telemetry',     title:'Live Telemetry',     body:'ov-feed-list',       x:728,  y:264, w:320, h:214, hidden:true},
   ];
   defs.forEach(function(d){
     W.register({
@@ -6877,7 +6888,21 @@ async function initDashboardWorkspace(){
   }
   // The classic grid steps aside; its card bodies are re-parented into panels, so every renderer
   // keeps writing to the same ids and nothing is duplicated.
+  // v2.15.1: the whole page becomes the workspace. `ws-active` takes every remaining classic
+  // section out of flow in CSS (one rule, so nothing can be missed the way ov2-grid alone was),
+  // and the map fills the viewport instead of the top third.
+  page.classList.add('ws-active');
   var grid=document.getElementById('ov2-grid'); if(grid) grid.style.display='none';
+
+  // The ANTHILL status bar belongs at the very top of the dashboard, above the colony view
+  // controls — not stranded mid-page below the map. Re-parented, not duplicated.
+  var topbar=document.getElementById('ws-topbar');
+  if(!topbar){
+    topbar=document.createElement('div'); topbar.id='ws-topbar';
+    page.insertBefore(topbar, page.firstChild);
+  }
+  var tb=document.getElementById('tb-overview');
+  if(tb && tb.parentElement!==topbar) topbar.appendChild(tb);
   // Stage 6: the topology layer is a SIBLING placed before #ws-root, so panels stack above the
   // map by document order without either one needing a z-index arms race.
   var topo=document.getElementById('ws-topology');

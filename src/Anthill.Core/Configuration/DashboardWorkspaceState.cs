@@ -47,18 +47,9 @@ public sealed class DashboardWorkspaceState
     public static readonly string[] Profileses = { "desktop", "compact" };
     public static readonly string[] DisplayStates = { "visible", "collapsed", "minimized", "hidden" };
     public static readonly string[] PlacementModes = { "floating", "docked", "tabbed" };
+    /// <summary>Retained for v2.15.0 documents only — docking was replaced by snapping in
+    /// v2.15.1 and these values now feed the one-way migration in SanitizePanel.</summary>
     public static readonly string[] DockSides = { "left", "right", "top", "bottom" };
-    /// <summary>
-    /// v2.15.0: the largest share of the viewport a single docked edge may consume.
-    ///
-    /// This is a product invariant, not a style preference. The whole premise of the topology-first
-    /// dashboard is that the colony map is the persistent background; a dock strip allowed to grow
-    /// to 100% would let the operator hide the map completely and leave no obvious way back. The
-    /// clamp is enforced here rather than in CSS so a hand-edited ui_state.json cannot bypass it.
-    /// </summary>
-    public const double MaxDockFraction = 0.60;
-    public const int MinDockSize = 180;
-
     public static readonly string[] Anchors =
         { "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right" };
 
@@ -78,6 +69,10 @@ public sealed class DashboardWorkspaceState
         // v2.14.15: the Colony page's inspector and jobs list, so the dashboard can host
         // everything the Colony page does and the topology no longer has to be left behind.
         "agent-inspector", "colony-jobs",
+        // v2.15.1: the six cards that used to render in normal flow beneath the map. Promoting
+        // them to panels is what lets the topology occupy the whole page.
+        "colony-vitals", "recent-missions", "patch-activity", "objectives", "recent-jobs",
+        "live-telemetry",
     };
 
     /// <summary>
@@ -102,11 +97,11 @@ public sealed class DashboardWorkspaceState
         [JsonPropertyName("pinned")] public bool Pinned { get; set; }
         [JsonPropertyName("dock_side")] public string? DockSide { get; set; }
         /// <summary>
-        /// Thickness of the docked strip: width for left/right, height for top/bottom. Clamped so
-        /// docking can never swallow the whole viewport — see MaxDockFraction.
+        /// Legacy: thickness of a v2.15.0 dock strip. Docking was replaced by snapping in
+        /// v2.15.1; this survives only so documents written by v2.15.0 still deserialize.
         /// </summary>
         [JsonPropertyName("dock_size")] public int DockSize { get; set; } = 320;
-        /// <summary>Position among the panels sharing this edge, low to high.</summary>
+        /// <summary>Legacy: order among panels sharing a v2.15.0 dock edge. See DockSize.</summary>
         [JsonPropertyName("dock_order")] public int DockOrder { get; set; }
         [JsonPropertyName("tab_group")] public string? TabGroup { get; set; }
         [JsonPropertyName("opacity")] public string Opacity { get; set; } = "solid"; // scrim strength, never text
@@ -174,7 +169,6 @@ public sealed class DashboardWorkspaceState
         }
 
         SanitizeTabGroups(knownPanelIds, vw, vh);
-        SanitizeDockRails(vw, vh);
 
         foreach (var id in TopologyOverlays.Keys.ToList())
         {
@@ -208,20 +202,22 @@ public sealed class DashboardWorkspaceState
     {
         if (!DisplayStates.Contains(p.DisplayState ?? "")) p.DisplayState = "visible";
         if (!PlacementModes.Contains(p.PlacementMode ?? "")) p.PlacementMode = "floating";
-        if (p.DockSide is not null && !DockSides.Contains(p.DockSide)) p.DockSide = null;
-        if (p.PlacementMode == "docked" && p.DockSide is null) p.PlacementMode = "floating";
-        if (p.PlacementMode != "docked") { p.DockSide = null; p.DockOrder = 0; }
-        else
+        // v2.15.1: docking is gone, replaced by edge/corner snapping. Any layout saved by v2.15.0
+        // is MIGRATED rather than discarded: a docked panel becomes a floating panel snapped to
+        // the same edge, which is the closest honest equivalent. Dock fields are then cleared, and
+        // remain in the schema only so old documents keep deserializing.
+        if (p.PlacementMode == "docked")
         {
-            // A panel cannot be docked AND tabbed: it would render in two places at once.
-            p.TabGroup = null;
-            var axis = p.DockSide is "left" or "right" ? vw : vh;
-            p.DockSize = Clamp(p.DockSize, MinDockSize, Math.Max(MinDockSize, (int)(axis * MaxDockFraction)));
-            p.DockOrder = Clamp(p.DockOrder, 0, 99);
+            var region = SnapRegion(p.DockSide, vw, vh);
+            if (region is { } r) { p.X = r.X; p.Y = r.Y; p.Width = r.Width; p.Height = r.Height; }
+            p.PlacementMode = "floating";
+            p.TabGroup = null;   // a docked panel was never tabbed; keep it that way through the move
         }
+        p.DockSide = null;
+        p.DockOrder = 0;
 
-        p.Width = Clamp(p.Width, 200, Math.Max(200, vw));
-        p.Height = Clamp(p.Height, 80, Math.Max(80, vh));
+        p.Width = Clamp(p.Width, MinPanelWidth, Math.Max(MinPanelWidth, vw));
+        p.Height = Clamp(p.Height, MinPanelHeight, Math.Max(MinPanelHeight, vh));
         p.ExpandedHeight = p.ExpandedHeight <= 0 ? p.Height : Clamp(p.ExpandedHeight, 80, Math.Max(80, vh));
 
         // Recover panels dragged (or migrated) off-screen: always keep a grabbable header edge.
@@ -233,59 +229,49 @@ public sealed class DashboardWorkspaceState
     }
 
     /// <summary>
-    /// v2.15.0: clamp OPPOSING dock rails together, not just individually.
+    /// v2.15.1: the geometry a panel takes when snapped to an edge or corner.
     ///
-    /// Per-panel clamping caps each edge at MaxDockFraction, which is not enough: left at 60% plus
-    /// right at 60% is 120% of the width, so the two rails overlap and the topology — the entire
-    /// point of this dashboard — disappears with no visible way back. The pair on each axis must
-    /// therefore fit within MaxDockFraction combined.
+    /// Replaces v2.15.0's dock rails, which stretched a panel the full length of an edge — the
+    /// operator's words: "it extends it super long instead of into a confined space". Halves and
+    /// quadrants give a predictable, bounded region instead.
     ///
-    /// When a pair is over budget both rails are scaled down proportionally rather than one being
-    /// truncated, so the operator's relative sizing survives instead of one edge being punished
-    /// for being processed second.
+    /// Computed here rather than in JavaScript for the same reason the dock budgets were: this is
+    /// arithmetic with edge cases (odd viewport sizes, minimum panel sizes on a small screen), and
+    /// this repo has no browser test harness. Returning a plain tuple keeps it trivially testable.
     /// </summary>
-    private void SanitizeDockRails(int vw, int vh)
+    /// <param name="zone">left, right, top, bottom, or a corner such as top-left.</param>
+    public static (int X, int Y, int Width, int Height)? SnapRegion(string? zone, int vw, int vh)
     {
-        foreach (var (_, panels) in Profiles)
+        if (string.IsNullOrWhiteSpace(zone)) return null;
+
+        var halfW = Math.Max(MinPanelWidth, vw / 2);
+        var halfH = Math.Max(MinPanelHeight, vh / 2);
+        // Right/bottom halves take the remainder so an odd viewport leaves no dead pixel column.
+        var restW = Math.Max(MinPanelWidth, vw - halfW);
+        var restH = Math.Max(MinPanelHeight, vh - halfH);
+
+        return zone switch
         {
-            ClampAxis(panels, "left", "right", vw);
-            ClampAxis(panels, "top", "bottom", vh);
-        }
-
-        static void ClampAxis(Dictionary<string, PanelPlacement> panels, string a, string b, int extent)
-        {
-            var budget = Math.Max(MinDockSize * 2, (int)(extent * MaxDockFraction));
-            var sizeA = RailSize(panels, a);
-            var sizeB = RailSize(panels, b);
-            var total = sizeA + sizeB;
-            if (total <= budget || total <= 0) return;
-
-            // Proportional scale-down, with each surviving rail kept at or above MinDockSize.
-            var scale = (double)budget / total;
-            var newA = Math.Max(MinDockSize, (int)(sizeA * scale));
-            var newB = Math.Max(MinDockSize, (int)(sizeB * scale));
-            // If both floors together still exceed the budget the viewport is simply too small for
-            // two opposing rails; the second axis-end gives way so at least one stays usable.
-            if (newA + newB > budget) newB = Math.Max(0, budget - newA);
-
-            SetRail(panels, a, newA);
-            SetRail(panels, b, newB);
-        }
-
-        static int RailSize(Dictionary<string, PanelPlacement> panels, string side)
-        {
-            var max = 0;
-            foreach (var (_, p) in panels)
-                if (p.PlacementMode == "docked" && p.DockSide == side) max = Math.Max(max, p.DockSize);
-            return max;
-        }
-
-        static void SetRail(Dictionary<string, PanelPlacement> panels, string side, int size)
-        {
-            foreach (var (_, p) in panels)
-                if (p.PlacementMode == "docked" && p.DockSide == side) p.DockSize = size;
-        }
+            "left"         => (0,     0,     halfW, vh),
+            "right"        => (halfW, 0,     restW, vh),
+            "top"          => (0,     0,     vw,    halfH),
+            "bottom"       => (0,     halfH, vw,    restH),
+            "top-left"     => (0,     0,     halfW, halfH),
+            "top-right"    => (halfW, 0,     restW, halfH),
+            "bottom-left"  => (0,     halfH, halfW, restH),
+            "bottom-right" => (halfW, halfH, restW, restH),
+            _ => null,
+        };
     }
+
+    public static readonly string[] SnapZones =
+    {
+        "left", "right", "top", "bottom",
+        "top-left", "top-right", "bottom-left", "bottom-right",
+    };
+
+    public const int MinPanelWidth = 200;
+    public const int MinPanelHeight = 80;
 
     private void SanitizeTabGroups(IReadOnlyCollection<string> knownPanelIds, int vw, int vh)
     {

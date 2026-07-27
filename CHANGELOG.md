@@ -1,5 +1,67 @@
 # ANTHILL Changelog
 
+## v2.15.1 — The dashboard is the colony, and it behaves like one
+
+Operator feedback on v2.15.0: the workspace was a good starting point but buggy as a dashboard —
+the map only filled the top of the page, half the console was still a non-modular scrolling section
+underneath it, the colony view bar was cut off, the status bar was stranded mid-page, and dropping a
+panel on an edge stretched it "super long instead of into a confined space". All of that is fixed.
+
+### Fixed — the topology now fills the whole page
+
+`#page-overview` is no longer a scrolling document when the workspace is live. The map occupies the
+entire viewport and panels float over it.
+
+The root cause of the "second dashboard" below the map: v2.15.0 hid `#ov2-grid` and nothing else,
+while the page also contained a telemetry bar and **six** further `hud-panel` cards in normal flow.
+Those are now taken out of flow by a single rule — `#page-overview.ws-active > *:not(#ws-root)` —
+rather than an enumerated list, because enumerating is exactly how six cards got missed.
+
+### Added — the six remaining cards are panels
+
+Colony Vitals, Recent Missions, Patch Activity, Objectives, Recent Jobs and Live Telemetry are now
+full workspace panels: draggable, resizable, collapsible, and groupable into tabs like everything
+else. Fifteen panels total, all re-parenting their existing body elements, so there is still exactly
+one renderer per card.
+
+They start hidden so the colony canvas is the whole page until you place what you want on it. Every
+one is a click away in the Modules menu.
+
+### Changed — docking replaced by snapping
+
+v2.15.0's edge rails are removed entirely: no rails, no `Dock left/right/top/bottom` menu entries,
+no rail resize handles. Dragging to an edge or corner now snaps the panel into a bounded region —
+left/right take a half, top/bottom take a half, corners take a quadrant. Corners are tested before
+edges, since a corner sits inside both edge bands and aiming at one is deliberate.
+
+**Existing docked layouts migrate rather than break.** `SanitizePanel` converts any panel saved as
+docked into a floating panel snapped to the same edge, then clears the legacy dock fields. The dock
+properties stay in the schema purely so v2.15.0 documents keep deserializing.
+
+Snap geometry lives in `DashboardWorkspaceState.SnapRegion` and is exercised by the migration, so it
+is real code with a real call site — not another tested function nothing invokes. Halves cover an
+odd viewport with no dead strip, the four quadrants tile exactly, and a viewport too small to halve
+still yields a usable panel instead of a zero-sized one.
+
+### Fixed — the colony view bar was clipped
+
+It rendered starting at "Handoffs" with Command / Expanded / Active / Chambers cut off the left
+edge, because the overlay anchor slot capped width at 260px. Width now belongs to the overlays that
+actually need constraining — the legend and signals panels — and the view bar is explicitly
+`nowrap`.
+
+### Fixed — the status bar sat mid-page
+
+The ANTHILL bar (colony online, tasks, success rate, active ants, approvals, health, search) is
+pinned to the top of the dashboard, above the colony view controls, by re-parenting the existing
+element rather than duplicating it. Top-anchored topology overlays now clear it instead of hiding
+beneath it.
+
+### Test note
+The v2.15.0 docking tests were removed along with the feature they covered, and replaced by
+equivalent snapping tests — migration, tiling, minimums, and unknown-zone handling. No test was
+weakened to obtain a green build.
+
 ## v2.15.0 — The topology-first dashboard, complete and on by default
 
 The console track that began at v2.14.2 is finished. The live colony topology is the persistent
