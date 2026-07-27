@@ -203,6 +203,11 @@ jobs:
           PY
           node --check /tmp/ui.js
 
+      # v2.17.1: behavioural coverage for the Missions conversation reconciler. node --test is
+      # built into the Node 20 above; nothing is installed and no build pipeline is added.
+      - name: UI logic tests (node --test)
+        run: node --test tests/ui/mission-thread.test.js
+
       # Roadmap/version consistency (v1.8.27, extended v1.8.28): the canonical roadmap must exist,
       # and every version marker must agree — runtime const, Directory.Build.props assembly version,
       # README, and CHANGELOG — so docs and binaries never drift from the code.
