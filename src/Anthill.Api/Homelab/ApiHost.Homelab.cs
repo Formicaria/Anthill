@@ -97,6 +97,19 @@ public static partial class ApiHost
             // v1.14.0: incident sweep — turns incident_candidate events into deduped incidents.
             HomelabJobs.Register(new HomelabScheduledJob("incident-sweep",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabIncidentSweepSeconds), HomelabIncidents.SweepAsync));
+            // v2.25.0: the fault-injection catalog runs on the shared scheduler (NORTH_STAR §6
+            // rule 2 — no private timers) and every run is recorded, because the V3 threshold
+            // "repeated fault-injection runs stable" is a property of recorded history. The run is
+            // pure computation over the catalog + current skill registry: no network, no state
+            // outside its own results table, safe at any cadence.
+            HomelabJobs.Register(new HomelabScheduledJob("fault-injection",
+                TimeSpan.FromHours(24), _ =>
+                {
+                    var report = ShadowSimulation.RunAll(Queen.Memory.LoadSkillRegistry());
+                    Queen.Memory.SaveFaultInjectionRun(report);
+                    return System.Threading.Tasks.Task.FromResult(HomelabProviderResult.Success(
+                        $"fault injection: {report.Passed}/{report.Total} scenarios passed", report.Total));
+                }));
         }
 
         // v1.12.0: Proxmox read-only sync. GET-only client; token pulled from the credential

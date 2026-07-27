@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.24.0";
-    public const int SchemaVersion = 14;
+    public const string Version = "2.25.0";
+    public const int SchemaVersion = 15;   // v2.25.0: fault_injection_runs
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
@@ -204,6 +204,11 @@ public static class AnthillRuntime
     public static bool EnableObjectiveVerification = false;
     /// <summary>v2.24.0 Phase E: shadow observation of live incidents. Never executes. Off by default.</summary>
     public static bool EnableShadowObservation = false;
+
+    // v2.25.0 Phase F: operator-defined readiness thresholds (see AnthillConfig for defaults).
+    public static int ReadinessMinShadowSample = 10;
+    public static double ReadinessMinDiagnosisPrecision = 0.8;
+    public static double ReadinessMinActionAccuracy = 0.8;
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
     public static bool EnableMedicAnt = false;
@@ -591,6 +596,9 @@ public static class AnthillRuntime
         ActivationTier = Agents.ActivationTiers.Parse(config.ActivationTier);
         EnableObjectiveVerification = config.ObjectiveVerificationEnabled;
         EnableShadowObservation = config.ShadowObservationEnabled;
+        ReadinessMinShadowSample = Math.Max(1, config.ReadinessMinShadowSample);
+        ReadinessMinDiagnosisPrecision = Math.Clamp(config.ReadinessMinDiagnosisPrecision, 0, 1);
+        ReadinessMinActionAccuracy = Math.Clamp(config.ReadinessMinActionAccuracy, 0, 1);
         EnableTesterAnt = config.TesterAntEnabled;
         EnableSoldierAnt = config.SoldierAntEnabled;
         EnableMedicAnt = config.MedicAntEnabled;

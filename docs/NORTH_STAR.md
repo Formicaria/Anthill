@@ -287,7 +287,7 @@ V2.10.0  Sandboxed Agent Execution                    [SHIPPED v2.10.0 — sandb
 V2.11.x  Sandbox/coder/model-routing wiring (unplanned insertion) [SHIPPED v2.11.0–v2.11.2]
 V2.12.0  Independent Verification and Evidence (was V2.11.0)  [SHIPPED v2.12.0 — deterministic verifiers + bundles]
 V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)  [SHIPPED v2.13.0 — skill registry + evidence-gated promotion]
-V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)  [SHIPPED v2.14.0 — engine + orchestration; executor migration next]
+V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)  [SHIPPED v2.14.0 — engine + orchestration; executor migration SHIPPED v2.25.0: the homelab executor's transitions come from the canonical lifecycle, verification is the only door to completion, failed verifies produce recovery recommendations (never executions)]
 V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V3 track)
          [IN PROGRESS through v2.14.15 — see docs/DASHBOARD_WORKSPACE.md for status + next steps]
          Shipped: workspace state model + kill switch (v2.14.2) · panel shell (v2.14.3) ·
@@ -311,14 +311,22 @@ V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V
          v2.15.2: workspace containing block + fixed-chrome vertical budget.
          v2.15.3: hide-rule excludes by class so workspace layers stay visible.
          v2.16.0: plain-English mission answers · Missions as a conversation · sector-based chamber
-         layout · new default dashboard arrangement. Next: the same conversation view for Automation.
+         layout · new default dashboard arrangement. The Automation conversation view SHIPPED
+         v2.25.0 — runs read as what the rule noticed and what the colony did about it, with
+         restraint (cooldown/cap skips) reading as deliberate quiet.
          Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
          [Stage 1 SHIPPED v2.17.0 — non-executing recommendation engine (ShadowOperator) +
           QualificationScoreboard. Stage 2 SHIPPED v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) — FaultScenarioCatalog (16 scenarios) +
           ShadowSimulation harness (safety invariants proven, incl. high-risk-needs-approval even
-          with a proven skill). Live-incident wiring, timing metrics, a Shadow dashboard panel, and
-          the V3.0 release thresholds are the remaining stages]
+          with a proven skill). Stage 3 SHIPPED v2.24.0 — durable recommendations/outcomes,
+          live-incident observation (never executes, off by default), the qualification scoreboard's
+          first production call site, and the Shadow dashboard panel (empty = "not qualified",
+          never a pass). Stage 4 SHIPPED v2.25.0 — the operator judgment endpoint (/shadow/judge)
+          closes the scoring loop, fault-injection runs daily with fingerprint-based stability
+          tracking, and the V3.0 release thresholds are evaluated live at /readiness/json with
+          operator attestations and a certification report that cannot certify an unready system.
+          PHASE COMPLETE.]
 
 > Renumbering note: the v2.11.x line was consumed by sandbox/coder wiring releases, so the
 > remaining planned phases shift by one minor version. Phase headings below keep their original
@@ -1237,6 +1245,13 @@ Track:
 * and unverified-success count.
 
 ## Required release thresholds
+
+> v2.25.0: these thresholds are now EVALUATED LIVE at `/readiness/json` (Phase F). Measured
+> thresholds compute from recorded data; the judgments ANTHILL cannot make about itself are
+> explicit operator attestations (`POST /readiness/attest`). Unmeasured and unattested both read
+> NOT ready; a measured check cannot be attested into passing, nor the reverse. The certification
+> report (`/readiness/certification`) is the conjunction of the rest and cannot certify an
+> unready system.
 
 Before V3.0:
 

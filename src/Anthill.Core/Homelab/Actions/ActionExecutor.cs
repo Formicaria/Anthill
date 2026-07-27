@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Anthill.Core.Common;
 using Anthill.Core.Homelab.Approvals;
+using Anthill.Core.SafeAction;
 
 namespace Anthill.Core.Homelab.Actions;
 
@@ -83,6 +84,10 @@ public sealed class ActionExecutor
             CreatedAt = AnthillTime.NowUtc().ToIso(),
         };
         proposal.DedupeKey = $"{proposal.ActionType}:{proposal.TargetId}".ToLowerInvariant();
+        // v2.25.0: a proposal that reached this point has traversed Draft -> Validated (catalog)
+        // -> RiskScored (blast radius, applied below) on the canonical lifecycle; what persists
+        // is the wait for a human.
+        proposal.LifecycleState = ActionLifecycleBridge.Persisted.WaitingForApproval;
         // v2.3.1.1: probe runners with the REAL proposal, not an action-type-only stub — the
         // Proxmox runner also validates the target form, so the stub always answered false and
         // every Proxmox-backed action reported dry_run_available = false.
@@ -99,6 +104,7 @@ public sealed class ActionExecutor
         foreach (var older in _repo.ListActionProposals(200).Where(p => p.State == "pending" && p.DedupeKey == proposal.DedupeKey))
         {
             older.State = "superseded";
+            older.LifecycleState = ActionLifecycleBridge.Persisted.Failed;
             _repo.UpdateActionProposal(older);
             Audit(older, "action_superseded", "info", $"Superseded by newer proposal {proposal.ApprovableId}.", requestedBy);
         }
@@ -116,9 +122,18 @@ public sealed class ActionExecutor
     {
         var proposal = _repo.GetActionProposal(id);
         if (proposal is null) return (false, "Unknown action proposal.");
-        if (proposal.State != "pending")
-            return (false, $"Only pending proposals can be decided — this one is '{proposal.State}'.");
+        // v2.25.0 executor migration: the refusal rule comes from the canonical lifecycle, not
+        // from a string comparison that happens to agree with it. A decision is specifically the
+        // WaitingForApproval exit (GuardDecision) — the plain transition guard would have allowed
+        // rejecting an ALREADY-APPROVED proposal, because Approved -> Failed is legal for
+        // execution failure. The old suite caught that weakening immediately.
+        var guard = ActionLifecycleBridge.GuardDecision(proposal.State, approve);
+        if (!guard.Ok)
+            return (false, $"Only pending proposals can be decided — this one is '{proposal.State}'. ({guard.Reason})");
         proposal.State = approve ? "approved" : "rejected";
+        proposal.LifecycleState = approve
+            ? ActionLifecycleBridge.Persisted.Approved
+            : ActionLifecycleBridge.Persisted.Failed;
         proposal.DecidedBy = decidedBy;
         proposal.DecidedAt = AnthillTime.NowUtc().ToIso();
         _repo.UpdateActionProposal(proposal);
@@ -149,11 +164,14 @@ public sealed class ActionExecutor
         if (_isStopped())
             return (false, "HOMELAB_STOP is engaged — no homelab action may execute until an operator resumes (POST /homelab/actions/resume or delete .anthill/HOMELAB_STOP).");
 
-        // TOCTOU guard: re-read state at execution time; only 'approved' may run.
+        // TOCTOU guard: re-read state at execution time; only 'approved' may run. v2.25.0: the
+        // refusal is the canonical lifecycle's — only Approved (or Scheduled) may enter Executing,
+        // and there is structurally no path that skips WaitingForApproval to get there.
         var proposal = _repo.GetActionProposal(id);
         if (proposal is null) return (false, "Unknown action proposal.");
-        if (proposal.State != "approved")
-            return (false, $"Execution refused: proposal state is '{proposal.State}', not 'approved'. Approval is a distinct human step.");
+        var entryGuard = ActionLifecycleBridge.Guard(proposal.State, ActionState.Executing);
+        if (!entryGuard.Ok)
+            return (false, $"Execution refused: proposal state is '{proposal.State}', not 'approved'. Approval is a distinct human step. ({entryGuard.Reason})");
 
         // Forbidden/unknown actions are refused here too — the catalog is enforced in the
         // executor, not just at proposal time or in the UI (APPROVALS.md requirement 5).
@@ -177,6 +195,10 @@ public sealed class ActionExecutor
         if (!result.Ok)
         {
             proposal.ExecutionResult = Truncate(result.Message);
+            // Canonical record of THIS attempt: Executing -> Failed. The legacy state stays
+            // 'approved' so retry remains an explicit operator step, exactly as before — the
+            // lifecycle column records where the attempt landed, it does not change the flow.
+            proposal.LifecycleState = ActionLifecycleBridge.Persisted.Failed;
             _repo.UpdateActionProposal(proposal); // state stays 'approved' — the failure is visible, retry is explicit
             Audit(proposal, "execution_failed", "error",
                 $"{proposal.ActionType} on {proposal.TargetKind}/{proposal.TargetId} failed via {runner.Name}: {result.Message}", executedBy);
@@ -192,9 +214,29 @@ public sealed class ActionExecutor
         proposal.ExecutedBy = executedBy;
         proposal.ExecutedAt = AnthillTime.NowUtc().ToIso();
         proposal.ExecutionResult = Truncate($"{result.Message} | verify: {(verify.Ok ? "ok" : "FAILED")} — {verify.Message}");
+        // v2.25.0: verification is the only door to completion (Executing -> Verifying ->
+        // CompletedVerified). A failed verify is canonically FAILED — no longer "executed, with a
+        // warning buried in the text". The legacy state string is unchanged for compatibility;
+        // the lifecycle column is where the distinction lives.
+        proposal.LifecycleState = verify.Ok
+            ? ActionLifecycleBridge.Persisted.CompletedVerified
+            : ActionLifecycleBridge.Persisted.Failed;
         _repo.UpdateActionProposal(proposal);
         Audit(proposal, "action_executed", verify.Ok ? "info" : "warning",
             $"{proposal.ActionType} on {proposal.TargetKind}/{proposal.TargetId} executed via {runner.Name}. {proposal.ExecutionResult}", executedBy);
+
+        if (!verify.Ok)
+        {
+            // Recovery is RECOMMENDED, never executed — recovery that runs itself is exactly the
+            // autonomy V3 has not yet earned. The context is built from what the proposal actually
+            // establishes (a rollback NOTE is prose for a human, not a deterministic rollback), so
+            // the orchestrator cannot recommend machinery that does not exist.
+            var recovery = ActionLifecycleBridge.RecoveryForFailedVerify(proposal);
+            Audit(proposal, "recovery_recommended", recovery.SuspendsAutonomy ? "error" : "warning",
+                $"Verification failed after execution. Recovery recommendation: {recovery.Action} — {recovery.Reason}"
+                + (recovery.SuspendsAutonomy ? " Operator review required before further automation on this target." : ""),
+                executedBy);
+        }
         _repo.RecordChange(new ChangeRecord
         {
             SubjectKind = proposal.TargetKind.Length > 0 ? proposal.TargetKind : "homelab_action",
