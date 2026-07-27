@@ -786,6 +786,7 @@ public sealed partial class Queen : IDisposable
         Memory.LogEvent(mission.Id, "pheromone_scored", $"Mission pheromone score calculated: {mission.SuccessScore}",
             metadata: new() { ["success_score"] = mission.SuccessScore, ["mission_status"] = mission.Status.Value() });
         Memory.UpdateMissionPheromones(mission);
+        CreditSkills(mission);
         mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
         mission.UserResult = ComposeUserResult(mission);
         mission.DebugResult = ComposeDebugResult(mission);
@@ -1108,6 +1109,82 @@ public sealed partial class Queen : IDisposable
                 ["unmet_criteria"] = decision.UnmetCriteria,
             });
         Console.WriteLine($"Adaptive stop: {reason}");
+    }
+
+    /// <summary>
+    /// v2.22.0 Phase C2: credit the skills a mission actually followed, closing the learning loop.
+    ///
+    /// v2.21.0 made skills durable and let certified procedures INFORM a plan; nothing recorded
+    /// whether following one worked, so standing could only ever be earned in the shadow
+    /// simulator. Tasks now carry the skill they were planned from, so a finished mission can be
+    /// credited back.
+    ///
+    /// The rule is the same one everything else obeys: **only `completed_verified` is a positive
+    /// outcome**. A mission that merely finished, or finished partially, records a non-verified
+    /// outcome — which `RecordOutcome` counts as a failure, because a procedure that cannot be
+    /// shown to have worked has not been shown to work. That is deliberately the same asymmetry
+    /// v2.19.0 established: unverified success reinforces nothing, but it does not pretend the
+    /// attempt never happened.
+    ///
+    /// Promotion and demotion both stay with <see cref="SkillRegistry.RecordOutcome"/>; this only
+    /// reports what happened and persists the result.
+    /// </summary>
+    private void CreditSkills(Mission mission)
+    {
+        var followed = mission.Tasks
+            .Where(t => !string.IsNullOrWhiteSpace(t.SkillId))
+            .Select(t => t.SkillId!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (followed.Count == 0) return;
+
+        // NOTE the qualification: Queen declares its own nested `MissionOutcome` record (the
+        // outcome+reason pair handed to the mission-finished callback), which shadows the
+        // Outcomes.MissionOutcome vocabulary class inside this type. Two different things wearing
+        // the same name — qualify or get the wrong one.
+        var verified = Outcomes.MissionOutcome.IsPositiveSuccess(
+            Outcomes.MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks)));
+
+        // A promotable bundle is the ONLY thing RecordOutcome counts as a verified success, so an
+        // unverified mission passes null rather than a bundle — it must not be able to promote.
+        var bundle = verified ? MissionEvidenceBundle(mission) : null;
+
+        foreach (var skillId in followed)
+        {
+            var status = Skills.RecordOutcome(skillId, bundle, AnthillRuntime.EnvironmentFingerprint,
+                verified ? null : $"mission {mission.Id} finished {mission.Status.Value()} without verified success");
+            Memory.LogEvent(mission.Id, "skill_outcome_recorded",
+                $"Skill '{skillId}' recorded {(verified ? "a verified success" : "an unverified outcome")} — now {status}.",
+                metadata: new()
+                {
+                    ["skill_id"] = skillId, ["verified"] = verified, ["status"] = status.ToString(),
+                    ["mission_status"] = mission.Status.Value(),
+                });
+        }
+        Memory.SaveSkillRegistry(Skills);   // standing must outlive the process that earned it
+    }
+
+    /// <summary>
+    /// The mission's own verification, expressed as a promotable bundle. Built from the verifier
+    /// task that actually passed, so skill credit rests on the same evidence mission grading does
+    /// rather than on a second, weaker opinion.
+    /// </summary>
+    private static Verification.VerificationBundle MissionEvidenceBundle(Mission mission)
+    {
+        var verifier = mission.Tasks.First(t => MissionVerification.IsVerificationTask(t)
+                                                && t.Status == TaskStatus.Complete);
+        return new Verification.VerificationBundle
+        {
+            Id = $"mission:{mission.Id}",
+            TaskType = "mission_verification",
+            Required = { "mission_verifier" },
+            Results =
+            {
+                new Verification.VerificationResult("mission_verifier", Passed: true, Deterministic: false,
+                    TextUtil.Truncate(verifier.ResultSummary ?? verifier.Result ?? "verified", 300),
+                    new[] { new Verification.VerificationEvidence("task_id", verifier.Id) }),
+            },
+        };
     }
 
     private void RecordAgentMessage(string missionId, string? taskId, string sender, string recipient, string messageType,

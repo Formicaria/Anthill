@@ -28,6 +28,14 @@ public sealed class Task
     /// </summary>
     public bool Critical { get; set; } = true;
 
+    /// <summary>
+    /// v2.22.0: the certified procedure this task was planned FROM, if any. Set only when the
+    /// planner chose a route offered by SkillPlanningContext. It records provenance — which proven
+    /// procedure was followed — so a verified mission outcome can be credited back to the skill
+    /// that earned it. It grants nothing: a skill reference never widens what the task may do.
+    /// </summary>
+    public string? SkillId { get; set; }
+
     public TaskStatus Status { get; set; } = TaskStatus.Pending;
     public string? Result { get; set; }
     public string? ResultSummary { get; set; }

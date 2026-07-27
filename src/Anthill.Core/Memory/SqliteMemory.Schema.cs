@@ -292,6 +292,8 @@ public sealed partial class SqliteMemory : IDisposable
             ["finished_at"] = "TEXT", ["completed_at"] = "TEXT", ["failed_at"] = "TEXT", ["skipped_at"] = "TEXT",
             ["elapsed_seconds"] = "REAL", ["attempt_count"] = "INTEGER DEFAULT 0", ["max_attempts"] = "INTEGER DEFAULT 1",
             ["failure_reason"] = "TEXT", ["failure_type"] = "TEXT", ["skipped_reason"] = "TEXT", ["blocked_reason"] = "TEXT",
+            // v2.22.0: provenance for skill credit — which proven procedure this task followed.
+            ["skill_id"] = "TEXT",
         });
         AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT" });
         // Phase 4 learning loop: per-objective success EMA (nullable — null until the first recorded run).
@@ -319,6 +321,7 @@ public sealed partial class SqliteMemory : IDisposable
             (10, "model_provider_connections", "Encrypted API-key storage for external model providers (provider_credentials) verified."),
             (11, "autonomy_learning", "Phase 4 learning loop: per-objective success EMA column (objectives.success_ema) verified."),
             (12, "durable_skills", "V2.12 skills line persisted (skills table) — promotion state now survives restart."),
+            (13, "skill_provenance", "tasks.skill_id records which proven procedure a task followed, closing the learning loop."),
         };
         foreach (var (id, name, description) in migrations)
         {

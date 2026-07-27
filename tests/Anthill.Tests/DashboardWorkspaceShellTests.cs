@@ -845,7 +845,7 @@ public class DashboardWorkspaceShellTests
 
         // One authoritative flag, defaulting closed, rather than re-derived per render.
         Assert.Contains("modulesOpen: false", js);
-        Assert.Contains("menu.hidden = !W.modulesOpen;", js);
+        Assert.Contains("menu.hidden = !W.modulesOpen", js);   // v2.22.0: focus mode ORs in after this
         Assert.DoesNotContain("menu.hidden = true;", js);
 
         // The force-reopen is gone; toggling a module goes through the flag instead.
@@ -862,6 +862,47 @@ public class DashboardWorkspaceShellTests
         // Collapsing must not rebuild every panel — a re-render mid-drag would be visible.
         var setter = BodyOf(js, "function setModulesOpen(open)");
         Assert.DoesNotContain("render()", setter);
+    }
+
+    /// <summary>
+    /// v2.22.0: the toggle reports the state it is actually in.
+    ///
+    /// `aria-expanded` was hardcoded to 'false' when the button was built, so every re-render
+    /// while the menu was open told assistive technology it was collapsed, and nothing on the
+    /// control indicated the list could be closed again — it read as permanent furniture.
+    /// </summary>
+    [Fact]
+    public void ModulesToggle_ReportsItsActualState()
+    {
+        var js = Ui("dashboard-workspace.js");
+        Assert.DoesNotContain("modules.setAttribute('aria-expanded', 'false')", js);
+        Assert.Contains("modules.setAttribute('aria-expanded', W.modulesOpen ? 'true' : 'false')", js);
+        // And it is visible on the control, not only to a screen reader.
+        Assert.Contains("W.modulesOpen ? '▾' : '▸'", js);
+    }
+
+    /// <summary>
+    /// v2.22.0: focus mode closes the module list and keeps it closed.
+    ///
+    /// Focus mode hides every unpinned panel. Leaving the checklist open on top of that is the
+    /// opposite of focus, and the list would be enumerating panels that are all hidden anyway.
+    /// The rule is enforced in the setter as well as at render, so no caller can reopen the list
+    /// behind focus mode's back.
+    /// </summary>
+    [Fact]
+    public void FocusMode_ClosesTheModuleList_AndKeepsItClosed()
+    {
+        var js = Ui("dashboard-workspace.js");
+
+        var focus = BodyOf(js, "'toggle-focus': function () {");
+        Assert.Contains("W.modulesOpen = false", focus);
+
+        // Render-time: focus mode is authoritative regardless of the flag.
+        Assert.Contains("W.state.focus_mode", BodyOf(js, "function renderModules"));
+
+        // Setter-level: opening is refused while focus mode is on.
+        var setter = BodyOf(js, "function setModulesOpen(open)");
+        Assert.Contains("focus_mode", setter);
     }
 
     // ---- Accessibility --------------------------------------------------------------------------------
