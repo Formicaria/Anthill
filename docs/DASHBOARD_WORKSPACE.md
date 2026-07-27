@@ -101,7 +101,7 @@ load by `DashboardWorkspaceState.Sanitize`:
 - **the invariant**: a corrupt workspace resets *only* `dashboard_workspace`. Ant names, colours,
   positions, and map preferences are never touched.
 
-## WHERE WE ARE (as of v2.15.0) — TRACK COMPLETE
+## WHERE WE ARE (as of v2.15.1) — TRACK COMPLETE
 
 **Shipped and working:**
 
@@ -137,8 +137,13 @@ remains a kill switch: set it false to restore the classic Overview grid and sta
 instantly, with no migration and no data loss. The config property is `bool?` so an explicit false
 survives the default flip; only an unset value takes the new default.
 
-Also shipped in v2.15.0: tab groups, docking to all four edges, the single-writer fix, the default
-layout, and the responsive/accessibility pass.
+Also shipped in v2.15.0: tab groups, the single-writer fix, the default layout, and the
+responsive/accessibility pass.
+
+**v2.15.1** made the topology fill the entire page (all classic sections taken out of flow by one
+rule), promoted the last six cards to panels for fifteen total, fixed the clipped colony view bar
+and the mid-page status bar, and **replaced docking with edge/corner snapping** — halves and
+quadrants. Saved docked layouts migrate to the equivalent snap rather than breaking.
 
 ### Release numbering correction
 
