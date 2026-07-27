@@ -12,8 +12,8 @@ namespace Anthill.Core.Agents;
 /// model call is required for the map itself. Tool access runs through the enforced dispatch path
 /// (list_directory / read_text_file only; write, shell, and patch tools are contract-forbidden and
 /// structurally denied in Stage B).
-/// Returns the compatibility string BaseAnt requires; the structured result is embedded as a
-/// UI_MAP_JSON block (temporary adapter per spec §16 until BaseAnt returns structured results).
+/// v2.19.0: returns a structured AntExecutionResult. The former UI_MAP_JSON compatibility adapter
+/// is gone — mission control reads StatusCode, Handoffs, and Evidence as fields, not as prose.
 /// </summary>
 public sealed class UiCartographerAnt : BaseAnt
 {
@@ -24,7 +24,7 @@ public sealed class UiCartographerAnt : BaseAnt
 
     public UiCartographerAnt(ToolRegistry tools) : base("ui_cartographer") => _tools = tools;
 
-    public override string Run(Task task, Mission mission)
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var examined = new List<string>();
         var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -36,8 +36,8 @@ public sealed class UiCartographerAnt : BaseAnt
         // 1. Find UI files (read-only listing through the enforced dispatch path).
         var listing = _tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." });
         if (!listing.Success)
-            return Compat(AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
-                $"workspace listing unavailable: {listing.Error}"));
+            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+                $"workspace listing unavailable: {listing.Error}");
         // Format-agnostic extraction: pull file-path tokens out of whatever shape the listing
         // tool prints (plain names, decorated rows, sizes appended — all fine).
         var candidates = Regex.Matches(listing.Output, @"[\w][\w./\\\-]*\.(?:html|js|css|jsx|ts|tsx)\b", RegexOptions.IgnoreCase)
@@ -65,8 +65,8 @@ public sealed class UiCartographerAnt : BaseAnt
         }
 
         if (examined.Count == 0)
-            return Compat(AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
-                "no UI files could be read from the workspace"));
+            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+                "no UI files could be read from the workspace");
 
         // 3. Structured map + handoff to the UI coder (spec §6.5).
         var map = new Dictionary<string, object?>
@@ -90,24 +90,22 @@ public sealed class UiCartographerAnt : BaseAnt
             Handoffs = { new AntHandoff("ui_cartographer", "coder", "UI map ready for implementation planning",
                 "code_change", new[] { "ui_map" }, Required: false, Depth: 1, DedupeKey: $"uimap:{mission.Id}") },
             Warnings = warnings,
+            // The operator record is the readable map; the ui_map artifact stays the machine copy
+            // for the coder handoff. A route/function count alone would not survive review.
+            Narrative =
+                $"files_examined: {string.Join(", ", examined)}\n" +
+                $"routes ({routes.Count}): {string.Join(", ", routes.OrderBy(r => r))}\n" +
+                $"functions ({functions.Count}): {string.Join(", ", functions.OrderBy(f => f).Take(40))}\n" +
+                $"api_call_sites ({apiCalls.Count}): {string.Join(", ", apiCalls.OrderBy(a => a))}\n" +
+                $"style_blocks: {styleBlocks}\n" +
+                $"likely_modification_points: {string.Join(", ", routes.OrderBy(r => r).Select(r => $"page-{r}"))}"
+                + (warnings.Count > 0 ? $"\nwarnings: {string.Join("; ", warnings)}" : ""),
         };
-        return Compat(result);
+        return result;
     }
 
-    /// <summary>TEMPORARY compatibility adapter (spec §16): BaseAnt.Run returns a string, so the
-    /// structured result rides along as a tagged JSON block. Removed when BaseAnt goes structured.</summary>
-    internal static string Compat(AntExecutionResult r)
-    {
-        var payload = JsonSerializer.Serialize(new
-        {
-            status = r.StatusCode, success = r.Success, summary = r.Summary,
-            artifacts = r.Artifacts.Select(a => new { a.Kind, a.Title, a.Content }),
-            evidence = r.Evidence.Select(e => new { e.Kind, e.Value }),
-            handoffs = r.Handoffs.Select(h => new { h.DestinationRole, h.Reason, h.RequiredTaskType }),
-            warnings = r.Warnings,
-        });
-        return $"{r.Summary}\n\nUI_MAP_JSON:\n{payload}";
-    }
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -122,12 +120,18 @@ public sealed class TesterAnt : BaseAnt
     private readonly ToolRegistry _tools;
     public TesterAnt(ToolRegistry tools) : base("tester") => _tools = tools;
 
-    public override string Run(Task task, Mission mission)
+    /// <summary>
+    /// v2.19.0: migrated to the structured contract. The result below was always built in full —
+    /// including the medic/verifier handoffs — and then discarded through Compat(), which
+    /// stringified it so the executor (which never parsed it) marked failing checks as completed
+    /// tasks. It is now returned as-is and TaskOutcomeMapper decides the task's fate.
+    /// </summary>
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("tester")!;
         if (!contract.SupportsTaskType(task.TaskType))
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                $"task type '{task.TaskType}' is outside the tester execution contract"));
+            return AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the tester execution contract");
 
         // Deterministic check selection: catalog ids literally named in the task text; a plain
         // build/test/validation task defaults to the SDK-probe + build profile. Never free text.
@@ -166,8 +170,11 @@ public sealed class TesterAnt : BaseAnt
             },
             Failure = allPassed ? null : new AntFailure(Contracts.FailureClass.VerificationFailure, "one or more checks failed", Retryable: true),
         };
-        return UiCartographerAnt.Compat(result);
+        return result;
     }
+
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -181,12 +188,20 @@ public sealed class SoldierAnt : BaseAnt
 {
     public SoldierAnt() : base("soldier") { }
 
-    public override string Run(Task task, Mission mission)
+    /// <summary>
+    /// v2.19.0: migrated to the structured contract. Note the deliberate distinction preserved
+    /// here — the REVIEW succeeding is not the same as the review PASSING. A blocking finding
+    /// leaves StatusCode succeeded_with_warnings (the soldier did its job) while the blocking
+    /// verdict lives in the artifact, evidence and warnings. Stage 6 reads those warnings when
+    /// deciding whether a mission may be completed_verified; a security block must prevent
+    /// verified success without pretending the review itself errored.
+    /// </summary>
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("soldier")!;
         if (!contract.SupportsTaskType(task.TaskType))
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                $"task type '{task.TaskType}' is outside the soldier execution contract"));
+            return AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the soldier execution contract");
 
         var input = task.Description + "\n" + string.Join("\n",
             mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null).Select(t => t.Result));
@@ -220,9 +235,14 @@ public sealed class SoldierAnt : BaseAnt
                     : new AntHandoff("soldier", "verifier", "review passed — verify", "verification", new[] { "security_review" }, false, 1, $"soldier-ok:{mission.Id}:{task.Id}"),
             },
             Warnings = blocked.Select(b => b.RuleId).ToList(),
+            // The review text is the record: operators need the findings, not a one-line verdict.
+            Narrative = review,
         };
-        return UiCartographerAnt.Compat(soldierResult);
+        return soldierResult;
     }
+
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -241,12 +261,12 @@ public sealed class ScribeAnt : BaseAnt
     private static readonly System.Text.RegularExpressions.Regex DocsPath =
         new(@"^(?:docs/[\w./\-]+\.md|README\.md|CHANGELOG\.md)$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    public override string Run(Task task, Mission mission)
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("scribe")!;
         if (!contract.SupportsTaskType(task.TaskType))
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                $"task type '{task.TaskType}' is outside the scribe execution contract"));
+            return AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the scribe execution contract");
 
         var priorResults = mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null)
             .Select(t => $"[{t.AssignedAnt}] {t.Title}: {t.ResultSummary ?? Truncate(t.Result!)}").ToList();
@@ -254,14 +274,13 @@ public sealed class ScribeAnt : BaseAnt
             .Matches(string.Join("\n", priorResults) + "\n" + task.Description, @"\b(?:src|docs|tests)/[\w./\-]+|README\.md|CHANGELOG\.md")
             .Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        var artifacts = new List<AntArtifact>
-        {
-            new("release_notes", "Operator summary",
-                $"Mission: {mission.Goal}\nCompleted stages: {priorResults.Count}\n" +
-                (changedFiles.Count > 0 ? $"Referenced files: {string.Join(", ", changedFiles.Take(10))}\n" : "") +
-                string.Join("\n", priorResults.Take(10))),
-        };
+        var releaseNotes =
+            $"Mission: {mission.Goal}\nCompleted stages: {priorResults.Count}\n" +
+            (changedFiles.Count > 0 ? $"Referenced files: {string.Join(", ", changedFiles.Take(10))}\n" : "") +
+            string.Join("\n", priorResults.Take(10));
+        var artifacts = new List<AntArtifact> { new("release_notes", "Operator summary", releaseNotes) };
         var warnings = new List<string>();
+        var proposedTargets = new List<string>();
 
         // Documentation patch proposals: docs paths only, structurally validated, never applied.
         if (task.TaskType == "docs_patch_proposal")
@@ -270,12 +289,13 @@ public sealed class ScribeAnt : BaseAnt
                 .Matches(task.Description, @"target:\s*([^\s,]+)")
                 .Select(m => m.Groups[1].Value.Replace('\\', '/')).ToList();
             if (targets.Count == 0)
-                return UiCartographerAnt.Compat(AntExecutionResult.Failed(
-                    Contracts.FailureClass.ValidationFailure, "docs_patch_proposal requires explicit 'target: <docs path>' entries"));
+                return AntExecutionResult.Failed(
+                    Contracts.FailureClass.ValidationFailure, "docs_patch_proposal requires explicit 'target: <docs path>' entries");
             var illegal = targets.Where(t => !DocsPath.IsMatch(t)).ToList();
             if (illegal.Count > 0)
-                return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                    $"documentation-only restriction: refused non-docs target(s) {string.Join(", ", illegal)}"));
+                return AntExecutionResult.Blocked(
+                    $"documentation-only restriction: refused non-docs target(s) {string.Join(", ", illegal)}");
+            proposedTargets = targets;
             artifacts.Add(new AntArtifact("docs_patch_set", "Documentation patch proposal (requires approval; scribe holds no apply permission)",
                 System.Text.Json.JsonSerializer.Serialize(new { targets, source_mission = mission.Id, requires_approval = true })));
         }
@@ -299,9 +319,21 @@ public sealed class ScribeAnt : BaseAnt
                     : new AntHandoff("scribe", "verifier", "documentation ready for verification", "verification", new[] { "release_notes" }, false, 1, $"scribe-ok:{mission.Id}:{task.Id}"),
             },
             Warnings = warnings,
+            // The operator record is the documentation itself, plus anything that gates its
+            // publication — a one-line artifact count would discard the deliverable.
+            Narrative = releaseNotes
+                + (proposedTargets.Count > 0
+                    ? $"\n\nProposed documentation targets (requires approval; scribe holds no apply permission): {string.Join(", ", proposedTargets)}"
+                    : "")
+                + (sensitive
+                    ? "\n\nsecurity-sensitive documentation — soldier review required before publication."
+                    : ""),
         };
-        return UiCartographerAnt.Compat(result);
+        return result;
     }
+
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     private static string Truncate(string s) => s.Length <= 160 ? s : s[..160] + "…";
 }
@@ -318,34 +350,43 @@ public sealed class MedicAnt : BaseAnt
     public const int MaxDiagnosesPerMission = 2;
     public MedicAnt() : base("medic") { }
 
-    public override string Run(Task task, Mission mission)
+    /// <summary>
+    /// v2.19.0: migrated to the structured contract.
+    ///
+    /// Failure DETECTION also changed. It used to sniff prior task result text for
+    /// <c>"status":"failed</c> and <c>": FAIL"</c>, because a failing tester was recorded as a
+    /// COMPLETED task carrying its real outcome inside serialised prose — text-matching was the
+    /// only way to notice. Since stage 3b a failing check genuinely fails, so TaskStatus is
+    /// authoritative and the prose sniffing is not merely redundant but misleading: it would now
+    /// match a summary that merely mentions the word.
+    /// </summary>
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("medic")!;
         if (!contract.SupportsTaskType(task.TaskType))
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                $"task type '{task.TaskType}' is outside the medic execution contract"));
+            return AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the medic execution contract");
 
         // Only diagnose actual failures (spec: never invoke medic before failure).
         var failed = mission.Tasks
-            .Where(t => t.Id != task.Id && (t.Status == TaskStatus.Failed || t.FailureReason is not null
-                || (t.Result?.Contains("\"status\":\"failed", StringComparison.OrdinalIgnoreCase) ?? false)
-                || (t.Result?.Contains(": FAIL") ?? false)))
+            .Where(t => t.Id != task.Id && (t.Status == TaskStatus.Failed || t.FailureReason is not null))
             .OrderByDescending(t => t.FailedAt ?? t.FinishedAt ?? DateTime.MinValue)
             .FirstOrDefault();
         if (failed is null)
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked("no failed task in this mission — nothing to diagnose"));
+            return AntExecutionResult.Blocked("no failed task in this mission — nothing to diagnose");
 
         // Loop control 1: diagnosis budget per mission.
         var priorDiagnoses = mission.Tasks.Count(t => t.Id != task.Id && t.AssignedAnt == "medic" && t.Result is not null);
         if (priorDiagnoses >= MaxDiagnosesPerMission)
-            return UiCartographerAnt.Compat(new AntExecutionResult
+            return new AntExecutionResult
             {
                 Success = true, StatusCode = "succeeded_with_warnings",
                 Summary = $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}) — escalating to operator, no further repair loops.",
+                Narrative = $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}). Repeated failures exceed the repair budget; operator review required.",
                 Artifacts = { new AntArtifact("failure_diagnosis", "Escalation", "repeated failures exceed the repair budget; operator review required") },
                 Handoffs = { new AntHandoff("medic", "builder", "escalation: repair budget exhausted", "build", new[] { "failure_diagnosis" }, true, 1, $"medic-esc:{mission.Id}") },
                 Warnings = { "escalated" },
-            });
+            };
 
         // Deterministic classification.
         var text = (failed.FailureReason ?? "") + " " + (failed.Result ?? "");
@@ -373,11 +414,16 @@ public sealed class MedicAnt : BaseAnt
             $"verification_plan: re-run the failed check via tester, then verifier\n" +
             $"source_task: {failed.Id} ({failed.Title})";
 
-        return UiCartographerAnt.Compat(new AntExecutionResult
+        return new AntExecutionResult
         {
             Success = true,
             StatusCode = "succeeded",
             Summary = $"Diagnosis: {cls} ({cause}) — route to {targetRole}{(repeated ? " [escalated: repeat diagnosis]" : "")}.",
+            // The full diagnosis becomes the task's recorded text (Queen uses Narrative ?? Summary).
+            // Loop control 2 below matches the dedupe key in a PRIOR medic task's result, so that
+            // key must survive into the record — with only the one-line summary stored, an
+            // identical diagnosis would be re-issued forever instead of escalating.
+            Narrative = diagnosis,
             Artifacts =
             {
                 new AntArtifact("failure_diagnosis", "Failure diagnosis", diagnosis),
@@ -386,8 +432,11 @@ public sealed class MedicAnt : BaseAnt
             Evidence = { new AntEvidence("failure_id", failed.Id, failed.FailureReason ?? "structured failure in result") },
             Handoffs = { new AntHandoff("medic", targetRole, repeated ? "escalation: repeat diagnosis" : $"repair route for {cls}",
                 targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{dedupe}") },
-        });
+        };
     }
+
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     internal static (Contracts.FailureClass, string, string) Classify(string text)
     {
@@ -420,12 +469,12 @@ public sealed class ArchivistAnt : BaseAnt
         @"(?:password|passwd|api[_-]?key|token|secret)\s*[:=]\s*['""]?[^'""\s]{4,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    public override string Run(Task task, Mission mission)
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("archivist")!;
         if (!contract.SupportsTaskType(task.TaskType))
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked(
-                $"task type '{task.TaskType}' is outside the archivist execution contract"));
+            return AntExecutionResult.Blocked(
+                $"task type '{task.TaskType}' is outside the archivist execution contract");
 
         // Terminal outcome determination — deterministic, from real mission state:
         // explicit "outcome: x" in the task wins; otherwise Complete + verifier-PASS = verified.
@@ -442,7 +491,7 @@ public sealed class ArchivistAnt : BaseAnt
                 _ => "unknown",
             };
         if (outcome is "unknown" or "" || mission.Status == MissionStatus.Running)
-            return UiCartographerAnt.Compat(AntExecutionResult.Blocked("mission is not terminal — archival runs only after a terminal outcome"));
+            return AntExecutionResult.Blocked("mission is not terminal — archival runs only after a terminal outcome");
 
         var candidates = new List<Dictionary<string, object?>>
         {
@@ -467,7 +516,19 @@ public sealed class ArchivistAnt : BaseAnt
         }
 
         var payload = System.Text.Json.JsonSerializer.Serialize(candidates);
-        return UiCartographerAnt.Compat(new AntExecutionResult
+
+        // The operator record is the candidate ledger, not the JSON blob: what was learned, from
+        // which mission, and at what confidence. Summaries are already redacted at Candidate().
+        var narrative =
+            $"outcome: {outcome}\n" +
+            $"source_mission: {mission.Id}\n" +
+            $"verifier_passed: {verifierPassed}\n" +
+            "candidates:\n" +
+            string.Join("\n", candidates.Select(c =>
+                $"  - [{c["memory_class"]}] (confidence {c["confidence"]}) {c["summary"]}")) + "\n" +
+            "auto_promote: false — certification requires the evaluation pipeline, never archival.";
+
+        return new AntExecutionResult
         {
             Success = true,
             StatusCode = "succeeded",
@@ -475,8 +536,12 @@ public sealed class ArchivistAnt : BaseAnt
                 + (outcome == "completed_verified" ? " (incl. positive procedural)" : outcome is "failed" or "partial" or "timed_out" ? " (incl. negative lesson)" : " (neutral)") + ".",
             Artifacts = { new AntArtifact("memory_candidate", "Memory candidates with provenance", payload) },
             Evidence = { new AntEvidence("mission_id", mission.Id, $"outcome={outcome} verifier_passed={verifierPassed}") },
-        });
+            Narrative = narrative,
+        };
     }
+
+    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     private static Dictionary<string, object?> Candidate(string cls, string summary, Mission m, string outcome, string confidence) => new()
     {

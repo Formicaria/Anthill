@@ -24,6 +24,12 @@
     profile: 'desktop',
     root: null,
     saveTimer: null,
+    // v2.19.0: the Modules checklist is COLLAPSED by default and its open state lives here.
+    // It used to be re-derived on every render (always hidden) and then force-reopened by
+    // toggle-visible, so once the operator touched it the list reappeared after every
+    // interaction with no way to dismiss it short of toggling a module again. It obscured the
+    // right-hand third of the map.
+    modulesOpen: false,
   };
 
   var PROFILE_BREAKPOINT = 900; // must match DashboardWorkspaceState.CompactBreakpoint
@@ -432,7 +438,7 @@
   function renderModules() {
     var menu = el('div', 'ws-modules');
     menu.id = 'ws-modules';
-    menu.hidden = true;
+    menu.hidden = !W.modulesOpen;
     menu.setAttribute('role', 'group');
     menu.setAttribute('aria-label', 'Dashboard modules');
     panelIds().forEach(function (id) {
@@ -620,21 +626,12 @@
     'toggle-visible': function (id) {
       var hidden = placement(id).display_state === 'hidden';
       setPlacement(id, { display_state: hidden ? 'visible' : 'hidden' });
+      W.modulesOpen = true;   // stay open while several modules are toggled in a row
       render();
-      var m = document.getElementById('ws-modules');
-      if (m) m.hidden = false; // keep the menu open while toggling several modules
-      var btn = document.querySelector('[data-wsact="toggle-modules"]');
-      if (btn) btn.setAttribute('aria-expanded', 'true');
     },
     'toggle-lock': function () { W.state.locked = !W.state.locked; save(); render(); },
     'toggle-focus': function () { W.state.focus_mode = !W.state.focus_mode; save(); render(); },
-    'toggle-modules': function () {
-      var m = document.getElementById('ws-modules');
-      var btn = document.querySelector('[data-wsact="toggle-modules"]');
-      if (!m) return;
-      m.hidden = !m.hidden;
-      if (btn) btn.setAttribute('aria-expanded', m.hidden ? 'false' : 'true');
-    },
+    'toggle-modules': function () { setModulesOpen(!W.modulesOpen); },
     'reset-layout': function () {
       // Layout only. Ant names, colours, positions, and map preferences are a different key and
       // are never touched here (server enforces the same invariant).
@@ -697,6 +694,37 @@
     var el2 = list[next];
     if (el2) ACTIONS['tab-select'](el2.getAttribute('data-wsid'));
   }
+
+  /**
+   * v2.19.0: open/close the Modules checklist without a full re-render.
+   *
+   * Kept cheap deliberately — collapsing a panel list should not rebuild every panel, and a
+   * re-render during a drag would be visible.
+   */
+  function setModulesOpen(open) {
+    W.modulesOpen = !!open;
+    var menu = document.getElementById('ws-modules');
+    if (menu) menu.hidden = !W.modulesOpen;
+    var btn = document.querySelector('[data-wsact="toggle-modules"]');
+    if (btn) btn.setAttribute('aria-expanded', W.modulesOpen ? 'true' : 'false');
+  }
+
+  /** Clicking anywhere outside collapses it, matching the topology overlay menu's behaviour. */
+  document.addEventListener('click', function (e) {
+    if (!W.enabled || !W.modulesOpen) return;
+    if (!e.target.closest) return;
+    if (e.target.closest('#ws-modules')) return;                      // inside the list
+    if (e.target.closest('[data-wsact="toggle-modules"]')) return;    // the toggle handles itself
+    setModulesOpen(false);
+  });
+
+  /** Escape collapses it and returns focus to the toggle, so keyboard users are not trapped. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !W.enabled || !W.modulesOpen) return;
+    setModulesOpen(false);
+    var btn = document.querySelector('[data-wsact="toggle-modules"]');
+    if (btn) btn.focus();
+  });
 
   function onClick(e) {
     var target = e.target.closest ? e.target.closest('[data-wsact]') : null;
