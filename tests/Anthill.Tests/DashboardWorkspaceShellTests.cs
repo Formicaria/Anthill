@@ -830,6 +830,40 @@ public class DashboardWorkspaceShellTests
         Assert.Contains("'answer_truncated'", mt);
     }
 
+    /// <summary>
+    /// v2.19.0: the Modules checklist collapses and stays collapsed.
+    ///
+    /// It was hidden on render but then force-reopened by toggle-visible after every checkbox
+    /// click, and unlike the topology overlay menu it had no outside-click or Escape close. Once
+    /// the operator touched it the list reappeared on every interaction and obscured the
+    /// right-hand third of the map with no obvious way to dismiss it.
+    /// </summary>
+    [Fact]
+    public void ModulesChecklist_IsCollapsedByDefault_AndDismissable()
+    {
+        var js = Ui("dashboard-workspace.js");
+
+        // One authoritative flag, defaulting closed, rather than re-derived per render.
+        Assert.Contains("modulesOpen: false", js);
+        Assert.Contains("menu.hidden = !W.modulesOpen;", js);
+        Assert.DoesNotContain("menu.hidden = true;", js);
+
+        // The force-reopen is gone; toggling a module goes through the flag instead.
+        Assert.DoesNotContain("if (m) m.hidden = false;", js);
+        Assert.Contains("W.modulesOpen = true;", js);
+
+        // Dismissable by clicking away and by keyboard.
+        Assert.Contains("function setModulesOpen", js);
+        Assert.Contains("e.target.closest('#ws-modules')", js);
+        var esc = BodyOf(js, "document.addEventListener('keydown', function (e) {");
+        Assert.Contains("Escape", esc);
+        Assert.Contains("setModulesOpen(false)", esc);
+
+        // Collapsing must not rebuild every panel — a re-render mid-drag would be visible.
+        var setter = BodyOf(js, "function setModulesOpen(open)");
+        Assert.DoesNotContain("render()", setter);
+    }
+
     // ---- Accessibility --------------------------------------------------------------------------------
 
     [Fact]

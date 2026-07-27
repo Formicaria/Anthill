@@ -1,5 +1,67 @@
 # ANTHILL Changelog
 
+## v2.19.0 — Adaptive mission runtime, part 1: ants declare outcomes, missions require proof
+
+An ant reported its outcome as prose. Nothing parsed that prose. The orchestrator inferred success
+from the fact that the ant returned a string at all.
+
+**The chain, end to end.** A specialist built a full structured result — status, handoffs, evidence —
+then discarded it through a compatibility adapter that flattened it into text. `RunSingleTask`
+marked the task **Complete** unless the ant threw, timed out, or was denied before execution, so a
+returned `failed_retryable` was recorded as completed. Mission grading read completed tasks and
+produced Complete or Partial. `ColonyDirector` read `partial` as success. Success satisfied the
+auto-apply precondition.
+
+**A failing agent could drive an automatic code change.** The same rule fed objective EMA, pheromone
+reinforcement and skill confidence, so the learning system was being trained on outcomes nothing had
+verified.
+
+### What changed
+
+**Ants declare outcomes; the orchestrator stops inferring them.** `AntExecutionResult` gains
+`AntMetrics`, `SucceededWithWarnings` and `Skipped`. All six specialists — tester, medic, soldier,
+scribe, archivist, ui_cartographer — return structured results, and the `Compat` adapter that
+stringified them into `UI_MAP_JSON` is **deleted**. `TaskOutcomeMapper` completes a task only on
+`succeeded` / `succeeded_with_warnings`; unknown or null status fails closed. The scheduler still
+owns the retry budget — a retryable failure is *eligible* for retry, not guaranteed one.
+
+**A mission is verified only if its verifier said so.** `VerifierAnt` now declares a verdict through
+the new `VerificationVerdict` vocabulary, and `MissionVerification` requires a real pass rather than
+a completed verification task. Previously a verifier that ran to completion and reported
+"Verification Failed" satisfied the gate. Parsing fails closed: absent, unrecognised, or ambiguous
+output is `Unknown`, which is not a pass — the verifier prompt lists all three verdicts on one line,
+and a model echoing it must not be read as whichever the parser happened to check first.
+
+**Partial missions reinforce nothing.** `UpdateMissionPheromones` applies a positive delta only for
+`completed_verified`. `completed_unverified` and `partial` apply **0.0** — not punished, because
+partial work is ambiguous evidence, but never reinforced.
+
+**Workspace Modules checklist is collapsible.** It was persistent and in the way.
+
+### Expect the apparent success rate to drop
+
+This is a **metric correction, not a regression**. Missions that previously graded successful on
+structural completion alone now grade `completed_unverified` or `partial`. The prior number measured
+"the ant returned a string", not "the work was verified".
+
+### Not in this release
+
+Stage 7 — the migration that resets derived learning state accumulated under the old rule — ships in
+**v2.20.0**. Until then, pre-v2.19.0 EMA, pheromone strengths and confidence counters remain active
+and were computed under the defective rule. Scope, constraints and the full remaining-work list are
+in `docs/ADAPTIVE_RUNTIME_STATUS.md`.
+
+Researcher, Web, File, Coder and Builder were deliberately **not** migrated: the default
+`BaseAnt.Execute` wrapper already declares their outcomes correctly, and Verifier was the only core
+ant whose text carried a control decision.
+
+### Operator-facing behaviour preserved
+
+Every migrated ant keeps its full narrative as the recorded result — the security review, the
+candidate ledger, the documentation, the UI map, the verifier's reasoning and risk notes. A failing
+verification deliberately does **not** fail its task, because that path replaces the result with a
+one-line reason and would have destroyed exactly the explanation the operator needs.
+
 ## v2.18.2 — Hotfix: the mission answer was never in the payload
 
 The Missions conversation showed **"Working — no answer recorded yet"** on every exchange, forever,

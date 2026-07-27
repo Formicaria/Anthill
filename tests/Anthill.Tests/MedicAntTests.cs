@@ -27,36 +27,45 @@ public class MedicAntTests
         return m;
     }
 
-    private static string Diagnose(Mission m)
+    // v2.19.0: MedicAnt returns a structured AntExecutionResult. These assertions previously
+    // substring-matched the JSON that Compat() embedded in the returned string; they now check
+    // fields directly, which is both stronger and readable.
+    private static AntExecutionResult Diagnose(Mission m)
     {
         var t = new DomainTask { Title = "Diagnose", Description = "diagnose the failure", AssignedAnt = "medic", TaskType = "failure_diagnosis" };
         m.Tasks.Add(t);
-        return new MedicAnt().Run(t, m);
+        return new MedicAnt().Execute(t, m);
     }
+
+    /// <summary>The recorded text — Queen stores Narrative ?? Summary as the task result.</summary>
+    private static string Recorded(AntExecutionResult r) => r.Narrative ?? r.Summary;
+
+    private static void AssertRoutesTo(AntExecutionResult r, string role) =>
+        Assert.Contains(r.Handoffs, h => h.DestinationRole == role);
 
     [Fact]
     public void Timeout_ClassifiedRetryable_RoutedToTester()
     {
         var o = Diagnose(MissionWithFailure("check timed out after 600s"));
-        Assert.Contains("Timeout", o);
-        Assert.Contains("retryable: True", o);
-        Assert.Contains("\"DestinationRole\":\"tester\"", o.Replace(" ", ""));
+        Assert.Contains("Timeout", Recorded(o));
+        Assert.Contains("retryable: True", Recorded(o));
+        AssertRoutesTo(o, "tester");
     }
 
     [Fact]
     public void ValidationFailure_ClassifiedPermanent_RoutedToCoder()
     {
         var o = Diagnose(MissionWithFailure("input failed validation: missing objective"));
-        Assert.Contains("ValidationFailure", o);
-        Assert.Contains("retryable: False", o);
-        Assert.Contains("\"DestinationRole\":\"coder\"", o.Replace(" ", ""));
+        Assert.Contains("ValidationFailure", Recorded(o));
+        Assert.Contains("retryable: False", Recorded(o));
+        AssertRoutesTo(o, "coder");
     }
 
     [Fact]
     public void UiFailure_RoutesThroughUiCartographer_BeforeRepair()
     {
         var o = Diagnose(MissionWithFailure("frontend check failed: app.js rendering broken"));
-        Assert.Contains("\"DestinationRole\":\"ui_cartographer\"", o.Replace(" ", ""));
+        AssertRoutesTo(o, "ui_cartographer");
     }
 
     [Fact]
@@ -64,8 +73,8 @@ public class MedicAntTests
     {
         var m = new Mission { Goal = "all good", Tasks = { new DomainTask { Title = "ok", AssignedAnt = "researcher", Status = Anthill.Core.Domain.TaskStatus.Complete } } };
         var o = Diagnose(m);
-        Assert.Contains("\"status\":\"blocked\"", o.Replace(" ", ""));
-        Assert.Contains("nothing to diagnose", o);
+        Assert.Equal("blocked", o.StatusCode);
+        Assert.Contains("nothing to diagnose", o.Summary);
     }
 
     [Fact]
@@ -74,9 +83,9 @@ public class MedicAntTests
         var prior1 = new DomainTask { Title = "diag1", AssignedAnt = "medic", Result = "diagnosed once" };
         var prior2 = new DomainTask { Title = "diag2", AssignedAnt = "medic", Result = "diagnosed twice" };
         var o = Diagnose(MissionWithFailure("build failed exit_code=1", prior1, prior2));
-        Assert.Contains("budget exhausted", o);
-        Assert.Contains("\"DestinationRole\":\"builder\"", o.Replace(" ", ""));
-        Assert.DoesNotContain("\"DestinationRole\":\"coder\"", o.Replace(" ", ""));
+        Assert.Contains("budget exhausted", o.Summary);
+        AssertRoutesTo(o, "builder");
+        Assert.DoesNotContain(o.Handoffs, h => h.DestinationRole == "coder");
     }
 
     [Fact]
@@ -90,8 +99,8 @@ public class MedicAntTests
             Result = $"dedupe: {failedId}:VerificationFailure — routed to coder already",
         });
         var o = Diagnose(m);
-        Assert.Contains("escalat", o, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("\"DestinationRole\":\"builder\"", o.Replace(" ", ""));
+        Assert.Contains("escalat", o.Summary, StringComparison.OrdinalIgnoreCase);
+        AssertRoutesTo(o, "builder");
     }
 
     [Fact]
