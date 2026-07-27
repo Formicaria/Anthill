@@ -346,7 +346,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
    past the bottom edge. That is what clipped the caste legend and the colony view bar on the left
    and pushed the mission directive box off screen. */
 #page-overview.ws-active{position:relative;overflow:hidden;padding:0;gap:0;}
-#page-overview.ws-active > *:not(#ws-root):not(#ws-topology){display:none !important;}
+/* v2.15.3: exclude by CLASS, not by an id allow-list.
+   The id form silently hid every layer added after it was written — v2.15.2 shipped with the
+   status bar and the mission directive box invisible for exactly that reason, because both are
+   direct children of this element. A workspace layer now opts out by carrying .ws-layer, so
+   adding one cannot reintroduce the bug. #ws-root is matched by id because the workspace module
+   owns its className and rewrites it on every render. */
+#page-overview.ws-active > *:not(#ws-root):not(.ws-layer){display:none !important;}
 #page-overview.ws-active #ws-root{flex:1;min-height:0;}
 
 /* The status bar is pinned to the very top of the workspace, above the colony view controls. */
