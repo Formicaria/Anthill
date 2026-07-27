@@ -1533,7 +1533,14 @@ public static partial class ApiHost
             ["success_score"] = mission.GetValueOrDefault("success_score"),
             ["created_at"] = mission.GetValueOrDefault("created_at"),
             ["completed_at"] = mission.GetValueOrDefault("completed_at"),
-            ["final_output"] = mission.GetValueOrDefault("user_result"),
+            // v2.16.0: the ANSWER the operator reads is final_result (a plain-English rewrite when
+            // synthesis is on). user_result stays available as raw_output so the activity view can
+            // show exactly what the winning task emitted, unedited.
+            ["final_output"] = mission.GetValueOrDefault("final_result")
+                               ?? mission.GetValueOrDefault("user_result"),
+            ["raw_output"] = mission.GetValueOrDefault("user_result"),
+            ["synthesized"] = mission.GetValueOrDefault("final_result") is string fr
+                              && fr != (mission.GetValueOrDefault("user_result") as string ?? ""),
             ["task_counts"] = new Dictionary<string, object?>
             {
                 ["total"] = statuses.Count,

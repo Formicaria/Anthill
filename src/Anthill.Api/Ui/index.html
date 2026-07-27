@@ -446,6 +446,43 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 }
 
 /* -- Mission Bar ------------------------------------------------------------- */
+/* The Missions page stops scrolling as a document: the THREAD scrolls and the composer stays
+   pinned, which is what makes it read as a conversation rather than a long form. */
+#page-missions.page-scroll{overflow:hidden;}
+
+/* ---- v2.16.0: Missions as a conversation ----
+   The answer is the default content of a response; the per-task trace, events, and changes live
+   behind one disclosure per exchange. Mirrors the UserResult/DebugResult split the backend has
+   always had — this only decides which of the two you see first. */
+.ms-conv{display:flex;flex-direction:column;flex:1;min-height:0;gap:10px;}
+.ms-thread{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:4px 2px 8px;}
+.ms-empty{color:var(--dim);font-size:12px;text-align:center;padding:28px 0;}
+.ms-x{display:flex;flex-direction:column;gap:6px;}
+/* The directive, as the operator phrased it. */
+.ms-ask{align-self:flex-end;max-width:78%;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.28);
+  border-radius:12px 12px 3px 12px;padding:8px 12px;font-size:12px;line-height:1.55;color:var(--text);white-space:pre-wrap;}
+/* The answer. Plain prose, generous line height — this is the thing being read. */
+.ms-say{align-self:flex-start;max-width:88%;background:rgba(255,255,255,.035);border:1px solid var(--border);
+  border-radius:12px 12px 12px 3px;padding:10px 14px;font-size:13px;line-height:1.72;color:var(--text);white-space:pre-wrap;}
+.ms-say.pending{color:var(--muted);font-style:italic;}
+.ms-meta{display:flex;align-items:center;gap:8px;font-size:9px;font-family:var(--mono);color:var(--dim);padding-left:2px;}
+.ms-chip{padding:1px 7px;border-radius:999px;border:1px solid var(--border);font-weight:600;}
+.ms-raw{margin-top:8px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--muted);
+  background:rgba(0,0,0,.22);border:1px solid var(--border);border-radius:6px;padding:8px 10px;max-height:320px;overflow:auto;white-space:pre-wrap;}
+/* One disclosure per response holds everything the colony actually did. */
+.ms-act{margin-top:2px;}
+.ms-act > summary{cursor:pointer;list-style:none;font-size:10px;color:var(--dim);padding:3px 2px;user-select:none;}
+.ms-act > summary::-webkit-details-marker{display:none;}
+.ms-act > summary:hover{color:var(--text);}
+.ms-act > summary:focus-visible{outline:2px solid var(--hud-cyan,#22d3ee);outline-offset:2px;border-radius:4px;}
+.ms-act-body{border-left:2px solid var(--border);margin:6px 0 0 4px;padding:6px 0 4px 12px;}
+.ms-active{flex-shrink:0;}
+.ms-active > summary{cursor:pointer;list-style:none;font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--dim);padding:6px 2px;user-select:none;display:flex;align-items:center;gap:8px;}
+.ms-active > summary::-webkit-details-marker{display:none;}
+.ms-composer{flex-shrink:0;border-top:1px solid var(--border);padding-top:10px;}
+@media (prefers-reduced-motion: reduce){.ms-thread{scroll-behavior:auto;}}
+
 .mission-bar-wrap{
   position:absolute;bottom:0;left:0;right:0;
   padding:7px 10px 9px;
@@ -1650,25 +1687,26 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
 
         <!-- Mission dispatch -->
-        <div class="card" style="padding:14px 16px;">
-          <div class="section-head">New Mission</div>
-          <div class="mission-row" style="gap:8px;">
-            <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
-            <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">▶</button>
+        <!-- v2.16.0: a conversation, not a form plus a log. The answer is the content; everything
+             the colony did to produce it is one disclosure away per exchange. -->
+        <div class="ms-conv">
+          <div id="ms-thread" class="ms-thread" role="log" aria-live="polite" aria-label="Mission conversation">
+            <div class="ms-empty">No missions yet. Describe what you want done below.</div>
           </div>
-          <div class="bar-hint" style="margin-top:4px;">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
-        </div>
 
-        <!-- Jobs list -->
-        <div class="card">
-          <div class="card-head">
-            Job History
-            <span class="badge" id="ms-jobs-badge">0</span>
-          </div>
-          <div class="card-body">
+          <details class="ms-active" id="ms-active">
+            <summary>Active jobs <span class="badge" id="ms-jobs-badge">0</span></summary>
             <div id="ms-jobs-list">
-              <div style="font-size:10px;color:var(--dim);text-align:center;padding:16px 0;">No jobs yet</div>
+              <div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>
             </div>
+          </details>
+
+          <div class="ms-composer">
+            <div class="mission-row" style="gap:8px;">
+              <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
+              <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">&#9654;</button>
+            </div>
+            <div class="bar-hint" style="margin-top:4px;">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
           </div>
         </div>
       </div><!-- /page-missions -->

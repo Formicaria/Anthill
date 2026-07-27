@@ -294,6 +294,8 @@ V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V
          v2.15.1: full-page topology · fifteen panels · docking replaced by halves/quadrants snap.
          v2.15.2: workspace containing block + fixed-chrome vertical budget.
          v2.15.3: hide-rule excludes by class so workspace layers stay visible.
+         v2.16.0: plain-English mission answers · Missions as a conversation · sector-based chamber
+         layout · new default dashboard arrangement. Next: the same conversation view for Automation.
          Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
 V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
 
