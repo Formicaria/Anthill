@@ -138,7 +138,14 @@ while appearing to work. A fifth instance of "tested code with no call site", in
       live work rather than only from the shadow simulator. Needs a skill reference on the task
       (schema change) — a plan can currently be *informed* by a skill without recording which one
       it followed, so the loop reads but does not yet write.
-- [ ] Objective progress model: objective state derived from verified evidence, not run counts.
+- [x] **C3 — Objective progress model — SHIPPED v2.22.0.** `ObjectiveProgress` derives what an
+      objective ACHIEVED from its run history instead of from how many times it ran. The defect:
+      `RecordObjectiveRunOutcome` moved an objective to Done the moment `RunCount >= MaxRuns`, so
+      one that failed every attempt ended identically to one that succeeded first time — "Done"
+      meant the budget ran out, not the goal was met. A new `exhausted_without_success` end reason
+      draws the distinction, judged on evidence rather than on whether the FINAL run happened to
+      succeed (achievement is not undone by a later failure). Pre-v2.19 runs fail closed. No new
+      storage — the evidence was always in `autonomy_runs`, it was simply never asked.
 - [ ] Evidence-derived follow-ups: follow-up objectives created from what verification actually
       found, with their own budgets (never confused with retries).
 - [ ] Connect the stored `memory_candidate` events (v2.20.0) to the Phase 5 evaluation pipeline:
@@ -152,15 +159,25 @@ because evidence says so; nothing promotes without the evaluation pipeline.
 
 ---
 
-## Phase D — Controlled specialist activation (target: v2.24.0)
+## Phase D — Controlled specialist activation — SHIPPED v2.22.0 (tiers)
 
 *Source: ADR §5 Stage 8; standing constraint "keep existing rollout gates" (v2.19.0 mandate).*
 
-- [ ] Activation tiers: `core` / `adaptive` / `full` — a deliberate dial, not six ad-hoc flags.
-- [ ] Per-role activation still required on top of the tier (both gates, as today).
+- [x] Activation tiers: `core` / `adaptive` / `full` — a deliberate dial, not six ad-hoc flags.
+      A **ceiling**, not a switch: raising it can never turn a role on, narrowing it can turn one
+      off. Unrecognised values fail closed to `core`. The adaptive set is tester + medic +
+      ui_cartographer (detect, diagnose, read-only map); soldier, scribe and archivist issue
+      security verdicts, write operator documentation, and write durable memory respectively, and
+      each deserves its own decision.
+- [x] Per-role activation still required on top of the tier — `SpecialistGateOpen` now requires
+      all three: master switch, tier ceiling, role flag.
+- [x] **Default is `full`**, meaning "defer entirely to the per-role flags" — exactly pre-v2.22
+      behaviour. Defaulting to `core` would have silently stopped specialists in every deployment
+      that had already enabled them, on upgrade, with nothing announcing it. Safety comes from the
+      per-role flags, which remain off by default.
 - [ ] Activation state surfaced in the dashboard (truthful UI status — the V2.9.x tactical track's
       last open item).
-- [ ] Rollback: any tier change is one config write away from reversal, like the workspace flag.
+- [x] Rollback: `activation_tier` is one config write away from reversal.
 
 **Exit gate:** specialists execute live under the tier the operator chose, their failures are
 recorded as failures (guaranteed by v2.19.0), and one setting turns it all off.

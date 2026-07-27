@@ -14,8 +14,21 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.21.0";
-    public const int SchemaVersion = 12;
+    public const string Version = "2.22.0";
+    public const int SchemaVersion = 13;
+
+    /// <summary>
+    /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
+    /// procedure verified on one platform/runtime is not thereby proven on another, and
+    /// <see cref="Skills.Skill.UsableIn"/> refuses to offer it outside its coverage.
+    ///
+    /// Deliberately COARSE: OS platform plus .NET major version. A fingerprint that changed on
+    /// every patch release would invalidate every skill's coverage constantly, which is the same
+    /// as having no skills; one that never changed would offer Windows-proven procedures on Linux.
+    /// </summary>
+    public static string EnvironmentFingerprint =>
+        $"{(System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "windows" : System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux) ? "linux" : "other")}" +
+        $"-dotnet{Environment.Version.Major}";
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -181,6 +194,12 @@ public static class AnthillRuntime
     public static bool EnableAnswerSynthesis = true;
     public static bool EnableSandboxExecution = false;
     public static bool EnableSpecialistAntExecution = false;
+    /// <summary>
+    /// v2.22.0 Phase D: the activation ceiling. Per-role flags apply on top of it.
+    /// Defaults to Full = "defer to the per-role flags", preserving pre-v2.22 behaviour exactly;
+    /// an operator narrows it deliberately. See AnthillConfig.ActivationTier.
+    /// </summary>
+    public static Agents.ActivationTier ActivationTier = Agents.ActivationTier.Full;
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
     public static bool EnableMedicAnt = false;
@@ -565,6 +584,7 @@ public static class AnthillRuntime
         EnableAnswerSynthesis = config.AnswerSynthesisEnabled;
         EnableSandboxExecution = config.SandboxExecutionEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
+        ActivationTier = Agents.ActivationTiers.Parse(config.ActivationTier);
         EnableTesterAnt = config.TesterAntEnabled;
         EnableSoldierAnt = config.SoldierAntEnabled;
         EnableMedicAnt = config.MedicAntEnabled;
