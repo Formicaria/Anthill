@@ -61,6 +61,20 @@ public sealed class SkillRegistry
     public IReadOnlyCollection<Skill> All => _skills.Values;
     public Skill? Get(string id) => _skills.TryGetValue(id ?? "", out var s) ? s : null;
 
+    /// <summary>
+    /// v2.21.0: rehydrate a skill from durable storage EXACTLY as recorded — no re-evaluation.
+    ///
+    /// Status was computed by <see cref="RecordOutcome"/> from evidence at the time; recomputing it
+    /// on load would let a policy change silently re-grade history that the evidence no longer
+    /// backs. A skill's standing changes only when a new outcome is recorded, or when an operator
+    /// or environment drift says so.
+    /// </summary>
+    public void Restore(Skill skill)
+    {
+        if (skill is null || string.IsNullOrWhiteSpace(skill.Id)) return;
+        _skills[skill.Id] = skill;
+    }
+
     /// <summary>Register (or return) a CANDIDATE. Candidates are never usable — they must earn
     /// experimental status through a verified success first.</summary>
     public Skill RegisterCandidate(string id, string purpose, IEnumerable<string>? procedure = null)

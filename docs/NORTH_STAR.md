@@ -41,7 +41,15 @@ The system must never treat autonomy as permission to act without boundaries.
 
 # 2. Current Baseline
 
-**Shipping release: v2.20.0** — the adaptive mission runtime, complete. v2.19.0 (part 1) made
+**Shipping release: v2.21.0** — Phases A–C of `docs/REMAINING_WORK.md`. Handoff ingestion: a
+specialist's handoff becomes a real gated follow-up task. Adaptive mission control: the Queen
+consults a bounded decision layer after each wave and may add a focused repair or the missing
+verification, or stop a mission that has stopped progressing. Runtime-aware planning: the planner
+plans against the roster it can actually run. Durable skills: the V2.12 evaluation model is
+persisted at last, and certified procedures inform planning as routes, never as scripts. The two
+adaptive subsystems are gated off by default. A specialist's handoff can now create a real follow-up task, admitted through `HandoffGate` plus the same authorization gate a planned task passes. Gated off by default.
+
+**Previous: v2.20.0** — the adaptive mission runtime, complete. v2.19.0 (part 1) made
 ants return structured execution results, mapped task outcomes from declared status rather than
 inferred prose, and required an actual verifier PASS for `completed_verified`. v2.20.0 (part 2)
 reset the learning state derived under the old rule at a durable, backed-up, audited boundary:
@@ -1423,6 +1431,7 @@ docs/ANT_EXECUTION.md         Ant runtime classification, execution contracts, v
 docs/DASHBOARD_WORKSPACE.md   Topology-first dashboard workspace
 docs/DEPLOYMENT.md            Deployment and LXC operations
 docs/ADAPTIVE_RUNTIME_STATUS.md  Adaptive mission runtime: staged status and remaining work
+docs/REMAINING_WORK.md        Consolidated remaining work, sequenced into phases A-F
 ```
 
 > **v2.15.0 correction.** This list previously named `TOOLS.md`, `VERIFICATION.md`, `SKILLS.md`,

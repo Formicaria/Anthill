@@ -33,10 +33,31 @@ public sealed class Planner
     /// overflow context. Such missions are handled as specification ingestion: split, analyze
     /// per section, then synthesize. Measured on the raw goal length in characters.
     /// </summary>
+    /// <summary>
+    /// Planning guidance that the registry's one-line Purpose cannot carry — operational emphasis
+    /// ("this is the ONLY ant that changes files") rather than description. Roles absent here fall
+    /// back to their registry purpose, so a newly enabled specialist is offered to the planner
+    /// immediately with a sensible description instead of being invisible until someone edits a
+    /// hardcoded prompt.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> PlannerEmphasis =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["researcher"] = "summarizes local memory, tool context, and mission-relevant internal context.",
+            ["web"] = "performs read-only external research when the mission requires current/public information.",
+            ["file"] = "inspects workspace files read-only. Use only for file/code/repo/folder missions.",
+            ["coder"] = "proposes structured JSON patches to CREATE or MODIFY files (code, config, documentation, scripts). This is the ONLY ant that changes files — any goal that creates, adds, writes, edits, or patches a file needs a coder task.",
+            ["builder"] = "creates the final response from prior ant outputs.",
+            ["verifier"] = "verifies result quality and safety.",
+        };
+
     public static bool IsLongInput(string goal) =>
         AnthillRuntime.EnableSpecIngestion && (goal ?? "").Length > AnthillRuntime.LongInputThreshold;
 
-    public List<Task> CreateTasks(string goal, string memoryContext = "", string toolContext = "", string pheromoneContext = "")
+    /// <param name="skillContext">Certified/experimental procedures proven in this environment.
+    /// Offered as known-good ROUTES to consider, never as scripts to run: every task planned from
+    /// one still passes the ordinary authorization, contract and permission gates.</param>
+    public List<Task> CreateTasks(string goal, string memoryContext = "", string toolContext = "", string pheromoneContext = "", string skillContext = "")
     {
         // v1.8.16: read explicit mission constraints up front. A verification-only / read-only /
         // "do not modify files" mission must never have coder patch-proposal tasks planned for it.
@@ -65,12 +86,7 @@ You are concise. Do not explain your reasoning unless asked.
 You are the Planner inside ANTHILL, a local swarm-intelligence AI harness.
 
 Available ants:
-- researcher: summarizes local memory, tool context, and mission-relevant internal context.
-- web: performs read-only external research when the mission requires current/public information.
-- file: inspects workspace files read-only. Use only for file/code/repo/folder missions.
-- coder: proposes structured JSON patches to CREATE or MODIFY files (code, config, documentation, scripts). This is the ONLY ant that changes files — any goal that creates, adds, writes, edits, or patches a file needs a coder task.
-- builder: creates the final response from prior ant outputs.
-- verifier: verifies result quality and safety.
+{RuntimeRoster.PromptBlock(PlannerEmphasis)}
 
 Available tools:
 {toolContext}
@@ -80,6 +96,10 @@ Memory:
 
 Pheromone trail summary. Prefer high-strength matching patterns, but do not force them if the mission does not fit:
 {pheromoneContext}
+
+Proven procedures (verified history — consider these routes first; they are not scripts, and any
+task you plan from one is still subject to every normal permission and contract check):
+{skillContext}
 
 Mission goal:
 {goal}
