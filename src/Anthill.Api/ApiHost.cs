@@ -30,6 +30,13 @@ public static partial class ApiHost
     private static RateLimiter AuthLimiter = null!;
     private static string UiHtml = "";
     private static string UiAppJs = "";
+    /// <summary>
+    /// v2.18.2: how much of a mission answer /missions/json carries inline. The conversation view
+    /// reads this directly; anything longer is truncated with a flag, and the untruncated text is
+    /// served by /missions/{id}/report.
+    /// </summary>
+    public const int MissionAnswerPreviewChars = 4000;
+
     private static string UiMissionThreadJs = "";
     private static string UiWorkspaceJs = "";
     private static string UiWorkspaceCss = "";
@@ -322,11 +329,26 @@ public static partial class ApiHost
             var limit = Math.Clamp(int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var l) ? l : 50, 1, AnthillRuntime.ApiMaxLimit);
             var rows = Queen.Memory.GetRecentMissions(limit)
                 .Where(m => m.GetValueOrDefault("id")?.ToString() != AnthillRuntime.SystemApiMissionId)
-                .Select(m => new Dictionary<string, object?>
+                .Select(m =>
                 {
-                    ["id"] = m.GetValueOrDefault("id"), ["goal"] = m.GetValueOrDefault("goal"),
-                    ["status"] = m.GetValueOrDefault("status"), ["success_score"] = m.GetValueOrDefault("success_score"),
-                    ["created_at"] = m.GetValueOrDefault("created_at"), ["saved_at"] = m.GetValueOrDefault("saved_at"),
+                    // v2.18.2: the ANSWER was missing from this projection entirely, so the
+                    // Missions conversation had nothing to show and every finished exchange read
+                    // "Working — no answer recorded yet" forever. Present since v2.16.0.
+                    //
+                    // Bounded rather than raw: this endpoint returns up to 100 missions and
+                    // user_result can be a whole diff or file dump. The full text always remains
+                    // available from /missions/{id}/report, which the activity disclosure loads.
+                    var answer = (m.GetValueOrDefault("final_result")?.ToString()
+                                  ?? m.GetValueOrDefault("user_result")?.ToString() ?? "").Trim();
+                    var clipped = answer.Length > MissionAnswerPreviewChars;
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = m.GetValueOrDefault("id"), ["goal"] = m.GetValueOrDefault("goal"),
+                        ["status"] = m.GetValueOrDefault("status"), ["success_score"] = m.GetValueOrDefault("success_score"),
+                        ["created_at"] = m.GetValueOrDefault("created_at"), ["saved_at"] = m.GetValueOrDefault("saved_at"),
+                        ["answer"] = clipped ? TextUtil.Truncate(answer, MissionAnswerPreviewChars, "") : answer,
+                        ["answer_truncated"] = clipped,
+                    };
                 }).ToList();
             return ApiJson.Ok(rows);
         });

@@ -23,10 +23,27 @@
   'use strict';
 
   /** Fields that actually change what an exchange looks like. Nothing else is compared. */
-  var RENDER_FIELDS = ['goal', 'status', 'final_result', 'user_result', 'success_score', 'saved_at', 'created_at'];
+  var RENDER_FIELDS = ['goal', 'status', 'answer', 'answer_truncated',
+                       'final_result', 'user_result', 'success_score', 'saved_at', 'created_at'];
 
+  /**
+   * The answer to display.
+   *
+   * v2.18.2: `answer` is the field /missions/json actually returns. Until then that endpoint
+   * projected only id/goal/status/score/timestamps — final_result and user_result were never in
+   * the payload — so this returned '' for every mission and the conversation showed
+   * "Working — no answer recorded yet" even for long-finished work. The final_result/user_result
+   * fallbacks are kept because /missions/{id}/report and the memory views do carry them.
+   */
   function answerOf(m) {
-    return (m && (m.final_result || m.user_result)) || '';
+    if (!m) return '';
+    if (typeof m.answer === 'string' && m.answer.length) return m.answer;
+    return m.final_result || m.user_result || '';
+  }
+
+  /** True when the inline answer was clipped and the full text lives in the activity report. */
+  function answerIsTruncated(m) {
+    return !!(m && m.answer_truncated);
   }
 
   /**
@@ -249,6 +266,7 @@
     FOLLOW_THRESHOLD_PX: FOLLOW_THRESHOLD_PX,
     ACTIVITY_STATES: ACTIVITY_STATES,
     answerOf: answerOf,
+    answerIsTruncated: answerIsTruncated,
     missionId: missionId,
     missionFingerprint: missionFingerprint,
     reconcileThread: reconcileThread,
