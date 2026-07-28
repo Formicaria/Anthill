@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.26.0";
+    public const string Version = "3.0.0";
     public const int SchemaVersion = 16;   // v2.26.0: persisted mission evaluation + task lifecycle + skill revisions
 
     /// <summary>
@@ -51,7 +51,6 @@ public static class AnthillRuntime
     // real security boundary, not network isolation. See ANTHILL_HOST env override below.
     public static string ApiHost = "0.0.0.0";
     public static int ApiPort = 8713;
-    public static bool EnableCors = false;
     public static int ApiJobWorkers = 1;
     public static string ApiAuthToken = Environment.GetEnvironmentVariable("ANTHILL_API_TOKEN") ?? "change-me-local-token";
 
@@ -360,7 +359,10 @@ public static class AnthillRuntime
     public const int MaxSourcesPerSearch = 5;
 
     public static readonly HashSet<string> SourceAllowlistDomains = new(StringComparer.OrdinalIgnoreCase)
-        { "docs.python.org", "github.com", "microsoft.com", "openai.com", "nist.gov", "cisa.gov" };
+        // v3.0.0 baseline lock: docs.python.org was seeded when ANTHILL itself was Python. The
+        // colony is .NET; per-language source authority belongs to workspace adapters (v3.3.0),
+        // not to a global default. learn.microsoft.com is the .NET equivalent it should have had.
+        { "learn.microsoft.com", "github.com", "microsoft.com", "openai.com", "nist.gov", "cisa.gov" };
     public static readonly HashSet<string> SourceBlocklistDomains = new(StringComparer.OrdinalIgnoreCase) { "pinterest.com" };
     public static readonly string[] HighAuthorityDomainSuffixes = { ".gov", ".edu" };
     public static readonly string[] HighAuthorityDomainKeywords =
@@ -553,7 +555,6 @@ public static class AnthillRuntime
         ApiHost = Environment.GetEnvironmentVariable("ANTHILL_HOST") ?? config.ApiHost;
         ApiPort = int.TryParse(Environment.GetEnvironmentVariable("ANTHILL_PORT"), out var envPort)
             ? envPort : config.ApiPort;
-        EnableCors = config.CorsEnabled;
         ApiJobWorkers = Math.Max(1, config.ApiJobWorkers);
         ApiAuthToken = Environment.GetEnvironmentVariable(config.ApiTokenEnv) ?? ApiAuthToken;
 

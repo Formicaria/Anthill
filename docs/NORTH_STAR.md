@@ -2,7 +2,7 @@
 
 ## Colony Execution Infrastructure
 
-**Baseline:** v2.26.0
+**Baseline:** v2.26.0 · **Shipping release: v3.0.0** (baseline lock)
 **Target:** V4 Autonomous Software Engineering Colony
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 **Document version:** 1.0
@@ -308,6 +308,16 @@ docs/DEPLOYMENT.md            Deployment reference (LXC, systemd, Docker)
 docs/HOMELAB.md               Homelab subsystem reference (maintenance only during V3)
 docs/TRAINING_MISSIONS.md     Operator training mission catalog
 docs/ADR-ADAPTIVE-MISSION-RUNTIME.md   Decision record: adaptive mission runtime (V2, retained)
+```
+
+V3 architecture decision records live in `docs/adr/` and are written BEFORE the phase they govern:
+
+```text
+docs/adr/ADR-001-runtime-composition.md   Runtime composition + Queen decomposition   (v3.1.0)
+docs/adr/ADR-002-mission-context.md       Immutable per-mission MissionContext        (v3.1.0)
+docs/adr/ADR-003-worker-protocol.md       Durable worker + attempt protocol           (v3.4.0)
+docs/adr/ADR-004-artifact-store.md        Artifact + evidence store                   (v3.5.0)
+docs/adr/ADR-005-workspace-manager.md     Mission workspace manager                   (v3.3.0)
 ```
 
 V2 planning documents (the V2 North Star, roadmap, remaining-work tracker, and completed project
