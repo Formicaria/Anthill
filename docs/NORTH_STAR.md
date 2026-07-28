@@ -1,1543 +1,314 @@
-# ANTHILL — NORTH STAR 2.0
+# ANTHILL V3 NORTH STAR
 
-> **Canonical project roadmap**
->
-> **Rebased from:** ANTHILL v2.7.0
-> **Target:** ANTHILL v3.0.0 — Bounded Autonomous Homelab Operator
-> **Status:** Active
->
-> This document replaces the previous ordered roadmap as the canonical source for future ANTHILL development.
->
-> Older roadmap documents may remain as subsystem design history, but they must link back to this document and must not define a conflicting release order.
+## Colony Execution Infrastructure
+
+**Baseline:** v2.26.0
+**Target:** V4 Autonomous Software Engineering Colony
+**Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
+**Document version:** 1.0
 
 ---
 
-# 1. Mission
-
-ANTHILL is a local-first autonomous operations platform for software projects and homelab infrastructure.
-
-Its purpose is not merely to generate recommendations, run isolated tools, or display infrastructure status.
-
-Its purpose is to become a dependable operator that can:
-
-1. Observe an environment.
-2. Detect meaningful change or failure.
-3. Diagnose the likely cause.
-4. Produce a bounded plan.
-5. Evaluate risk and blast radius.
-6. Select an approved capability.
-7. Execute through deterministic tools.
-8. Verify the real-world result.
-9. Roll back or compensate when necessary.
-10. Record evidence.
-11. Learn from the verified outcome.
-12. Improve future decisions without exceeding operator-defined authority.
-
-ANTHILL must earn autonomy through demonstrated reliability.
-
-The system must never treat autonomy as permission to act without boundaries.
-
----
-
-# 2. Current Baseline
-
-**Shipping release: v2.24.0** — objective-level verification: a mission must also have delivered what its goal asked for. Additive, off by default. Previously v2.23.0 — observed routes become skill candidates: a hypothesis that must still earn certification through verified use. Previously v2.22.0 — the skills loop closes: a task records the procedure it followed, and a verified mission credits it. Previously v2.21.0 — Phases A–C of `docs/REMAINING_WORK.md`. Handoff ingestion: a
-specialist's handoff becomes a real gated follow-up task. Adaptive mission control: the Queen
-consults a bounded decision layer after each wave and may add a focused repair or the missing
-verification, or stop a mission that has stopped progressing. Runtime-aware planning: the planner
-plans against the roster it can actually run. Durable skills: the V2.12 evaluation model is
-persisted at last, and certified procedures inform planning as routes, never as scripts. The two
-adaptive subsystems are gated off by default. A specialist's handoff can now create a real follow-up task, admitted through `HandoffGate` plus the same authorization gate a planned task passes. Gated off by default.
-
-**Previous: v2.20.0** — the adaptive mission runtime, complete. v2.19.0 (part 1) made
-ants return structured execution results, mapped task outcomes from declared status rather than
-inferred prose, and required an actual verifier PASS for `completed_verified`. v2.20.0 (part 2)
-reset the learning state derived under the old rule at a durable, backed-up, audited boundary:
-objective EMA to neutral, pre-boundary pheromone trails to neutral strength and marked
-`legacy_unverified` — retained for reporting, excluded from planning until they earn a post-reset
-success. See `docs/ADAPTIVE_RUNTIME_STATUS.md` for the full staged record.
-
-ANTHILL v2.7.0 already includes substantial foundations.
-
-## Existing autonomy
-
-* Persistent objectives and autonomy run history.
-* Colony Director objective loop.
-* Strategist-generated mission goals.
-* Concurrent mission execution.
-* Resource-aware concurrency reduction.
-* Priority scheduling with anti-starvation aging.
-* Mission budgets and kill switches.
-* Follow-up objective generation.
-* Objective success scoring.
-* Low-value and looping-objective retirement.
-* Patch proposals and approval workflows.
-* Gated autonomous patch application.
-* Build-and-test verification.
-* Rollback of failed auto-applied patches.
-* Pheromone and mission memory.
-* Fresh-install training missions.
-* Model routing and circuit breaking.
-
-## Existing homelab platform
-
-* Host and service inventory.
-* Dependency mapping.
-* Health checks.
-* Notifications.
-* Proxmox integration.
-* Backup awareness.
-* Network and security awareness.
-* Incidents and change history.
-* Approval-gated infrastructure actions.
-* Automation rules.
-* DNS, DHCP, and firewall control foundations.
-* Full homelab operations layer.
-* Permissions, credential storage, target allowlists, and audit records.
-
-These capabilities are valuable, but their existence alone does not make ANTHILL a trustworthy autonomous operator.
-
-The remaining work is primarily framework work:
-
-* durable execution,
-* deterministic task contracts,
-* typed tools,
-* isolated execution,
-* independent verification,
-* real skill learning,
-* recovery,
-* and operator qualification.
-
----
-
-# 3. Permanent Operating Doctrine
-
-Every autonomous action must follow:
-
-```text
-Observe
-  ↓
-Classify
-  ↓
-Diagnose
-  ↓
-Plan
-  ↓
-Risk Score
-  ↓
-Authorize
-  ↓
-Execute
-  ↓
-Verify
-  ↓
-Keep, Retry, Compensate, or Roll Back
-  ↓
-Record Evidence
-  ↓
-Learn
-```
-
-No stage may be skipped merely because a model reports confidence.
-
-## Permanent rules
-
-1. **Partial completion is not success.**
-2. **Model output is not evidence.**
-3. **A completed task is not verified until an independent verifier confirms it.**
-4. **No irreversible action may depend only on an LLM judgment.**
-5. **All autonomous writes occur in an isolated or recoverable environment.**
-6. **Every side effect must have an idempotency strategy.**
-7. **Every destructive or state-changing tool must declare recovery behavior.**
-8. **The operator controls the maximum authority level.**
-9. **Fail closed when authorization, verification, or environment state is uncertain.**
-10. **Learning may influence selection, but may not bypass policy.**
-11. **The system must distinguish recommendation, proposal, execution, and verification.**
-12. **ANTHILL must be able to explain what it observed, what it changed, and how it proved the result.**
-
----
-
-# 4. Outcome Semantics
-
-ANTHILL must stop treating broad structural completion as operational success.
-
-All missions, tasks, actions, and playbook executions must use explicit outcomes.
-
-```text
-queued
-claimed
-running
-waiting_for_tool
-waiting_for_approval
-waiting_for_verification
-completed_unverified
-completed_verified
-partial
-failed_retryable
-failed_permanent
-timed_out
-cancelled
-compensating
-compensated
-rollback_failed
-orphaned
-```
+## 1. Purpose
+
+V2 proved that ANTHILL can hold missions, plan work, route tasks, store history, propose changes, verify outcomes, manage approvals, observe homelab infrastructure, and enforce increasingly serious safety boundaries.
+
+V3 will not be another feature-expansion cycle. V3 will turn those capabilities into one coherent execution platform.
+
+The V3 objective is to build the colony operating system: a durable, typed, isolated, observable, restart-safe framework in which every ant performs its intended job through the same mission protocol. By the end of V3, ANTHILL should be able to complete medium-complexity software-engineering missions in a disposable workspace, coordinate multiple ants, test and repair its own work, produce a verified change set, explain every decision, and wait for an operator to retain or publish the result.
 
-## Success definition
+V4 will use that foundation to pursue broader autonomous software execution comparable in workflow quality to Codex or Claude Code. V3 must make that possible without pretending the framework is complete before it is proven.
 
-Only the following state may:
-
-* reinforce positive learning,
-* increase skill confidence,
-* generate autonomous follow-up work,
-* permit autonomous patch retention,
-* permit autonomous infrastructure change retention,
-* or count toward operator certification:
-
-```text
-completed_verified
-```
-
-`partial`, `completed_unverified`, or model-reported success must never be treated as verified success.
-
----
-
-# 5. Autonomy Levels
-
-ANTHILL must expose a single consistent autonomy model across code and homelab operations.
-
-## Level 0 — Observe
-
-ANTHILL may:
-
-* collect inventory,
-* run read-only checks,
-* correlate incidents,
-* summarize findings,
-* and record memory.
-
-No changes are proposed or executed.
-
-## Level 1 — Recommend
-
-ANTHILL may:
-
-* diagnose,
-* produce plans,
-* recommend playbooks,
-* estimate risk,
-* and prepare evidence.
-
-No action proposal is created automatically.
-
-## Level 2 — Propose
-
-ANTHILL may:
-
-* create patch proposals,
-* create infrastructure action proposals,
-* calculate blast radius,
-* prepare rollback plans,
-* and request approval.
-
-Execution requires human approval.
-
-## Level 3 — Bounded Auto-Execution
-
-ANTHILL may automatically execute actions only when:
-
-* the capability is explicitly allowlisted,
-* the action is low-risk,
-* the target is allowlisted,
-* verification is deterministic,
-* compensation or rollback exists,
-* the cumulative budget is available,
-* and the action remains inside the configured blast-radius limit.
-
-## Level 4 — Supervised Autonomous Operation
-
-ANTHILL may:
-
-* diagnose incidents,
-* select certified playbooks,
-* execute bounded multi-step recovery,
-* verify results,
-* roll back failures,
-* and place itself into cooldown or degraded mode.
-
-High-risk actions continue to require approval.
-
-## Level 5 — Reserved
-
-Fully unrestricted autonomy is not a planned project goal.
-
-ANTHILL must always operate within operator-defined permissions, budgets, targets, and recovery rules.
-
----
-
-# 6. Release Sequence
-
-```text
-V2.7.0   Full homelab operations layer                 [CURRENT BASELINE]
-
-V2.8.0   Durable Mission Runtime                       [SHIPPED v2.8.0]
-V2.9.0   Contracted Tasks and Typed Capability Tools   [SHIPPED v2.9.0]
-V2.9.x   Ant Execution Framework (specialist activation) [see docs/ANT_EXECUTION.md]
-V2.10.0  Sandboxed Agent Execution                    [SHIPPED v2.10.0 — sandbox + loop primitives; agent wiring v2.10.x]
-V2.11.x  Sandbox/coder/model-routing wiring (unplanned insertion) [SHIPPED v2.11.0–v2.11.2]
-V2.12.0  Independent Verification and Evidence (was V2.11.0)  [SHIPPED v2.12.0 — deterministic verifiers + bundles]
-V2.13.0  Procedural Skills and Evaluated Learning       (was V2.12.0)  [SHIPPED v2.13.0 — skill registry + evidence-gated promotion]
-V2.14.0  Safe Action Engine and Recovery Orchestration  (was V2.13.0)  [SHIPPED v2.14.0 — engine + orchestration; executor migration SHIPPED v2.25.0: the homelab executor's transitions come from the canonical lifecycle, verification is the only door to completion, failed verifies produce recovery recommendations (never executions)]
-V2.14.x  Topology-first Dashboard workspace (console track, runs alongside the V3 track)
-         [IN PROGRESS through v2.14.15 — see docs/DASHBOARD_WORKSPACE.md for status + next steps]
-         Shipped: workspace state model + kill switch (v2.14.2) · panel shell (v2.14.3) ·
-         drag/resize/snap (v2.14.4) · chambers as a canvas layout + map prefs moved onto the
-         canvas (v2.14.5) · per-ant truthful pheromone field (v2.14.6) · draggable chambers
-         (v2.14.7) · chamber SVG retired, one renderer (v2.14.8) · seven functional chambers +
-         dashboard cards as panels (v2.14.9/v2.14.10) · chamber renaming (v2.14.10) ·
-         editable Ant Inspector + topology as the dashboard canvas (v2.14.13) ·
-         topology overlays, hideable and re-anchorable (v2.14.14) ·
-         persistent topology + inspector/jobs as panels + readable standby chambers (v2.14.15)
-         Hotfixes in this line: v2.14.11 colony layout · v2.14.12 restored the colony/chamber
-         definitions whose call sites had shipped without them. Both consumed their version
-         numbers, which is why the feature stages shifted.
-         Corrected in-flight: v2.14.14 wired DashboardWorkspaceState into /ui/state — Stage 1
-         had shipped it with 20 passing tests and NO call site, so every guarantee it made was
-         inert; and fixed saveUiState deleting the whole panel layout on any ant rename.
-         COMPLETE at v2.15.0: tab groups · docking to all four edges · single-writer +
-         lifecycle audit · polished default layout · responsive/a11y pass ·
-         dashboard_workspace_enabled now DEFAULT ON (still an instant rollback when set false).
-         v2.15.1: full-page topology · fifteen panels · docking replaced by halves/quadrants snap.
-         v2.15.2: workspace containing block + fixed-chrome vertical budget.
-         v2.15.3: hide-rule excludes by class so workspace layers stay visible.
-         v2.16.0: plain-English mission answers · Missions as a conversation · sector-based chamber
-         layout · new default dashboard arrangement. The Automation conversation view SHIPPED
-         v2.25.0 — runs read as what the rule noticed and what the colony did about it, with
-         restraint (cooldown/cap skips) reading as deliberate quiet.
-         Dock geometry invariants (per-edge and opposing-pair budgets) are enforced in C#.
-V2.15.0  Shadow Operations and Operator Qualification   (was V2.14.0)
-         [Stage 1 SHIPPED v2.17.0 — non-executing recommendation engine (ShadowOperator) +
-          QualificationScoreboard. Stage 2 SHIPPED v2.18.0 (v2.18.2 fixed the Missions conversation being rebuilt by the 3s jobs poll) — FaultScenarioCatalog (16 scenarios) +
-          ShadowSimulation harness (safety invariants proven, incl. high-risk-needs-approval even
-          with a proven skill). Stage 3 SHIPPED v2.24.0 — durable recommendations/outcomes,
-          live-incident observation (never executes, off by default), the qualification scoreboard's
-          first production call site, and the Shadow dashboard panel (empty = "not qualified",
-          never a pass). Stage 4 SHIPPED v2.25.0 — the operator judgment endpoint (/shadow/judge)
-          closes the scoring loop, fault-injection runs daily with fingerprint-based stability
-          tracking, and the V3.0 release thresholds are evaluated live at /readiness/json with
-          operator attestations and a certification report that cannot certify an unready system.
-          PHASE COMPLETE.]
-
-> Renumbering note: the v2.11.x line was consumed by sandbox/coder wiring releases, so the
-> remaining planned phases shift by one minor version. Phase headings below keep their original
-> numbering with these NEW target versions; scope is unchanged.
-
-V3.0.0   Bounded Autonomous Homelab Operator
-```
-
-V3.0 may not begin until all V2.8–V2.14 release gates are satisfied.
-
-Additionally, before V3 (Ant Execution Framework requirements — see docs/ANT_EXECUTION.md):
-every executable ant requires a versioned execution contract; tools are capability-enforced at
-dispatch (spoofed identities refused, apply/shell structurally denied to mission agents);
-specialist agents produce structured outputs with evidence; failure handoffs are bounded
-(depth/budget/dedupe); deterministic homelab services remain separate from LLM reasoning; roles
-cannot become executable without runtime handlers and tests (rollout gates default off); and
-positive learning requires completed_verified outcomes only.
-
----
-
-# PHASE 1 — V2.8.0 DURABLE MISSION RUNTIME
-
-## Goal
-
-Make mission execution survive process crashes, service restarts, host reboots, worker loss, and partial execution.
-
-The runtime must no longer depend on in-memory job state for operational correctness.
-
-## Required capabilities
-
-### Persistent mission queue
-
-Persist:
-
-* mission ID,
-* objective ID,
-* task graph,
-* current task,
-* mission status,
-* attempt number,
-* assigned worker,
-* claim timestamp,
-* lease expiration,
-* heartbeat timestamp,
-* cancellation request,
-* tool calls,
-* produced artifacts,
-* verifier state,
-* compensation state,
-* and final outcome.
-
-### Atomic objective claims
-
-Selecting an objective and claiming it must occur in one transaction.
-
-Two Directors or workers must not launch the same objective concurrently unless the objective explicitly permits parallelism.
-
-### Worker leases
-
-Workers must:
-
-* claim work for a fixed lease period,
-* renew the lease with heartbeats,
-* release the lease on completion,
-* and allow safe reclamation after expiration.
-
-### Startup reconciliation
-
-At startup, ANTHILL must inspect incomplete work and classify it as:
-
-* resumable,
-* retryable,
-* compensating,
-* orphaned,
-* waiting for operator review,
-* or permanently failed.
-
-### Idempotency
-
-Every mission and side-effecting action must have an idempotency key.
-
-Repeated delivery of the same work must not create duplicate:
-
-* patches,
-* snapshots,
-* VM operations,
-* DNS records,
-* firewall rules,
-* notifications,
-* objectives,
-* incidents,
-* or Git commits.
-
-### Attempt history
-
-Retries must create separate attempts while preserving the original mission identity.
-
-Each attempt must record:
-
-* reason,
-* worker,
-* environment,
-* model,
-* tool versions,
-* inputs,
-* outputs,
-* errors,
-* and duration.
-
-## Required tests
-
-* Kill the process while a mission is queued.
-* Kill it while a worker owns a lease.
-* Kill it during a tool call.
-* Kill it after a side effect but before outcome recording.
-* Kill it during verification.
-* Kill it during rollback.
-* Restart with multiple expired leases.
-* Run two Directors against the same database.
-* Replay the same idempotency key.
-* Confirm no task is silently lost or executed twice.
-
-## Success criteria
-
-* No accepted mission disappears after restart.
-* No objective is launched twice because of a race.
-* Expired work is reclaimed safely.
-* Completed work is not repeated.
-* Side effects can be correlated to a durable attempt.
-* The runtime can explain every incomplete mission after recovery.
-
----
-
-# PHASE 2 — V2.9.0 CONTRACTED TASKS AND TYPED CAPABILITY TOOLS
-
-## Goal
-
-Replace loosely defined prompt tasks and string-based tool results with machine-readable contracts.
-
-## Task contract
-
-Every task must define:
-
-```json
-{
-  "id": "task-id",
-  "title": "Human-readable title",
-  "objective": "What must be achieved",
-  "task_type": "diagnose|change|verify|research|recover",
-  "required_capabilities": [],
-  "inputs": {},
-  "constraints": {},
-  "expected_artifacts": [],
-  "success_criteria": [],
-  "verification_plan": [],
-  "dependencies": [],
-  "side_effect_class": "none|reversible|destructive",
-  "risk_class": "low|medium|high|critical",
-  "idempotency_key": "",
-  "retry_policy": {},
-  "compensation_plan": {},
-  "timeout_seconds": 0
-}
-```
-
-## Typed tool interface
-
-Every tool must declare:
-
-* name,
-* description,
-* version,
-* JSON input schema,
-* JSON output schema,
-* required permissions,
-* supported targets,
-* side-effect class,
-* risk class,
-* whether it is idempotent,
-* idempotency-key support,
-* timeout support,
-* cancellation support,
-* retry behavior,
-* compensation capability,
-* audit fields,
-* and evidence produced.
-
-## Structured tool result
-
-Tools must return structured results:
-
-```json
-{
-  "status": "succeeded|failed_retryable|failed_permanent|cancelled",
-  "summary": "",
-  "data": {},
-  "artifacts": [],
-  "evidence": [],
-  "warnings": [],
-  "error": {
-    "code": "",
-    "message": "",
-    "retry_after_seconds": 0
-  },
-  "side_effects": [],
-  "compensation_token": ""
-}
-```
-
-## Capability model
-
-Permissions must attach to capabilities, not ant names.
-
-Examples:
-
-```text
-repo.read
-repo.search
-repo.write.sandbox
-repo.patch.propose
-repo.patch.apply
-process.execute.readonly
-process.execute.workspace
-network.http.public
-network.http.homelab
-proxmox.read
-proxmox.vm.start
-proxmox.vm.stop
-proxmox.snapshot.create
-dns.record.write
-firewall.rule.write
-backup.restore
-credential.use
-```
-
-Ants may receive temporary capability grants for one mission.
-
-## Failure taxonomy
-
-Errors must be classified consistently:
-
-* validation failure,
-* authorization failure,
-* target rejection,
-* transient provider failure,
-* rate limit,
-* timeout,
-* conflict,
-* dependency failure,
-* verification failure,
-* unsafe state,
-* compensation failure,
-* and internal defect.
-
-## Success criteria
-
-* Planner output is schema validated.
-* Invalid tasks cannot enter the execution queue.
-* Tools no longer depend on unstructured text parsing for control flow.
-* Permissions can be evaluated before execution.
-* Every state-changing tool declares recovery behavior.
-* Retry decisions use typed failure classes.
-
----
-
-# PHASE 3 — V2.10.0 SANDBOXED AGENT EXECUTION
-
-## Goal
-
-Allow ants to work iteratively without modifying the active ANTHILL installation or uncontrolled host state.
-
-## Required execution environments
-
-### Code missions
-
-Run in one of:
-
-* disposable Git worktree,
-* temporary clone,
-* ephemeral container,
-* or operator-defined isolated workspace.
-
-Never perform autonomous code changes directly in the live production checkout.
-
-### Infrastructure missions
-
-Use:
-
-* read-only observation context,
-* a proposed action plan,
-* a bounded execution session,
-* action-specific credentials,
-* target allowlists,
-* and explicit compensation metadata.
-
-## Agent execution loop
-
-Agents must support bounded iteration:
-
-```text
-Observe
-→ Choose capability
-→ Execute tool
-→ Inspect structured result
-→ Update working state
-→ Replan if necessary
-→ Continue or stop
-```
-
-Each loop must be constrained by:
-
-* maximum turns,
-* maximum tool calls,
-* maximum elapsed time,
-* token budget,
-* action budget,
-* risk budget,
-* repeated-action detection,
-* and cancellation.
-
-## Required agent tools
-
-For code:
-
-* repository tree,
-* semantic code search,
-* exact text search,
-* file reader,
-* diff reader,
-* compiler,
-* test runner,
-* formatter,
-* linter,
-* static analyzer,
-* dependency inspector,
-* Git status,
-* and artifact collector.
-
-For homelab:
-
-* inventory lookup,
-* dependency graph lookup,
-* incident history,
-* change history,
-* health checks,
-* provider status,
-* target validation,
-* action preview,
-* blast-radius calculation,
-* and rollback availability.
-
-## Prompt-injection boundaries
-
-Tool output, repository content, logs, web pages, and infrastructure metadata must be treated as untrusted input.
-
-Untrusted content must not:
-
-* grant capabilities,
-* alter system policy,
-* disable verification,
-* change approval requirements,
-* reveal credentials,
-* or expand target allowlists.
-
-## Loop controls
-
-Detect:
-
-* repeated identical tool calls,
-* no-progress cycles,
-* oscillating edits,
-* repeated failing patches,
-* repeated diagnosis without new evidence,
-* and planner-executor disagreement.
-
-## Success criteria
-
-* Autonomous code edits occur only in isolated workspaces.
-* Agents can inspect, act, test, and revise.
-* The active checkout remains unchanged until promotion.
-* Tool loops stop predictably when budgets expire.
-* Untrusted content cannot elevate authority.
-
----
-
-# PHASE 4 — V2.11.0 INDEPENDENT VERIFICATION AND EVIDENCE
-
-## Goal
-
-Separate execution from verification and require real evidence before declaring success.
-
-The ant or model that performed a change must not be the only entity deciding whether it worked.
-
-## Verification framework
-
-Introduce:
-
-```text
-IVerifier
-VerificationRequest
-VerificationResult
-VerificationEvidence
-VerificationPolicy
-VerificationBundle
-```
-
-## Required verifier types
-
-### BuildVerifier
-
-Confirms compilation or packaging succeeds.
-
-### TestVerifier
-
-Runs required test suites and records exact results.
-
-### DiffVerifier
-
-Checks that the resulting diff matches approved scope.
-
-### ArtifactVerifier
-
-Confirms required files, reports, backups, snapshots, or outputs exist.
-
-### ServiceHealthVerifier
-
-Checks HTTP, TCP, process, service, or application health.
-
-### InfrastructureStateVerifier
-
-Confirms actual provider state matches the intended state.
-
-### DependencyVerifier
-
-Checks dependent services and systems after a change.
-
-### SecurityPolicyVerifier
-
-Checks:
-
-* secret exposure,
-* permission expansion,
-* unsafe paths,
-* credential leakage,
-* dangerous commands,
-* firewall exposure,
-* and policy violations.
-
-### RollbackVerifier
-
-Proves rollback or compensation restored the expected previous state.
-
-### SemanticJudgeVerifier
-
-Uses a model for semantic review only when deterministic verification is insufficient.
-
-A semantic judge may supplement deterministic evidence but must not replace it for state-changing operations.
-
-## Evidence requirements
-
-Verification evidence may include:
-
-* command,
-* exit code,
-* stdout and stderr digests,
-* test counts,
-* file hashes,
-* diffs,
-* API responses,
-* health-check results,
-* provider task IDs,
-* screenshots,
-* timestamps,
-* target identity,
-* and before/after state.
-
-## Verification policy
-
-A task must specify which verifiers are required.
-
-Example:
-
-```text
-Code patch:
-- DiffVerifier
-- BuildVerifier
-- TestVerifier
-- SecurityPolicyVerifier
-
-VM restart:
-- InfrastructureStateVerifier
-- ServiceHealthVerifier
-- DependencyVerifier
-
-Firewall change:
-- InfrastructureStateVerifier
-- ConnectivityVerifier
-- SecurityPolicyVerifier
-- RollbackVerifier availability
-```
-
-## Promotion rule
-
-A code or configuration change may be promoted from its sandbox only after:
-
-* all required verifiers pass,
-* the final diff remains within approved scope,
-* cumulative risk remains within policy,
-* no secret is detected,
-* and the evidence bundle is persisted.
-
-## Success criteria
-
-* Structural task completion cannot create a verified success.
-* Every retained autonomous change has an evidence bundle.
-* Verification can be rerun independently.
-* Failed verification causes retry, compensation, rollback, or escalation.
-* Model confidence is never stored as proof.
-
----
-
-# PHASE 5 — V2.12.0 PROCEDURAL SKILLS AND EVALUATED LEARNING
-
-## Goal
-
-Make ANTHILL improve from verified experience without allowing uncontrolled self-training.
-
-## Learning layers
-
-### Episodic memory
-
-Store what occurred during a specific mission:
-
-* context,
-* plan,
-* tool calls,
-* decisions,
-* evidence,
-* outcome,
-* and operator feedback.
-
-### Semantic memory
-
-Store stable facts:
-
-* repository architecture,
-* environment inventory,
-* service ownership,
-* dependency relationships,
-* policies,
-* and known constraints.
-
-### Procedural memory
-
-Store reusable methods:
-
-* diagnosis sequences,
-* repair playbooks,
-* verification routines,
-* rollback routines,
-* and environment-specific runbooks.
-
-### Causal memory
-
-Store supported relationships:
-
-* change X preceded failure Y,
-* action A restored service B,
-* rollback C reversed side effect D.
-
-Causal claims must include evidence strength and provenance.
-
-### Negative memory
-
-Store:
-
-* failed fixes,
-* unsafe approaches,
-* rejected patches,
-* false diagnoses,
-* expired procedures,
-* and environment incompatibilities.
-
-## Hybrid retrieval
-
-Memory search must combine:
-
-* exact filters,
-* FTS/BM25,
-* embeddings,
-* metadata,
-* freshness,
-* environment compatibility,
-* source reliability,
-* and prior verified success.
-
-## Skill registry
-
-Introduce versioned skills:
-
-```text
-Skill ID
-Version
-Purpose
-Supported environments
-Required capabilities
-Inputs
-Preconditions
-Procedure
-Expected evidence
-Verification policy
-Compensation plan
-Success count
-Failure count
-Confidence
-Last validated
-Status
-```
-
-Statuses:
-
-```text
-candidate
-experimental
-certified
-degraded
-retired
-blocked
-```
-
-## Skill promotion
-
-A candidate skill becomes certified only after:
-
-* repeated verified successes,
-* no unresolved rollback failures,
-* acceptable environment coverage,
-* passing regression scenarios,
-* and operator-defined confidence thresholds.
-
-## Skill demotion
-
-Skills must be degraded or retired when:
-
-* the environment changes,
-* provider versions become incompatible,
-* repeated failures occur,
-* verification becomes unreliable,
-* or a safer skill replaces them.
-
-## Planner use
-
-The Planner should prefer:
-
-1. certified compatible skills,
-2. experimental skills in sandbox or shadow mode,
-3. generated plans when no suitable skill exists.
-
-## Model routing learning
-
-Outcome history may influence:
-
-* role-to-model routing,
-* prompt selection,
-* tool ordering,
-* retrieval weighting,
-* and retry strategy.
-
-It may not:
-
-* grant new permissions,
-* skip approvals,
-* weaken verification,
-* or expand allowed targets.
-
-## Model training policy
-
-ANTHILL must not continuously fine-tune its active production model from its own unreviewed outputs.
-
-Any future adapter or fine-tuning pipeline must be:
-
-* offline,
-* secret-scrubbed,
-* based on verified trajectories,
-* split into train and holdout sets,
-* evaluated against a stable baseline,
-* tested for regression and policy compliance,
-* deployed as a canary,
-* and reversible.
-
-Production self-replacement is outside the V3.0 scope.
-
-## Success criteria
-
-* ANTHILL learns reusable procedures rather than only scalar scores.
-* Certified skills contain deterministic verification.
-* Failed approaches reduce future selection probability.
-* Retrieval accounts for environment and freshness.
-* Learning cannot bypass authorization policy.
-
----
-
-# PHASE 6 — V2.13.0 SAFE ACTION ENGINE AND RECOVERY ORCHESTRATION
-
-## Goal
-
-Unify code changes and homelab actions behind one safe execution framework.
-
-## Action lifecycle
-
-```text
-draft
-validated
-risk_scored
-waiting_for_approval
-approved
-scheduled
-executing
-verifying
-completed_verified
-failed
-compensating
-compensated
-rollback_failed
-escalated
-```
-
-## Action proposal
-
-Every action proposal must include:
-
-* target,
-* intended state,
-* current state,
-* capability,
-* exact operation,
-* preconditions,
-* risk class,
-* blast radius,
-* affected dependencies,
-* expected downtime,
-* verification plan,
-* rollback or compensation plan,
-* approval requirement,
-* expiration time,
-* and idempotency key.
-
-## Risk engine
-
-Risk scoring must consider:
-
-* destructive potential,
-* reversibility,
-* target criticality,
-* number of affected systems,
-* dependency depth,
-* credential privilege,
-* production versus lab designation,
-* backup freshness,
-* maintenance window,
-* recent changes,
-* unresolved incidents,
-* action novelty,
-* skill confidence,
-* verifier quality,
-* and cumulative change size.
-
-## High-risk categories
-
-The following require explicit approval unless the operator creates a narrowly scoped exception:
-
-* delete operations,
-* storage destruction,
-* restore operations,
-* firewall exposure,
-* credential or permission changes,
-* authentication changes,
-* network routing changes,
-* database schema migrations,
-* production service shutdown,
-* cluster membership changes,
-* destructive Git operations,
-* and changes without deterministic rollback.
-
-## Recovery orchestration
-
-Recovery must support:
-
-* immediate rollback,
-* compensating action,
-* retry after cooldown,
-* failover,
-* restore from snapshot or backup,
-* quarantine,
-* disable automation,
-* revoke temporary capability,
-* and escalate to the operator.
-
-## Change-set transactions
-
-Multi-step actions must define:
-
-* step order,
-* checkpoints,
-* verification after each checkpoint,
-* stop conditions,
-* compensation order,
-* and whether partial retention is allowed.
-
-## Cooldowns and circuit breakers
-
-Automatically pause an action type, target, provider, skill, or automation rule after:
-
-* repeated failures,
-* repeated verification failures,
-* rollback failure,
-* provider instability,
-* resource pressure,
-* or unexpected blast radius.
-
-## Auto-apply correction
-
-Autonomous patch application must:
-
-* perform branch and workspace safety checks before writing,
-* operate inside an isolated worktree,
-* evaluate cumulative diff risk,
-* inspect critical file classes,
-* block secret-bearing changes,
-* block unsafe dependency changes,
-* block unapproved migrations,
-* and promote verified commits rather than modifying the live checkout first.
-
-## Success criteria
-
-* All state-changing systems use the same lifecycle.
-* Every action has a recovery path or is explicitly marked non-recoverable.
-* Critical changes cannot qualify as low risk by line count alone.
-* Rollback failure automatically suspends related autonomy.
-* Multi-step recovery can stop safely at checkpoints.
-
----
-
-# PHASE 7 — V2.14.0 SHADOW OPERATIONS AND OPERATOR QUALIFICATION
-
-## Goal
-
-Prove ANTHILL is ready to operate before granting V3 authority.
-
-V2.14 is a qualification release, not a feature expansion release.
-
-## Shadow mode
-
-ANTHILL observes real incidents and produces:
-
-* diagnosis,
-* proposed action,
-* chosen skill,
-* risk score,
-* predicted outcome,
-* verification plan,
-* and rollback plan.
-
-It does not execute.
-
-The operator records what action was actually taken and whether ANTHILL’s recommendation was correct.
-
-## Simulation mode
-
-Run against:
-
-* mocked providers,
-* disposable VMs,
-* containers,
-* test networks,
-* temporary repositories,
-* and replayed incident histories.
-
-## Fault-injection scenarios
-
-Required scenarios include:
-
-* service crash,
-* health-check false positive,
-* full disk,
-* failed backup,
-* stale DNS record,
-* unreachable Proxmox node,
-* VM stuck in transition,
-* firewall rule regression,
-* dependency outage,
-* expired credential,
-* rate-limited provider,
-* interrupted mission,
-* failed verification,
-* failed rollback,
-* duplicate mission delivery,
-* and malicious prompt injection in logs or repository content.
-
-## Reliability metrics
-
-Track:
-
-* diagnosis precision,
-* diagnosis recall,
-* action-selection accuracy,
-* unnecessary-action rate,
-* verification false-positive rate,
-* rollback success rate,
-* duplicate execution rate,
-* mean time to detect,
-* mean time to diagnose,
-* mean time to recover,
-* operator override rate,
-* policy violation count,
-* and unverified-success count.
-
-## Required release thresholds
-
-> v2.25.0: these thresholds are now EVALUATED LIVE at `/readiness/json` (Phase F). Measured
-> thresholds compute from recorded data; the judgments ANTHILL cannot make about itself are
-> explicit operator attestations (`POST /readiness/attest`). Unmeasured and unattested both read
-> NOT ready; a measured check cannot be attested into passing, nor the reverse. The certification
-> report (`/readiness/certification`) is the conjunction of the rest and cannot certify an
-> unready system.
-
-Before V3.0:
-
-* Zero silent mission loss during recovery testing.
-* Zero duplicate irreversible actions during idempotency testing.
-* Zero unverified outcomes counted as success.
-* Zero critical policy bypasses.
-* Zero credentials exposed in logs, prompts, memory, or evidence.
-* All destructive capabilities fail closed.
-* All Level 3 actions have deterministic verification.
-* All Level 3 actions have rollback or approved compensation.
-* Rollback success rate meets the operator-defined threshold.
-* Shadow-mode recommendations meet the operator-defined accuracy threshold.
-* Repeated fault-injection runs produce stable results.
-* Restart and crash-recovery suites pass.
-* The operator can disable all autonomous execution immediately.
-
-## Operator certification report
-
-ANTHILL must generate a readiness report containing:
-
-* certified capabilities,
-* certified skills,
-* allowed targets,
-* known limitations,
-* unresolved risks,
-* recovery test results,
-* verifier coverage,
-* shadow-mode performance,
-* provider compatibility,
-* and recommended autonomy level.
-
-## Success criteria
-
-* V3 readiness is evidence-based.
-* Autonomy is granted per capability, not globally.
-* Failed qualification areas remain at Level 0–2.
-* The system can prove its recovery behavior.
-* The operator receives a clear go/no-go decision.
-
----
-
-# 7. V3.0.0 — BOUNDED AUTONOMOUS HOMELAB OPERATOR
-
-## Goal
-
-Allow ANTHILL to autonomously operate approved portions of a homelab through certified capabilities and playbooks.
-
-V3.0 does not mean unrestricted control.
-
-It means ANTHILL may independently complete approved, recoverable, machine-verifiable operations within a defined boundary.
-
-## V3 execution loop
-
-```text
-Observe environment
-→ Detect event or objective
-→ Build evidence-backed diagnosis
-→ Match certified skill
-→ Validate preconditions
-→ Calculate blast radius and cumulative risk
-→ Confirm authority level
-→ Claim durable execution lease
-→ Execute bounded steps
-→ Verify actual state
-→ Roll back or compensate on failure
-→ Enter cooldown when required
-→ Persist evidence and outcome
-→ Update skill and routing confidence
-```
-
-## Allowed V3 action classes
-
-Examples may include:
-
-* restart a noncritical failed service,
-* start a stopped approved VM,
-* renew a known-safe health check,
-* retry a failed backup job,
-* clean an approved temporary directory,
-* restore a known-safe DNS record,
-* revert a recently introduced approved configuration,
-* create a diagnostic snapshot,
-* apply a certified low-risk code patch in an isolated worktree,
-* or execute another operator-certified skill.
-
-Each action class must be enabled separately.
-
-## Actions still requiring approval
-
-By default:
-
-* data deletion,
-* backup restoration,
-* firewall exposure,
-* account or credential changes,
-* privilege escalation,
-* storage reconfiguration,
-* cluster membership changes,
-* network routing changes,
-* database migrations,
-* destructive code operations,
-* and actions without deterministic recovery.
-
-## V3 operator controls
-
-The operator must be able to configure:
-
-* maximum autonomy level,
-* allowed capabilities,
-* allowed targets,
-* maintenance windows,
-* risk threshold,
-* per-action budget,
-* daily action budget,
-* concurrent action limit,
-* required verifiers,
-* cooldown duration,
-* approval exceptions,
-* and emergency stop behavior.
-
-## V3 degraded mode
-
-ANTHILL must automatically reduce authority when:
-
-* a provider is unstable,
-* verification is unavailable,
-* backups are stale,
-* the database is degraded,
-* memory is inconsistent,
-* resource pressure is high,
-* multiple rollbacks occur,
-* a critical incident is active,
-* or the environment differs from the certified profile.
-
-Degraded mode may reduce the system to:
-
-* Observe,
-* Recommend,
-* or Propose.
-
-## V3 definition of done
-
-ANTHILL v3.0 is complete only when it can demonstrate:
-
-1. Durable operation across restart and worker failure.
-2. Typed, permissioned, cancellable tools.
-3. Contracted tasks with explicit success criteria.
-4. Iterative bounded agent execution.
-5. Isolated code and configuration changes.
-6. Independent deterministic verification.
-7. Verified rollback or compensation.
-8. Certified procedural skills.
-9. Evidence-based learning.
-10. Capability-scoped autonomy.
-11. Shadow and fault-injection qualification.
-12. Immediate operator control and emergency shutdown.
-
----
-
-# 8. Explicit Non-Goals Before V3
-
-The following are not required to declare V3 complete:
-
-* unrestricted autonomous administration,
-* uncontrolled recursive objective generation,
-* online self-fine-tuning,
-* automatic replacement of the production model,
-* unrestricted shell access,
-* unrestricted network access,
-* bypassing approval for critical actions,
-* eliminating human oversight,
-* active exploitation or offensive security,
-* or autonomous expansion of its own permissions.
-
-These may not be added indirectly through plugins, prompts, skills, or generated code.
-
----
-
-# 9. Documentation and Governance
+## 2. V3 Mission
+
+ANTHILL V3 exists to make colony execution dependable.
+
+A V3 mission must be able to:
+
+1. Accept a directive and resolve its constraints.
+2. Inspect the repository and environment before planning changes.
+3. Produce a small, explicit, contract-valid task graph.
+4. Create an isolated mission workspace.
+5. Assign work only to ants with proven handlers, contracts, tools, and budgets.
+6. Move typed artifacts and evidence between ants instead of relying on prose transcripts.
+7. Execute bounded agent loops with cancellation, retries, and durable attempts.
+8. Verify the actual result through deterministic checks and independent review.
+9. Diagnose failures and perform focused repair attempts.
+10. Produce a final operator-facing result, change set, evidence bundle, and risk summary.
+11. Retain nothing without the required approval and verification.
+12. Archive only lessons supported by verified outcomes.
+13. Resume or explain every interrupted mission after restart.
+
+## 3. V3 End State
+
+At the end of V3, ANTHILL is not yet an unrestricted autonomous developer. It is a qualified software-execution platform with the following properties:
+
+- Every mission agent implements one versioned execution interface.
+- Every task enters through one contract and capability admission gate.
+- Every code-changing mission runs in a disposable or recoverable workspace.
+- Every model call and tool call returns a typed result.
+- Every task produces immutable artifacts, evidence, or an explicit typed failure.
+- Every handoff is bounded, authorized, deduplicated, and traceable.
+- Every repair is budgeted and tied to a concrete failed check.
+- Every positive mission outcome requires independent verification.
+- Every retained change has provenance, verification evidence, and rollback information.
+- Every ant is either active for its intended purpose or explicitly classified as control-plane or deterministic service infrastructure.
+- No feature is considered complete merely because its class, schema, or tests exist; it must have a production call site and an end-to-end qualification test.
+
+## 4. What V3 Is Not
+
+V3 is not:
+
+- A new homelab feature expansion.
+- A push toward unrestricted infrastructure control.
+- A visual redesign project.
+- A reason to add more ants before the existing roster is activated.
+- A plugin marketplace.
+- A distributed multi-node colony, although the worker interface must not prevent one later.
+- Permission for agents to write directly to the active ANTHILL installation.
+- Permission for model confidence to substitute for deterministic evidence.
+- A release-number race.
+
+## 5. Permanent V3 Doctrine
+
+1. **Framework before intelligence.** A better model cannot repair an undefined execution protocol.
+2. **One lifecycle authority.** Mission, task, action, workspace, artifact, and verification states each have one canonical owner.
+3. **No call site, no feature.** Declarations, schemas, and tests without production wiring are incomplete.
+4. **Typed boundaries end to end.** No control-flow decision may depend on string prefixes, prose parsing, or implied success.
+5. **Artifacts over transcripts.** Ants exchange versioned artifacts and evidence references, not unbounded chat history.
+6. **Deterministic gates around stochastic reasoning.** Models may propose, classify, summarize, and diagnose; policy, authorization, execution, and verification remain deterministic.
+7. **Capabilities belong to tasks and tools.** Ant identity never grants hidden authority.
+8. **All writes occur in a mission workspace.** The active checkout is never an agent scratchpad.
+9. **Independent verification is mandatory.** The ant that creates a change cannot be the sole authority that declares it correct.
+10. **Repair is bounded.** Every repair attempt has a reason, budget, scope, and stop condition.
+11. **Learning follows verified outcomes only.** Observation may create a candidate; only proven use earns standing.
+12. **Every run must be explainable and replayable.** Configuration, environment, tools, models, artifacts, decisions, and evidence are recorded.
+13. **Activation is earned per ant.** A role graduates through explicit maturity gates; a global switch cannot create capability.
+14. **No hidden fallback success.** Degraded paths are visible, typed, and never silently promoted.
+15. **A release is evidence, not a version number.** Each phase closes only when its measured gates pass.
+
+## 6. Target Architecture
+
+### 6.1 Control Plane
+
+The control plane decides what work exists and what authority it receives.
+
+- **Queen:** mission authority, lifecycle coordination, final outcome publication.
+- **Director:** objective scheduling and long-running autonomy policy.
+- **Planner:** task-graph creation from live roster and workspace capability data.
+- **Constraint service:** mission boundaries, risk ceilings, no-write/read-only rules, and policy interpretation.
+
+The Queen must stop owning the implementation details of planning, execution, evaluation, learning, and presentation. V3 decomposes those responsibilities behind explicit interfaces while preserving one orchestration authority.
+
+### 6.2 Execution Plane
+
+The execution plane owns durable work.
+
+- Mission queue and task claims.
+- Worker identity, leases, heartbeats, attempts, and reclamation.
+- Cancellation and deadline propagation.
+- Mission workspace creation, checkpointing, recovery, and cleanup.
+- Resource budgets and concurrency limits.
+- Idempotency for all side effects.
+
+### 6.3 Agent Plane
+
+Every mission agent runs through the same typed protocol:
+
+`Prepare -> Execute -> Produce Artifacts -> Request Handoff -> Report Metrics -> Stop`
+
+The protocol is shared by Researcher, Web, File, Coder, Builder, Verifier, UI Cartographer, Tester, Soldier, Medic, Archivist, and Scribe. Specialization is expressed through contracts, tools, artifact types, and task types, not through separate execution frameworks.
+
+### 6.4 Tool and Capability Plane
+
+Every tool declares:
+
+- Versioned input and output schemas.
+- Required capabilities.
+- Side-effect and risk class.
+- Timeout and cancellation behavior.
+- Idempotency behavior.
+- Evidence produced.
+- Compensation or rollback behavior.
+
+No agent receives unrestricted shell or file-write authority. Code changes flow through scoped workspace tools and immutable change sets.
+
+### 6.5 Artifact and Evidence Plane
+
+The colony communicates through durable records such as:
+
+- Repository map.
+- File set.
+- UI map.
+- Change plan.
+- Patch set.
+- Test report.
+- Security review.
+- Failure diagnosis.
+- Verification bundle.
+- Operator summary.
+- Release notes.
+- Memory candidate.
+
+Every artifact records schema version, producer, mission, task, workspace, source artifact IDs, content hash, timestamp, and visibility classification.
+
+### 6.6 Verification and Recovery Plane
+
+Verification is layered:
+
+1. Contract and admission verification.
+2. Tool execution verification.
+3. Build/test/static verification.
+4. Security and policy verification.
+5. Deliverable verification.
+6. Final mission evaluation.
+
+A failure creates evidence. The Medic may diagnose that evidence and propose a focused repair. The repair returns to the Coder or another authorized role, then repeats the exact failed verification. Repair cannot rewrite the mission indefinitely.
+
+### 6.7 Memory and Learning Plane
+
+The Archivist stores:
+
+- Verified lessons.
+- Negative lessons from proven failure.
+- Deprecated routes.
+- Skill candidates with provenance.
+- Operator rules.
+
+Memory is not authority. It influences planning only through evaluated, environment-scoped skills and explicit policy-approved signals.
+
+### 6.8 Operator Plane
+
+The operator must be able to see:
+
+- Current mission and task state.
+- Workspace and branch identity.
+- Active ants and why each was selected.
+- Input and output artifacts.
+- Handoffs and rejections.
+- Model and tool calls.
+- Verification requirements and current evidence.
+- Repair attempts and remaining budgets.
+- Pending approvals.
+- Exact final change set and rollback path.
+
+## 7. Canonical Colony Workflow
+
+### Stage 1 - Intake and Constraints
+
+The Queen creates the mission. The Constraint service resolves read-only, no-patch, language, path, risk, and approval boundaries. The mission receives an immutable `MissionContext`.
+
+### Stage 2 - Reconnaissance
+
+Researcher, File, Web, and UI Cartographer gather only the context required for the directive. They publish repository maps, file sets, source records, and UI maps.
+
+### Stage 3 - Planning and Admission
+
+The Planner creates a task graph against the live runtime roster and the workspace capability manifest. Every task declares inputs, outputs, capabilities, risk, success criteria, verification plan, dependencies, timeout, retry policy, and repair policy. The admission gate either accepts the complete graph or returns a structured rejection.
+
+### Stage 4 - Workspace Preparation
+
+The Workspace Manager creates a disposable worktree or clone, records the base revision, detects project capabilities, and exposes scoped read/change/check tools.
+
+### Stage 5 - Execution Waves
+
+Ants consume artifact references, perform bounded work, and publish new artifacts. Dynamic handoffs enter through the same authorization and contract gates as planned tasks.
+
+### Stage 6 - Verification
+
+Tester runs declared checks. Soldier evaluates policy and security risk. Verifier evaluates result completeness and evidence. Deliverable verification confirms that the requested change actually exists.
+
+### Stage 7 - Repair
+
+Medic classifies a failed check, identifies the smallest repair surface, and creates a bounded repair recommendation. The Planner or repair controller admits a focused task. The failed check is rerun.
+
+### Stage 8 - Assembly
+
+Builder produces the final result from verified artifacts. Scribe prepares release notes or documentation only after the change set is verified.
+
+### Stage 9 - Retention
+
+The Queen presents the change set, checks, evidence, risk summary, and rollback path. The operator approves retention, export, commit, or rejection. Agents never push directly to main.
+
+### Stage 10 - Archive and Learning
+
+Archivist records verified lessons and negative evidence. Quartermaster records resource and throughput data and adjusts future budgets within operator-defined ceilings.
+
+## 8. Ant Activation Doctrine
+
+Every mission agent moves through six maturity levels:
+
+| Level | Name | Meaning |
+|---|---|---|
+| 0 | Scaffold | Display identity only; cannot receive work. |
+| 1 | Implemented | Runtime handler exists but is not planner-visible. |
+| 2 | Contracted | Versioned contract, tools, artifacts, limits, and tests exist. |
+| 3 | Shadow | Receives mirrored tasks and records results without affecting mission flow. |
+| 4 | Supervised | May affect missions with explicit operator or phase approval. |
+| 5 | Qualified | Planner-eligible by default within its capability and risk ceiling. |
+
+An ant may graduate only when all of the following exist:
+
+- Runtime handler.
+- Versioned execution contract.
+- Typed input/output schemas.
+- Capability and tool enforcement.
+- Artifact and evidence definitions.
+- Handoff policy.
+- Budget and stop conditions.
+- Unit, integration, fault, and end-to-end tests.
+- Runtime metrics and operator visibility.
+- Shadow comparison data.
+- Rollback or safe no-side-effect proof.
+- Explicit activation record.
+
+A global specialist flag may narrow availability, but it may never substitute for these gates.
+
+## 9. Role Intent at the End of V3
+
+| Role | V3 responsibility | Required V3 change |
+|---|---|---|
+| Researcher | Repository and mission-context analysis | Migrate to universal execution contract and artifact outputs. |
+| File | Precise workspace discovery and file reading | Produce versioned file-set artifacts and read provenance. |
+| Web | Public-source research | Typed source records, authority scoring, freshness, and citation evidence. |
+| UI Cartographer | Route, component, style, and UI-impact mapping | Activate as the required reconnaissance step for UI missions. |
+| Coder | Iterative scoped changes in mission workspace | Replace proposal-only flow with workspace change sets while retaining approval gates. |
+| Builder | Assemble verified mission result | Consume artifacts rather than raw task prose. |
+| Verifier | Independent evidence and deliverable evaluation | Become verification orchestrator, never a model-only pass. |
+| Tester | Run declared allowlisted checks | Activate with deterministic evidence and check adapters. |
+| Soldier | Policy, security, scope, and patch-risk review | Activate as a blocking deterministic/model-assisted review layer. |
+| Medic | Failure diagnosis and focused repair routing | Activate only after repair budgets and retry evidence are durable. |
+| Archivist | Verified memory and skill-candidate extraction | Activate after artifact provenance and canonical outcomes are universal. |
+| Scribe | Release notes, operator summaries, and docs change sets | Activate only after verified diffs; docs paths remain scoped. |
+| Quartermaster | Resource pressure, queue depth, and concurrency control | Remain deterministic; gain a metrics contract and advisory control surface. |
+
+Homelab inventory roles remain deterministic services in V3. They may provide structured context to missions but are not converted into free-form LLM workers.
+
+## 10. V4 Entry Definition
+
+V4 may begin only when ANTHILL can repeatedly complete a software mission through this closed loop:
+
+`inspect -> plan -> change in sandbox -> test -> diagnose -> repair -> retest -> review -> summarize -> request retention`
+
+The operator may still be required to approve retention. What must no longer require manual intervention is the internal workflow coordination.
+
+V4 is where ANTHILL may expand authority, repository breadth, long-running development, autonomous pull-request preparation, richer language adapters, and supervised multi-mission execution. V3 is where the framework earns the right to attempt those things.
 
 ## Canonical documents
 
 ```text
-docs/NORTH_STAR.md            Ordered project roadmap
-docs/ROADMAP.md               Release map
-docs/AUTONOMY.md              Autonomy runtime and operator controls
-docs/HOMELAB.md               Homelab architecture
-docs/APPROVALS.md             Approval and authorization model
-docs/CONTRACTS.md             Task contracts, capability tools, recovery and compensation
-docs/ANT_EXECUTION.md         Ant runtime classification, execution contracts, verification
-docs/DASHBOARD_WORKSPACE.md   Topology-first dashboard workspace
-docs/DEPLOYMENT.md            Deployment and LXC operations
-docs/ADAPTIVE_RUNTIME_STATUS.md  Adaptive mission runtime: staged status and remaining work
-docs/REMAINING_WORK.md        Consolidated remaining work, sequenced into phases A-F
+docs/NORTH_STAR.md            This document — the V3 canonical direction (authority on WHAT)
+docs/ROADMAP.md               The V3 release order, v3.0.0 through v3.9.0 (authority on WHEN)
+docs/DASHBOARD_WORKSPACE.md   Console/workspace operational reference (complete; maintenance)
+docs/ANT_EXECUTION.md         Ant execution framework reference
+docs/APPROVALS.md             Approval pipeline contract
+docs/AUTONOMY.md              Autonomy loop, STOP semantics, budgets
+docs/CONTRACTS.md             Task and specialist contracts
+docs/DEPLOYMENT.md            Deployment reference (LXC, systemd, Docker)
+docs/HOMELAB.md               Homelab subsystem reference (maintenance only during V3)
+docs/TRAINING_MISSIONS.md     Operator training mission catalog
+docs/ADR-ADAPTIVE-MISSION-RUNTIME.md   Decision record: adaptive mission runtime (V2, retained)
 ```
 
-> **v2.15.0 correction.** This list previously named `TOOLS.md`, `VERIFICATION.md`, `SKILLS.md`,
-> `RECOVERY.md`, and `QUALIFICATION.md` — none of which exist. The section immediately below
-> claims automated tests verify that "required canonical documents exist", and no such test was
-> ever written, so the list drifted unchecked. It now names only documents that are really in the
-> repo, and `DocsConsistencyTests.CanonicalDocuments_AllExist` enforces that.
->
-> Still genuinely undocumented, tracked as debt rather than pretended away: the **procedural skill
-> lifecycle** (shipped v2.13.0) has no dedicated document, and **V3 qualification / fault-injection**
-> lives only in §6 of this file. Verification and recovery are covered by `ANT_EXECUTION.md` and
-> `CONTRACTS.md` respectively.
-
-## Roadmap consistency
-
-Automated tests must verify:
-
-* runtime version matches documented version,
-* shipped releases are not marked future,
-* future phases appear in the correct order,
-* deprecated roadmap documents link to this file,
-* required canonical documents exist,
-* and V3 cannot be marked shipped unless qualification gates are recorded.
-
-## Architecture decision records
-
-Major changes to:
-
-* outcome semantics,
-* authorization,
-* task contracts,
-* tools,
-* verification,
-* memory,
-* skill learning,
-* model training,
-* rollback,
-* or durable execution
-
-must receive an architecture decision record.
-
-**Recorded ADRs:**
-
-```text
-docs/ADR-ADAPTIVE-MISSION-RUNTIME.md   Adaptive mission runtime (audit of v2.18.2; staged v2.19.x-v2.21.0)
-docs/PRE_V3_RUNTIME_HARDENING.md       Pre-V3 hardening audit + execution record (v2.26.0)
-```
-
-> This requirement predates any ADR existing. The first was written for the adaptive mission
-> runtime audit, which found fourteen confirmed integration defects in the execution core —
-> including structured agent failures being recorded as completed tasks, and partial missions
-> reaching auto-apply. See that document before changing execution, outcome, or autonomy semantics.
-
----
-
-# 10. Priority Rule
-
-Until V3.0 qualification is complete, development priority is:
-
-```text
-Reliability
-→ Safety
-→ Verification
-→ Recovery
-→ Learning quality
-→ Operator usability
-→ New integrations
-→ Visual polish
-```
-
-New ants, dashboards, integrations, and visual features must not displace the framework phases required for dependable autonomy.
-
----
-
-# 11. Final Direction
-
-ANTHILL already has the beginnings of autonomy.
-
-The next stage is not to give the colony more freedom.
-
-The next stage is to make every action:
-
-* durable,
-* bounded,
-* typed,
-* isolated,
-* recoverable,
-* verifiable,
-* evidence-backed,
-* and teachable.
-
-V3.0 is reached when ANTHILL no longer merely says that an operation succeeded.
-
-It reaches V3.0 when it can prove what happened, recover when it is wrong, and stay inside the authority its operator granted.
+V2 planning documents (the V2 North Star, roadmap, remaining-work tracker, and completed project
+records) are archived at `docs/archive/v2/` — history, not authority.
