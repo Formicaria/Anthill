@@ -30,7 +30,6 @@ public sealed class AnthillConfig
     [JsonPropertyName("api_port")] public int ApiPort { get; set; } = 8713;
     [JsonPropertyName("api_auth_enabled")] public bool ApiAuthEnabled { get; set; } = true;
     [JsonPropertyName("api_token_env")] public string ApiTokenEnv { get; set; } = "ANTHILL_API_TOKEN";
-    [JsonPropertyName("cors_enabled")] public bool CorsEnabled { get; set; } = false;
     [JsonPropertyName("api_job_workers")] public int ApiJobWorkers { get; set; } = 1;
 
     [JsonPropertyName("use_ollama")] public bool UseOllama { get; set; } = true;

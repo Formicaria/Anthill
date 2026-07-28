@@ -1,5 +1,79 @@
 # ANTHILL Changelog
 
+## v3.0.0 — V3 baseline lock
+
+The first V3 release, and deliberately the least exciting one: **no new feature behavior**. V3's
+roadmap opens by locking a measured baseline before the runtime architecture changes, on the
+principle that you cannot safely decompose a system you cannot inventory.
+
+### The V3 document set is canonical
+
+`docs/NORTH_STAR.md` and `docs/ROADMAP.md` are now the V3 documents — Colony Execution
+Infrastructure, v3.0.0 through v3.9.0. The nine completed V2 planning documents moved to
+`docs/archive/v2/` with a README mapping each to the release that closed it. History, not
+authority.
+
+### The runtime inventory and call-site audit
+
+V2 shipped seven well-tested subsystems that nothing called. Every one was found by a person
+reading carefully, one release too late. That is not a process.
+
+`RuntimeInventory` enumerates what the runtime DECLARES — roles, feature gates, endpoints, tables,
+background loops: 300 declarations today — and pairs each with its production call sites. Tests
+are deliberately not counted as consumers; that a subsystem has tests is exactly what made the V2
+defects invisible. Comments are stripped before searching, because a symbol named only in a doc
+comment is how dead code looks alive.
+
+`CallSiteAudit` turns gaps into a build failure, in both directions: a declaration with no
+consumer is a regression, AND an exemption that has since acquired consumers is stale and must be
+removed. An allowlist nobody prunes is how a real gap eventually hides inside one. The exemption
+list ships **empty** — the honest state, and the one worth defending.
+
+Building it taught something worth recording. The first draft reported 61 orphans out of 300,
+because its symbol matcher rejected dot-qualified access — and `AnthillRuntime.EnableAutonomy` is
+precisely how a static gate is read. A check that cries wolf gets switched off within a week, so
+the matcher was corrected before the finding was believed.
+
+### The eighth instance, found by machine
+
+With the matcher honest, the audit found exactly one real orphan: **`cors_enabled`**. Documented
+in `config.example.json`, parsed into `AnthillConfig`, projected into `AnthillRuntime.EnableCors`
+— and read by nothing. A security-adjacent switch an operator could set and believe protected
+them. Removed rather than implemented, because v3.0.0 adds no feature behavior; if cross-origin
+access is wanted it arrives properly, with an origin allowlist and tests.
+
+### Hygiene residue
+
+A duplicate mission-deadline `CancelAfter` (introduced by v2.26.0's own drain work) and the
+Python-era `docs.python.org` source-authority default — a relic of when the colony itself was
+Python. Per-language source authority belongs to the workspace adapters in v3.3.0, not to a global
+default.
+
+### Characterization tests
+
+A different kind of test from the rest of the suite: these do not assert that behaviour is
+*correct*, they assert that it is *what it is today*, so v3.1.0's decomposition can be proven
+behaviour-preserving rather than asserted to be. Pinned: the complete mission-outcome truth table
+(nine rows), the verifier verdict vocabulary including its ambiguity and unknown cases, the
+three-way skill-outcome split (promotable / neutral / failure), pheromone signal categories,
+constraint parsing, the action-state mapping, and the ant status-code mapping. A V3 phase that
+deliberately changes one updates the test in the same commit with its reason — never deletes it.
+
+### Architecture decision records
+
+Five ADRs in `docs/adr/`, each written before the phase it governs and each naming what was
+explicitly rejected — the rejected option usually being the smaller diff:
+ADR-001 runtime composition and Queen decomposition (v3.1.0, rejects a cosmetic file split),
+ADR-002 immutable `MissionContext` (v3.1.0, rejects an ambient one),
+ADR-003 durable worker and attempt protocol (v3.4.0, rejects distributing now),
+ADR-004 artifact and evidence store (v3.5.0, rejects keeping prose as a second channel),
+ADR-005 mission workspace manager (v3.3.0, rejects a shared reused sandbox).
+
+### Operator surface
+
+`GET /runtime/inventory` returns the same data CI gates on: every declaration, its consumer count,
+and the audit verdict.
+
 ## v2.26.0 — Pre-V3 runtime hardening
 
 An external engineering deep-dive audited the repo before V3. Every claim was verified against the

@@ -1565,6 +1565,28 @@ public static partial class ApiHost
             });
         });
 
+        // v3.0.0 baseline lock: the generated runtime inventory + call-site audit. What the
+        // runtime declares, and who consumes it. The same data CI gates on.
+        app.MapGet("/runtime/inventory", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var inventory = Anthill.Core.Diagnostics.RuntimeInventory.Build(AnthillRuntime.PathFromScript("."));
+            var audit = Anthill.Core.Diagnostics.CallSiteAudit.Run(inventory);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["generated_at"] = inventory.GeneratedAt,
+                ["declarations"] = inventory.Entries.Count,
+                ["by_kind"] = inventory.ByKind.ToDictionary(g => g.Key, g => g.Count()),
+                ["audit_clean"] = audit.Clean,
+                ["audit"] = audit.Explain(),
+                ["entries"] = inventory.Entries.Select(e => new Dictionary<string, object?>
+                {
+                    ["kind"] = e.Kind, ["name"] = e.Name, ["detail"] = e.Detail,
+                    ["consumers"] = e.CallSites.Count, ["orphaned"] = e.Orphaned,
+                }).ToList(),
+            });
+        });
+
         // v2.26.0: the machine-generated qualification report — measured results only.
         app.MapPost("/readiness/qualification-report", (HttpContext ctx) =>
         {

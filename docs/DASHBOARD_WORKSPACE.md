@@ -10,6 +10,8 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v3.0.0 note: no new dashboard surface — a baseline-lock release. `GET /runtime/inventory`
+> exposes the generated declaration/consumer inventory and the call-site audit verdict.
 > v2.26.0 note: no new dashboard surface — a hardening release. Config-health findings and
 > introspection are API-first (`/config/health`, `/colony/introspection`); job statuses gain
 > `timed_out` (mapped from the canonical mission outcome, so status can never contradict it).
