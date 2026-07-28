@@ -1,3 +1,10 @@
+> **SUPERSEDED — historical snapshot.** This file is the original v2.20-era draft of the
+> consolidated remaining-work plan. Its maintained successor is `docs/REMAINING_WORK.md`, where
+> every phase below (A–F) is checked off with its shipping release (A: v2.21.0 · B: v2.21–22 ·
+> C: v2.21–24 · D: v2.22.0 · E: v2.24–25 · F: v2.25.0), followed by the v2.26.0 pre-V3 hardening
+> (`docs/PRE_V3_RUNTIME_HARDENING.md`). Nothing in this file remains outstanding. Retained as the
+> record of how the plan looked before execution.
+
 NORTH_STAR phases 1–6 (V2.8–V2.13 lines): shipped. Dashboard console track: complete — maintenance only. Adaptive mission runtime stages 1–2 + learning reset: shipped (v2.19.0 / v2.20.0). Phase 7 (Shadow Operations): stages 1–2 of ~5 shipped (v2.17.0 / v2.18.0). Autonomy level in operation: Level 2 (Propose). Levels 3–4 are V3.
 
 Everything below is what remains between here and V3.0.0, in dependency order.

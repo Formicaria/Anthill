@@ -79,8 +79,11 @@ the Ant Inspector.
 timed-out, and failed never reinforce positively; cancellation is neutral. Enforced in
 ArchivistAnt and its tests.
 
-## Deferred (per NORTH_STAR phases)
+## Deferred (per NORTH_STAR phases) — all since shipped
 
-Sandboxed execution (V2.10), independent verification/evidence hardening (V2.11), skill
-certification (V2.12), safe-action recovery orchestration (V2.13), scheduler-side live handoff
-ingestion and structured `BaseAnt` returns (adapter removal).
+Everything this section deferred has landed: sandboxed execution (v2.10.x), independent
+verification/evidence (v2.12.0, hardened v2.26.0 — Promotable intrinsically requires
+deterministic evidence), skill certification (v2.13.0, durable v2.21.0, row-atomic v2.26.0),
+safe-action recovery orchestration (v2.14.0, executor migration v2.25.0), scheduler-side live
+handoff ingestion (v2.21.0), and structured returns for every ant — specialists in v2.19.0
+(adapter deleted) and the five core ants in v2.26.0, each declaring typed outcomes.
