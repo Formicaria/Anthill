@@ -1492,6 +1492,7 @@ must receive an architecture decision record.
 
 ```text
 docs/ADR-ADAPTIVE-MISSION-RUNTIME.md   Adaptive mission runtime (audit of v2.18.2; staged v2.19.x-v2.21.0)
+docs/PRE_V3_RUNTIME_HARDENING.md       Pre-V3 hardening audit + execution record (v2.26.0)
 ```
 
 > This requirement predates any ADR existing. The first was written for the adaptive mission

@@ -61,7 +61,10 @@ public sealed partial class SqliteMemory : IDisposable
         conn.Open();
         using (var pragma = conn.CreateCommand())
         {
-            pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON;";
+            // v2.26.0: journal_mode=WAL is a PERSISTENT database property, set once at
+            // initialization (EnsureSchema) — re-declaring it on every connection was a wasted
+            // round-trip. busy_timeout and foreign_keys are genuinely per-connection and stay.
+            pragma.CommandText = "PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON;";
             pragma.ExecuteNonQuery();
         }
         return conn;
@@ -104,6 +107,11 @@ public sealed partial class SqliteMemory : IDisposable
         lock (_writeLock)
         {
             using var conn = Connect();
+            // v2.26.0: WAL is a persistent database property — declared once here at
+            // initialization instead of on every opened connection. (Cannot run inside the
+            // transaction below: journal-mode changes are refused mid-transaction.)
+            using (var wal = conn.CreateCommand()) { wal.CommandText = "PRAGMA journal_mode=WAL;"; wal.ExecuteNonQuery(); }
+
             using var tx = conn.BeginTransaction();
             foreach (var ddl in SchemaStatements) Exec(conn, tx, ddl);
 
@@ -310,6 +318,33 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v2.26.0 pre-V3 hardening (migration 16): the canonical evaluation is PERSISTED — the
+        // authoritative outcome must not live only in transient events or per-caller re-derivation.
+        // Legacy rows read as '' → "no evaluation", which is never treated as verified.
+        AddMissing("missions", new()
+        {
+            ["outcome_code"] = "TEXT NOT NULL DEFAULT ''",
+            ["stop_reason"] = "TEXT",
+            ["verification_status"] = "TEXT NOT NULL DEFAULT ''",
+            ["deliverable_status"] = "TEXT NOT NULL DEFAULT ''",
+            ["evaluator_version"] = "TEXT NOT NULL DEFAULT ''",
+            ["evaluated_at"] = "TEXT",
+        });
+        // v2.26.0: task rows must carry enough to reproduce live evaluation — criticality above
+        // all, because row-based evaluation previously guessed it and could disagree with the
+        // live mission object.
+        AddMissing("tasks", new()
+        {
+            ["critical"] = "INTEGER NOT NULL DEFAULT 1",
+            ["outcome_code"] = "TEXT NOT NULL DEFAULT ''",
+            ["cancellation_reason"] = "TEXT",
+        });
+        // v2.26.0: optimistic-concurrency revision for row-level skill updates (whole-registry
+        // saves were last-writer-wins across concurrent missions).
+        AddMissing("skills", new() { ["revision"] = "INTEGER NOT NULL DEFAULT 0" });
+        // v2.26.0: what KIND of signal a trail carries. Planning may only read procedural /
+        // routing categories; operational telemetry must not steer strategy.
+        AddMissing("pheromone_trails", new() { ["signal_category"] = "TEXT NOT NULL DEFAULT ''" });
         // v2.24.0: the first cut of this table stored only the risk LABEL. `QualificationMetrics`
         // counts a policy violation as "would have recommended execution while approval was
         // required" — with the approval flag unpersisted, that count could only ever rehydrate as

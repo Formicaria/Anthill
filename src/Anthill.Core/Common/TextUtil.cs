@@ -52,6 +52,11 @@ public static partial class TextUtil
         return Math.Max(1, text.Length / AnthillRuntime.TokenEstimateCharsPerToken);
     }
 
+    /// <summary>v2.26.0: the same estimate straight from a character count — callers that only
+    /// know a length must not allocate a fake string to divide it by four.</summary>
+    public static int EstimateTokenCountFromChars(int chars) =>
+        chars <= 0 ? 0 : Math.Max(1, chars / AnthillRuntime.TokenEstimateCharsPerToken);
+
     public static string CompactWhitespace(string text) =>
         MultiNewline().Replace((text ?? "").Trim(), "\n\n");
 

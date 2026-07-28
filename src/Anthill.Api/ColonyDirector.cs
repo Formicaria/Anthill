@@ -63,14 +63,22 @@ public sealed class ColonyDirector : IDisposable
 
     public bool IsRunning => _running;
 
-    /// <summary>Starts the loop. Refuses if autonomy is disabled in config. Clears the kill switch.</summary>
+    /// <summary>
+    /// Starts the loop. Refuses if autonomy is disabled in config.
+    ///
+    /// v2.26.0 pre-V3 hardening: starting the Director NEVER clears the STOP sentinel. STOP is
+    /// documented as durable with no auto-clear — yet this method called AutonomyControl.Resume(),
+    /// and the --autonomous boot path calls this method, so a process restart silently cleared an
+    /// operator STOP. Starting the process and resuming autonomous work are different acts: the
+    /// loop may start (it checks IsStopped before every mission and launches nothing while
+    /// stopped), but only an explicit operator resume clears the sentinel.
+    /// </summary>
     public bool Start()
     {
         if (!AnthillRuntime.EnableAutonomy) return false;
         lock (_lifecycleLock)
         {
             if (_running) return true;
-            AutonomyControl.Resume();
             _running = true;
             _thread = new Thread(Loop) { IsBackground = true, Name = "anthill-colony-director" };
             _thread.Start();
@@ -231,7 +239,12 @@ public sealed class ColonyDirector : IDisposable
                                      evidenceMissionId, objective, missionStatus)
             : (IReadOnlyList<Objective>)Array.Empty<Objective>();
         var enqueuedFollowUps = success
-            ? SaveFollowUps(strategy.FollowUps.Concat(evidenceFollowUps).ToList(), job.MissionId, run.Id)
+            // v2.26.0: the two follow-up sources are no longer merged into one admission path.
+            // Evidence-derived follow-ups (verified mission + structured finding + budgets) remain
+            // auto-admitted; Strategist proposals are model opinions and land as `suggested`,
+            // requiring operator approval before they can execute.
+            ? SaveFollowUps(strategy.FollowUps, job.MissionId, run.Id, suggested: true)
+              + SaveFollowUps(evidenceFollowUps, job.MissionId, run.Id, suggested: false)
             : 0;
         if (evidenceFollowUps.Count > 0)
             _queen.Memory.LogEvent(SystemMissionId, "evidence_follow_ups_created",
@@ -385,12 +398,22 @@ public sealed class ColonyDirector : IDisposable
     /// Persists Strategist-discovered follow-up objectives, stamping which mission/run created
     /// them (so mission reports can show "objectives this mission created"). Returns how many were saved.
     /// </summary>
-    private int SaveFollowUps(List<Objective> followUps, string? missionId, string runId)
+    private int SaveFollowUps(IReadOnlyList<Objective> followUps, string? missionId, string runId, bool suggested)
     {
         foreach (var fu in followUps)
         {
             if (missionId is not null) fu.Metadata["created_by_mission_id"] = missionId;
             fu.Metadata["created_by_run_id"] = runId;
+            if (suggested)
+            {
+                // v2.26.0 pre-V3 hardening: a Strategist follow-up is a model OPINION, not a
+                // proven discovery. It lands as `suggested` — visible, auditable, and NOT
+                // executable until an operator approves it (POST /objectives/{id}/approve).
+                // Evidence-derived follow-ups (verified mission + structured finding + budgets)
+                // are the only auto-admitted path.
+                fu.Status = ObjectiveStatus.Suggested;
+                fu.Metadata["origin"] = "strategist_suggestion";
+            }
             _queen.Memory.SaveObjective(fu);
         }
         return followUps.Count;
@@ -405,18 +428,22 @@ public sealed class ColonyDirector : IDisposable
         double? score = null;
         var rawScore = mission?.GetValueOrDefault("success_score");
         if (rawScore is not null && double.TryParse(rawScore.ToString(), out var s)) score = s;
-        // v2.19.0: `partial` is NOT success. This single flag drives objective EMA, follow-up
-        // creation, objective lifecycle closure, and AUTO-APPLY — so treating a partially-failed
-        // mission as successful meant partial work could automatically apply code. Every positive
-        // path now routes through MissionOutcome.IsPositiveSuccess, which admits only
-        // completed_verified.
-        var taskRows = job.MissionId is { Length: > 0 } mid
-            ? _queen.Memory.GetTasksForMission(mid, 200)
+        // v2.19.0: `partial` is NOT success. v2.26.0: the answer is now READ from the one
+        // persisted evaluation rather than re-derived from task rows — the row re-derivation
+        // could disagree with the live path (rows lacked fields like criticality), which meant
+        // objective EMA, follow-ups, closure and AUTO-APPLY keyed off a different truth than the
+        // mission that just ran. A row without a persisted evaluation is legacy: never verified.
+        var evaluation = job.MissionId is { Length: > 0 } mid ? _queen.Memory.LoadMissionEvaluation(mid) : null;
+        if (evaluation is not null)
+            return (evaluation.OutcomeCode, score, evaluation.IsPositive);
+
+        // Legacy fallback (pre-v2.26 rows only): the old derivation, and it can never be positive —
+        // a mission whose evidence predates the canonical evaluator is not retroactively promoted.
+        var taskRows = job.MissionId is { Length: > 0 } legacyMid
+            ? _queen.Memory.GetTasksForMission(legacyMid, 200)
             : new List<Dictionary<string, object?>>();
-        var verified = MissionVerification.IsSatisfiedFromRows(taskRows);
-        var outcome = MissionOutcome.ResolveFromStatusText(status, verified);
-        var success = MissionOutcome.IsPositiveSuccess(outcome);
-        return (outcome, score, success);
+        var legacyOutcome = MissionOutcome.ResolveFromStatusText(status, MissionVerification.IsSatisfiedFromRows(taskRows));
+        return (legacyOutcome, score, false);
     }
 
     private static void Backoff() => Thread.Sleep(TimeSpan.FromSeconds(AnthillRuntime.AutonomyPollSeconds));

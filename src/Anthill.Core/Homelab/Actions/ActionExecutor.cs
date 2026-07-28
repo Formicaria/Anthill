@@ -236,6 +236,10 @@ public sealed class ActionExecutor
                 $"Verification failed after execution. Recovery recommendation: {recovery.Action} — {recovery.Reason}"
                 + (recovery.SuspendsAutonomy ? " Operator review required before further automation on this target." : ""),
                 executedBy);
+            // v2.26.0 pre-V3 hardening: the RETURN is a failure. "Command issued" is not "desired
+            // state achieved" — v2.25.0 made the lifecycle say failed but still returned Ok=true,
+            // so a caller reading only the return believed the action worked.
+            return (false, proposal.ExecutionResult);
         }
         _repo.RecordChange(new ChangeRecord
         {

@@ -29,6 +29,22 @@ public static class AutoApplyRunner
     {
         if (!AnthillRuntime.AutonomyAutoApplyEnabled) return;
 
+        // v2.26.0 pre-V3 hardening: auto-apply consumes the CANONICAL persisted evaluation, at the
+        // writing site itself — not only the Director's flag. A mission without a persisted
+        // completed_verified evaluation cannot have its patches auto-applied, whatever any caller
+        // believed. Defence in depth around the one action that changes the operator's files.
+        var evaluation = queen.Memory.LoadMissionEvaluation(missionId);
+        if (evaluation is null || !evaluation.IsPositive)
+        {
+            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_skipped",
+                $"Auto-apply refused: mission {missionId} has no canonical completed_verified evaluation "
+                + $"(outcome: {evaluation?.OutcomeCode ?? "none persisted"}).",
+                antName: "director",
+                metadata: new() { ["reason"] = "not_canonically_verified", ["mission_id"] = missionId,
+                                  ["outcome_code"] = evaluation?.OutcomeCode });
+            return;
+        }
+
         // Auto-apply writes to disk — it can't do anything unless the write gates are also on.
         if (!AnthillRuntime.EnablePatchApplication || !AnthillRuntime.EnableFileWriting)
         {
@@ -107,6 +123,18 @@ public static class AutoApplyRunner
         // command, keep the applied patches instead of running (and failing) the built-in verify.
         if (!verifyCmdConfigured && AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify)
         {
+            // v2.26.0 pre-V3 hardening: this is a BREAK-GLASS development option, and using it is
+            // recorded as such — a critical event, an explicit "this installation is unqualified"
+            // statement, and NO verified-success anywhere: the kept change records no deterministic
+            // evidence, so it can never promote a skill or reinforce learning (Promotable
+            // intrinsically requires deterministic evidence), and the readiness gate reports the
+            // installation NOT QUALIFIED while the flag is on.
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_break_glass",
+                "CRITICAL: patches kept WITHOUT verification via the keep_without_verify break-glass. "
+                + "This installation is NOT V3-qualifiable while this option is enabled; the kept "
+                + "change records no verified success and reinforces no learning.",
+                antName: "director",
+                metadata: new() { ["mission_id"] = missionId, ["severity"] = "critical", ["kept_count"] = applied.Count });
             KeepApplied(queen, missionId, applied,
                 "autonomy_autoapply_kept_unverified",
                 $"Kept {applied.Count} auto-applied patch(es) WITHOUT verification " +

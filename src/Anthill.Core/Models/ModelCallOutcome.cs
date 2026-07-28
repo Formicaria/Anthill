@@ -31,6 +31,24 @@ public enum ModelCallOutcome
     Error,
 }
 
+/// <summary>
+/// v2.26.0 pre-V3 hardening: the TYPED model-call result. Providers still transport failure as
+/// in-band sentinel strings (they never throw across the ant boundary), but callers no longer
+/// branch on <c>StartsWith("ERROR:")</c> — the status is classified ONCE, here, by the same
+/// classifier the router's telemetry already records. Content survives for narrative/fallback
+/// use; the status is the authority. An Empty response is never Ok.
+/// </summary>
+public sealed record ModelCallResult(ModelCallOutcome Status, string Content)
+{
+    public bool Ok => Status == ModelCallOutcome.Ok;
+    /// <summary>Transient statuses a retry may cure (mirrors the circuit breaker's transient set).</summary>
+    public bool Retryable => Status is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError
+        or ModelCallOutcome.Empty or ModelCallOutcome.HttpError;
+
+    public static ModelCallResult From(string? response) =>
+        new(ModelCallOutcomeExtensions.Classify(response), response ?? "");
+}
+
 public static class ModelCallOutcomeExtensions
 {
     /// <summary>

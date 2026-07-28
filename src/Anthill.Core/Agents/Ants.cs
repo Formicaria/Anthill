@@ -107,7 +107,11 @@ public sealed class ResearcherAnt : BaseAnt
         _memory = memory; _tools = tools; _router = router;
     }
 
-    public override string Run(Task task, Mission mission)
+    // v2.26.0 pre-V3 hardening: the ant DECLARES its outcome at each branch instead of leaving a
+    // wrapper to guess from prose. Run() remains the narrative view of the same execution.
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
+
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var recentMemory = _memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars);
         var relevantMemory = _memory.FormatRelevantMemory(mission.Goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars);
@@ -122,8 +126,12 @@ public sealed class ResearcherAnt : BaseAnt
         rawContext = TextUtil.Truncate(rawContext, AnthillRuntime.MaxContextPacketChars, "...[research context truncated]");
 
         if (_router is null || !AnthillRuntime.UseOllama)
-            return "Researcher Ant summarized local context without LLM routing.\n\n" + rawContext +
+        {
+            // Configured-offline mode: the local summary IS the deliverable — a plain success.
+            var offline = "Researcher Ant summarized local context without LLM routing.\n\n" + rawContext +
                    $"\n\nResearch Finding:\nANTHILL v{AnthillRuntime.Version} supports read-only external research when web search is enabled.";
+            return TextResult(Name, offline);
+        }
 
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: researcher | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
@@ -143,10 +151,21 @@ Return format:
 - Pheromone Guidance:
 - Research Need:
 ";
-        var response = _router.Generate("researcher", prompt, mission.Id, task.Id, Name);
-        return response.StartsWith("ERROR:")
-            ? "Researcher routed model unavailable. Fallback context brief:\n\n" + rawContext
-            : response;
+        var call = _router.GenerateTyped("researcher", prompt, mission.Id, task.Id, Name);
+        if (call.Status == Models.ModelCallOutcome.Empty)
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                "Researcher: routed model returned an empty response.");
+        if (!call.Ok)
+        {
+            // The provider failed but the local context is genuinely useful — succeeded WITH the
+            // degradation disclosed as a structured warning, not silently as ordinary success and
+            // not a task failure that would discard usable context.
+            var fallback = "Researcher routed model unavailable. Fallback context brief:\n\n" + rawContext;
+            return AntExecutionResult.SucceededWithWarnings(
+                "Researcher fell back to a local context brief (routed model unavailable).",
+                new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" }, fallback);
+        }
+        return TextResult(Name, call.Content);
     }
 
     private static bool ShouldInspectWorkspace(Task task, Mission mission)
@@ -168,7 +187,11 @@ Return format:
 /// </summary>
 public sealed class SourceQualityEngine
 {
-    private static readonly HashSet<string> RecentHints = new() { "2026", "2025", "latest", "current", "release", "updated", "today", "recent" };
+    // v2.26.0: recency years derive from the CLOCK — hard-coded "2025"/"2026" would rot into
+    // staleness hints the moment the calendar moved on.
+    private static readonly HashSet<string> RecentHints = new(
+        new[] { "latest", "current", "release", "updated", "today", "recent" }
+            .Concat(new[] { AnthillTime.NowUtc().Year.ToString(), (AnthillTime.NowUtc().Year - 1).ToString() }));
     private static readonly HashSet<string> StaleHints = new() { "2019", "2018", "2017", "2016", "2015", "archived", "deprecated" };
 
     public Dictionary<string, object?> Score(string goal, string title, string url, string snippet)
@@ -229,11 +252,17 @@ public sealed class WebResearchAnt : BaseAnt
         _memory = memory; _tools = tools; _router = router;
     }
 
-    public override string Run(Task task, Mission mission)
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
+
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
+        // v2.26.0: each terminal below declares its own class — an exhausted budget is a SKIP, a
+        // provider failure is retryable, zero usable sources is NOT an ordinary success. "Search
+        // ran but saved nothing" used to read as a completed research task.
         var existingSources = _memory.CountSourcesForMission(mission.Id);
         if (existingSources >= AnthillRuntime.MaxSourcesPerMission)
-            return $"WebResearchAnt skipped search because the mission source budget is exhausted.\nMission Sources: {existingSources}/{AnthillRuntime.MaxSourcesPerMission}";
+            return AntExecutionResult.Skipped(
+                $"Web search skipped: mission source budget exhausted ({existingSources}/{AnthillRuntime.MaxSourcesPerMission}).");
 
         var existingSearches = _memory.CountWebSearchAttemptsForMission(mission.Id);
         if (existingSearches >= AnthillRuntime.MaxWebSearchesPerMission)
@@ -241,8 +270,13 @@ public sealed class WebResearchAnt : BaseAnt
             _memory.LogEvent(mission.Id, "web_search_budget_exhausted",
                 "WebResearchAnt skipped search because the mission web-search attempt budget is exhausted.", task.Id, Name,
                 new() { ["web_search_attempts"] = existingSearches, ["max_web_searches_per_mission"] = AnthillRuntime.MaxWebSearchesPerMission });
-            return $"WebResearchAnt skipped search because the mission web-search attempt budget is exhausted.\nWeb Searches: {existingSearches}/{AnthillRuntime.MaxWebSearchesPerMission}";
+            return AntExecutionResult.Skipped(
+                $"Web search skipped: attempt budget exhausted ({existingSearches}/{AnthillRuntime.MaxWebSearchesPerMission}).");
         }
+
+        if (!AnthillRuntime.EnableWebSearch)
+            return AntExecutionResult.Blocked(
+                "Web search is disabled (web_search_enabled=false) — external research cannot run.");
 
         var query = BuildQuery(task, mission);
         _memory.LogEvent(mission.Id, "web_search_attempted", "WebResearchAnt requested read-only external research.", task.Id, Name,
@@ -251,7 +285,8 @@ public sealed class WebResearchAnt : BaseAnt
         var result = _tools.RunTool("web_search", mission.Id, task.Id, Name,
             new() { ["query"] = query, ["max_results"] = Math.Min(AnthillRuntime.MaxWebResults, AnthillRuntime.MaxSourcesPerSearch) });
         if (!result.Success)
-            return $"WebResearchAnt could not perform external research.\nQuery: {query}\nError: {result.Error}\nNote: Enable web search to allow read-only web research.";
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                $"Web search provider failed for query '{TextUtil.Truncate(query, 120)}': {TextUtil.Truncate(result.Error ?? "unknown error", 300)}");
 
         JsonElement payload;
         try { payload = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement; }
@@ -306,7 +341,12 @@ public sealed class WebResearchAnt : BaseAnt
         if (savedSources.Count == 0)
         {
             var preview = payload.TryGetProperty("preview", out var p) ? p.GetString() ?? "No parsed search results returned." : "No parsed search results returned.";
-            return $"WebResearchAnt ran query but saved no source records.\nQuery: {query}\nSkipped: {skipped}\nPreview:\n{TextUtil.Truncate(preview, 1000)}";
+            // The search RAN and produced nothing usable. That is a failed research task — the
+            // deliverable (saved sources) does not exist — and retryable, because a different
+            // provider window may answer. It must never read as ordinary success.
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                $"Search ran but saved zero usable sources (query '{TextUtil.Truncate(query, 120)}', {skipped} skipped/filtered). "
+                + $"Preview: {TextUtil.Truncate(preview, 300)}");
         }
 
         var lines = new List<string>
@@ -315,7 +355,15 @@ public sealed class WebResearchAnt : BaseAnt
         };
         lines.AddRange(savedSources.Select(src =>
             $"Source ID: {src.Id}\nTitle: {src.Title}\nDomain: {src.Domain}\nConfidence: {src.ConfidenceLabel} ({src.ConfidenceScore})\nURL: {src.Url}\nSummary: {src.Summary}"));
-        return string.Join("\n\n---\n\n", lines);
+        var narrative = string.Join("\n\n---\n\n", lines);
+
+        // Sourced research succeeded; uniformly low-confidence sources succeed WITH the caveat
+        // disclosed — advisory quality, never silently equated with proven truth.
+        var allLow = savedSources.All(src => src.ConfidenceScore < 0.55);
+        return allLow
+            ? AntExecutionResult.SucceededWithWarnings($"Saved {savedSources.Count} source record(s), all low-confidence.",
+                new[] { "low_confidence_sources: every saved source scored below 0.55 heuristic confidence" }, narrative)
+            : TextResult(Name, narrative);
     }
 
     private static string BuildQuery(Task task, Mission mission) =>
@@ -350,14 +398,20 @@ public sealed partial class FileAnt : BaseAnt
     private readonly ToolRegistry _tools;
     public FileAnt(ToolRegistry tools) : base("file") => _tools = tools;
 
-    public override string Run(Task task, Mission mission)
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
+
+    // v2.26.0: an inspection whose every tool call failed is a FAILED inspection, not a successful
+    // narrative about failure. Partial read failures and paths-not-found are disclosed as warnings.
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var directoryResult = _tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." });
         var candidatePaths = ShouldAttemptFileReads(task, mission) ? ExtractCandidatePaths(task, mission) : new List<string>();
         var fileReports = new List<string>();
+        int readsOk = 0, readsFailed = 0;
         foreach (var path in candidatePaths.Take(AnthillRuntime.MaxFileAntFilesToRead))
         {
             var readResult = _tools.RunTool("read_text_file", mission.Id, task.Id, Name, new() { ["path"] = path });
+            if (readResult.Success) readsOk++; else readsFailed++;
             fileReports.Add(readResult.Success
                 ? $"File: {path}\nRead Success: True\nContent:\n{readResult.Output}"
                 : $"File: {path}\nRead Success: False\nError:\n{readResult.Error}");
@@ -365,10 +419,28 @@ public sealed partial class FileAnt : BaseAnt
         if (fileReports.Count == 0)
             fileReports.Add("FileAnt did not identify specific readable file paths. It only listed workspace structure.");
 
-        return $"FileAnt performed safe read-only workspace inspection.\n\nMission:\n{mission.Goal}\n\nAssigned Task:\n{task.Description}\n\n" +
+        var narrative = $"FileAnt performed safe read-only workspace inspection.\n\nMission:\n{mission.Goal}\n\nAssigned Task:\n{task.Description}\n\n" +
                $"Workspace Listing:\nSuccess: {directoryResult.Success}\n{(directoryResult.Success ? directoryResult.Output : directoryResult.Error)}\n\n" +
                $"File Read Reports:\n{string.Join("\n\n---\n\n", fileReports)}" +
                "\n\nFileAnt did not write, modify, delete, execute, or patch any files.";
+
+        // Every tool call failed — listing AND all attempted reads. Nothing was inspected.
+        if (!directoryResult.Success && candidatePaths.Count > 0 && readsOk == 0)
+            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+                $"Workspace inspection failed: the directory listing and all {readsFailed} file read(s) failed. "
+                + $"Listing error: {TextUtil.Truncate(directoryResult.Error ?? "unknown", 200)}");
+        if (!directoryResult.Success && candidatePaths.Count == 0)
+            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+                $"Workspace inspection failed: the directory listing failed and no file paths were identified. "
+                + $"Listing error: {TextUtil.Truncate(directoryResult.Error ?? "unknown", 200)}");
+
+        var warnings = new List<string>();
+        if (readsFailed > 0) warnings.Add($"partial_read_failures: {readsFailed} of {readsOk + readsFailed} file read(s) failed");
+        if (candidatePaths.Count == 0 && ShouldAttemptFileReads(task, mission))
+            warnings.Add("no_target_paths: the mission suggested file reads but named no identifiable paths — listing only");
+        return warnings.Count > 0
+            ? AntExecutionResult.SucceededWithWarnings($"Workspace inspected: listing ok, {readsOk} read(s) ok, {readsFailed} failed.", warnings, narrative)
+            : TextResult(Name, narrative);
     }
 
     private static bool ShouldAttemptFileReads(Task task, Mission mission)
@@ -410,11 +482,23 @@ public sealed class CoderAnt : BaseAnt
     private readonly ModelRouter? _router;
     public CoderAnt(bool useOllama, ModelRouter? router) : base("coder") { _useOllama = useOllama; _router = router; }
 
-    public override string Run(Task task, Mission mission)
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
+
+    // v2.26.0: a file-change task that returns zero proposals is NOT a success — the coder exists
+    // to produce patches. Classification is by parsing the coder's OWN JSON artifact (counting its
+    // proposals), never by reading intent out of narrative prose.
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
+        var constraints = MissionConstraints.Parse(mission.Goal);
+        if (constraints.BlocksPatches)
+            return AntExecutionResult.Blocked(
+                "Coder admitted to a read-only / no-patch mission — the planner must not assign coder tasks here, "
+                + "and the coder refuses rather than proposing changes the operator forbade.");
+
         var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars));
         if (!_useOllama || _router is null)
-            return FallbackPatchJson("CoderAnt fallback mode produced no patch proposals because model routing/LLM generation is unavailable.");
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
 
         // v2.11.1: when the sandbox gate is on, iterate inside a disposable sandbox (propose ->
         // apply IN THE SANDBOX -> build -> refine on failure) and return proposals that verified —
@@ -423,13 +507,44 @@ public sealed class CoderAnt : BaseAnt
         if (AnthillRuntime.EnableSandboxExecution)
         {
             var sandboxed = TryRunSandboxed(task, mission, codeContext);
-            if (sandboxed is not null) return sandboxed;
+            if (sandboxed is not null) return ClassifyPatchJson(sandboxed);
         }
 
-        var response = _router.Generate("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name);
-        return response.StartsWith("ERROR:")
-            ? FallbackPatchJson($"CoderAnt could not reach the routed model, so no patch proposals were created. Model error: {response}")
-            : response;
+        var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name);
+        if (!call.Ok)
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
+        return ClassifyPatchJson(call.Content);
+    }
+
+    /// <summary>Classify the coder's own JSON artifact by its proposal count: proposals → success;
+    /// well-formed but empty → failed (the deliverable does not exist — an intentionally empty
+    /// result must say so in its summary); unparseable → failed (malformed output).</summary>
+    internal static AntExecutionResult ClassifyPatchJson(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                "Coder: routed model returned an empty response.");
+        try
+        {
+            var parsed = Json.ExtractJsonObject(response);
+            var count = parsed["proposals"] is System.Text.Json.Nodes.JsonArray arr ? arr.Count : 0;
+            if (count > 0)
+                return AntExecutionResult.Succeeded($"Coder produced {count} patch proposal(s).", response) with
+                {
+                    Artifacts = new List<AntArtifact> { new("patch_json", "coder patch proposals", response) },
+                    Metrics = new AntMetrics { OutputChars = response.Length },
+                };
+            var summary = parsed["summary"]?.GetValue<string>() ?? "";
+            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
+                $"Coder returned zero patch proposals for a patch task. Coder's stated reason: "
+                + $"{TextUtil.Truncate(summary.Length > 0 ? summary : "(none given)", 300)}");
+        }
+        catch
+        {
+            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
+                $"Coder returned malformed patch output (not parseable JSON): {TextUtil.Truncate(response, 200)}");
+        }
     }
 
     /// <summary>Runs the bounded sandbox loop for this coder task. Returns the coder's best patch
@@ -552,10 +667,13 @@ public sealed class BuilderAnt : BaseAnt
     private readonly ModelRouter? _router;
     public BuilderAnt(bool useOllama, ModelRouter? router) : base("builder") { _useOllama = useOllama; _router = router; }
 
-    public override string Run(Task task, Mission mission)
+    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
+
+    public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars));
-        if (!_useOllama || _router is null) return FallbackResponse(task, mission, previousContext);
+        // Configured-offline: the static response IS the configured behaviour — plain success.
+        if (!_useOllama || _router is null) return TextResult(Name, FallbackResponse(task, mission, previousContext));
 
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: builder | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
@@ -585,10 +703,18 @@ Rules:
 - Explain that approved patches can be applied with /apply <approval_id> only if config write gates are enabled.
 - Mention that ANTHILL supports dependency-aware parallel execution, FTS memory search, and role-based model routing.
 ";
-        var response = _router.Generate("builder", prompt, mission.Id, task.Id, Name);
-        return response.StartsWith("ERROR:")
-            ? $"{response}\n\nFallback Builder Response:\n{FallbackResponse(task, mission, previousContext)}"
-            : response;
+        var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name);
+        if (call.Status == Models.ModelCallOutcome.Empty)
+            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+                "Builder: routed model returned an empty response.");
+        if (!call.Ok)
+            // v2.26.0: the fallback still answers, but degraded generation is DISCLOSED as a
+            // structured warning rather than buried in the prose.
+            return AntExecutionResult.SucceededWithWarnings(
+                "Builder fell back to a non-LLM response (routed model unavailable).",
+                new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" },
+                $"{call.Content}\n\nFallback Builder Response:\n{FallbackResponse(task, mission, previousContext)}");
+        return TextResult(Name, call.Content);
     }
 
     private static string FallbackResponse(Task task, Mission mission, string previousContext) =>
