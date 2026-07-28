@@ -44,6 +44,17 @@ Close V2 cleanly and create a measured baseline before changing the runtime arch
 - CI green on Linux, Windows, publish/self-test, Docker, UI, and LXC checks.
 - No new feature behavior in this release.
 
+### Exit Gate Record — SHIPPED v3.0.0
+
+| Gate | Result |
+|---|---|
+| One canonical V3 document set | **PASS** — `docs/NORTH_STAR.md` + `docs/ROADMAP.md` canonical; nine V2 planning docs archived at `docs/archive/v2/` with a closing-release map. |
+| Zero declaration-without-call-site defects | **PASS** — 300 declarations inventoried (25 roles, 54 gates, 166 endpoints, 48 tables, 7 loops); one orphan found (`cors_enabled`) and removed; `CallSiteAudit` gates CI in both directions; exemption list empty. |
+| Behavior captured by characterization tests | **PASS** — `CharacterizationTests` pins the mission-outcome truth table, verdict vocabulary, three-way skill-outcome split, pheromone signal categories, constraint parsing, action-state mapping, ant status mapping. |
+| Clean upgrade from the latest V2 database | **PASS (inferred)** — no schema change in this release; schema 16 loads unchanged. Verified against fresh databases only; **not yet exercised against a populated production database.** Recorded as an inference, not a measurement. |
+| CI green across all checks | **PASS** — full `validate.ps1` green. |
+| No new feature behavior | **PASS** — the only behavioural deltas are removals: the dead `cors_enabled` gate, a duplicate deadline call, and a Python-era source-authority default. `GET /runtime/inventory` exposes existing state; it adds no capability. |
+
 ## v3.1.0 - Runtime Composition and Queen Decomposition
 
 ### Goal
@@ -323,8 +334,8 @@ A phase is not complete when its code merges. It is complete when its intended w
 | First action | Status |
 |---|---|
 | 1. Adopt the V3 document set; archive V2 planning docs | **Done** — V2 docs at `docs/archive/v2/`; this document and `docs/NORTH_STAR.md` are canonical. |
-| 2. Open the v3.0.0 baseline-lock tracking issue | Pending operator |
-| 3. Generate the runtime inventory + call-site audit | Pending (v3.0.0 work) |
-| 4. ADRs for Queen decomposition and `MissionContext` | Pending (v3.0.0 work) |
-| 5. Characterization tests around the v2.26.0 lifecycle | Pending (v3.0.0 work) |
+| 2. Open the v3.0.0 baseline-lock tracking issue | Pending operator (acceptance criteria are the Exit Gate Record above) |
+| 3. Generate the runtime inventory + call-site audit | **Done — shipped in v3.0.0.** `RuntimeInventory` + `CallSiteAudit`, CI-gating, 300 declarations, exemption list empty. Found and removed the dead `cors_enabled` gate. |
+| 4. ADRs for Queen decomposition and `MissionContext` | **Done — shipped in v3.0.0.** Five ADRs in `docs/adr/`, each written before the phase it governs, each naming what was explicitly rejected. |
+| 5. Characterization tests around the v2.26.0 lifecycle | **Done — shipped in v3.0.0.** `CharacterizationTests` pins the outcome truth table, verdict vocabulary, skill-outcome split, signal categories, constraint parsing, action-state mapping, and ant status mapping. |
 | 6. Freeze new ant and homelab feature work | **In force** from adoption until v3.0.0 closes |

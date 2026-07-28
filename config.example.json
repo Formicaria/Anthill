@@ -16,7 +16,6 @@
   "api_port":             8713,
   "api_auth_enabled":     true,
   "api_token_env":        "ANTHILL_API_TOKEN",
-  "cors_enabled":         false,
 
   "api_job_workers":           1,
   "parallel_execution_enabled": true,

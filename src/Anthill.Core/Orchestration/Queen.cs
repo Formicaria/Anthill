@@ -122,7 +122,6 @@ public sealed partial class Queen : IDisposable
         // completion while the mission proceeded to finalization without them. MissionStopReason
         // checks the clock before the token, so a deadline cancellation still reports as timeout.
         missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
-        missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
         using var modelScope = ModelCallScope.Enter(missionCts.Token);
         var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
         LastMissionId = mission.Id;
