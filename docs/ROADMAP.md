@@ -4,6 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
+**Latest:** v3.0.1 — generation-integrity mission scoring: a model-unavailable / all-fallback run can no longer report `completed_verified` (found by live end-to-end testing; additive, default-safe).
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 

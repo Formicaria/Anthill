@@ -4,6 +4,9 @@ using Anthill.Core.Homelab;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Integrations.Arr;
 using Anthill.Core.Integrations.Download;
+using Anthill.Core.Integrations.MediaRequests;
+using Anthill.Core.Integrations.Media;
+using Anthill.Core.Integrations.Monitoring;
 
 namespace Anthill.Api;
 
@@ -27,6 +30,11 @@ public static partial class ApiHost
         // SABnzbd/NZBGet) register into the same catalog; the generic sync job below sweeps them
         // too — no per-kind wiring, endpoints, or UI pages.
         DownloadIntegrationDefinition.RegisterAll();
+        // v3.0.1 Homarr-parity: media-request servers (Overseerr/Jellyseerr) register into the same
+        // catalog and are swept by the generic sync job — no per-kind endpoints or UI pages.
+        OverseerrIntegrationDefinition.RegisterAll();
+        PlexIntegrationDefinition.RegisterAll();
+        UptimeKumaIntegrationDefinition.RegisterAll();
         HomelabArr = new IntegrationSyncProvider(Homelab, HomelabTargets,
             credId => HomelabCredentials.GetSecret(credId, usedBy: "IntegrationSyncProvider"));
         if (AnthillRuntime.EnableHomelab)

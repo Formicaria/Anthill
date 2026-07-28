@@ -92,7 +92,13 @@ public static class MissionEvaluator
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
 
-        var outcome = Resolve(structuralStatus: mission.Status, stopReason, verification, deliverable);
+        // Generation-integrity layer (v3.0.1): if the answer was produced by a DEGRADED (non-model)
+        // fallback because the routed model was unavailable, the mission cannot be a verified
+        // success. A fallback/ungrounded deliverable must not score as completed_verified — this is
+        // what stopped an all-fallback (provider-down) run from reporting a perfect completion.
+        var generationDegraded = mission.Tasks.Any(t => t.GenerationDegraded);
+
+        var outcome = Resolve(mission.Status, stopReason, verification, deliverable, generationDegraded);
         return new MissionEvaluation(
             MissionId: mission.Id,
             OutcomeCode: outcome,
@@ -102,11 +108,11 @@ public static class MissionEvaluator
             StopReason: string.IsNullOrWhiteSpace(stopReason) ? null : stopReason,
             EvaluatorVersion: Version,
             EvaluatedAt: AnthillTime.NowUtc().ToIso(),
-            Explanation: Explain(outcome, structural, verification, deliverable, stopReason));
+            Explanation: Explain(outcome, structural, verification, deliverable, stopReason, generationDegraded));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,
-        string verification, string deliverable)
+        string verification, string deliverable, bool generationDegraded)
     {
         // An interrupted mission is never completed, whatever the tasks say.
         if (stopReason == "mission_cancelled") return MissionOutcome.Cancelled;
@@ -120,12 +126,14 @@ public static class MissionEvaluator
         // and applicable). NotSatisfied is the only deliverable state that demotes — a disabled
         // layer keeps pre-v2.26 behaviour, and is visible as "not_checked" rather than hidden.
         var verified = verification == MissionEvaluation.Verification.Passed
-                       && deliverable != MissionEvaluation.Deliverable.NotSatisfied;
+                       && deliverable != MissionEvaluation.Deliverable.NotSatisfied
+                       && !generationDegraded;
         return verified ? MissionOutcome.CompletedVerified : MissionOutcome.CompletedUnverified;
     }
 
     private static string Explain(string outcome, string structural, string verification,
-        string deliverable, string? stopReason) =>
+        string deliverable, string? stopReason, bool generationDegraded) =>
         $"outcome={outcome} (structural={structural}, verification={verification}, "
-        + $"deliverable={deliverable}{(stopReason is null ? "" : $", stop={stopReason}")})";
+        + $"deliverable={deliverable}{(generationDegraded ? ", generation=degraded" : "")}"
+        + $"{(stopReason is null ? "" : $", stop={stopReason}")})";
 }

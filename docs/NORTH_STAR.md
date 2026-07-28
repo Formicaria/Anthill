@@ -2,7 +2,7 @@
 
 ## Colony Execution Infrastructure
 
-**Baseline:** v2.26.0 · **Shipping release: v3.0.0** (baseline lock)
+**Baseline:** v2.26.0 · **Shipping release: v3.0.1** (v3.0.0 baseline lock + generation-integrity scoring fix)
 **Target:** V4 Autonomous Software Engineering Colony
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 **Document version:** 1.0
