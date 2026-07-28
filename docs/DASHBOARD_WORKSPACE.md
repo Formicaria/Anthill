@@ -10,6 +10,9 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v2.26.0 note: no new dashboard surface — a hardening release. Config-health findings and
+> introspection are API-first (`/config/health`, `/colony/introspection`); job statuses gain
+> `timed_out` (mapped from the canonical mission outcome, so status can never contradict it).
 > v2.25.0 note: **Homelab → Automation** runs now read as a conversation (the v2.16.0 "Next:"
 > item): what the rule noticed, then what the colony did about it, in plain English — cooldown and
 > cap skips read as deliberate quiet, because restraint is the engine working. The raw outcome

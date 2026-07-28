@@ -17,6 +17,9 @@ public sealed class Skill
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     [JsonPropertyName("version")] public int Version { get; set; } = 1;
+    /// <summary>v2.26.0: bumped on every recorded outcome — the optimistic-concurrency marker for
+    /// row-level persistence, so concurrent recordings are visible as distinct revisions.</summary>
+    [JsonPropertyName("revision")] public int Revision { get; set; }
     [JsonPropertyName("purpose")] public string Purpose { get; set; } = "";
     /// <summary>Environment fingerprints this skill has been proven against (e.g. "proxmox-8",
     /// "dotnet-9"). Empty = unproven anywhere; a skill is never used outside its coverage.</summary>
@@ -94,9 +97,22 @@ public sealed class SkillRegistry
     /// (all required verifiers passed, deterministic evidence present) — a "completed" mission with
     /// no proof is not a success and cannot advance a skill. Returns the resulting status.
     /// </summary>
+    // v2.26.0: one registry is shared across concurrent missions — outcome recording is
+    // serialized so two finalizations cannot interleave count/status updates on the same skill.
+    private readonly object _recordLock = new();
+
     public SkillStatus RecordOutcome(string id, VerificationBundle? bundle, string environment = "", string? note = null)
     {
+        lock (_recordLock)
+        {
+            return RecordOutcomeLocked(id, bundle, environment, note);
+        }
+    }
+
+    private SkillStatus RecordOutcomeLocked(string id, VerificationBundle? bundle, string environment, string? note)
+    {
         var skill = Get(id) ?? RegisterCandidate(id, "(auto-registered from outcome)");
+        skill.Revision++;
         if (skill.Status is SkillStatus.Blocked or SkillStatus.Retired)
         {
             skill.Notes.Add($"outcome ignored — skill is {skill.Status}");
@@ -104,6 +120,18 @@ public sealed class SkillRegistry
         }
 
         var verified = bundle is { Promotable: true };
+        // v2.26.0: a canonically verified mission whose evidence is semantic-only is NOT proof the
+        // skill worked — but it is not evidence the skill failed either. Punishing it would teach
+        // the registry that honest, verifier-passing missions are failures. It records as a
+        // NEUTRAL observation: a note, no count movement, no status change.
+        if (!verified && bundle is not null && bundle.BlockedReasons.Count == 0
+            && bundle.Required.Count > 0
+            && bundle.Required.All(r => bundle.Results.Any(x => x.Verifier == r && x.Passed))
+            && !bundle.HasDeterministicEvidence)
+        {
+            skill.Notes.Add(note ?? $"neutral observation — verified without deterministic evidence: {bundle.Explain()}");
+            return skill.Status;
+        }
         if (verified)
         {
             skill.SuccessCount++;

@@ -34,15 +34,16 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO skills (id, version, purpose, environments_json, required_capabilities_json,
                       procedure_json, verification_policy, compensation_plan, success_count, failure_count,
-                      consecutive_failures, status, last_validated, evidence_bundles_json, notes_json, saved_at)
+                      consecutive_failures, status, last_validated, evidence_bundles_json, notes_json, saved_at,
+                      revision)
                   VALUES (@id, @ver, @purpose, @envs, @caps, @proc, @vpolicy, @comp, @sc, @fc, @cf, @status,
-                      @validated, @bundles, @notes, @saved)
+                      @validated, @bundles, @notes, @saved, @rev)
                   ON CONFLICT(id) DO UPDATE SET
                       version=@ver, purpose=@purpose, environments_json=@envs,
                       required_capabilities_json=@caps, procedure_json=@proc, verification_policy=@vpolicy,
                       compensation_plan=@comp, success_count=@sc, failure_count=@fc,
                       consecutive_failures=@cf, status=@status, last_validated=@validated,
-                      evidence_bundles_json=@bundles, notes_json=@notes, saved_at=@saved",
+                      evidence_bundles_json=@bundles, notes_json=@notes, saved_at=@saved, revision=@rev",
                 ("@id", skill.Id), ("@ver", skill.Version), ("@purpose", skill.Purpose),
                 ("@envs", Json.SafeDumps(skill.Environments)),
                 ("@caps", Json.SafeDumps(skill.RequiredCapabilities)),
@@ -53,7 +54,7 @@ public sealed partial class SqliteMemory
                 ("@validated", skill.LastValidated),
                 ("@bundles", Json.SafeDumps(skill.EvidenceBundleIds)),
                 ("@notes", Json.SafeDumps(skill.Notes)),
-                ("@saved", AnthillTime.NowUtc().ToIso()));
+                ("@saved", AnthillTime.NowUtc().ToIso()), ("@rev", skill.Revision));
         }
         InvalidateCache();
     }
@@ -62,7 +63,8 @@ public sealed partial class SqliteMemory
     public List<Skill> LoadSkills() =>
         Query(@"SELECT id, version, purpose, environments_json, required_capabilities_json, procedure_json,
                     verification_policy, compensation_plan, success_count, failure_count,
-                    consecutive_failures, status, last_validated, evidence_bundles_json, notes_json
+                    consecutive_failures, status, last_validated, evidence_bundles_json, notes_json,
+                    revision
                 FROM skills ORDER BY id")
             .Select(ToSkill).ToList();
 
@@ -88,6 +90,7 @@ public sealed partial class SqliteMemory
     {
         Id = row.GetValueOrDefault("id")?.ToString() ?? "",
         Version = (int)AsLong(row.GetValueOrDefault("version")),
+        Revision = (int)AsLong(row.GetValueOrDefault("revision")),
         Purpose = row.GetValueOrDefault("purpose")?.ToString() ?? "",
         Environments = Json.TryParseStringList(row.GetValueOrDefault("environments_json") as string),
         RequiredCapabilities = Json.TryParseStringList(row.GetValueOrDefault("required_capabilities_json") as string),

@@ -1,5 +1,113 @@
 # ANTHILL Changelog
 
+## v2.26.0 — Pre-V3 runtime hardening
+
+An external engineering deep-dive audited the repo before V3. Every claim was verified against the
+code first (docs/PRE_V3_RUNTIME_HARDENING.md records confirmed / already-fixed / invalid, item by
+item); every confirmed defect is fixed here, under one governing principle: **one outcome, one
+verification authority, one durable stop, one task lifecycle, one learning boundary, one action
+lifecycle.** This is a hardening release — nothing here makes ANTHILL more autonomous; all of it
+makes the autonomy it already has believable.
+
+### One outcome — the canonical mission evaluation
+
+Six call sites independently re-derived whether a mission succeeded, and they could disagree —
+task rows lacked fields the live path used, and one caller (v2.23's route registration) resolved
+the outcome mid-mission while status was still `Running`, always read negative, and **never
+registered a single route in production**. A mission is now evaluated exactly once at finalization
+(`MissionEvaluator`), across three explicit layers — structural completion, verdict-gated
+verification, goal deliverable — persisted on the mission row (migration 16) BEFORE completion is
+published, and consumed by every positive path: Director outcome/EMA/follow-ups, auto-apply (which
+also re-checks at the writing site), skill credit, pheromone learning, candidate routes, job
+status, restored-mission listing. Rows that predate the evaluation are `legacy`: never verified,
+never retroactively promoted. An interrupted mission is never any flavour of completed.
+
+### One verification authority
+
+`VerificationBundle.Promotable` now intrinsically requires a passing deterministic result — the
+requirement used to live in a separate flag callers had to remember, and the one that mattered
+didn't: Queen fabricated `Passed: true, Deterministic: false` mission evidence from a model's own
+verdict and used it for skill credit. That path is gone. A canonically verified mission whose
+evidence is semantic-only records a NEUTRAL skill observation — no promotion, and no punishment
+either.
+
+### One durable stop
+
+`ColonyDirector.Start()` called `AutonomyControl.Resume()` — and `--autonomous` boot calls
+`Start()`, so a process restart silently cleared a durable operator STOP. Starting the Director
+process and resuming autonomous work are now different acts: the loop starts (status and resume
+endpoints work), launches nothing while STOP exists, and only the explicit operator resume at
+`POST /autonomy/start` clears the sentinel, audited. Restart tests prove the sequence.
+
+### One task lifecycle
+
+On mission timeout/cancel the parallel executor returned immediately while `Task.Run` futures
+were still executing — a terminal mission could contain running tasks. The mission deadline now
+CANCELS the mission token (reaching every in-flight model call), a bounded drain waits for
+in-flight work and marks non-terminating tasks with persisted cancellation reasons, and
+finalization asserts no task is left non-terminal (violation = logged internal runtime defect,
+fail closed). Task rows persist criticality and cancellation reasons (migration 16) so row-based
+evaluation can never disagree with live state. API jobs map their status FROM the canonical
+outcome — `status=complete, outcome=timed_out` is no longer possible.
+
+### Concurrency correctness
+
+The Planner held the offered-skill set in an instance field on a planner shared across concurrent
+missions — plans could cross-contaminate skill provenance. It is stateless now (a deterministic
+interleaved-parse test pins it). Skill outcome recording is serialized, skills persist
+row-atomically with a `revision` column, and mission finalization saves only the skills it
+touched — whole-registry last-writer-wins saves are gone from the credit path.
+
+### Core ants declare their outcomes
+
+Researcher, Web, File, Coder and Builder implement explicit `Execute`: an exhausted search budget
+is a SKIP; a search that saved zero sources is a FAILURE, not an ordinary success; an inspection
+whose every tool call failed FAILS; a zero-proposal coder run on a patch task FAILS (classified by
+parsing the coder's own JSON artifact, never its prose); fallbacks disclose degraded generation as
+structured warnings. Model calls return typed results (`ModelCallResult` over the classifier the
+telemetry already used); an empty response is never success.
+
+### One learning boundary
+
+Pheromone writes now carry a `signal_category` stamped in the one write path
+(operational_telemetry / reliability_signal / quality_signal / procedural_learning /
+routing_preference), and PLANNING reads only the learning-bearing categories — a provider
+answering HTTP 200 is telemetry, not strategy. Positive reinforcement consumes the canonical
+evaluation. Strategist follow-up objectives land as `suggested` — model opinions, visible and
+auditable, executable only after `POST /objectives/{id}/approve`; evidence-derived follow-ups
+(verified mission + structured finding + budgets) remain the only auto-admitted path.
+
+### One action lifecycle, completed
+
+v2.25.0 made a failed post-execution verify canonically `failed` but still returned `Ok=true`.
+The return is now a failure: "command issued" is not "desired state achieved".
+
+### Auto-apply break-glass
+
+`autonomy_autoapply_keep_without_verify` is now explicitly a development break-glass: using it
+logs a critical event, the readiness evaluation reports the installation NOT QUALIFIED while it is
+enabled (a measured disqualifier, not an attestation), and a kept-unverified change can never
+record verified success or reinforce learning.
+
+### Operability
+
+`/config/health` + startup events surface incompatible feature combinations (adaptive repair
+without Medic, handoffs with no destinations, auto-apply without deliverable verification, sandbox
+without workspace) — degraded loudly, never silently. `/colony/introspection` answers what the
+colony IS from live registries and gates, never from memory search. `POST
+/readiness/qualification-report` writes `data/reports/v3-qualification.{json,md}` from measured
+results only; a critical config finding forces NOT QUALIFIED regardless of every other gate.
+
+### Performance corrections
+
+Token estimation no longer allocates megabyte throwaway strings to divide a length by four.
+`journal_mode=WAL` is set once at initialization instead of on every connection. Pre-mission
+full-database backups are interval-based (`BackupMinIntervalMinutes`, default 6h) instead of
+unconditional; migration and auto-apply paths keep unconditional backups. Hard-coded freshness
+years ("2025"/"2026") derive from the clock.
+
+Schema 16. All additive; no data deleted or reset. Rollback to v2.25.0 reads the same tables.
+
 ## v2.25.0 — V2 closes
 
 The last four items from every roadmap — NORTH_STAR, ROADMAP, REMAINING_WORK — in one closeout

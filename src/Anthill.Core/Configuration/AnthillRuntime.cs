@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "2.25.0";
-    public const int SchemaVersion = 15;   // v2.25.0: fault_injection_runs
+    public const string Version = "2.26.0";
+    public const int SchemaVersion = 16;   // v2.26.0: persisted mission evaluation + task lifecycle + skill revisions
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
@@ -116,6 +116,12 @@ public static class AnthillRuntime
     public const int MinDynamicTasks = 3;
     public const int MaxDynamicTasks = 7;
     public const int MaxMissionSeconds = 600;
+    /// <summary>v2.26.0: bounded shutdown grace after mission cancel/timeout — how long in-flight
+    /// tasks get to observe cancellation before being marked terminal. Mutable for tests.</summary>
+    public static int MissionDrainGraceSeconds = 20;
+    /// <summary>v2.26.0 backup policy: minimum minutes between routine pre-mission backups.
+    /// Schema migrations and auto-apply take their own backups regardless.</summary>
+    public static int BackupMinIntervalMinutes = 360;
     public const int MaxTaskSeconds = 240;
     // Hard bound on a single model HTTP call. Enforced via a per-call CancellationTokenSource
     // (see the IModelClient implementations) rather than HttpClient.Timeout alone, so the wait is

@@ -152,12 +152,14 @@ public class SkillCreditTests : IDisposable
     public void TheQueenCreditsSkills_AtMissionFinalisation()
     {
         var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
-        Assert.Contains("CreditSkills(mission)", code);
+        Assert.Contains("CreditSkills(mission, evaluation)", code);
 
         var credit = Between(code, "private void CreditSkills", "private static Verification.VerificationBundle");
-        Assert.Contains("MissionOutcome.IsPositiveSuccess", credit);   // only verified success counts
+        // v2.26.0: the positive predicate is CONSUMED from the one persisted evaluation
+        // (IsPositive == canonical completed_verified), never re-derived inside the credit path.
+        Assert.Contains("evaluation.IsPositive", credit);
         Assert.Contains("Skills.RecordOutcome", credit);
-        Assert.Contains("Memory.SaveSkillRegistry(Skills)", credit);   // standing outlives the process
+        Assert.Contains("Memory.SaveSkill(touched)", credit);   // row-atomic; standing outlives the process
     }
 
     /// <summary>The planner must record provenance, or nothing is ever creditable.</summary>
@@ -166,7 +168,10 @@ public class SkillCreditTests : IDisposable
     {
         var planner = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Planning", "Planner.cs")));
         Assert.Contains("SkillId = skillId", planner);
-        Assert.Contains("_offeredSkillIds.Contains(claimedSkill)", planner);
+        // v2.26.0: the offered-set is plan-LOCAL (a parameter, not a Planner field) — one Planner
+        // is shared across concurrent missions, and an instance field let plans cross-contaminate.
+        Assert.Contains("offeredSkillIds.Contains(claimedSkill)", planner);
+        Assert.DoesNotContain("_offeredSkillIds", planner);
     }
 
     // ---- helpers -------------------------------------------------------------------------------------

@@ -34,6 +34,30 @@ public static class FileSecurity
     /// Returns the backup path on success, or null when there is nothing to copy.
     /// Called automatically at mission start so every run has a pre-mission snapshot.
     /// </summary>
+    /// <summary>
+    /// v2.26.0 backup policy: back up only when the newest existing backup is older than
+    /// <paramref name="minInterval"/>. Returns null when skipped (recent backup exists) — the
+    /// caller logs the skip. Migration and auto-apply paths call <see cref="BackupDb"/> directly,
+    /// unconditionally: risk-triggered backups ignore the routine interval.
+    /// </summary>
+    public static string? BackupDbIfDue(string dbPath, string backupDir, Func<string, string> pathResolver, TimeSpan minInterval)
+    {
+        try
+        {
+            var dstDir = pathResolver(backupDir);
+            if (Directory.Exists(dstDir))
+            {
+                var newest = Directory.EnumerateFiles(dstDir, "anthill_*.db")
+                    .Select(f => (DateTime?)File.GetLastWriteTimeUtc(f))
+                    .DefaultIfEmpty(null)
+                    .Max();
+                if (newest is { } t && DateTime.UtcNow - t < minInterval) return null;
+            }
+        }
+        catch { /* fall through to an unconditional backup attempt */ }
+        return BackupDb(dbPath, backupDir, pathResolver);
+    }
+
     public static string? BackupDb(string dbPath, string backupDir, Func<string, string> pathResolver)
     {
         try

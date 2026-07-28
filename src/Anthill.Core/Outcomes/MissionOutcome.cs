@@ -37,6 +37,9 @@ public static class MissionOutcome
     public const string FailedPermanent = "failed_permanent";
     public const string TimedOut = "timed_out";
     public const string Cancelled = "cancelled";
+    /// <summary>v2.26.0: the adaptive controller stopped the mission and handed it to a human.
+    /// Distinct from failed — nothing broke; the runtime declined to continue without judgment.</summary>
+    public const string Escalated = "escalated";
     public const string Compensating = "compensating";
     public const string Compensated = "compensated";
     public const string RollbackFailed = "rollback_failed";

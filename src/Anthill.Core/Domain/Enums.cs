@@ -29,7 +29,9 @@ public enum ApprovalStatus { Pending, Approved, Rejected, Expired, Consumed }
 public enum ApprovalActionType { PatchProposal, FileWrite, ShellCommand, ToolUse }
 
 /// <summary>Lifecycle of an autonomous objective in the Director backlog (Phase 0+).</summary>
-public enum ObjectiveStatus { Pending, Active, Paused, Done, Failed }
+// v2.26.0: Suggested = a model-proposed objective awaiting operator approval. NOT executable —
+// the Director only pulls Active objectives, and suggestions may not promote themselves.
+public enum ObjectiveStatus { Pending, Active, Paused, Done, Failed, Suggested }
 
 public static class EnumExtensions
 {
@@ -74,13 +76,15 @@ public static class EnumExtensions
     public static string Value(this ObjectiveStatus s) => s switch
     {
         ObjectiveStatus.Pending => "pending", ObjectiveStatus.Active => "active", ObjectiveStatus.Paused => "paused",
-        ObjectiveStatus.Done => "done", ObjectiveStatus.Failed => "failed", _ => "pending",
+        ObjectiveStatus.Done => "done", ObjectiveStatus.Failed => "failed",
+        ObjectiveStatus.Suggested => "suggested", _ => "pending",
     };
 
     public static ObjectiveStatus ParseObjectiveStatus(string value) => value switch
     {
         "pending" => ObjectiveStatus.Pending, "active" => ObjectiveStatus.Active, "paused" => ObjectiveStatus.Paused,
-        "done" => ObjectiveStatus.Done, "failed" => ObjectiveStatus.Failed, _ => ObjectiveStatus.Pending,
+        "done" => ObjectiveStatus.Done, "failed" => ObjectiveStatus.Failed,
+        "suggested" => ObjectiveStatus.Suggested, _ => ObjectiveStatus.Pending,
     };
 
     public static TaskStatus ParseTaskStatus(string value) => value switch

@@ -71,6 +71,11 @@ public static partial class ApiHost
             AnthillRuntime.EnableAutonomy ? AnthillRuntime.AutonomyConcurrency : 1);
         Jobs = new ApiJobRegistry(Queen, jobWorkers);
         Director = new ColonyDirector(Queen, Jobs);
+        // v2.26.0: configuration health at startup — incompatible feature combinations degrade
+        // LOUDLY (events + console), never silently. Live view at /config/health.
+        RuntimeConfigValidator.ReportAtStartup(Queen.Memory);
+        foreach (var finding in RuntimeConfigValidator.Validate())
+            Console.Error.WriteLine($"[config-health:{finding.Severity}] {finding.Combination}: {finding.Detail}");
         MissionLimiter = new RateLimiter(AnthillRuntime.RateLimitMissionWindow, AnthillRuntime.RateLimitMissionMax);
         AuthLimiter = new RateLimiter(AnthillRuntime.RateLimitAuthWindow, AnthillRuntime.RateLimitAuthMax);
         UiHtml = LoadUi();
@@ -149,7 +154,17 @@ public static partial class ApiHost
 
         if (autostart)
         {
-            if (Director.Start()) Console.WriteLine("Autonomous Colony Director started (--autonomous).");
+            // v2.26.0: autostart honours a durable STOP. The Director process starts (so status,
+            // introspection, and the resume endpoint work), but it launches nothing while STOP
+            // exists, and starting it no longer clears the sentinel. Only an explicit operator
+            // resume (POST /autonomy/start) does that.
+            if (Director.Start())
+            {
+                if (AutonomyControl.IsStopped)
+                    Console.WriteLine("Colony Director started (--autonomous), but the STOP sentinel is engaged — "
+                        + "no objectives will launch until an operator explicitly resumes (POST /autonomy/start).");
+                else Console.WriteLine("Autonomous Colony Director started (--autonomous).");
+            }
             else Console.Error.WriteLine("--autonomous ignored: set autonomy_enabled=true in config to start the Director.");
         }
 
@@ -1407,7 +1422,15 @@ public static partial class ApiHost
             var auth = RequireAuth(ctx, "autonomy_control"); if (auth is not null) return auth;
             if (!AnthillRuntime.EnableAutonomy)
                 return ApiJson.Error("Autonomy is disabled in config (autonomy_enabled=false).", "autonomy_disabled");
+            // v2.26.0: THIS is the explicit operator resume — the one path that clears a durable
+            // STOP, audited as such. Starting the Director process no longer does it.
+            var wasStopped = AutonomyControl.IsStopped;
+            AutonomyControl.Resume();
             Director.Start();
+            if (wasStopped)
+                Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "autonomy_resumed",
+                    $"Operator '{CurrentUsername(ctx) ?? "operator"}' explicitly cleared the STOP sentinel and resumed autonomy.",
+                    antName: "operator");
             return ApiJson.Ok(Director.StatusSnapshot(), "Colony Director started.");
         });
 
@@ -1468,6 +1491,89 @@ public static partial class ApiHost
             };
             Queen.Memory.SaveObjective(o);
             return ApiJson.Ok(ObjectiveDict(o), "Objective added to the backlog.");
+        });
+
+        // v2.26.0 pre-V3 hardening: promote a model-SUGGESTED objective into the executable
+        // backlog. This is the only path from `suggested` to executable — suggestions may not
+        // promote themselves, and the promotion is an audited operator act.
+        app.MapPost("/objectives/{id}/approve", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_objectives"); if (auth is not null) return auth;
+            var objective = Queen.Memory.GetObjective(id);
+            if (objective is null) return ApiJson.Error("Unknown objective.", "not_found");
+            if (objective.Status != ObjectiveStatus.Suggested)
+                return ApiJson.Error($"Only 'suggested' objectives can be approved — this one is '{objective.Status.Value()}'.", "bad_request");
+            objective.Status = ObjectiveStatus.Pending;
+            objective.Metadata["approved_by"] = CurrentUsername(ctx) ?? "operator";
+            objective.Metadata["approved_at"] = AnthillTime.NowUtc().ToIso();
+            Queen.Memory.SaveObjective(objective);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "objective_suggestion_approved",
+                $"Operator approved suggested objective '{objective.Title}' into the executable backlog.",
+                antName: "operator", metadata: new() { ["objective_id"] = objective.Id });
+            return ApiJson.Ok(ObjectiveDict(objective), "Suggestion approved into the backlog.");
+        });
+
+        // v2.26.0: deterministic self-introspection — the colony answers what it IS from live
+        // registries and gates, never from memory search or model opinion.
+        app.MapGet("/colony/introspection", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var findings = RuntimeConfigValidator.Validate();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["version"] = AnthillRuntime.Version,
+                ["executable_roles"] = AntRegistry.ExecutableRoleIds.OrderBy(x => x).ToList(),
+                ["activation_tier"] = AnthillRuntime.ActivationTier.ToString().ToLowerInvariant(),
+                ["specialists"] = new Dictionary<string, object?>
+                {
+                    ["tester"] = AnthillRuntime.EnableTesterAnt, ["soldier"] = AnthillRuntime.EnableSoldierAnt,
+                    ["medic"] = AnthillRuntime.EnableMedicAnt, ["archivist"] = AnthillRuntime.EnableArchivistAnt,
+                },
+                ["autonomy_enabled"] = AnthillRuntime.EnableAutonomy,
+                ["stop_engaged"] = AutonomyControl.IsStopped,
+                ["homelab_stop_engaged"] = Anthill.Core.Homelab.Actions.HomelabActionControl.IsStopped,
+                ["director_running"] = Director.IsRunning,
+                ["can_write_files"] = AnthillRuntime.EnableFileWriting,
+                ["can_apply_patches"] = AnthillRuntime.EnablePatchApplication,
+                ["auto_apply_enabled"] = AnthillRuntime.AutonomyAutoApplyEnabled,
+                ["break_glass_keep_without_verify"] = AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify,
+                ["adaptive_operational"] = AnthillRuntime.EnableHandoffIngestion || AnthillRuntime.EnableObjectiveVerification,
+                ["objective_verification_enabled"] = AnthillRuntime.EnableObjectiveVerification,
+                ["handoff_ingestion_enabled"] = AnthillRuntime.EnableHandoffIngestion,
+                ["running_jobs"] = Jobs.ListJobs(100).Count(j => (j.GetValueOrDefault("status")?.ToString() ?? "") == "running"),
+                ["config_health"] = findings.Select(f => new Dictionary<string, object?>
+                {
+                    ["severity"] = f.Severity, ["combination"] = f.Combination, ["detail"] = f.Detail,
+                }).ToList(),
+                ["config_healthy"] = findings.Count == 0,
+                ["v3_qualified"] = EvaluateReadiness().Ready,
+            });
+        });
+
+        // v2.26.0: configuration health — incompatible feature combinations, degraded loudly.
+        app.MapGet("/config/health", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var findings = RuntimeConfigValidator.Validate();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["healthy"] = findings.Count == 0,
+                ["findings"] = findings.Select(f => new Dictionary<string, object?>
+                {
+                    ["severity"] = f.Severity, ["combination"] = f.Combination, ["detail"] = f.Detail,
+                }).ToList(),
+            });
+        });
+
+        // v2.26.0: the machine-generated qualification report — measured results only.
+        app.MapPost("/readiness/qualification-report", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var (jsonPath, mdPath) = QualificationReportWriter.Write(EvaluateReadiness(), RuntimeConfigValidator.Validate());
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["json_path"] = jsonPath, ["markdown_path"] = mdPath,
+            }, "Qualification report written from measured results.");
         });
 
         app.MapPatch("/objectives/{id}", async (HttpContext ctx, string id) =>
@@ -2042,7 +2148,8 @@ public static partial class ApiHost
             MinShadowSample: AnthillRuntime.ReadinessMinShadowSample,
             MinDiagnosisPrecision: AnthillRuntime.ReadinessMinDiagnosisPrecision,
             MinActionAccuracy: AnthillRuntime.ReadinessMinActionAccuracy,
-            Attestations: Queen.Memory.LoadReadinessAttestations()));
+            Attestations: Queen.Memory.LoadReadinessAttestations(),
+            BreakGlassKeepWithoutVerify: AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify));
     }
 
     private static Dictionary<string, object?> ReadinessSnapshot()

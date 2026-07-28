@@ -22,6 +22,9 @@ public sealed class ApiMissionJob
     /// <summary>v2.7.0: plain-English "why it ended" (completed / timed_out / cancelled / partial / failed) + a short reason.</summary>
     public string? Outcome { get; set; }
     public string? Reason { get; set; }
+    /// <summary>v2.26.0: the CANONICAL outcome code from the persisted mission evaluation — the
+    /// job status is mapped from this, so status can never contradict the mission's outcome.</summary>
+    public string? OutcomeCode { get; set; }
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
@@ -30,6 +33,7 @@ public sealed class ApiMissionJob
     {
         ["id"] = Id, ["goal"] = Goal, ["status"] = Status, ["mission_id"] = MissionId,
         ["result"] = Result, ["error"] = Error, ["outcome"] = Outcome, ["reason"] = Reason,
+        ["outcome_code"] = OutcomeCode,
         ["created_at"] = CreatedAt.ToIso(),
         ["started_at"] = StartedAt.ToIsoOrNull(), ["finished_at"] = FinishedAt.ToIsoOrNull(),
     };
@@ -133,10 +137,12 @@ public sealed class ApiJobRegistry : IDisposable
                 job.Result = _queen.RunMission(job.Goal,
                     missionId => { job.MissionId = missionId; _mem.UpdateJobState(job.Id, "running", missionId: missionId); },
                     job.Cts.Token,
-                    outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; });
-                // A cancel that landed mid-mission stops the scheduler cleanly rather than throwing;
-                // reflect that as cancelled rather than a misleading "complete".
-                job.Status = job.Cancelled ? "cancelled" : "complete";
+                    outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; job.OutcomeCode = outcome.OutcomeCode; });
+                // v2.26.0 pre-V3 hardening: the job status MAPS FROM the canonical mission
+                // outcome — "RunMission returned" is not "complete". Before this, a timed-out
+                // mission produced the contradiction status=complete / outcome=timed_out, and
+                // failed missions wore "complete" too.
+                job.Status = job.Cancelled ? "cancelled" : StatusFromOutcome(job.Outcome, job.OutcomeCode);
             }
             catch (OperationCanceledException)
             {
@@ -159,6 +165,27 @@ public sealed class ApiJobRegistry : IDisposable
                     job.StartedAt.ToIsoOrNull(), job.FinishedAt.ToIsoOrNull());
             }
         }
+    }
+
+    /// <summary>
+    /// v2.26.0: typed job status from the canonical outcome. The keyed vocabulary is unchanged
+    /// (queued | running | complete | failed | cancelled) plus timed_out — an addition, not a
+    /// redefinition, so existing consumers keep working while the contradiction dies.
+    /// A mission with no recorded outcome maps to failed: an unexplained end is not a success.
+    /// </summary>
+    internal static string StatusFromOutcome(string? outcome, string? outcomeCode)
+    {
+        // Prefer the canonical evaluation code when the callback delivered one.
+        var key = string.IsNullOrWhiteSpace(outcomeCode) ? outcome : outcomeCode;
+        return key switch
+        {
+            "completed" or "completed_verified" or "completed_unverified" => "complete",
+            "partial" => "complete",   // structurally finished; the outcome field carries the nuance
+            "timed_out" => "timed_out",
+            "cancelled" => "cancelled",
+            "escalated" or "failed" or "failed_permanent" or "failed_retryable" => "failed",
+            _ => "failed",
+        };
     }
 
     // v2.8.0: reads come from the durable table (survives restart); live in-memory jobs overlay

@@ -67,11 +67,20 @@ public sealed class VerificationBundle
     [JsonPropertyName("required")] public List<string> Required { get; init; } = new();
     [JsonPropertyName("blocked_reasons")] public List<string> BlockedReasons { get; init; } = new();
 
-    /// <summary>Promotion rule: every REQUIRED verifier ran and passed, and nothing blocked.
-    /// A missing verifier is a failure, not a pass — fail closed.</summary>
+    /// <summary>
+    /// Promotion rule: every REQUIRED verifier ran and passed, nothing blocked, AND at least one
+    /// passing result is deterministic.
+    ///
+    /// v2.26.0 pre-V3 hardening: the deterministic requirement is now INTRINSIC to this property.
+    /// It used to live in the separate <see cref="HasDeterministicEvidence"/> flag that callers
+    /// had to remember to consult — and one caller (mission-level skill credit) didn't, so a
+    /// semantic-only bundle could promote a skill. An invariant a caller must remember is not an
+    /// invariant. A missing verifier is a failure, not a pass — fail closed.
+    /// </summary>
     [JsonPropertyName("promotable")]
     public bool Promotable => BlockedReasons.Count == 0 && Required.Count > 0
-        && Required.All(r => Results.Any(x => x.Verifier == r && x.Passed));
+        && Required.All(r => Results.Any(x => x.Verifier == r && x.Passed))
+        && HasDeterministicEvidence;
 
     /// <summary>Deterministic evidence must exist; semantic-only proof is never sufficient.</summary>
     [JsonPropertyName("has_deterministic_evidence")]
