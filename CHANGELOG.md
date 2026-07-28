@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v3.0.1 — Generation-integrity scoring + native Infrastructure integrations (Homarr parity)
+
+Found by live end-to-end testing against a running console: with the routed model (Ollama)
+unavailable, read-only missions still reported `completed_verified` (score 1.00) even though every
+model call fell back and the "answer" was a canned non-model response. The canonical evaluator scored
+structural completion + a passing verifier, but had **no notion of whether the answer was actually
+generated** — so a provider-down run, and equally a hallucinated answer whose verifier passed, both
+read as a perfect verified success. That directly undercuts the V3 "believable autonomy" principle.
+
+- **`Task.GenerationDegraded`** (additive): a structured flag set in `Queen.PersistExecutionRecord`
+  from the ant's EXISTING disclosure — a fallback ant returns `succeeded_with_warnings` with a
+  `provider_failure` warning. Read from that structure, never parsed from result prose (per the
+  repo's own rule). Transient/in-memory, consumed by the single live evaluation.
+- **Generation-integrity layer in `MissionEvaluator`**: `completed_verified` now additionally
+  requires that generation was NOT degraded. A mission whose answer came from a model-unavailable
+  fallback demotes to `completed_unverified` — which `MissionOutcome.IsPositiveSuccess` already
+  excludes, so it can never reinforce learning, credit a skill, or drive auto-apply. The evaluation
+  explanation gains a `generation=degraded` marker.
+- **Default-safe & backward-compatible**: the flag defaults false, so every pre-existing case — and
+  the v2.26 characterization mission-outcome truth table — is byte-for-byte unchanged. Only a
+  genuinely degraded run is demoted.
+- **Sandbox observability**: `CoderAnt`'s sandboxed path was discarding the `SandboxRunReport`, so a
+  sandbox iteration left no trace — you could not tell whether the in-sandbox build even ran. It now
+  logs one structured line per coder task (`[sandbox] coder task=… stop=… verified=… check=… diff=…`),
+  making the bounded loop observable and debuggable. Found while end-to-end testing the activated loop.
+- Tests: an intact verified research mission still scores `completed_verified`; the same mission with
+  a degraded-generation task demotes to `completed_unverified`, is non-positive, and is explained.
+
+### Infrastructure — native service management to Homarr parity
+
+The Infrastructure module gains equivalents of what a Homarr-style dashboard provides, implemented
+natively on the existing `IIntegrationDefinition` contract (GET-only clients, credentials write-only
+in the store and fetched per request, D1 target-allowlist checked before any I/O, strict timeouts,
+deterministic sync — no LLM, no writes) rather than embedding or cloning anything.
+
+- **Three new integration kinds** register into `IntegrationCatalog` alongside the existing *arr and
+  download families: **Overseerr/Jellyseerr** (`health` + `requests` widgets), **Plex** (`health` +
+  `mediaServer`: active streams + version), and **Uptime-Kuma** (`health` + `status`: monitors up/down
+  from the public status-page slug). Each is one definition + client + typed widget payloads; the
+  generic scheduler sweep picks them up with no per-kind endpoints or UI pages.
+- **Widget renderers** for the new kinds (`requests`, `mediaServer`, `status`) in the dashboard widget
+  runtime, tolerant of missing fields, so a pinned integration renders live data on any board zone.
+
 ## v3.0.0 — V3 baseline lock
 
 The first V3 release, and deliberately the least exciting one: **no new feature behavior**. V3's

@@ -44,6 +44,12 @@ public sealed class Task
     public string? ResultSummary { get; set; }
     public int ResultChars { get; set; }
     public int EstimatedTokens { get; set; }
+    /// <summary>v3.0.1: the ant produced this result via a DEGRADED (non-model) fallback because the
+    /// routed model was unavailable — a structured signal (set from the ant's
+    /// <c>succeeded_with_warnings</c> + <c>provider_failure</c> disclosure), never parsed from prose.
+    /// Read by <see cref="Anthill.Core.Outcomes.MissionEvaluator"/> so an all-fallback mission cannot
+    /// be scored as a verified success. Transient/in-memory: consumed by the single live evaluation.</summary>
+    public bool GenerationDegraded { get; set; }
 
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
     public DateTime? StartedAt { get; set; }

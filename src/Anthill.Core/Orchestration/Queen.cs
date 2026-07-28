@@ -962,6 +962,12 @@ public sealed partial class Queen : IDisposable
     private void PersistExecutionRecord(Mission mission, Task task, AntRuntimeSelection runtimeSelection,
         AntExecutionResult execution, double elapsed)
     {
+        // v3.0.1: carry the ant's structured degraded-generation disclosure onto the task so the
+        // canonical evaluator can see it. A fallback ant returns succeeded_with_warnings with a
+        // provider_failure warning — this reads that structure, never the result prose.
+        task.GenerationDegraded = execution.StatusCode == "succeeded_with_warnings"
+            && execution.Warnings.Any(w => w.Contains("provider_failure", StringComparison.Ordinal));
+
         Memory.LogEvent(mission.Id, "task_execution_recorded",
             $"Structured result recorded: {execution.StatusCode}", task.Id, runtimeSelection.RuntimeNodeId,
             MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
