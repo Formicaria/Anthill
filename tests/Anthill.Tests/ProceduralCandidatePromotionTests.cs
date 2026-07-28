@@ -176,16 +176,23 @@ public class ProceduralCandidatePromotionTests
 
     // ---- the call site -------------------------------------------------------------------------------
 
+    /// <summary>
+    /// v2.26.0: registration moved from archivist-task completion to mission FINALIZATION — the
+    /// per-task call resolved the outcome while the mission was still Running, always read
+    /// negative, and never registered a single route in production. The guard now pins the wiring
+    /// that actually works: registration from the one canonical evaluation, per-skill persisted.
+    /// </summary>
     [Fact]
-    public void TheQueenRegistersRoutes_OnArchivistCompletion()
+    public void TheQueenRegistersRoutes_AtFinalization_FromTheCanonicalEvaluation()
     {
         var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
         var code = string.Join("\n", source.Split('\n')
             .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
 
-        Assert.Contains("ProceduralCandidatePromotion.Register(Skills, candidates, outcome)", code);
+        Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", code);
+        Assert.Contains("ProceduralCandidatePromotion.Register(Skills, candidates, evaluation.OutcomeCode)", code);
         Assert.Contains("skill_candidate_registered", code);
-        Assert.Contains("Memory.SaveSkillRegistry(Skills)", code);   // survives the process
+        Assert.Contains("Memory.SaveSkill(registered)", code);   // row-atomic; survives the process
     }
 
     private static string RepoRoot()

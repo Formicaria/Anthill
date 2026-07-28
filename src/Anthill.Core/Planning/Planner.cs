@@ -19,12 +19,11 @@ public sealed class Planner
     // one canonical role catalog, no duplicated executable lists (spec §7.1).
     private static HashSet<string> AllowedAnts => new(AntRegistry.ExecutableRoleIds, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// The skill ids offered to the model for THIS plan. A claimed skill_id is honoured only if it
-    /// is in here: credit must attach to a procedure the planner was actually shown, never to one
-    /// a model named from nowhere.
-    /// </summary>
-    private HashSet<string> _offeredSkillIds = new(StringComparer.OrdinalIgnoreCase);
+    // v2.26.0 pre-V3 hardening: the Planner holds NO per-plan mutable state. The offered skill
+    // ids (the set a claimed skill_id is checked against — credit must attach to a procedure the
+    // planner was actually shown) used to live in an instance field here. One Planner is shared
+    // across concurrent missions, so a second plan starting while another's model call was in
+    // flight overwrote the first plan's provenance set. Plan-local data flows through parameters.
 
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
@@ -70,9 +69,10 @@ public sealed class Planner
         // "do not modify files" mission must never have coder patch-proposal tasks planned for it.
         var constraints = MissionConstraints.Parse(goal);
 
-        // v2.22.0: remember exactly which skills this plan was shown, so a claimed skill_id can be
-        // checked against what was offered rather than taken on the model's word.
-        _offeredSkillIds = SkillContextIds(skillContext);
+        // v2.22.0 (made concurrency-safe in v2.26.0): capture exactly which skills THIS plan was
+        // shown, locally, so a claimed skill_id is checked against what this plan offered — never
+        // against whatever a concurrently running plan happened to be offered.
+        var offeredSkillIds = SkillContextIds(skillContext);
 
         // Long specification / architecture / framework documents are never sent into a single
         // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
@@ -162,7 +162,7 @@ Required JSON:
         try
         {
             var parsed = Json.ExtractJsonObject(response);
-            var tasks = TasksFromJson(parsed, goal);
+            var tasks = TasksFromJson(parsed, goal, offeredSkillIds);
             if (tasks.Count == 0)
             {
                 Console.Error.WriteLine("Dynamic planner returned no valid task plan. Using fallback plan.");
@@ -299,7 +299,9 @@ Required JSON:
         return ids;
     }
 
-    private List<Task> TasksFromJson(JsonObject parsed, string goal)
+    // Internal for the v2.26.0 concurrency test: the method is pure (no Planner state), and the
+    // test proves two interleaved parses with different offered sets cannot cross-contaminate.
+    internal List<Task> TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
     {
         if (parsed["tasks"] is not JsonArray rawTasks) return new();
         var tasks = new List<Task>();
@@ -321,7 +323,7 @@ Required JSON:
             // actually offered for this plan — a model must not be able to invent an id and have
             // the outcome credited to it, or to a skill it was never shown.
             var claimedSkill = (obj["skill_id"]?.GetValue<string>() ?? "").Trim();
-            var skillId = _offeredSkillIds.Contains(claimedSkill) ? claimedSkill : null;
+            var skillId = offeredSkillIds.Contains(claimedSkill) ? claimedSkill : null;
             tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId });
         }
 

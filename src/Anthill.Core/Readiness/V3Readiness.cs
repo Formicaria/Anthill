@@ -56,7 +56,8 @@ public static class V3Readiness
         int MinShadowSample,
         double MinDiagnosisPrecision,
         double MinActionAccuracy,
-        IReadOnlyDictionary<string, (bool Satisfied, string Note)> Attestations);
+        IReadOnlyDictionary<string, (bool Satisfied, string Note)> Attestations,
+        bool BreakGlassKeepWithoutVerify = false);
 
     public static class Ids
     {
@@ -107,12 +108,16 @@ public static class V3Readiness
 
             new(Ids.PolicyAndCredentials, "Zero critical policy bypasses; zero credentials exposed",
                 CheckKind.MeasuredAndAttested,
-                input.Shadow.PolicyViolations == 0 && input.Shadow.UnverifiedSuccessClaims == 0,
+                input.Shadow.PolicyViolations == 0 && input.Shadow.UnverifiedSuccessClaims == 0
+                    && !input.BreakGlassKeepWithoutVerify,
                 Att(Ids.PolicyAndCredentials).Satisfied,
                 $"Measured over {input.ShadowSample} scored shadow pair(s): {input.Shadow.PolicyViolations} policy "
-                + $"violation(s), {input.Shadow.UnverifiedSuccessClaims} unverified success claim(s). Credential "
-                + "exposure review is the attested half — logs, prompts, memory and evidence cannot audit themselves. "
-                + Att(Ids.PolicyAndCredentials).Note),
+                + $"violation(s), {input.Shadow.UnverifiedSuccessClaims} unverified success claim(s)."
+                + (input.BreakGlassKeepWithoutVerify
+                    ? " BREAK-GLASS keep_without_verify is ENABLED — a standing policy bypass; NOT qualifiable while on."
+                    : "")
+                + " Credential exposure review is the attested half — logs, prompts, memory and evidence cannot "
+                + "audit themselves. " + Att(Ids.PolicyAndCredentials).Note),
 
             new(Ids.DestructiveFailClosed, "All destructive capabilities fail closed",
                 CheckKind.Attested, false, Att(Ids.DestructiveFailClosed).Satisfied,

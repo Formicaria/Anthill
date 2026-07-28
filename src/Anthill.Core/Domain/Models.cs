@@ -27,6 +27,9 @@ public sealed class Task
     /// (the default) keeps the original fail-fast dependency semantics.
     /// </summary>
     public bool Critical { get; set; } = true;
+    /// <summary>v2.26.0: why this task was cancelled/timed out during the drain — persisted so a
+    /// restored mission explains its interrupted tasks the same way the live run did.</summary>
+    public string? CancellationReason { get; set; }
 
     /// <summary>
     /// v2.22.0: the certified procedure this task was planned FROM, if any. Set only when the

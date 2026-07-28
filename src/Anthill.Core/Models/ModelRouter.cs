@@ -212,6 +212,12 @@ public sealed class ModelRouter
             : (choice.Provider, choice.Model, choice.Reason);
     }
 
+    /// <summary>v2.26.0: the typed boundary. Same call, but the outcome is classified ONCE by the
+    /// classifier the telemetry already uses — callers branch on Status, never on string prefixes.</summary>
+    public ModelCallResult GenerateTyped(string role, string prompt, string? missionId = null,
+        string? taskId = null, string? antName = null, int retries = 2) =>
+        ModelCallResult.From(Generate(role, prompt, missionId, taskId, antName, retries));
+
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
         string? antName = null, int retries = 2)
     {

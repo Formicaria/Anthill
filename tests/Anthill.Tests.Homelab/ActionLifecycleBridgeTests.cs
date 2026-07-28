@@ -176,7 +176,9 @@ public class ActionLifecycleBridgeTests : IDisposable
         executor.Approve(proposal!.ApprovableId, "approver");
 
         var (ok, message) = await executor.ExecuteAsync(proposal.ApprovableId, "runner-op");
-        Assert.True(ok);                            // execution itself succeeded, honestly reported
+        // v2.26.0: the RETURN is now a failure too — "command issued" is not "desired state
+        // achieved". (v2.25.0 made the lifecycle say failed but still returned Ok=true.)
+        Assert.False(ok);
         Assert.Contains("FAILED", message);
 
         var read = repo.GetActionProposal(proposal.ApprovableId)!;

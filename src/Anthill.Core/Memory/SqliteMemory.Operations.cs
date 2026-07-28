@@ -133,10 +133,10 @@ public sealed partial class SqliteMemory
                 parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
                 result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
                 skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
-                skipped_reason, blocked_reason, skill_id)
+                skipped_reason, blocked_reason, skill_id, critical, cancellation_reason)
               VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @status, @result, @summary,
                 @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
-                @max, @freason, @ftype, @sreason, @breason, @skill)",
+                @max, @freason, @ftype, @sreason, @breason, @skill, @critical, @cancel)",
             ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
             ("@ant", task.AssignedAnt), ("@worker", task.AssignedWorker), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
             ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
@@ -148,7 +148,11 @@ public sealed partial class SqliteMemory
             ("@elapsed", task.ElapsedSeconds), ("@attempts", task.AttemptCount),
             ("@max", Math.Max(1, task.MaxAttempts)), ("@freason", task.FailureReason),
             ("@ftype", task.FailureType), ("@sreason", task.SkippedReason), ("@breason", task.BlockedReason),
-            ("@skill", task.SkillId));
+            ("@skill", task.SkillId),
+            // v2.26.0: criticality persisted so row-based evaluation can never disagree with the
+            // live mission object about which failures fail the mission; cancellation reason so a
+            // drained task's terminal state survives restart.
+            ("@critical", task.Critical ? 1 : 0), ("@cancel", task.CancellationReason));
 
     public void SavePatchSet(PatchSet patchSet)
     {
@@ -210,8 +214,10 @@ public sealed partial class SqliteMemory
                   VALUES (@id, @mid, @tid, @ant, @mt, @ic, @oc, @ite, @ote, @meta, @created)",
                 ("@id", Guid.NewGuid().ToString()), ("@mid", missionId), ("@tid", taskId), ("@ant", antName),
                 ("@mt", metricType), ("@ic", inputChars), ("@oc", outputChars),
-                ("@ite", TextUtil.EstimateTokenCount(new string('x', Math.Max(0, inputChars)))),
-                ("@ote", TextUtil.EstimateTokenCount(new string('x', Math.Max(0, outputChars)))),
+                // v2.26.0: arithmetic over the counts — the old form allocated a megabyte-scale
+                // throwaway string of 'x' characters just to divide its length by four.
+                ("@ite", TextUtil.EstimateTokenCountFromChars(inputChars)),
+                ("@ote", TextUtil.EstimateTokenCountFromChars(outputChars)),
                 ("@meta", Json.SafeDumps(metadata ?? new())), ("@created", AnthillTime.NowUtc().ToIso()));
         }
     }
@@ -643,10 +649,30 @@ public sealed partial class SqliteMemory
 
     // ---- pheromones -------------------------------------------------------
 
+    /// <summary>
+    /// v2.26.0: what KIND of signal a trail type carries. Derived in the ONE write path so all
+    /// call sites inherit it and none can drift. Planning may read only procedural_learning /
+    /// routing_preference — a provider answering HTTP 200 is telemetry, not strategy.
+    /// </summary>
+    internal static string SignalCategoryFor(string trailType) => (trailType ?? "").ToLowerInvariant() switch
+    {
+        // Which ant/worker/task/pattern verifiably works — the strategy signals planning may read.
+        "planner_pattern" or "worker_pattern" or "task_pattern" or "capability"
+            or "ant" or "worker" or "task_type" or "objective" or "objective_pattern" => "procedural_learning",
+        // Which model route serves a role well — a routing preference, also plannable.
+        "model_route" => "routing_preference",
+        // Advisory source heuristics — never proven truth.
+        "source_domain" => "quality_signal",
+        // Did the tool/provider answer — reliability, not strategy.
+        "external_research_tool" or "tool" or "model_provider" or "provider" => "reliability_signal",
+        _ => "operational_telemetry",
+    };
+
     public void UpdatePheromoneTrail(string trailKey, string trailType, bool success, double strengthDelta,
         Dictionary<string, object?>? metadata = null)
     {
         metadata ??= new();
+        var category = SignalCategoryFor(trailType);
         lock (_writeLock)
         {
             using var conn = Connect();
@@ -660,19 +686,20 @@ public sealed partial class SqliteMemory
                 var merged = MergeMetadata(existing["metadata_json"] as string, metadata);
                 NonQuery(conn, null,
                     @"UPDATE pheromone_trails SET strength=@s, success_count=@sc, failure_count=@fc,
-                        last_updated=@u, metadata_json=@m WHERE trail_key=@k",
+                        last_updated=@u, metadata_json=@m, signal_category=@cat WHERE trail_key=@k",
                     ("@s", newStrength), ("@sc", successCount), ("@fc", failureCount),
-                    ("@u", AnthillTime.NowUtc().ToIso()), ("@m", Json.SafeDumps(merged)), ("@k", trailKey));
+                    ("@u", AnthillTime.NowUtc().ToIso()), ("@m", Json.SafeDumps(merged)), ("@cat", category),
+                    ("@k", trailKey));
             }
             else
             {
                 var initial = Math.Clamp(Math.Round(0.5 + strengthDelta, 4), 0.0, 1.0);
                 NonQuery(conn, null,
                     @"INSERT INTO pheromone_trails (id, trail_key, trail_type, strength, success_count, failure_count,
-                        last_updated, metadata_json) VALUES (@id, @k, @t, @s, @sc, @fc, @u, @m)",
+                        last_updated, metadata_json, signal_category) VALUES (@id, @k, @t, @s, @sc, @fc, @u, @m, @cat)",
                     ("@id", Guid.NewGuid().ToString()), ("@k", trailKey), ("@t", trailType), ("@s", initial),
                     ("@sc", success ? 1 : 0), ("@fc", success ? 0 : 1), ("@u", AnthillTime.NowUtc().ToIso()),
-                    ("@m", Json.SafeDumps(metadata)));
+                    ("@m", Json.SafeDumps(metadata)), ("@cat", category));
             }
         }
         InvalidateCache();
@@ -694,14 +721,16 @@ public sealed partial class SqliteMemory
         return merged;
     }
 
-    public void UpdateMissionPheromones(Mission mission)
+    public void UpdateMissionPheromones(Mission mission, string? outcomeCode = null)
     {
-        // v2.19.0: positive reinforcement requires completed_verified — nothing else. Previously
-        // `complete or partial` counted, so a partially-failed mission strengthened the very
-        // planner/worker/task pattern that had just partly failed. Partial now reinforces NOTHING
-        // (delta 0): it is not punished as a failure either, because partial work is genuinely
-        // ambiguous evidence. Only verified success may pull a trail up.
-        var outcome = MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks));
+        // v2.19.0: positive reinforcement requires completed_verified — nothing else. Partial
+        // reinforces NOTHING (delta 0): not punished as a failure either, because partial work is
+        // genuinely ambiguous evidence. Only verified success may pull a trail up.
+        // v2.26.0: the outcome is CONSUMED from the canonical evaluation when the caller has one;
+        // the local re-derivation survives only as a fallback for legacy callers and reads the
+        // same inputs the evaluator's floor reads.
+        var outcome = outcomeCode
+            ?? MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks));
         var success = MissionOutcome.IsPositiveSuccess(outcome);
         var score = mission.SuccessScore ?? 0.0;
         var delta = outcome switch
@@ -747,7 +776,7 @@ public sealed partial class SqliteMemory
                   parent_task_ids_json, depends_on_json, status, result, result_summary, result_chars,
                   estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at, skipped_at,
                   elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason,
-                  skill_id
+                  skill_id, critical, outcome_code, cancellation_reason
                 FROM tasks WHERE mission_id = @mid ORDER BY COALESCE(started_at, finished_at, id) ASC LIMIT @lim",
             ("@mid", missionId), ("@lim", limit));
 
@@ -796,11 +825,17 @@ public sealed partial class SqliteMemory
     /// success under the corrected rule (success_count restarts at 0 at the reset, so any positive
     /// count here is post-reset, verified-success evidence). Reporting reads are unfiltered.
     /// </summary>
+    // v2.26.0: PLANNING reads only learning-bearing categories. Operational telemetry and
+    // heuristic source quality never steer strategy. Uncategorized rows predate the column and
+    // re-enter only through the existing requalification rule (post-reset success), after which
+    // any further touch stamps their real category.
     public List<Dictionary<string, object?>> GetTopPheromoneTrails(int limit = 10) =>
         CacheRead($"top_pheromones::{limit}", () =>
             Query(@"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated
                     FROM pheromone_trails
-                    WHERE legacy = 0 OR success_count > 0
+                    WHERE (legacy = 0 OR success_count > 0)
+                      AND (signal_category IN ('procedural_learning', 'routing_preference')
+                           OR (signal_category = '' AND success_count > 0))
                     ORDER BY strength DESC, success_count DESC LIMIT @lim", ("@lim", limit)));
 
     public string FormatRecentMemory(int limit = 3, int maxResultChars = 300)

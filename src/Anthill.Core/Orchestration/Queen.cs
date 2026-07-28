@@ -117,6 +117,11 @@ public sealed partial class Queen : IDisposable
         var missionStartedAt = AnthillTime.NowUtc();
         // One token governs the whole mission: external cancel OR the deadline, whichever comes first.
         using var missionCts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        // v2.26.0 pre-V3 hardening: the mission DEADLINE cancels the token. Before this, timeout
+        // was only a wall-clock check in the dispatch loop — in-flight model calls ran to their own
+        // completion while the mission proceeded to finalization without them. MissionStopReason
+        // checks the clock before the token, so a deadline cancellation still reports as timeout.
+        missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
         missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
         using var modelScope = ModelCallScope.Enter(missionCts.Token);
         var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
@@ -126,12 +131,16 @@ public sealed partial class Queen : IDisposable
         Memory.SaveMission(mission);
         onMissionCreated?.Invoke(mission.Id);
 
-        var backupPath = FileSecurity.BackupDb(AnthillRuntime.DbPath, AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
-        // Retention: a full DB copy is written before every mission, so prune to the newest N right
-        // after — otherwise the backup dir grows without bound (the top cause of disk bloat).
+        // v2.26.0 backup policy: a full DB copy before EVERY mission does not scale — a read-only
+        // question should not trigger a database-sized write once the colony has history. Backups
+        // now run when the last one is older than BackupMinIntervalMinutes (schema migrations and
+        // auto-apply runs take their own). Retention and permission hardening unchanged.
+        var backupPath = FileSecurity.BackupDbIfDue(AnthillRuntime.DbPath, AnthillRuntime.BackupDir,
+            AnthillRuntime.PathFromScript, TimeSpan.FromMinutes(AnthillRuntime.BackupMinIntervalMinutes));
         var (prunedBackups, freedBytes) = FileSecurity.PruneBackups(AnthillRuntime.BackupDir, AnthillRuntime.MaxDbBackups, AnthillRuntime.PathFromScript);
         Memory.LogEvent(mission.Id, backupPath is not null ? "db_backup_created" : "db_backup_skipped",
-            backupPath is not null ? "Pre-mission DB backup created." : "Pre-mission DB backup skipped because no database file exists yet.",
+            backupPath is not null ? "Pre-mission DB backup created."
+                : "Pre-mission DB backup skipped (a recent backup already exists, or no database file yet).",
             metadata: new() { ["backup_file"] = backupPath is not null ? Path.GetFileName(backupPath) : null,
                 ["backups_pruned"] = prunedBackups, ["bytes_freed"] = freedBytes, ["keep"] = AnthillRuntime.MaxDbBackups });
         Memory.LogEvent(mission.Id, "mission_created", "Mission created.", metadata: new() { ["goal"] = goal });
@@ -199,22 +208,34 @@ public sealed partial class Queen : IDisposable
             ? ExecuteTasksParallel(mission, missionStartedAt, missionCts.Token)
             : ExecuteTasksSequential(mission, missionStartedAt, missionCts.Token);
 
-        FinalizeMission(mission);
+        var evaluation = FinalizeMission(mission, stopReason);
         Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
         Memory.SaveMission(mission);
-        Memory.LogEvent(mission.Id, "mission_saved", "Mission saved to ANTHILL memory.", metadata: new() { ["db_path"] = Memory.DbPath });
+        // The evaluation is persisted AFTER the final SaveMission on purpose: SaveMission is an
+        // INSERT OR REPLACE, and a row replacement erases columns it does not carry — writing the
+        // evaluation first would silently destroy it (the restart test caught exactly that). It is
+        // still persisted BEFORE completion is published anywhere: the outcome event, the
+        // job callback, and every Director/auto-apply read all come after this line.
+        Memory.SaveMissionEvaluation(evaluation);
         Console.WriteLine("Mission saved to ANTHILL memory.");
 
-        // v2.7.0: a plain-English "why it ended" that the API/console can show without re-deriving it.
-        var outcome = ComputeOutcome(mission, stopReason);
+        // v2.7.0 (canonical since v2.26.0): the operator-facing "why it ended" derives from the
+        // ONE persisted evaluation — the reason text is presentation; the code is authority.
+        var outcome = ComputeOutcome(mission, stopReason) with { OutcomeCode = evaluation.OutcomeCode };
         Memory.LogEvent(mission.Id, "mission_outcome", outcome.Reason,
-            metadata: new() { ["outcome"] = outcome.Outcome, ["reason"] = outcome.Reason, ["mission_status"] = mission.Status.Value() });
+            metadata: new()
+            {
+                ["outcome"] = outcome.Outcome, ["reason"] = outcome.Reason,
+                ["outcome_code"] = evaluation.OutcomeCode, ["mission_status"] = mission.Status.Value(),
+                ["verification_status"] = evaluation.VerificationStatus,
+                ["deliverable_status"] = evaluation.DeliverableStatus,
+            });
         onMissionFinished?.Invoke(outcome);
         return ComposeCliResult(mission);
     }
 
     /// <summary>Plain-English mission result the console surfaces on each job. Keyed status + a short reason.</summary>
-    public sealed record MissionOutcome(string Outcome, string Reason);
+    public sealed record MissionOutcome(string Outcome, string Reason, string OutcomeCode = "");
 
     /// <summary>
     /// Derives the operator-facing outcome from the executor's stop reason (authoritative for
@@ -354,6 +375,12 @@ public sealed partial class Queen : IDisposable
                     scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                     LogSchedulerTransitions(mission, scheduler);
                 }
+                // v2.26.0: a terminal mission must never contain a running task. Cancellation has
+                // already reached every task token (the mission token is linked into each); this
+                // waits a bounded grace period for in-flight work to observe it, then marks any
+                // non-terminating task with its cancellation reason. Nothing returns before every
+                // task is terminal.
+                DrainRunningTasks(mission, scheduler, running, stop.ReasonType);
                 return stop.ReasonType;
             }
 
@@ -684,6 +711,47 @@ public sealed partial class Queen : IDisposable
         }
     }
 
+    /// <summary>
+    /// v2.26.0: bounded shutdown for the parallel executor. The mission token is already
+    /// cancelled (deadline or operator); in-flight tasks get MissionDrainGraceSeconds to observe
+    /// it and record their own terminal state. Whatever is still Running after the grace period is
+    /// marked cancelled/timed-out HERE, with a persisted cancellation reason — so the mission
+    /// reaches finalization with every task terminal, and a straggler's late write is ignored by
+    /// the existing late-result guard.
+    /// </summary>
+    private void DrainRunningTasks(Mission mission, TaskScheduler scheduler,
+        Dictionary<System.Threading.Tasks.Task, Task> running, string reasonType)
+    {
+        if (running.Count == 0) return;
+        try
+        {
+            System.Threading.Tasks.Task.WaitAll(
+                running.Keys.ToArray(), TimeSpan.FromSeconds(AnthillRuntime.MissionDrainGraceSeconds));
+        }
+        catch { /* task-level failures were already handled inside RunSingleTask */ }
+
+        lock (_executionLock)
+        {
+            foreach (var task in running.Values.Where(t => t.Status == TaskStatus.Running).ToList())
+            {
+                var now = AnthillTime.NowUtc();
+                var cancelled = reasonType == "mission_cancelled";
+                task.CancellationReason = cancelled
+                    ? "cancelled: mission was cancelled while this task was still running"
+                    : $"timed_out: mission stopped ({reasonType}) while this task was still running";
+                task.Result = task.CancellationReason;
+                task.FinishedAt = now;
+                if (task.StartedAt is { } st) task.ElapsedSeconds = Math.Round((now - st).TotalSeconds, 3);
+                scheduler.MarkFailed(task.Id, task.CancellationReason,
+                    cancelled ? "cancelled" : "timeout", false, now, task.ElapsedSeconds);
+                FinalizeTaskResult(mission, task);
+                Memory.LogEvent(mission.Id, "task_drained", task.CancellationReason, task.Id, task.AssignedAnt,
+                    new() { ["reason_type"] = reasonType, ["grace_seconds"] = AnthillRuntime.MissionDrainGraceSeconds });
+            }
+            LogSchedulerTransitions(mission, scheduler);
+        }
+    }
+
     private void MarkTaskTimeout(Task task, Mission mission, TaskScheduler? scheduler)
     {
         var now = AnthillTime.NowUtc();
@@ -774,19 +842,60 @@ public sealed partial class Queen : IDisposable
         Metadata = new() { ["patch_set_id"] = patchSet.Id, ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value(), ["requires_approval"] = proposal.RequiresApproval, ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting },
     };
 
-    private void FinalizeMission(Mission mission)
+    private Outcomes.MissionEvaluation FinalizeMission(Mission mission, string? stopReason)
     {
         // Only a CRITICAL task failure fails the whole mission. A non-critical failure/skip
         // (e.g. one spec-ingestion section) degrades the mission to Partial but never aborts it.
+        // v2.26.0 invariant: no task may reach finalization non-terminal. If one does, that is an
+        // internal runtime defect — reported as such, and the mission fails CLOSED rather than
+        // evaluating half-finished state as if it were finished.
+        var nonTerminal = mission.Tasks
+            .Where(t => t.Status is TaskStatus.Pending or TaskStatus.Ready or TaskStatus.Blocked or TaskStatus.Running)
+            .ToList();
+        foreach (var stuck in nonTerminal)
+        {
+            stuck.Result = $"INTERNAL RUNTIME DEFECT: task was still '{stuck.Status.Value()}' at mission finalization.";
+            stuck.CancellationReason = stuck.Result;
+            stuck.Status = TaskStatus.Failed;
+            stuck.FailureReason = stuck.Result;
+            stuck.FailureType = "internal_runtime_defect";
+            stuck.FinishedAt = AnthillTime.NowUtc();
+            Memory.LogEvent(mission.Id, "internal_runtime_defect", stuck.Result, stuck.Id, stuck.AssignedAnt,
+                new() { ["invariant"] = "no_non_terminal_task_at_finalization" });
+        }
+
         var criticalFailed = mission.Tasks.Any(t => t.Status == TaskStatus.Failed && t.Critical);
         var degraded = mission.Tasks.Any(t => t.Status == TaskStatus.Skipped
                                               || (t.Status == TaskStatus.Failed && !t.Critical));
         mission.Status = criticalFailed ? MissionStatus.Failed : degraded ? MissionStatus.Partial : MissionStatus.Complete;
+
+        // v2.26.0 pre-V3 hardening: the ONE evaluation. Computed exactly once, after every task is
+        // terminal, PERSISTED before any learning/credit/completion consumer runs — so restored
+        // state answers exactly what live state answered, and no consumer re-derives success.
+        var evaluation = Outcomes.MissionEvaluator.Evaluate(
+            mission, stopReason, Memory.CountPatchProposalsForMission(mission.Id));
+        // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
+        // it here) and before anything publishes completion. In-process consumers below use this
+        // same object, so they cannot disagree with what gets persisted.
+        Memory.LogEvent(mission.Id, "mission_evaluated", evaluation.Explanation, metadata: new()
+        {
+            ["outcome_code"] = evaluation.OutcomeCode,
+            ["verification_status"] = evaluation.VerificationStatus,
+            ["deliverable_status"] = evaluation.DeliverableStatus,
+            ["stop_reason"] = evaluation.StopReason,
+            ["evaluator_version"] = evaluation.EvaluatorVersion,
+        });
+        if (evaluation.DeliverableStatus == Outcomes.MissionEvaluation.Deliverable.NotSatisfied)
+            Memory.LogEvent(mission.Id, "objective_verification_failed",
+                Outcomes.ObjectiveVerification.Explain(mission, Memory.CountPatchProposalsForMission(mission.Id)),
+                metadata: new() { ["goal"] = TextUtil.Truncate(mission.Goal, 300) });
+
         mission.SuccessScore = _pheromones.ScoreMission(mission);
         Memory.LogEvent(mission.Id, "pheromone_scored", $"Mission pheromone score calculated: {mission.SuccessScore}",
             metadata: new() { ["success_score"] = mission.SuccessScore, ["mission_status"] = mission.Status.Value() });
-        Memory.UpdateMissionPheromones(mission);
-        CreditSkills(mission);
+        Memory.UpdateMissionPheromones(mission, evaluation.OutcomeCode);
+        CreditSkills(mission, evaluation);
+        RegisterProceduralRoutes(mission, evaluation);
         mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
         mission.UserResult = ComposeUserResult(mission);
         mission.DebugResult = ComposeDebugResult(mission);
@@ -804,6 +913,40 @@ public sealed partial class Queen : IDisposable
             ["skipped_tasks"] = mission.Tasks.Where(t => t.Status == TaskStatus.Skipped).Select(t => t.Id).ToList(),
             ["best_output_task_id"] = mission.BestOutputTaskId,
         });
+        return evaluation;
+    }
+
+    /// <summary>
+    /// v2.26.0: procedural route registration moved HERE from the per-task archivist path — where
+    /// it resolved the mission outcome while status was still Running, always got a negative, and
+    /// therefore never registered anything. (v2.23's feature was structurally dead in production;
+    /// its tests passed because they called Register directly with a final outcome.) Candidates
+    /// are rebuilt from the durable memory_candidate events the archivist path records.
+    /// </summary>
+    private void RegisterProceduralRoutes(Mission mission, Outcomes.MissionEvaluation evaluation)
+    {
+        var candidates = Memory.GetRecentEvents(200, eventType: Outcomes.MemoryCandidateIngest.EventType, missionId: mission.Id)
+            .Select(row => Json.TryParseObject(row.GetValueOrDefault("metadata_json")?.ToString()))
+            .Select(meta => new Outcomes.MemoryCandidateIngest.Candidate(
+                MemoryClass: meta.GetValueOrDefault("memory_class")?.ToString() ?? "",
+                Summary: meta.GetValueOrDefault("summary")?.ToString() ?? "",
+                SourceMission: meta.GetValueOrDefault("source_mission")?.ToString() ?? "",
+                Outcome: meta.GetValueOrDefault("outcome")?.ToString() ?? "",
+                Confidence: meta.GetValueOrDefault("confidence")?.ToString() ?? "",
+                AutoPromote: meta.GetValueOrDefault("auto_promote") is bool b && b))
+            .Where(c => c.MemoryClass.Length > 0)
+            .ToList();
+        if (candidates.Count == 0) return;
+
+        var routes = ProceduralCandidatePromotion.Register(Skills, candidates, evaluation.OutcomeCode);
+        if (routes.Count == 0) return;
+        foreach (var routeId in routes)
+            if (Skills.Get(routeId) is { } registered) Memory.SaveSkill(registered);
+        foreach (var id in routes)
+            Memory.LogEvent(mission.Id, "skill_candidate_registered",
+                $"Observed route registered as a skill candidate (usable for nothing until verified): {id}",
+                antName: "archivist",
+                metadata: new() { ["skill_id"] = id, ["mission_outcome"] = evaluation.OutcomeCode, ["status"] = "Candidate" });
     }
 
     /// <summary>
@@ -910,21 +1053,10 @@ public sealed partial class Queen : IDisposable
         if (candidates.Count > 0)
             Console.WriteLine($"Archived {candidates.Count} memory candidate(s) for mission {mission.Id}.");
 
-        // v2.23.0 Phase C4: a verified route the archivist observed becomes a skill CANDIDATE —
-        // a hypothesis, usable for nothing, appearing in no plan. It earns standing only by being
-        // followed and verified again through RecordOutcome. Registering an observation as
-        // evidence is exactly the mistake v2.19.0 exists to prevent.
-        var outcome = Outcomes.MissionOutcome.Resolve(mission.Status, MissionVerification.IsSatisfied(mission.Tasks));
-        var routes = ProceduralCandidatePromotion.Register(Skills, candidates, outcome);
-        if (routes.Count > 0)
-        {
-            Memory.SaveSkillRegistry(Skills);
-            foreach (var id in routes)
-                Memory.LogEvent(mission.Id, "skill_candidate_registered",
-                    $"Observed route registered as a skill candidate (usable for nothing until verified): {id}",
-                    task.Id, "archivist",
-                    new() { ["skill_id"] = id, ["mission_outcome"] = outcome, ["status"] = "Candidate" });
-        }
+        // v2.23.0 Phase C4 route registration used to live here — and resolved the mission
+        // outcome while status was still Running, so it ALWAYS read negative and never registered
+        // anything. Moved to RegisterProceduralRoutes at finalization, where the one canonical
+        // evaluation exists. (v2.26.0 pre-V3 hardening.)
     }
 
     /// <summary>
@@ -1145,7 +1277,7 @@ public sealed partial class Queen : IDisposable
     /// Promotion and demotion both stay with <see cref="SkillRegistry.RecordOutcome"/>; this only
     /// reports what happened and persists the result.
     /// </summary>
-    private void CreditSkills(Mission mission)
+    private void CreditSkills(Mission mission, Outcomes.MissionEvaluation evaluation)
     {
         var followed = mission.Tasks
             .Where(t => !string.IsNullOrWhiteSpace(t.SkillId))
@@ -1154,12 +1286,8 @@ public sealed partial class Queen : IDisposable
             .ToList();
         if (followed.Count == 0) return;
 
-        // NOTE the qualification: Queen declares its own nested `MissionOutcome` record (the
-        // outcome+reason pair handed to the mission-finished callback), which shadows the
-        // Outcomes.MissionOutcome vocabulary class inside this type. Two different things wearing
-        // the same name — qualify or get the wrong one.
-        var verified = Outcomes.MissionOutcome.IsPositiveSuccess(
-            Outcomes.MissionOutcome.Resolve(mission.Status, MissionIsVerified(mission)));
+        // v2.26.0: verified-ness is CONSUMED from the one evaluation, never re-derived here.
+        var verified = evaluation.IsPositive;
 
         // A promotable bundle is the ONLY thing RecordOutcome counts as a verified success, so an
         // unverified mission passes null rather than a bundle — it must not be able to promote.
@@ -1167,6 +1295,12 @@ public sealed partial class Queen : IDisposable
 
         foreach (var skillId in followed)
         {
+            // v2.26.0: the bundle below is built from the ACTUAL verifier task and is honestly
+            // semantic (Deterministic: false). Promotable now intrinsically requires deterministic
+            // evidence, so this bundle records a NEUTRAL observation, never a promotion — the old
+            // path here fabricated promotable evidence out of a model's own verdict. Deterministic
+            // task-level evidence (build/test/diff) will flow in once patch verification bundles
+            // are attached at this site; until then, no evidence means no credit.
             var status = Skills.RecordOutcome(skillId, bundle, AnthillRuntime.EnvironmentFingerprint,
                 verified ? null : $"mission {mission.Id} finished {mission.Status.Value()} without verified success");
             Memory.LogEvent(mission.Id, "skill_outcome_recorded",
@@ -1177,39 +1311,15 @@ public sealed partial class Queen : IDisposable
                     ["mission_status"] = mission.Status.Value(),
                 });
         }
-        Memory.SaveSkillRegistry(Skills);   // standing must outlive the process that earned it
+        // v2.26.0: persist ONLY the touched skills, row-atomically — a whole-registry save from
+        // one mission's finalization was last-writer-wins against a concurrent mission's.
+        foreach (var skillId in followed)
+            if (Skills.Get(skillId) is { } touched) Memory.SaveSkill(touched);
     }
 
-    /// <summary>
-    /// v2.24.0 Phase C5: the single place that decides whether a mission counts as verified.
-    ///
-    /// The interim gate (a verification step ran and returned a pass) is the FLOOR and is never
-    /// relaxed. When objective verification is enabled, the mission must additionally have
-    /// produced the deliverable its goal asked for — a mission whose goal was "add a CHANGELOG
-    /// entry" can plan a researcher and a builder, describe the change, pass verification honestly,
-    /// and deliver no file change at all.
-    ///
-    /// Additive by construction: this can only ever narrow. Nothing that fails today can newly
-    /// pass because of it.
-    /// </summary>
-    private bool MissionIsVerified(Mission mission)
-    {
-        if (!MissionVerification.IsSatisfied(mission.Tasks)) return false;
-        if (!AnthillRuntime.EnableObjectiveVerification) return true;
-
-        var proposals = Memory.CountPatchProposalsForMission(mission.Id);
-        if (ObjectiveVerification.IsSatisfied(mission, proposals)) return true;
-
-        Memory.LogEvent(mission.Id, "objective_verification_failed",
-            ObjectiveVerification.Explain(mission, proposals),
-            metadata: new()
-            {
-                ["goal"] = TextUtil.Truncate(mission.Goal, 300),
-                ["patch_proposals"] = proposals,
-                ["required"] = ObjectiveVerification.Required(mission.Goal, MissionConstraints.Parse(mission.Goal)).ToString(),
-            });
-        return false;
-    }
+    // v2.24.0's MissionIsVerified was absorbed into Outcomes.MissionEvaluator in v2.26.0 — the
+    // layered rule (interim gate as floor + objective deliverable) lives THERE, computed once and
+    // persisted, so no second site can drift from it.
 
     /// <summary>
     /// The mission's own verification, expressed as a promotable bundle. Built from the verifier

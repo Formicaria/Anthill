@@ -129,6 +129,19 @@ public class V3ReadinessTests : IDisposable
         Assert.Contains("fabrication", cert.Detail);
     }
 
+    /// <summary>v2.26.0: the keep-without-verify break-glass is a MEASURED disqualifier — with it
+    /// enabled, perfect data and full attestations still cannot qualify the installation.</summary>
+    [Fact]
+    public void TheBreakGlassOption_UnqualifiesTheInstallation()
+    {
+        var inputs = Inputs(attestations: AllAttested()) with { BreakGlassKeepWithoutVerify = true };
+        var report = V3Readiness.Evaluate(inputs);
+        Assert.False(report.Ready);
+        var policy = report.Checks.Single(c => c.Id == V3Readiness.Ids.PolicyAndCredentials);
+        Assert.False(policy.Satisfied);
+        Assert.Contains("BREAK-GLASS", policy.Detail);
+    }
+
     // ---- fault-injection stability is a property of recorded history ---------------------------
 
     private static SimulationReport Report(bool allPass = true, string flavor = "a")

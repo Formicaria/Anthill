@@ -198,8 +198,11 @@ public class EvidenceFollowUpTests
 
         Assert.Contains("EvidenceFollowUps.From(", code);
         Assert.Contains("evidence_follow_ups_created", code);
-        // Merged into the same save path, so they pass the same handling as Strategist follow-ups.
-        Assert.Contains("strategy.FollowUps.Concat(evidenceFollowUps)", code);
+        // v2.26.0: the two sources are deliberately NOT merged any more. Evidence-derived
+        // follow-ups stay auto-admitted; Strategist proposals are model opinions and land as
+        // `suggested`, requiring operator approval before they can execute.
+        Assert.Contains("SaveFollowUps(strategy.FollowUps, job.MissionId, run.Id, suggested: true)", code);
+        Assert.Contains("SaveFollowUps(evidenceFollowUps, job.MissionId, run.Id, suggested: false)", code);
     }
 
     private static string RepoRoot()

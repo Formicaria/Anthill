@@ -169,9 +169,12 @@ public class ObjectiveVerificationTests
         var code = string.Join("\n", source.Split('\n')
             .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
 
-        Assert.Contains("private bool MissionIsVerified(Mission mission)", code);
-        Assert.Contains("MissionIsVerified(mission)", code);
-        Assert.Contains("ObjectiveVerification.IsSatisfied(mission, proposals)", code);
+        // v2.26.0: the one decision moved from Queen.MissionIsVerified into the canonical
+        // evaluator — computed once, persisted, consumed. Same intent, structurally stronger.
+        Assert.Contains("MissionEvaluator.Evaluate(", code);
+        Assert.Contains("SaveMissionEvaluation(evaluation)", code);
+        Assert.Contains("evaluation.IsPositive", code);
+        Assert.DoesNotContain("MissionIsVerified", code);         // the second authority is GONE
         Assert.Contains("objective_verification_failed", code);   // never a silent downgrade
     }
 
