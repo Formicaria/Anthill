@@ -6499,6 +6499,10 @@ const WIDGET_KINDS={
   'failed-imports':  {title:'Failed Imports',  icon:'✕', ttl:60000,  wide:true, render:wgtRenderList},
   'logs':            {title:'Logs',            icon:'☰', ttl:20000,  wide:true, render:wgtRenderList},
   'alerts':          {title:'Alerts',          icon:'⚠', ttl:20000,  wide:true, render:wgtRenderList},
+  // v3.0.1 Homarr parity: native integration widgets (Overseerr/Plex/Uptime-Kuma).
+  'requests':        {title:'Requests',        icon:'▤', ttl:60000,  render:wgtRenderRequests},
+  'mediaServer':     {title:'Media Server',    icon:'▶', ttl:30000,  render:wgtRenderMediaServer},
+  'status':          {title:'Status',          icon:'◉', ttl:30000,  render:wgtRenderStatus},
 };
 const _widgets=new Map(); // el → widget state (timer bookkeeping; cleared on unmount)
 
@@ -6592,6 +6596,36 @@ function wgtRenderList(p){
     const tx=it.title||it.text||it.message||it.line||it.name||JSON.stringify(it).slice(0,80);
     return '<div class="wgt-li"><span class="at">'+escapeHtml(String(at).slice(0,16).replace('T',' '))+'</span><span class="tx" title="'+escapeHtml(String(tx))+'">'+escapeHtml(String(tx))+'</span></div>';
   }).join('');
+}
+
+// v3.0.1 Homarr parity — renderers for the native media/monitoring widgets. Tolerant of missing
+// fields (an integer < 0 means "not reported yet"), same discipline as the built-in renderers.
+function wgtRenderRequests(p){
+  const t=(typeof p.total==='number')?p.total:-1;
+  const parts=[];
+  if((p.pending|0)>0) parts.push((p.pending|0)+' pending');
+  if((p.processing|0)>0) parts.push((p.processing|0)+' processing');
+  if((p.available|0)>=0 && (p.available|0)>0) parts.push((p.available|0)+' available');
+  return '<div class="wgt-big">'+(t<0?'—':t)+'</div>'
+    +'<div style="font-size:10px;color:var(--dim);">'
+    +(t<0?'requests not reported yet':escapeHtml(parts.join(' · ')||('total request'+(t===1?'':'s'))))+'</div>';
+}
+function wgtRenderMediaServer(p){
+  const s=(typeof p.active_streams==='number')?p.active_streams:-1;
+  return '<div class="wgt-big">'+(s<0?'—':s)+'</div>'
+    +'<div style="font-size:10px;color:var(--dim);">'
+    +(s<0?'stream count not reported':('active stream'+(s===1?'':'s')))
+    +(p.version?' · v'+escapeHtml(String(p.version)):'')+'</div>';
+}
+function wgtRenderStatus(p){
+  const up=(p.up|0), down=(p.down|0);
+  const total=(typeof p.total==='number')?p.total:(up+down);
+  const ok=down===0;
+  return '<div style="display:flex;align-items:center;gap:10px;">'
+    +'<span style="font-size:20px;">'+hl3Dot(ok?'ok':(up===0?'failed':''))+'</span>'
+    +'<div><div style="font-weight:700;color:var(--anthill-text)">'+up+' up · '+down+' down</div>'
+    +'<div style="font-size:10px;color:'+(down>0?'var(--status-warning)':'var(--dim)')+'">'
+    +total+' monitor'+(total===1?'':'s')+' watched</div></div></div>';
 }
 
 // ---- Layout registry (per-operator, persisted via /ui/state; ordered = drag-and-drop ready) ----

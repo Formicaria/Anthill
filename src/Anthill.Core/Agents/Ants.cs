@@ -567,6 +567,14 @@ public sealed class CoderAnt : BaseAnt
 
         var report = runner.Run(sourceRoot, mission.Id, task.Id, ModelCallScope.Current);
         if (report.StopReason is "disabled" or "refused") return null; // let the caller do the one-shot
+
+        // v3.0.1: surface the sandbox loop outcome — the report was previously discarded, making
+        // sandbox execution invisible (you could not tell whether the in-sandbox build even ran).
+        // One structured line to the app log per coder task keeps the loop observable + debuggable.
+        Console.WriteLine($"[sandbox] coder task={task.Id} stop={report.StopReason} turns={report.Turns} "
+            + $"toolCalls={report.ToolCalls} verified={report.Verified} check={report.CheckId} "
+            + $"diff={TextUtil.Truncate(report.ChangeSummary.Replace('\n', ' '), 300)}");
+
         // Verified (built green inside the sandbox) or best-effort on budget exhaustion — either way
         // these proposals remain human-approval-gated before anything touches the live tree.
         return lastProposalJson;
