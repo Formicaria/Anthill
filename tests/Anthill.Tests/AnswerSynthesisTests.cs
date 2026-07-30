@@ -1,4 +1,3 @@
-using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Orchestration;
 using Xunit;
@@ -19,23 +18,23 @@ public class AnswerSynthesisTests
     [Fact]
     public void NullOrEmptySynthesis_FallsBackToTheRawAnswer()
     {
-        Assert.Equal("raw", Queen.SelectFinalAnswer("raw", null));
-        Assert.Equal("raw", Queen.SelectFinalAnswer("raw", ""));
-        Assert.Equal("raw", Queen.SelectFinalAnswer("raw", "   \n  "));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", null));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", ""));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "   \n  "));
     }
 
     /// <summary>ModelRouter reports failure in-band as an "ERROR:" string rather than throwing.</summary>
     [Fact]
     public void ErrorResponse_FallsBackToTheRawAnswer()
     {
-        Assert.Equal("raw", Queen.SelectFinalAnswer("raw", "ERROR: ollama temporarily unavailable"));
-        Assert.Equal("raw", Queen.SelectFinalAnswer("raw", "ERROR: Model routing requested Ollama, but USE_OLLAMA is False."));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "ERROR: ollama temporarily unavailable"));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "ERROR: Model routing requested Ollama, but USE_OLLAMA is False."));
     }
 
     [Fact]
     public void GoodSynthesis_IsUsed_AndTrimmed()
     {
-        Assert.Equal("The backup job finished.", Queen.SelectFinalAnswer("raw", "  The backup job finished.\n "));
+        Assert.Equal("The backup job finished.", ResultAssembler.SelectFinalAnswer("raw", "  The backup job finished.\n "));
     }
 
     /// <summary>A message that merely mentions an error is still a real answer.</summary>
@@ -43,35 +42,41 @@ public class AnswerSynthesisTests
     public void AnswerDescribingAnError_IsNotMistakenForAFailedCall()
     {
         const string answer = "The mission failed: the ERROR: prefix only counts at the start.";
-        Assert.Equal(answer, Queen.SelectFinalAnswer("raw", answer));
+        Assert.Equal(answer, ResultAssembler.SelectFinalAnswer("raw", answer));
     }
 
+    /// <summary>
+    /// v3.1.0 (ADR-001): the gate is a PARAMETER, not a static read. These two tests used to
+    /// save/mutate/restore AnthillRuntime.EnableAnswerSynthesis around the assertion — the exact
+    /// global-state dance the phase exists to remove, and the reason two runtimes could not share
+    /// a process. The rule under test is unchanged; it is simply now decidable from arguments.
+    /// </summary>
     [Fact]
-    public void SynthesisIsSkipped_WhenDisabled()
-    {
-        var prior = AnthillRuntime.EnableAnswerSynthesis;
-        try
-        {
-            AnthillRuntime.EnableAnswerSynthesis = false;
-            Assert.False(Queen.ShouldSynthesizeAnswer(new string('x', 5000)));
-        }
-        finally { AnthillRuntime.EnableAnswerSynthesis = prior; }
-    }
+    public void SynthesisIsSkipped_WhenDisabled() =>
+        Assert.False(ResultAssembler.ShouldSynthesizeAnswer(new string('x', 5000), synthesisEnabled: false));
 
     /// <summary>A short answer is already prose; paying a model call to rewrite it buys nothing.</summary>
     [Fact]
     public void SynthesisIsSkipped_ForShortOrEmptyAnswers()
     {
-        var prior = AnthillRuntime.EnableAnswerSynthesis;
-        try
-        {
-            AnthillRuntime.EnableAnswerSynthesis = true;
-            Assert.False(Queen.ShouldSynthesizeAnswer(""));
-            Assert.False(Queen.ShouldSynthesizeAnswer("   "));
-            Assert.False(Queen.ShouldSynthesizeAnswer(new string('x', Queen.AnswerSynthesisMinChars - 1)));
-            Assert.True(Queen.ShouldSynthesizeAnswer(new string('x', Queen.AnswerSynthesisMinChars)));
-        }
-        finally { AnthillRuntime.EnableAnswerSynthesis = prior; }
+        Assert.False(ResultAssembler.ShouldSynthesizeAnswer("", synthesisEnabled: true));
+        Assert.False(ResultAssembler.ShouldSynthesizeAnswer("   ", synthesisEnabled: true));
+        Assert.False(ResultAssembler.ShouldSynthesizeAnswer(
+            new string('x', ResultAssembler.AnswerSynthesisMinChars - 1), synthesisEnabled: true));
+        Assert.True(ResultAssembler.ShouldSynthesizeAnswer(
+            new string('x', ResultAssembler.AnswerSynthesisMinChars), synthesisEnabled: true));
+    }
+
+    /// <summary>
+    /// Two decisions taken at once cannot disagree — the property the parameterisation buys. Under
+    /// the old static read this was not expressible as a test at all.
+    /// </summary>
+    [Fact]
+    public void TwoRunsWithDifferentSettings_DecideIndependently()
+    {
+        var answer = new string('x', ResultAssembler.AnswerSynthesisMinChars);
+        Assert.True(ResultAssembler.ShouldSynthesizeAnswer(answer, synthesisEnabled: true));
+        Assert.False(ResultAssembler.ShouldSynthesizeAnswer(answer, synthesisEnabled: false));
     }
 
     /// <summary>
@@ -81,16 +86,16 @@ public class AnswerSynthesisTests
     [Fact]
     public void Prompt_CarriesOutcomeAndForbidsFabrication()
     {
-        var failed = Queen.BuildAnswerSynthesisPrompt(M("check the backups", MissionStatus.Failed), "trace");
+        var failed = ResultAssembler.BuildAnswerSynthesisPrompt(M("check the backups", MissionStatus.Failed), "trace");
         Assert.Contains("FAILED", failed);
         Assert.Contains("Do not present it as a success", failed);
         Assert.Contains("check the backups", failed);
         Assert.Contains("Add nothing", failed);
 
-        var partial = Queen.BuildAnswerSynthesisPrompt(M(status: MissionStatus.Partial), "trace");
+        var partial = ResultAssembler.BuildAnswerSynthesisPrompt(M(status: MissionStatus.Partial), "trace");
         Assert.Contains("PARTIALLY", partial);
 
-        var ok = Queen.BuildAnswerSynthesisPrompt(M(), "trace");
+        var ok = ResultAssembler.BuildAnswerSynthesisPrompt(M(), "trace");
         Assert.Contains("completed successfully", ok);
     }
 
@@ -98,8 +103,8 @@ public class AnswerSynthesisTests
     [Fact]
     public void Prompt_TruncatesAnOversizedRawAnswer()
     {
-        var huge = new string('x', Queen.AnswerSynthesisMaxInputChars * 3);
-        var prompt = Queen.BuildAnswerSynthesisPrompt(M(), huge);
+        var huge = new string('x', ResultAssembler.AnswerSynthesisMaxInputChars * 3);
+        var prompt = ResultAssembler.BuildAnswerSynthesisPrompt(M(), huge);
         Assert.True(prompt.Length < huge.Length, "an oversized raw answer must be truncated");
         Assert.Contains("[truncated]", prompt);
     }
