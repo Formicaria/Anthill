@@ -1,5 +1,83 @@
 # ANTHILL Changelog
 
+## v3.1.0 — Runtime composition and Queen decomposition
+
+The V3 roadmap's second phase. **No new features, no new gates, no schema change** — this release
+exists to make the mission path composable, and its success criterion is that behaviour did not
+move. The v3.0.0 characterization tests are what made that provable rather than asserted.
+
+`AnthillRuntime` is a bag of mutable statics, the honest .NET translation of the Python module
+globals it replaced. Every consumer read whatever the last writer left behind, at whatever instant
+it happened to look. v2.26.0 found six call sites independently deriving mission success; the same
+shape of defect was available to any gate read twice at two different moments.
+
+### New Features
+
+None. Deliberately.
+
+### Improvements
+
+- **`RuntimeOptions`** — 35 mission-path settings captured once per run, immutable thereafter. A
+  projection of existing config: no new defaults, no new precedence rules, no behaviour of its own.
+- **`RuntimeProfile`** — the run's resolved capability set: executable roles, tool grants taken from
+  the registry that was actually built, write permissions, verification policy. Validated at
+  construction by the v2.26.0 `RuntimeConfigValidator`, whose findings are *carried* rather than
+  thrown — that validator's contract is to degrade loudly and never refuse boot.
+- **`MissionContext`** — a mission's governing facts, resolved once at intake and passed explicitly:
+  constraints, capability grants, budgets, correlation id, and an **absolute UTC deadline**. Never
+  ambient; an AsyncLocal context would have been a smaller diff and would have reproduced the exact
+  defect being removed. Persisted as a `mission_context_resolved` event, so an operator can read a
+  mission's boundaries instead of inferring them.
+- **`RuntimeHost`** — the composition root. One host owns one colony: one database, one profile, one
+  Queen. Not a container: no service locator, no registration API, no lifetime scopes.
+- **Queen decomposed** behind `IPlanningService`, `IExecutionService`, `IMissionEvaluator`,
+  `ILearningRecorder`, `IResultAssembler`, and `IMissionCoordinator`. Each takes its dependencies as
+  constructor parameters; none reads a mutable gate. **`Queen.cs`: 1,365 → 381 lines.**
+- **The Queen is composed, not self-configuring.** It takes a `RuntimeProfile` instead of reading
+  `EnableModelRouting` / `UseOllama` / `EnableFileTools` / `EnableFileWriting` during construction.
+  This is what makes two differently-configured colonies in one process possible at all.
+- **`MissionConstraints.Parse`: eight call sites → two.** Both survivors are deliberate and
+  documented in a guard test: `CoderAnt` (the ant contract is v3.2.0's to redesign, and forcing it
+  here would design that contract twice) and `ObjectiveLifecycle` (parses an objective charter — a
+  different input).
+- **The mission deadline is an absolute instant**, not a duration re-measured in two dispatch loops.
+  A resumed run inherits the original boundary instead of restarting its clock.
+
+### Bug Fixes
+
+- **The plan preview showed a plan that would not run.** `POST /missions/plan` never applied the
+  authorization gate, so it could show an operator a step dispatch refuses on sight — in the one
+  surface whose entire purpose is saying what is about to happen. It now runs the same construction
+  a dispatch does. The endpoint was also re-parsing the goal *and* re-running `ValidateTask` to
+  rebuild warnings the plan already carried; it now reports what the plan says.
+- **`MissionEvaluator` read a mutable static.** The single authority on whether a mission succeeded
+  depended on what `EnableObjectiveVerification` said at the instant finalization ran, so its
+  verdict could not be reproduced from the persisted record it writes. It is now a pure function of
+  its arguments.
+- **Planning was implemented twice** — in `RunMission` and again in `PlanPreview` — and the copies
+  had already diverged. One construction now serves both.
+
+### Performance
+
+Unchanged. Constraints are parsed once per mission rather than once per task, which is a real but
+immaterial saving; nothing else in the hot path moved.
+
+### Breaking Changes
+
+None at the API or database level. Schema 16 is unchanged and a v3.0.x database loads as-is.
+
+Internal C# signatures changed (`Planner.CreateTasks`, `MissionEvaluator.Evaluate`,
+`ObjectiveVerification.IsSatisfied`/`Explain`, `Queen.PlanPreview`). These are not a supported
+extension surface, but anything compiled against `Anthill.Core` will need updating.
+
+`POST /missions/plan` gains `blocked` and `blocked_reason` on each step — additive; nothing was
+removed or renamed. The console marks a refused step **REFUSED** with its reason.
+
+### Upgrade Notes
+
+Drop-in. No migration, no configuration change, no operator action. Roll back by deploying the
+previous binary; the database is untouched by this release.
+
 ## v3.0.1 — Generation-integrity scoring + native Infrastructure integrations (Homarr parity)
 
 Found by live end-to-end testing against a running console: with the routed model (Ollama)

@@ -88,7 +88,7 @@ public class MemoryCandidateIngestTests
     [Fact]
     public void TheQueen_ActuallyIngests_OnArchivistCompletion()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
+        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "ExecutionService.cs"));
         var code = string.Join("\n", source.Split('\n')
             .Select(line =>
             {

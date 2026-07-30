@@ -158,8 +158,10 @@ public class HandoffIngestionTests : IDisposable
     [Fact]
     public void TheQueen_ActuallyIngestsHandoffs_OnTaskCompletion()
     {
-        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
-        Assert.Contains("IngestHandoffs(mission, task, execution, runtimeSelection, scheduler)", code);
+        // v3.1.0: dispatch moved to ExecutionService, and the ingestion call site moved with it.
+        // The Queen still owns WHEN a mission runs; this is about the task-completion path.
+        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
+        Assert.Contains("IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler)", code);
         Assert.Contains("HandoffGate.Evaluate(handoff, mission)", code);
         Assert.Contains("HandoffGate.NextDepthFrom(sourceTask)", code);
     }
@@ -179,7 +181,7 @@ public class HandoffIngestionTests : IDisposable
 
         WithIngestion(() => WithMedicOpen(() =>
         {
-            queen.IngestHandoffs(mission, source, execution, Selection(source), scheduler);
+            queen.Execution.IngestHandoffs(mission, Context(mission), source, execution, Selection(source), scheduler);
             return 0;
         }));
 
@@ -204,7 +206,7 @@ public class HandoffIngestionTests : IDisposable
         var (queen, mission, source, scheduler) = Harness();
         WithMedicOpen(() =>
         {
-            queen.IngestHandoffs(mission, source, ResultProposing(Medic("k-off")), Selection(source), scheduler);
+            queen.Execution.IngestHandoffs(mission, Context(mission), source, ResultProposing(Medic("k-off")), Selection(source), scheduler);
             return 0;
         });
         Assert.DoesNotContain(scheduler.Tasks, t => t.AssignedAnt == "medic");
@@ -221,7 +223,7 @@ public class HandoffIngestionTests : IDisposable
         var (queen, mission, source, scheduler) = Harness();
         WithIngestion(() =>
         {
-            queen.IngestHandoffs(mission, source, ResultProposing(Medic("k-gated")), Selection(source), scheduler);
+            queen.Execution.IngestHandoffs(mission, Context(mission), source, ResultProposing(Medic("k-gated")), Selection(source), scheduler);
             return 0;
         });
 
@@ -237,8 +239,9 @@ public class HandoffIngestionTests : IDisposable
         var (queen, mission, source, scheduler) = Harness();
         WithIngestion(() => WithMedicOpen(() =>
         {
-            queen.IngestHandoffs(mission, source, ResultProposing(Medic("k-dupe")), Selection(source), scheduler);
-            queen.IngestHandoffs(mission, source, ResultProposing(Medic("k-dupe")), Selection(source), scheduler);
+            var context = Context(mission);
+            queen.Execution.IngestHandoffs(mission, context, source, ResultProposing(Medic("k-dupe")), Selection(source), scheduler);
+            queen.Execution.IngestHandoffs(mission, context, source, ResultProposing(Medic("k-dupe")), Selection(source), scheduler);
             return 0;
         }));
         Assert.Single(scheduler.Tasks, t => t.AssignedAnt == "medic");
@@ -255,10 +258,11 @@ public class HandoffIngestionTests : IDisposable
 
         WithIngestion(() => WithMedicOpen(() =>
         {
+            var context = Context(mission);
             var current = source;
             for (var i = 0; i < HandoffGate.MaxHandoffDepth + 2; i++)
             {
-                queen.IngestHandoffs(mission, current, ResultProposing(Medic($"k-chain-{i}")), Selection(current), scheduler);
+                queen.Execution.IngestHandoffs(mission, context, current, ResultProposing(Medic($"k-chain-{i}")), Selection(current), scheduler);
                 var next = scheduler.Tasks.LastOrDefault(t => t.AssignedAnt == "medic");
                 if (next is null || next.Id == current.Id) break;
                 current = next;
@@ -321,6 +325,13 @@ public class HandoffIngestionTests : IDisposable
 
     private static AntRuntimeSelection Selection(DomainTask task) =>
         AntRuntime.Resolve(task, MissionConstraints.Parse("diagnose the failing checks"));
+
+    /// <summary>
+    /// v3.1.0 (ADR-002): the mission's resolved context. Built INSIDE the gate wrappers on purpose
+    /// — a context captures the runtime's capability set at intake, and "what was enabled when the
+    /// mission was admitted" is precisely the behaviour these tests vary.
+    /// </summary>
+    private static MissionContext Context(Mission mission) => MissionContext.ForMission(mission);
 
     private static T WithIngestion<T>(Func<T> body)
     {
