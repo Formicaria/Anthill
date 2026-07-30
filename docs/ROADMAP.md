@@ -99,7 +99,8 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 | 2. Constraint resolution beyond the engine | Planner, `MissionEvaluator`, `ObjectiveVerification`, plan preview | **Landed** |
 | 3a. Queen decomposition — planning | `IPlanningService` | **Landed** |
 | 3b. Queen decomposition — learning | `ILearningRecorder` | **Landed** |
-| 3c. Queen decomposition — the rest | `IMissionCoordinator`, `IExecutionService`, `IMissionEvaluator`, `IResultAssembler` | Pending |
+| 3c. Queen decomposition — results | `IResultAssembler` | **Landed** |
+| 3d. Queen decomposition — execution | `IExecutionService`, `IMissionEvaluator`, `IMissionCoordinator` | Pending |
 | 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
 | 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
 
@@ -179,6 +180,21 @@ task is terminal, after the evaluation exists, before completion is published.
 guards that pinned these behaviours now check both halves: that the Queen still invokes learning
 from the canonical evaluation, and that the recorder is what performs each step. Either half alone
 is the defect those guards were written for.
+
+**Increment 3c — what landed.** `IResultAssembler`: the three parallel accounts a finished mission
+carries of itself — `UserResult` (raw best-task output, never rewritten), `DebugResult` (full trace,
+never truncated in storage), and `FinalResult` (the plain-English answer, the only one a model
+touches). Keeping those straight is the whole job, and the governing rule — synthesis is a
+presentation nicety that must never leave a finished mission answerless — is now stated once, on the
+interface, above the six fallback paths that enforce it.
+
+`ShouldSynthesizeAnswer` takes the feature gate as a parameter instead of reading the static. Its
+two tests previously had to save, mutate and restore `AnthillRuntime.EnableAnswerSynthesis` around
+a single assertion — the exact global-state dance ADR-001 exists to remove — and are now plain
+calls. A third test was added that was not previously *expressible*: two synthesis decisions taken
+at once, with different settings, deciding independently.
+
+`Queen.Views.cs` is down 142 lines to 704.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 

@@ -37,6 +37,9 @@ public sealed partial class Queen : IDisposable
     /// reinforcement, skill credit, route registration — behind an interface. The Queen decides
     /// WHEN learning happens; this owns what gets recorded.</summary>
     private readonly ILearningRecorder _learning;
+    /// <summary>v3.1.0 (ADR-001): the operator-facing accounts of a finished mission — raw output,
+    /// full trace, and the synthesised answer — behind an interface.</summary>
+    private readonly IResultAssembler _results;
     private readonly PheromoneEngine _pheromones = new();
     private readonly PatchProposalParser _patchParser = new();
     private readonly object _executionLock = new();
@@ -63,6 +66,7 @@ public sealed partial class Queen : IDisposable
         // shared with the credit/promotion paths, so there must remain exactly one instance.
         _planning = new PlanningService(_planner, Memory, Tools, () => Skills);
         _learning = new LearningRecorder(Memory, _pheromones, () => Skills);
+        _results = new ResultAssembler(Memory, Router);
         _ants = new Dictionary<string, BaseAnt>
         {
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
@@ -242,7 +246,7 @@ public sealed partial class Queen : IDisposable
                 ["deliverable_status"] = evaluation.DeliverableStatus,
             });
         onMissionFinished?.Invoke(outcome);
-        return ComposeCliResult(mission);
+        return _results.ComposeCliResult(mission);
     }
 
     /// <summary>Plain-English mission result the console surfaces on each job. Keyed status + a short reason.</summary>
@@ -885,13 +889,9 @@ public sealed partial class Queen : IDisposable
         // decides WHEN learning happens: after every task is terminal, after the ONE canonical
         // evaluation exists, and before completion is published anywhere.
         _learning.Record(mission, context, evaluation);
-        mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
-        mission.UserResult = ComposeUserResult(mission);
-        mission.DebugResult = ComposeDebugResult(mission);
-        // v2.16.0: FinalResult is what the operator reads — a plain-English answer when synthesis
-        // is on and the raw output warrants it. UserResult (raw best task) and DebugResult (full
-        // trace) are untouched, so the detail behind the answer is always still there.
-        mission.FinalResult = ComposeFinalAnswer(mission);
+        // v3.1.0 (ADR-001): the three operator-facing accounts of a finished mission — raw best
+        // output, full trace, and the plain-English answer — assembled behind one interface.
+        _results.Assemble(mission, context);
         Memory.LogEvent(mission.Id, "best_output_selected", $"Best output task selected: {mission.BestOutputTaskId}",
             metadata: new() { ["best_output_task_id"] = mission.BestOutputTaskId });
         var eventType = mission.Status == MissionStatus.Complete ? "mission_completed" : mission.Status == MissionStatus.Partial ? "mission_partial" : "mission_failed";
