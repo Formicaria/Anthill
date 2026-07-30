@@ -195,7 +195,7 @@ public class ActionLifecycleBridgeTests : IDisposable
         executor.Approve(proposal!.ApprovableId, "approver");
         await executor.ExecuteAsync(proposal.ApprovableId, "runner-op");
 
-        var ev = Assert.Single(repo.RecentEvents(100).Where(e => e.EventType == "recovery_recommended"));
+        var ev = Assert.Single(repo.RecentEvents(100), e => e.EventType == "recovery_recommended");
         Assert.Contains("Recovery recommendation", ev.Message);
         // BackupCovered + no deterministic rollback -> restore-from-backup, operator-gated.
         Assert.Contains(nameof(RecoveryAction.RestoreFromBackup), ev.Message);
@@ -210,7 +210,7 @@ public class ActionLifecycleBridgeTests : IDisposable
         var (proposal, _) = executor.Propose(Request(), "tester");
         executor.Approve(proposal!.ApprovableId, "approver");
         await executor.ExecuteAsync(proposal.ApprovableId, "runner-op");
-        Assert.Empty(repo.RecentEvents(100).Where(e => e.EventType == "recovery_recommended"));
+        Assert.DoesNotContain(repo.RecentEvents(100), e => e.EventType == "recovery_recommended");
     }
 
     /// <summary>
