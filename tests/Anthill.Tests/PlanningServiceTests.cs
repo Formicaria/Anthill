@@ -47,22 +47,42 @@ public class PlanningServiceTests : IDisposable
         MissionContext.ForMission(new Mission { Goal = goal });
 
     /// <summary>
-    /// The whole point of the extraction. Preview and dispatch must agree about WHICH tasks a goal
-    /// produces — a preview that shows a different plan than the one that would run is worse than
-    /// no preview, because an operator approves the plan they were shown.
+    /// The whole point of the extraction. There is ONE plan construction, so preview and dispatch
+    /// cannot describe different plans — a preview that shows something other than what would run
+    /// is worse than no preview, because an operator approves the plan they were shown.
+    ///
+    /// This is a structural guard, not a behavioural one: it asserts the interface offers no way to
+    /// ask for a plan with admission skipped. That capability existed and was the bug.
     /// </summary>
     [Fact]
-    public void PreviewAndDispatch_ProduceTheSameTaskShape()
+    public void ThereIsOnlyOnePlanConstruction_WithNoWayToSkipAdmission()
+    {
+        var methods = typeof(IPlanningService).GetMethods().Select(m => m.Name).ToList();
+        Assert.Equal(new[] { nameof(IPlanningService.CreatePlan) }, methods);
+
+        // And no parameter can turn the authorization step off.
+        var parameters = typeof(IPlanningService)
+            .GetMethod(nameof(IPlanningService.CreatePlan))!
+            .GetParameters().Select(p => p.ParameterType).ToList();
+        Assert.Equal(new[] { typeof(MissionContext) }, parameters);
+    }
+
+    /// <summary>
+    /// Determinism of shape: planning the same goal twice yields the same steps. Preview and
+    /// dispatch run this same construction, so agreement between them follows from it.
+    /// </summary>
+    [Fact]
+    public void PlanningTheSameGoalTwice_ProducesTheSameTaskShape()
     {
         const string goal = "research the parser and summarise the findings";
 
-        var dispatch = _planning.CreatePlan(Context(goal));
-        var preview = _planning.PreviewPlan(Context(goal));
+        var first = _planning.CreatePlan(Context(goal));
+        var second = _planning.CreatePlan(Context(goal));
 
-        Assert.Equal(dispatch.Select(t => t.AssignedAnt), preview.Select(t => t.AssignedAnt));
-        Assert.Equal(dispatch.Select(t => t.TaskType), preview.Select(t => t.TaskType));
-        Assert.Equal(dispatch.Select(t => t.AssignedWorker), preview.Select(t => t.AssignedWorker));
-        Assert.Equal(dispatch.Select(t => t.DependsOn.Count), preview.Select(t => t.DependsOn.Count));
+        Assert.Equal(first.Select(t => t.AssignedAnt), second.Select(t => t.AssignedAnt));
+        Assert.Equal(first.Select(t => t.TaskType), second.Select(t => t.TaskType));
+        Assert.Equal(first.Select(t => t.AssignedWorker), second.Select(t => t.AssignedWorker));
+        Assert.Equal(first.Select(t => t.DependsOn.Count), second.Select(t => t.DependsOn.Count));
     }
 
     /// <summary>
@@ -95,24 +115,31 @@ public class PlanningServiceTests : IDisposable
     }
 
     /// <summary>
-    /// The named difference: dispatch applies the registry's verdict, preview does not. Pinned so
-    /// the discrepancy stays a decision with a reason rather than becoming folklore — v3.8.0's
-    /// workflow templates are where it gets resolved.
+    /// A refused task carries the reason, and the plan can report it without anyone re-running the
+    /// gate. The plan-preview endpoint used to rebuild this list by calling ValidateTask again over
+    /// tasks it had just received — a second reading of one plan, free to disagree with the first.
     /// </summary>
     [Fact]
-    public void OnlyDispatch_AppliesTheAdmissionVerdict()
+    public void ThePlanReportsItsOwnRefusals_WithoutReRunningTheGate()
     {
         var context = Context("audit only: review the scheduler and report");
-        var rejected = new DomainTask
+        var plan = new MissionPlan(_planning.CreatePlan(context), context.Constraints, SpecIngestion: false);
+
+        // Whatever the planner produced, the plan's own account of what was refused must match the
+        // tasks it is carrying — the endpoint renders THIS, not a recomputation.
+        Assert.Equal(
+            plan.Tasks.Where(t => t.FailureType == PlanningService.AdmissionRefusedFailureType).ToList(),
+            plan.Refused);
+        Assert.All(plan.Refused, t => Assert.False(string.IsNullOrWhiteSpace(t.FailureReason)));
+        Assert.Equal(plan.Refused.Select(t => t.FailureReason).Distinct(), plan.RefusalReasons);
+
+        // And the gate the plan applied is the real one: a coder patch task is refused here.
+        var coderPatch = new DomainTask
         {
             AssignedAnt = "coder", AssignedWorker = "coder.backend_coder", TaskType = "patch_proposal",
             Title = "propose a change",
         };
-
-        // The gate the dispatch path applies, exercised directly on a task the planner would not
-        // itself produce — this is what CreatePlan runs and PreviewPlan skips.
-        Assert.False(AntRegistry.ValidateTask(rejected, context.Constraints).Allowed);
-        Assert.All(_planning.PreviewPlan(context), t => Assert.False(t.FailureType == "ant_permission_denied"));
+        Assert.False(AntRegistry.ValidateTask(coderPatch, context.Constraints).Allowed);
     }
 
     /// <summary>

@@ -530,8 +530,13 @@ public static partial class ApiHost
             if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
             try
             {
-                var constraints = MissionConstraints.Parse(goal);
-                var tasks = Queen.PlanPreview(goal);
+                // v3.1.0: the plan carries its own explanation. This endpoint used to re-parse the
+                // goal for constraints and re-run AntRegistry.ValidateTask over every task to
+                // rebuild warnings the planning path had already computed — two readings of one
+                // plan, free to disagree. It now reports what the plan says.
+                var plan = Queen.PlanPreview(goal);
+                var tasks = plan.Tasks;
+                var constraints = plan.Constraints;
                 var indexById = tasks.Select((t, i) => (t.Id, N: i + 1)).ToDictionary(x => x.Id, x => x.N);
                 var rows = tasks.Select((t, i) => new Dictionary<string, object?>
                 {
@@ -543,6 +548,12 @@ public static partial class ApiHost
                     ["task_type"] = t.TaskType,
                     ["description"] = TextUtil.Truncate(t.Description, 400),
                     ["critical"] = t.Critical,
+                    // v3.1.0: WHICH task the runtime would refuse, not just a deduplicated list of
+                    // reasons. The preview used to skip admission entirely and could therefore show
+                    // a step that dispatch would reject on sight.
+                    ["blocked"] = t.FailureType == PlanningService.AdmissionRefusedFailureType,
+                    ["blocked_reason"] = t.FailureType == PlanningService.AdmissionRefusedFailureType
+                        ? t.FailureReason : null,
                     // Dependencies rendered as human 1-based step numbers (task ids are GUIDs).
                     ["depends_on"] = t.DependsOn.Select(d => indexById.GetValueOrDefault(d, 0)).Where(n => n > 0).ToList(),
                 }).ToList();
@@ -550,16 +561,11 @@ public static partial class ApiHost
                 {
                     ["goal"] = goal,
                     ["task_count"] = tasks.Count,
-                    ["spec_ingestion"] = Planner.IsLongInput(goal),
+                    ["spec_ingestion"] = plan.SpecIngestion,
                     ["has_coder_task"] = tasks.Any(t => t.AssignedAnt == "coder"),
                     // v1.8.22: worker path the plan resolves to, plus any capability warnings.
                     ["selected_path"] = tasks.Select(t => t.AssignedWorker ?? t.AssignedAnt).ToList(),
-                    ["constraint_warnings"] = tasks
-                        .Select(t => AntRegistry.ValidateTask(t, constraints))
-                        .Where(r => !r.Allowed)
-                        .Select(r => r.Reason)
-                        .Distinct()
-                        .ToList(),
+                    ["constraint_warnings"] = plan.RefusalReasons,
                     ["constraints"] = new Dictionary<string, object?>
                     {
                         ["verification_only"] = constraints.VerificationOnly,

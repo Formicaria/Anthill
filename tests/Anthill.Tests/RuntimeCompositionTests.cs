@@ -224,7 +224,7 @@ public class RuntimeCompositionTests
     /// consumer along that path takes the resolved value as an argument: the Queen's four admission
     /// and dispatch sites, the planner, the canonical evaluator, and the deliverable check.
     ///
-    /// Three parse sites remain in <c>src/</c>, each deliberately, each with a reason it is not
+    /// Two parse sites remain in <c>src/</c>, each deliberately, each with a reason it is not
     /// simply a missed rename:
     ///
     ///   - <c>Agents/Ants.cs</c> (CoderAnt) — the ant contract is <c>Execute(Task, Mission)</c>.
@@ -234,8 +234,6 @@ public class RuntimeCompositionTests
     ///   - <c>Autonomy/ObjectiveLifecycle.cs</c> — parses an objective CHARTER, not a mission goal.
     ///     A different input, legitimately parsed where it is read; it becomes an intake concern
     ///     when objectives gain their own context.
-    ///   - <c>Anthill.Api/ApiHost.cs</c> — annotates the plan-preview RESPONSE. Creates no mission
-    ///     and governs nothing; it moves with the composition root in increment 4.
     ///
     /// This test fails if the mission path regresses, and its list is the definition of done for
     /// the remainder.
@@ -259,12 +257,15 @@ public class RuntimeCompositionTests
         // And the Queen consumes the resolved value instead — at planning, dispatch, and grading.
         Assert.Contains("context.Constraints", queen);
 
-        // The other mission-path consumers take it as an argument rather than deriving it.
+        // The other mission-path consumers take it as an argument rather than deriving it — the
+        // API included, which used to re-parse the goal AND re-run the admission gate to rebuild
+        // warnings the plan already carried.
         foreach (var rel in new[]
                  {
                      Path.Combine("src", "Anthill.Core", "Planning", "Planner.cs"),
                      Path.Combine("src", "Anthill.Core", "Outcomes", "MissionEvaluation.cs"),
                      Path.Combine("src", "Anthill.Core", "Outcomes", "ObjectiveVerification.cs"),
+                     Path.Combine("src", "Anthill.Api", "ApiHost.cs"),
                  })
             Assert.Equal(0, Occurrences(CodeOnly(File.ReadAllText(Path.Combine(root, rel))),
                                         "MissionConstraints.Parse"));
