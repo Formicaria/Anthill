@@ -100,7 +100,7 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 | 3a. Queen decomposition — planning | `IPlanningService` | **Landed** |
 | 3b. Queen decomposition — learning | `ILearningRecorder` | **Landed** |
 | 3c. Queen decomposition — results | `IResultAssembler` | **Landed** |
-| 3d. Queen decomposition — execution | `IExecutionService`, `IMissionEvaluator`, `IMissionCoordinator` | Pending |
+| 3d. Queen decomposition — execution | `IExecutionService` | **Landed** |
 | 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
 | 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
 
@@ -195,6 +195,32 @@ calls. A third test was added that was not previously *expressible*: two synthes
 at once, with different settings, deciding independently.
 
 `Queen.Views.cs` is down 142 lines to 704.
+
+**Increment 3d — what landed.** `IExecutionService`: driving the task graph. Both dispatch loops,
+`RunSingleTask`, the timeout sweep, the bounded drain, patch-proposal processing, and handoff /
+adaptive admission — together with the single `_executionLock` that serialises them.
+
+They moved as one piece because they already *were* one piece: a check confirmed the region
+referenced no Queen-only member. Every rule in it is about ordering, and ordering rules that live in
+different places stop agreeing. The invariants are now stated on the interface, each of which was a
+real defect first: no result applied twice or late, no running task in a terminal mission, every
+mid-run task through one admission path, evidence persisted before the status decision.
+
+The extraction was performed as an exact scripted cut — the moved code is byte-identical apart from
+`Memory.` → `_memory.`. On a concurrency surface, transcription error is the failure mode tests
+cannot be relied on to catch, so the opportunity for it was removed rather than managed.
+
+**`Queen.cs`: 1,365 → 377 lines.** What remains is what ADR-001 says should: construction,
+`RunMission`'s lifecycle, `FinalizeMission`, and the plan preview. The Queen decides that a mission
+runs and alone finalises one; it no longer implements planning, execution, learning, or result
+composition. One final mission authority, as the ADR required — decomposition produced no second
+lifecycle owner.
+
+The widened guard immediately earned itself: it found `AnthillRuntime.EnableParallelExecution` in
+`Queen.Views.cs`. That read is *correct* — a configuration status page must report what is
+configured now, not what a past mission resolved. The guard was narrowed back to the mission path,
+but the exemption is bounded rather than open-ended: the live read may appear exactly once, and the
+mission-path gates must appear zero times there.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 
