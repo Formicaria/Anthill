@@ -1,5 +1,40 @@
 # ANTHILL Changelog
 
+## v3.1.1 — The Mission Composer was unreachable
+
+A UI reachability defect found while verifying v3.1.0's plan-preview fix in a live console: the
+fix was correct and could not be seen, because **nothing in the shipping console could reach the
+plan preview at all.**
+
+`POST /missions/plan` (v1.8.18) is served by a card on the classic overview grid. v2.15.0 made the
+topology workspace the default console, which hides that grid — and the workspace's panel registry
+never included the composer. So since v2.15.0 the endpoint worked, the renderer worked, and the
+"⌕ Preview Plan" button existed in the DOM with `visible: false`. Confirmed live before fixing.
+
+This is the repo's recurring defect one layer above where `CallSiteAudit` looks: that audit proves
+a C# declaration has a production consumer, but a UI control with no reachable path is invisible to
+it. The cost here was not a dead feature in the abstract — it was the *review step*. "See the plan
+before you approve dispatch" is a safety affordance, and it had been dark for many releases.
+
+### Bug Fixes
+
+- **Mission Composer restored to the console.** Registered as a `mission-composer` workspace panel
+  on both sides of the contract (`DashboardWorkspaceState.KnownPanelIds` and the client panel
+  defs). Existing saved layouts do not gain new panels automatically, but the Modules menu is built
+  from the panel defs — so it appears there for every install and can be switched on without
+  resetting a layout.
+- **Release guard blocked its own documented recovery.** `.githooks/pre-push` rejected tag
+  *deletions*: a deletion push sends an all-zero local sha, the version lookup found no commit, and
+  the guard blocked with `code Version: <not found>`. `scripts/release.sh` prints exactly that
+  deletion as the way to recover from a mis-tagged release, so the tooling contradicted itself at
+  the only moment it mattered. Deletions are now allowed — the guard exists to stop a bad tag being
+  published, never to stop one being retracted.
+
+### Upgrade Notes
+
+Drop-in. No migration, no configuration change. The composer panel is off in existing layouts until
+enabled from the Modules menu, or on by default after a layout reset.
+
 ## v3.1.0 — Runtime composition and Queen decomposition
 
 The V3 roadmap's second phase. **No new features, no new gates, no schema change** — this release
