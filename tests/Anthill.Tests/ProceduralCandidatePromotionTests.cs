@@ -185,14 +185,23 @@ public class ProceduralCandidatePromotionTests
     [Fact]
     public void TheQueenRegistersRoutes_AtFinalization_FromTheCanonicalEvaluation()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
-        var code = string.Join("\n", source.Split('\n')
-            .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+        string CodeOnly(string path) => string.Join("\n",
+            File.ReadAllText(Path.Combine(RepoRoot(), path.Replace('/', Path.DirectorySeparatorChar))).Split('\n')
+                .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
 
+        // v3.1.0: registration moved into ILearningRecorder with the rest of what a finished
+        // mission teaches the colony. Both halves still have to hold: the Queen must invoke
+        // learning at finalization from the ONE canonical evaluation, and the recorder must be
+        // what actually registers. The defect this guards — a feature that resolves the outcome
+        // too early and therefore never fires — is possible in either half alone.
+        var queen = CodeOnly("src/Anthill.Core/Orchestration/Queen.cs");
+        Assert.Contains("_learning.Record(mission, context, evaluation)", queen);
+
+        var code = CodeOnly("src/Anthill.Core/Orchestration/LearningRecorder.cs");
         Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", code);
-        Assert.Contains("ProceduralCandidatePromotion.Register(Skills, candidates, evaluation.OutcomeCode)", code);
+        Assert.Contains("ProceduralCandidatePromotion.Register(skills, candidates, evaluation.OutcomeCode)", code);
         Assert.Contains("skill_candidate_registered", code);
-        Assert.Contains("Memory.SaveSkill(registered)", code);   // row-atomic; survives the process
+        Assert.Contains("_memory.SaveSkill(registered)", code);   // row-atomic; survives the process
     }
 
     private static string RepoRoot()
