@@ -7238,6 +7238,12 @@ function registerWorkspacePanels(){
     {id:'colony-health',      title:'Colony Health',      body:'ov2-health-body',      x:8,    y:60,  w:316, h:200},
     {id:'colony-vitals',      title:'Colony Vitals',      body:'ov-vitals-body',       x:8,    y:266, w:316, h:180},
     {id:'missions',           title:'Missions',           body:'ov2-active-body',      x:8,    y:452, w:316, h:160},
+    // v3.1.1: the Mission Composer. It lived only on the classic overview grid, which v2.15.0
+    // hid behind the topology canvas — so dispatching with a MODE, and the entire "preview the
+    // plan before approving it" review step, had no reachable control in the shipping console.
+    // Existing saved layouts do not gain new panels automatically, but the Modules menu is built
+    // from these defs, so it appears there for everyone and can be switched on without a reset.
+    {id:'mission-composer',   title:'Mission Command',    body:'ov-composer-body',     x:596,  y:60,  w:420, h:300},
     {id:'colony-jobs',        title:'Jobs',               body:'jobs-list',            x:8,    y:618, w:316, h:222},
     // Right rail
     {id:'agent-inspector',    title:'Agent Inspector',    body:'agent-detail',         x:1276, y:60,  w:316, h:380},

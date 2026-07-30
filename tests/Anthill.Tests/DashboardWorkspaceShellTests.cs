@@ -393,6 +393,44 @@ public class DashboardWorkspaceShellTests
     }
 
     /// <summary>
+    /// v3.1.1: every control that starts or reviews work must be REACHABLE in the workspace
+    /// console, which has been the default since v2.15.0.
+    ///
+    /// The defect this guards, found by driving a live console: the classic overview grid is
+    /// hidden when the workspace is active, and the Mission Composer card lived only there. The
+    /// mission *dispatch* box was re-parented into the bottom bar (see the test below) so
+    /// dispatching still worked — but the mode selector and the "⌕ Preview Plan" button were not,
+    /// so selecting an execution mode and reviewing a plan before approving it had no reachable
+    /// control at all. The endpoint, the renderer and the button all existed; nothing could reach
+    /// them. `CallSiteAudit` cannot see this class of defect: it proves a C# declaration has a
+    /// production consumer, and says nothing about whether a UI control has a path to it.
+    ///
+    /// The rule: a control that starts or reviews work is either in the always-present bottom bar
+    /// or inside a registered workspace panel. Being in the markup is not being reachable.
+    /// </summary>
+    [Fact]
+    public void EveryWorkWorkflowControl_IsReachableInTheWorkspace()
+    {
+        var html = Ui("index.html");
+        var app = Ui("app.js");
+
+        // The composer body is a registered panel, so the workspace can host it and the Modules
+        // menu lists it even for saved layouts that predate the panel.
+        Assert.Contains("body:'ov-composer-body'", app.Replace(" ", ""));
+        Assert.Contains("id=\"ov-composer-body\"", html);
+
+        // ...and the controls that were stranded are inside it.
+        var open = html.IndexOf("id=\"ov-composer-body\"", StringComparison.Ordinal);
+        var close = html.IndexOf("/ov-composer-body", open, StringComparison.Ordinal);
+        Assert.True(open >= 0 && close > open, "ov-composer-body wrapper not found or unterminated.");
+        var body = html[open..close];
+
+        Assert.Contains("id=\"ov-preview-btn\"", body);   // plan review
+        Assert.Contains("id=\"ov-modes\"", body);         // execution mode selector
+        Assert.Contains("id=\"ov-plan\"", body);          // where the reviewed plan renders
+    }
+
+    /// <summary>
     /// The mission directive box starts work, so it must never be coverable by a floating panel.
     /// It is re-parented into its own bar above the panel layer — moved, not duplicated.
     /// </summary>

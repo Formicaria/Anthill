@@ -1438,6 +1438,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
           <div class="ath-card ov2-mission hud-panel mission-node">
             <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
+            <!-- v3.1.1: wrapped so the dashboard workspace can adopt the composer as a panel. A
+                 panel adopts ONE element by id and supplies its own header, so the hud-hd above
+                 stays outside the wrapper. Without this the composer — and with it the whole
+                 plan-preview review step — was reachable only on the classic overview grid, which
+                 has been hidden behind the topology canvas since v2.15.0. -->
+            <div id="ov-composer-body">
             <div class="mn-prompt">
               <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
               <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
@@ -1454,6 +1460,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="hud-act" id="ov-preview-btn" data-onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
             </div>
             <div class="hud-plan" id="ov-plan" style="display:none"></div>
+            </div><!-- /ov-composer-body -->
           </div>
 
           <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" data-onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>

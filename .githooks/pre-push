@@ -28,6 +28,17 @@ while read -r _localref localsha remoteref _remotesha; do
   esac
   tag="${remoteref#refs/tags/}"
   want="${tag#v}"
+
+  # A DELETION push (git push <remote> :refs/tags/vX.Y.Z) sends an all-zero local sha. There is
+  # no commit to read a version from, so the version comparison below would compare "" against
+  # the tag and block — which is worse than useless: deleting a mistakenly-created tag is the
+  # documented recovery path, printed by scripts/release.sh itself. The guard exists to stop a
+  # BAD tag being published, never to stop one being retracted.
+  case "$localsha" in
+    *[!0]*) : ;;                       # a real sha (contains a non-zero character)
+    *) echo "  · release guard: allowing deletion of tag $tag." >&2; continue ;;
+  esac
+
   code="$(read_version "$localsha")"
 
   if [ "$code" != "$want" ]; then

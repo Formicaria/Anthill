@@ -1,0 +1,1 @@
+This file contains information on building and verifying researcher files.
