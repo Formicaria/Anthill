@@ -96,7 +96,7 @@ public class AdaptiveWiringTests : IDisposable
     [Fact]
     public void BothExecutionLoops_ConsultTheController()
     {
-        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
+        var code = ExecutionSource();
 
         var sequential = Between(code, "private string? ExecuteTasksSequential", "private string? ExecuteTasksParallel");
         var parallel = Between(code, "private string? ExecuteTasksParallel", "private void RunSingleTask");
@@ -112,7 +112,7 @@ public class AdaptiveWiringTests : IDisposable
     [Fact]
     public void EveryRuntimeCreatedTask_GoesThroughTheSingleAdmissionPath()
     {
-        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
+        var code = ExecutionSource();
 
         // Exactly one place calls the scheduler's dynamic-admission API...
         Assert.Equal(1, Occurrences(code, "scheduler.AddDynamicTask("));
@@ -121,7 +121,7 @@ public class AdaptiveWiringTests : IDisposable
         Assert.Contains("scheduler.AddDynamicTask(created)", helper);
         Assert.Contains("AntRegistry.ValidateTask(created, constraints)", helper);
         Assert.Contains("mission.Tasks.Add(created)", helper);
-        Assert.Contains("Memory.SaveTask(mission.Id, created)", helper);
+        Assert.Contains("_memory.SaveTask(mission.Id, created)", helper);   // v3.1.0: injected, not a Queen field
     }
 
     /// <summary>
@@ -132,8 +132,7 @@ public class AdaptiveWiringTests : IDisposable
     [Fact]
     public void ARepairTaskIsNotItselfCritical()
     {
-        var apply = Between(
-            CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"))),
+        var apply = Between(ExecutionSource(),
             "if (decision.Action == AdaptiveAction.Repair)", "if (decision.Action == AdaptiveAction.DeltaPlan)");
         Assert.Contains("Critical = false", apply);
     }
@@ -143,8 +142,7 @@ public class AdaptiveWiringTests : IDisposable
     [Fact]
     public void ARefusedAdaptiveTask_StopsTheMission()
     {
-        var record = Between(
-            CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"))),
+        var record = Between(ExecutionSource(),
             "private bool RecordAdaptiveAdmission", "private void LogAdaptiveStop");
         Assert.Contains("adaptive task refused", record);
         Assert.Contains("return false", record);
@@ -176,6 +174,14 @@ public class AdaptiveWiringTests : IDisposable
     }
 
     // ---- helpers ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// v3.1.0: the dispatch loops and the adaptive wiring moved to ExecutionService. The property
+    /// these guards defend is unchanged — both loops consult the controller, and every runtime-made
+    /// task passes one admission path — so they follow the code rather than being weakened.
+    /// </summary>
+    private static string ExecutionSource() => CodeOnly(File.ReadAllText(
+        Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
 
     private static string Between(string text, string start, string end)
     {

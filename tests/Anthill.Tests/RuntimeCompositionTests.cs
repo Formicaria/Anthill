@@ -250,12 +250,18 @@ public class RuntimeCompositionTests
         var context = CodeOnly(File.ReadAllText(
             Path.Combine(root, "src", "Anthill.Core", "Orchestration", "MissionContext.cs")));
 
+        var execution = CodeOnly(File.ReadAllText(
+            Path.Combine(root, "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
+
         Assert.Equal(0, Occurrences(queen, "MissionConstraints.Parse"));
         Assert.Equal(0, Occurrences(queenViews, "MissionConstraints.Parse"));
+        Assert.Equal(0, Occurrences(execution, "MissionConstraints.Parse"));
         Assert.Equal(1, Occurrences(context, "MissionConstraints.Parse"));
 
-        // And the Queen consumes the resolved value instead — at planning, dispatch, and grading.
+        // And the resolved value is what gets consumed — by the Queen at planning and grading, and
+        // by the execution service at dispatch and mid-run admission.
         Assert.Contains("context.Constraints", queen);
+        Assert.Contains("context.Constraints", execution);
 
         // The other mission-path consumers take it as an argument rather than deriving it — the
         // API included, which used to re-parse the goal AND re-run the admission gate to rebuild
@@ -296,12 +302,16 @@ public class RuntimeCompositionTests
     [Fact]
     public void TheMissionExecutionPath_ReadsNoMutableFeatureGate()
     {
-        var queen = CodeOnly(File.ReadAllText(
-            Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
+        // Whole-file, and BOTH files: the dispatch loops moved to ExecutionService in increment 3d,
+        // so checking only the Queen would leave this guard passing while the code it guards had
+        // walked out from under it. Every one of these is resolved at intake and arrives on the
+        // context — including in the plan preview, which resolves a context over a transient
+        // mission so its answer comes from the same reading of the goal a real dispatch would use.
+        var sources = new[] { "Queen.cs", "ExecutionService.cs" }
+            .Select(f => CodeOnly(File.ReadAllText(
+                Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", f))))
+            .ToList();
 
-        // Whole-file, not a span: every one of these is now resolved at intake, including in the
-        // plan preview, which resolves a context over a transient mission so its answer comes from
-        // the same reading of the goal a real dispatch would use.
         foreach (var gate in new[]
                  {
                      "AnthillRuntime.EnableParallelExecution",
@@ -313,7 +323,19 @@ public class RuntimeCompositionTests
                      "AnthillRuntime.MissionDrainGraceSeconds",
                      "AnthillRuntime.EnvironmentFingerprint",
                  })
-            Assert.DoesNotContain(gate, queen);
+            Assert.All(sources, src => Assert.DoesNotContain(gate, src));
+
+        // Queen.Views.cs is deliberately NOT in that list, and the distinction is real rather than
+        // convenient: it is the operator-facing view surface, and a configuration status page must
+        // report what is configured NOW — not what some past mission resolved at its intake. That
+        // exemption is bounded rather than open-ended: the live read may appear once, in the status
+        // line. A second occurrence means a gate has started driving behaviour on the view surface,
+        // which is the coupling this phase removes.
+        var views = CodeOnly(File.ReadAllText(
+            Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.Views.cs")));
+        Assert.Equal(1, Occurrences(views, "AnthillRuntime.EnableParallelExecution"));
+        Assert.Equal(0, Occurrences(views, "AnthillRuntime.EnableHandoffIngestion"));
+        Assert.Equal(0, Occurrences(views, "AnthillRuntime.EnableAdaptiveMissionControl"));
     }
 
     // ---- helpers -------------------------------------------------------------------------------------
