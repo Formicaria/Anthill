@@ -122,9 +122,17 @@ public class SkillPlanningContextTests
     [Fact]
     public void TheQueenFeedsPersistedSkills_IntoThePlanner()
     {
+        // v3.1.0: planning moved behind IPlanningService, so the formatter's call site moved with
+        // it. The two halves of the guarantee are now checkable separately — the Queen still owns
+        // hydrating exactly ONE registry from the database and hands a factory for it to the
+        // service, and the service is what feeds it to the planner. Both must hold; either alone is
+        // the defect this test was written for.
         var queen = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
-        Assert.Contains("SkillPlanningContext.Format(Skills)", queen);
         Assert.Contains("Memory.LoadSkillRegistry()", queen);   // hydrated, not constructed empty
+        Assert.Contains("new PlanningService(_planner, Memory, Tools, () => Skills)", queen);
+
+        var planning = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "PlanningService.cs")));
+        Assert.Contains("SkillPlanningContext.Format(_skills())", planning);
 
         var planner = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Planning", "Planner.cs"));
         Assert.Contains("{skillContext}", planner);

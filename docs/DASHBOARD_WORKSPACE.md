@@ -10,6 +10,11 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v3.1.0 note: one dashboard-visible change — the plan preview now runs the same authorization
+> gate a dispatch does, so a step the runtime would refuse renders as REFUSED with its reason
+> instead of looking like an ordinary planned step. Everything else in the release is internal
+> composition work with no console surface.
+>
 > v3.0.1 note: no dashboard surface either — a backend-only mission-scoring integrity fix (a
 > model-unavailable / all-fallback run can no longer show as a verified success).
 > v3.0.0 note: no new dashboard surface — a baseline-lock release. `GET /runtime/inventory`

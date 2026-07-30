@@ -15,6 +15,17 @@ namespace Anthill.Tests;
 /// </summary>
 public class MissionEvaluationDegradedTests : IDisposable
 {
+
+    /// <summary>
+    /// v3.1.0 (ADR-001/ADR-002): the evaluator is a pure function — it takes the mission's
+    /// constraints and the run's verification policy explicitly instead of reading a static and
+    /// re-parsing the goal. These tests resolve both exactly as mission intake does, so what they
+    /// pin is still the production rule and not a test-only shortcut.
+    /// </summary>
+    private static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount) =>
+        MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
+            Anthill.Core.Common.MissionConstraints.Parse(mission.Goal),
+            AnthillRuntime.EnableObjectiveVerification);
     // These tests flip the shared AnthillRuntime.EnableObjectiveVerification global. With assembly
     // parallelization disabled, leaving it mutated leaks into later tests (it broke
     // ObjectiveVerification_IsOffByDefault). Capture on construction, restore on teardown.
@@ -46,7 +57,7 @@ public class MissionEvaluationDegradedTests : IDisposable
         AnthillRuntime.EnableObjectiveVerification = true;
         var m = MissionWith("research a topic", Work(degraded: false), Verifier(pass: true));
 
-        var e = MissionEvaluator.Evaluate(m, stopReason: null, patchProposalCount: 0);
+        var e = Evaluate(m, stopReason: null, patchProposalCount: 0);
 
         Assert.Equal(MissionOutcome.CompletedVerified, e.OutcomeCode); // unchanged baseline (truth-table row)
         Assert.True(e.IsPositive);
@@ -58,7 +69,7 @@ public class MissionEvaluationDegradedTests : IDisposable
         AnthillRuntime.EnableObjectiveVerification = true;
         var m = MissionWith("research a topic", Work(degraded: true), Verifier(pass: true));
 
-        var e = MissionEvaluator.Evaluate(m, stopReason: null, patchProposalCount: 0);
+        var e = Evaluate(m, stopReason: null, patchProposalCount: 0);
 
         Assert.Equal(MissionOutcome.CompletedUnverified, e.OutcomeCode); // demoted by generation integrity
         Assert.False(e.IsPositive);                                      // and therefore never reinforces

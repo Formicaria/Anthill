@@ -151,15 +151,21 @@ public class SkillCreditTests : IDisposable
     [Fact]
     public void TheQueenCreditsSkills_AtMissionFinalisation()
     {
-        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
-        Assert.Contains("CreditSkills(mission, evaluation)", code);
+        // v3.1.0: credit moved into ILearningRecorder, and takes the mission's resolved context —
+        // the environment a skill's coverage is proven against now comes from intake rather than
+        // being recomputed at finalisation. The Queen still owns WHEN.
+        var queen = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
+        Assert.Contains("_learning.Record(mission, context, evaluation)", queen);
 
-        var credit = Between(code, "private void CreditSkills", "private static Verification.VerificationBundle");
+        var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "LearningRecorder.cs")));
+        Assert.Contains("CreditSkills(mission, context, evaluation)", code);
+
+        var credit = Between(code, "private void CreditSkills", "private void RegisterProceduralRoutes");
         // v2.26.0: the positive predicate is CONSUMED from the one persisted evaluation
         // (IsPositive == canonical completed_verified), never re-derived inside the credit path.
         Assert.Contains("evaluation.IsPositive", credit);
-        Assert.Contains("Skills.RecordOutcome", credit);
-        Assert.Contains("Memory.SaveSkill(touched)", credit);   // row-atomic; standing outlives the process
+        Assert.Contains("skills.RecordOutcome", credit);
+        Assert.Contains("_memory.SaveSkill(touched)", credit);   // row-atomic; standing outlives the process
     }
 
     /// <summary>The planner must record provenance, or nothing is ever creditable.</summary>

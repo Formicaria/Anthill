@@ -29,6 +29,17 @@ namespace Anthill.Tests;
 [Collection("specialist-gates")]
 public class CharacterizationTests : IDisposable
 {
+
+    /// <summary>
+    /// v3.1.0 (ADR-001/ADR-002): the evaluator is a pure function — it takes the mission's
+    /// constraints and the run's verification policy explicitly instead of reading a static and
+    /// re-parsing the goal. These tests resolve both exactly as mission intake does, so what they
+    /// pin is still the production rule and not a test-only shortcut.
+    /// </summary>
+    private static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount) =>
+        MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
+            Anthill.Core.Common.MissionConstraints.Parse(mission.Goal),
+            AnthillRuntime.EnableObjectiveVerification);
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "anthill_char_" + Guid.NewGuid().ToString("N"));
     private readonly bool _objVerify;
     private readonly bool _handoffs;
@@ -92,7 +103,7 @@ public class CharacterizationTests : IDisposable
     {
         AnthillRuntime.EnableObjectiveVerification = true;
         var mission = MissionWith(goal, status, Work(), Verifier(verifierPasses));
-        Assert.Equal(expected, MissionEvaluator.Evaluate(mission, stop, patches).OutcomeCode);
+        Assert.Equal(expected, Evaluate(mission, stop, patches).OutcomeCode);
     }
 
     /// <summary>Exactly one outcome code is positive. This is the single most load-bearing rule in
@@ -116,7 +127,7 @@ public class CharacterizationTests : IDisposable
     [Fact]
     public void AMissionWithNoVerifier_IsNotRun_AndNotAPass()
     {
-        var e = MissionEvaluator.Evaluate(MissionWith("g", MissionStatus.Complete, Work()), null, 0);
+        var e = Evaluate(MissionWith("g", MissionStatus.Complete, Work()), null, 0);
         Assert.Equal(MissionEvaluation.Verification.NotRun, e.VerificationStatus);
         Assert.False(e.IsPositive);
     }
@@ -205,7 +216,7 @@ public class CharacterizationTests : IDisposable
         var mission = MissionWith("research a topic", MissionStatus.Complete, Work(), Verifier(true));
         mem.SaveMission(mission);
 
-        var live = MissionEvaluator.Evaluate(mission, null, 0);
+        var live = Evaluate(mission, null, 0);
         mem.SaveMissionEvaluation(live);
         var restored = mem.LoadMissionEvaluation(mission.Id)!;
 
