@@ -205,9 +205,16 @@ public class MissionEvaluationTests : IDisposable
 
         var queen = CodeOnly(Read("src", "Anthill.Core", "Orchestration", "Queen.cs"));
         Assert.Contains("SaveMissionEvaluation(evaluation)", queen);
-        Assert.Contains("UpdateMissionPheromones(mission, evaluation.OutcomeCode)", queen);
-        Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", queen);
-        Assert.Contains("CreditSkills(mission, context, evaluation)", queen);   // v3.1.0: context-carried
+        // v3.1.0: pheromones, credit and route registration moved behind ILearningRecorder. The
+        // Queen still consumes the ONE evaluation and hands it to learning; the recorder is where
+        // each consumer lives. Both are checked so neither half can quietly stop happening.
+        Assert.Contains("_learning.Record(mission, context, evaluation)", queen);
+
+        var learning = CodeOnly(Read("src", "Anthill.Core", "Orchestration", "LearningRecorder.cs"));
+        Assert.Contains("UpdateMissionPheromones(mission, evaluation.OutcomeCode)", learning);
+        Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", learning);
+        Assert.Contains("CreditSkills(mission, context, evaluation)", learning);
+        Assert.Contains("evaluation.IsPositive", learning);   // never re-derived
     }
 
     /// <summary>Criticality persists, so row-based evaluation can never disagree with the live

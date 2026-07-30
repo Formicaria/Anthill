@@ -176,17 +176,30 @@ public class ObjectiveVerificationTests
     [Fact]
     public void TheQueenHasOneVerificationDecision_AndCreditReadsIt()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
-        var code = string.Join("\n", source.Split('\n')
-            .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+        string CodeOnly(string relative) => string.Join("\n",
+            File.ReadAllText(Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar)))
+                .Split('\n')
+                .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+
+        var code = CodeOnly("src/Anthill.Core/Orchestration/Queen.cs");
 
         // v2.26.0: the one decision moved from Queen.MissionIsVerified into the canonical
         // evaluator — computed once, persisted, consumed. Same intent, structurally stronger.
         Assert.Contains("MissionEvaluator.Evaluate(", code);
         Assert.Contains("SaveMissionEvaluation(evaluation)", code);
-        Assert.Contains("evaluation.IsPositive", code);
         Assert.DoesNotContain("MissionIsVerified", code);         // the second authority is GONE
         Assert.Contains("objective_verification_failed", code);   // never a silent downgrade
+
+        // v3.1.0: credit moved behind ILearningRecorder, so "the credit path reads the ONE
+        // decision" is now two checkable facts — the Queen hands that decision to learning, and
+        // the recorder consumes IsPositive rather than deriving verified-ness for itself. The
+        // property this test defends is unchanged: there is exactly one authority, and credit
+        // asks it.
+        Assert.Contains("_learning.Record(mission, context, evaluation)", code);
+
+        var learning = CodeOnly("src/Anthill.Core/Orchestration/LearningRecorder.cs");
+        Assert.Contains("evaluation.IsPositive", learning);
+        Assert.DoesNotContain("MissionEvaluator.Evaluate(", learning);   // it consumes; it never re-evaluates
     }
 
     private static string RepoRoot()

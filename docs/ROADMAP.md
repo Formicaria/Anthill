@@ -98,7 +98,8 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 | 1. Immutable configuration + mission context | `RuntimeOptions`, `RuntimeProfile`, `MissionContext`, wired through the Queen's mission engine | **Landed** |
 | 2. Constraint resolution beyond the engine | Planner, `MissionEvaluator`, `ObjectiveVerification`, plan preview | **Landed** |
 | 3a. Queen decomposition — planning | `IPlanningService` | **Landed** |
-| 3b. Queen decomposition — the rest | `IMissionCoordinator`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler` | Pending |
+| 3b. Queen decomposition — learning | `ILearningRecorder` | **Landed** |
+| 3c. Queen decomposition — the rest | `IMissionCoordinator`, `IExecutionService`, `IMissionEvaluator`, `IResultAssembler` | Pending |
 | 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
 | 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
 
@@ -156,6 +157,22 @@ response, which this phase is not permitted to do.
 The service takes its dependencies as constructor parameters (`Planner`, `SqliteMemory`,
 `ToolRegistry`, and a `Func<SkillRegistry>` so the Queen keeps ownership of the single hydrated
 registry). It reads no mutable static. `Queen.PlanPreview` is down from 22 lines to 3.
+
+**Increment 3b — what landed.** `ILearningRecorder` / `LearningRecorder`: everything a finished
+mission teaches the colony — pheromone scoring, trail reinforcement, skill credit, and procedural
+route registration.
+
+These four were interleaved with result composition and event logging inside `FinalizeMission`, so
+"what does this mission change about future missions" had no single place to be read or reviewed.
+The safety rule the whole surface obeys is now stated once, on the interface: only
+`completed_verified` is positive, and that fact is consumed from the one canonical
+`MissionEvaluation`, never re-derived. The Queen still decides *when* learning happens — after every
+task is terminal, after the evaluation exists, before completion is published.
+
+`Queen.cs` is down from 1,365 lines to 1,237 across increments 3a and 3b, and the three call-site
+guards that pinned these behaviours now check both halves: that the Queen still invokes learning
+from the canonical evaluation, and that the recorder is what performs each step. Either half alone
+is the defect those guards were written for.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 
