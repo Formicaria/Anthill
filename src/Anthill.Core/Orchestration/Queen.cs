@@ -30,6 +30,9 @@ public sealed partial class Queen : IDisposable
     public ModelRouter? Router { get; }
     public ToolRegistry Tools { get; }
     private readonly Planner _planner;
+    /// <summary>v3.1.0 (ADR-001): planning behind an interface. The Queen decides WHEN a plan is
+    /// made and owns the mission it belongs to; it no longer also implements how one is built.</summary>
+    private readonly IPlanningService _planning;
     private readonly PheromoneEngine _pheromones = new();
     private readonly PatchProposalParser _patchParser = new();
     private readonly object _executionLock = new();
@@ -52,6 +55,9 @@ public sealed partial class Queen : IDisposable
         Router = AnthillRuntime.EnableModelRouting ? new ModelRouter(Memory) : null;
         Tools = BuildToolRegistry();
         _planner = new Planner(AnthillRuntime.UseOllama, Router);
+        // The registry factory, not the registry: Skills hydrates lazily from the database and is
+        // shared with the credit/promotion paths, so there must remain exactly one instance.
+        _planning = new PlanningService(_planner, Memory, Tools, () => Skills);
         _ants = new Dictionary<string, BaseAnt>
         {
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
@@ -174,32 +180,9 @@ public sealed partial class Queen : IDisposable
             ["spec_ingestion_enabled"] = AnthillRuntime.EnableSpecIngestion,
         });
 
-        var memoryContext =
-            $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
-            $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        mission.Tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, Tools.DescribeTools(),
-            Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
-
-        // v3.1.0 (ADR-002): consumed from the context. This used to be one of eight independent
-        // parses of the same goal string, each free to disagree with the others.
-        var constraints = context.Constraints;
-        foreach (var task in mission.Tasks)
-        {
-            if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
-            if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
-            var selection = AntRegistry.ValidateTask(task, constraints);
-            if (!selection.Allowed)
-            {
-                task.Status = TaskStatus.Failed;
-                task.FailureType = "ant_permission_denied";
-                task.FailureReason = selection.Reason;
-                task.Result = $"Task rejected by ant registry: {selection.Reason}";
-            }
-        }
-        // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
-        // non-critical section flags; auto-wiring would only re-derive the same edges.
-        if (options.AutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
+        // v3.1.0 (ADR-001): planning is a service. The Queen says WHEN a plan is made and owns
+        // everything that happens to it afterwards; it no longer also implements how one is built.
+        mission.Tasks = _planning.CreatePlan(context);
 
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
@@ -286,25 +269,6 @@ public sealed partial class Queen : IDisposable
         };
     }
 
-    private static void AutoWireDependencies(Mission mission)
-    {
-        var researcherFileIds = new List<string>();
-        var preBuilderIds = new List<string>();
-        var builderIds = new List<string>();
-        foreach (var task in mission.Tasks)
-        {
-            if (task.DependsOn.Count > 0) { /* respect explicit deps */ }
-            else if (task.AssignedAnt is "researcher" or "web" or "file") { /* sources have no upstream deps */ }
-            else if (task.AssignedAnt == "coder") task.DependsOn = new List<string>(researcherFileIds);
-            else if (task.AssignedAnt == "builder") task.DependsOn = new List<string>(preBuilderIds);
-            else if (task.AssignedAnt == "verifier") task.DependsOn = preBuilderIds.Concat(builderIds).ToList();
-
-            if (task.AssignedAnt is "researcher" or "web" or "file") { researcherFileIds.Add(task.Id); preBuilderIds.Add(task.Id); }
-            else if (task.AssignedAnt == "coder") preBuilderIds.Add(task.Id);
-            else if (task.AssignedAnt == "builder") builderIds.Add(task.Id);
-        }
-    }
-
     /// <summary>
     /// v1.8.18 Mission Composer plan preview: builds the task plan for a goal exactly as
     /// <see cref="RunMission(string)"/> would (planner → task-type inference → auto-dependency
@@ -316,33 +280,12 @@ public sealed partial class Queen : IDisposable
     public List<Task> PlanPreview(string goal)
     {
         // v3.1.0: the preview resolves a context exactly as a dispatch would, over a transient
-        // mission that is never persisted. It creates no mission, but it must answer "what would
-        // the plan be" from the SAME constraints and configuration a real dispatch would use —
-        // a preview computed from a different reading of the goal is a preview of nothing.
-        var transient = new Mission { Goal = goal };
-        var context = MissionContext.Create(transient,
+        // mission that is never persisted, and then asks the SAME planning service. Before this it
+        // re-implemented planning in a near-copy that had already drifted — a preview computed from
+        // a different reading of the goal is a preview of nothing.
+        var context = MissionContext.Create(new Mission { Goal = goal },
             RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names), AnthillTime.NowUtc());
-
-        var memoryContext =
-            $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
-            $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        var tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, Tools.DescribeTools(),
-            Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
-        foreach (var task in tasks)
-        {
-            if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
-            if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
-        }
-        // Mirror RunMission's auto-wiring so the preview shows the same dependency edges the
-        // scheduler would actually run. Spec-ingestion plans carry their own explicit wiring.
-        if (context.Options.AutoDependencyWiring && !Planner.IsLongInput(goal))
-        {
-            transient.Tasks = tasks;
-            AutoWireDependencies(transient);
-            tasks = transient.Tasks;
-        }
-        return tasks;
+        return _planning.PreviewPlan(context);
     }
 
     private string? ExecuteTasksSequential(Mission mission, MissionContext context, CancellationToken missionToken)

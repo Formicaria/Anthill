@@ -97,7 +97,8 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 |---|---|---|
 | 1. Immutable configuration + mission context | `RuntimeOptions`, `RuntimeProfile`, `MissionContext`, wired through the Queen's mission engine | **Landed** |
 | 2. Constraint resolution beyond the engine | Planner, `MissionEvaluator`, `ObjectiveVerification`, plan preview | **Landed** |
-| 3. Queen decomposition | `IMissionCoordinator`, `IPlanningService`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler` | Pending |
+| 3a. Queen decomposition — planning | `IPlanningService` | **Landed** |
+| 3b. Queen decomposition — the rest | `IMissionCoordinator`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler` | Pending |
 | 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
 | 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
 
@@ -141,6 +142,20 @@ documented in `RuntimeCompositionTests.TheMissionEngine_ParsesConstraintsExactly
 (waits for v3.2.0's ant-contract redesign rather than designing that contract twice),
 `ObjectiveLifecycle` (parses an objective charter, a different input), and the plan-preview API
 response (creates no mission, governs nothing).
+
+**Increment 3a — what landed.** `IPlanningService` / `PlanningService`: goal → admitted task graph.
+
+This extraction is not cosmetic, and the reason is worth recording. Planning was written **twice** —
+once in `RunMission` and once in `PlanPreview` — and the copies had already diverged: the preview
+never ran `AntRegistry.ValidateTask`, so it could show an operator a task that dispatch would refuse
+on sight. Both surfaces now call the same construction. The remaining difference is a named method
+(`CreatePlan` vs `PreviewPlan`) rather than a silent one, with the discrepancy documented on the
+interface and left for v3.8.0's workflow templates to resolve — changing it now would change an API
+response, which this phase is not permitted to do.
+
+The service takes its dependencies as constructor parameters (`Planner`, `SqliteMemory`,
+`ToolRegistry`, and a `Func<SkillRegistry>` so the Queen keeps ownership of the single hydrated
+registry). It reads no mutable static. `Queen.PlanPreview` is down from 22 lines to 3.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 
