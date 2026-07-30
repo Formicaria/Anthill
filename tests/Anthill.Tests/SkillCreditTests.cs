@@ -152,7 +152,9 @@ public class SkillCreditTests : IDisposable
     public void TheQueenCreditsSkills_AtMissionFinalisation()
     {
         var code = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
-        Assert.Contains("CreditSkills(mission, evaluation)", code);
+        // v3.1.0: credit takes the mission's resolved context, so the environment a skill's coverage
+        // is proven against comes from intake rather than being recomputed at finalisation.
+        Assert.Contains("CreditSkills(mission, context, evaluation)", code);
 
         var credit = Between(code, "private void CreditSkills", "private static Verification.VerificationBundle");
         // v2.26.0: the positive predicate is CONSUMED from the one persisted evaluation

@@ -196,7 +196,7 @@ public class MissionEvaluationTests : IDisposable
         Assert.Contains("SaveMissionEvaluation(evaluation)", queen);
         Assert.Contains("UpdateMissionPheromones(mission, evaluation.OutcomeCode)", queen);
         Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", queen);
-        Assert.Contains("CreditSkills(mission, evaluation)", queen);
+        Assert.Contains("CreditSkills(mission, context, evaluation)", queen);   // v3.1.0: context-carried
     }
 
     /// <summary>Criticality persists, so row-based evaluation can never disagree with the live
