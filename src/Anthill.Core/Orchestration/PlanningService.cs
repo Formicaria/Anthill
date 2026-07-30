@@ -10,6 +10,30 @@ using Anthill.Core.Tools;
 namespace Anthill.Core.Orchestration;
 
 /// <summary>
+/// A plan and the facts needed to explain it, resolved together.
+///
+/// v3.1.0: the plan-preview endpoint used to receive only the task list and then re-derive its own
+/// answers — parsing the goal for constraints and re-running <c>AntRegistry.ValidateTask</c> over
+/// every task to rebuild warnings the planning path had already computed. That is the same
+/// re-derivation defect one layer out: two readings of one plan, free to disagree. The plan now
+/// carries its own explanation.
+/// </summary>
+/// <param name="Tasks">The admitted task graph.</param>
+/// <param name="Constraints">The constraints this plan was built under, resolved at intake.</param>
+/// <param name="SpecIngestion">Whether the goal was ingested section-by-section as a long
+/// specification rather than planned as a single analysis.</param>
+public sealed record MissionPlan(List<Task> Tasks, MissionConstraints Constraints, bool SpecIngestion)
+{
+    /// <summary>Tasks the ant registry refused, with the reason it gave. Read off the plan rather
+    /// than recomputed, so an operator's warning list cannot disagree with what dispatch did.</summary>
+    public IReadOnlyList<Task> Refused =>
+        Tasks.Where(t => t.FailureType == PlanningService.AdmissionRefusedFailureType).ToList();
+
+    public IReadOnlyList<string> RefusalReasons =>
+        Refused.Select(t => t.FailureReason ?? "refused").Distinct(StringComparer.Ordinal).ToList();
+}
+
+/// <summary>
 /// v3.1.0 (ADR-001) — turning a goal into an admitted task graph.
 ///
 /// This was inline in <c>Queen.RunMission</c>, and inline again — in a near-copy that had quietly
@@ -24,29 +48,24 @@ namespace Anthill.Core.Orchestration;
 public interface IPlanningService
 {
     /// <summary>
-    /// The plan a dispatch will run: planned, task types inferred, workers resolved, and each task
-    /// put through <see cref="AntRegistry.ValidateTask"/> — a task the registry refuses comes back
-    /// already Failed, because a plan that contains work the runtime will not authorize should say
-    /// so before anything tries to run it.
+    /// The plan: planned, task types inferred, workers resolved, and each task put through
+    /// <see cref="AntRegistry.ValidateTask"/> — a task the registry refuses comes back already
+    /// Failed, because a plan containing work the runtime will not authorize should say so before
+    /// anything tries to run it.
+    ///
+    /// There is exactly ONE plan construction, used by dispatch and by the preview endpoint alike.
+    /// The preview briefly had its own copy that skipped admission; that is the defect this
+    /// interface exists to make impossible, so no "preview mode" parameter is offered here.
     /// </summary>
     List<Task> CreatePlan(MissionContext context);
-
-    /// <summary>
-    /// The same plan for operator review, WITHOUT the admission verdict applied.
-    ///
-    /// The difference from <see cref="CreatePlan"/> is deliberate and is preserved from v1.8.18
-    /// behaviour rather than endorsed: the preview endpoint returns tasks with their planned status,
-    /// so a task that dispatch would immediately refuse still renders as an ordinary planned step.
-    /// In practice the planner's own constraint enforcement means this rarely diverges — but
-    /// "rarely" is not "never", and a preview that disagrees with dispatch is worth naming.
-    /// Recorded here as a known discrepancy for the v3.8.0 workflow templates to resolve; changing
-    /// it now would change an API response, which v3.1.0 is not permitted to do.
-    /// </summary>
-    List<Task> PreviewPlan(MissionContext context);
 }
 
 public sealed class PlanningService : IPlanningService
 {
+    /// <summary>The failure type a task carries when the ant registry refused it at admission.
+    /// Named once so the plan, the API, and the runtime cannot spell it differently.</summary>
+    public const string AdmissionRefusedFailureType = "ant_permission_denied";
+
     private readonly Planner _planner;
     private readonly SqliteMemory _memory;
     private readonly ToolRegistry _tools;
@@ -63,11 +82,7 @@ public sealed class PlanningService : IPlanningService
         _skills = skills;
     }
 
-    public List<Task> CreatePlan(MissionContext context) => Build(context, applyAdmission: true);
-
-    public List<Task> PreviewPlan(MissionContext context) => Build(context, applyAdmission: false);
-
-    private List<Task> Build(MissionContext context, bool applyAdmission)
+    public List<Task> CreatePlan(MissionContext context)
     {
         var goal = context.Goal;
 
@@ -89,12 +104,13 @@ public sealed class PlanningService : IPlanningService
                 task.AssignedWorker = AntRegistry.DefaultWorkerFor(
                     task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
 
-            if (!applyAdmission) continue;
-
+            // The authorization verdict is part of the plan, not something a caller opts into. An
+            // operator reviewing a preview is approving the plan that will actually run, so a task
+            // the registry refuses must be visibly refused there too.
             var selection = AntRegistry.ValidateTask(task, context.Constraints);
             if (selection.Allowed) continue;
             task.Status = TaskStatus.Failed;
-            task.FailureType = "ant_permission_denied";
+            task.FailureType = AdmissionRefusedFailureType;
             task.FailureReason = selection.Reason;
             task.Result = $"Task rejected by ant registry: {selection.Reason}";
         }

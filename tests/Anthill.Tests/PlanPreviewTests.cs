@@ -40,7 +40,7 @@ public class PlanPreviewTests : IDisposable
     [Fact]
     public void PlanPreview_VerificationOnly_HasNoCoderTask()
     {
-        var tasks = _queen.PlanPreview("verify the parser is correct — verification only, do not modify files");
+        var tasks = _queen.PlanPreview("verify the parser is correct — verification only, do not modify files").Tasks;
         Assert.DoesNotContain(tasks, t => t.AssignedAnt == "coder");
         Assert.DoesNotContain(tasks, t => t.TaskType == "patch_proposal");
         Assert.Contains(tasks, t => t.AssignedAnt == "verifier");
@@ -49,7 +49,7 @@ public class PlanPreviewTests : IDisposable
     [Fact]
     public void PlanPreview_CodeGoal_IncludesCoderTask()
     {
-        var tasks = _queen.PlanPreview("create a new file src/Foo.cs and add a class");
+        var tasks = _queen.PlanPreview("create a new file src/Foo.cs and add a class").Tasks;
         Assert.Contains(tasks, t => t.AssignedAnt == "coder");
     }
 
@@ -57,7 +57,7 @@ public class PlanPreviewTests : IDisposable
     public void PlanPreview_DoesNotCreateOrExecuteAMission()
     {
         var before = _memory.GetRecentMissions(50).Count;
-        var tasks = _queen.PlanPreview("do something useful");
+        var tasks = _queen.PlanPreview("do something useful").Tasks;
         Assert.NotEmpty(tasks);
         Assert.Equal(before, _memory.GetRecentMissions(50).Count); // nothing persisted
     }
@@ -65,7 +65,7 @@ public class PlanPreviewTests : IDisposable
     [Fact]
     public void PlanPreview_AlwaysEndsWithVerifier()
     {
-        var tasks = _queen.PlanPreview("research the best approach and summarize");
+        var tasks = _queen.PlanPreview("research the best approach and summarize").Tasks;
         Assert.Contains(tasks, t => t.AssignedAnt == "verifier");
     }
 }
