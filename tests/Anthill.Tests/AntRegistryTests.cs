@@ -67,8 +67,9 @@ public class AntRegistryTests
     [Fact]
     public void Planner_VerificationOnlyDoesNotUseCoderAndGetsWorkers()
     {
+        const string Goal = "verify the parser only; no patches and do not modify files";
         var planner = new Planner(useOllama: false, router: null);
-        var tasks = planner.CreateTasks("verify the parser only; no patches and do not modify files");
+        var tasks = planner.CreateTasks(Goal, MissionConstraints.Parse(Goal));
         Assert.DoesNotContain(tasks, t => t.AssignedAnt == "coder");
         Assert.All(tasks, t => Assert.False(string.IsNullOrWhiteSpace(t.AssignedWorker)));
     }
@@ -76,8 +77,9 @@ public class AntRegistryTests
     [Fact]
     public void Planner_UiGoalRoutesCoderToUiWorker()
     {
+        const string UiGoal = "update the Colony Live UI canvas and CSS";
         var planner = new Planner(useOllama: false, router: null);
-        var tasks = planner.CreateTasks("update the Colony Live UI canvas and CSS");
+        var tasks = planner.CreateTasks(UiGoal, MissionConstraints.Parse(UiGoal));
         Assert.Contains(tasks, t => t.AssignedAnt == "coder" && t.AssignedWorker == "coder.ui_coder");
     }
 

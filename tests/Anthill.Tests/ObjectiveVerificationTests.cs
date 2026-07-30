@@ -20,6 +20,17 @@ namespace Anthill.Tests;
 /// </summary>
 public class ObjectiveVerificationTests
 {
+
+    /// <summary>
+    /// v3.1.0 (ADR-002): the deliverable check takes the mission's constraints instead of
+    /// re-parsing its goal. Resolved here exactly as intake resolves them, so these tests still
+    /// pin the production rule.
+    /// </summary>
+    private static bool Satisfied(Mission? mission, int patches) =>
+        ObjectiveVerification.IsSatisfied(mission, MissionConstraints.Parse(mission?.Goal), patches);
+
+    private static string Explain(Mission? mission, int patches) =>
+        ObjectiveVerification.Explain(mission, MissionConstraints.Parse(mission?.Goal), patches);
     private const string PassText = "Verification Passed\nReasoning: checked.";
 
     private static Mission Verified(string goal) =>
@@ -78,16 +89,16 @@ public class ObjectiveVerificationTests
     public void AFileChangeGoalWithNoProposal_IsNotSatisfied()
     {
         var mission = Verified("add a changelog entry for v2.24.0");
-        Assert.False(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 0));
-        Assert.Contains("proposed none", ObjectiveVerification.Explain(mission, 0));
+        Assert.False(Satisfied(mission, 0));
+        Assert.Contains("proposed none", Explain(mission, 0));
     }
 
     [Fact]
     public void AFileChangeGoalWithAProposal_IsSatisfied()
     {
         var mission = Verified("add a changelog entry for v2.24.0");
-        Assert.True(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 1));
-        Assert.Equal("objective satisfied", ObjectiveVerification.Explain(mission, 1));
+        Assert.True(Satisfied(mission, 1));
+        Assert.Equal("objective satisfied", Explain(mission, 1));
     }
 
     /// <summary>
@@ -105,7 +116,7 @@ public class ObjectiveVerificationTests
     public void AGoalAskingForNothingSpecific_RequiresNothingSpecific()
     {
         var mission = Verified("summarise the recent mission failures");
-        Assert.True(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 0));
+        Assert.True(Satisfied(mission, 0));
     }
 
     // ---- additive: it can only narrow --------------------------------------------------------------
@@ -123,7 +134,7 @@ public class ObjectiveVerificationTests
             Tasks = { new DomainTask { Title = "work", AssignedAnt = "coder", Status = TaskStatus.Complete } },
         };
         Assert.False(MissionVerification.IsSatisfied(unverified.Tasks));
-        Assert.False(ObjectiveVerification.IsSatisfied(unverified, proposedPatchCount: 99));
+        Assert.False(Satisfied(unverified, 99));
     }
 
     /// <summary>
@@ -139,7 +150,7 @@ public class ObjectiveVerificationTests
         foreach (var patches in new[] { 0, 1, 5 })
         {
             var mission = verified ? Verified(goal) : new Mission { Goal = goal };
-            if (ObjectiveVerification.IsSatisfied(mission, patches))
+            if (Satisfied(mission, patches))
                 Assert.True(MissionVerification.IsSatisfied(mission.Tasks),
                     $"objective gate admitted a mission the floor rejects: goal='{goal}', patches={patches}");
         }
@@ -147,7 +158,7 @@ public class ObjectiveVerificationTests
 
     [Fact]
     public void ANullMission_IsNotSatisfied() =>
-        Assert.False(ObjectiveVerification.IsSatisfied(null, 1));
+        Assert.False(Satisfied(null, 1));
 
     // ---- gated, and wired -------------------------------------------------------------------------
 

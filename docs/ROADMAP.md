@@ -96,7 +96,7 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 | Increment | Scope | Status |
 |---|---|---|
 | 1. Immutable configuration + mission context | `RuntimeOptions`, `RuntimeProfile`, `MissionContext`, wired through the Queen's mission engine | **Landed** |
-| 2. Constraint resolution beyond the engine | Planner, CoderAnt, `MissionEvaluator`, `ObjectiveVerification`, `ObjectiveLifecycle`, plan-preview endpoint | Pending |
+| 2. Constraint resolution beyond the engine | Planner, `MissionEvaluator`, `ObjectiveVerification`, plan preview | **Landed** |
 | 3. Queen decomposition | `IMissionCoordinator`, `IPlanningService`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler` | Pending |
 | 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
 | 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
@@ -120,9 +120,27 @@ project. A phase is complete when its exit gates are recorded, not when its firs
 
 **Increment 1 — what did not change.** No behaviour, by construction. Construction-time reads
 (building the ant roster, the tool registry, the model router) still read the live runtime; those
-move with the composition root in increment 4. The remaining `MissionConstraints.Parse` sites are
-enumerated in `RuntimeCompositionTests.TheMissionEngine_ParsesConstraintsExactlyOnce`, which doubles
-as increment 2's checklist.
+move with the composition root in increment 4.
+
+**Increment 2 — what landed.** The resolved constraints reach the rest of the mission path, and the
+canonical evaluator becomes a pure function:
+
+- `Planner.CreateTasks` takes the constraints instead of parsing the goal. The planner now reaches
+  its "no coder tasks for a read-only mission" conclusion from the same object the admission gate
+  and the evaluator use.
+- `MissionEvaluator.Evaluate` takes the constraints AND the run's verification policy.
+  `AnthillRuntime.` no longer appears in `MissionEvaluation.cs` at all — the one authority on
+  mission success is now reproducible from its arguments rather than dependent on what a mutable
+  static said at the instant finalization ran. Guarded by a test.
+- `ObjectiveVerification.IsSatisfied` / `.Explain` take the constraints.
+- `Queen.PlanPreview` resolves a context over a transient, never-persisted mission, so the preview
+  answers from the same reading of the goal a real dispatch would use.
+
+`MissionConstraints.Parse` is down from eight sites to three in `src/`, each deliberate and each
+documented in `RuntimeCompositionTests.TheMissionEngine_ParsesConstraintsExactlyOnce`: `CoderAnt`
+(waits for v3.2.0's ant-contract redesign rather than designing that contract twice),
+`ObjectiveLifecycle` (parses an objective charter, a different input), and the plan-preview API
+response (creates no mission, governs nothing).
 
 ## v3.2.0 - Universal Ant and Model Protocol
 

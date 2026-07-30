@@ -1,5 +1,4 @@
 using Anthill.Core.Common;
-using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 
 namespace Anthill.Core.Outcomes;
@@ -69,7 +68,15 @@ public static class MissionEvaluator
     /// `completed_verified` requires all three. A stop reason (timeout / cancel / adaptive
     /// escalation) overrides everything: an interrupted mission is never any flavour of completed.
     /// </summary>
-    public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount)
+    /// <param name="constraints">v3.1.0 (ADR-002): the mission's constraints, resolved once at
+    /// intake. The evaluator must read a mission's own instructions from the same object the
+    /// admission gate and the planner used, not from a ninth parse of the goal string.</param>
+    /// <param name="objectiveVerificationEnabled">v3.1.0 (ADR-001): the run's verification policy,
+    /// passed in rather than read from a mutable static. This keeps the evaluator a PURE function
+    /// of its arguments — the property that makes "evaluated exactly once, and reproducibly" a
+    /// checkable claim rather than an aspiration.</param>
+    public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount,
+        MissionConstraints constraints, bool objectiveVerificationEnabled)
     {
         var structural = mission.Status.Value();
 
@@ -82,13 +89,13 @@ public static class MissionEvaluator
 
         // Deliverable layer — "a patch proposal is a deliverable, not proof the patch is safe".
         string deliverable;
-        if (!AnthillRuntime.EnableObjectiveVerification)
+        if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
-        else if (ObjectiveVerification.Required(mission.Goal, MissionConstraints.Parse(mission.Goal))
+        else if (ObjectiveVerification.Required(mission.Goal, constraints)
                  == ObjectiveVerification.Deliverable.Unknown)
             deliverable = MissionEvaluation.Deliverable.NotApplicable;
         else
-            deliverable = ObjectiveVerification.IsSatisfied(mission, patchProposalCount)
+            deliverable = ObjectiveVerification.IsSatisfied(mission, constraints, patchProposalCount)
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
 
