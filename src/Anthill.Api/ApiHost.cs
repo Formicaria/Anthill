@@ -25,6 +25,12 @@ namespace Anthill.Api;
 /// </summary>
 public static partial class ApiHost
 {
+    /// <summary>v3.1.0 (ADR-001): the composition root this process is running. One host owns one
+    /// colony — one database, one resolved profile, one Queen.</summary>
+    public static RuntimeHost Host { get; private set; } = null!;
+
+    /// <summary>The host's Queen. A projection of <see cref="Host"/>, kept as a static because the
+    /// endpoint closures read it directly; it is no longer where a Queen is created.</summary>
     public static Queen Queen { get; private set; } = null!;
     public static ApiJobRegistry Jobs { get; private set; } = null!;
     public static ColonyDirector Director { get; private set; } = null!;
@@ -63,7 +69,13 @@ public static partial class ApiHost
         builder.WebHost.UseUrls($"http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-        Queen = new Queen();
+        // v3.1.0 (ADR-001): the API host asks the composition root for a colony instead of
+        // constructing one itself. Queen stays exposed as a static for the 160-odd endpoint
+        // closures that read it — replacing those is churn without benefit — but it is now a
+        // projection of a host that CAN be instantiated more than once, rather than the only
+        // way a Queen comes into existence.
+        Host = RuntimeHost.Create();
+        Queen = Host.Queen;
         // Phase 3: the Director multiplexes its concurrent missions through this same worker
         // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
         // ensuring autonomous missions can actually run side by side without starving user jobs.

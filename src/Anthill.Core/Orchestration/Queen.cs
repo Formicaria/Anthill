@@ -22,13 +22,16 @@ namespace Anthill.Core.Orchestration;
 /// This partial holds construction and the mission-execution engine; approvals, patch
 /// application, and the formatter/view surface live in <c>Queen.Views.cs</c>.
 /// </summary>
-public sealed partial class Queen : IDisposable
+public sealed partial class Queen : IMissionCoordinator, IDisposable
 {
     public void Dispose() => Memory.Dispose();
 
     public SqliteMemory Memory { get; }
     public ModelRouter? Router { get; }
     public ToolRegistry Tools { get; }
+    /// <summary>The capability set this Queen was composed from. Missions resolve their context
+    /// against it, so a mission cannot be governed by configuration the Queen never saw.</summary>
+    public RuntimeProfile Profile { get; }
     private readonly Planner _planner;
     /// <summary>v3.1.0 (ADR-001): planning behind an interface. The Queen decides WHEN a plan is
     /// made and owns the mission it belongs to; it no longer also implements how one is built.</summary>
@@ -46,6 +49,9 @@ public sealed partial class Queen : IDisposable
     /// private so the admission path itself stays testable: a source guard proving a call site
     /// exists is not the same as proving the gates actually run.</summary>
     internal IExecutionService Execution { get; }
+    /// <summary>v3.1.0 (ADR-001): the ONE grader, injected. A pass-through to the canonical
+    /// evaluator — the interface exists so the composition root can see there is exactly one.</summary>
+    private readonly IMissionEvaluator _evaluator = new CanonicalMissionEvaluator();
 
     /// <summary>
     /// v2.21.0 Phase C: the skills registry, hydrated from the database rather than constructed
@@ -57,13 +63,32 @@ public sealed partial class Queen : IDisposable
     private readonly Dictionary<string, BaseAnt> _ants;
     public string? LastMissionId { get; private set; }
 
-    public Queen(SqliteMemory? memory = null)
+    /// <summary>
+    /// v3.1.0 (ADR-001): the Queen's own construction is now composed from an immutable
+    /// <see cref="RuntimeProfile"/> rather than read out of mutable statics.
+    ///
+    /// This is what makes the phase's exit gate reachable. Construction used to read
+    /// <c>EnableModelRouting</c>, <c>UseOllama</c>, <c>EnableFileTools</c> and
+    /// <c>EnableFileWriting</c> directly, which meant two Queens built at two different instants
+    /// could disagree about their own shape — and it is why every gate-touching test had to
+    /// serialise itself around the globals. A profile passed in makes the disagreement impossible
+    /// and the serialisation unnecessary.
+    ///
+    /// <paramref name="profile"/> null captures the live runtime, preserving the existing
+    /// single-instance behaviour for the CLI and the API host.
+    /// </summary>
+    public Queen(SqliteMemory? memory = null, RuntimeProfile? profile = null)
     {
         AnthillRuntime.Initialize();
         Memory = memory ?? new SqliteMemory();
-        Router = AnthillRuntime.EnableModelRouting ? new ModelRouter(Memory) : null;
-        Tools = BuildToolRegistry();
-        _planner = new Planner(AnthillRuntime.UseOllama, Router);
+        // Captured BEFORE anything is built, so every component below sees one consistent answer.
+        var options = (profile ?? RuntimeProfile.Resolve(RuntimeOptions.Capture(), Array.Empty<string>())).Options;
+        Router = options.ModelRouting ? new ModelRouter(Memory) : null;
+        Tools = BuildToolRegistry(options);
+        // The profile is re-resolved against the tools this run actually registered, so its grants
+        // describe what was built rather than what the gates implied.
+        Profile = RuntimeProfile.Resolve(options, Tools.Names);
+        _planner = new Planner(options.UseOllama, Router);
         // The registry factory, not the registry: Skills hydrates lazily from the database and is
         // shared with the credit/promotion paths, so there must remain exactly one instance.
         _planning = new PlanningService(_planner, Memory, Tools, () => Skills);
@@ -74,9 +99,9 @@ public sealed partial class Queen : IDisposable
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
             ["web"] = new WebResearchAnt(Memory, Tools, Router),
             ["file"] = new FileAnt(Tools),
-            ["coder"] = new CoderAnt(AnthillRuntime.UseOllama, Router),
-            ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
-            ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
+            ["coder"] = new CoderAnt(options.UseOllama, Router),
+            ["builder"] = new BuilderAnt(options.UseOllama, Router),
+            ["verifier"] = new VerifierAnt(options.UseOllama, Router),
             // Stage D canary 1: handler registered unconditionally (implemented), but the role only
             // becomes executable/plannable when its rollout gates are open — the catalog and the
             // registry gate agree by construction.
@@ -94,19 +119,19 @@ public sealed partial class Queen : IDisposable
         Execution = new ExecutionService(Memory, _ants);
     }
 
-    private ToolRegistry BuildToolRegistry()
+    private ToolRegistry BuildToolRegistry(RuntimeOptions options)
     {
         var registry = new ToolRegistry(Memory);
-        var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+        var guard = new WorkspacePathGuard(options.AllowedWorkspaceRoot);
         registry.Register(new SystemInfoTool());
         // Stage D-2: TesterAnt's ONLY execution surface — declared checks, never arbitrary commands.
-        registry.Register(new RunAllowlistedCheckTool(AnthillRuntime.AllowedWorkspaceRoot));
-        if (AnthillRuntime.EnableFileTools)
+        registry.Register(new RunAllowlistedCheckTool(options.AllowedWorkspaceRoot));
+        if (options.FileTools)
         {
             registry.Register(new DirectoryListTool(guard));
             registry.Register(new ReadTextFileTool(guard));
         }
-        if (AnthillRuntime.EnableFileWriting)
+        if (options.FileWriting)
             registry.Register(new WriteTextFileTool(guard));
         registry.Register(new WebSearchTool());
         registry.Register(new ShellCommandTool());
@@ -138,7 +163,7 @@ public sealed partial class Queen : IDisposable
         // resolved from it. Everything below reads the snapshot; nothing on the mission path
         // reaches for a mutable static again. Two Queens in one process therefore cannot leak
         // configuration into each other's missions — each captured its own at its own intake.
-        var profile = RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names);
+        var profile = Profile;
         var options = profile.Options;
 
         var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
@@ -297,8 +322,7 @@ public sealed partial class Queen : IDisposable
         // authorization verdict, which the old preview skipped. It returns the plan together with
         // the constraints it was built under, so the endpoint rendering it does not have to
         // reconstruct either. An operator approving a preview is approving the plan that will run.
-        var context = MissionContext.Create(new Mission { Goal = goal },
-            RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names), AnthillTime.NowUtc());
+        var context = MissionContext.Create(new Mission { Goal = goal }, Profile, AnthillTime.NowUtc());
         return new MissionPlan(_planning.CreatePlan(context), context.Constraints, Planner.IsLongInput(goal));
     }
 
@@ -332,13 +356,12 @@ public sealed partial class Queen : IDisposable
         // v2.26.0 pre-V3 hardening: the ONE evaluation. Computed exactly once, after every task is
         // terminal, PERSISTED before any learning/credit/completion consumer runs — so restored
         // state answers exactly what live state answered, and no consumer re-derives success.
-        // v3.1.0: the evaluator is now a pure function of its arguments — the mission's constraints
-        // and verification policy arrive from the context resolved at intake, so the evaluation is
+        // v3.1.0: graded ONCE, through the one injected evaluator. Its inputs are the mission's
+        // constraints and verification policy as resolved at intake, so the evaluation is
         // reproducible from the persisted record rather than dependent on what the statics happened
         // to say at the moment finalization ran.
-        var evaluation = Outcomes.MissionEvaluator.Evaluate(
-            mission, stopReason, Memory.CountPatchProposalsForMission(mission.Id),
-            context.Constraints, context.Profile.Verification.ObjectiveVerification);
+        var evaluation = _evaluator.Evaluate(
+            mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id));
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.

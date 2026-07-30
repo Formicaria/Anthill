@@ -185,8 +185,15 @@ public class ObjectiveVerificationTests
 
         // v2.26.0: the one decision moved from Queen.MissionIsVerified into the canonical
         // evaluator — computed once, persisted, consumed. Same intent, structurally stronger.
-        Assert.Contains("MissionEvaluator.Evaluate(", code);
+        // v3.1.0: the evaluator is INJECTED (IMissionEvaluator), so the Queen grades through the
+        // one grader rather than reaching for a static. The rule is unchanged; the authority is
+        // now visible to the composition root.
+        Assert.Contains("_evaluator.Evaluate(", code);
         Assert.Contains("SaveMissionEvaluation(evaluation)", code);
+
+        // And that grader is a pass-through to the canonical rules — not a second set of them.
+        var grader = CodeOnly("src/Anthill.Core/Orchestration/MissionServices.cs");
+        Assert.Contains("MissionEvaluator.Evaluate(", grader);
         Assert.DoesNotContain("MissionIsVerified", code);         // the second authority is GONE
         Assert.Contains("objective_verification_failed", code);   // never a silent downgrade
 
