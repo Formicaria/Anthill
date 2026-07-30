@@ -20,6 +20,17 @@ namespace Anthill.Tests;
 /// </summary>
 public class ObjectiveVerificationTests
 {
+
+    /// <summary>
+    /// v3.1.0 (ADR-002): the deliverable check takes the mission's constraints instead of
+    /// re-parsing its goal. Resolved here exactly as intake resolves them, so these tests still
+    /// pin the production rule.
+    /// </summary>
+    private static bool Satisfied(Mission? mission, int patches) =>
+        ObjectiveVerification.IsSatisfied(mission, MissionConstraints.Parse(mission?.Goal), patches);
+
+    private static string Explain(Mission? mission, int patches) =>
+        ObjectiveVerification.Explain(mission, MissionConstraints.Parse(mission?.Goal), patches);
     private const string PassText = "Verification Passed\nReasoning: checked.";
 
     private static Mission Verified(string goal) =>
@@ -78,16 +89,16 @@ public class ObjectiveVerificationTests
     public void AFileChangeGoalWithNoProposal_IsNotSatisfied()
     {
         var mission = Verified("add a changelog entry for v2.24.0");
-        Assert.False(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 0));
-        Assert.Contains("proposed none", ObjectiveVerification.Explain(mission, 0));
+        Assert.False(Satisfied(mission, 0));
+        Assert.Contains("proposed none", Explain(mission, 0));
     }
 
     [Fact]
     public void AFileChangeGoalWithAProposal_IsSatisfied()
     {
         var mission = Verified("add a changelog entry for v2.24.0");
-        Assert.True(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 1));
-        Assert.Equal("objective satisfied", ObjectiveVerification.Explain(mission, 1));
+        Assert.True(Satisfied(mission, 1));
+        Assert.Equal("objective satisfied", Explain(mission, 1));
     }
 
     /// <summary>
@@ -105,7 +116,7 @@ public class ObjectiveVerificationTests
     public void AGoalAskingForNothingSpecific_RequiresNothingSpecific()
     {
         var mission = Verified("summarise the recent mission failures");
-        Assert.True(ObjectiveVerification.IsSatisfied(mission, proposedPatchCount: 0));
+        Assert.True(Satisfied(mission, 0));
     }
 
     // ---- additive: it can only narrow --------------------------------------------------------------
@@ -123,7 +134,7 @@ public class ObjectiveVerificationTests
             Tasks = { new DomainTask { Title = "work", AssignedAnt = "coder", Status = TaskStatus.Complete } },
         };
         Assert.False(MissionVerification.IsSatisfied(unverified.Tasks));
-        Assert.False(ObjectiveVerification.IsSatisfied(unverified, proposedPatchCount: 99));
+        Assert.False(Satisfied(unverified, 99));
     }
 
     /// <summary>
@@ -139,7 +150,7 @@ public class ObjectiveVerificationTests
         foreach (var patches in new[] { 0, 1, 5 })
         {
             var mission = verified ? Verified(goal) : new Mission { Goal = goal };
-            if (ObjectiveVerification.IsSatisfied(mission, patches))
+            if (Satisfied(mission, patches))
                 Assert.True(MissionVerification.IsSatisfied(mission.Tasks),
                     $"objective gate admitted a mission the floor rejects: goal='{goal}', patches={patches}");
         }
@@ -147,7 +158,7 @@ public class ObjectiveVerificationTests
 
     [Fact]
     public void ANullMission_IsNotSatisfied() =>
-        Assert.False(ObjectiveVerification.IsSatisfied(null, 1));
+        Assert.False(Satisfied(null, 1));
 
     // ---- gated, and wired -------------------------------------------------------------------------
 
@@ -165,17 +176,37 @@ public class ObjectiveVerificationTests
     [Fact]
     public void TheQueenHasOneVerificationDecision_AndCreditReadsIt()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
-        var code = string.Join("\n", source.Split('\n')
-            .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+        string CodeOnly(string relative) => string.Join("\n",
+            File.ReadAllText(Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar)))
+                .Split('\n')
+                .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+
+        var code = CodeOnly("src/Anthill.Core/Orchestration/Queen.cs");
 
         // v2.26.0: the one decision moved from Queen.MissionIsVerified into the canonical
         // evaluator — computed once, persisted, consumed. Same intent, structurally stronger.
-        Assert.Contains("MissionEvaluator.Evaluate(", code);
+        // v3.1.0: the evaluator is INJECTED (IMissionEvaluator), so the Queen grades through the
+        // one grader rather than reaching for a static. The rule is unchanged; the authority is
+        // now visible to the composition root.
+        Assert.Contains("_evaluator.Evaluate(", code);
         Assert.Contains("SaveMissionEvaluation(evaluation)", code);
-        Assert.Contains("evaluation.IsPositive", code);
+
+        // And that grader is a pass-through to the canonical rules — not a second set of them.
+        var grader = CodeOnly("src/Anthill.Core/Orchestration/MissionServices.cs");
+        Assert.Contains("MissionEvaluator.Evaluate(", grader);
         Assert.DoesNotContain("MissionIsVerified", code);         // the second authority is GONE
         Assert.Contains("objective_verification_failed", code);   // never a silent downgrade
+
+        // v3.1.0: credit moved behind ILearningRecorder, so "the credit path reads the ONE
+        // decision" is now two checkable facts — the Queen hands that decision to learning, and
+        // the recorder consumes IsPositive rather than deriving verified-ness for itself. The
+        // property this test defends is unchanged: there is exactly one authority, and credit
+        // asks it.
+        Assert.Contains("_learning.Record(mission, context, evaluation)", code);
+
+        var learning = CodeOnly("src/Anthill.Core/Orchestration/LearningRecorder.cs");
+        Assert.Contains("evaluation.IsPositive", learning);
+        Assert.DoesNotContain("MissionEvaluator.Evaluate(", learning);   // it consumes; it never re-evaluates
     }
 
     private static string RepoRoot()

@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.0.1 — generation-integrity mission scoring: a model-unavailable / all-fallback run can no longer report `completed_verified` (found by live end-to-end testing; additive, default-safe).
+**Latest:** v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 
@@ -85,6 +85,158 @@ Replace global coupling with explicit runtime composition while preserving behav
 - Existing mission behavior and persisted outcomes remain compatible.
 - Restart, cancellation, and STOP tests remain green.
 - No phase feature is activated yet.
+
+### Exit Gate Record — SHIPPED v3.1.0
+
+| Gate | Result |
+|---|---|
+| Two runtime instances execute in the same process without configuration leakage | **PASS** — `RuntimeIsolationTests`: two hosts with different capability configuration alive simultaneously, built in both orders, each owning its own colony; a host composed from explicit options is unaffected by the global being flipped after construction. The `Queen` takes a `RuntimeProfile` rather than reading gates during construction, which is what made this expressible. |
+| Queen no longer implements planning, execution, learning and result formatting | **PASS** — six interfaces (`IPlanningService`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler`, `IMissionCoordinator`). `Queen.cs` 1,365 → 381 lines. Each service takes constructor dependencies; none reads a mutable gate. |
+| Existing mission behaviour and persisted outcomes remain compatible | **PASS** — schema 16 unchanged; the v3.0.0 characterization tests pass unmodified across the whole refactor, which is the definition of done ADR-001 set. |
+| Restart, cancellation and STOP tests remain green | **PASS** — full suite 1,293 → 1,299 tests green in Release, plus `--selftest` 15/15 against a self-contained publish. |
+| No phase feature is activated | **PASS** — no new gate, no new capability. The only behavioural deltas are two defect fixes (the plan preview's missing authorization gate; the evaluator's static read) and one additive API field pair. |
+| `[Collection]` serialisation attributes become removable | **PARTIAL — recorded as such rather than claimed.** The *mechanism* that required them is gone: a host composed from explicit options is immune to the globals, proven by `RuntimeIsolationTests`. But the attributes are still in place, because many tests deliberately exercise the static gates themselves (`HandoffIngestion_IsOffByDefault` and similar) and the assembly-wide `DisableTestParallelization` ban sits on top of them. Removing the attributes while that ban stands would prove nothing; removing the ban is the real test and is its own piece of work. **Not claimed as passing.** |
+
+**Honest scope note.** `ApiHost.Queen` remains a public static. It is now a projection of a
+`RuntimeHost` that can be instantiated more than once, rather than the only way a Queen comes into
+existence — but roughly 160 endpoint closures still read the static, and rewriting them is churn
+without benefit. ADR-001 said "remove API-host static ownership *where practical*"; this is where
+that clause was spent, and it is recorded rather than glossed.
+
+### Phase Progress — DELIVERED
+
+The phase is being delivered in increments so each lands behaviour-preserving and independently
+reviewable, rather than as one 1,300-line mechanical rewrite of the highest-risk surface in the
+project. A phase is complete when its exit gates are recorded, not when its first commit merges.
+
+| Increment | Scope | Status |
+|---|---|---|
+| 1. Immutable configuration + mission context | `RuntimeOptions`, `RuntimeProfile`, `MissionContext`, wired through the Queen's mission engine | **Landed** |
+| 2. Constraint resolution beyond the engine | Planner, `MissionEvaluator`, `ObjectiveVerification`, plan preview | **Landed** |
+| 3a. Queen decomposition — planning | `IPlanningService` | **Landed** |
+| 3b. Queen decomposition — learning | `ILearningRecorder` | **Landed** |
+| 3c. Queen decomposition — results | `IResultAssembler` | **Landed** |
+| 3d. Queen decomposition — execution | `IExecutionService` | **Landed** |
+| 4. Composition root | `RuntimeHost`, `IMissionCoordinator`, `IMissionEvaluator`, Queen composed from a profile | **Landed** |
+| 5. Isolation proof | `RuntimeIsolationTests` — two hosts, one process, no leakage | **Landed** (attribute removal deferred; see gate record) |
+
+**Increment 1 — what landed.**
+
+- `RuntimeOptions` (immutable, `Capture()`d once per run) and `RuntimeProfile` (per-run executable
+  roles, tool grants, write permissions, verification policy), the latter validated at construction
+  by the v2.26.0 `RuntimeConfigValidator` — findings are *carried*, not thrown, because the
+  validator's contract is to degrade loudly and never refuse boot.
+- `MissionContext`: mission id, correlation id, goal, constraints, capability grants, an **absolute
+  UTC deadline**, budgets, and environment fingerprint. Constructed once at intake and passed
+  explicitly. Persisted to the event log as `mission_context_resolved`, so an operator can read a
+  mission's boundaries without inferring them.
+- The Queen's mission engine consumes the context at all four sites that previously re-parsed the
+  goal (planning admission, per-task runtime resolution, handoff admission, adaptive admission) and
+  at every mission-path feature gate. `MissionConstraints.Parse` now appears **zero** times in
+  `Queen.cs` and exactly once in `MissionContext.Create`, guarded by a test.
+- The deadline moved from a duration re-measured in two dispatch loops to one absolute instant both
+  loops compare against.
+
+**Increment 1 — what did not change.** No behaviour, by construction. Construction-time reads
+(building the ant roster, the tool registry, the model router) still read the live runtime; those
+move with the composition root in increment 4.
+
+**Increment 2 — what landed.** The resolved constraints reach the rest of the mission path, and the
+canonical evaluator becomes a pure function:
+
+- `Planner.CreateTasks` takes the constraints instead of parsing the goal. The planner now reaches
+  its "no coder tasks for a read-only mission" conclusion from the same object the admission gate
+  and the evaluator use.
+- `MissionEvaluator.Evaluate` takes the constraints AND the run's verification policy.
+  `AnthillRuntime.` no longer appears in `MissionEvaluation.cs` at all — the one authority on
+  mission success is now reproducible from its arguments rather than dependent on what a mutable
+  static said at the instant finalization ran. Guarded by a test.
+- `ObjectiveVerification.IsSatisfied` / `.Explain` take the constraints.
+- `Queen.PlanPreview` resolves a context over a transient, never-persisted mission, so the preview
+  answers from the same reading of the goal a real dispatch would use.
+
+`MissionConstraints.Parse` is down from eight sites to three in `src/`, each deliberate and each
+documented in `RuntimeCompositionTests.TheMissionEngine_ParsesConstraintsExactlyOnce`: `CoderAnt`
+(waits for v3.2.0's ant-contract redesign rather than designing that contract twice),
+`ObjectiveLifecycle` (parses an objective charter, a different input), and the plan-preview API
+response (creates no mission, governs nothing).
+
+**Increment 3a — what landed.** `IPlanningService` / `PlanningService`: goal → admitted task graph.
+
+This extraction is not cosmetic, and the reason is worth recording. Planning was written **twice** —
+once in `RunMission` and once in `PlanPreview` — and the copies had already diverged: the preview
+never ran `AntRegistry.ValidateTask`, so it could show an operator a task that dispatch would refuse
+on sight. Both surfaces now call one construction, and the interface offers no way to ask for a plan
+with admission skipped — that capability existed and was the bug.
+
+The plan-preview endpoint was making the same mistake one layer out: it re-parsed the goal for
+constraints and re-ran `AntRegistry.ValidateTask` over the tasks it had just received, rebuilding
+warnings the planning path had already computed. Two readings of one plan, free to disagree.
+`PlanPreview` now returns a `MissionPlan` carrying its own tasks, constraints, and refusals, and the
+endpoint reports what the plan says. The response gains `blocked` / `blocked_reason` per step
+(additive), and the console marks a refused step **REFUSED** with its reason instead of rendering it
+as an ordinary step that fails the moment the operator approves it.
+
+The service takes its dependencies as constructor parameters (`Planner`, `SqliteMemory`,
+`ToolRegistry`, and a `Func<SkillRegistry>` so the Queen keeps ownership of the single hydrated
+registry). It reads no mutable static. `Queen.PlanPreview` is down from 22 lines to 3.
+
+**Increment 3b — what landed.** `ILearningRecorder` / `LearningRecorder`: everything a finished
+mission teaches the colony — pheromone scoring, trail reinforcement, skill credit, and procedural
+route registration.
+
+These four were interleaved with result composition and event logging inside `FinalizeMission`, so
+"what does this mission change about future missions" had no single place to be read or reviewed.
+The safety rule the whole surface obeys is now stated once, on the interface: only
+`completed_verified` is positive, and that fact is consumed from the one canonical
+`MissionEvaluation`, never re-derived. The Queen still decides *when* learning happens — after every
+task is terminal, after the evaluation exists, before completion is published.
+
+`Queen.cs` is down from 1,365 lines to 1,237 across increments 3a and 3b, and the three call-site
+guards that pinned these behaviours now check both halves: that the Queen still invokes learning
+from the canonical evaluation, and that the recorder is what performs each step. Either half alone
+is the defect those guards were written for.
+
+**Increment 3c — what landed.** `IResultAssembler`: the three parallel accounts a finished mission
+carries of itself — `UserResult` (raw best-task output, never rewritten), `DebugResult` (full trace,
+never truncated in storage), and `FinalResult` (the plain-English answer, the only one a model
+touches). Keeping those straight is the whole job, and the governing rule — synthesis is a
+presentation nicety that must never leave a finished mission answerless — is now stated once, on the
+interface, above the six fallback paths that enforce it.
+
+`ShouldSynthesizeAnswer` takes the feature gate as a parameter instead of reading the static. Its
+two tests previously had to save, mutate and restore `AnthillRuntime.EnableAnswerSynthesis` around
+a single assertion — the exact global-state dance ADR-001 exists to remove — and are now plain
+calls. A third test was added that was not previously *expressible*: two synthesis decisions taken
+at once, with different settings, deciding independently.
+
+`Queen.Views.cs` is down 142 lines to 704.
+
+**Increment 3d — what landed.** `IExecutionService`: driving the task graph. Both dispatch loops,
+`RunSingleTask`, the timeout sweep, the bounded drain, patch-proposal processing, and handoff /
+adaptive admission — together with the single `_executionLock` that serialises them.
+
+They moved as one piece because they already *were* one piece: a check confirmed the region
+referenced no Queen-only member. Every rule in it is about ordering, and ordering rules that live in
+different places stop agreeing. The invariants are now stated on the interface, each of which was a
+real defect first: no result applied twice or late, no running task in a terminal mission, every
+mid-run task through one admission path, evidence persisted before the status decision.
+
+The extraction was performed as an exact scripted cut — the moved code is byte-identical apart from
+`Memory.` → `_memory.`. On a concurrency surface, transcription error is the failure mode tests
+cannot be relied on to catch, so the opportunity for it was removed rather than managed.
+
+**`Queen.cs`: 1,365 → 377 lines.** What remains is what ADR-001 says should: construction,
+`RunMission`'s lifecycle, `FinalizeMission`, and the plan preview. The Queen decides that a mission
+runs and alone finalises one; it no longer implements planning, execution, learning, or result
+composition. One final mission authority, as the ADR required — decomposition produced no second
+lifecycle owner.
+
+The widened guard immediately earned itself: it found `AnthillRuntime.EnableParallelExecution` in
+`Queen.Views.cs`. That read is *correct* — a configuration status page must report what is
+configured now, not what a past mission resolved. The guard was narrowed back to the mission path,
+but the exemption is bounded rather than open-ended: the live read may appear exactly once, and the
+mission-path gates must appear zero times there.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 

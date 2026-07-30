@@ -15,6 +15,17 @@ namespace Anthill.Tests;
 [Collection("specialist-gates")]
 public class MissionEvaluationTests : IDisposable
 {
+
+    /// <summary>
+    /// v3.1.0 (ADR-001/ADR-002): the evaluator is a pure function — it takes the mission's
+    /// constraints and the run's verification policy explicitly instead of reading a static and
+    /// re-parsing the goal. These tests resolve both exactly as mission intake does, so what they
+    /// pin is still the production rule and not a test-only shortcut.
+    /// </summary>
+    private static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount) =>
+        MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
+            Anthill.Core.Common.MissionConstraints.Parse(mission.Goal),
+            AnthillRuntime.EnableObjectiveVerification);
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "anthill_eval_" + Guid.NewGuid().ToString("N"));
     private readonly bool _objVerify;
 
@@ -62,7 +73,7 @@ public class MissionEvaluationTests : IDisposable
     public void ACompleteVerifiedMission_IsCompletedVerified()
     {
         var m = MissionWith("research topic", MissionStatus.Complete, Work(), Verifier(pass: true));
-        var e = MissionEvaluator.Evaluate(m, stopReason: null, patchProposalCount: 0);
+        var e = Evaluate(m, stopReason: null, patchProposalCount: 0);
         Assert.Equal(MissionOutcome.CompletedVerified, e.OutcomeCode);
         Assert.True(e.IsPositive);
     }
@@ -76,14 +87,14 @@ public class MissionEvaluationTests : IDisposable
         var m = MissionWith("add a changelog entry for the release", MissionStatus.Complete,
             Work(), Verifier(pass: true));
 
-        var e = MissionEvaluator.Evaluate(m, stopReason: null, patchProposalCount: 0);
+        var e = Evaluate(m, stopReason: null, patchProposalCount: 0);
         Assert.Equal(MissionEvaluation.Verification.Passed, e.VerificationStatus);   // the PASS is real
         Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, e.DeliverableStatus); // the work is not
         Assert.Equal(MissionOutcome.CompletedUnverified, e.OutcomeCode);
         Assert.False(e.IsPositive);
 
         // With the deliverable produced, the same mission verifies.
-        var delivered = MissionEvaluator.Evaluate(m, stopReason: null, patchProposalCount: 1);
+        var delivered = Evaluate(m, stopReason: null, patchProposalCount: 1);
         Assert.Equal(MissionOutcome.CompletedVerified, delivered.OutcomeCode);
     }
 
@@ -95,7 +106,7 @@ public class MissionEvaluationTests : IDisposable
     {
         // Even with every task complete and a passing verifier: interruption overrides.
         var m = MissionWith("g", MissionStatus.Complete, Work(), Verifier(pass: true));
-        var e = MissionEvaluator.Evaluate(m, stop, patchProposalCount: 0);
+        var e = Evaluate(m, stop, patchProposalCount: 0);
         Assert.Equal(expected, e.OutcomeCode);
         Assert.False(e.IsPositive);
     }
@@ -103,12 +114,12 @@ public class MissionEvaluationTests : IDisposable
     [Fact]
     public void PartialIsNotSuccess_AndFailedIsNotSuccess()
     {
-        var partial = MissionEvaluator.Evaluate(
+        var partial = Evaluate(
             MissionWith("g", MissionStatus.Partial, Work(), Work(TaskStatus.Skipped, critical: false)), null, 0);
         Assert.Equal(MissionOutcome.Partial, partial.OutcomeCode);
         Assert.False(partial.IsPositive);
 
-        var failed = MissionEvaluator.Evaluate(
+        var failed = Evaluate(
             MissionWith("g", MissionStatus.Failed, Work(TaskStatus.Failed)), null, 0);
         Assert.Equal(MissionOutcome.FailedPermanent, failed.OutcomeCode);
         Assert.False(failed.IsPositive);
@@ -118,7 +129,7 @@ public class MissionEvaluationTests : IDisposable
     public void NoVerifierTask_MeansNotRun_WhichIsNotAPass()
     {
         var m = MissionWith("g", MissionStatus.Complete, Work());
-        var e = MissionEvaluator.Evaluate(m, null, 0);
+        var e = Evaluate(m, null, 0);
         Assert.Equal(MissionEvaluation.Verification.NotRun, e.VerificationStatus);
         Assert.Equal(MissionOutcome.CompletedUnverified, e.OutcomeCode);
     }
@@ -129,7 +140,7 @@ public class MissionEvaluationTests : IDisposable
     public void ADisabledDeliverableLayer_IsVisiblyNotChecked_NeverSilentlyPassed()
     {
         AnthillRuntime.EnableObjectiveVerification = false;
-        var e = MissionEvaluator.Evaluate(
+        var e = Evaluate(
             MissionWith("add a changelog entry", MissionStatus.Complete, Work(), Verifier(true)), null, 0);
         Assert.Equal(MissionEvaluation.Deliverable.NotChecked, e.DeliverableStatus);
         Assert.Equal(MissionOutcome.CompletedVerified, e.OutcomeCode);   // pre-v2.26 behaviour preserved
@@ -144,7 +155,7 @@ public class MissionEvaluationTests : IDisposable
         var m = MissionWith("research topic", MissionStatus.Complete, Work(), Verifier(true));
         mem.SaveMission(m);
 
-        var live = MissionEvaluator.Evaluate(m, null, 0);
+        var live = Evaluate(m, null, 0);
         mem.SaveMissionEvaluation(live);
 
         var restored = mem.LoadMissionEvaluation(m.Id)!;
@@ -194,9 +205,16 @@ public class MissionEvaluationTests : IDisposable
 
         var queen = CodeOnly(Read("src", "Anthill.Core", "Orchestration", "Queen.cs"));
         Assert.Contains("SaveMissionEvaluation(evaluation)", queen);
-        Assert.Contains("UpdateMissionPheromones(mission, evaluation.OutcomeCode)", queen);
-        Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", queen);
-        Assert.Contains("CreditSkills(mission, evaluation)", queen);
+        // v3.1.0: pheromones, credit and route registration moved behind ILearningRecorder. The
+        // Queen still consumes the ONE evaluation and hands it to learning; the recorder is where
+        // each consumer lives. Both are checked so neither half can quietly stop happening.
+        Assert.Contains("_learning.Record(mission, context, evaluation)", queen);
+
+        var learning = CodeOnly(Read("src", "Anthill.Core", "Orchestration", "LearningRecorder.cs"));
+        Assert.Contains("UpdateMissionPheromones(mission, evaluation.OutcomeCode)", learning);
+        Assert.Contains("RegisterProceduralRoutes(mission, evaluation)", learning);
+        Assert.Contains("CreditSkills(mission, context, evaluation)", learning);
+        Assert.Contains("evaluation.IsPositive", learning);   // never re-derived
     }
 
     /// <summary>Criticality persists, so row-based evaluation can never disagree with the live
