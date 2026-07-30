@@ -5,6 +5,7 @@
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
 **Latest:** v3.0.1 — generation-integrity mission scoring: a model-unavailable / all-fallback run can no longer report `completed_verified` (found by live end-to-end testing; additive, default-safe).
+**In flight:** v3.1.0 increment 1 (immutable runtime composition + `MissionContext`) — see the v3.1.0 phase-progress table below. Unreleased.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 
@@ -85,6 +86,43 @@ Replace global coupling with explicit runtime composition while preserving behav
 - Existing mission behavior and persisted outcomes remain compatible.
 - Restart, cancellation, and STOP tests remain green.
 - No phase feature is activated yet.
+
+### Phase Progress — IN PROGRESS (not released; version marker stays at v3.0.1 until the gates pass)
+
+The phase is being delivered in increments so each lands behaviour-preserving and independently
+reviewable, rather than as one 1,300-line mechanical rewrite of the highest-risk surface in the
+project. A phase is complete when its exit gates are recorded, not when its first commit merges.
+
+| Increment | Scope | Status |
+|---|---|---|
+| 1. Immutable configuration + mission context | `RuntimeOptions`, `RuntimeProfile`, `MissionContext`, wired through the Queen's mission engine | **Landed** |
+| 2. Constraint resolution beyond the engine | Planner, CoderAnt, `MissionEvaluator`, `ObjectiveVerification`, `ObjectiveLifecycle`, plan-preview endpoint | Pending |
+| 3. Queen decomposition | `IMissionCoordinator`, `IPlanningService`, `IExecutionService`, `IMissionEvaluator`, `ILearningRecorder`, `IResultAssembler` | Pending |
+| 4. Composition root | Host-scoped container; `ApiHost` stops owning runtime services as statics | Pending |
+| 5. Isolation proof | Remove the `[Collection]` attributes added for global state; two runtimes in one process | Pending |
+
+**Increment 1 — what landed.**
+
+- `RuntimeOptions` (immutable, `Capture()`d once per run) and `RuntimeProfile` (per-run executable
+  roles, tool grants, write permissions, verification policy), the latter validated at construction
+  by the v2.26.0 `RuntimeConfigValidator` — findings are *carried*, not thrown, because the
+  validator's contract is to degrade loudly and never refuse boot.
+- `MissionContext`: mission id, correlation id, goal, constraints, capability grants, an **absolute
+  UTC deadline**, budgets, and environment fingerprint. Constructed once at intake and passed
+  explicitly. Persisted to the event log as `mission_context_resolved`, so an operator can read a
+  mission's boundaries without inferring them.
+- The Queen's mission engine consumes the context at all four sites that previously re-parsed the
+  goal (planning admission, per-task runtime resolution, handoff admission, adaptive admission) and
+  at every mission-path feature gate. `MissionConstraints.Parse` now appears **zero** times in
+  `Queen.cs` and exactly once in `MissionContext.Create`, guarded by a test.
+- The deadline moved from a duration re-measured in two dispatch loops to one absolute instant both
+  loops compare against.
+
+**Increment 1 — what did not change.** No behaviour, by construction. Construction-time reads
+(building the ant roster, the tool registry, the model router) still read the live runtime; those
+move with the composition root in increment 4. The remaining `MissionConstraints.Parse` sites are
+enumerated in `RuntimeCompositionTests.TheMissionEngine_ParsesConstraintsExactlyOnce`, which doubles
+as increment 2's checklist.
 
 ## v3.2.0 - Universal Ant and Model Protocol
 
