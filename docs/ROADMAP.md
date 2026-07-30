@@ -149,10 +149,16 @@ response (creates no mission, governs nothing).
 This extraction is not cosmetic, and the reason is worth recording. Planning was written **twice** —
 once in `RunMission` and once in `PlanPreview` — and the copies had already diverged: the preview
 never ran `AntRegistry.ValidateTask`, so it could show an operator a task that dispatch would refuse
-on sight. Both surfaces now call the same construction. The remaining difference is a named method
-(`CreatePlan` vs `PreviewPlan`) rather than a silent one, with the discrepancy documented on the
-interface and left for v3.8.0's workflow templates to resolve — changing it now would change an API
-response, which this phase is not permitted to do.
+on sight. Both surfaces now call one construction, and the interface offers no way to ask for a plan
+with admission skipped — that capability existed and was the bug.
+
+The plan-preview endpoint was making the same mistake one layer out: it re-parsed the goal for
+constraints and re-ran `AntRegistry.ValidateTask` over the tasks it had just received, rebuilding
+warnings the planning path had already computed. Two readings of one plan, free to disagree.
+`PlanPreview` now returns a `MissionPlan` carrying its own tasks, constraints, and refusals, and the
+endpoint reports what the plan says. The response gains `blocked` / `blocked_reason` per step
+(additive), and the console marks a refused step **REFUSED** with its reason instead of rendering it
+as an ordinary step that fails the moment the operator approves it.
 
 The service takes its dependencies as constructor parameters (`Planner`, `SqliteMemory`,
 `ToolRegistry`, and a `Func<SkillRegistry>` so the Queen keeps ownership of the single hydrated

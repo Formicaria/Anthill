@@ -3706,9 +3706,16 @@ function renderPlan(d){
     const crit=t.critical===false?' · optional':'';
     // v1.8.23: show the resolved worker sub-caste, when the planner picked one.
     const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
-    return `<div class="plan-step"><span class="p-num">${t.index}</span><div class="p-body">`+
-      `<div class="p-title">${escapeHtml(t.title||'')}</div>`+
+    // v3.1.0: the preview runs the same authorization gate dispatch does, so a step the runtime
+    // would refuse is marked HERE — it used to render as an ordinary planned step and fail the
+    // moment the operator approved it.
+    const refused=t.blocked===true;
+    const mark=refused?`<span style="color:var(--status-danger);font-size:9px;font-weight:700;letter-spacing:.05em">REFUSED</span> `:'';
+    const why=refused&&t.blocked_reason?`<div class="p-meta" style="color:var(--status-danger)">${escapeHtml(t.blocked_reason)}</div>`:'';
+    return `<div class="plan-step"${refused?' style="opacity:.6"':''}><span class="p-num">${t.index}</span><div class="p-body">`+
+      `<div class="p-title">${mark}${escapeHtml(t.title||'')}</div>`+
       `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${worker}${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
+      why+
       `</div></div>`;
   }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
   // v1.8.23: surface any capability-contract warnings from worker validation.

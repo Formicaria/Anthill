@@ -282,15 +282,16 @@ public sealed partial class Queen : IDisposable
     /// verification-only / no-patch constraints) before approving dispatch. Read-only: the only
     /// external effect is the planner's model call, exactly as a real dispatch would make.
     /// </summary>
-    public List<Task> PlanPreview(string goal)
+    public MissionPlan PlanPreview(string goal)
     {
         // v3.1.0: the preview resolves a context exactly as a dispatch would, over a transient
-        // mission that is never persisted, and then asks the SAME planning service. Before this it
-        // re-implemented planning in a near-copy that had already drifted — a preview computed from
-        // a different reading of the goal is a preview of nothing.
+        // mission that is never persisted, and then asks the SAME planning service — including the
+        // authorization verdict, which the old preview skipped. It returns the plan together with
+        // the constraints it was built under, so the endpoint rendering it does not have to
+        // reconstruct either. An operator approving a preview is approving the plan that will run.
         var context = MissionContext.Create(new Mission { Goal = goal },
             RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names), AnthillTime.NowUtc());
-        return _planning.PreviewPlan(context);
+        return new MissionPlan(_planning.CreatePlan(context), context.Constraints, Planner.IsLongInput(goal));
     }
 
     private string? ExecuteTasksSequential(Mission mission, MissionContext context, CancellationToken missionToken)
