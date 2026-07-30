@@ -49,17 +49,17 @@ public sealed class OpenAiCompatibleClient : IModelClient
             : trimmed + "/chat/completions";
     }
 
-    public string Generate(string prompt, int retries = 2)
+    public ModelCallResult Generate(string prompt, int retries = 2)
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
-            return $"ERROR: {_providerLabel} API key not configured. Add it in Settings → Providers.";
+            return new ModelCallResult(ModelCallOutcome.ConfigError, $"ERROR: {_providerLabel} API key not configured. Add it in Settings → Providers.");
 
         var payload = JsonSerializer.Serialize(new
         {
             model = _model,
             messages = new[] { new { role = "user", content = prompt } },
         });
-        var lastError = "";
+        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             var ambient = ModelCallScope.Current;
@@ -77,7 +77,10 @@ public sealed class OpenAiCompatibleClient : IModelClient
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
-                    lastError = $"ERROR: {_providerLabel} request failed ({(int)response.StatusCode}): {Truncate(body)}";
+                    lastError = new ModelCallResult(
+                        response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError,
+                        $"ERROR: {_providerLabel} request failed ({(int)response.StatusCode}): {Truncate(body)}");
                     // Auth/permission failures will not heal on retry — surface immediately.
                     if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
                         return lastError;
@@ -89,23 +92,25 @@ public sealed class OpenAiCompatibleClient : IModelClient
                 if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0
                     && choices[0].TryGetProperty("message", out var message) && message.TryGetProperty("content", out var c))
                     content = c.GetString()?.Trim() ?? "";
-                return string.IsNullOrEmpty(content) ? $"{_providerLabel} returned an empty response." : content;
+                return string.IsNullOrEmpty(content)
+                    ? new ModelCallResult(ModelCallOutcome.Empty, $"{_providerLabel} returned an empty response.")
+                    : new ModelCallResult(ModelCallOutcome.Ok, content);
             }
             catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                return $"ERROR: {_providerLabel} request cancelled because the mission was stopped.";
+                return new ModelCallResult(ModelCallOutcome.Cancelled, $"ERROR: {_providerLabel} request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Timeout, $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {
-                return $"ERROR: Could not reach {_providerLabel}: {error.Message}";
+                return new ModelCallResult(ModelCallOutcome.ConnectError, $"ERROR: Could not reach {_providerLabel}: {error.Message}");
             }
             catch (Exception error)
             {
-                lastError = $"ERROR: {_providerLabel} request failed: {error.Message} (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Error, $"ERROR: {_providerLabel} request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
@@ -146,10 +151,10 @@ public sealed class AnthropicClient : IModelClient
         return trimmed.EndsWith("/messages", StringComparison.OrdinalIgnoreCase) ? trimmed : trimmed + "/messages";
     }
 
-    public string Generate(string prompt, int retries = 2)
+    public ModelCallResult Generate(string prompt, int retries = 2)
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
-            return "ERROR: Anthropic API key not configured. Add it in Settings → Providers.";
+            return new ModelCallResult(ModelCallOutcome.ConfigError, "ERROR: Anthropic API key not configured. Add it in Settings → Providers.");
 
         var payload = JsonSerializer.Serialize(new
         {
@@ -157,7 +162,7 @@ public sealed class AnthropicClient : IModelClient
             max_tokens = 4096,
             messages = new[] { new { role = "user", content = prompt } },
         });
-        var lastError = "";
+        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             var ambient = ModelCallScope.Current;
@@ -174,7 +179,10 @@ public sealed class AnthropicClient : IModelClient
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
-                    lastError = $"ERROR: Anthropic request failed ({(int)response.StatusCode}): {Truncate(body)}";
+                    lastError = new ModelCallResult(
+                        response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError,
+                        $"ERROR: Anthropic request failed ({(int)response.StatusCode}): {Truncate(body)}");
                     if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
                         return lastError;
                     continue;
@@ -188,24 +196,26 @@ public sealed class AnthropicClient : IModelClient
                             && block.TryGetProperty("text", out var blockText))
                             text.Append(blockText.GetString());
 
-                var result = text.ToString().Trim();
-                return string.IsNullOrEmpty(result) ? "Anthropic returned an empty response." : result;
+                var completion = text.ToString().Trim();
+                return string.IsNullOrEmpty(completion)
+                    ? new ModelCallResult(ModelCallOutcome.Empty, "Anthropic returned an empty response.")
+                    : new ModelCallResult(ModelCallOutcome.Ok, completion);
             }
             catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                return "ERROR: Anthropic request cancelled because the mission was stopped.";
+                return new ModelCallResult(ModelCallOutcome.Cancelled, "ERROR: Anthropic request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Timeout, $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {
-                return $"ERROR: Could not reach Anthropic: {error.Message}";
+                return new ModelCallResult(ModelCallOutcome.ConnectError, $"ERROR: Could not reach Anthropic: {error.Message}");
             }
             catch (Exception error)
             {
-                lastError = $"ERROR: Anthropic request failed: {error.Message} (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Error, $"ERROR: Anthropic request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
