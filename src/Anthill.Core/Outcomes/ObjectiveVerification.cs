@@ -86,22 +86,24 @@ public static class ObjectiveVerification
     /// <summary>
     /// The full gate: the interim verification floor AND the deliverable the goal asked for.
     /// </summary>
-    public static bool IsSatisfied(Mission? mission, int proposedPatchCount)
+    /// <param name="constraints">v3.1.0 (ADR-002): the mission's constraints, resolved at intake.
+    /// This used to re-parse the goal here, which meant the deliverable check could in principle
+    /// read a mission's own instructions differently from the gate that admitted its tasks.</param>
+    public static bool IsSatisfied(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount)
     {
         if (mission is null) return false;
         if (!MissionVerification.IsSatisfied(mission.Tasks)) return false;   // the floor, unchanged
 
-        var required = Required(mission.Goal, Common.MissionConstraints.Parse(mission.Goal));
-        return DeliverablePresent(required, proposedPatchCount);
+        return DeliverablePresent(Required(mission.Goal, constraints), proposedPatchCount);
     }
 
     /// <summary>Why the objective check said no — operator-facing, never a silent downgrade.</summary>
-    public static string Explain(Mission? mission, int proposedPatchCount)
+    public static string Explain(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount)
     {
         if (mission is null) return "no mission";
         if (!MissionVerification.IsSatisfied(mission.Tasks)) return MissionVerification.Explain(mission.Tasks);
 
-        var required = Required(mission.Goal, Common.MissionConstraints.Parse(mission.Goal));
+        var required = Required(mission.Goal, constraints);
         if (DeliverablePresent(required, proposedPatchCount)) return "objective satisfied";
 
         return "the goal asks for a file change and the mission proposed none — "

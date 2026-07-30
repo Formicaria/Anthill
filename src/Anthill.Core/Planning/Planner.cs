@@ -63,11 +63,16 @@ public sealed class Planner
     /// <param name="skillContext">Certified/experimental procedures proven in this environment.
     /// Offered as known-good ROUTES to consider, never as scripts to run: every task planned from
     /// one still passes the ordinary authorization, contract and permission gates.</param>
-    public List<Task> CreateTasks(string goal, string memoryContext = "", string toolContext = "", string pheromoneContext = "", string skillContext = "")
+    /// <param name="constraints">
+    /// v3.1.0 (ADR-002): the mission's constraints, RESOLVED AT INTAKE and passed in. A
+    /// verification-only / read-only / "do not modify files" mission must never have coder
+    /// patch-proposal tasks planned for it — and the planner must reach that conclusion from the
+    /// same constraint object the admission gate and the evaluator use, not from its own parse of
+    /// the goal. v1.8.16 introduced the rule; the planner re-derived it until now.
+    /// </param>
+    public List<Task> CreateTasks(string goal, MissionConstraints constraints, string memoryContext = "",
+        string toolContext = "", string pheromoneContext = "", string skillContext = "")
     {
-        // v1.8.16: read explicit mission constraints up front. A verification-only / read-only /
-        // "do not modify files" mission must never have coder patch-proposal tasks planned for it.
-        var constraints = MissionConstraints.Parse(goal);
 
         // v2.22.0 (made concurrency-safe in v2.26.0): capture exactly which skills THIS plan was
         // shown, locally, so a claimed skill_id is checked against what this plan offered — never

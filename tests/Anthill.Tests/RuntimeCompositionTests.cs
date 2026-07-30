@@ -220,23 +220,25 @@ public class RuntimeCompositionTests
     /// <summary>
     /// ADR-002 §4: "MissionConstraints.Parse appears exactly once on the mission path."
     ///
-    /// v3.1.0 delivers that for the mission ENGINE — the Queen and the context type. The parse now
-    /// happens in exactly one place, <c>MissionContext.Create</c>, and the Queen consumes
-    /// <c>context.Constraints</c> at all four sites that previously re-parsed (planning admission,
-    /// per-task runtime resolution, handoff admission, adaptive admission).
+    /// The mission path now parses in exactly one place — <c>MissionContext.Create</c> — and every
+    /// consumer along that path takes the resolved value as an argument: the Queen's four admission
+    /// and dispatch sites, the planner, the canonical evaluator, and the deliverable check.
     ///
-    /// Sites outside the engine still parse, and are listed in the phase-2 checklist below rather
-    /// than left to be rediscovered. Each needs a context threaded to it, which means a signature
-    /// change on a type the engine does not own:
+    /// Three parse sites remain in <c>src/</c>, each deliberately, each with a reason it is not
+    /// simply a missed rename:
     ///
-    ///   - Planning/Planner.cs            — planner takes the goal, not the mission
-    ///   - Agents/Ants.cs (CoderAnt)      — ant contract takes (Task, Mission)
-    ///   - Outcomes/MissionEvaluation.cs  — evaluator takes (Mission, stopReason, patchCount)
-    ///   - Outcomes/ObjectiveVerification.cs
-    ///   - Autonomy/ObjectiveLifecycle.cs — objective charters, not missions
-    ///   - Anthill.Api/ApiHost.cs         — plan preview
+    ///   - <c>Agents/Ants.cs</c> (CoderAnt) — the ant contract is <c>Execute(Task, Mission)</c>.
+    ///     Threading a context through it means changing that contract, which is exactly what
+    ///     v3.2.0 (Universal Ant and Model Protocol) exists to do. Forcing it here would mean
+    ///     designing the new contract twice.
+    ///   - <c>Autonomy/ObjectiveLifecycle.cs</c> — parses an objective CHARTER, not a mission goal.
+    ///     A different input, legitimately parsed where it is read; it becomes an intake concern
+    ///     when objectives gain their own context.
+    ///   - <c>Anthill.Api/ApiHost.cs</c> — annotates the plan-preview RESPONSE. Creates no mission
+    ///     and governs nothing; it moves with the composition root in increment 4.
     ///
-    /// This test fails if the engine regresses, and its list is the definition of done for the rest.
+    /// This test fails if the mission path regresses, and its list is the definition of done for
+    /// the remainder.
     /// </summary>
     [Fact]
     public void TheMissionEngine_ParsesConstraintsExactlyOnce()
@@ -254,8 +256,34 @@ public class RuntimeCompositionTests
         Assert.Equal(0, Occurrences(queenViews, "MissionConstraints.Parse"));
         Assert.Equal(1, Occurrences(context, "MissionConstraints.Parse"));
 
-        // And the Queen consumes the resolved value instead.
+        // And the Queen consumes the resolved value instead — at planning, dispatch, and grading.
         Assert.Contains("context.Constraints", queen);
+
+        // The other mission-path consumers take it as an argument rather than deriving it.
+        foreach (var rel in new[]
+                 {
+                     Path.Combine("src", "Anthill.Core", "Planning", "Planner.cs"),
+                     Path.Combine("src", "Anthill.Core", "Outcomes", "MissionEvaluation.cs"),
+                     Path.Combine("src", "Anthill.Core", "Outcomes", "ObjectiveVerification.cs"),
+                 })
+            Assert.Equal(0, Occurrences(CodeOnly(File.ReadAllText(Path.Combine(root, rel))),
+                                        "MissionConstraints.Parse"));
+    }
+
+    /// <summary>
+    /// ADR-001: the canonical evaluator must be a pure function of its arguments. It read
+    /// <c>AnthillRuntime.EnableObjectiveVerification</c> directly, which meant the one authority on
+    /// mission success depended on what a mutable static happened to say at the instant
+    /// finalization ran — and therefore could not be reproduced from the persisted record.
+    /// </summary>
+    [Fact]
+    public void TheCanonicalEvaluator_ReadsNoStatic()
+    {
+        var evaluator = CodeOnly(File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "Anthill.Core", "Outcomes", "MissionEvaluation.cs")));
+
+        Assert.DoesNotContain("AnthillRuntime.", evaluator);
+        Assert.Contains("objectiveVerificationEnabled", evaluator);
     }
 
     /// <summary>
@@ -270,13 +298,9 @@ public class RuntimeCompositionTests
         var queen = CodeOnly(File.ReadAllText(
             Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
 
-        // Two spans: mission intake, and the execution engine. PlanPreview sits between them and is
-        // deliberately excluded — it is a read-only preview that creates no mission and therefore
-        // has no context to consume. It moves behind the composition root in a later phase.
-        var intake = Between(queen, "public string RunMission(string goal, Action<string>? onMissionCreated",
-                                    "public List<Task> PlanPreview");
-        var engine = Between(queen, "private string? ExecuteTasksSequential", "private void RecordAgentMessage");
-
+        // Whole-file, not a span: every one of these is now resolved at intake, including in the
+        // plan preview, which resolves a context over a transient mission so its answer comes from
+        // the same reading of the goal a real dispatch would use.
         foreach (var gate in new[]
                  {
                      "AnthillRuntime.EnableParallelExecution",
@@ -284,13 +308,11 @@ public class RuntimeCompositionTests
                      "AnthillRuntime.EnableHandoffIngestion",
                      "AnthillRuntime.EnableAdaptiveMissionControl",
                      "AnthillRuntime.EnableAutoDependencyWiring",
+                     "AnthillRuntime.EnableObjectiveVerification",
                      "AnthillRuntime.MissionDrainGraceSeconds",
                      "AnthillRuntime.EnvironmentFingerprint",
                  })
-        {
-            Assert.DoesNotContain(gate, intake);
-            Assert.DoesNotContain(gate, engine);
-        }
+            Assert.DoesNotContain(gate, queen);
     }
 
     // ---- helpers -------------------------------------------------------------------------------------
@@ -300,14 +322,6 @@ public class RuntimeCompositionTests
         int count = 0, at = 0;
         while ((at = text.IndexOf(needle, at, StringComparison.Ordinal)) >= 0) { count++; at += needle.Length; }
         return count;
-    }
-
-    private static string Between(string text, string start, string end)
-    {
-        var a = text.IndexOf(start, StringComparison.Ordinal);
-        Assert.True(a >= 0, $"anchor not found: {start}");
-        var b = text.IndexOf(end, a, StringComparison.Ordinal);
-        return b > a ? text[a..b] : text[a..];
     }
 
     private static string CodeOnly(string src) => string.Join("\n", src.Split('\n')
