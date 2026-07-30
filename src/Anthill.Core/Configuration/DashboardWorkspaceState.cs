@@ -73,6 +73,10 @@ public sealed class DashboardWorkspaceState
         // them to panels is what lets the topology occupy the whole page.
         "colony-vitals", "recent-missions", "patch-activity", "objectives", "recent-jobs",
         "live-telemetry",
+        // v3.1.1: the Mission Composer. Its absence is why the plan-preview review step had no
+        // reachable control once the topology workspace became the default console in v2.15.0 —
+        // the endpoint, the renderer and the button all existed; nothing could reach them.
+        "mission-composer",
     };
 
     /// <summary>

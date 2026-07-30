@@ -10,6 +10,10 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> v3.1.1 note: the Mission Composer is now a workspace panel (`mission-composer`). It had been
+> reachable only on the classic overview grid, which this workspace hides — so the plan-preview
+> review step had no control in the default console from v2.15.0 until this release.
+>
 > v3.1.0 note: one dashboard-visible change — the plan preview now runs the same authorization
 > gate a dispatch does, so a step the runtime would refuse renders as REFUSED with its reason
 > instead of looking like an ordinary planned step. Everything else in the release is internal
