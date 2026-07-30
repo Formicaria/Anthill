@@ -177,7 +177,8 @@ public sealed partial class Queen : IDisposable
         var memoryContext =
             $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
+        mission.Tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, Tools.DescribeTools(),
+            Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
 
         // v3.1.0 (ADR-002): consumed from the context. This used to be one of eight independent
         // parses of the same goal string, each free to disagree with the others.
@@ -314,10 +315,19 @@ public sealed partial class Queen : IDisposable
     /// </summary>
     public List<Task> PlanPreview(string goal)
     {
+        // v3.1.0: the preview resolves a context exactly as a dispatch would, over a transient
+        // mission that is never persisted. It creates no mission, but it must answer "what would
+        // the plan be" from the SAME constraints and configuration a real dispatch would use —
+        // a preview computed from a different reading of the goal is a preview of nothing.
+        var transient = new Mission { Goal = goal };
+        var context = MissionContext.Create(transient,
+            RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names), AnthillTime.NowUtc());
+
         var memoryContext =
             $"Recent Memory:\n{Memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
-        var tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
+        var tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, Tools.DescribeTools(),
+            Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
         foreach (var task in tasks)
         {
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
@@ -326,9 +336,9 @@ public sealed partial class Queen : IDisposable
         }
         // Mirror RunMission's auto-wiring so the preview shows the same dependency edges the
         // scheduler would actually run. Spec-ingestion plans carry their own explicit wiring.
-        if (AnthillRuntime.EnableAutoDependencyWiring && !Planner.IsLongInput(goal))
+        if (context.Options.AutoDependencyWiring && !Planner.IsLongInput(goal))
         {
-            var transient = new Mission { Goal = goal, Tasks = tasks };
+            transient.Tasks = tasks;
             AutoWireDependencies(transient);
             tasks = transient.Tasks;
         }
@@ -897,8 +907,13 @@ public sealed partial class Queen : IDisposable
         // v2.26.0 pre-V3 hardening: the ONE evaluation. Computed exactly once, after every task is
         // terminal, PERSISTED before any learning/credit/completion consumer runs — so restored
         // state answers exactly what live state answered, and no consumer re-derives success.
+        // v3.1.0: the evaluator is now a pure function of its arguments — the mission's constraints
+        // and verification policy arrive from the context resolved at intake, so the evaluation is
+        // reproducible from the persisted record rather than dependent on what the statics happened
+        // to say at the moment finalization ran.
         var evaluation = Outcomes.MissionEvaluator.Evaluate(
-            mission, stopReason, Memory.CountPatchProposalsForMission(mission.Id));
+            mission, stopReason, Memory.CountPatchProposalsForMission(mission.Id),
+            context.Constraints, context.Profile.Verification.ObjectiveVerification);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.
@@ -912,7 +927,8 @@ public sealed partial class Queen : IDisposable
         });
         if (evaluation.DeliverableStatus == Outcomes.MissionEvaluation.Deliverable.NotSatisfied)
             Memory.LogEvent(mission.Id, "objective_verification_failed",
-                Outcomes.ObjectiveVerification.Explain(mission, Memory.CountPatchProposalsForMission(mission.Id)),
+                Outcomes.ObjectiveVerification.Explain(mission, context.Constraints,
+                    Memory.CountPatchProposalsForMission(mission.Id)),
                 metadata: new() { ["goal"] = TextUtil.Truncate(mission.Goal, 300) });
 
         mission.SuccessScore = _pheromones.ScoreMission(mission);
