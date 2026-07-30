@@ -32,6 +32,13 @@ public sealed class ToolRegistry
 
     public void Register(ITool tool) => _tools[tool.Name] = tool;
 
+    /// <summary>
+    /// The tools actually registered for this run. v3.1.0: <see cref="Configuration.RuntimeProfile"/>
+    /// reports the run's tool grants from THIS rather than re-deriving them from the capability
+    /// gates — so the profile describes what was built, not what the gates imply should have been.
+    /// </summary>
+    public IReadOnlyCollection<string> Names => _tools.Keys.ToList();
+
     public ToolResult RunTool(string name, string? missionId = null, string? taskId = null, string? antName = null,
         Dictionary<string, object?>? args = null)
     {

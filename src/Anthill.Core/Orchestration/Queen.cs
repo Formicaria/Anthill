@@ -115,20 +115,39 @@ public sealed partial class Queen : IDisposable
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
+
+        // v3.1.0 (ADR-001): configuration is captured ONCE, here, and the run's capability set is
+        // resolved from it. Everything below reads the snapshot; nothing on the mission path
+        // reaches for a mutable static again. Two Queens in one process therefore cannot leak
+        // configuration into each other's missions — each captured its own at its own intake.
+        var profile = RuntimeProfile.Resolve(RuntimeOptions.Capture(), Tools.Names);
+        var options = profile.Options;
+
+        var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
+        LastMissionId = mission.Id;
+
+        // v3.1.0 (ADR-002): the mission's governing facts, resolved once at intake and passed
+        // explicitly from here on. Constraints are parsed exactly once; the deadline is an
+        // ABSOLUTE instant anchored to the mission's own start, so a resumed run compares against
+        // the same wall-clock boundary the original did instead of restarting its clock.
+        var context = MissionContext.Create(mission, profile, missionStartedAt);
+
         // One token governs the whole mission: external cancel OR the deadline, whichever comes first.
         using var missionCts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         // v2.26.0 pre-V3 hardening: the mission DEADLINE cancels the token. Before this, timeout
         // was only a wall-clock check in the dispatch loop — in-flight model calls ran to their own
         // completion while the mission proceeded to finalization without them. MissionStopReason
         // checks the clock before the token, so a deadline cancellation still reports as timeout.
-        missionCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxMissionSeconds));
+        // v3.1.0: armed from the context's absolute deadline rather than a fresh duration.
+        missionCts.CancelAfter(context.Remaining(AnthillTime.NowUtc()));
         using var modelScope = ModelCallScope.Enter(missionCts.Token);
-        var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
-        LastMissionId = mission.Id;
 
         // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
         Memory.SaveMission(mission);
         onMissionCreated?.Invoke(mission.Id);
+        Memory.LogEvent(mission.Id, "mission_context_resolved",
+            "Mission constraints, capability grants, deadline and budgets resolved at intake.",
+            metadata: context.Snapshot());
 
         // v2.26.0 backup policy: a full DB copy before EVERY mission does not scale — a read-only
         // question should not trigger a database-sized write once the colony has history. Backups
@@ -160,7 +179,9 @@ public sealed partial class Queen : IDisposable
             $"Relevant Memory:\n{Memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
         mission.Tasks = _planner.CreateTasks(goal, memoryContext, Tools.DescribeTools(), Memory.FormatPheromoneContext(8), SkillPlanningContext.Format(Skills));
 
-        var constraints = MissionConstraints.Parse(goal);
+        // v3.1.0 (ADR-002): consumed from the context. This used to be one of eight independent
+        // parses of the same goal string, each free to disagree with the others.
+        var constraints = context.Constraints;
         foreach (var task in mission.Tasks)
         {
             if (task.TaskType == "general") task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
@@ -177,7 +198,7 @@ public sealed partial class Queen : IDisposable
         }
         // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
         // non-critical section flags; auto-wiring would only re-derive the same edges.
-        if (AnthillRuntime.EnableAutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
+        if (options.AutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
 
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
@@ -190,12 +211,14 @@ public sealed partial class Queen : IDisposable
             ["planner_pattern"] = mission.Tasks.Select(t => t.AssignedAnt).ToList(),
             ["worker_path"] = mission.Tasks.Select(t => t.AssignedWorker ?? t.AssignedAnt).ToList(),
             ["task_type_pattern"] = mission.Tasks.Select(t => t.TaskType).ToList(),
-            ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
-            ["max_parallel_workers"] = AnthillRuntime.MaxParallelWorkers,
-            ["auto_dependency_wiring"] = AnthillRuntime.EnableAutoDependencyWiring,
+            ["parallel_execution"] = options.ParallelExecution,
+            ["max_parallel_workers"] = options.MaxParallelWorkers,
+            ["auto_dependency_wiring"] = options.AutoDependencyWiring,
+            ["correlation_id"] = context.CorrelationId,
+            ["deadline"] = context.Deadline.ToIso(),
         });
         Console.WriteLine($"Mission ID: {mission.Id}");
-        Console.WriteLine($"Created {mission.Tasks.Count} tasks. Parallel execution: {(AnthillRuntime.EnableParallelExecution ? "ON" : "OFF")}\n");
+        Console.WriteLine($"Created {mission.Tasks.Count} tasks. Parallel execution: {(options.ParallelExecution ? "ON" : "OFF")}\n");
 
         // Persist the planned DAG before execution so /graph (and the live colony canvas) can see
         // the mission's tasks while they run — not only after the mission finishes.
@@ -203,11 +226,11 @@ public sealed partial class Queen : IDisposable
 
         // The executors return WHY they stopped dispatching (mission_timeout / mission_cancelled), or
         // null if the plan ran to its natural end — the authoritative signal for the outcome below.
-        var stopReason = AnthillRuntime.EnableParallelExecution
-            ? ExecuteTasksParallel(mission, missionStartedAt, missionCts.Token)
-            : ExecuteTasksSequential(mission, missionStartedAt, missionCts.Token);
+        var stopReason = options.ParallelExecution
+            ? ExecuteTasksParallel(mission, context, missionCts.Token)
+            : ExecuteTasksSequential(mission, context, missionCts.Token);
 
-        var evaluation = FinalizeMission(mission, stopReason);
+        var evaluation = FinalizeMission(mission, context, stopReason);
         Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
         Memory.SaveMission(mission);
         // The evaluation is persisted AFTER the final SaveMission on purpose: SaveMission is an
@@ -312,7 +335,7 @@ public sealed partial class Queen : IDisposable
         return tasks;
     }
 
-    private string? ExecuteTasksSequential(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
+    private string? ExecuteTasksSequential(Mission mission, MissionContext context, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -321,7 +344,7 @@ public sealed partial class Queen : IDisposable
 
         while (!scheduler.IsFinished())
         {
-            if (MissionStopReason(missionStartedAt, missionToken) is { } stop)
+            if (MissionStopReason(context, missionToken) is { } stop)
             {
                 scheduler.SkipRemaining(stop.Message, stop.ReasonType);
                 LogSchedulerTransitions(mission, scheduler);
@@ -332,15 +355,15 @@ public sealed partial class Queen : IDisposable
             if (task is not null)
             {
                 var before = AdaptiveMissionController.Fingerprint(mission);
-                RunSingleTask(task, mission, taskIndex.GetValueOrDefault(task.Id), mission.Tasks.Count, scheduler);
+                RunSingleTask(task, mission, context, taskIndex.GetValueOrDefault(task.Id), mission.Tasks.Count, scheduler);
                 LogSchedulerTransitions(mission, scheduler);
                 // Assess after every task: this loop's "wave" is one task.
-                if (ApplyAdaptiveDecision(mission, scheduler, before)) return "adaptive_stop";
+                if (ApplyAdaptiveDecision(mission, context, scheduler, before)) return "adaptive_stop";
                 continue;
             }
             // Nothing ready. Before declaring dead dependencies, let the controller decide whether
             // a bounded delta plan or repair can supply what is missing.
-            if (ApplyAdaptiveDecision(mission, scheduler, previousFingerprint: null)) return "adaptive_stop";
+            if (ApplyAdaptiveDecision(mission, context, scheduler, previousFingerprint: null)) return "adaptive_stop";
             if (scheduler.NextReadyTask() is not null) continue;   // the controller admitted work
             var blocked = mission.Tasks.Where(t => t.Status == TaskStatus.Blocked).ToList();
             if (blocked.Count > 0)
@@ -355,7 +378,7 @@ public sealed partial class Queen : IDisposable
         return null;
     }
 
-    private string? ExecuteTasksParallel(Mission mission, DateTime missionStartedAt, CancellationToken missionToken)
+    private string? ExecuteTasksParallel(Mission mission, MissionContext context, CancellationToken missionToken)
     {
         var scheduler = new TaskScheduler(mission.Tasks, mission.Id);
         LogSchedulerIssues(mission, scheduler.Prepare());
@@ -367,7 +390,7 @@ public sealed partial class Queen : IDisposable
 
         while (true)
         {
-            if (MissionStopReason(missionStartedAt, missionToken) is { } stop)
+            if (MissionStopReason(context, missionToken) is { } stop)
             {
                 lock (_executionLock)
                 {
@@ -379,7 +402,7 @@ public sealed partial class Queen : IDisposable
                 // waits a bounded grace period for in-flight work to observe it, then marks any
                 // non-terminating task with its cancellation reason. Nothing returns before every
                 // task is terminal.
-                DrainRunningTasks(mission, scheduler, running, stop.ReasonType);
+                DrainRunningTasks(mission, context, scheduler, running, stop.ReasonType);
                 return stop.ReasonType;
             }
 
@@ -389,8 +412,8 @@ public sealed partial class Queen : IDisposable
                 lock (_executionLock)
                     foreach (var runningTask in running.Values.ToList())
                         if (runningTask.Status == TaskStatus.Running && runningTask.StartedAt is { } startedAt &&
-                            (AnthillTime.NowUtc() - startedAt).TotalSeconds > AnthillRuntime.MaxTaskSeconds)
-                            MarkTaskTimeout(runningTask, mission, scheduler);
+                            (AnthillTime.NowUtc() - startedAt).TotalSeconds > context.Budgets.MaxTaskSeconds)
+                            MarkTaskTimeout(runningTask, mission, context, scheduler);
             }
 
             List<Task> toSubmit;
@@ -402,7 +425,7 @@ public sealed partial class Queen : IDisposable
                 var runningIds = running.Values.Select(t => t.Id).ToHashSet();
                 var eligible = scheduler.ReadyTasks().Where(t => !runningIds.Contains(t.Id)).ToList();
                 LogSchedulerTransitions(mission, scheduler);
-                var openSlots = Math.Max(0, AnthillRuntime.MaxParallelWorkers - running.Count);
+                var openSlots = Math.Max(0, context.Options.MaxParallelWorkers - running.Count);
                 toSubmit = eligible.Take(openSlots).ToList();
             }
 
@@ -410,7 +433,7 @@ public sealed partial class Queen : IDisposable
             {
                 var captured = task;
                 var future = System.Threading.Tasks.Task.Run(() =>
-                    RunSingleTask(captured, mission, taskIndex.GetValueOrDefault(captured.Id), mission.Tasks.Count, scheduler));
+                    RunSingleTask(captured, mission, context, taskIndex.GetValueOrDefault(captured.Id), mission.Tasks.Count, scheduler));
                 running[future] = task;
             }
 
@@ -463,7 +486,7 @@ public sealed partial class Queen : IDisposable
                 // A "wave" here is the batch of futures that just completed. Assess once per wave
                 // rather than per task, so parallel completions cannot each trigger their own
                 // replan for the same unmet criterion.
-                if (running.Count == 0 && ApplyAdaptiveDecision(mission, scheduler, waveFingerprint))
+                if (running.Count == 0 && ApplyAdaptiveDecision(mission, context, scheduler, waveFingerprint))
                     return "adaptive_stop";
                 waveFingerprint = AdaptiveMissionController.Fingerprint(mission);
             }
@@ -504,31 +527,34 @@ public sealed partial class Queen : IDisposable
         }
     }
 
-    private static bool MissionTimedOut(DateTime missionStartedAt) =>
-        (AnthillTime.NowUtc() - missionStartedAt).TotalSeconds > AnthillRuntime.MaxMissionSeconds;
-
     /// <summary>
     /// Reports why the mission must stop dispatching, or null to continue. The deadline is checked
     /// first so it is reported as <c>mission_timeout</c>; an external cancel (job cancelled) reached
     /// before the deadline is reported as <c>mission_cancelled</c>. Both leave the same cancelled
     /// token that already aborted any in-flight model call.
+    ///
+    /// v3.1.0 (ADR-002): the deadline is the context's ABSOLUTE instant, not a duration measured
+    /// from a start time carried alongside it. Two loops comparing the same instant cannot disagree
+    /// about when the mission expired, and a resumed run inherits the original boundary.
     /// </summary>
-    private static (string Message, string ReasonType)? MissionStopReason(DateTime missionStartedAt, CancellationToken missionToken)
+    private static (string Message, string ReasonType)? MissionStopReason(MissionContext context, CancellationToken missionToken)
     {
-        if (MissionTimedOut(missionStartedAt))
+        if (context.IsPastDeadline(AnthillTime.NowUtc()))
             return ("Task skipped because mission timed out.", "mission_timeout");
         if (missionToken.IsCancellationRequested)
             return ("Task skipped because the mission was cancelled.", "mission_cancelled");
         return null;
     }
 
-    private void RunSingleTask(Task task, Mission mission, int index, int total, TaskScheduler? scheduler)
+    private void RunSingleTask(Task task, Mission mission, MissionContext context, int index, int total, TaskScheduler? scheduler)
     {
         var taskStartedAt = AnthillTime.NowUtc();
         AntRuntimeSelection runtimeSelection;
         try
         {
-            runtimeSelection = AntRuntime.Resolve(task, MissionConstraints.Parse(mission.Goal));
+            // v3.1.0 (ADR-002): the mission's constraints, not a fresh parse of its goal. This site
+            // re-parsed once PER TASK — the most expensive and most drift-prone of the eight.
+            runtimeSelection = AntRuntime.Resolve(task, context.Constraints);
         }
         catch (Exception error)
         {
@@ -571,9 +597,9 @@ public sealed partial class Queen : IDisposable
                 runtimeMetadata);
             Memory.LogEvent(mission.Id, "task_started", $"Task started: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId, MergeMetadata(runtimeMetadata, new()
             {
-                ["task_type"] = task.TaskType, ["index"] = index, ["parallel"] = AnthillRuntime.EnableParallelExecution,
+                ["task_type"] = task.TaskType, ["index"] = index, ["parallel"] = context.Options.ParallelExecution,
                 ["assigned_worker"] = task.AssignedWorker,
-                ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds, ["attempt_count"] = task.AttemptCount,
+                ["max_task_seconds"] = context.Budgets.MaxTaskSeconds, ["attempt_count"] = task.AttemptCount,
                 ["max_attempts"] = task.MaxAttempts, ["snapshot_context"] = true,
             }));
             taskSnapshot = AntRuntime.PrepareWorkerTaskSnapshot(task, runtimeSelection);
@@ -586,7 +612,7 @@ public sealed partial class Queen : IDisposable
             {
                 ["schema"] = AnthillRuntime.AgentMessageVersion, ["context_strategy"] = "locked_mission_snapshot+compact_context_packets",
                 ["assigned_worker"] = task.AssignedWorker,
-                ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds, ["parallel_execution"] = AnthillRuntime.EnableParallelExecution,
+                ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds, ["parallel_execution"] = context.Options.ParallelExecution,
             }));
 
         if (!_ants.TryGetValue(runtimeSelection.ExecutorRoleId, out var ant))
@@ -616,7 +642,7 @@ public sealed partial class Queen : IDisposable
                 // token here). A single task can no longer consume the whole mission budget: its model
                 // calls abort at MaxTaskSeconds instead of only being flagged as over-limit after they
                 // return. The linked source means a mission cancel/timeout still propagates through too.
-                taskCts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.MaxTaskSeconds));
+                taskCts.CancelAfter(TimeSpan.FromSeconds(context.Budgets.MaxTaskSeconds));
                 using var taskScope = ModelCallScope.Enter(taskCts.Token);
                 // v2.19.0: the STRUCTURED contract. The ant declares its outcome; the orchestrator
                 // no longer infers one from the absence of an exception. The narrative is kept for
@@ -638,14 +664,14 @@ public sealed partial class Queen : IDisposable
                 task.Result = result;
                 task.FinishedAt = finishedAt;
                 task.ElapsedSeconds = elapsed;
-                if (elapsed > AnthillRuntime.MaxTaskSeconds)
+                if (elapsed > context.Budgets.MaxTaskSeconds)
                 {
-                    task.Result = $"Task exceeded max runtime of {AnthillRuntime.MaxTaskSeconds} seconds. Elapsed: {elapsed} seconds.";
+                    task.Result = $"Task exceeded max runtime of {context.Budgets.MaxTaskSeconds} seconds. Elapsed: {elapsed} seconds.";
                     if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "timeout", false, finishedAt, elapsed);
                     else { task.Status = TaskStatus.Failed; task.FailedAt = finishedAt; task.FailureReason = task.Result; task.FailureType = "timeout"; }
                     FinalizeTaskResult(mission, task);
                     Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, runtimeSelection.RuntimeNodeId,
-                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds }));
+                        MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["max_task_seconds"] = context.Budgets.MaxTaskSeconds }));
                     Console.WriteLine(task.Result);
                     return;
                 }
@@ -673,7 +699,7 @@ public sealed partial class Queen : IDisposable
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
                 if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
-                IngestHandoffs(mission, task, execution, runtimeSelection, scheduler);
+                IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["schema"] = AnthillRuntime.AgentMessageVersion, ["status"] = task.Status.Value(), ["result_chars"] = task.ResultChars, ["estimated_tokens"] = task.EstimatedTokens, ["elapsed_seconds"] = task.ElapsedSeconds }));
@@ -718,14 +744,14 @@ public sealed partial class Queen : IDisposable
     /// reaches finalization with every task terminal, and a straggler's late write is ignored by
     /// the existing late-result guard.
     /// </summary>
-    private void DrainRunningTasks(Mission mission, TaskScheduler scheduler,
+    private void DrainRunningTasks(Mission mission, MissionContext context, TaskScheduler scheduler,
         Dictionary<System.Threading.Tasks.Task, Task> running, string reasonType)
     {
         if (running.Count == 0) return;
         try
         {
             System.Threading.Tasks.Task.WaitAll(
-                running.Keys.ToArray(), TimeSpan.FromSeconds(AnthillRuntime.MissionDrainGraceSeconds));
+                running.Keys.ToArray(), TimeSpan.FromSeconds(context.Options.MissionDrainGraceSeconds));
         }
         catch { /* task-level failures were already handled inside RunSingleTask */ }
 
@@ -745,23 +771,23 @@ public sealed partial class Queen : IDisposable
                     cancelled ? "cancelled" : "timeout", false, now, task.ElapsedSeconds);
                 FinalizeTaskResult(mission, task);
                 Memory.LogEvent(mission.Id, "task_drained", task.CancellationReason, task.Id, task.AssignedAnt,
-                    new() { ["reason_type"] = reasonType, ["grace_seconds"] = AnthillRuntime.MissionDrainGraceSeconds });
+                    new() { ["reason_type"] = reasonType, ["grace_seconds"] = context.Options.MissionDrainGraceSeconds });
             }
             LogSchedulerTransitions(mission, scheduler);
         }
     }
 
-    private void MarkTaskTimeout(Task task, Mission mission, TaskScheduler? scheduler)
+    private void MarkTaskTimeout(Task task, Mission mission, MissionContext context, TaskScheduler? scheduler)
     {
         var now = AnthillTime.NowUtc();
         task.FinishedAt = now;
         if (task.StartedAt is { } st) task.ElapsedSeconds = Math.Round((now - st).TotalSeconds, 3);
-        task.Result = $"Task exceeded max runtime of {AnthillRuntime.MaxTaskSeconds} seconds.";
+        task.Result = $"Task exceeded max runtime of {context.Budgets.MaxTaskSeconds} seconds.";
         if (scheduler is not null) scheduler.MarkFailed(task.Id, task.Result, "timeout", false, now, task.ElapsedSeconds);
         else { task.Status = TaskStatus.Failed; task.FailedAt = now; task.FailureReason = task.Result; task.FailureType = "timeout"; }
         FinalizeTaskResult(mission, task);
         Memory.LogEvent(mission.Id, "task_failed_timeout", task.Result, task.Id, task.AssignedAnt,
-            new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = task.ElapsedSeconds, ["max_task_seconds"] = AnthillRuntime.MaxTaskSeconds });
+            new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = task.ElapsedSeconds, ["max_task_seconds"] = context.Budgets.MaxTaskSeconds });
         Console.WriteLine(task.Result);
     }
 
@@ -841,7 +867,7 @@ public sealed partial class Queen : IDisposable
         Metadata = new() { ["patch_set_id"] = patchSet.Id, ["patch_proposal_id"] = proposal.Id, ["file_path"] = proposal.FilePath, ["change_type"] = proposal.ChangeType.Value(), ["requires_approval"] = proposal.RequiresApproval, ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting },
     };
 
-    private Outcomes.MissionEvaluation FinalizeMission(Mission mission, string? stopReason)
+    private Outcomes.MissionEvaluation FinalizeMission(Mission mission, MissionContext context, string? stopReason)
     {
         // Only a CRITICAL task failure fails the whole mission. A non-critical failure/skip
         // (e.g. one spec-ingestion section) degrades the mission to Partial but never aborts it.
@@ -893,7 +919,7 @@ public sealed partial class Queen : IDisposable
         Memory.LogEvent(mission.Id, "pheromone_scored", $"Mission pheromone score calculated: {mission.SuccessScore}",
             metadata: new() { ["success_score"] = mission.SuccessScore, ["mission_status"] = mission.Status.Value() });
         Memory.UpdateMissionPheromones(mission, evaluation.OutcomeCode);
-        CreditSkills(mission, evaluation);
+        CreditSkills(mission, context, evaluation);
         RegisterProceduralRoutes(mission, evaluation);
         mission.BestOutputTaskId = SelectBestOutputTaskId(mission);
         mission.UserResult = ComposeUserResult(mission);
@@ -1082,13 +1108,15 @@ public sealed partial class Queen : IDisposable
     /// </summary>
     /// <remarks>Internal rather than private so the admission path itself is testable — a source
     /// guard proving the call site exists is not the same as proving the gates actually run.</remarks>
-    internal void IngestHandoffs(Mission mission, Task sourceTask, AntExecutionResult execution,
+    internal void IngestHandoffs(Mission mission, MissionContext context, Task sourceTask, AntExecutionResult execution,
         AntRuntimeSelection runtimeSelection, TaskScheduler? scheduler)
     {
-        if (!AnthillRuntime.EnableHandoffIngestion || execution.Handoffs.Count == 0) return;
+        // v3.1.0: the gate is read from the mission's OWN resolved capability set. Flipping the
+        // static mid-mission can no longer change what an in-flight mission is permitted to do.
+        if (!context.Options.HandoffIngestion || execution.Handoffs.Count == 0) return;
 
         var depth = HandoffGate.NextDepthFrom(sourceTask);
-        var constraints = MissionConstraints.Parse(mission.Goal);
+        var constraints = context.Constraints;
 
         foreach (var proposed in execution.Handoffs)
         {
@@ -1174,9 +1202,9 @@ public sealed partial class Queen : IDisposable
     ///
     /// Returns true when the mission should stop.
     /// </summary>
-    private bool ApplyAdaptiveDecision(Mission mission, TaskScheduler? scheduler, string? previousFingerprint)
+    private bool ApplyAdaptiveDecision(Mission mission, MissionContext context, TaskScheduler? scheduler, string? previousFingerprint)
     {
-        if (!AnthillRuntime.EnableAdaptiveMissionControl) return false;
+        if (!context.Options.AdaptiveMissionControl) return false;
 
         var budget = new AdaptiveBudget(
             ReplansUsed: Memory.GetRecentEvents(200, "adaptive_delta_plan", mission.Id).Count,
@@ -1185,7 +1213,7 @@ public sealed partial class Queen : IDisposable
         var decision = _adaptive.Assess(mission, budget, previousFingerprint);
         if (decision.Action is AdaptiveAction.Continue or AdaptiveAction.Finish) return false;
 
-        var constraints = MissionConstraints.Parse(mission.Goal);
+        var constraints = context.Constraints;
 
         if (decision.Action == AdaptiveAction.Repair)
         {
@@ -1282,7 +1310,7 @@ public sealed partial class Queen : IDisposable
     /// Promotion and demotion both stay with <see cref="SkillRegistry.RecordOutcome"/>; this only
     /// reports what happened and persists the result.
     /// </summary>
-    private void CreditSkills(Mission mission, Outcomes.MissionEvaluation evaluation)
+    private void CreditSkills(Mission mission, MissionContext context, Outcomes.MissionEvaluation evaluation)
     {
         var followed = mission.Tasks
             .Where(t => !string.IsNullOrWhiteSpace(t.SkillId))
@@ -1306,7 +1334,9 @@ public sealed partial class Queen : IDisposable
             // path here fabricated promotable evidence out of a model's own verdict. Deterministic
             // task-level evidence (build/test/diff) will flow in once patch verification bundles
             // are attached at this site; until then, no evidence means no credit.
-            var status = Skills.RecordOutcome(skillId, bundle, AnthillRuntime.EnvironmentFingerprint,
+            // v3.1.0: the environment a skill's coverage is proven against comes from the mission's
+            // own context — the fingerprint recorded at intake, not one recomputed at finalization.
+            var status = Skills.RecordOutcome(skillId, bundle, context.EnvironmentFingerprint,
                 verified ? null : $"mission {mission.Id} finished {mission.Status.Value()} without verified success");
             Memory.LogEvent(mission.Id, "skill_outcome_recorded",
                 $"Skill '{skillId}' recorded {(verified ? "a verified success" : "an unverified outcome")} — now {status}.",
@@ -1314,6 +1344,11 @@ public sealed partial class Queen : IDisposable
                 {
                     ["skill_id"] = skillId, ["verified"] = verified, ["status"] = status.ToString(),
                     ["mission_status"] = mission.Status.Value(),
+                    ["environment"] = context.EnvironmentFingerprint,
+                    // Recorded, deliberately not enforced here: while break-glass is on, the
+                    // installation is not V3-qualifiable and this credit is not qualifying evidence.
+                    // v3.7.0 owns the enforcement point; v3.1.0 changes no behaviour.
+                    ["qualifying"] = context.Profile.Verification.CanRecordVerifiedSuccess,
                 });
         }
         // v2.26.0: persist ONLY the touched skills, row-atomically — a whole-registry save from
