@@ -3,15 +3,17 @@
    Replaces the floating-panel workspace: widgets sit in a responsive CSS Grid,
    not absolutely-positioned frames layered over the colony canvas.
 
-   Why a 24-column track instead of auto-fit/minmax: auto-fit decides column
-   count from a minimum width, which means widget SIZE and column count are the
-   same knob. Operational importance and screen width are different questions —
-   the Colony must stay dominant on a laptop and must not become absurd on an
-   ultrawide. An explicit column count per breakpoint, with each widget
-   declaring a span, keeps those two decisions separate.
+   Why an explicit column track instead of auto-fit/minmax: auto-fit derives the
+   column count from a minimum width, which makes widget SIZE and column count
+   the same knob. Operational importance and screen width are different
+   questions and need different answers.
 
-   24 divides by 2, 3, 4, 6, 8 and 12, so thirds and quarters both land on whole
-   columns at every breakpoint. A 12-column grid cannot do thirds and eighths.
+   Widget spans are PROPORTIONALLY INVARIANT: small = 1/4 of a row, medium =
+   1/3, large = 1/2, colony = full, at every width above 901px. That invariant
+   was not the first design — phase 2 measurement found a row at 32% fill
+   because the fractions moved between breakpoints, so a set of widgets that
+   tiled at 1920 stranded one at 1366. Tiling cannot be a property of the widget
+   set if the fractions shift underneath it. See the tiling rule below.
    ───────────────────────────────────────────────────────────────────────────── */
 
 .dg-root {
@@ -44,8 +46,9 @@
 .dg-root { margin-inline: auto; max-width: 2560px; }
 
 /* TILING RULE — read this before assigning a widget a size.
-   Spans must sum to the column count or a row ends short. At 12 columns that means 4 small (3),
-   3 medium (4), or 2 large (6) per row; at 24 it is 6 small (4), 4 medium (6), 3 large (8).
+   Spans must sum to the column count or a row ends short. Because the fractions are invariant
+   (see the breakpoints below), one rule holds at EVERY width above 901px: 4 small, or 3 medium,
+   or 2 large, or 1 colony per row.
    Measured on the live grid: a row of 3 smalls uses 75% of its width and the remainder is dead
    space, which is exactly the "large empty cards" the redesign exists to remove.
 
@@ -155,31 +158,39 @@
   }
 }
 
-/* 1080p and small laptops: 12 columns — quarters, thirds and halves. */
-@media (min-width: 901px) and (max-width: 1439px) {
+/* PROPORTIONALLY INVARIANT SPANS — 901px and up.
+   Phase-2 measurement in the live console found a row at 32% fill: spans were 4/12 here and 3/12
+   at the next breakpoint up, so a set of four small widgets tiled at one width and stranded one
+   at another. Tiling cannot be a property of the widget set if the fractions move underneath it.
+
+   So the fractions are fixed everywhere: small = 1/4 of a row, medium = 1/3, large = 1/2,
+   colony = full. Four smalls, three mediums, or two larges fill a row at EVERY size, and a layout
+   that tiles at one resolution tiles at all of them.
+
+   The cost, accepted deliberately: an ultrawide no longer packs more widgets per row than a 1080p
+   display — it renders the same arrangement larger, bounded by the 2560px max-width above.
+   Predictable emptiness-free rows are worth more to an always-open console than variable density,
+   and unnecessary whitespace is precisely what this redesign exists to remove. The 24-column track
+   is kept because it expresses the same fractions with finer granularity for future widget sizes. */
+
+/* 1080p through 1440p: 12 columns. */
+@media (min-width: 901px) and (max-width: 2199px) {
   .dg-root {
     --dg-cols: 12;
-    --dg-span-small: 4; --dg-span-medium: 6; --dg-span-large: 12; --dg-span-colony: 12;
-  }
-}
-
-/* 1440p: 12 columns, but large widgets stop eating the full width so two can
-   sit side by side. */
-@media (min-width: 1440px) and (max-width: 2199px) {
-  .dg-root {
-    --dg-cols: 12; --dg-gap: 16px; --dg-pad: 20px;
     --dg-span-small: 3; --dg-span-medium: 4; --dg-span-large: 6; --dg-span-colony: 12;
-    --dg-colony-h: clamp(380px, 50vh, 660px);
   }
 }
 
-/* 4K and ultrawide: 24 columns. Widgets get proportionally NARROWER in column
-   terms rather than wider in pixels — four small widgets across an ultrawide is
-   useful; four 700px-wide ones are not. */
+/* 1440p gains breathing room, not a different arrangement. */
+@media (min-width: 1440px) and (max-width: 2199px) {
+  .dg-root { --dg-gap: 16px; --dg-pad: 20px; --dg-colony-h: clamp(380px, 50vh, 660px); }
+}
+
+/* 4K and ultrawide: 24 columns expressing the SAME fractions (6/8/12 of 24 == 3/4/6 of 12). */
 @media (min-width: 2200px) {
   .dg-root {
     --dg-cols: 24; --dg-gap: 18px; --dg-pad: 24px;
-    --dg-span-small: 4; --dg-span-medium: 6; --dg-span-large: 8; --dg-span-colony: 24;
+    --dg-span-small: 6; --dg-span-medium: 8; --dg-span-large: 12; --dg-span-colony: 24;
     --dg-colony-h: clamp(420px, 46vh, 760px);
   }
 }
