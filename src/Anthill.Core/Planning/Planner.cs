@@ -392,7 +392,24 @@ Required JSON:
         // LLMs often emit non-ID dependency references: integer indices ([0],[1]) or task titles.
         // Build lookup maps and resolve everything to real task IDs.
         var idByIndex = tasks.Select((t, i) => (t, i)).ToDictionary(x => x.i, x => x.t.Id);
-        var idByTitle = tasks.ToDictionary(t => t.Title.Trim(), t => t.Id, StringComparer.OrdinalIgnoreCase);
+
+        // Titles are NOT unique and nothing ever made them so. `ToDictionary` here threw
+        // ArgumentException the moment a model emitted two tasks with the same title — which small
+        // models do routinely, and which the untitled-task default ("Task") makes likelier still.
+        // The throw was invisible in production because CreatePlan's catch-all turned it into
+        // "parse failed → fallback", so a crash was being read as a bad plan for releases.
+        //
+        // A repeated title is not fatal by itself: it only matters if a dependency REFERS to it,
+        // and then it is genuinely ambiguous — two tasks answer to that name and picking either is
+        // a guess about ordering. Recorded here, rejected below only if something actually
+        // references it.
+        var idByTitle = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ambiguousTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in tasks)
+        {
+            var key = t.Title.Trim();
+            if (!idByTitle.TryAdd(key, t.Id)) ambiguousTitles.Add(key);
+        }
 
         for (int i = 0; i < tasks.Count; i++)
         {
@@ -402,7 +419,14 @@ Required JSON:
                 // Integer index
                 if (int.TryParse(dep, out var idx) && idx >= 0 && idx < tasks.Count && idx != i)
                 { resolved.Add(idByIndex[idx]); continue; }
-                // Exact task title
+                // Exact task title — unless more than one task answers to it, in which case the
+                // ordering the model asked for cannot be recovered and guessing is not allowed.
+                if (ambiguousTitles.Contains(dep.Trim()))
+                {
+                    rejections.Add(new PlanRejection(i, "depends_on",
+                        $"'{TextUtil.Truncate(dep, 60)}' is ambiguous — several tasks share that title"));
+                    continue;
+                }
                 if (idByTitle.TryGetValue(dep.Trim(), out var titleId) && titleId != tasks[i].Id)
                 { resolved.Add(titleId); continue; }
                 // Already a valid task ID
@@ -418,7 +442,11 @@ Required JSON:
             tasks[i].DependsOn = resolved.Distinct().ToList();
         }
 
-        if (tasks.Count < AnthillRuntime.MinDynamicTasks)
+        // Only when nothing else was rejected. A rejected task is not a usable one, so a plan that
+        // already failed on a bad role would ALSO report "below the minimum" — a consequence of the
+        // first problem presented as a second, co-equal one. The operator needs the cause, not the
+        // count of symptoms it produced.
+        if (rejections.Count == 0 && tasks.Count < AnthillRuntime.MinDynamicTasks)
             rejections.Add(new PlanRejection(-1, "tasks",
                 $"{tasks.Count} usable task(s), below the minimum of {AnthillRuntime.MinDynamicTasks}"));
 

@@ -29,8 +29,13 @@ public class PlanSchemaStrictnessTests
     private static JsonObject Plan(params string[] taskJson) =>
         JsonNode.Parse("{\"tasks\":[" + string.Join(",", taskJson) + "]}")!.AsObject();
 
-    private static string TaskJson(string ant, string title = "t", string? dependsOn = null) =>
-        "{\"title\":\"" + title + "\",\"description\":\"d\",\"assigned_ant\":\"" + ant + "\""
+    // Distinct titles by default. The first version of this fixture titled every task "t", which
+    // is how the duplicate-title crash below was found — worth keeping the default honest so the
+    // other tests exercise ordinary plans rather than that edge.
+    private static int _n;
+    private static string TaskJson(string ant, string? title = null, string? dependsOn = null) =>
+        "{\"title\":\"" + (title ?? $"task-{System.Threading.Interlocked.Increment(ref _n)}")
+        + "\",\"description\":\"d\",\"assigned_ant\":\"" + ant + "\""
         + (dependsOn is null ? "" : ",\"depends_on\":[" + dependsOn + "]") + "}";
 
     /// <summary>A well-formed plan is still accepted, or strictness would just mean "never plan".</summary>
@@ -131,6 +136,44 @@ public class PlanSchemaStrictnessTests
 
         Assert.False(plan.Accepted);
         Assert.Contains(plan.Rejections, r => r.Field == "tasks");
+    }
+
+    /// <summary>
+    /// Two tasks may share a title without the parser throwing.
+    ///
+    /// Found by an earlier version of the fixture above, which titled every task "t": the title
+    /// lookup was built with ToDictionary and raised ArgumentException on the duplicate. Small
+    /// models repeat titles routinely, and the default title for an untitled task ("Task") makes a
+    /// collision likelier still. In production the crash was invisible — CreatePlan's catch-all
+    /// reported it as "parse failed" and fell back — so a planner crash has been reading as a bad
+    /// plan for several releases.
+    /// </summary>
+    [Fact]
+    public void DuplicateTitles_DoNotThrow_WhenNothingRefersToThem()
+    {
+        var plan = NewPlanner().TasksFromJson(
+            Plan(TaskJson("researcher", "same"), TaskJson("coder", "same"), TaskJson("builder", "same")),
+            "goal", NoSkills);
+
+        Assert.True(plan.Accepted, string.Join("; ", plan.Rejections.Select(r => r.Describe())));
+        Assert.True(plan.Tasks.Count >= 3);
+    }
+
+    /// <summary>
+    /// But a dependency ON a repeated title IS ambiguous: two tasks answer to that name, and
+    /// picking either is a guess about ordering. Rejected rather than guessed.
+    /// </summary>
+    [Fact]
+    public void ADependencyOnADuplicatedTitle_IsRejectedAsAmbiguous()
+    {
+        var plan = NewPlanner().TasksFromJson(
+            Plan(TaskJson("researcher", "same"),
+                 TaskJson("builder", "same"),
+                 TaskJson("coder", "third", dependsOn: "\"same\"")),
+            "goal", NoSkills);
+
+        Assert.False(plan.Accepted);
+        Assert.Contains(plan.Rejections, r => r.Field == "depends_on" && r.Reason.Contains("ambiguous"));
     }
 
     /// <summary>Every rejection must name the field and, where it applies, the task.</summary>

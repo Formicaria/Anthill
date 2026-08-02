@@ -34,6 +34,13 @@ public sealed partial class SqliteMemory
         // ant never ran under.
         var contractVersion = AntExecutionCatalog.ContractFor(antName ?? "")?.Version;
 
+        // A diagnostic record must never be able to break the mission it is recording. The row has
+        // a foreign key to missions(id) and foreign_keys is ON, so a result arriving before its
+        // mission row exists — or after a delete — would otherwise throw inside the execution path
+        // and fail a task whose ant had already succeeded. Losing the record is the smaller loss,
+        // and it is reported rather than swallowed.
+        try
+        {
         lock (_writeLock)
         {
             using var conn = Connect();
@@ -63,6 +70,11 @@ public sealed partial class SqliteMemory
                 ("@warnings", Json.SafeDumps(result.Warnings)),
                 ("@metrics", Json.SafeDumps(result.Metrics)),
                 ("@at", AnthillTime.NowUtc().ToIso()));
+        }
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Could not record the ant result for task {taskId}: {error.Message}");
         }
     }
 

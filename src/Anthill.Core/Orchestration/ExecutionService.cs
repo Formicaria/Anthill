@@ -399,7 +399,29 @@ public sealed class ExecutionService : IExecutionService
                 // v2.19.0: the STRUCTURED contract. The ant declares its outcome; the orchestrator
                 // no longer infers one from the absence of an exception. The narrative is kept for
                 // the operator but carries no control meaning.
-                execution = ant.Execute(taskSnapshot, missionSnapshot);
+                // v3.2.0 (phase): the contract is checked at DISPATCH, for every ant.
+                //
+                // Five specialists checked their own contract's task type on entry; the six core
+                // ants and the cartographer did not — so "no ant bypasses the contract" was true
+                // of whoever had remembered to write the check. Enforcing it here covers every
+                // role including any added later, and it fails BEFORE the model call rather than
+                // after paying for one.
+                //
+                // The specialists' own checks stay, and are not a duplicate decision: this one
+                // refuses to DISPATCH work outside a role's contract, theirs refuses to RUN it
+                // however they were called — including directly, as their tests do. Both answer
+                // from the same contract, so they cannot disagree about what it says.
+                var contract = AntExecutionCatalog.ContractFor(ant.Name);
+                if (contract is not null && !contract.SupportsTaskType(taskSnapshot.TaskType))
+                {
+                    execution = AntExecutionResult.Blocked(
+                        $"task type '{taskSnapshot.TaskType}' is outside the {ant.Name} execution contract " +
+                        $"(v{contract.Version})");
+                }
+                else
+                {
+                    execution = ant.Execute(taskSnapshot, missionSnapshot);
+                }
                 result = execution.Narrative ?? execution.Summary;
             }
             // v3.2.0 (phase): record what the ant REPORTED, before the scheduler decides what to do
