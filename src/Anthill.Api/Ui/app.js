@@ -7226,30 +7226,30 @@ function registerGridWidgets(){
 
   // ---- above the Colony: is the colony healthy, and what needs me -----------
   var above=[
-    // Colony Vitals holds three sub-cards side by side; at 3 columns they were narrow enough that
-    // "AUTOMATION" and "Database" broke mid-word. Found in the live console — the fix is width,
-    // not weaker wrapping. Operator Attention carries alerts, so it earns equal prominence.
+    // TWO rows above the Colony, not three. With three the map was pushed to the lower third of
+    // the viewport and read as the bottom of the page rather than its centre. Vitals and alerts
+    // answer "is the colony healthy"; the composer and mission list are what an operator reaches
+    // for first — that is enough context to sit above the map, and everything else reads after it.
     {id:'colony-vitals',      title:'Colony Vitals',      icon:'\u25b2', size:'large',  body:'ov-vitals-body'},
     {id:'operator-attention', title:'Operator Attention', icon:'\u0021', size:'large',  body:'hud-attn-list'},
-    {id:'colony-health',      title:'Colony Health',      icon:'\u25c6', size:'small',  body:'ov2-health-body'},
-    {id:'system-core',        title:'System Core',        icon:'\u2699', size:'small',  body:'ov2-core-body'},
-    {id:'resource-usage',     title:'Resource Usage',     icon:'\u25a4', size:'small',  body:'ov2-resources-body'},
-    {id:'colony-jobs',        title:'Jobs',               icon:'\u2637', size:'small',  body:'jobs-list'},
-    // The two an operator reaches for first, side by side directly above the map.
     {id:'mission-composer',   title:'Mission Command',    icon:'\u25b6', size:'large',  body:'ov-composer-body'},
     {id:'missions',           title:'Active Missions',    icon:'\u26a1', size:'large',  body:'ov2-active-body'},
   ];
 
   // ---- below the Colony: detail, history and queues -------------------------
   var below=[
+    // The four status smalls move BELOW the map so the Colony rises to the middle of the layout.
+    // They are glanceable rather than read, which is what makes them the right ones to move.
+    {id:'colony-health',      title:'Colony Health',      icon:'\u25c6', size:'small',  body:'ov2-health-body'},
+    {id:'system-core',        title:'System Core',        icon:'\u2699', size:'small',  body:'ov2-core-body'},
+    {id:'resource-usage',     title:'Resource Usage',     icon:'\u25a4', size:'small',  body:'ov2-resources-body'},
+    {id:'colony-jobs',        title:'Jobs',               icon:'\u2637', size:'small',  body:'jobs-list'},
     {id:'agent-inspector',    title:'Agent Inspector',    icon:'\u2b21', size:'medium', body:'agent-detail'},
     {id:'live-telemetry',     title:'Live Telemetry',     icon:'\u2261', size:'medium', body:'ov-feed-list'},
     {id:'recent-events',      title:'Recent Events',      icon:'\u25cf', size:'medium', body:'ov2-events-body'},
     {id:'recent-missions',    title:'Recent Missions',    icon:'\u25f4', size:'medium', body:'ov-sum-missions'},
     {id:'approvals',          title:'Pending Approvals',  icon:'\u2713', size:'medium', body:'ov2-approvals-body'},
     {id:'patch-activity',     title:'Patch Activity',     icon:'\u2726', size:'medium', body:'ov-sum-patches'},
-    // Large rather than small: a pair of half-width cards tiles the final row exactly, and both
-    // are list surfaces that were being squeezed into a quarter width for no reason.
     {id:'objectives',         title:'Objectives',         icon:'\u25ce', size:'large',  body:'ov-sum-objectives'},
     {id:'recent-jobs',        title:'Recent Jobs',        icon:'\u231b', size:'large',  body:'ov-jobs-list'},
   ];
