@@ -259,7 +259,46 @@ Still open before v3.2.0 can be recorded as SHIPPED against the gates below:
 - `IAntExecutor.ExecuteAsync(AntExecutionRequest, CancellationToken)` across all twelve agents.
   Note that `Execute(Task, Mission) -> AntExecutionResult` now IS the universal typed contract; what
   remains is the async signature, the request object, and cancellation.
+
+  **Do the provider layer first.** Cancellation is already delivered by `ModelCallScope` — an
+  ambient async-local token linked into every HTTP request, built expressly so a token need not be
+  threaded through every ant signature. Adding `ExecuteAsync` now would mean a second cancellation
+  mechanism competing with the first, plus a sync-to-async adapter over twelve synchronous ants:
+  the adapter pattern this phase just finished deleting. The genuine async work is
+  `ModelRouter`/`ProviderClients`, which block a thread per model call via
+  `.GetAwaiter().GetResult()` — that is a real cost under parallel execution and a prerequisite for
+  an `ExecuteAsync` that is not a lie.
+
 - Versioned `AntExecutionContract` on every active and standby mission agent.
+
+  **This is the phase's real remaining work, and it is not a small edit.** `AntExecutionCatalog`
+  holds contracts for the six SPECIALISTS only, so `ContractFor("coder")` is null. Consequences
+  already visible in the code: the v3.2.0 dispatch check is a no-op for the six core ants, and
+  every core-ant row in `task_results` stores `contract_version = NULL`.
+
+  Two hazards make authoring them evidence work rather than typing, both discovered by reading the
+  consumers rather than the contract type:
+
+  1. **`AllowedTools` is an exhaustive allowlist that REPLACES the fallback.**
+     `ToolAuthorization.Decide` short-circuits the moment `ContractFor(role)` is non-null: it then
+     denies any tool not in `contract.AllowedTools` and never consults the `RoleAllowedTools` map
+     that governs core ants today. Giving a core ant a contract with an incomplete tool list denies
+     its tools mid-mission. The list must be derived from every call site, not from the four
+     `RunTool(...)` literals in `Ants.cs` — the sandboxed coder runner and the verification tools
+     reach the registry by other paths.
+  2. **`SupportedTaskTypes` is load-bearing now that dispatch enforces it.** The planner accepts
+     whatever `task_type` the model emits and only infers one when the field is empty, so a model
+     inventing `"analysis"` for a researcher task would be blocked at execution by a contract
+     listing only `"research"`. The evidenced vocabulary is `research`, `file_inspection`,
+     `patch_proposal`, `build_answer`, `verification`, `external_research` (from
+     `TextUtil.InferTaskType`), plus `synthesis`, `section_analysis`, `verify` and
+     `mission_verification` in use elsewhere.
+
+     The safe order is to normalise BEFORE enforcing: when a model's `task_type` is outside the
+     assigned role's contract, replace it with `InferTaskType(role)` in the planner. That is
+     normalisation by this phase's own rule — it changes neither which ant runs nor the ordering —
+     and it means contracts can be strict without a model's vocabulary choice sending a good plan
+     to the fallback or blocking it mid-mission.
 - Strict planner schema validation; task contracts carrying expected artifacts and repair policy.
 
 The version number was an operator decision, taken knowing the phase is incomplete. Recorded here
@@ -294,7 +333,36 @@ model boundary, and adapter removal remain to be made universal here.
 - No core ant bypasses the contract, capability, metric, or artifact path.
 - Compatibility adapters are deleted, not merely deprecated.
 
-## v3.3.0 - Mission Workspace and Language Adapter Infrastructure
+## DIRECTION CHANGE — Anthill as an agent harness (see `docs/ADR-003-AGENT-HARNESS.md`)
+
+Anthill is becoming a general-purpose agentic AI harness: provider-agnostic, capability-aware and
+tool-centric, with the dashboard, Colony, missions and integrations as capabilities of the platform
+rather than its purpose.
+
+**Nothing below is obsolete.** The v3.2.0 typed-protocol work is a precondition for the harness, not
+a detour — an agent runtime whose control flow reads prose cannot be provider-agnostic, because
+every provider phrases failure differently.
+
+What changes is ORDER, and one reversal:
+
+- `IAntExecutor.ExecuteAsync` stays deferred, but its prerequisite is promoted. The provider layer
+  goes async and typed FIRST; the ant signature follows it rather than wrapping it.
+- Core-ant `AntExecutionContract`s move to v3.4.0. They were already blocked on tool-inventory
+  evidence; they now also need to declare required MODEL capabilities, which cannot be expressed
+  until the capability model exists. Writing them now means writing them twice.
+- The workspace/language-adapter phase below moves after the provider and tool substrate.
+
+Revised sequence: **v3.3.0 provider substrate** (typed request/response, async transport, model
+capabilities) → **v3.4.0 tool framework projection** (tool schemas, tool-call loop, core-ant
+contracts authored with capabilities) → **v3.5.0 mission workspace** (the phase below) → v3.6.0
+repository indexing → v3.7.0 conversation orchestration.
+
+The blocking defect is one interface: `IModelClient.Generate(string prompt, int retries)`. String in,
+string out — with nowhere to carry messages, tool schemas, structured-output formats, image parts,
+streaming, usage or a per-call model. Adding OpenRouter, LM Studio, vLLM or llama.cpp is mostly a
+`ProviderCatalog` entry against an OpenAI-compatible base URL and is NOT the hard part.
+
+## v3.5.0 - Mission Workspace and Language Adapter Infrastructure (was v3.3.0)
 
 ### Goal
 
