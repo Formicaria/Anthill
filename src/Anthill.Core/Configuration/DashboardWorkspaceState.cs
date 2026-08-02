@@ -77,6 +77,10 @@ public sealed class DashboardWorkspaceState
         // reachable control once the topology workspace became the default console in v2.15.0 —
         // the endpoint, the renderer and the button all existed; nothing could reach them.
         "mission-composer",
+        // v3.3.0: the Colony. Under the floating workspace it was the page BACKGROUND and so was
+        // never a panel; in the grid it is a first-class widget like any other and must be known
+        // to the server, or the ids guard reports a disagreement that is really just this gap.
+        "colony",
     };
 
     /// <summary>

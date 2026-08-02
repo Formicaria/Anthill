@@ -355,6 +355,22 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 #page-overview.ws-active > *:not(#ws-root):not(.ws-layer){display:none !important;}
 #page-overview.ws-active #ws-root{flex:1;min-height:0;}
 
+/* v3.3.0 — the grid dashboard. Deliberately NOT a copy of the rules above.
+   The workspace needed `position:relative; overflow:hidden` because it hosted absolutely
+   positioned layers that would otherwise resolve against the viewport and slide under the
+   sidebar. The grid has no absolute layers, so it needs neither: the page SCROLLS normally and
+   the grid is a block in that flow. Removing `overflow:hidden` is most of why widgets can no
+   longer be clipped or stranded off-screen.
+
+   The exclusion below keeps the v2.15.3 lesson — exclude by CLASS, never by an id allow-list,
+   because an id list silently hides every element added after it is written. */
+#page-overview.dg-active{position:static;overflow:visible;padding:0;gap:0;}
+#page-overview.dg-active > *:not(#dg-root):not(.dg-keep){display:none !important;}
+#page-overview.dg-active #dg-root{flex:1 1 auto;min-height:0;}
+/* The colony canvas is moved INTO the Colony widget, so it must fill that widget's body rather
+   than the fixed height it used when it was the page background. */
+#page-overview.dg-active #colony-canvas-area{position:relative;width:100%;height:100%;min-height:0;}
+
 /* The status bar is pinned to the very top of the workspace, above the colony view controls. */
 #ws-topbar{position:absolute;top:0;left:0;right:0;z-index:45;pointer-events:auto;
   background:rgba(8,12,20,.82);border-bottom:1px solid var(--border);
@@ -3020,9 +3036,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   </div>
 </div>
 
-<link rel="stylesheet" href="/ui/dashboard-workspace.css">
+<!-- v3.3.0: the responsive dashboard grid replaces the floating-panel workspace. The workspace
+     stylesheet and runtime are gone from the page; the files are removed in the follow-up commit
+     once the grid has been exercised in a live console. -->
+<link rel="stylesheet" href="/ui/dashboard-grid.css">
 <script src="/ui/mission-thread.js" defer></script>
-<script src="/ui/dashboard-workspace.js" defer></script>
+<script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
 </body>
 </html>
