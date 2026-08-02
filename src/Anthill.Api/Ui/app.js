@@ -7172,7 +7172,7 @@ function renderTelemetryBar(containerId){
 (function(){
   const prevOv=PAGE_ENTER['overview'];
   PAGE_ENTER['overview']=()=>{ if(prevOv)prevOv(); pollTelemetry(); pollOv2();
-    if(!window.__wsBooted){ window.__wsBooted=true; initDashboardWorkspace(); } };
+    if(!window.__wsBooted){ window.__wsBooted=true; initDashboardGrid(); } };
   const prevCo=PAGE_ENTER['colony'];
   PAGE_ENTER['colony']=()=>{ if(prevCo)prevCo(); pollTelemetry(); };
   setInterval(pollTelemetry,15000);
@@ -7215,6 +7215,106 @@ function wsMountTarget(bodyId, el){
   var existing=document.getElementById(bodyId);
   if(existing){ el.appendChild(existing); return; }
   var made=document.createElement('div'); made.id=bodyId; el.appendChild(made);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   v3.3.0 dashboard grid — widget registration.
+
+   Same adoption model the workspace used and the reason a layout replacement is
+   not a rewrite: every widget mounts an EXISTING element by id, so every
+   renderer in this file keeps writing to the node it already wrote to.
+
+   ORDER IS THE LAYOUT. There is no saved arrangement yet, so registration order
+   is what the operator sees: situational awareness above the Colony, detail
+   below it. The Colony sits mid-list on purpose — that is what makes the page
+   read as an operations console with a mission display rather than a list of
+   cards that happens to contain a map.
+
+   SIZES TILE. At 12 columns a row is 4 small (3) / 3 medium (4) / 2 large (6),
+   so each group below sums to 12 and no row ends short. See the tiling rule in
+   dashboard-grid.css for why grid-auto-flow:dense is not used instead.
+   ───────────────────────────────────────────────────────────────────────────── */
+function registerGridWidgets(){
+  if(!window.AnthillGrid) return;
+  var G=window.AnthillGrid;
+
+  // ---- above the Colony: is the colony healthy, and what needs me -----------
+  var above=[
+    // Colony Vitals holds three sub-cards side by side; at 3 columns they were narrow enough that
+    // "AUTOMATION" and "Database" broke mid-word. Found in the live console — the fix is width,
+    // not weaker wrapping. Operator Attention carries alerts, so it earns equal prominence.
+    {id:'colony-vitals',      title:'Colony Vitals',      icon:'\u25b2', size:'large',  body:'ov-vitals-body'},
+    {id:'operator-attention', title:'Operator Attention', icon:'\u0021', size:'large',  body:'hud-attn-list'},
+    {id:'colony-health',      title:'Colony Health',      icon:'\u25c6', size:'small',  body:'ov2-health-body'},
+    {id:'system-core',        title:'System Core',        icon:'\u2699', size:'small',  body:'ov2-core-body'},
+    {id:'resource-usage',     title:'Resource Usage',     icon:'\u25a4', size:'small',  body:'ov2-resources-body'},
+    {id:'colony-jobs',        title:'Jobs',               icon:'\u2637', size:'small',  body:'jobs-list'},
+    // The two an operator reaches for first, side by side directly above the map.
+    {id:'mission-composer',   title:'Mission Command',    icon:'\u25b6', size:'large',  body:'ov-composer-body'},
+    {id:'missions',           title:'Active Missions',    icon:'\u26a1', size:'large',  body:'ov2-active-body'},
+  ];
+
+  // ---- below the Colony: detail, history and queues -------------------------
+  var below=[
+    {id:'agent-inspector',    title:'Agent Inspector',    icon:'\u2b21', size:'medium', body:'agent-detail'},
+    {id:'live-telemetry',     title:'Live Telemetry',     icon:'\u2261', size:'medium', body:'ov-feed-list'},
+    {id:'recent-events',      title:'Recent Events',      icon:'\u25cf', size:'medium', body:'ov2-events-body'},
+    {id:'recent-missions',    title:'Recent Missions',    icon:'\u25f4', size:'medium', body:'ov-sum-missions'},
+    {id:'approvals',          title:'Pending Approvals',  icon:'\u2713', size:'medium', body:'ov2-approvals-body'},
+    {id:'patch-activity',     title:'Patch Activity',     icon:'\u2726', size:'medium', body:'ov-sum-patches'},
+    // Large rather than small: a pair of half-width cards tiles the final row exactly, and both
+    // are list surfaces that were being squeezed into a quarter width for no reason.
+    {id:'objectives',         title:'Objectives',         icon:'\u25ce', size:'large',  body:'ov-sum-objectives'},
+    {id:'recent-jobs',        title:'Recent Jobs',        icon:'\u231b', size:'large',  body:'ov-jobs-list'},
+  ];
+
+  function reg(d){
+    G.register({ id:d.id, title:d.title, icon:d.icon, size:d.size,
+      render:function(el){ gridMountTarget(d.body, el); } });
+  }
+
+  above.forEach(reg);
+
+  // The Colony: its own full-width row, taller than anything around it, and the
+  // existing canvas MOVED in rather than duplicated — same node, same renderer,
+  // same zoom/pan state. topologyRemeasure() re-runs the layout maths after the
+  // element lands in its new box, which is what stops the canvas drawing at the
+  // wrong size when the grid reflows.
+  G.register({ id:'colony', title:'Colony', icon:'\u2726', size:'colony',
+    render:function(el){
+      var area=document.getElementById('colony-canvas-area');
+      if(!area) return;
+      if(typeof topologyCaptureHome==='function') topologyCaptureHome();
+      el.appendChild(area);
+      if(typeof topologyHost!=='undefined') topologyHost='grid';
+      if(typeof topologyRemeasure==='function') topologyRemeasure();
+    }});
+
+  below.forEach(reg);
+}
+
+/** Re-parent a renderer's own element into a widget body: same node, same id, same writer. */
+function gridMountTarget(bodyId, el){
+  var existing=document.getElementById(bodyId);
+  if(existing){ el.appendChild(existing); return; }
+  var made=document.createElement('div'); made.id=bodyId; el.appendChild(made);
+}
+
+/** Mount the responsive grid as the dashboard. */
+function initDashboardGrid(){
+  if(!window.AnthillGrid) return;
+  var page=document.getElementById('page-overview'); if(!page) return;
+
+  var root=document.getElementById('dg-root');
+  if(!root){ root=document.createElement('div'); root.id='dg-root'; page.insertBefore(root, page.firstChild); }
+
+  // The classic grid steps aside; its card bodies are re-parented into widgets, so every
+  // renderer keeps writing to the same ids and nothing is duplicated.
+  var legacy=document.getElementById('ov2-grid'); if(legacy) legacy.style.display='none';
+  page.classList.add('dg-active');
+
+  registerGridWidgets();
+  window.AnthillGrid.mount(root);
 }
 
 function registerWorkspacePanels(){
