@@ -35,7 +35,11 @@
     // the host's single ui_state writer rather than a second cycle of its own — app.js and the
     // old workspace once ran independent debounced read-modify-writes against the same document
     // and silently discarded each other's changes.
-    layout: { hidden: {}, order: null, locked: true },
+    // `spans` holds a FRACTION of the row (0 < f <= 1), not a column count. A count would mean a
+    // different width at every breakpoint — half the dashboard at 12 columns is a quarter of it at
+    // 24 — and the operator arranged a proportion, not a number of tracks. Heights are px, because
+    // a height means the same thing at any width.
+    layout: { hidden: {}, order: null, locked: true, spans: {}, heights: {} },
     _menuOpen: false,   // view state, not layout: never persisted
     _frames: {},        // id -> {widget, head, body}; built once, moved thereafter
     onLayoutChange: null,   // set by the host to persist
@@ -93,6 +97,7 @@
     w.appendChild(head);
     w.appendChild(body);
     fillHead(def, head);
+    if (G._observe) G._observe(w);   // watch for the native corner grip being dragged
     return { widget: w, head: head, body: body };
   }
 
@@ -208,11 +213,22 @@
    * So JS, which has already measured the content, writes the exact height that content needs.
    */
   var QUIET_BELOW_PX = 64;
+
+  // Resize bounds. The floor is a header plus a usable line of content — below that a widget is
+  // a title bar that lies about having content. The ceiling stops one widget from becoming a page.
+  var MIN_H = 96;
+  var MAX_H = 1600;
+
+  // At or below this column count the grid is a single stack and operator widths do not apply.
+  var STACK_BELOW_COLS = 4;
   function markQuiet() {
     if (!G.root) return;
     requestAnimationFrame(function () {
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-widget'), function (w) {
         if (w.getAttribute('data-size') === 'colony') return;    // the map is never "quiet"
+        // An operator-set height is not a measurement to be improved on. Without this the 4s
+        // remeasure would quietly undo every resize a few seconds after it was made.
+        if (w.hasAttribute('data-user-h')) return;
         var body = w.querySelector('.dg-body');
         if (!body) return;
 
@@ -279,8 +295,180 @@
     G.root = rootEl;
     rootEl.classList.add('dg-root');
     G.mounted = true;
+    wireDragAndDrop(rootEl);
+    watchResize();
+    watchBreakpoint();
     G.render();
   };
+
+  /**
+   * Re-resolve saved widths when the grid changes shape.
+   *
+   * The inline span is a COLUMN COUNT derived from a proportion, so it is only correct for the
+   * column count it was computed against. Without this, a widget sized to three quarters at 12
+   * columns kept its literal span of 9 when the window narrowed to a 4-column grid — clamped to
+   * full width, silently wrong, and it looked like the proportion had never been stored at all.
+   */
+  function watchBreakpoint() {
+    var last = null;
+    var timer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        if (!G.root) return;
+        var cols = columnCount();
+        if (cols === last) return;      // same grid shape: nothing to re-resolve
+        last = cols;
+        Object.keys(G._frames).forEach(function (id) { applySize(id, G._frames[id].widget); });
+        markQuiet();                    // --dg-widget-h changes with the breakpoint too
+      }, 120);
+    });
+  }
+
+  // ---- direct manipulation: drag to arrange, corner to size ------------------------------------
+
+  var dragId = null;
+
+  /** The widget under a drag, and whether the pointer is past its midpoint. */
+  function dropTargetAt(x, y) {
+    var best = null;
+    Array.prototype.forEach.call(G.root.querySelectorAll('.dg-widget'), function (w) {
+      var r = w.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) best = w;
+    });
+    if (!best) return null;
+    var r = best.getBoundingClientRect();
+    return { widget: best, after: x > r.left + r.width / 2 };
+  }
+
+  function clearDropMarks() {
+    Array.prototype.forEach.call(G.root.querySelectorAll('.dg-drop-before, .dg-drop-after'),
+      function (w) { w.classList.remove('dg-drop-before', 'dg-drop-after'); });
+  }
+
+  /**
+   * Drag to arrange, using the native drag-and-drop API.
+   *
+   * Native rather than pointer-tracked-with-a-floating-clone on purpose: a clone that follows the
+   * cursor is a layer stacked over the grid, and a layer that can float over other content is the
+   * failure mode this layout replaced. The browser's own drag image costs nothing and needs no
+   * stacking order.
+   *
+   * Delegated to the root so a widget added later is draggable without re-wiring, and so the
+   * handlers survive the frame caching that makes reordering non-destructive.
+   */
+  var RESIZE_CORNER_PX = 18;
+
+  function wireDragAndDrop(rootEl) {
+    // The resize grip and the drag handle occupy the same element, and drag wins by default — the
+    // browser starts dragging the card before its own resizer sees the press, so the corner would
+    // be unusable. Draggability is therefore suspended while the pointer is in the corner, and
+    // restored on release. Measured from the bottom-right because that is where `resize: both`
+    // puts the grip.
+    rootEl.addEventListener('mousedown', function (e) {
+      if (G.layout.locked) return;
+      var w = e.target.closest && e.target.closest('.dg-widget');
+      if (!w) return;
+      var r = w.getBoundingClientRect();
+      var inCorner = (r.right - e.clientX) <= RESIZE_CORNER_PX && (r.bottom - e.clientY) <= RESIZE_CORNER_PX;
+      w.draggable = !inCorner;
+    });
+
+    rootEl.addEventListener('mouseup', function () {
+      if (G.layout.locked) return;
+      Array.prototype.forEach.call(rootEl.querySelectorAll('.dg-widget'), function (w) { w.draggable = true; });
+    });
+
+    rootEl.addEventListener('dragstart', function (e) {
+      if (G.layout.locked) return;
+      var w = e.target.closest && e.target.closest('.dg-widget');
+      if (!w) return;
+      dragId = w.getAttribute('data-widget-id');
+      w.classList.add('dg-dragging');
+      try { e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed = 'move'; } catch (err) { /* older engines */ }
+    });
+
+    rootEl.addEventListener('dragover', function (e) {
+      if (G.layout.locked || !dragId) return;
+      e.preventDefault();                       // required, or the browser refuses the drop
+      e.dataTransfer.dropEffect = 'move';
+      var t = dropTargetAt(e.clientX, e.clientY);
+      clearDropMarks();
+      if (t && t.widget.getAttribute('data-widget-id') !== dragId) {
+        t.widget.classList.add(t.after ? 'dg-drop-after' : 'dg-drop-before');
+      }
+    });
+
+    rootEl.addEventListener('drop', function (e) {
+      if (G.layout.locked || !dragId) return;
+      e.preventDefault();
+      var t = dropTargetAt(e.clientX, e.clientY);
+      clearDropMarks();
+      if (t) {
+        var targetId = t.widget.getAttribute('data-widget-id');
+        if (targetId !== dragId) {
+          // Dropping on the right half means "after this one", which is "before the one following
+          // it" in a list that is about to have the dragged widget removed from it.
+          var order = effectiveOrder().filter(function (x) { return x !== dragId; });
+          var at = order.indexOf(targetId);
+          var beforeId = t.after ? (order[at + 1] || null) : targetId;
+          G.moveBefore(dragId, beforeId);
+        }
+      }
+      dragId = null;
+    });
+
+    rootEl.addEventListener('dragend', function () {
+      clearDropMarks();
+      Array.prototype.forEach.call(G.root.querySelectorAll('.dg-dragging'),
+        function (w) { w.classList.remove('dg-dragging'); });
+      dragId = null;
+    });
+  }
+
+  /**
+   * Corner resize, snapped to whole grid columns.
+   *
+   * Uses the browser's own `resize` grip (CSS `resize: both`) rather than a custom handle, because
+   * a handle pinned to a widget's corner wants absolute positioning and the grid is not allowed to
+   * declare any. Native resize writes an inline width/height; those are read, snapped to the column
+   * rhythm, stored as a fraction, and then CLEARED — the grid owns width, the operator owns the
+   * proportion. Leaving the inline width in place would freeze the widget at one breakpoint's pixel
+   * measurement.
+   */
+  function watchResize() {
+    if (typeof ResizeObserver !== 'function') return;   // arrows and the menu still work
+    var timer = null;
+    var ro = new ResizeObserver(function (entries) {
+      if (G.layout.locked) return;
+      var touched = entries.map(function (en) { return en.target; })
+        .filter(function (w) { return w.style.width; });   // only a native resize sets inline width
+      if (!touched.length) return;
+      clearTimeout(timer);
+      timer = setTimeout(function () { touched.forEach(snapToGrid); }, 120);
+    });
+    G._observe = function (w) { try { ro.observe(w); } catch (e) { /* detached */ } };
+  }
+
+  function snapToGrid(w) {
+    var id = w.getAttribute('data-widget-id');
+    if (!id || !G.widgets[id]) return;
+    var cols = columnCount();
+    var cs = getComputedStyle(G.root);
+    var gap = parseFloat(cs.columnGap || cs.gap) || 0;
+    var rootW = G.root.clientWidth
+      - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    var colW = (rootW - gap * (cols - 1)) / cols;
+    var px = w.getBoundingClientRect().width;
+    var span = Math.max(1, Math.min(cols, Math.round((px + gap) / (colW + gap))));
+    var h = w.getBoundingClientRect().height;
+
+    // Hand width back to the grid before storing, or the inline width outlives this breakpoint.
+    w.style.width = '';
+    w.style.height = '';
+    G.setSpanFraction(id, span / cols);
+    G.setHeight(id, h);
+  }
 
   /**
    * Lay the grid out from the current layout.
@@ -305,11 +493,50 @@
       } else {
         fillHead(def, f.head);       // lock state may have changed
       }
+      applySize(id, f.widget);
+      // Draggable only while unlocked: a dashboard being read must not move when a click slips.
+      f.widget.draggable = !G.layout.locked;
+      f.widget.classList.toggle('dg-resizable', !G.layout.locked);
       if (G.isHidden(id)) { if (f.widget.parentNode) f.widget.parentNode.removeChild(f.widget); }
       else rootEl.appendChild(f.widget);   // append = move into the right position
     });
     markQuiet();
   };
+
+  /** Columns in the grid right now. Read from CSS so the breakpoints stay the single source. */
+  function columnCount() {
+    var n = parseInt(getComputedStyle(G.root).getPropertyValue('--dg-cols'), 10);
+    return n > 0 ? n : 12;
+  }
+
+  /**
+   * Apply the operator's size overrides to one widget.
+   *
+   * The stored fraction is resolved against the CURRENT column count, so a widget dragged to half
+   * width stays half width when the window changes shape, and can never be given a span wider than
+   * the grid — which would push it out of the row and leave a hole beside it.
+   */
+  function applySize(id, widget) {
+    var f = G.layout.spans[id];
+    var cols = columnCount();
+    // At the narrowest breakpoint the grid is a stack: every widget is full width by design,
+    // because a 3-of-4 card leaves a one-column orphan beside it and reads as a mistake. The
+    // override is REMOVED rather than clamped, so the breakpoint's own rule applies and the saved
+    // proportion is waiting unchanged when the window widens again.
+    if (typeof f === 'number' && f > 0 && f <= 1 && cols > STACK_BELOW_COLS) {
+      widget.style.setProperty('--dg-span', String(Math.max(1, Math.min(cols, Math.round(f * cols)))));
+    } else {
+      widget.style.removeProperty('--dg-span');
+    }
+
+    var h = G.layout.heights[id];
+    if (typeof h === 'number' && h > 0) {
+      widget.style.minHeight = Math.round(h) + 'px';
+      widget.setAttribute('data-user-h', '1');   // markQuiet must not fight the operator
+    } else {
+      widget.removeAttribute('data-user-h');
+    }
+  }
 
   /** Re-evaluate which widgets are quiet. Cheap, and safe to call on a timer. */
   G.remeasure = function () { markQuiet(); };
@@ -409,23 +636,88 @@
 
   G.setLocked = function (locked) { G.layout.locked = !!locked; G.persist(); G.render(); };
 
-  /** Back to the shipped arrangement: nothing hidden, registration order, locked. */
-  G.resetLayout = function () {
-    G.layout = { hidden: {}, order: null, locked: true };
+  /**
+   * Move `id` so it sits directly before `beforeId` (or last, when beforeId is null).
+   *
+   * Drop targets are expressed as "before which widget" rather than as an index, because the index
+   * of the dragged widget shifts the moment it is removed from the list — computing the insertion
+   * point first and splicing second is how drop-one-place-to-the-right lands one place too far.
+   */
+  G.moveBefore = function (id, beforeId) {
+    if (!G.widgets[id] || id === beforeId) return;
+    var order = effectiveOrder();
+    var from = order.indexOf(id);
+    if (from < 0) return;
+    order.splice(from, 1);
+    var at = beforeId ? order.indexOf(beforeId) : -1;
+    if (at < 0) order.push(id); else order.splice(at, 0, id);
+    G.layout.order = order;
     G.persist(); G.render();
   };
+
+  /** Set a widget's width as a fraction of the row. Clamped to something usable. */
+  G.setSpanFraction = function (id, fraction) {
+    if (!G.widgets[id] || typeof fraction !== 'number' || !isFinite(fraction)) return;
+    var cols = columnCount();
+    // Snap to whole columns, then store the snapped value back as a fraction so the width means
+    // the same proportion at every breakpoint rather than the pixel width of this one.
+    var snapped = Math.max(1, Math.min(cols, Math.round(fraction * cols)));
+    G.layout.spans[id] = snapped / cols;
+    if (G._frames[id]) applySize(id, G._frames[id].widget);
+    G.persist();
+  };
+
+  /** Set a widget's height in pixels. */
+  G.setHeight = function (id, px) {
+    if (!G.widgets[id] || typeof px !== 'number' || !isFinite(px)) return;
+    G.layout.heights[id] = Math.max(MIN_H, Math.min(MAX_H, Math.round(px)));
+    if (G._frames[id]) applySize(id, G._frames[id].widget);
+    G.persist();
+  };
+
+  /** Back to the shipped arrangement: nothing hidden, registration order, default sizes, locked. */
+  G.resetLayout = function () {
+    G.layout = { hidden: {}, order: null, locked: true, spans: {}, heights: {} };
+    // Inline overrides live on the element, so clearing the model is not enough to clear the view.
+    Object.keys(G._frames).forEach(function (id) {
+      var w = G._frames[id].widget;
+      w.style.removeProperty('--dg-span');
+      w.style.minHeight = '';
+      w.removeAttribute('data-user-h');
+    });
+    G.persist(); G.render();
+  };
+
+  /**
+   * Size overrides arrive from storage, which means they arrive from something that could be old,
+   * hand-edited, or written by a different release. Anything that is not a sane number is dropped
+   * rather than trusted: a bad span silently breaks the row it lands in.
+   */
+  function sanitizeSizes(raw, validate) {
+    var out = {};
+    if (raw && typeof raw === 'object') {
+      Object.keys(raw).forEach(function (id) {
+        var v = raw[id];
+        if (typeof v === 'number' && isFinite(v) && validate(v)) out[id] = v;
+      });
+    }
+    return out;
+  }
 
   G.applyLayout = function (saved) {
     if (!saved || typeof saved !== 'object') return;
     G.layout.hidden = (saved.hidden && typeof saved.hidden === 'object') ? saved.hidden : {};
     G.layout.order = Array.isArray(saved.order) ? saved.order.slice() : null;
     G.layout.locked = saved.locked !== false;
+    G.layout.spans = sanitizeSizes(saved.spans, function (v) { return v > 0 && v <= 1; });
+    G.layout.heights = sanitizeSizes(saved.heights, function (v) { return v >= MIN_H && v <= MAX_H; });
     if (G.mounted) G.render();
   };
 
   G.persist = function () {
     if (typeof G.onLayoutChange === 'function') {
-      G.onLayoutChange({ hidden: G.layout.hidden, order: effectiveOrder(), locked: G.layout.locked });
+      G.onLayoutChange({ hidden: G.layout.hidden, order: effectiveOrder(), locked: G.layout.locked,
+                         spans: G.layout.spans, heights: G.layout.heights });
     }
   };
 

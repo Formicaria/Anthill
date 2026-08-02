@@ -279,6 +279,29 @@
 
 /* Unlocked: make it obvious the dashboard is editable rather than merely different. */
 .dg-root.dg-unlocked .dg-widget { border-style: dashed; }
+/* While unlocked, the whole card is the drag handle — including its body. Selection is suppressed
+   there for a concrete reason: dragging across text starts a TEXT drag, not an element drag, so a
+   card grabbed by its content would refuse to move and look broken. Customise is an explicit mode,
+   so trading selection for a predictable grab is the right way round. Form controls opt back in,
+   because the mission directive is still typed into while the dashboard is unlocked. */
+.dg-root.dg-unlocked .dg-widget { cursor: grab; user-select: none; -webkit-user-select: none; }
+.dg-root.dg-unlocked .dg-widget:active { cursor: grabbing; }
+.dg-root.dg-unlocked input,
+.dg-root.dg-unlocked textarea,
+.dg-root.dg-unlocked select { user-select: text; -webkit-user-select: text; }
+
+/* The corner grip is the browser's own. A custom handle pinned to the corner would need absolute
+   positioning, which the grid does not get to declare; `resize` gives the same affordance for free.
+   It requires a scroll container to work, which .dg-widget already is (overflow: hidden). The width
+   the operator drags is snapped to whole columns and then handed back to the grid — see
+   snapToGrid() — so nothing stays frozen at one breakpoint's pixel measurement. */
+.dg-widget.dg-resizable { resize: both; }
+
+/* Drag feedback. Borders and opacity only: a drop indicator that floats above the grid would be a
+   stacking layer, and the whole point of this layout is that it has none. */
+.dg-widget.dg-dragging { opacity: .45; }
+.dg-widget.dg-drop-before { border-left: 3px solid var(--queen, #fbbf24); }
+.dg-widget.dg-drop-after { border-right: 3px solid var(--queen, #fbbf24); }
 
 /* A widget with nothing to report earns less room: without this, the height floor turned every idle
    card — "No jobs yet.", "No approvals pending." — into a 230px void, which is precisely the "large

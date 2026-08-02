@@ -2,7 +2,7 @@
 
 ## Colony Execution Infrastructure
 
-**Baseline:** v2.26.0 · **Shipping release: v3.2.0** (runtime composition + Queen decomposition; v3.0.1 was the generation-integrity scoring fix)
+**Baseline:** v2.26.0 · **Shipping release: v3.2.1** (dashboard direct manipulation — drag to arrange, corner to size; v3.2.0 carried the dashboard redesign and typed model results, v3.0.1 the generation-integrity scoring fix)
 **Target:** V4 Autonomous Software Engineering Colony
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 **Document version:** 1.0
