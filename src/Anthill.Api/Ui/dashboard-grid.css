@@ -1,0 +1,192 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANTHILL dashboard grid (v3.3.0).
+   Replaces the floating-panel workspace: widgets sit in a responsive CSS Grid,
+   not absolutely-positioned frames layered over the colony canvas.
+
+   Why a 24-column track instead of auto-fit/minmax: auto-fit decides column
+   count from a minimum width, which means widget SIZE and column count are the
+   same knob. Operational importance and screen width are different questions —
+   the Colony must stay dominant on a laptop and must not become absurd on an
+   ultrawide. An explicit column count per breakpoint, with each widget
+   declaring a span, keeps those two decisions separate.
+
+   24 divides by 2, 3, 4, 6, 8 and 12, so thirds and quarters both land on whole
+   columns at every breakpoint. A 12-column grid cannot do thirds and eighths.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.dg-root {
+  --dg-cols: 12;
+  --dg-gap: 14px;
+  --dg-pad: 16px;
+  /* Widget spans, redefined per breakpoint. Declared here so a widget's CSS
+     never hard-codes a column count. */
+  --dg-span-small: 4;
+  --dg-span-medium: 6;
+  --dg-span-large: 12;
+  --dg-span-colony: 12;
+  --dg-colony-h: clamp(340px, 52vh, 620px);
+
+  display: grid;
+  grid-template-columns: repeat(var(--dg-cols), minmax(0, 1fr));
+  gap: var(--dg-gap);
+  padding: var(--dg-pad);
+  align-content: start;
+  /* minmax(0,1fr) above + this is what stops a wide child (a table, a long
+     unbroken token) from forcing a column wider than its share and pushing the
+     last widget off-screen — the failure the old layout produced on 1080p. */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Ultrawide: stop the grid becoming a single unreadable band of 20 columns.
+   Content stays centred with a sane maximum measure. */
+.dg-root { margin-inline: auto; max-width: 2560px; }
+
+/* TILING RULE — read this before assigning a widget a size.
+   Spans must sum to the column count or a row ends short. At 12 columns that means 4 small (3),
+   3 medium (4), or 2 large (6) per row; at 24 it is 6 small (4), 4 medium (6), 3 large (8).
+   Measured on the live grid: a row of 3 smalls uses 75% of its width and the remainder is dead
+   space, which is exactly the "large empty cards" the redesign exists to remove.
+
+   `grid-auto-flow: dense` would backfill those gaps automatically and is deliberately NOT used:
+   it hoists a later, smaller widget into an earlier gap, which would let a widget registered
+   BELOW the Colony jump above it. The Colony sitting at the visual centre with operational
+   context above and below is the whole layout thesis; automatic gap-filling is not worth
+   breaking it, and it would also divorce reading order from tab order. Sizes are assigned
+   deliberately instead. */
+.dg-widget {
+  grid-column: span var(--dg-span, var(--dg-span-medium));
+  display: flex;
+  flex-direction: column;
+  min-width: 0;                 /* grid children default to min-content — this is the fix */
+  min-height: 0;
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dg-widget[data-size="small"]  { --dg-span: var(--dg-span-small); }
+.dg-widget[data-size="medium"] { --dg-span: var(--dg-span-medium); }
+.dg-widget[data-size="large"]  { --dg-span: var(--dg-span-large); }
+.dg-widget[data-size="colony"] { --dg-span: var(--dg-span-colony); }
+
+/* The Colony is the focal point: full width, its own row, taller than anything
+   around it, and never in a tab group or behind another widget. */
+.dg-widget[data-size="colony"] { min-height: var(--dg-colony-h); }
+.dg-widget[data-size="colony"] .dg-body { padding: 0; }   /* the canvas owns its box */
+
+.dg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border, #1e3354);
+  background: var(--inner, #162440);
+  flex: 0 0 auto;
+}
+.dg-icon { font-size: 12px; line-height: 1; opacity: .85; }
+.dg-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--anthill-text, #eaf2ff);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dg-sub { font-size: 10px; color: var(--anthill-dim, #4f6078); margin-left: auto; white-space: nowrap; }
+.dg-act {
+  background: none; border: 1px solid transparent; color: var(--anthill-muted, #7f91aa);
+  cursor: pointer; border-radius: 6px; padding: 2px 6px; font-size: 11px; line-height: 1.4;
+}
+.dg-act:hover { color: var(--anthill-text, #eaf2ff); border-color: var(--border, #1e3354); }
+.dg-act:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: 1px; }
+
+.dg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;             /* the widget scrolls vertically; the page never grows to fit it */
+  overflow-x: hidden;
+  padding: 10px 12px;
+  font-size: 11px;
+
+  /* Found by measuring the live grid: an unbroken 80-character token (a mission id, a file path,
+     a base64 blob — all routine here) made the widget body scroll SIDEWAYS. The grid itself held,
+     because minmax(0,1fr) stopped the column widening, but a horizontally scrolling card is wrong
+     for a console meant to be read at a glance: the operator cannot see there is more text.
+     `anywhere` breaks such a token; `break-word` alone would not, because it declines to break
+     when the word is the only thing on the line. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Tabular content is the exception: a table that wraps mid-token becomes unreadable, so let it
+   scroll within its own box rather than mangling the columns. */
+.dg-body table { display: block; overflow-x: auto; max-width: 100%; }
+.dg-body table td, .dg-body table th { overflow-wrap: normal; word-break: normal; }
+
+/* ---- the four states every widget supports ------------------------------- */
+.dg-state {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 100%; min-height: 54px; padding: 12px;
+  color: var(--anthill-dim, #4f6078); font-size: 11px; text-align: center;
+}
+.dg-state.err { color: var(--status-danger, #ff416c); }
+.dg-spin {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--border, #1e3354); border-top-color: var(--status-info, #36c8ff);
+  animation: dg-spin .8s linear infinite;
+}
+@keyframes dg-spin { to { transform: rotate(360deg); } }
+
+/* Respect the operator's motion preference — an always-open operations console
+   is exactly where a permanently spinning element is worst. */
+@media (prefers-reduced-motion: reduce) {
+  .dg-spin { animation: none; border-top-color: var(--border, #1e3354); }
+}
+
+/* ---- breakpoints ---------------------------------------------------------
+   Each step changes the column count AND the spans, so widget proportions stay
+   deliberate rather than being whatever falls out of the arithmetic. */
+
+/* Laptop / narrow: single column. Stacking beats cramming. */
+@media (max-width: 900px) {
+  .dg-root {
+    --dg-cols: 4; --dg-gap: 10px; --dg-pad: 10px;
+    --dg-span-small: 4; --dg-span-medium: 4; --dg-span-large: 4; --dg-span-colony: 4;
+    --dg-colony-h: clamp(260px, 42vh, 420px);
+  }
+}
+
+/* 1080p and small laptops: 12 columns — quarters, thirds and halves. */
+@media (min-width: 901px) and (max-width: 1439px) {
+  .dg-root {
+    --dg-cols: 12;
+    --dg-span-small: 4; --dg-span-medium: 6; --dg-span-large: 12; --dg-span-colony: 12;
+  }
+}
+
+/* 1440p: 12 columns, but large widgets stop eating the full width so two can
+   sit side by side. */
+@media (min-width: 1440px) and (max-width: 2199px) {
+  .dg-root {
+    --dg-cols: 12; --dg-gap: 16px; --dg-pad: 20px;
+    --dg-span-small: 3; --dg-span-medium: 4; --dg-span-large: 6; --dg-span-colony: 12;
+    --dg-colony-h: clamp(380px, 50vh, 660px);
+  }
+}
+
+/* 4K and ultrawide: 24 columns. Widgets get proportionally NARROWER in column
+   terms rather than wider in pixels — four small widgets across an ultrawide is
+   useful; four 700px-wide ones are not. */
+@media (min-width: 2200px) {
+  .dg-root {
+    --dg-cols: 24; --dg-gap: 18px; --dg-pad: 24px;
+    --dg-span-small: 4; --dg-span-medium: 6; --dg-span-large: 8; --dg-span-colony: 24;
+    --dg-colony-h: clamp(420px, 46vh, 760px);
+  }
+}
+
+/* Short viewports (a laptop in landscape, a split screen): the Colony must not
+   push every other widget below the fold. Height query, not width — this is
+   about vertical room, and no width breakpoint can answer it. */
+@media (max-height: 780px) {
+  .dg-root { --dg-colony-h: clamp(240px, 38vh, 380px); }
+}

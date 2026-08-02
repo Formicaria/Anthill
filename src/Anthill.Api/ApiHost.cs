@@ -48,6 +48,8 @@ public static partial class ApiHost
     private static string UiMissionThreadJs = "";
     private static string UiWorkspaceJs = "";
     private static string UiWorkspaceCss = "";
+    private static string UiGridJs = "";
+    private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
     // reuses connections. Per-call timeouts are applied via CancellationToken.
@@ -95,6 +97,8 @@ public static partial class ApiHost
         UiMissionThreadJs = LoadUiAsset("mission-thread.js");
         UiWorkspaceJs = LoadUiAsset("dashboard-workspace.js");
         UiWorkspaceCss = LoadUiAsset("dashboard-workspace.css");
+        UiGridJs = LoadUiAsset("dashboard-grid.js");
+        UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
         var app = builder.Build();
@@ -256,6 +260,20 @@ public static partial class ApiHost
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiWorkspaceCss, "text/css; charset=utf-8");
+        });
+
+        // v3.3.0: the responsive dashboard grid. Same-origin like every other asset so the CSP
+        // stays script-src 'self' — the console carries no inline script, and this must not be
+        // the change that reintroduces one.
+        app.MapGet("/ui/dashboard-grid.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiGridJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/dashboard-grid.css", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiGridCss, "text/css; charset=utf-8");
         });
 
         app.MapGet("/health", () => ApiJson.Ok(new Dictionary<string, object?>

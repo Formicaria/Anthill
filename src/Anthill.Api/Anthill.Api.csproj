@@ -25,6 +25,9 @@
     <EmbeddedResource Include="Ui\mission-thread.js" />
     <EmbeddedResource Include="Ui\dashboard-workspace.js" />
     <EmbeddedResource Include="Ui\dashboard-workspace.css" />
+    <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
+    <EmbeddedResource Include="Ui\dashboard-grid.js" />
+    <EmbeddedResource Include="Ui\dashboard-grid.css" />
   </ItemGroup>
 
 </Project>
