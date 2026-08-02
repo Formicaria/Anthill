@@ -113,14 +113,17 @@ public sealed class ResultAssembler : IResultAssembler
     /// returned. Separated from the model call so the fallback rules are unit-testable without a
     /// live provider — a mission must NEVER end up answerless because synthesis failed.
     /// </summary>
-    public static string SelectFinalAnswer(string rawAnswer, string? synthesized)
+    /// <param name="synthesized">The synthesis call's typed result, or null if it was never made
+    /// (no router, feature off, answer too short) or threw.</param>
+    public static string SelectFinalAnswer(string rawAnswer, ModelCallResult? synthesized)
     {
-        if (synthesized is null) return rawAnswer;
-        var cleaned = synthesized.Trim();
-        if (cleaned.Length == 0) return rawAnswer;
-        // ModelRouter reports failure in-band as an "ERROR:" string rather than throwing.
-        if (cleaned.StartsWith("ERROR:", StringComparison.Ordinal)) return rawAnswer;
-        return cleaned;
+        // v3.2.0: the provider's status decides. This used to test the response for an "ERROR:"
+        // prefix, which meant a genuine answer that happened to discuss an error was one careless
+        // rewording away from being discarded — and an empty generation was caught only because
+        // Trim() made it zero-length, not because anything knew the call had failed.
+        if (synthesized is null || !synthesized.Ok) return rawAnswer;
+        var cleaned = synthesized.Content.Trim();
+        return cleaned.Length == 0 ? rawAnswer : cleaned;
     }
 
     /// <summary>
@@ -176,10 +179,10 @@ public sealed class ResultAssembler : IResultAssembler
         var raw = mission.UserResult ?? "";
         if (_router is null || !ShouldSynthesizeAnswer(raw, context.Options.AnswerSynthesis)) return raw;
 
-        string? synthesized = null;
+        ModelCallResult? synthesized = null;
         try
         {
-            synthesized = _router.Generate("scribe", BuildAnswerSynthesisPrompt(mission, raw),
+            synthesized = _router.GenerateTyped("scribe", BuildAnswerSynthesisPrompt(mission, raw),
                 mission.Id, antName: "scribe");
         }
         catch (Exception ex)
