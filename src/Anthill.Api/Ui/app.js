@@ -7301,6 +7301,35 @@ function gridMountTarget(bodyId, el, cls){
   var made=document.createElement('div'); made.id=bodyId; if(cls) made.classList.add(cls); el.appendChild(made);
 }
 
+/**
+ * The dashboard a freshly installed colony opens on.
+ *
+ * Seventeen widgets at once is a wall, not a console. This is the curated set: the composer to
+ * give an order, the vitals to see whether the colony can take one, the Colony itself, and the
+ * four status smalls beneath it. Everything else is registered, listed in the Widgets menu, and one
+ * click from being shown — hidden here is "not on by default", never "unavailable".
+ *
+ * Only order and visibility are shipped. No spans or heights: a default that dictates pixel sizes
+ * would fight the content-fit pass and would be wrong on the first screen that is not the one it
+ * was captured on.
+ */
+var DEFAULT_DASHBOARD_VIEW = {
+  locked: true,
+  order: [
+    'mission-composer', 'colony-vitals', 'colony',
+    'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
+    // registered but off by default, in the order they appear in the Widgets menu
+    'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
+    'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs',
+  ],
+  hidden: {
+    'operator-attention': true, 'missions': true, 'agent-inspector': true, 'live-telemetry': true,
+    'recent-events': true, 'recent-missions': true, 'approvals': true, 'patch-activity': true,
+    'objectives': true, 'recent-jobs': true,
+  },
+  spans: {}, heights: {},
+};
+
 /** Mount the responsive grid as the dashboard. */
 function initDashboardGrid(){
   if(!window.AnthillGrid) return;
@@ -7346,11 +7375,14 @@ function initDashboardGrid(){
   (async function(){
     try{
       const r=await api('/ui/state');
-      if(r&&r.success&&r.data&&r.data.dashboard_grid){
-        window.AnthillGrid.applyLayout(r.data.dashboard_grid);
-        window.AnthillGrid.renderToolbar(bar);
-      }
-    }catch(e){ /* keep the defaults */ }
+      const saved = r && r.success && r.data && r.data.dashboard_grid;
+      // A first-run console gets the curated view rather than all seventeen widgets at once. A
+      // SAVED layout always wins, including one that hides nothing — an operator who deliberately
+      // turned everything on must not have the default reimposed on their next visit, which is why
+      // this tests for the document's presence and not for whether it looks empty.
+      window.AnthillGrid.applyLayout(saved || DEFAULT_DASHBOARD_VIEW);
+      window.AnthillGrid.renderToolbar(bar);
+    }catch(e){ /* keep the registration defaults: an unreachable state doc is not a blank console */ }
   })();
 }
 
