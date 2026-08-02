@@ -152,8 +152,12 @@ public class ProviderTests : IDisposable
         var router = new ModelRouter(_memory);
         var client = router.GetClientForProvider("openai");
         var result = client.Generate("say hi", retries: 1);
-        Assert.StartsWith("ERROR:", result);
-        Assert.Contains("API key not configured", result);
+        // A missing key is a CONFIG error, not a transport fault — the distinction matters because
+        // ToCircuitSignal treats them differently, and a misconfigured provider must not be able
+        // to look like a flaky one.
+        Assert.Equal(ModelCallOutcome.ConfigError, result.Status);
+        Assert.False(result.Ok);
+        Assert.Contains("API key not configured", result.Content);
     }
 
     [Fact]
@@ -162,8 +166,12 @@ public class ProviderTests : IDisposable
         var router = new ModelRouter(_memory);
         var client = router.GetClientForProvider("anthropic");
         var result = client.Generate("say hi", retries: 1);
-        Assert.StartsWith("ERROR:", result);
-        Assert.Contains("API key not configured", result);
+        // A missing key is a CONFIG error, not a transport fault — the distinction matters because
+        // ToCircuitSignal treats them differently, and a misconfigured provider must not be able
+        // to look like a flaky one.
+        Assert.Equal(ModelCallOutcome.ConfigError, result.Status);
+        Assert.False(result.Ok);
+        Assert.Contains("API key not configured", result.Content);
     }
 
     // Regression coverage for a real bug hit in production: a "Base URL" override saved as just

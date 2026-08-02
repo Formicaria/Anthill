@@ -10,6 +10,12 @@ gate passes.
 > prediction / rollback bundle + the qualification scoreboard + fault-simulation report) is a
 > planned later stage on this workspace.
 
+> **v3.2.0: this document describes a workspace that no longer exists.** The floating-panel
+> workspace was replaced by a responsive CSS Grid; `dashboard-workspace.js` and its stylesheet are
+> deleted. Panel placement, docking, tab groups, snapping and saved layouts are all gone. Kept as
+> the historical record of why those mechanisms existed — several of their lessons were ported into
+> the grid's guards. See `docs/DASHBOARD_GRID_MIGRATION.md` for what replaced it.
+>
 > v3.1.1 note: the Mission Composer is now a workspace panel (`mission-composer`). It had been
 > reachable only on the classic overview grid, which this workspace hides — so the plan-preview
 > review step had no control in the default console from v2.15.0 until this release.
