@@ -40,6 +40,7 @@
     // 24 — and the operator arranged a proportion, not a number of tracks. Heights are px, because
     // a height means the same thing at any width.
     layout: { hidden: {}, order: null, locked: true, spans: {}, heights: {} },
+    defaults: null,     // the host's first-run view; also what "Reset layout" restores
     _menuOpen: false,   // view state, not layout: never persisted
     _frames: {},        // id -> {widget, head, body}; built once, moved thereafter
     onLayoutChange: null,   // set by the host to persist
@@ -743,9 +744,23 @@
     G.persist();
   };
 
-  /** Back to the shipped arrangement: nothing hidden, registration order, default sizes, locked. */
+  /**
+   * Back to the shipped arrangement.
+   *
+   * "Shipped" means the host's default view when it supplies one (G.defaults), NOT "every widget
+   * visible in registration order". Once a curated first-run view exists, resetting to
+   * show-everything resets to an arrangement no one ever chose — and it silently outranks the
+   * default for anyone who has ever pressed the button, since the result is then saved.
+   */
   G.resetLayout = function () {
-    G.layout = { hidden: {}, order: null, locked: true, spans: {}, heights: {} };
+    var d = G.defaults || {};
+    G.layout = {
+      hidden: d.hidden ? JSON.parse(JSON.stringify(d.hidden)) : {},
+      order: d.order ? d.order.slice() : null,
+      locked: true,
+      spans: d.spans ? JSON.parse(JSON.stringify(d.spans)) : {},
+      heights: d.heights ? JSON.parse(JSON.stringify(d.heights)) : {},
+    };
     // Inline overrides live on the element, so clearing the model is not enough to clear the view.
     Object.keys(G._frames).forEach(function (id) {
       var w = G._frames[id].widget;

@@ -638,6 +638,11 @@ public class UiShellTests
         Assert.Contains("DEFAULT_DASHBOARD_VIEW", app);
         Assert.Contains("applyLayout(saved || DEFAULT_DASHBOARD_VIEW)", app);
 
+        // Reset must restore the SAME view, or the button quietly outranks the default: resetting
+        // to "every widget visible" is an arrangement nobody chose, and it is saved on the way out.
+        Assert.Contains("AnthillGrid.defaults = DEFAULT_DASHBOARD_VIEW", app);
+        Assert.Contains("G.defaults", BodyOf(Ui("dashboard-grid.js"), "G.resetLayout = function"));
+
         // Every hidden-by-default widget must still be registered, or it is unreachable rather
         // than merely off: the Widgets menu can only list what the grid knows about.
         var view = Regex.Match(app, @"var DEFAULT_DASHBOARD_VIEW = \{.*?\n\};", RegexOptions.Singleline).Value;

@@ -122,15 +122,29 @@ public class VerificationVerdictTests
     }
 
     /// <summary>
-    /// Run() is still the compatibility surface and must be byte-identical to what it produced
-    /// before the migration, because the mission thread and operator UI render it directly.
+    /// The full verdict text still reaches the operator.
+    ///
+    /// This used to assert <c>Run() == Execute().Narrative</c>, guarding the string adapter against
+    /// drifting away from the typed path. v3.2.0 (phase, increment 3) deleted <c>Run</c>, so there
+    /// is no second path left to drift — but the PROPERTY that test existed to protect is not the
+    /// equality, it is that the mission thread and operator UI still get the whole verdict rather
+    /// than a summary. That is what is asserted now, directly against the surviving path.
     /// </summary>
     [Fact]
-    public void RunOutput_IsUnchangedByTheMigration_AndMatchesTheNarrative()
+    public void TheNarrative_CarriesTheWholeVerdict_NotASummary()
     {
         var (t, m) = MissionThatPasses();
-        var ant = StaticVerifier();
-        Assert.Equal(ant.Run(t, m), ant.Execute(t, m).Narrative);
+        var outcome = StaticVerifier().Execute(t, m);
+        var narrative = outcome.Narrative ?? "";
+
+        Assert.Contains("Verification Passed", narrative);
+        Assert.Contains("Reasoning:", narrative);
+
+        // The load-bearing assertion, and the one that does not depend on the wording of a heading:
+        // the narrative is the full artifact, strictly more than the one-line Summary beside it.
+        // Summarising the verdict away is the actual regression this guards against.
+        Assert.True(narrative.Length > outcome.Summary.Length,
+            $"Narrative ({narrative.Length} chars) is no longer than Summary ({outcome.Summary.Length}): {narrative}");
     }
 
     // ---- end to end: the verdict reaches the mission gate --------------------------------------

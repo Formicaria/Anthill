@@ -7375,6 +7375,8 @@ function initDashboardGrid(){
   (async function(){
     try{
       const r=await api('/ui/state');
+      // Also what "Reset layout" restores, so the button and the first-run view cannot disagree.
+      window.AnthillGrid.defaults = DEFAULT_DASHBOARD_VIEW;
       const saved = r && r.success && r.data && r.data.dashboard_grid;
       // A first-run console gets the curated view rather than all seventeen widgets at once. A
       // SAVED layout always wins, including one that hides nothing — an operator who deliberately
