@@ -437,28 +437,119 @@ public class UiShellTests
     [Fact]
     public void EveryElementHiddenFromScript_HasACssRuleThatActuallyHidesIt()
     {
-        var js = Ui("dashboard-workspace.js");
-        var css = Ui("dashboard-workspace.css");
+        // v3.3.0: the elements this guarded (ws-modules, ws-tray) went with the workspace, so the
+        // instances are gone — but the LESSON is not, and the grid will grow hidden elements of
+        // its own. Restated as a general rule over the console's stylesheets: anything the script
+        // hides via the `hidden` property needs a matching [hidden] rule, because an element that
+        // sets `display` overrides the UA stylesheet's display:none and stays visible. Correct
+        // JavaScript defeated by one line of CSS is what this cost twice.
+        var js = Ui("dashboard-grid.js");
+        var css = Ui("dashboard-grid.css") + Ui("index.html");
 
-        // The classes the script hides by setting .hidden.
-        foreach (var cls in new[] { "ws-modules", "ws-tray" })
-        {
-            Assert.True(css.Contains($".{cls}[hidden]", StringComparison.Ordinal),
-                $".{cls} is hidden from script but has no [hidden] rule — it sets display, so the "
-                + "UA stylesheet's display:none is overridden and the element stays visible.");
-            Assert.Contains($".{cls}[hidden] {{ display: none !important; }}", css);
-        }
+        var hiddenTargets = System.Text.RegularExpressions.Regex
+            .Matches(js, @"(\w+)\.hidden\s*=")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
 
-        // And the script really does hide them this way, so the guard tracks reality.
-        Assert.Contains("menu.hidden = !W.modulesOpen", js);
-        Assert.Contains("tray.hidden = true", js);
+        foreach (var target in hiddenTargets)
+            Assert.True(css.Contains("[hidden]", StringComparison.Ordinal),
+                $"'{target}.hidden' is set in dashboard-grid.js but no [hidden] rule exists in the "
+                + "console stylesheets — the element sets display and will stay visible.");
     }
 
+    /// <summary>
+    /// Accessibility floor for the console's own chrome: a visible focus ring, and animation that
+    /// respects the operator's motion preference. An always-open operations console is exactly
+    /// where a permanently spinning element is worst.
+    /// </summary>
     [Fact]
     public void FocusStyles_AndReducedMotion_ArePresent()
     {
-        var css = Ui("dashboard-workspace.css");
+        var css = Ui("dashboard-grid.css");
         Assert.Contains(":focus-visible", css);
         Assert.Contains("prefers-reduced-motion", css);
+    }
+
+    // ---- ported from DashboardWorkspaceShellTests when the workspace was retired --------------
+    // These four defended properties that outlived the layout engine. Each is restated in grid
+    // terms rather than deleted, because the lesson each encodes is still live.
+
+    /// <summary>
+    /// v3.1.1, restated for the grid: every control that starts or reviews work must be REACHABLE.
+    ///
+    /// The defect: the Mission Composer lived only on the classic overview grid, which the
+    /// topology workspace hid, so from v2.15.0 the execution mode selector and the plan REVIEW
+    /// step had no reachable control at all. The endpoint, the renderer and the button all
+    /// existed; nothing could reach them. CallSiteAudit cannot see this class of defect — it
+    /// proves a C# declaration has a production consumer, and says nothing about whether a UI
+    /// control has a path to it.
+    ///
+    /// Being present in the markup is not the same as being reachable.
+    /// </summary>
+    [Fact]
+    public void EveryWorkWorkflowControl_IsReachableOnTheDashboard()
+    {
+        var html = Ui("index.html");
+        var app = Ui("app.js");
+
+        // The composer is a registered grid widget, so it renders on the default dashboard.
+        Assert.Contains("body:'ov-composer-body'", app.Replace(" ", ""));
+        Assert.Contains("id=\"ov-composer-body\"", html);
+
+        var open = html.IndexOf("id=\"ov-composer-body\"", StringComparison.Ordinal);
+        var close = html.IndexOf("/ov-composer-body", open, StringComparison.Ordinal);
+        Assert.True(open >= 0 && close > open, "ov-composer-body wrapper not found or unterminated.");
+        var body = html[open..close];
+
+        Assert.Contains("id=\"ov-preview-btn\"", body);   // plan review
+        Assert.Contains("id=\"ov-modes\"", body);         // execution mode selector
+        Assert.Contains("id=\"ov-plan\"", body);          // where the reviewed plan renders
+    }
+
+    /// <summary>
+    /// ONE rule takes the classic sections out of flow, not an enumeration.
+    ///
+    /// v2.15.3 shipped with the status bar and the mission directive box invisible because the
+    /// rule excluded by an id ALLOW-LIST, which silently hid every element added after it was
+    /// written. Excluding by CLASS is what makes adding a new element safe. The grid inherits the
+    /// lesson even though it has no layers of its own.
+    /// </summary>
+    [Fact]
+    public void GridDashboard_TakesClassicContentOutOfFlow_ByClassNotByIdList()
+    {
+        var html = Ui("index.html");
+        Assert.Contains("#page-overview.dg-active", html);
+        Assert.Contains("#page-overview.dg-active > *:not(#dg-root):not(.dg-keep){display:none !important;}", html);
+        Assert.Contains("classList.add('dg-active')", Ui("app.js"));
+    }
+
+    /// <summary>
+    /// Widget chrome must be real buttons with real state, not clickable divs. Carried over from
+    /// the workspace shell, which is where the requirement was first established.
+    /// </summary>
+    [Fact]
+    public void WidgetControlsAreRealButtons_WithLabelsAndState()
+    {
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("createElement('button')", js.Replace("el('button'", "createElement('button')"));
+        Assert.Contains("aria-label", js);
+        Assert.Contains("refresh.type = 'button'", js);   // never a submit inside a form
+        Assert.Contains("setAttribute('role', 'region')", js);
+        Assert.Contains("aria-label", js);
+    }
+
+    /// <summary>
+    /// The mission directive box could be covered by a floating panel, so the workspace pinned it
+    /// above the panel layer. The grid has no panel layer and no z-order, so the hazard is removed
+    /// BY CONSTRUCTION rather than by a guard — recorded here so the next reader knows the
+    /// property was retired deliberately and not dropped.
+    ///
+    /// What replaces it is the reachability test above: the composer must exist as a widget.
+    /// </summary>
+    [Fact]
+    public void NothingCanCoverTheMissionDirective_BecauseThereIsNoPanelLayer()
+    {
+        var css = Ui("dashboard-grid.css");
+        Assert.DoesNotContain("position: absolute", css);
+        Assert.DoesNotContain("z-index", css);
     }
 }

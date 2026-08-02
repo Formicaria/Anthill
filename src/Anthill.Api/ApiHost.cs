@@ -46,8 +46,6 @@ public static partial class ApiHost
     public const int MissionAnswerPreviewChars = 4000;
 
     private static string UiMissionThreadJs = "";
-    private static string UiWorkspaceJs = "";
-    private static string UiWorkspaceCss = "";
     private static string UiGridJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
@@ -95,8 +93,6 @@ public static partial class ApiHost
         UiHtml = LoadUi();
         UiAppJs = LoadUiAsset("app.js");
         UiMissionThreadJs = LoadUiAsset("mission-thread.js");
-        UiWorkspaceJs = LoadUiAsset("dashboard-workspace.js");
-        UiWorkspaceCss = LoadUiAsset("dashboard-workspace.css");
         UiGridJs = LoadUiAsset("dashboard-grid.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
@@ -243,23 +239,12 @@ public static partial class ApiHost
             return Results.Content(UiAppJs, "text/javascript; charset=utf-8");
         });
 
-        // v2.14.3: workspace runtime + styles, same-origin like app.js so CSP stays script-src 'self'.
         // v2.17.1: the Missions thread reconciler. Same-origin like the others so CSP stays
         // script-src 'self'; it is pure logic with no DOM access so node --test can exercise it.
         app.MapGet("/ui/mission-thread.js", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiMissionThreadJs, "text/javascript; charset=utf-8");
-        });
-        app.MapGet("/ui/dashboard-workspace.js", (HttpContext ctx) =>
-        {
-            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
-            return Results.Content(UiWorkspaceJs, "text/javascript; charset=utf-8");
-        });
-        app.MapGet("/ui/dashboard-workspace.css", (HttpContext ctx) =>
-        {
-            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
-            return Results.Content(UiWorkspaceCss, "text/css; charset=utf-8");
         });
 
         // v3.3.0: the responsive dashboard grid. Same-origin like every other asset so the CSP

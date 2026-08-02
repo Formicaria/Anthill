@@ -7203,20 +7203,6 @@ async function pollOv2(){
 }
 
 
-// -- v2.14.9 Stage 5: the dashboard cards become registered workspace panels -----------------
-// The workspace runtime (v2.14.3/2.14.4) had a shell, drag, and resize but nothing registered in
-// it — turning the flag on produced an empty surface. These registrations reuse the EXISTING
-// renderers verbatim: each panel body borrows the element id the renderer already writes to, so
-// there is one implementation of every card and no duplicated data path. pollOv2/pollHud keep
-// filling them exactly as they fill the classic grid, so the two shells can coexist while the
-// flag decides which one is mounted.
-function wsMountTarget(bodyId, el){
-  // Re-parent the renderer's own element into the panel body: same node, same id, same writer.
-  var existing=document.getElementById(bodyId);
-  if(existing){ el.appendChild(existing); return; }
-  var made=document.createElement('div'); made.id=bodyId; el.appendChild(made);
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    v3.3.0 dashboard grid — widget registration.
 
@@ -7317,121 +7303,7 @@ function initDashboardGrid(){
   window.AnthillGrid.mount(root);
 }
 
-function registerWorkspacePanels(){
-  if(!window.AnthillWorkspace) return;
-  var W=window.AnthillWorkspace;
-  // v2.16.0 default layout — two rails and a clear map.
-  //
-  // Left rail: colony condition, top to bottom. Right rail: the inspector and what changed.
-  // The centre stays empty so the topology reads at a glance, with two small status panels
-  // floating low where the map is sparse. Everything else starts HIDDEN — a first-run dashboard
-  // showing fifteen panels is not a dashboard, it is a wall. Each is one click in Modules.
-  //
-  // Coordinates target the 1600x900 reference viewport the server clamps against
-  // (DashboardWorkspaceState.DefaultViewportWidth/Height); a narrower screen gets clamped rather
-  // than overflowing. y starts at 60 to clear the status bar, and the lowest panel ends by 840 to
-  // clear the mission directive bar.
-  //
-  // NOTE: defaults apply on first run only. An existing saved layout wins until Reset layout.
-  var defs=[
-    // Left rail
-    {id:'colony-health',      title:'Colony Health',      body:'ov2-health-body',      x:8,    y:60,  w:316, h:200},
-    {id:'colony-vitals',      title:'Colony Vitals',      body:'ov-vitals-body',       x:8,    y:266, w:316, h:180},
-    {id:'missions',           title:'Missions',           body:'ov2-active-body',      x:8,    y:452, w:316, h:160},
-    // v3.1.1: the Mission Composer. It lived only on the classic overview grid, which v2.15.0
-    // hid behind the topology canvas — so dispatching with a MODE, and the entire "preview the
-    // plan before approving it" review step, had no reachable control in the shipping console.
-    // Existing saved layouts do not gain new panels automatically, but the Modules menu is built
-    // from these defs, so it appears there for everyone and can be switched on without a reset.
-    {id:'mission-composer',   title:'Mission Command',    body:'ov-composer-body',     x:596,  y:60,  w:420, h:300},
-    {id:'colony-jobs',        title:'Jobs',               body:'jobs-list',            x:8,    y:618, w:316, h:222},
-    // Right rail
-    {id:'agent-inspector',    title:'Agent Inspector',    body:'agent-detail',         x:1276, y:60,  w:316, h:380},
-    {id:'patch-activity',     title:'Patch Activity',     body:'ov-sum-patches',       x:1276, y:446, w:316, h:170},
-    {id:'live-telemetry',     title:'Live Telemetry',     body:'ov-feed-list',         x:1276, y:622, w:316, h:218},
-    // Low centre-right, over the sparse part of the map
-    {id:'system-core',        title:'System Core',        body:'ov2-core-body',        x:930,  y:640, w:330, h:150},
-    {id:'objectives',         title:'Objectives',         body:'ov-sum-objectives',    x:596,  y:756, w:320, h:84},
-
-    // Available, not shown.
-    {id:'operator-attention', title:'Operator Attention', body:'hud-attn-list',        x:340,  y:60,  w:300, h:200, hidden:true},
-    {id:'approvals',          title:'Pending Approvals',  body:'ov2-approvals-body',   x:340,  y:266, w:340, h:180, hidden:true},
-    {id:'resource-usage',     title:'Resource Usage',     body:'ov2-resources-body',   x:340,  y:452, w:320, h:180, hidden:true},
-    {id:'recent-events',      title:'Recent Events',      body:'ov2-events-body',      x:696,  y:60,  w:320, h:200, hidden:true},
-    {id:'recent-missions',    title:'Recent Missions',    body:'ov-sum-missions',      x:696,  y:266, w:360, h:180, hidden:true},
-    {id:'recent-jobs',        title:'Recent Jobs',        body:'ov-jobs-list',         x:696,  y:452, w:320, h:180, hidden:true},
-  ];
-  defs.forEach(function(d){
-    W.register({
-      id:d.id, title:d.title,
-      defaultPlacement:{mode:'floating',x:d.x,y:d.y,width:d.w,height:d.h,
-                        display_state:d.hidden?'hidden':'visible'},
-      collapsible:true, minimizable:true, hideable:true, pinnable:true,
-      refreshPolicy:'visible',
-      render:function(el){ wsMountTarget(d.body, el); },
-    });
-  });
-}
-
 /** Mount the workspace on the dashboard when the server says the flag is on. */
-async function initDashboardWorkspace(){
-  if(!window.AnthillWorkspace) return;
-  var enabled=false;
-  try{
-    var h=await (await fetch(url('/health'))).json();
-    enabled=!!(h&&h.data&&h.data.dashboard_workspace_enabled);
-  }catch(e){ return; }                       // unreachable /health: keep the classic dashboard
-  if(!enabled) return;
-  var page=document.getElementById('page-overview'); if(!page) return;
-  var root=document.getElementById('ws-root');
-  if(!root){
-    root=document.createElement('div'); root.id='ws-root';
-    page.insertBefore(root, page.firstChild);
-  }
-  // The classic grid steps aside; its card bodies are re-parented into panels, so every renderer
-  // keeps writing to the same ids and nothing is duplicated.
-  // v2.15.1: the whole page becomes the workspace. `ws-active` takes every remaining classic
-  // section out of flow in CSS (one rule, so nothing can be missed the way ov2-grid alone was),
-  // and the map fills the viewport instead of the top third.
-  page.classList.add('ws-active');
-  var grid=document.getElementById('ov2-grid'); if(grid) grid.style.display='none';
-
-  // The ANTHILL status bar belongs at the very top of the dashboard, above the colony view
-  // controls — not stranded mid-page below the map. Re-parented, not duplicated.
-  var topbar=document.getElementById('ws-topbar');
-  if(!topbar){
-    topbar=document.createElement('div'); topbar.id='ws-topbar'; topbar.className='ws-layer';
-    page.insertBefore(topbar, page.firstChild);
-  }
-  var tb=document.getElementById('tb-overview');
-  if(tb && tb.parentElement!==topbar) topbar.appendChild(tb);
-
-  // v2.15.2: the mission directive box is how work is started — it must never be behind a panel
-  // or off the bottom of the screen. Re-parented out of the canvas into its own bar, same
-  // move-don't-duplicate approach as the status bar above.
-  var bottombar=document.getElementById('ws-bottombar');
-  if(!bottombar){
-    bottombar=document.createElement('div'); bottombar.id='ws-bottombar'; bottombar.className='ws-layer';
-    page.appendChild(bottombar);
-  }
-  var mb=document.getElementById('mission-bar');
-  if(mb && mb.parentElement!==bottombar) bottombar.appendChild(mb);
-  // Stage 6: the topology layer is a SIBLING placed before #ws-root, so panels stack above the
-  // map by document order without either one needing a z-index arms race.
-  var topo=document.getElementById('ws-topology');
-  if(!topo){
-    topo=document.createElement('div'); topo.id='ws-topology'; topo.className='ws-topology ws-layer';
-    topo.setAttribute('aria-hidden','true');   // the canvas is decorative here; the ants are
-    page.insertBefore(topo, root);             // reachable through the Colony page and inspector
-  }
-  registerWorkspacePanels();
-  await window.AnthillWorkspace.init(root, true);
-  // Mount only if the dashboard is the page actually on screen; otherwise wait for PAGE_ENTER so
-  // we never measure a display:none container.
-  if(page.classList.contains('active')) topologyMountTo('dashboard');
-  if(typeof pollOv2==='function') pollOv2();
-  if(typeof pollHud==='function') pollHud();
-}
 
 // v2.2.3: restored — the events feed anchors row 3 of the balanced grid (uses data already
 // fetched by pollOv2; no extra polling).
