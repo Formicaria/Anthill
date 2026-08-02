@@ -47,13 +47,17 @@ public class ModelCallCancellationTests
 
         var client = new OllamaClient("test-model", "http://127.0.0.1:1"); // unroutable — must never be reached
         var sw = Stopwatch.StartNew();
-        string result;
+        ModelCallResult result;
         using (ModelCallScope.Enter(cts.Token))
             result = client.Generate("say hi", retries: 3);
         sw.Stop();
 
-        Assert.StartsWith("ERROR:", result);
-        Assert.Contains("cancelled because the mission was stopped", result);
+        // v3.2.0: the STATUS is the assertion. It used to be a prefix test on the prose, which
+        // meant this test would have kept passing while the fault was misclassified — and a
+        // misclassified cancellation is one the circuit breaker mistakes for provider health.
+        Assert.Equal(ModelCallOutcome.Cancelled, result.Status);
+        Assert.False(result.Ok);
+        Assert.Contains("cancelled because the mission was stopped", result.Content);
         // A cancelled mission must not retry or wait out any timeout — it returns effectively instantly.
         Assert.True(sw.Elapsed.TotalSeconds < 5, $"cancel should short-circuit, took {sw.Elapsed.TotalSeconds:F1}s");
     }
@@ -66,12 +70,13 @@ public class ModelCallCancellationTests
 
         // A non-empty key is required to reach the request path (an empty key fails closed earlier).
         var client = new OpenAiCompatibleClient("OpenAI", "http://127.0.0.1:1/v1", "sk-test", "test-model");
-        string result;
+        ModelCallResult result;
         using (ModelCallScope.Enter(cts.Token))
             result = client.Generate("say hi", retries: 3);
 
-        Assert.StartsWith("ERROR:", result);
-        Assert.Contains("cancelled because the mission was stopped", result);
+        Assert.Equal(ModelCallOutcome.Cancelled, result.Status);
+        Assert.False(result.Ok);
+        Assert.Contains("cancelled because the mission was stopped", result.Content);
     }
 
     [Fact]

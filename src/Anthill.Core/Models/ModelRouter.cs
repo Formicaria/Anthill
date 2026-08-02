@@ -5,10 +5,26 @@ using Anthill.Core.Memory;
 
 namespace Anthill.Core.Models;
 
-/// <summary>Abstraction over a text-generation backend. Implementations are role-routed by <see cref="ModelRouter"/>.</summary>
+/// <summary>
+/// Abstraction over a text-generation backend. Implementations are role-routed by
+/// <see cref="ModelRouter"/>.
+///
+/// v3.2.0 (ROADMAP § v3.2.0, "no <c>ERROR:</c> prefix determines success"): a client returns a
+/// TYPED <see cref="ModelCallResult"/>. It does not throw across the ant boundary — that contract
+/// is unchanged — but it no longer encodes what went wrong into prose for someone downstream to
+/// parse back out.
+///
+/// Why that round-trip had to go: every failure site in a client already knows exactly what
+/// happened — a 404, a refused connection, the mission's token, the per-call deadline. It then
+/// formatted that knowledge into a sentence, and <c>Classify</c> recovered it by substring match.
+/// Editing one of those sentences — "timed out" to "exceeded its deadline", say — would silently
+/// reclassify the fault, the circuit breaker would stop seeing a TransientFault, and it would stop
+/// tripping. Nothing would fail; the protection would just quietly stop working. Status is now set
+/// where it is known.
+/// </summary>
 public interface IModelClient
 {
-    string Generate(string prompt, int retries = 2);
+    ModelCallResult Generate(string prompt, int retries = 2);
 }
 
 /// <summary>
@@ -28,11 +44,13 @@ public sealed class OllamaClient : IModelClient
         _host = (host ?? AnthillRuntime.OllamaHost).TrimEnd('/');
     }
 
-    public string Generate(string prompt, int retries = 2)
+    public ModelCallResult Generate(string prompt, int retries = 2)
     {
         var url = $"{_host}/api/generate";
         var payload = JsonSerializer.Serialize(new { model = _model, prompt, stream = false });
-        var lastError = "";
+        // The operator-facing prose is unchanged throughout; only the STATUS is now carried
+        // alongside it instead of being recoverable from it.
+        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             // Link the mission's ambient token (so a timed-out/cancelled mission aborts this call)
@@ -53,33 +71,41 @@ public sealed class OllamaClient : IModelClient
                     var errBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                     var detail = errBody.Length > 0 && errBody.Length <= 300 ? $" — {errBody.Trim()}" : "";
                     return (int)response.StatusCode == 404
-                        ? $"ERROR: Ollama at {_host} is reachable but model '{_model}' is not available{detail}. Run: ollama pull {_model} (an offline machine needs the model blobs copied in — it cannot pull)."
-                        : $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.";
+                        ? new ModelCallResult(ModelCallOutcome.NotAvailable,
+                            $"ERROR: Ollama at {_host} is reachable but model '{_model}' is not available{detail}. Run: ollama pull {_model} (an offline machine needs the model blobs copied in — it cannot pull).")
+                        : new ModelCallResult(ModelCallOutcome.HttpError,
+                            $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.");
                 }
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 using var doc = JsonDocument.Parse(body);
                 var output = doc.RootElement.TryGetProperty("response", out var resp) ? resp.GetString()?.Trim() ?? "" : "";
-                return string.IsNullOrEmpty(output) ? "Ollama returned an empty response." : output;
+                return string.IsNullOrEmpty(output)
+                    ? new ModelCallResult(ModelCallOutcome.Empty, "Ollama returned an empty response.")
+                    : new ModelCallResult(ModelCallOutcome.Ok, output);
             }
             catch (HttpRequestException error)
             {
-                return $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
+                return new ModelCallResult(ModelCallOutcome.ConnectError,
+                    $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
                     + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
-                    + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?";
+                    + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?");
             }
             catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
                 // The mission itself was stopped (deadline reached or job cancelled) — abort cleanly
                 // and do NOT retry; retrying would just re-hit the already-cancelled token.
-                return "ERROR: Ollama request cancelled because the mission was stopped.";
+                return new ModelCallResult(ModelCallOutcome.Cancelled,
+                    "ERROR: Ollama request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Timeout,
+                    $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (Exception error)
             {
-                lastError = $"ERROR: Ollama request failed: {error.Message} (attempt {attempt}/{retries}).";
+                lastError = new ModelCallResult(ModelCallOutcome.Error,
+                    $"ERROR: Ollama request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
@@ -91,8 +117,13 @@ public sealed class PlaceholderClient : IModelClient
 {
     private readonly string _provider;
     public PlaceholderClient(string provider) => _provider = provider;
-    public string Generate(string prompt, int retries = 2) =>
-        $"ERROR: {_provider} provider placeholder is not implemented in this build.";
+    // Error, deliberately, not ConfigError: this classified as the generic Error before the typed
+    // boundary, and Error maps to CircuitSignal.Neutral. Promoting it to ConfigError would make it
+    // Healthy and start CLEARING a provider's breaker — a behaviour change smuggled in under a
+    // refactor. The status recorded here is the one this path already had.
+    public ModelCallResult Generate(string prompt, int retries = 2) =>
+        new(ModelCallOutcome.Error,
+            $"ERROR: {_provider} provider placeholder is not implemented in this build.");
 }
 
 /// <summary>
@@ -212,17 +243,27 @@ public sealed class ModelRouter
             : (choice.Provider, choice.Model, choice.Reason);
     }
 
-    /// <summary>v2.26.0: the typed boundary. Same call, but the outcome is classified ONCE by the
-    /// classifier the telemetry already uses — callers branch on Status, never on string prefixes.</summary>
+    /// <summary>
+    /// v2.26.0 introduced this typed boundary; v3.2.0 made it authoritative. It used to call
+    /// <c>Generate</c> and re-derive the status by parsing the prose that came back. Now the
+    /// status travels with the result from the client that knew it, and the string-returning
+    /// <c>Generate</c> is the thin projection instead of the other way round.
+    /// </summary>
     public ModelCallResult GenerateTyped(string role, string prompt, string? missionId = null,
         string? taskId = null, string? antName = null, int retries = 2) =>
-        ModelCallResult.From(Generate(role, prompt, missionId, taskId, antName, retries));
+        GenerateCore(role, prompt, missionId, taskId, antName, retries);
 
+    /// <summary>Content-only projection, for callers that have not yet moved to the typed result.</summary>
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
-        string? antName = null, int retries = 2)
+        string? antName = null, int retries = 2) =>
+        GenerateCore(role, prompt, missionId, taskId, antName, retries).Content;
+
+    private ModelCallResult GenerateCore(string role, string prompt, string? missionId, string? taskId,
+        string? antName, int retries)
     {
         if (!AnthillRuntime.UseOllama && AnthillRuntime.DefaultModelProvider == "ollama")
-            return "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.";
+            return new ModelCallResult(ModelCallOutcome.Error,
+                "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.");
 
         var (provider, model, rerouteReason) = ResolveRoute(role);
         var routeKey = $"{provider}:{model}";
@@ -231,24 +272,31 @@ public sealed class ModelRouter
         // If this provider's breaker is open, fail fast without a network call — the whole point is to
         // stop a dead/slow provider from making every mission wait out a full timeout and pin the queue.
         var blockedReason = _breaker?.Blocked(routeKey);
-        string response;
-        ModelCallOutcome outcome;
+        ModelCallResult result;
         if (blockedReason is not null)
         {
-            response = $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
-                     + "Fast-failed without a network call to keep the mission queue moving.";
-            outcome = ModelCallOutcome.ConnectError;
+            result = new ModelCallResult(ModelCallOutcome.ConnectError,
+                $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
+                + "Fast-failed without a network call to keep the mission queue moving.");
         }
         else
         {
-            var client = GetClient(provider, model);
-            response = client.Generate(prompt, retries);
-            outcome = ModelCallOutcomeExtensions.Classify(response);
-            _breaker?.Record(routeKey, outcome.ToCircuitSignal());
+            // v3.2.0: the status arrives WITH the result. This used to be
+            // Classify(response) — recovering, by substring match, what the client already knew.
+            result = GetClient(provider, model).Generate(prompt, retries);
+            _breaker?.Record(routeKey, result.Status.ToCircuitSignal());
         }
+        var response = result.Content;
+        var outcome = result.Status;
 
         var durationMs = (int)(DateTime.UtcNow - started).TotalMilliseconds;
-        var success = !response.StartsWith("ERROR:", StringComparison.Ordinal);
+        // v3.2.0 BEHAVIOUR FIX, called out because it is one: success was
+        // !response.StartsWith("ERROR:"), which disagreed with ModelCallResult.Ok — whose own
+        // documentation already said "an Empty response is never Ok". A provider returning nothing
+        // does not start with ERROR:, so it was counted as a successful call, REINFORCING the
+        // route's pheromone trail and reporting success:true in telemetry. Two definitions of
+        // success in one method, the exact disease this phase exists to cure. There is now one.
+        var success = result.Ok;
         var pheromoneDelta = success ? 0.01
             : outcome is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError ? -0.02 : -0.01;
 
@@ -273,7 +321,7 @@ public sealed class ModelRouter
                     ["last_mission_id"] = missionId, ["last_task_id"] = taskId,
                 });
         }
-        return response;
+        return result;
     }
 
     /// <summary>

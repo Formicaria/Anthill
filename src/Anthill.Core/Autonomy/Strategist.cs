@@ -58,10 +58,10 @@ public sealed class Strategist
 
         if (_router is null) return fallback;
 
-        string response;
+        Models.ModelCallResult result;
         try
         {
-            response = _router.Generate("strategist", BuildPrompt(objective), antName: "strategist");
+            result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist");
         }
         catch (Exception ex)
         {
@@ -69,11 +69,15 @@ public sealed class Strategist
             return fallback;
         }
 
-        if (response.StartsWith("ERROR:", StringComparison.Ordinal))
+        // v3.2.0: status, not prefix. An empty response is a failed generation, not a strategy.
+        if (!result.Ok)
         {
-            fallback.Notes = response;
+            fallback.Notes = result.Content.Length > 0
+                ? result.Content
+                : $"Strategist model call returned {result.Status.Name()}.";
             return fallback;
         }
+        var response = result.Content;
 
         try
         {

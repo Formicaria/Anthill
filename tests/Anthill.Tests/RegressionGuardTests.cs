@@ -113,12 +113,12 @@ public class RegressionGuardTests : IDisposable
     /// </summary>
     private static string UiSource()
     {
-        // v2.15.2: dashboard-workspace.js joins the scan. It was excluded simply because it did not
-        // exist when this helper was written, which left an entire UI file — by now the one that
-        // builds most of the console's chrome — outside every guard that uses UiSource.
+        // v2.15.2 added dashboard-workspace.js to the scan, because leaving a UI file outside every
+        // guard that uses UiSource is how whole files go unchecked. v3.3.0 keeps the rule and
+        // swaps the file: the grid replaced the workspace.
         var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
         var parts = new List<string> { File.ReadAllText(Path.Combine(dir, "index.html")) };
-        foreach (var js in new[] { "app.js", "dashboard-workspace.js" })
+        foreach (var js in new[] { "app.js", "dashboard-grid.js" })
         {
             var path = Path.Combine(dir, js);
             if (File.Exists(path)) parts.Add(File.ReadAllText(path));
@@ -366,7 +366,7 @@ public class RegressionGuardTests : IDisposable
         var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
         var html = File.ReadAllText(Path.Combine(dir, "index.html"));
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
-        var wsCss = File.ReadAllText(Path.Combine(dir, "dashboard-workspace.css"));
+        var gridCss = File.ReadAllText(Path.Combine(dir, "dashboard-grid.css"));
 
         var canvases = Regex.Matches(html, @"<canvas\b").Count;
         Assert.True(canvases == 1, $"Expected exactly one <canvas> in the console markup, found {canvases}.");
@@ -376,17 +376,19 @@ public class RegressionGuardTests : IDisposable
             "Expected exactly two references to requestAnimationFrame(loop) — the self-schedule "
             + $"inside loop() and the single bootstrap call — found {loopStarts}.");
 
-        var wsRoot = Regex.Match(wsCss, @"\.ws-root\s*\{[^}]*\}").Value;
-        Assert.False(string.IsNullOrEmpty(wsRoot), "dashboard-workspace.css no longer defines .ws-root.");
-        Assert.True(Regex.IsMatch(wsRoot, @"pointer-events\s*:\s*none"),
-            ".ws-root must set pointer-events:none so the topology beneath it stays interactive. "
-            + "Found: " + wsRoot);
+        // v3.3.0: .ws-root needed pointer-events:none because it was a full-page layer sitting ON
+        // TOP of the topology canvas — without it the map could not be clicked through. The grid
+        // has no overlay layer at all; the Colony is a widget the canvas lives inside, so the
+        // hazard is gone by construction rather than by a rule. What replaces the guard is the
+        // grid's own assertion that it declares no absolute positioning and no z-index
+        // (UiShellTests.NothingCanCoverTheMissionDirective_BecauseThereIsNoPanelLayer).
+        Assert.DoesNotContain("position: absolute", gridCss);
 
-        // Panels and toolbar have to opt back in, or the workspace chrome itself stops responding.
-        Assert.True(Regex.IsMatch(wsCss, @"\.ws-panel\s*\{[^}]*pointer-events\s*:\s*auto"),
-            ".ws-panel must re-enable pointer events.");
-        Assert.True(Regex.IsMatch(wsCss, @"\.ws-toolbar[^{]*\{[^}]*pointer-events\s*:\s*auto"),
-            ".ws-toolbar must re-enable pointer events.");
+        // The other half of the same rule: under the workspace, .ws-panel and .ws-toolbar had to
+        // opt pointer events back IN, because the layer above them had switched them off. With no
+        // layer there is nothing to opt back into — so the guard becomes the simpler statement
+        // that the grid never switches them off in the first place.
+        Assert.DoesNotContain("pointer-events: none", gridCss);
     }
 
     /// <summary>
@@ -428,9 +430,15 @@ public class RegressionGuardTests : IDisposable
     {
         var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
 
-        var registered = Regex.Matches(appJs, @"\{\s*id\s*:\s*'([a-z0-9-]+)'\s*,\s*title\s*:")
-            .Select(m => m.Groups[1].Value).OrderBy(x => x, StringComparer.Ordinal).ToList();
-        Assert.True(registered.Count > 0, "Could not find any workspace panel registrations in app.js.");
+        // v3.3.0: the grid replaced the floating workspace, so this reads the GRID widget
+        // registrations. Both def shapes start `{id:'x', title:'...'` — the grid's carry a `size:`
+        // and the workspace's do not, which is what distinguishes them while both files coexist.
+        // The property being defended is unchanged and still worth defending: if the server and the
+        // client disagree about which widgets exist, Sanitize() silently drops real ones and
+        // invents placements for ones that have no renderer.
+        var registered = Regex.Matches(appJs, @"\{\s*id\s*:\s*'([a-z0-9-]+)'\s*,\s*title\s*:[^}]*?\bsize\s*:")
+            .Select(m => m.Groups[1].Value).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.True(registered.Count > 0, "Could not find any grid widget registrations in app.js.");
         Assert.Equal(
             DashboardWorkspaceState.KnownPanelIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
             registered);
@@ -460,7 +468,6 @@ public class RegressionGuardTests : IDisposable
     {
         var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
-        var wsJs = File.ReadAllText(Path.Combine(dir, "dashboard-workspace.js"));
 
         Assert.Contains("const UiStateWriter", appJs);
         Assert.Contains("window.AnthillUiState = UiStateWriter", appJs);
@@ -470,19 +477,13 @@ public class RegressionGuardTests : IDisposable
         Assert.True(appPuts == 1,
             $"app.js should PUT /ui/state from exactly one place (UiStateWriter); found {appPuts}.");
 
-        // The workspace module must prefer the shared writer, and its own PUT may only survive as
-        // the guarded fallback for app.js being absent.
-        var saveIdx = wsJs.IndexOf("function save()", StringComparison.Ordinal);
-        Assert.True(saveIdx >= 0, "dashboard-workspace.js no longer defines save().");
-        var saveBody = wsJs.Substring(saveIdx, Math.Min(1400, wsJs.Length - saveIdx));
-        Assert.True(saveBody.Contains("window.AnthillUiState"),
-            "dashboard-workspace.js save() must route through the shared writer, not its own cycle.");
-        Assert.True(saveBody.IndexOf("window.AnthillUiState", StringComparison.Ordinal)
-                    < saveBody.IndexOf("'/ui/state', 'PUT'", StringComparison.Ordinal),
-            "The shared writer must be tried BEFORE the fallback PUT, or the race returns.");
+        // v3.3.0: the workspace was the SECOND writer this guard existed to police, and it is
+        // gone — so the remaining assertions are about app.js being the only one left. The rule
+        // stands: ui_state.json has exactly one writer. If a future surface adds its own debounced
+        // read-modify-write cycle, the count above catches it.
 
-        // Overlays belong to app.js; the workspace must drop its stale copy on load.
-        Assert.Contains("delete W.state.topology_overlays", wsJs);
+        // The overlay half of this guard went with the workspace: it existed because the module
+        // kept a stale copy of topology_overlays that app.js owned. There is no second holder now.
     }
 
     [Fact]
@@ -528,6 +529,11 @@ public class RegressionGuardTests : IDisposable
             // which is precisely why these carry no static id= in the markup.
             "ws-root", "ws-topology", "ws-topbar", "ws-bottombar",
             "ws-panel-layer", "ws-guides", "ws-snapzones", "ws-modules",
+            // v3.3.0: the grid root is created by initDashboardGrid for the same reason — it is
+            // the container the widget framework owns and rewrites, not page markup. The toolbar
+            // beside it is created by the same function and rewritten by renderToolbar on every
+            // layout change, so it is markup no more than the root is.
+            "dg-root", "dg-toolbar",
         };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
