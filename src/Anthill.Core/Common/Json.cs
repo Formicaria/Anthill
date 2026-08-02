@@ -138,6 +138,30 @@ public static class Json
         catch (JsonException) { return new List<string>(); }
     }
 
+    /// <summary>
+    /// A stored JSON array as a typed list, tolerating null, empty and malformed input.
+    ///
+    /// Same rule as <see cref="TryParseStringList"/> and for the same reason: a corrupt row must
+    /// degrade to an empty list rather than take down a load path. Deserialization failure here is
+    /// data loss for one record, not a reason to fail the read that found it.
+    /// </summary>
+    public static List<T> TryParseList<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<T>();
+        try { return JsonSerializer.Deserialize<List<T>>(json!) ?? new List<T>(); }
+        catch (JsonException) { return new List<T>(); }
+        catch (NotSupportedException) { return new List<T>(); }
+    }
+
+    /// <summary>A stored JSON object as a typed record; null on null/empty/malformed input.</summary>
+    public static T? TryParseTyped<T>(string? json) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<T>(json!); }
+        catch (JsonException) { return null; }
+        catch (NotSupportedException) { return null; }
+    }
+
     public static Dictionary<string, object?> TryParseObject(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return new();
