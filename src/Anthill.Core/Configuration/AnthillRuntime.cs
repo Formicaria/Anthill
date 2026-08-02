@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 public static class AnthillRuntime
 {
     public const string Version = "3.2.1";
-    public const int SchemaVersion = 16;   // v2.26.0: persisted mission evaluation + task lifecycle + skill revisions
+    public const int SchemaVersion = 17;   // v3.2.0: structured ant results persisted whole (task_results)
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a

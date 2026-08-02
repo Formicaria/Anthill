@@ -248,11 +248,18 @@ call site branching on status rather than an `ERROR:` prefix). It does NOT compl
 
 Still open before v3.2.0 can be recorded as SHIPPED against the gates below:
 
+- ~~Deletion of the legacy string-return adapters.~~ **Done (increment 3).** `BaseAnt.Execute` is
+  abstract, `string Run(Task, Mission)` and all twelve overrides are deleted, and the colony's last
+  `StartsWith("ERROR:")` test went with them. It could be deleted rather than rewritten because
+  every ant already overrode `Execute`, so the fallback carrying that test had no call site — the
+  "no call site, no feature" rule applied to the file that had been exempting itself from it.
+  `ModelUnavailable()` was deleted in the same pass for the same reason: with the adapter gone it
+  had no caller, and each ant now decides at its own call site what a dead provider means for its
+  work, which a shared helper could not express.
 - `IAntExecutor.ExecuteAsync(AntExecutionRequest, CancellationToken)` across all twelve agents.
+  Note that `Execute(Task, Mission) -> AntExecutionResult` now IS the universal typed contract; what
+  remains is the async signature, the request object, and cancellation.
 - Versioned `AntExecutionContract` on every active and standby mission agent.
-- Deletion of the legacy string-return adapters — `BaseAnt.Execute` still carries the colony's last
-  `StartsWith("ERROR:")` test, annotated in place, because the ant contract is
-  `Run(Task, Mission) -> string` and the status is destroyed before it arrives.
 - Strict planner schema validation; task contracts carrying expected artifacts and repair policy.
 
 The version number was an operator decision, taken knowing the phase is incomplete. Recorded here
