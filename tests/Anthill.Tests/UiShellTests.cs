@@ -552,4 +552,75 @@ public class UiShellTests
         Assert.DoesNotContain("position: absolute", css);
         Assert.DoesNotContain("z-index", css);
     }
+
+    /// <summary>
+    /// The stylesheet must NOT give `.dg-quiet` a min-height of its own.
+    ///
+    /// This looks like the obvious way to shrink an idle card and it is a layout bug. `.dg-widget`
+    /// sets `overflow: hidden`, which makes every widget a scroll container, and a scroll container
+    /// contributes nothing to the height of an `auto` grid row. Relaxing the floor in CSS therefore
+    /// collapses the row to 2px and the cards overlap each other — measured, not theorised: it
+    /// produced four overlapping pairs and pushed thirteen widgets past the grid's bottom edge.
+    ///
+    /// The floor is written by markQuiet() as an inline style instead, so the un-scripted state
+    /// stays the safe one and script only ever shrinks a card.
+    /// </summary>
+    [Fact]
+    public void QuietWidgets_DoNotGetTheirFloorFromCss()
+    {
+        var css = Ui("dashboard-grid.css");
+        foreach (Match m in Regex.Matches(css, @"\.dg-quiet[^{}]*\{([^}]*)\}"))
+            Assert.DoesNotContain("min-height", m.Groups[1].Value);
+
+        // and the widget floor itself must survive, since that is what keeps rows from collapsing
+        Assert.Contains("min-height: var(--dg-widget-h)", css);
+    }
+
+    /// <summary>
+    /// Adoption must carry the class an element's styles are scoped to.
+    ///
+    /// Every Mission Command rule is written `.mission-node ...`. Adoption moves the element out
+    /// from under that ancestor, so all of them stopped applying: the prompt row was no longer a
+    /// flex row, the textarea fell back to its intrinsic width — 47% of the card — and the dispatch
+    /// button collapsed to 8×15px. Nothing about that is visible in the markup, the ids, or the
+    /// renderers, which is exactly why it needs a guard rather than a reviewer.
+    /// </summary>
+    [Fact]
+    public void AdoptedWidgets_KeepTheClassTheirStylesAreScopedTo()
+    {
+        var appJs = Ui("app.js");
+        var html = Ui("index.html");
+
+        // the composer must declare its style scope, and adoption must apply it
+        var composer = Regex.Match(appJs, @"id:'mission-composer'[^}]*\}");
+        Assert.True(composer.Success, "mission-composer registration not found");
+        Assert.Contains("cls:'mission-node'", composer.Value);
+        Assert.Contains("if(cls) existing.classList.add(cls)", appJs);
+
+        // and the rules it depends on must still be scoped that way, or the class is cargo
+        Assert.Contains(".mission-node .mn-prompt", html);
+        Assert.Contains(".mission-node .mn-send", html);
+    }
+
+    /// <summary>
+    /// markQuiet() must clear the inline floor BEFORE it measures.
+    ///
+    /// Without this the previous pass's floor is part of this pass's measurement, and because the
+    /// re-measure runs on a timer, every idle card grows a little every few seconds. The failure is
+    /// slow and silent, which is exactly why it is worth a guard rather than an eyeball.
+    /// </summary>
+    [Fact]
+    public void QuietMeasurement_ReadsNaturalHeight_NotItsOwnPreviousFloor()
+    {
+        var body = BodyOf(Ui("dashboard-grid.js"), "function markQuiet()");
+        Assert.NotEqual("", body);
+
+        var reset = body.IndexOf("style.minHeight = ''", StringComparison.Ordinal);
+        var measure = body.IndexOf("getBoundingClientRect", StringComparison.Ordinal);
+        var write = body.LastIndexOf("style.minHeight =", StringComparison.Ordinal);
+
+        Assert.True(reset >= 0, "markQuiet must clear the inline floor before measuring");
+        Assert.True(measure > reset, "measurement must happen after the floor is cleared");
+        Assert.True(write > measure, "the computed floor must be written after measurement");
+    }
 }
