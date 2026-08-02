@@ -428,9 +428,15 @@ public class RegressionGuardTests : IDisposable
     {
         var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
 
-        var registered = Regex.Matches(appJs, @"\{\s*id\s*:\s*'([a-z0-9-]+)'\s*,\s*title\s*:")
-            .Select(m => m.Groups[1].Value).OrderBy(x => x, StringComparer.Ordinal).ToList();
-        Assert.True(registered.Count > 0, "Could not find any workspace panel registrations in app.js.");
+        // v3.3.0: the grid replaced the floating workspace, so this reads the GRID widget
+        // registrations. Both def shapes start `{id:'x', title:'...'` — the grid's carry a `size:`
+        // and the workspace's do not, which is what distinguishes them while both files coexist.
+        // The property being defended is unchanged and still worth defending: if the server and the
+        // client disagree about which widgets exist, Sanitize() silently drops real ones and
+        // invents placements for ones that have no renderer.
+        var registered = Regex.Matches(appJs, @"\{\s*id\s*:\s*'([a-z0-9-]+)'\s*,\s*title\s*:[^}]*?\bsize\s*:")
+            .Select(m => m.Groups[1].Value).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.True(registered.Count > 0, "Could not find any grid widget registrations in app.js.");
         Assert.Equal(
             DashboardWorkspaceState.KnownPanelIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
             registered);
@@ -528,6 +534,9 @@ public class RegressionGuardTests : IDisposable
             // which is precisely why these carry no static id= in the markup.
             "ws-root", "ws-topology", "ws-topbar", "ws-bottombar",
             "ws-panel-layer", "ws-guides", "ws-snapzones", "ws-modules",
+            // v3.3.0: the grid root is created by initDashboardGrid for the same reason — it is
+            // the container the widget framework owns and rewrites, not page markup.
+            "dg-root",
         };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
