@@ -8,6 +8,38 @@ using Anthill.Core.Models;
 namespace Anthill.Core.Planning;
 
 /// <summary>
+/// One reason a proposed plan was not accepted. <c>TaskIndex</c> is the position in the model's
+/// `tasks` array, or -1 when the problem is with the plan as a whole.
+/// </summary>
+public sealed record PlanRejection(int TaskIndex, string Field, string Reason)
+{
+    public string Describe() =>
+        TaskIndex < 0 ? $"plan.{Field}: {Reason}" : $"task[{TaskIndex}].{Field}: {Reason}";
+}
+
+/// <summary>
+/// The outcome of reading a model's proposed plan: the tasks, or the reasons there are none.
+///
+/// v3.2.0 (phase) — strict, all-or-nothing schema validation. The parser used to repair a plan
+/// in place: an unknown ant dropped that task, an unresolvable dependency dropped that edge, and
+/// whatever survived was executed. A five-task plan could become a two-task plan with its ordering
+/// removed, and the mission would report success against a graph nobody proposed and nobody
+/// reviewed — having spent real time and real model calls getting there.
+///
+/// Rejections are CARRIED rather than thrown, matching RuntimeProfile.Findings: the caller decides
+/// what a bad plan means (here: fall back to the static plan, which someone did review) and the
+/// operator gets every reason rather than a count.
+/// </summary>
+public sealed record PlanParse(IReadOnlyList<Task> Tasks, IReadOnlyList<PlanRejection> Rejections)
+{
+    /// <summary>A plan is usable only when nothing was rejected AND something was produced.</summary>
+    public bool Accepted => Rejections.Count == 0 && Tasks.Count > 0;
+
+    public static PlanParse Reject(params PlanRejection[] reasons) =>
+        new(Array.Empty<Task>(), reasons);
+}
+
+/// <summary>
 /// Turns a mission goal into a task plan. Asks the routed planner model for a strict JSON
 /// plan, validates and repairs it (drops invalid ants, guarantees a verifier, clamps count),
 /// and falls back to a deterministic static plan whenever the model is unavailable or unusable.
@@ -171,12 +203,17 @@ Required JSON:
         try
         {
             var parsed = Json.ExtractJsonObject(response);
-            var tasks = TasksFromJson(parsed, goal, offeredSkillIds);
-            if (tasks.Count == 0)
+            var plan = TasksFromJson(parsed, goal, offeredSkillIds);
+            if (!plan.Accepted)
             {
-                Console.Error.WriteLine("Dynamic planner returned no valid task plan. Using fallback plan.");
+                // Every reason, not a count. "Planner dropped 3 invalid task(s)" told an operator
+                // that something was wrong and nothing about what, which is the same as telling
+                // them nothing — and the plan ran anyway.
+                Console.Error.WriteLine($"Dynamic plan REJECTED ({plan.Rejections.Count} problem(s)). Using fallback plan.");
+                foreach (var r in plan.Rejections) Console.Error.WriteLine("  " + r.Describe());
                 return EnforceConstraints(FallbackTasks(goal), goal, constraints);
             }
+            var tasks = plan.Tasks.ToList();
             // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
             // coder patch task on a verification-only mission. Strip them deterministically.
             return AssignDefaultWorkers(EnforceConstraints(tasks, goal, constraints), goal, constraints);
@@ -310,20 +347,36 @@ Required JSON:
 
     // Internal for the v2.26.0 concurrency test: the method is pure (no Planner state), and the
     // test proves two interleaved parses with different offered sets cannot cross-contaminate.
-    internal List<Task> TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
+    internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
     {
-        if (parsed["tasks"] is not JsonArray rawTasks) return new();
+        var rejections = new List<PlanRejection>();
+        if (parsed["tasks"] is not JsonArray rawTasks)
+            return PlanParse.Reject(new PlanRejection(-1, "tasks", "the plan has no `tasks` array"));
+
         var tasks = new List<Task>();
-        var dropped = 0;
+        var index = -1;
         foreach (var item in rawTasks.Take(AnthillRuntime.MaxDynamicTasks))
         {
-            if (item is not JsonObject obj) { dropped++; continue; }
+            index++;
+            if (item is not JsonObject obj)
+            {
+                rejections.Add(new PlanRejection(index, "task", "entry is not a JSON object"));
+                continue;
+            }
+            // Normalisation, not repair: a missing title or description loses no structure, and the
+            // graph the model proposed is unchanged. Contrast with an unknown ant or an
+            // unresolvable edge below, which change WHICH WORK RUNS and are therefore rejections.
             var title = (obj["title"]?.GetValue<string>() ?? "").Trim();
             if (title.Length == 0) title = "Task";
             var description = (obj["description"]?.GetValue<string>() ?? "").Trim();
             if (description.Length == 0) description = $"Handle part of the mission: {goal}";
             var assignedAnt = (obj["assigned_ant"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
-            if (!AllowedAnts.Contains(assignedAnt)) { dropped++; continue; }
+            if (!AllowedAnts.Contains(assignedAnt))
+            {
+                rejections.Add(new PlanRejection(index, "assigned_ant",
+                    assignedAnt.Length == 0 ? "missing" : $"'{assignedAnt}' is not a planner-eligible role"));
+                continue;
+            }
             var assignedWorker = (obj["assigned_worker"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             var taskType = (obj["task_type"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             if (taskType.Length == 0) taskType = TextUtil.InferTaskType(assignedAnt, title, description);
@@ -343,28 +396,38 @@ Required JSON:
 
         for (int i = 0; i < tasks.Count; i++)
         {
-            tasks[i].DependsOn = tasks[i].DependsOn
-                .Select(dep =>
-                {
-                    // Integer index
-                    if (int.TryParse(dep, out var idx) && idx >= 0 && idx < tasks.Count && idx != i)
-                        return idByIndex[idx];
-                    // Exact task title
-                    if (idByTitle.TryGetValue(dep.Trim(), out var titleId) && titleId != tasks[i].Id)
-                        return titleId;
-                    // Already a valid task ID
-                    if (tasks.Any(t => t.Id == dep))
-                        return dep;
-                    // Unknown reference — drop it so the scheduler doesn't deadlock
-                    return "";
-                })
-                .Where(dep => dep.Length > 0)
-                .Distinct()
-                .ToList();
+            var resolved = new List<string>();
+            foreach (var dep in tasks[i].DependsOn)
+            {
+                // Integer index
+                if (int.TryParse(dep, out var idx) && idx >= 0 && idx < tasks.Count && idx != i)
+                { resolved.Add(idByIndex[idx]); continue; }
+                // Exact task title
+                if (idByTitle.TryGetValue(dep.Trim(), out var titleId) && titleId != tasks[i].Id)
+                { resolved.Add(titleId); continue; }
+                // Already a valid task ID
+                if (tasks.Any(t => t.Id == dep)) { resolved.Add(dep); continue; }
+
+                // An edge that cannot be resolved used to be dropped here "so the scheduler doesn't
+                // deadlock". That traded a deadlock for something worse and quieter: the task ran
+                // anyway, out of order, against inputs its author said it needed. The ordering the
+                // model expressed is part of the plan, so losing an edge rejects the plan.
+                rejections.Add(new PlanRejection(i, "depends_on",
+                    $"'{TextUtil.Truncate(dep, 60)}' matches no task in this plan"));
+            }
+            tasks[i].DependsOn = resolved.Distinct().ToList();
         }
 
-        if (dropped > 0) Console.Error.WriteLine($"Planner dropped {dropped} invalid task(s).");
-        if (tasks.Count < AnthillRuntime.MinDynamicTasks) return new();
+        if (tasks.Count < AnthillRuntime.MinDynamicTasks)
+            rejections.Add(new PlanRejection(-1, "tasks",
+                $"{tasks.Count} usable task(s), below the minimum of {AnthillRuntime.MinDynamicTasks}"));
+
+        // ALL OR NOTHING. A plan is a graph, and a graph missing a node or an edge is not a smaller
+        // version of the same plan — it is a different one that nothing reviewed. Executing it
+        // spent real time and real model calls on work the operator never approved, and it looked
+        // like success. Rejecting sends the mission to the static fallback, which is a plan someone
+        // did review.
+        if (rejections.Count > 0) return new PlanParse(Array.Empty<Task>(), rejections);
         if (!tasks.Any(t => t.AssignedAnt == "verifier"))
             tasks.Add(new Task
             {
@@ -372,7 +435,7 @@ Required JSON:
                 Description = $"Check the final result for accuracy, completeness, and usefulness: {goal}",
                 AssignedAnt = "verifier", AssignedWorker = "verifier.result_verifier", TaskType = "verification",
             });
-        return tasks.Take(AnthillRuntime.MaxDynamicTasks).ToList();
+        return new PlanParse(tasks.Take(AnthillRuntime.MaxDynamicTasks).ToList(), Array.Empty<PlanRejection>());
     }
 
     /// <summary>

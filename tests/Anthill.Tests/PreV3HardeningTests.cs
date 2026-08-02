@@ -246,8 +246,8 @@ public class PreV3HardeningTests : IDisposable
             try
             {
                 barrier.SignalAndWait();
-                aClaimsA = planner.TasksFromJson(PlanClaiming("skill-a"), "goal", offeredA)[0].SkillId;
-                aClaimsB = planner.TasksFromJson(PlanClaiming("skill-b"), "goal", offeredA)[0].SkillId;
+                aClaimsA = planner.TasksFromJson(PlanClaiming("skill-a"), "goal", offeredA).Tasks[0].SkillId;
+                aClaimsB = planner.TasksFromJson(PlanClaiming("skill-b"), "goal", offeredA).Tasks[0].SkillId;
             }
             catch (Exception ex) { Interlocked.CompareExchange(ref threadError, ex, null); }
         });
@@ -256,8 +256,8 @@ public class PreV3HardeningTests : IDisposable
             try
             {
                 barrier.SignalAndWait();
-                bClaimsB = planner.TasksFromJson(PlanClaiming("skill-b"), "goal", offeredB)[0].SkillId;
-                bClaimsA = planner.TasksFromJson(PlanClaiming("skill-a"), "goal", offeredB)[0].SkillId;
+                bClaimsB = planner.TasksFromJson(PlanClaiming("skill-b"), "goal", offeredB).Tasks[0].SkillId;
+                bClaimsA = planner.TasksFromJson(PlanClaiming("skill-a"), "goal", offeredB).Tasks[0].SkillId;
             }
             catch (Exception ex) { Interlocked.CompareExchange(ref threadError, ex, null); }
         });
