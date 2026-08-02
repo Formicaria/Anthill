@@ -157,10 +157,14 @@ Required JSON:
   ]
 }}
 ";
-        var response = _router.Generate("planner", prompt, antName: "planner");
-        if (response.StartsWith("ERROR:"))
+        // v3.2.0: the provider's own status decides, not the shape of its prose. An EMPTY model
+        // response now falls back too — it never started with "ERROR:", so it used to be handed
+        // to the JSON parser as if it were a plan.
+        var result = _router.GenerateTyped("planner", prompt, antName: "planner");
+        var response = result.Content;
+        if (!result.Ok)
         {
-            Console.Error.WriteLine($"Planner failed to use Ollama: {response}");
+            Console.Error.WriteLine($"Planner failed to use Ollama ({result.Status.Name()}): {response}");
             Console.Error.WriteLine("Using fallback static task plan.");
             return EnforceConstraints(FallbackTasks(goal), goal, constraints);
         }

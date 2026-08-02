@@ -52,6 +52,11 @@ public abstract class BaseAnt
     public virtual AntExecutionResult Execute(Task task, Mission mission)
     {
         var text = Run(task, mission) ?? "";
+        // v3.2.0: THE LAST PREFIX TEST IN THE COLONY, and it is deferred rather than missed. Every
+        // site that calls a model directly now branches on ModelCallResult.Status; this one cannot,
+        // because the ant contract is Run(Task, Mission) -> string, so the status is already gone
+        // by the time the result arrives here. It goes when IAntExecutor lands and Run returns a
+        // typed result — which is the rest of this phase, not a follow-up someone has to remember.
         if (text.StartsWith("ERROR:", StringComparison.Ordinal)) return ModelUnavailable(Name, text);
         if (string.IsNullOrWhiteSpace(text))
             return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
@@ -386,8 +391,9 @@ Do not invent details beyond the title/snippet/url/quality fields.
 Source:
 {baseText}
 ";
-        var response = _router.Generate("web", prompt, antName: "web");
-        return response.StartsWith("ERROR:")
+        var summary = _router.GenerateTyped("web", prompt, antName: "web");
+        var response = summary.Content;
+        return !summary.Ok
             ? TextUtil.Truncate(string.IsNullOrEmpty(snippet) ? title : snippet, AnthillRuntime.MaxSourceSummaryChars)
             : TextUtil.Truncate(response, AnthillRuntime.MaxSourceSummaryChars);
     }
@@ -559,9 +565,14 @@ public sealed class CoderAnt : BaseAnt
         var runner = new SandboxedCoderRunner(
             (turn, feedback) =>
             {
-                var resp = _router!.Generate("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name);
-                if (!resp.StartsWith("ERROR:")) lastProposalJson = resp;
-                return resp.StartsWith("ERROR:") ? FallbackPatchJson($"Model error during sandbox iteration: {resp}") : resp;
+                // v3.2.0: one status decides both branches. Before, two independent prefix tests
+                // could disagree — an empty generation passed the first (so it was cached as the
+                // last good proposal) and passed the second (so it was handed on as a patch set).
+                var call = _router!.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name);
+                if (call.Ok) lastProposalJson = call.Content;
+                return call.Ok
+                    ? call.Content
+                    : FallbackPatchJson($"Model {call.Status.Name()} during sandbox iteration: {call.Content}");
             },
             checkId: "dotnet_build");
 
@@ -815,8 +826,10 @@ Rules:
 - If /apply was not executed, do not claim files were modified.
 - If write gates are disabled, confirm patch application cannot run.
 ";
-        var response = _router.Generate("verifier", prompt, mission.Id, task.Id, Name);
-        return response.StartsWith("ERROR:") ? $"{staticCheck}\n\nRouted verifier model unavailable:\n{response}" : response;
+        var verdict = _router.GenerateTyped("verifier", prompt, mission.Id, task.Id, Name);
+        return verdict.Ok
+            ? verdict.Content
+            : $"{staticCheck}\n\nRouted verifier model unavailable ({verdict.Status.Name()}):\n{verdict.Content}";
     }
 
     private static string StaticVerify(List<Task> completed, List<Task> failed, List<Task> outputs)

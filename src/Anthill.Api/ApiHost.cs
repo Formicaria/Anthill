@@ -1420,11 +1420,14 @@ public static partial class ApiHost
 
             var client = Queen.Router.GetClientForProvider(p);
             var reply = client.Generate("Reply with the single word: OK", retries: 1);
-            var ok = !reply.StartsWith("ERROR:", StringComparison.Ordinal);
-            Queen.Memory.SetProviderVerification(p, ok, reply);
+            // v3.2.0: the provider's own status, not a prefix test on its prose. This also closes
+            // a real hole — "<provider> returned an empty response." does not start with ERROR:,
+            // so a provider that answered with nothing used to be recorded as VERIFIED.
+            var ok = reply.Ok;
+            Queen.Memory.SetProviderVerification(p, ok, reply.Content);
             return ok
                 ? ApiJson.Ok(Queen.Memory.ListProviderConnections(), $"{p} connection verified.")
-                : ApiJson.Error(reply, "provider_test_failed");
+                : ApiJson.Error(reply.Content, "provider_test_failed");
         });
     }
 
