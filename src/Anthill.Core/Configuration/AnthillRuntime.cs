@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.1.1";
+    public const string Version = "3.2.0";
     public const int SchemaVersion = 16;   // v2.26.0: persisted mission evaluation + task lifecycle + skill revisions
 
     /// <summary>
