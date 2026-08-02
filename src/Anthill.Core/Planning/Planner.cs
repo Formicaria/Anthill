@@ -380,6 +380,19 @@ Required JSON:
             var assignedWorker = (obj["assigned_worker"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             var taskType = (obj["task_type"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             if (taskType.Length == 0) taskType = TextUtil.InferTaskType(assignedAnt, title, description);
+            else
+            {
+                // A model may invent a task_type — "analysis" for a researcher, say. Now that the
+                // executor blocks work outside a role's contract, an invented word would fail the
+                // task mid-mission, having already paid for the plan. Replaced with the role's own
+                // inferred type instead: NORMALISATION by this file's rule, since it changes
+                // neither which ant runs nor the ordering, only the label the contract is checked
+                // against. Roles without a contract keep whatever the model said, because there is
+                // nothing to be outside of.
+                var roleContract = AntExecutionCatalog.ContractFor(assignedAnt);
+                if (roleContract is not null && !roleContract.SupportsTaskType(taskType))
+                    taskType = TextUtil.InferTaskType(assignedAnt, title, description);
+            }
             var dependsOn = (obj["depends_on"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? new();
             // v2.22.0: skill provenance. Accepted ONLY when it names a procedure the registry
             // actually offered for this plan — a model must not be able to invent an id and have
