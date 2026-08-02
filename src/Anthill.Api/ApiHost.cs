@@ -1387,6 +1387,70 @@ public static partial class ApiHost
         app.MapGet("/providers", (HttpContext ctx) =>
             RequireAuth(ctx, "read_providers") ?? ApiJson.Ok(Queen.Memory.ListProviderConnections()));
 
+        /*
+         * v3.3.0 (ADR-003): what each provider/model pair can actually DO.
+         *
+         * Capability is a property of the MODEL, not of the provider that serves it — a tool-capable
+         * model on Ollama is tool-capable, and a text-only model on OpenAI is not made tool-capable
+         * by the company hosting it. So this reports per model, and the operator can see why a role
+         * pinned to one model gets tools and another does not.
+         *
+         * Unknown resolves to text-only rather than to a blank: an operator reading "no capabilities
+         * listed" would reasonably assume the page was broken, whereas "text only" is the actual,
+         * deliberate, fail-closed answer.
+         */
+        app.MapGet("/providers/capabilities", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_providers"); if (auth is not null) return auth;
+
+            var report = new List<Dictionary<string, object?>>();
+            foreach (var p in ProviderCatalog.All)
+            {
+                // A provider whose catalog list is empty does not have "no models" — it has a
+                // DYNAMIC list. Ollama serves whatever the operator has pulled, so the static
+                // catalog cannot enumerate it and the live list comes from /ollama/models. Reporting
+                // an empty array here would tell an operator their local provider supports nothing,
+                // which is both wrong and the exact case this whole per-model design exists for.
+                var declared = p.Models ?? Array.Empty<string>();
+                var dynamicList = declared.Length == 0;
+                var listed = dynamicList
+                    ? new[] { p.DefaultModel }.Where(m => !string.IsNullOrWhiteSpace(m)).ToArray()
+                    : declared.ToArray();
+
+                var models = new List<Dictionary<string, object?>>();
+                foreach (var model in listed)
+                {
+                    var caps = ModelCapabilityCatalog.For(p.Id, model);
+                    models.Add(new Dictionary<string, object?>
+                    {
+                        ["model"] = model,
+                        ["is_default"] = string.Equals(model, p.DefaultModel, StringComparison.OrdinalIgnoreCase),
+                        ["tool_calling"] = caps.ToolCalling,
+                        ["structured_output"] = caps.StructuredOutput,
+                        ["streaming"] = caps.Streaming,
+                        ["vision"] = caps.Vision,
+                        ["embeddings"] = caps.Embeddings,
+                        ["reasoning"] = caps.Reasoning,
+                        ["context_window_tokens"] = caps.ContextWindowTokens,
+                    });
+                }
+                report.Add(new Dictionary<string, object?>
+                {
+                    ["provider"] = p.Id,
+                    ["name"] = p.Name,
+                    // Stated so the UI can explain a "no tools" model rather than looking wrong:
+                    // capabilities are declared from a table, not probed from the provider.
+                    ["source"] = "declared",
+                    // The UI must join this with /ollama/models rather than treating the list as
+                    // complete, and it can only know to do that if we say so.
+                    ["models_are_dynamic"] = dynamicList,
+                    ["dynamic_models_endpoint"] = dynamicList && p.Id == "ollama" ? "/ollama/models" : null,
+                    ["models"] = models,
+                });
+            }
+            return ApiJson.Ok(report);
+        });
+
         // Add or update a connection. api_key is optional on update (blank = leave the stored key
         // untouched); required the first time a provider is connected.
         app.MapPost("/providers", async (HttpContext ctx) =>
