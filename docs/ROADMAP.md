@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.1.1 — Mission Composer reachability fix (see CHANGELOG). Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
+**Latest:** v3.2.0 — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 
@@ -239,6 +239,28 @@ but the exemption is bounded rather than open-ended: the live read may appear ex
 mission-path gates must appear zero times there.
 
 ## v3.2.0 - Universal Ant and Model Protocol
+
+### RELEASE v3.2.0 vs PHASE v3.2.0 — they are not the same thing
+
+The release tagged v3.2.0 contains the dashboard redesign, the Mission Composer reachability fix,
+the release-guard fix, and **increments 1–2 of this phase** (typed provider results; every model
+call site branching on status rather than an `ERROR:` prefix). It does NOT complete the phase.
+
+Still open before v3.2.0 can be recorded as SHIPPED against the gates below:
+
+- `IAntExecutor.ExecuteAsync(AntExecutionRequest, CancellationToken)` across all twelve agents.
+- Versioned `AntExecutionContract` on every active and standby mission agent.
+- Deletion of the legacy string-return adapters — `BaseAnt.Execute` still carries the colony's last
+  `StartsWith("ERROR:")` test, annotated in place, because the ant contract is
+  `Run(Task, Mission) -> string` and the status is destroyed before it arrives.
+- Strict planner schema validation; task contracts carrying expected artifacts and repair policy.
+
+The version number was an operator decision, taken knowing the phase is incomplete. Recorded here
+rather than left for someone to infer from a gate table that does not match the tag, which is
+exactly the drift the v3.0.0 baseline lock existed to stop.
+
+The dashboard redesign is not a roadmap phase at all — it arrived as a separate directive. Its
+remaining work is tracked in `docs/DASHBOARD_GRID_MIGRATION.md`.
 
 ### Goal
 

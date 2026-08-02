@@ -355,6 +355,31 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 #page-overview.ws-active > *:not(#ws-root):not(.ws-layer){display:none !important;}
 #page-overview.ws-active #ws-root{flex:1;min-height:0;}
 
+/* v3.3.0 — the grid dashboard. Deliberately NOT a copy of the rules above.
+   The workspace needed `position:relative; overflow:hidden` because it hosted absolutely
+   positioned layers that would otherwise resolve against the viewport and slide under the
+   sidebar. The grid has no absolute layers, so it needs neither: the page SCROLLS normally and
+   the grid is a block in that flow. Removing `overflow:hidden` is most of why widgets can no
+   longer be clipped or stranded off-screen.
+
+   The exclusion below keeps the v2.15.3 lesson — exclude by CLASS, never by an id allow-list,
+   because an id list silently hides every element added after it is written. */
+/* NOTE the absent `overflow`. The workspace needed overflow:hidden because it hosted absolute
+   layers; the grid does not — but declaring `overflow:visible` here was a real bug: this selector
+   is id+class, so it outranks `.page-scroll{overflow-y:auto}` and the shorthand killed BOTH axes.
+   The dashboard became unscrollable and everything below the fold was unreachable. Declaring
+   nothing lets .page-scroll keep owning the scroll container, which is what it is for. */
+#page-overview.dg-active{position:static;padding:0;gap:0;}
+#page-overview.dg-active > *:not(#dg-root):not(.dg-keep){display:none !important;}
+/* flex-shrink 0 is the load-bearing part: with `1 1 auto` the root was allowed to end up SHORTER
+   than the rows it contains, so its bottom padding sat inside a box the widgets had already
+   overflowed and the last row finished flush against the viewport edge — no clearance above the
+   OS taskbar. Grow to fill a short viewport, never shrink below the content. */
+#page-overview.dg-active #dg-root{flex:1 0 auto;min-height:0;}
+/* The colony canvas is moved INTO the Colony widget, so it must fill that widget's body rather
+   than the fixed height it used when it was the page background. */
+#page-overview.dg-active #colony-canvas-area{position:relative;width:100%;height:100%;min-height:0;}
+
 /* The status bar is pinned to the very top of the workspace, above the colony view controls. */
 #ws-topbar{position:absolute;top:0;left:0;right:0;z-index:45;pointer-events:auto;
   background:rgba(8,12,20,.82);border-bottom:1px solid var(--border);
@@ -1639,7 +1664,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <option value="off">Off</option><option value="active">Active</option>
               <option value="all" selected>All</option>
             </select>
-            <button class="cv-btn" data-colonyact="reset-view" title="Reset pan and zoom">⤾ View</button>
+            <button class="cv-btn" data-colonyact="reset-view" title="Reset pan and zoom (Ctrl/Cmd + wheel zooms; plain wheel scrolls the dashboard)">⤾ View</button>
             <button class="cv-btn" data-colonyact="reset-layout" title="Return dragged ants to the computed layout">⌂ Layout</button>
           </div>
           <div id="zoom-hint">Scroll to zoom · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
@@ -3020,9 +3045,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   </div>
 </div>
 
-<link rel="stylesheet" href="/ui/dashboard-workspace.css">
+<!-- v3.3.0: the responsive dashboard grid replaces the floating-panel workspace. The workspace
+     stylesheet and runtime are gone from the page; the files are removed in the follow-up commit
+     once the grid has been exercised in a live console. -->
+<link rel="stylesheet" href="/ui/dashboard-grid.css">
 <script src="/ui/mission-thread.js" defer></script>
-<script src="/ui/dashboard-workspace.js" defer></script>
+<script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
 </body>
 </html>

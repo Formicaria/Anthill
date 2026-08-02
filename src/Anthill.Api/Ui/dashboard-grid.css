@@ -1,0 +1,295 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANTHILL dashboard grid (v3.3.0).
+   Replaces the floating-panel workspace: widgets sit in a responsive CSS Grid,
+   not absolutely-positioned frames layered over the colony canvas.
+
+   Why an explicit column track instead of auto-fit/minmax: auto-fit derives the
+   column count from a minimum width, which makes widget SIZE and column count
+   the same knob. Operational importance and screen width are different
+   questions and need different answers.
+
+   Widget spans are PROPORTIONALLY INVARIANT: small = 1/4 of a row, medium =
+   1/3, large = 1/2, colony = full, at every width above 901px. That invariant
+   was not the first design — phase 2 measurement found a row at 32% fill
+   because the fractions moved between breakpoints, so a set of widgets that
+   tiled at 1920 stranded one at 1366. Tiling cannot be a property of the widget
+   set if the fractions shift underneath it. See the tiling rule below.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.dg-root {
+  --dg-cols: 12;
+  --dg-gap: 14px;
+  --dg-pad: 16px;
+  /* Widget spans, redefined per breakpoint. Declared here so a widget's CSS
+     never hard-codes a column count. */
+  --dg-span-small: 4;
+  --dg-span-medium: 6;
+  --dg-span-large: 12;
+  --dg-span-colony: 12;
+  --dg-colony-h: clamp(340px, 52vh, 620px);
+  /* Every non-Colony widget gets a floor. Without one the grid collapsed to a stack of bare
+     headers: .dg-body is a scroll container with min-height:0, and such a box contributes ZERO to
+     its flex parent's content height, so the widget shrank to its header and the row followed.
+     A floor also gives the dashboard uniform rows, which is what makes a wall of widgets scannable
+     rather than ragged. Content taller than the floor scrolls inside its own card. */
+  --dg-widget-h: 210px;
+
+  display: grid;
+  grid-template-columns: repeat(var(--dg-cols), minmax(0, 1fr));
+  gap: var(--dg-gap);
+  padding: var(--dg-pad);
+  align-content: start;
+  /* minmax(0,1fr) above + this is what stops a wide child (a table, a long
+     unbroken token) from forcing a column wider than its share and pushing the
+     last widget off-screen — the failure the old layout produced on 1080p. */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Ultrawide: stop the grid becoming a single unreadable band of 20 columns.
+   Content stays centred with a sane maximum measure. */
+.dg-root { margin-inline: auto; max-width: 2560px; }
+
+/* TILING RULE — read this before assigning a widget a size.
+   Spans must sum to the column count or a row ends short. Because the fractions are invariant
+   (see the breakpoints below), one rule holds at EVERY width above 901px: 4 small, or 3 medium,
+   or 2 large, or 1 colony per row.
+   Measured on the live grid: a row of 3 smalls uses 75% of its width and the remainder is dead
+   space, which is exactly the "large empty cards" the redesign exists to remove.
+
+   `grid-auto-flow: dense` would backfill those gaps automatically and is deliberately NOT used:
+   it hoists a later, smaller widget into an earlier gap, which would let a widget registered
+   BELOW the Colony jump above it. The Colony sitting at the visual centre with operational
+   context above and below is the whole layout thesis; automatic gap-filling is not worth
+   breaking it, and it would also divorce reading order from tab order. Sizes are assigned
+   deliberately instead. */
+.dg-widget {
+  grid-column: span var(--dg-span, var(--dg-span-medium));
+  display: flex;
+  flex-direction: column;
+  min-width: 0;                 /* grid children default to min-content — this is the fix */
+  min-height: var(--dg-widget-h);
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dg-widget[data-size="small"]  { --dg-span: var(--dg-span-small); }
+.dg-widget[data-size="medium"] { --dg-span: var(--dg-span-medium); }
+.dg-widget[data-size="large"]  { --dg-span: var(--dg-span-large); }
+.dg-widget[data-size="colony"] { --dg-span: var(--dg-span-colony); }
+
+/* The Colony is the focal point: full width, its own row, taller than anything
+   around it, and never in a tab group or behind another widget. */
+.dg-widget[data-size="colony"] { min-height: var(--dg-colony-h); }
+.dg-widget[data-size="colony"] .dg-body { padding: 0; }   /* the canvas owns its box */
+
+/* Mission Command fills its card.
+   Scoped to .dg-widget so the classic layout is untouched. The directive box is the one control an
+   operator types into, so the card's leftover height belongs to it rather than to dead space under
+   the buttons — 44px of it, before this.
+   `height` is deliberately NOT set on the textarea: an explicit height disables flex stretch, and a
+   percentage against an auto-height parent resolves to auto anyway, so setting it left the field at
+   its 34px minimum while the row around it grew. Stretch does the work. */
+.dg-widget #ov-composer-body { display: flex; flex-direction: column; min-height: 100%; }
+.dg-widget #ov-composer-body .mn-prompt { flex: 1 1 auto; align-items: stretch; }
+/* Once the field grows past one line, centring the prompt breaks the line it belongs to: the
+   `ANTHILL_CORE >` prefix floated to the middle of the box while the text it introduces stayed at
+   the top, so nothing lined up. The prefix belongs on the first line of the directive — the 8px
+   matches the textarea's own padding-top, which is what puts them on the same baseline.
+   The dispatch button goes to the bottom corner, where a growing composer expects it. */
+.dg-widget #ov-composer-body .mn-prefix { align-self: flex-start; margin-top: 8px; }
+.dg-widget #ov-composer-body .mn-send { align-self: flex-end; }
+/* The card bounds the field now, so the old max-height would just cap it below the space it has;
+   overflowing text scrolls inside the field as before. */
+.dg-widget #ov-composer-body #ov-mission-input { max-height: none; }
+
+.dg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border, #1e3354);
+  background: var(--inner, #162440);
+  flex: 0 0 auto;
+}
+.dg-icon { font-size: 12px; line-height: 1; opacity: .85; }
+.dg-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--anthill-text, #eaf2ff);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dg-sub { font-size: 10px; color: var(--anthill-dim, #4f6078); margin-left: auto; white-space: nowrap; }
+.dg-act {
+  background: none; border: 1px solid transparent; color: var(--anthill-muted, #7f91aa);
+  cursor: pointer; border-radius: 6px; padding: 2px 6px; font-size: 11px; line-height: 1.4;
+}
+.dg-act:hover { color: var(--anthill-text, #eaf2ff); border-color: var(--border, #1e3354); }
+.dg-act:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: 1px; }
+
+.dg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;             /* the widget scrolls vertically; the page never grows to fit it */
+  overflow-x: hidden;
+  padding: 10px 12px;
+  font-size: 11px;
+
+  /* Found by measuring the live grid: an unbroken 80-character token (a mission id, a file path,
+     a base64 blob — all routine here) made the widget body scroll SIDEWAYS. The grid itself held,
+     because minmax(0,1fr) stopped the column widening, but a horizontally scrolling card is wrong
+     for a console meant to be read at a glance: the operator cannot see there is more text.
+     `anywhere` breaks such a token; `break-word` alone would not, because it declines to break
+     when the word is the only thing on the line. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Tabular content is the exception: a table that wraps mid-token becomes unreadable, so let it
+   scroll within its own box rather than mangling the columns. */
+.dg-body table { display: block; overflow-x: auto; max-width: 100%; }
+.dg-body table td, .dg-body table th { overflow-wrap: normal; word-break: normal; }
+
+/* ---- the four states every widget supports ------------------------------- */
+.dg-state {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 100%; min-height: 54px; padding: 12px;
+  color: var(--anthill-dim, #4f6078); font-size: 11px; text-align: center;
+}
+.dg-state.err { color: var(--status-danger, #ff416c); }
+.dg-spin {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--border, #1e3354); border-top-color: var(--status-info, #36c8ff);
+  animation: dg-spin .8s linear infinite;
+}
+@keyframes dg-spin { to { transform: rotate(360deg); } }
+
+/* Respect the operator's motion preference — an always-open operations console
+   is exactly where a permanently spinning element is worst. */
+@media (prefers-reduced-motion: reduce) {
+  .dg-spin { animation: none; border-top-color: var(--border, #1e3354); }
+}
+
+/* ---- breakpoints ---------------------------------------------------------
+   Each step changes the column count AND the spans, so widget proportions stay
+   deliberate rather than being whatever falls out of the arithmetic. */
+
+/* Laptop / narrow: single column. Stacking beats cramming. */
+@media (max-width: 900px) {
+  .dg-root {
+    --dg-cols: 4; --dg-gap: 10px; --dg-pad: 10px;
+    --dg-span-small: 4; --dg-span-medium: 4; --dg-span-large: 4; --dg-span-colony: 4;
+    --dg-colony-h: clamp(260px, 42vh, 420px);
+    --dg-widget-h: 170px;
+  }
+}
+
+/* PROPORTIONALLY INVARIANT SPANS — 901px and up.
+   Phase-2 measurement in the live console found a row at 32% fill: spans were 4/12 here and 3/12
+   at the next breakpoint up, so a set of four small widgets tiled at one width and stranded one
+   at another. Tiling cannot be a property of the widget set if the fractions move underneath it.
+
+   So the fractions are fixed everywhere: small = 1/4 of a row, medium = 1/3, large = 1/2,
+   colony = full. Four smalls, three mediums, or two larges fill a row at EVERY size, and a layout
+   that tiles at one resolution tiles at all of them.
+
+   The cost, accepted deliberately: an ultrawide no longer packs more widgets per row than a 1080p
+   display — it renders the same arrangement larger, bounded by the 2560px max-width above.
+   Predictable emptiness-free rows are worth more to an always-open console than variable density,
+   and unnecessary whitespace is precisely what this redesign exists to remove. The 24-column track
+   is kept because it expresses the same fractions with finer granularity for future widget sizes. */
+
+/* 1080p through 1440p: 12 columns. */
+@media (min-width: 901px) and (max-width: 2199px) {
+  .dg-root {
+    --dg-cols: 12;
+    --dg-span-small: 3; --dg-span-medium: 4; --dg-span-large: 6; --dg-span-colony: 12;
+  }
+}
+
+/* 1440p gains breathing room, not a different arrangement. */
+@media (min-width: 1440px) and (max-width: 2199px) {
+  .dg-root { --dg-gap: 16px; --dg-pad: 20px; --dg-colony-h: clamp(380px, 50vh, 660px); --dg-widget-h: 230px; }
+}
+
+/* 4K and ultrawide: 24 columns expressing the SAME fractions (6/8/12 of 24 == 3/4/6 of 12). */
+@media (min-width: 2200px) {
+  .dg-root {
+    --dg-cols: 24; --dg-gap: 18px; --dg-pad: 24px;
+    --dg-span-small: 6; --dg-span-medium: 8; --dg-span-large: 12; --dg-span-colony: 24;
+    --dg-colony-h: clamp(420px, 46vh, 760px);
+    --dg-widget-h: 250px;
+  }
+}
+
+/* Short viewports (a laptop in landscape, a split screen): the Colony must not
+   push every other widget below the fold. Height query, not width — this is
+   about vertical room, and no width breakpoint can answer it. */
+@media (max-height: 780px) {
+  .dg-root { --dg-colony-h: clamp(240px, 38vh, 380px); }
+}
+
+/* ---- customise toolbar ------------------------------------------------------------------
+   Always present, never a hidden gesture. The workspace's lesson: an affordance that can hide
+   things must have a visible, always-reachable way back, or an operator hides a widget and has
+   no route to it. */
+.dg-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 16px 0;
+  max-width: 2560px; margin-inline: auto;
+}
+.dg-tool {
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354);
+  color: var(--anthill-muted, #7f91aa);
+  border-radius: 7px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+}
+.dg-tool:hover { color: var(--anthill-text, #eaf2ff); }
+.dg-tool:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: 1px; }
+.dg-tool[aria-pressed="true"] { color: var(--queen, #fbbf24); border-color: var(--queen, #fbbf24); }
+
+/* The widget picker expands IN FLOW as a second toolbar row, rather than floating over the grid.
+   It was originally a dropdown, positioned out of flow with a stacking order, and two guards
+   rejected it: the grid may declare neither. A layer that can float over other content is the
+   entire failure mode this layout replaced, and a dropdown is the mildest possible version of that
+   — but "mild overlay" is how the last one started.
+
+   In flow it costs one row of vertical shift while open, and buys: no z-order, nothing that can
+   cover the Colony or the mission directive, no clipping at the viewport edge, and no repositioning
+   logic at any breakpoint. */
+.dg-menu {
+  flex: 1 0 100%;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px; padding: 8px;
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354); border-radius: 8px;
+}
+/* Set by script AND by CSS: an element hidden via the `hidden` property still needs a rule,
+   because anything that sets `display` overrides the UA stylesheet's display:none and stays
+   visible. Correct JavaScript defeated by one line of CSS is what that cost twice before. */
+.dg-menu[hidden] { display: none !important; }
+.dg-menu-row {
+  background: var(--inner, #162440); border: 1px solid var(--border, #1e3354);
+  color: var(--anthill-muted, #7f91aa);
+  text-align: left; padding: 4px 9px; font-size: 11px; cursor: pointer; border-radius: 5px;
+}
+.dg-menu-row:hover { background: var(--inner, #162440); color: var(--anthill-text, #eaf2ff); }
+.dg-menu-row:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: -2px; }
+
+/* Unlocked: make it obvious the dashboard is editable rather than merely different. */
+.dg-root.dg-unlocked .dg-widget { border-style: dashed; }
+
+/* A widget with nothing to report earns less room: without this, the height floor turned every idle
+   card — "No jobs yet.", "No approvals pending." — into a 230px void, which is precisely the "large
+   empty cards" this redesign exists to remove.
+
+   There is deliberately NO min-height override here. The exact floor is written as an inline style
+   by markQuiet() in dashboard-grid.js, because the height a quiet card needs depends on content CSS
+   cannot measure. Declaring `min-height: 0` here as well would be actively harmful: before the
+   script runs it would collapse the grid rows to 2px and let cards overlap. Leaving the normal
+   floor in place means the un-scripted state is the safe one, and JS only ever shrinks it.
+
+   The class is still styled here for anything purely visual, so the two files do not fight over
+   who owns the height. */
+.dg-widget.dg-quiet .dg-body { padding-top: 8px; }
