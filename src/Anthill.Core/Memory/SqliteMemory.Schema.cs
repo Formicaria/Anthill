@@ -171,6 +171,28 @@ public sealed partial class SqliteMemory : IDisposable
             attempt_count INTEGER DEFAULT 0, max_attempts INTEGER DEFAULT 1,
             failure_reason TEXT, failure_type TEXT, skipped_reason TEXT, blocked_reason TEXT,
             FOREIGN KEY (mission_id) REFERENCES missions(id))",
+        // v3.2.0 (phase): what the ANT reported, kept whole.
+        //
+        // Until now an AntExecutionResult decided the task's status and was then thrown away except
+        // for its narrative: artifacts, evidence, handoffs, warnings, metrics and the failure class
+        // all died at this boundary. Anything downstream that wanted them — an operator asking why
+        // a task failed, learning, or a future replay — had to read the prose back, which is the
+        // one thing this phase exists to stop.
+        //
+        // A separate table rather than columns on `tasks`: this records what the ant SAID, at the
+        // moment it said it, and `tasks` records what the scheduler DID about it. They can
+        // legitimately disagree — a late result is ignored, a timeout overwrites the text — and
+        // collapsing them into one row would destroy the evidence of exactly those disagreements.
+        @"CREATE TABLE IF NOT EXISTS task_results (
+            task_id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, ant_name TEXT NOT NULL,
+            status_code TEXT NOT NULL, success INTEGER NOT NULL DEFAULT 0,
+            contract_version TEXT,
+            summary TEXT NOT NULL DEFAULT '',
+            failure_class TEXT, failure_reason TEXT, failure_retryable INTEGER NOT NULL DEFAULT 0,
+            artifacts_json TEXT, evidence_json TEXT, handoffs_json TEXT, warnings_json TEXT,
+            metrics_json TEXT, recorded_at TEXT NOT NULL,
+            FOREIGN KEY (mission_id) REFERENCES missions(id))",
+        @"CREATE INDEX IF NOT EXISTS idx_task_results_mission ON task_results(mission_id)",
         @"CREATE TABLE IF NOT EXISTS events (
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, task_id TEXT, ant_name TEXT,
             event_type TEXT NOT NULL, message TEXT NOT NULL, metadata_json TEXT,

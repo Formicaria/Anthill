@@ -402,6 +402,13 @@ public sealed class ExecutionService : IExecutionService
                 execution = ant.Execute(taskSnapshot, missionSnapshot);
                 result = execution.Narrative ?? execution.Summary;
             }
+            // v3.2.0 (phase): record what the ant REPORTED, before the scheduler decides what to do
+            // with it. Written here rather than at finalization because the mapping below can
+            // legitimately discard this result (a late one, for a task no longer running) or
+            // replace its text (a timeout overwrites it with a one-line reason) — and those are
+            // precisely the executions whose evidence is worth having afterwards.
+            _memory.SaveTaskResult(mission.Id, task.Id, ant.Name, execution);
+
             var finishedAt = AnthillTime.NowUtc();
             var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
             lock (_executionLock)
