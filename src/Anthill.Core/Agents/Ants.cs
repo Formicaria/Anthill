@@ -31,38 +31,27 @@ public abstract class BaseAnt
     protected BaseAnt(string name) => Name = name;
 
     /// <summary>
-    /// The text an ant produces. Still abstract because for the six original ants the text IS the
-    /// artifact (a research summary, a patch proposal, a verification report).
-    /// </summary>
-    public abstract string Run(Task task, Mission mission);
-
-    /// <summary>
-    /// Run the task and report a STRUCTURED outcome. This is the contract the orchestrator uses;
+    /// Run the task and report a STRUCTURED outcome. The only execution contract in the colony;
     /// nothing downstream may infer status from prose.
     ///
-    /// Virtual, not abstract, and only for the duration of the migration: specialists override it
-    /// to return the result they already build, while the six text-producing ants are carried by
-    /// the default below until each is migrated. Two execution paths must not outlive v2.19.x —
-    /// see docs/ADR-ADAPTIVE-MISSION-RUNTIME.md §5, stage 1.
+    /// v3.2.0 (phase, increment 3): ABSTRACT, and the string adapter beside it is gone.
     ///
-    /// The default is NOT "no exception means success": it classifies the ant's own known failure
-    /// signal (a routed model call returning an in-band "ERROR:" string) as a dependency failure,
-    /// and empty output as a permanent one.
+    /// What was here until now: a <c>string Run(Task, Mission)</c> that every ant also implemented,
+    /// and a default <c>Execute</c> that called it and recovered a status by testing the text for
+    /// an <c>"ERROR:"</c> prefix — the last such test in the colony. It survived because the
+    /// adapter destroyed the status before the result arrived: a typed <see cref="ModelCallResult"/>
+    /// came back from the router, was flattened into a string by <c>Run</c>, and the prefix was the
+    /// only trace of failure left to read.
+    ///
+    /// It could be deleted rather than rewritten because all twelve ants already overrode
+    /// <c>Execute</c>, so the fallback had no call site — the repo's own rule, applied to the file
+    /// that was making the exception for itself. <c>Run</c> is deleted with it (exit gate:
+    /// compatibility adapters are deleted, not deprecated); the narrative it returned is
+    /// <see cref="AntExecutionResult.Narrative"/>, which is the same text from the same execution.
+    ///
+    /// IMPLEMENTATIONS MUST BE STATELESS — see the class remarks.
     /// </summary>
-    public virtual AntExecutionResult Execute(Task task, Mission mission)
-    {
-        var text = Run(task, mission) ?? "";
-        // v3.2.0: THE LAST PREFIX TEST IN THE COLONY, and it is deferred rather than missed. Every
-        // site that calls a model directly now branches on ModelCallResult.Status; this one cannot,
-        // because the ant contract is Run(Task, Mission) -> string, so the status is already gone
-        // by the time the result arrives here. It goes when IAntExecutor lands and Run returns a
-        // typed result — which is the rest of this phase, not a follow-up someone has to remember.
-        if (text.StartsWith("ERROR:", StringComparison.Ordinal)) return ModelUnavailable(Name, text);
-        if (string.IsNullOrWhiteSpace(text))
-            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
-                $"{Name}: produced no output.");
-        return TextResult(Name, text);
-    }
+    public abstract AntExecutionResult Execute(Task task, Mission mission);
 
     /// <summary>
     /// Wrap a text-producing ant's output as a structured result.
@@ -87,18 +76,15 @@ public abstract class BaseAnt
         };
     }
 
-    /// <summary>
-    /// A routed model call came back as an in-band "ERROR:" string. ModelRouter reports provider
-    /// failure that way rather than throwing, so this is the ant recognising its own dependency
-    /// failure — retryable, because the next attempt may reach a healthy provider.
-    /// </summary>
-    protected static AntExecutionResult ModelUnavailable(string role, string response) =>
-        // TransientProviderFailure, not DependencyFailure: FailureClassify.IsRetryable covers only
-        // TransientProviderFailure / RateLimit / Timeout / Conflict, so classifying a temporarily
-        // unreachable provider as a dependency failure would mark it failed_permanent and forbid
-        // the retry that would very likely succeed.
-        AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
-            $"{role}: routed model call failed — {TextUtil.Truncate(response ?? "", 300)}");
+    // ModelUnavailable() lived here and is deleted with the adapter that was its only caller.
+    //
+    // It existed to recover a status the string contract had destroyed, so it had to answer for
+    // every role at once — one generic "routed model call failed" for twelve ants with genuinely
+    // different stakes. Each ant now branches on ModelCallResult.Ok at its own call site and says
+    // what a dead provider means for ITS work: the researcher and builder degrade to a local
+    // answer and disclose it as a structured warning, because partial context still helps; the
+    // coder fails the task, because a patch proposal invented without the model would be worse
+    // than none. A shared helper could not have made that distinction.
 }
 
 public sealed class ResearcherAnt : BaseAnt
@@ -112,9 +98,6 @@ public sealed class ResearcherAnt : BaseAnt
         _memory = memory; _tools = tools; _router = router;
     }
 
-    // v2.26.0 pre-V3 hardening: the ant DECLARES its outcome at each branch instead of leaving a
-    // wrapper to guess from prose. Run() remains the narrative view of the same execution.
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -257,7 +240,6 @@ public sealed class WebResearchAnt : BaseAnt
         _memory = memory; _tools = tools; _router = router;
     }
 
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -404,7 +386,6 @@ public sealed partial class FileAnt : BaseAnt
     private readonly ToolRegistry _tools;
     public FileAnt(ToolRegistry tools) : base("file") => _tools = tools;
 
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
 
     // v2.26.0: an inspection whose every tool call failed is a FAILED inspection, not a successful
     // narrative about failure. Partial read failures and paths-not-found are disclosed as warnings.
@@ -488,7 +469,6 @@ public sealed class CoderAnt : BaseAnt
     private readonly ModelRouter? _router;
     public CoderAnt(bool useOllama, ModelRouter? router) : base("coder") { _useOllama = useOllama; _router = router; }
 
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
 
     // v2.26.0: a file-change task that returns zero proposals is NOT a success — the coder exists
     // to produce patches. Classification is by parsing the coder's OWN JSON artifact (counting its
@@ -686,7 +666,6 @@ public sealed class BuilderAnt : BaseAnt
     private readonly ModelRouter? _router;
     public BuilderAnt(bool useOllama, ModelRouter? router) : base("builder") { _useOllama = useOllama; _router = router; }
 
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Narrative ?? "";
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -782,7 +761,6 @@ public sealed class VerifierAnt : BaseAnt
         };
     }
 
-    public override string Run(Task task, Mission mission) => Compose(task, mission);
 
     private string Compose(Task task, Mission mission)
     {

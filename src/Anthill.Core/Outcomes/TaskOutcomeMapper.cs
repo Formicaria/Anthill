@@ -36,6 +36,9 @@ public sealed record TaskOutcomeDecision(
 ///     task.Result = result;
 ///     scheduler.MarkComplete(task.Id, result, ...);
 ///
+/// (<c>Run</c> no longer exists: v3.2.0 deleted it together with the last status-from-prose test.
+/// The snippet is left as written, because it is what the defect actually looked like.)
+///
 /// The returned value was never inspected. The only routes to a non-complete status were a thrown
 /// exception, a wall-clock timeout, or a pre-execution runtime denial — so an ant reporting
 /// <c>failed_retryable</c> was recorded as a completed task. Combined with the Director treating

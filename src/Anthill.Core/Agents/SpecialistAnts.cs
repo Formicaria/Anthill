@@ -104,8 +104,6 @@ public sealed class UiCartographerAnt : BaseAnt
         return result;
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -173,8 +171,6 @@ public sealed class TesterAnt : BaseAnt
         return result;
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -241,8 +237,6 @@ public sealed class SoldierAnt : BaseAnt
         return soldierResult;
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 }
 
 /// <summary>
@@ -332,8 +326,6 @@ public sealed class ScribeAnt : BaseAnt
         return result;
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     private static string Truncate(string s) => s.Length <= 160 ? s : s[..160] + "…";
 }
@@ -435,8 +427,6 @@ public sealed class MedicAnt : BaseAnt
         };
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     internal static (Contracts.FailureClass, string, string) Classify(string text)
     {
@@ -540,8 +530,6 @@ public sealed class ArchivistAnt : BaseAnt
         };
     }
 
-    /// <summary>Operator-facing text only. Status comes from <see cref="Execute"/>.</summary>
-    public override string Run(Task task, Mission mission) => Execute(task, mission).Summary;
 
     private static Dictionary<string, object?> Candidate(string cls, string summary, Mission m, string outcome, string confidence) => new()
     {
