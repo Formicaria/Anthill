@@ -1,4 +1,5 @@
 using Anthill.Core.Domain;
+using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
 using Xunit;
 
@@ -15,34 +16,48 @@ public class AnswerSynthesisTests
     private static Mission M(string goal = "do the thing", MissionStatus status = MissionStatus.Complete)
         => new() { Goal = goal, Status = status };
 
+    /// <summary>A successful synthesis call carrying the given content.</summary>
+    private static ModelCallResult Ok(string content) => new(ModelCallOutcome.Ok, content);
+
     [Fact]
     public void NullOrEmptySynthesis_FallsBackToTheRawAnswer()
     {
-        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", null));
-        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", ""));
-        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "   \n  "));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", null));               // never called
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", Ok("")));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", Ok("   \n  ")));
     }
 
     /// <summary>ModelRouter reports failure in-band as an "ERROR:" string rather than throwing.</summary>
     [Fact]
     public void ErrorResponse_FallsBackToTheRawAnswer()
     {
-        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "ERROR: ollama temporarily unavailable"));
-        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw", "ERROR: Model routing requested Ollama, but USE_OLLAMA is False."));
+        // v3.2.0: a failed call is now expressed as a STATUS, not as prose that happens to start
+        // with "ERROR:". Each of these previously relied on the prefix; they now rely on the
+        // provider having said what went wrong.
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw",
+            new ModelCallResult(ModelCallOutcome.ConnectError, "ERROR: ollama temporarily unavailable")));
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw",
+            new ModelCallResult(ModelCallOutcome.Error, "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.")));
+        // And the case the prefix test could never catch: a provider that answered with nothing.
+        Assert.Equal("raw", ResultAssembler.SelectFinalAnswer("raw",
+            new ModelCallResult(ModelCallOutcome.Empty, "Ollama returned an empty response.")));
     }
 
     [Fact]
     public void GoodSynthesis_IsUsed_AndTrimmed()
     {
-        Assert.Equal("The backup job finished.", ResultAssembler.SelectFinalAnswer("raw", "  The backup job finished.\n "));
+        Assert.Equal("The backup job finished.", ResultAssembler.SelectFinalAnswer("raw", Ok("  The backup job finished.\n ")));
     }
 
     /// <summary>A message that merely mentions an error is still a real answer.</summary>
     [Fact]
     public void AnswerDescribingAnError_IsNotMistakenForAFailedCall()
     {
-        const string answer = "The mission failed: the ERROR: prefix only counts at the start.";
-        Assert.Equal(answer, ResultAssembler.SelectFinalAnswer("raw", answer));
+        // This test is stronger than it was. Under the prefix rule it proved only that "ERROR:"
+        // mid-string was tolerated. Now it proves content is not inspected AT ALL: a successful
+        // call is used verbatim however much it talks about errors.
+        const string answer = "The mission failed: ERROR: appears here and must not matter.";
+        Assert.Equal(answer, ResultAssembler.SelectFinalAnswer("raw", Ok(answer)));
     }
 
     /// <summary>
