@@ -16,15 +16,34 @@ namespace Anthill.Tests;
 ///
 /// These tests pin the contract itself: that an outcome is DECLARED, never inferred from the
 /// absence of an exception. The task-status mapping that consumes it is Stage 3.
+///
+/// v3.2.0 (phase, increment 3) — WHAT WAS RETIRED FROM THIS FILE, and why it is not a loss of
+/// coverage:
+///
+/// Three tests here drove <c>BaseAnt</c>'s text-classifying fallback through a stub that only
+/// implemented <c>string Run</c>: an "ERROR:" prefix became a retryable provider failure, and empty
+/// output became a permanent one. That fallback is deleted — <c>Execute</c> is abstract and every
+/// ant implements it — so those tests could no longer compile, and rewriting them against the
+/// deleted code path would have been inventing a subject for them.
+///
+/// The behaviours they protected did not disappear, they MOVED, and each is covered where it now
+/// lives: provider failure is classified from <see cref="Anthill.Core.Models.ModelCallResult"/> at
+/// the call site (ModelCallOutcome tests, and each ant's own tests), and an empty model response is
+/// rejected by the ant that made the call — which is what lets the researcher degrade to local
+/// context while the coder fails outright, a distinction one shared fallback could not draw.
 /// </summary>
 public class AntStructuredResultTests
 {
-    /// <summary>A text-producing ant whose output the test controls.</summary>
+    /// <summary>
+    /// A text-producing ant, shaped like the six that produce prose as their artifact: it declares
+    /// success itself and uses the shared <c>TextResult</c> helper to wrap the output.
+    /// </summary>
     private sealed class StubAnt : BaseAnt
     {
         private readonly Func<string> _produce;
         public StubAnt(string name, Func<string> produce) : base(name) => _produce = produce;
-        public override string Run(DomainTask task, Mission mission) => _produce();
+        public override AntExecutionResult Execute(DomainTask task, Mission mission)
+            => TextResult(Name, _produce());
     }
 
     /// <summary>A specialist-shaped ant that declares its own structured outcome.</summary>
@@ -32,7 +51,6 @@ public class AntStructuredResultTests
     {
         private readonly AntExecutionResult _result;
         public StructuredAnt(string name, AntExecutionResult result) : base(name) => _result = result;
-        public override string Run(DomainTask task, Mission mission) => _result.Summary;
         public override AntExecutionResult Execute(DomainTask task, Mission mission) => _result;
     }
 
@@ -57,59 +75,40 @@ public class AntStructuredResultTests
     }
 
     /// <summary>
-    /// ModelRouter reports provider failure in-band as an "ERROR:" string rather than throwing.
-    /// Before v2.19.0 that string became the task result and the task was marked complete.
+    /// No ant may recover a status by reading the text of a result.
+    ///
+    /// This replaces two tests that drove an "ERROR:" prefix through the deleted fallback. Asserting
+    /// on the source is the honest form now: the property is not "this string classifies that way",
+    /// it is that NOTHING in the colony classifies a string that way any more. A future ant that
+    /// reintroduced the shortcut would pass any behavioural test written against its own output.
     /// </summary>
     [Fact]
-    public void InBandModelError_IsAFailure_NotASuccessfulTextResult()
+    public void NoAntInfersStatusFromAnErrorPrefix()
     {
-        var (task, mission) = Fixture();
-        var result = new StubAnt("coder", () => "ERROR: ollama temporarily unavailable").Execute(task, mission);
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Anthill.sln"))) dir = dir.Parent;
+        var agents = Path.Combine(dir!.FullName, "src", "Anthill.Core", "Agents");
 
-        Assert.False(result.Success);
-        Assert.NotNull(result.Failure);
-        Assert.Contains("routed model call failed", result.Summary);
+        foreach (var file in Directory.GetFiles(agents, "*.cs"))
+        {
+            var src = File.ReadAllText(file);
+            Assert.DoesNotContain("StartsWith(\"ERROR:\")", src);
+        }
     }
 
     /// <summary>
-    /// A provider being briefly unreachable must be RETRYABLE. FailureClassify.IsRetryable covers
-    /// only TransientProviderFailure / RateLimit / Timeout / Conflict — classifying this as
-    /// DependencyFailure (the intuitive choice) would yield failed_permanent and forbid the retry
-    /// that would most likely succeed.
+    /// A null narrative must not crash the wrapper. Empty-output REJECTION now belongs to each ant —
+    /// the researcher and builder reject an empty model response themselves, which is what lets one
+    /// degrade to local context while another fails — so what is pinned here is only that the shared
+    /// helper survives the degenerate input rather than throwing inside it.
     /// </summary>
     [Fact]
-    public void InBandModelError_IsClassifiedRetryable()
-    {
-        var (task, mission) = Fixture();
-        var result = new StubAnt("verifier", () => "ERROR: connection refused").Execute(task, mission);
-
-        Assert.Equal("failed_retryable", result.StatusCode);
-        Assert.Equal(FailureClass.TransientProviderFailure, result.Failure!.Class);
-        Assert.True(result.Failure.Retryable);
-        Assert.True(FailureClassify.IsRetryable(result.Failure.Class));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("\n\t  \n")]
-    public void EmptyOutput_IsAPermanentFailure_NotAnEmptySuccess(string produced)
-    {
-        var (task, mission) = Fixture();
-        var result = new StubAnt("builder", () => produced).Execute(task, mission);
-
-        Assert.False(result.Success);
-        Assert.Equal("failed_permanent", result.StatusCode);
-        Assert.Equal(FailureClass.InternalDefect, result.Failure!.Class);
-        Assert.False(result.Failure.Retryable);
-    }
-
-    [Fact]
-    public void NullOutput_IsHandledAsEmpty_NotAsACrash()
+    public void NullOutput_IsHandledAsEmptyText_NotAsACrash()
     {
         var (task, mission) = Fixture();
         var result = new StubAnt("file", () => null!).Execute(task, mission);
-        Assert.Equal("failed_permanent", result.StatusCode);
+        Assert.Equal("", result.Narrative);
+        Assert.Equal(0, result.Metrics.OutputChars);
     }
 
     /// <summary>
