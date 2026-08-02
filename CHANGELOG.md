@@ -1,5 +1,69 @@
 # ANTHILL Changelog
 
+## v3.2.0 — Dashboard redesign, typed model results, and the composer fix
+
+> **Read this before upgrading unattended.** Despite arriving as a minor release, this replaces the
+> dashboard layout engine outright. **Every saved dashboard arrangement is reset** — panel
+> positions, sizes, tab groups and docking are gone, the floating workspace is deleted, and there
+> is no kill switch to return to it. Nothing else about your colony changes: schema 16 is
+> untouched, missions, memory, skills and ant customisation are all unaffected.
+
+Three tracks, released together.
+
+### New Features
+
+- **Responsive dashboard grid.** The console is a CSS Grid of widgets instead of absolutely
+  positioned frames layered over the colony canvas. The Colony is now a first-class widget at the
+  visual centre of the layout rather than the page background.
+- **Widget framework** (`dashboard-grid.js`): every widget gets a title, icon, loading / empty /
+  error state, and a refresh control. A widget whose renderer throws fails ALONE, in its own cell —
+  on a console meant to be left open all day, one bad renderer must not blank the dashboard.
+- **Mission Composer is reachable again.** Its controls — the execution mode selector and the plan
+  REVIEW step — had no reachable path in the shipping console since v2.15.0.
+
+### Improvements
+
+- **Widget spans are proportionally invariant**: small = 1/4 of a row, medium = 1/3, large = 1/2,
+  colony = full, at every width above 901px. A layout that tiles at one resolution tiles at all of
+  them. Measured live at 1366 and 1920: 17 widgets, 6 rows, **100% row occupancy**, zero overlaps,
+  zero off-screen widgets, no page-level horizontal scroll.
+- **Typed model provider results.** `IModelClient.Generate` returns a `ModelCallResult` whose status
+  is set where it is KNOWN. Previously every client formatted what it knew — a 404, a refused
+  connection, a cancelled token — into prose, and a classifier recovered it downstream by substring
+  match. Rewording one message would have silently reclassified the fault and stopped the circuit
+  breaker tripping, with nothing failing to show it.
+- The floating workspace is deleted: `dashboard-workspace.js`, its stylesheet, its state plumbing
+  in the page, and 43 tests specific to it. `src/Anthill.Api/Ui/` is four files.
+
+### Bug Fixes
+
+- **An empty model response counted as success.** It never began with `ERROR:`, so every prefix test
+  passed it: the planner handed it to the JSON parser as a plan, the strategist treated it as a
+  strategy, the coder cached it as a patch set, `ModelRouter` REINFORCED the route's pheromone trail
+  and logged `success:true`, and provider verification recorded a provider that answered with
+  nothing as VERIFIED. All now decided by status.
+- **The plan preview showed a plan that would not run** — it skipped the authorization gate, in the
+  one surface whose entire purpose is saying what is about to happen.
+- **The release guard blocked its own documented recovery.** `.githooks/pre-push` rejected tag
+  DELETIONS, which is exactly what `scripts/release.sh` prints as the way to retract a mis-tagged
+  release.
+- Widget bodies no longer scroll sideways on a long unbroken identifier, and no longer break
+  ordinary words mid-token.
+
+### Breaking Changes
+
+- **Saved dashboard layouts are reset.** Old workspace rows remain in the database, unread. There is
+  no path back — the kill switch was removed with the engine.
+- `POST /missions/plan` gains `blocked` / `blocked_reason` per step (additive; nothing removed).
+- Internal C# signatures changed (`IModelClient.Generate`, `ModelRouter.GenerateTyped`,
+  `ResultAssembler.SelectFinalAnswer`). Not a supported extension surface, but anything compiled
+  against `Anthill.Core` needs updating.
+
+### Upgrade Notes
+
+Drop-in apart from the layout reset. No migration, no configuration change. Schema 16 unchanged, so
+rolling back to the previous binary restores the old console and its saved layouts intact.
+
 ## v3.1.1 — The Mission Composer was unreachable
 
 A UI reachability defect found while verifying v3.1.0's plan-preview fix in a live console: the
