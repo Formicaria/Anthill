@@ -586,6 +586,138 @@ public class UiShellTests
     /// renderers, which is exactly why it needs a guard rather than a reviewer.
     /// </summary>
     [Fact]
+    public void ResizedWidths_AreStoredAsAProportion_NotAColumnCount()
+    {
+        var js = Ui("dashboard-grid.js");
+
+        // The grid has 12 columns on desktop and 24 on an ultrawide, so a stored COUNT would mean
+        // half the dashboard in one and a quarter of it in the other. The fraction is re-resolved
+        // against the current column count on every render.
+        var setter = BodyOf(js, "G.setSpanFraction = function");
+        Assert.NotEqual("", setter);
+        Assert.Contains("/ cols", setter);
+        Assert.Contains("columnCount()", setter);
+
+        // and the inline pixel width the browser's resize grip writes must be handed back to the
+        // grid, or the widget stays frozen at one breakpoint's measurement
+        var snap = BodyOf(js, "function snapToGrid");
+        Assert.NotEqual("", snap);
+        Assert.Contains("w.style.width = ''", snap);
+    }
+
+    /// <summary>
+    /// Hiding a widget must not throw the operator back to the top of the dashboard.
+    ///
+    /// render() used to append every widget in order. Appending relocates a node to the end, so the
+    /// content height collapsed and regrew mid-loop and the scroller clamped to zero — dismissing
+    /// one widget near the bottom of a long console scrolled you back to the first row. Widgets are
+    /// now moved only when their position actually changes, and the scroll position is restored.
+    /// </summary>
+    [Fact]
+    public void Rerender_PreservesScrollPosition_AndMovesOnlyWhatMoved()
+    {
+        var body = BodyOf(Ui("dashboard-grid.js"), "G.render = function");
+        Assert.NotEqual("", body);
+        Assert.Contains("scrollTop", body);                 // captured and restored
+        Assert.Contains("insertBefore", body);              // positional, not wholesale append
+        Assert.DoesNotContain("rootEl.appendChild(f.widget)", body);
+    }
+
+    /// <summary>
+    /// A first-run console opens on a curated view, and a saved layout always wins over it.
+    ///
+    /// The test that matters is the second half: an operator who deliberately turns every widget on
+    /// has a layout that hides nothing, and a default applied by "does this look empty?" would
+    /// silently re-hide them on the next visit. Presence of the saved document is the only safe
+    /// signal.
+    /// </summary>
+    [Fact]
+    public void FirstRunGetsTheDefaultView_ButASavedLayoutAlwaysWins()
+    {
+        var app = Ui("app.js");
+        Assert.Contains("DEFAULT_DASHBOARD_VIEW", app);
+        Assert.Contains("applyLayout(saved || DEFAULT_DASHBOARD_VIEW)", app);
+
+        // Every hidden-by-default widget must still be registered, or it is unreachable rather
+        // than merely off: the Widgets menu can only list what the grid knows about.
+        var view = Regex.Match(app, @"var DEFAULT_DASHBOARD_VIEW = \{.*?\n\};", RegexOptions.Singleline).Value;
+        Assert.NotEqual("", view);
+        foreach (Match m in Regex.Matches(view, @"'([a-z-]+)':\s*true"))
+            Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
+    }
+
+    /// <summary>
+    /// A resize must snap when the drag ENDS, never on a timer while it is still happening.
+    ///
+    /// The first implementation debounced off size changes. Pausing mid-drag with the grip still
+    /// held fired the snap: the inline width was cleared underneath the operator, the browser
+    /// carried on resizing from the width it still believed in, and the widget fought the cursor
+    /// and settled on the wrong size. The end of a drag is a real event and is waited for, rather
+    /// than inferred from a gap in a stream of them.
+    /// </summary>
+    [Fact]
+    public void ResizeSnaps_OnPointerRelease_NotOnATimer()
+    {
+        var body = BodyOf(Ui("dashboard-grid.js"), "function watchResize");
+        Assert.NotEqual("", body);
+        Assert.Contains("mouseup", body);
+        Assert.DoesNotContain("setTimeout", body);
+        Assert.DoesNotContain("ResizeObserver", body);
+    }
+
+    /// <summary>
+    /// An operator-set height must survive the content-fit pass.
+    ///
+    /// markQuiet() writes min-height from measured content and runs on a 4s timer. Without an
+    /// explicit opt-out it undoes every resize seconds after it was made — a defect that presents
+    /// as the feature "not saving" and sends you hunting in the persistence layer.
+    /// </summary>
+    [Fact]
+    public void OperatorSetHeight_IsNotOverwrittenByAutoFit()
+    {
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("data-user-h", BodyOf(js, "function applySize"));
+        Assert.Contains("hasAttribute('data-user-h')", BodyOf(js, "function markQuiet()"));
+    }
+
+    /// <summary>
+    /// Dragging must not be the only way to rearrange the dashboard.
+    ///
+    /// Carried from the workspace, which established the rule: a pointer-only affordance is
+    /// unreachable by keyboard and by anyone who cannot drag accurately.
+    /// </summary>
+    [Fact]
+    public void DragIsNotTheOnlyPathToRearrange()
+    {
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("G.move = function", js);          // the arrow buttons
+        Assert.Contains("G.setHidden = function", js);     // the widget menu
+        Assert.Contains("G.resetLayout = function", js);   // the way back
+        Assert.Contains("'dragstart'", js);                // and drag, alongside them
+    }
+
+    /// <summary>
+    /// Size overrides loaded from storage must be validated, not trusted. They arrive from a
+    /// document that could be old, hand-edited, or written by another release, and a span of 0 or
+    /// NaN silently breaks the row it lands in.
+    /// </summary>
+    [Fact]
+    public void SizeOverridesFromStorage_AreSanitized()
+    {
+        var js = Ui("dashboard-grid.js");
+        var apply = BodyOf(js, "G.applyLayout = function");
+        Assert.Contains("sanitizeSizes(saved.spans", apply);
+        Assert.Contains("sanitizeSizes(saved.heights", apply);
+
+        var san = BodyOf(js, "function sanitizeSizes");
+        Assert.Contains("typeof v === 'number'", san);
+        Assert.Contains("isFinite(v)", san);
+    }
+
+    /// <summary>
+    /// Adopted widgets must carry the class an element's styles are scoped to.
+    /// </summary>
+    [Fact]
     public void AdoptedWidgets_KeepTheClassTheirStylesAreScopedTo()
     {
         var appJs = Ui("app.js");

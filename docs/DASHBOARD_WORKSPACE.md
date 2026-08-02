@@ -16,6 +16,13 @@ gate passes.
 > the historical record of why those mechanisms existed — several of their lessons were ported into
 > the grid's guards. See `docs/DASHBOARD_GRID_MIGRATION.md` for what replaced it.
 >
+> **v3.2.1 returns direct manipulation, on the grid's terms.** Widgets are dragged to position and
+> resized from their corner again — but by reordering a flow, not by placing panels on a plane.
+> There are no coordinates, no z-order and no docking, so the failure modes this document catalogs
+> (overlap, clipping, panels stranded off-screen) cannot recur: a widget's position is its index in
+> a list and its width is a proportion of the row. The one mechanism deliberately not restored is
+> free x/y placement, which is what made all three of those failures possible.
+>
 > v3.1.1 note: the Mission Composer is now a workspace panel (`mission-composer`). It had been
 > reachable only on the classic overview grid, which this workspace hides — so the plan-preview
 > review step had no control in the default console from v2.15.0 until this release.

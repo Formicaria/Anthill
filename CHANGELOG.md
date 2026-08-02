@@ -1,5 +1,24 @@
 # ANTHILL Changelog
 
+## v3.2.1 — Direct manipulation: drag to arrange, corner to size
+
+The dashboard is arranged by hand now, not by buttons. In **Customise** mode every widget can be
+dragged to a new position and resized from its bottom-right corner; the grid reflows around it.
+
+- **Drag to arrange.** A coloured edge shows where the drop will land. Uses the native
+  drag-and-drop API rather than a cursor-following clone, because a clone is a layer stacked over
+  the grid and this layout deliberately has no stacking order. The arrow buttons remain — dragging
+  must never be the only path to a feature.
+- **Corner resize.** Width snaps to whole grid columns; height is free pixels. The browser's own
+  `resize` grip is used, so no absolute positioning is introduced.
+- **Sizes are stored as a proportion, not a pixel width.** A widget set to half the dashboard stays
+  half the dashboard at every window size. Storing a column count would make it a quarter of the
+  screen on an ultrawide, where the grid has 24 tracks rather than 12.
+- **An operator-set height wins over auto-fit.** The content-fit pass that keeps idle cards small
+  runs on a timer, and would otherwise have undone every resize a few seconds after it was made.
+- Layout — order, hidden widgets, spans and heights — persists through the existing single
+  `ui_state` writer. Values that are not sane numbers are dropped on load rather than trusted.
+
 ## v3.2.0 — Dashboard redesign, typed model results, and the composer fix
 
 > **Read this before upgrading unattended.** Despite arriving as a minor release, this replaces the
