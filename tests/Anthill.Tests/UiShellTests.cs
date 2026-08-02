@@ -622,5 +622,10 @@ public class UiShellTests
         Assert.True(reset >= 0, "markQuiet must clear the inline floor before measuring");
         Assert.True(measure > reset, "measurement must happen after the floor is cleared");
         Assert.True(write > measure, "the computed floor must be written after measurement");
+
+        // The standard height is a ceiling: a widget with MORE content than the floor must fall
+        // back to the CSS floor and scroll, never grow the page to fit a long list.
+        Assert.Contains("--dg-widget-h", body);
+        Assert.Contains("desired < cap", body);
     }
 }

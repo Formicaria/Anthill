@@ -180,11 +180,17 @@
   }
 
   /**
-   * Mark widgets that have nothing to say, so they stop occupying a full card.
+   * Size every widget to its content, so no card holds more empty space than it needs.
    *
    * Measured, not inferred. Most "No jobs yet." messages come from the app's OWN renderers inside
    * adopted nodes, not from this framework's empty state — so asking "did I render a placeholder"
    * misses almost every case that matters. Actual content height is the only signal that sees both.
+   *
+   * This started as an empty-card fix and became a general one, because the screenshot showed the
+   * real cause: a populated widget with 140px of content was also holding a 230px card, so the
+   * FLOOR was padding the rows, not the idle widgets stretching them. Fitting every widget to its
+   * content took ~11% off the dashboard's height. Grid rows still take the tallest card in the row,
+   * which keeps bottoms aligned — ragged rows read as broken rather than dense.
    *
    * Runs after layout (rAF) because content height is meaningless before the browser has laid the
    * grid out.
@@ -227,16 +233,21 @@
           });
         }
 
-        var quiet = content > 0 && content < QUIET_BELOW_PX;
-        w.classList.toggle('dg-quiet', quiet);
-        if (!quiet) return;
+        if (content <= 0) return;
+        w.classList.toggle('dg-quiet', content < QUIET_BELOW_PX);
 
         var head = w.querySelector('.dg-head');
         var cs = getComputedStyle(body);
         var pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
         var borders = w.offsetHeight - w.clientHeight;
         var headH = head ? head.getBoundingClientRect().height : 0;
-        w.style.minHeight = Math.ceil(headH + content + pad + borders) + 'px';
+        var desired = headH + content + pad + borders;
+
+        // The standard height is a CEILING, not a target. Below it, the card fits its content —
+        // which is what makes rows tight. At or above it, the inline floor is left off so the CSS
+        // floor applies and the body scrolls: a widget must never grow the page to fit a long list.
+        var cap = parseFloat(getComputedStyle(w).getPropertyValue('--dg-widget-h')) || 0;
+        if (cap && desired < cap) w.style.minHeight = Math.ceil(desired) + 'px';
       });
     });
   }

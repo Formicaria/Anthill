@@ -94,8 +94,13 @@
    its 34px minimum while the row around it grew. Stretch does the work. */
 .dg-widget #ov-composer-body { display: flex; flex-direction: column; min-height: 100%; }
 .dg-widget #ov-composer-body .mn-prompt { flex: 1 1 auto; align-items: stretch; }
-.dg-widget #ov-composer-body .mn-prefix,
-.dg-widget #ov-composer-body .mn-send { align-self: center; }
+/* Once the field grows past one line, centring the prompt breaks the line it belongs to: the
+   `ANTHILL_CORE >` prefix floated to the middle of the box while the text it introduces stayed at
+   the top, so nothing lined up. The prefix belongs on the first line of the directive — the 8px
+   matches the textarea's own padding-top, which is what puts them on the same baseline.
+   The dispatch button goes to the bottom corner, where a growing composer expects it. */
+.dg-widget #ov-composer-body .mn-prefix { align-self: flex-start; margin-top: 8px; }
+.dg-widget #ov-composer-body .mn-send { align-self: flex-end; }
 /* The card bounds the field now, so the old max-height would just cap it below the space it has;
    overflowing text scrolls inside the field as before. */
 .dg-widget #ov-composer-body #ov-mission-input { max-height: none; }
