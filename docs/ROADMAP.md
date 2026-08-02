@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.2.0 — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
+**Latest:** v3.2.1 — dashboard direct manipulation: widgets are dragged to position and resized from their corner, with widths stored as a proportion of the row so an arrangement means the same thing at every window size. Preceded by v3.2.0 (dashboard redesign + typed model results) — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 

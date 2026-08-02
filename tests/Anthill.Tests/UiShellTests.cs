@@ -586,6 +586,78 @@ public class UiShellTests
     /// renderers, which is exactly why it needs a guard rather than a reviewer.
     /// </summary>
     [Fact]
+    public void ResizedWidths_AreStoredAsAProportion_NotAColumnCount()
+    {
+        var js = Ui("dashboard-grid.js");
+
+        // The grid has 12 columns on desktop and 24 on an ultrawide, so a stored COUNT would mean
+        // half the dashboard in one and a quarter of it in the other. The fraction is re-resolved
+        // against the current column count on every render.
+        var setter = BodyOf(js, "G.setSpanFraction = function");
+        Assert.NotEqual("", setter);
+        Assert.Contains("/ cols", setter);
+        Assert.Contains("columnCount()", setter);
+
+        // and the inline pixel width the browser's resize grip writes must be handed back to the
+        // grid, or the widget stays frozen at one breakpoint's measurement
+        var snap = BodyOf(js, "function snapToGrid");
+        Assert.NotEqual("", snap);
+        Assert.Contains("w.style.width = ''", snap);
+    }
+
+    /// <summary>
+    /// An operator-set height must survive the content-fit pass.
+    ///
+    /// markQuiet() writes min-height from measured content and runs on a 4s timer. Without an
+    /// explicit opt-out it undoes every resize seconds after it was made — a defect that presents
+    /// as the feature "not saving" and sends you hunting in the persistence layer.
+    /// </summary>
+    [Fact]
+    public void OperatorSetHeight_IsNotOverwrittenByAutoFit()
+    {
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("data-user-h", BodyOf(js, "function applySize"));
+        Assert.Contains("hasAttribute('data-user-h')", BodyOf(js, "function markQuiet()"));
+    }
+
+    /// <summary>
+    /// Dragging must not be the only way to rearrange the dashboard.
+    ///
+    /// Carried from the workspace, which established the rule: a pointer-only affordance is
+    /// unreachable by keyboard and by anyone who cannot drag accurately.
+    /// </summary>
+    [Fact]
+    public void DragIsNotTheOnlyPathToRearrange()
+    {
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("G.move = function", js);          // the arrow buttons
+        Assert.Contains("G.setHidden = function", js);     // the widget menu
+        Assert.Contains("G.resetLayout = function", js);   // the way back
+        Assert.Contains("'dragstart'", js);                // and drag, alongside them
+    }
+
+    /// <summary>
+    /// Size overrides loaded from storage must be validated, not trusted. They arrive from a
+    /// document that could be old, hand-edited, or written by another release, and a span of 0 or
+    /// NaN silently breaks the row it lands in.
+    /// </summary>
+    [Fact]
+    public void SizeOverridesFromStorage_AreSanitized()
+    {
+        var js = Ui("dashboard-grid.js");
+        var apply = BodyOf(js, "G.applyLayout = function");
+        Assert.Contains("sanitizeSizes(saved.spans", apply);
+        Assert.Contains("sanitizeSizes(saved.heights", apply);
+
+        var san = BodyOf(js, "function sanitizeSizes");
+        Assert.Contains("typeof v === 'number'", san);
+        Assert.Contains("isFinite(v)", san);
+    }
+
+    /// <summary>
+    /// Adopted widgets must carry the class an element's styles are scoped to.
+    /// </summary>
+    [Fact]
     public void AdoptedWidgets_KeepTheClassTheirStylesAreScopedTo()
     {
         var appJs = Ui("app.js");
