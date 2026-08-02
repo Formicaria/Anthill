@@ -606,6 +606,66 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// Hiding a widget must not throw the operator back to the top of the dashboard.
+    ///
+    /// render() used to append every widget in order. Appending relocates a node to the end, so the
+    /// content height collapsed and regrew mid-loop and the scroller clamped to zero — dismissing
+    /// one widget near the bottom of a long console scrolled you back to the first row. Widgets are
+    /// now moved only when their position actually changes, and the scroll position is restored.
+    /// </summary>
+    [Fact]
+    public void Rerender_PreservesScrollPosition_AndMovesOnlyWhatMoved()
+    {
+        var body = BodyOf(Ui("dashboard-grid.js"), "G.render = function");
+        Assert.NotEqual("", body);
+        Assert.Contains("scrollTop", body);                 // captured and restored
+        Assert.Contains("insertBefore", body);              // positional, not wholesale append
+        Assert.DoesNotContain("rootEl.appendChild(f.widget)", body);
+    }
+
+    /// <summary>
+    /// A first-run console opens on a curated view, and a saved layout always wins over it.
+    ///
+    /// The test that matters is the second half: an operator who deliberately turns every widget on
+    /// has a layout that hides nothing, and a default applied by "does this look empty?" would
+    /// silently re-hide them on the next visit. Presence of the saved document is the only safe
+    /// signal.
+    /// </summary>
+    [Fact]
+    public void FirstRunGetsTheDefaultView_ButASavedLayoutAlwaysWins()
+    {
+        var app = Ui("app.js");
+        Assert.Contains("DEFAULT_DASHBOARD_VIEW", app);
+        Assert.Contains("applyLayout(saved || DEFAULT_DASHBOARD_VIEW)", app);
+
+        // Every hidden-by-default widget must still be registered, or it is unreachable rather
+        // than merely off: the Widgets menu can only list what the grid knows about.
+        var view = Regex.Match(app, @"var DEFAULT_DASHBOARD_VIEW = \{.*?\n\};", RegexOptions.Singleline).Value;
+        Assert.NotEqual("", view);
+        foreach (Match m in Regex.Matches(view, @"'([a-z-]+)':\s*true"))
+            Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
+    }
+
+    /// <summary>
+    /// A resize must snap when the drag ENDS, never on a timer while it is still happening.
+    ///
+    /// The first implementation debounced off size changes. Pausing mid-drag with the grip still
+    /// held fired the snap: the inline width was cleared underneath the operator, the browser
+    /// carried on resizing from the width it still believed in, and the widget fought the cursor
+    /// and settled on the wrong size. The end of a drag is a real event and is waited for, rather
+    /// than inferred from a gap in a stream of them.
+    /// </summary>
+    [Fact]
+    public void ResizeSnaps_OnPointerRelease_NotOnATimer()
+    {
+        var body = BodyOf(Ui("dashboard-grid.js"), "function watchResize");
+        Assert.NotEqual("", body);
+        Assert.Contains("mouseup", body);
+        Assert.DoesNotContain("setTimeout", body);
+        Assert.DoesNotContain("ResizeObserver", body);
+    }
+
+    /// <summary>
     /// An operator-set height must survive the content-fit pass.
     ///
     /// markQuiet() writes min-height from measured content and runs on a 4s timer. Without an
