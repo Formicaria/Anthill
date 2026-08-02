@@ -530,8 +530,10 @@ public class RegressionGuardTests : IDisposable
             "ws-root", "ws-topology", "ws-topbar", "ws-bottombar",
             "ws-panel-layer", "ws-guides", "ws-snapzones", "ws-modules",
             // v3.3.0: the grid root is created by initDashboardGrid for the same reason — it is
-            // the container the widget framework owns and rewrites, not page markup.
-            "dg-root",
+            // the container the widget framework owns and rewrites, not page markup. The toolbar
+            // beside it is created by the same function and rewritten by renderToolbar on every
+            // layout change, so it is markup no more than the root is.
+            "dg-root", "dg-toolbar",
         };
 
         var declared = Regex.Matches(ui, "id=\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();

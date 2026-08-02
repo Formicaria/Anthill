@@ -1336,6 +1336,12 @@ canvas.addEventListener('dblclick',e=>{
 });
 
 canvas.addEventListener('wheel',e=>{
+  // v3.3.0: the colony is a WIDGET inside a scrolling dashboard now, not the page background.
+  // Swallowing every wheel event used to be free — the workspace page could not scroll — but it
+  // now traps the operator: scrolling down to reach the widgets BELOW the Colony zoomed the map
+  // and the page never moved. Zoom takes a modifier; a plain wheel scrolls the dashboard. This is
+  // the same bargain embedded maps strike on scrolling pages, and for the same reason.
+  if(!(e.ctrlKey||e.metaKey)) return;      // no preventDefault: let the page scroll
   e.preventDefault();
   const cl=getCanvasLocal(e);
   const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
@@ -7232,7 +7238,7 @@ function registerGridWidgets(){
     // for first — that is enough context to sit above the map, and everything else reads after it.
     {id:'colony-vitals',      title:'Colony Vitals',      icon:'\u25b2', size:'large',  body:'ov-vitals-body'},
     {id:'operator-attention', title:'Operator Attention', icon:'\u0021', size:'large',  body:'hud-attn-list'},
-    {id:'mission-composer',   title:'Mission Command',    icon:'\u25b6', size:'large',  body:'ov-composer-body'},
+    {id:'mission-composer',   title:'Mission Command',    icon:'\u25b6', size:'large',  body:'ov-composer-body', cls:'mission-node'},
     {id:'missions',           title:'Active Missions',    icon:'\u26a1', size:'large',  body:'ov2-active-body'},
   ];
 
@@ -7256,7 +7262,7 @@ function registerGridWidgets(){
 
   function reg(d){
     G.register({ id:d.id, title:d.title, icon:d.icon, size:d.size,
-      render:function(el){ gridMountTarget(d.body, el); } });
+      render:function(el){ gridMountTarget(d.body, el, d.cls); } });
   }
 
   above.forEach(reg);
@@ -7279,11 +7285,20 @@ function registerGridWidgets(){
   below.forEach(reg);
 }
 
-/** Re-parent a renderer's own element into a widget body: same node, same id, same writer. */
-function gridMountTarget(bodyId, el){
+/**
+ * Re-parent a renderer's own element into a widget body: same node, same id, same writer.
+ *
+ * `cls` restores a class the element's STYLES were scoped to via an ancestor. Adoption moves a
+ * node out from under that ancestor, so any rule written as `.ancestor .child` silently stops
+ * applying — the markup is intact, the ids are intact, and the element quietly loses its layout.
+ * The Mission Command box is the case that exposed this: every one of its rules is written
+ * `.mission-node ...`, so once adopted, its prompt row was no longer a flex row, the textarea fell
+ * back to its intrinsic width (47% of the card) and the dispatch button collapsed to 8×15px.
+ */
+function gridMountTarget(bodyId, el, cls){
   var existing=document.getElementById(bodyId);
-  if(existing){ el.appendChild(existing); return; }
-  var made=document.createElement('div'); made.id=bodyId; el.appendChild(made);
+  if(existing){ if(cls) existing.classList.add(cls); el.appendChild(existing); return; }
+  var made=document.createElement('div'); made.id=bodyId; if(cls) made.classList.add(cls); el.appendChild(made);
 }
 
 /** Mount the responsive grid as the dashboard. */
@@ -7299,8 +7314,44 @@ function initDashboardGrid(){
   var legacy=document.getElementById('ov2-grid'); if(legacy) legacy.style.display='none';
   page.classList.add('dg-active');
 
+  var bar=document.getElementById('dg-toolbar');
+  // dg-keep at creation, not just in renderToolbar: the element is in the page for a frame before
+  // the grid fills it, and without the class that frame hides it.
+  if(!bar){ bar=document.createElement('div'); bar.id='dg-toolbar'; bar.className='dg-keep'; page.insertBefore(bar, root); }
+
   registerGridWidgets();
+
+  // Persist through the host's SINGLE ui_state writer. app.js and the old workspace once ran
+  // independent debounced read-modify-write cycles against this document and silently discarded
+  // each other's changes; there is one writer now and the grid uses it rather than adding a second.
+  window.AnthillGrid.onLayoutChange=function(layout){
+    if(!window.AnthillUiState) return;
+    window.AnthillUiState.queue(function(doc){ doc.dashboard_grid=layout; });
+  };
+
   window.AnthillGrid.mount(root);
+  window.AnthillGrid.renderToolbar(bar);
+
+  // The data pollers refill widget bodies on their own timers, long after the grid laid out. A
+  // widget that was empty at mount and has rows a second later must stop being treated as quiet —
+  // otherwise the first poll leaves real content squeezed into a collapsed card.
+  var quietTimer=setInterval(function(){
+    if(window.AnthillGrid && typeof window.AnthillGrid.remeasure==='function') window.AnthillGrid.remeasure();
+  }, 4000);
+  window.addEventListener('beforeunload', function(){ clearInterval(quietTimer); });
+
+  // Load the saved arrangement after the first paint: the dashboard must render immediately even
+  // if /ui/state is slow or unreachable, and an unreachable state document must never mean a
+  // blank console.
+  (async function(){
+    try{
+      const r=await api('/ui/state');
+      if(r&&r.success&&r.data&&r.data.dashboard_grid){
+        window.AnthillGrid.applyLayout(r.data.dashboard_grid);
+        window.AnthillGrid.renderToolbar(bar);
+      }
+    }catch(e){ /* keep the defaults */ }
+  })();
 }
 
 /** Mount the workspace on the dashboard when the server says the flag is on. */

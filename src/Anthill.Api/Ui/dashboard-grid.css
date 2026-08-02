@@ -27,6 +27,12 @@
   --dg-span-large: 12;
   --dg-span-colony: 12;
   --dg-colony-h: clamp(340px, 52vh, 620px);
+  /* Every non-Colony widget gets a floor. Without one the grid collapsed to a stack of bare
+     headers: .dg-body is a scroll container with min-height:0, and such a box contributes ZERO to
+     its flex parent's content height, so the widget shrank to its header and the row followed.
+     A floor also gives the dashboard uniform rows, which is what makes a wall of widgets scannable
+     rather than ragged. Content taller than the floor scrolls inside its own card. */
+  --dg-widget-h: 210px;
 
   display: grid;
   grid-template-columns: repeat(var(--dg-cols), minmax(0, 1fr));
@@ -63,7 +69,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;                 /* grid children default to min-content — this is the fix */
-  min-height: 0;
+  min-height: var(--dg-widget-h);
   background: var(--panel, #0d1525);
   border: 1px solid var(--border, #1e3354);
   border-radius: 10px;
@@ -78,6 +84,21 @@
    around it, and never in a tab group or behind another widget. */
 .dg-widget[data-size="colony"] { min-height: var(--dg-colony-h); }
 .dg-widget[data-size="colony"] .dg-body { padding: 0; }   /* the canvas owns its box */
+
+/* Mission Command fills its card.
+   Scoped to .dg-widget so the classic layout is untouched. The directive box is the one control an
+   operator types into, so the card's leftover height belongs to it rather than to dead space under
+   the buttons — 44px of it, before this.
+   `height` is deliberately NOT set on the textarea: an explicit height disables flex stretch, and a
+   percentage against an auto-height parent resolves to auto anyway, so setting it left the field at
+   its 34px minimum while the row around it grew. Stretch does the work. */
+.dg-widget #ov-composer-body { display: flex; flex-direction: column; min-height: 100%; }
+.dg-widget #ov-composer-body .mn-prompt { flex: 1 1 auto; align-items: stretch; }
+.dg-widget #ov-composer-body .mn-prefix,
+.dg-widget #ov-composer-body .mn-send { align-self: center; }
+/* The card bounds the field now, so the old max-height would just cap it below the space it has;
+   overflowing text scrolls inside the field as before. */
+.dg-widget #ov-composer-body #ov-mission-input { max-height: none; }
 
 .dg-head {
   display: flex;
@@ -155,6 +176,7 @@
     --dg-cols: 4; --dg-gap: 10px; --dg-pad: 10px;
     --dg-span-small: 4; --dg-span-medium: 4; --dg-span-large: 4; --dg-span-colony: 4;
     --dg-colony-h: clamp(260px, 42vh, 420px);
+    --dg-widget-h: 170px;
   }
 }
 
@@ -183,7 +205,7 @@
 
 /* 1440p gains breathing room, not a different arrangement. */
 @media (min-width: 1440px) and (max-width: 2199px) {
-  .dg-root { --dg-gap: 16px; --dg-pad: 20px; --dg-colony-h: clamp(380px, 50vh, 660px); }
+  .dg-root { --dg-gap: 16px; --dg-pad: 20px; --dg-colony-h: clamp(380px, 50vh, 660px); --dg-widget-h: 230px; }
 }
 
 /* 4K and ultrawide: 24 columns expressing the SAME fractions (6/8/12 of 24 == 3/4/6 of 12). */
@@ -192,6 +214,7 @@
     --dg-cols: 24; --dg-gap: 18px; --dg-pad: 24px;
     --dg-span-small: 6; --dg-span-medium: 8; --dg-span-large: 12; --dg-span-colony: 24;
     --dg-colony-h: clamp(420px, 46vh, 760px);
+    --dg-widget-h: 250px;
   }
 }
 
@@ -201,3 +224,67 @@
 @media (max-height: 780px) {
   .dg-root { --dg-colony-h: clamp(240px, 38vh, 380px); }
 }
+
+/* ---- customise toolbar ------------------------------------------------------------------
+   Always present, never a hidden gesture. The workspace's lesson: an affordance that can hide
+   things must have a visible, always-reachable way back, or an operator hides a widget and has
+   no route to it. */
+.dg-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 16px 0;
+  max-width: 2560px; margin-inline: auto;
+}
+.dg-tool {
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354);
+  color: var(--anthill-muted, #7f91aa);
+  border-radius: 7px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+}
+.dg-tool:hover { color: var(--anthill-text, #eaf2ff); }
+.dg-tool:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: 1px; }
+.dg-tool[aria-pressed="true"] { color: var(--queen, #fbbf24); border-color: var(--queen, #fbbf24); }
+
+/* The widget picker expands IN FLOW as a second toolbar row, rather than floating over the grid.
+   It was originally a dropdown, positioned out of flow with a stacking order, and two guards
+   rejected it: the grid may declare neither. A layer that can float over other content is the
+   entire failure mode this layout replaced, and a dropdown is the mildest possible version of that
+   — but "mild overlay" is how the last one started.
+
+   In flow it costs one row of vertical shift while open, and buys: no z-order, nothing that can
+   cover the Colony or the mission directive, no clipping at the viewport edge, and no repositioning
+   logic at any breakpoint. */
+.dg-menu {
+  flex: 1 0 100%;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px; padding: 8px;
+  background: var(--panel, #0d1525);
+  border: 1px solid var(--border, #1e3354); border-radius: 8px;
+}
+/* Set by script AND by CSS: an element hidden via the `hidden` property still needs a rule,
+   because anything that sets `display` overrides the UA stylesheet's display:none and stays
+   visible. Correct JavaScript defeated by one line of CSS is what that cost twice before. */
+.dg-menu[hidden] { display: none !important; }
+.dg-menu-row {
+  background: var(--inner, #162440); border: 1px solid var(--border, #1e3354);
+  color: var(--anthill-muted, #7f91aa);
+  text-align: left; padding: 4px 9px; font-size: 11px; cursor: pointer; border-radius: 5px;
+}
+.dg-menu-row:hover { background: var(--inner, #162440); color: var(--anthill-text, #eaf2ff); }
+.dg-menu-row:focus-visible { outline: 2px solid var(--status-info, #36c8ff); outline-offset: -2px; }
+
+/* Unlocked: make it obvious the dashboard is editable rather than merely different. */
+.dg-root.dg-unlocked .dg-widget { border-style: dashed; }
+
+/* A widget with nothing to report earns less room: without this, the height floor turned every idle
+   card — "No jobs yet.", "No approvals pending." — into a 230px void, which is precisely the "large
+   empty cards" this redesign exists to remove.
+
+   There is deliberately NO min-height override here. The exact floor is written as an inline style
+   by markQuiet() in dashboard-grid.js, because the height a quiet card needs depends on content CSS
+   cannot measure. Declaring `min-height: 0` here as well would be actively harmful: before the
+   script runs it would collapse the grid rows to 2px and let cards overlap. Leaving the normal
+   floor in place means the un-scripted state is the safe one, and JS only ever shrinks it.
+
+   The class is still styled here for anything purely visual, so the two files do not fight over
+   who owns the height. */
+.dg-widget.dg-quiet .dg-body { padding-top: 8px; }
