@@ -297,11 +297,29 @@
    snapToGrid() — so nothing stays frozen at one breakpoint's pixel measurement. */
 .dg-widget.dg-resizable { resize: both; }
 
+/* While the corner is held, the height floor is lifted. A widget always carries a min-height —
+   the breakpoint's floor, or the exact content height written by the auto-fit pass — and a browser
+   resizer cannot drag a box below its own min-height. Without this the first drag set a new floor
+   wherever it landed and every later drag could only grow: resizing was one-way, which reads as
+   "it will not resize" once you try to undo an overshoot. */
+.dg-widget.dg-sizing { min-height: 0; }
+
+/* The native resizer is a few near-invisible diagonal lines, and this card has a 10px radius that
+   crops the very corner it is drawn in — so the one affordance the feature depends on was easy to
+   miss entirely. Give it contrast while the dashboard is unlocked. Styling the pseudo-element
+   keeps the browser's own hit area; a decorative overlay would need absolute positioning. */
+.dg-widget.dg-resizable::-webkit-resizer {
+  background: var(--queen, #fbbf24);
+  border-radius: 0 0 9px 0;
+}
+
 /* Drag feedback. Borders and opacity only: a drop indicator that floats above the grid would be a
    stacking layer, and the whole point of this layout is that it has none. */
 .dg-widget.dg-dragging { opacity: .45; }
-.dg-widget.dg-drop-before { border-left: 3px solid var(--queen, #fbbf24); }
-.dg-widget.dg-drop-after { border-right: 3px solid var(--queen, #fbbf24); }
+/* No drop-edge marker: the grid itself reflows during the drag, so the arrangement under the
+   cursor is the arrangement that will be saved. A marker drawn where the widget WILL go leaves the
+   operator to imagine the result, which is the guesswork the live preview removes. */
+.dg-widget.dg-dragging { outline: 2px dashed var(--queen, #fbbf24); outline-offset: -2px; }
 
 /* A widget with nothing to report earns less room: without this, the height floor turned every idle
    card — "No jobs yet.", "No approvals pending." — into a 230px void, which is precisely the "large

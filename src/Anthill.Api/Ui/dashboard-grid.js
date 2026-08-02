@@ -97,7 +97,6 @@
     w.appendChild(head);
     w.appendChild(body);
     fillHead(def, head);
-    if (G._observe) G._observe(w);   // watch for the native corner grip being dragged
     return { widget: w, head: head, body: body };
   }
 
@@ -341,9 +340,23 @@
     return { widget: best, after: x > r.left + r.width / 2 };
   }
 
-  function clearDropMarks() {
-    Array.prototype.forEach.call(G.root.querySelectorAll('.dg-drop-before, .dg-drop-after'),
-      function (w) { w.classList.remove('dg-drop-before', 'dg-drop-after'); });
+  /**
+   * Adopt the on-screen arrangement as the saved one.
+   *
+   * Hidden widgets are not in the DOM, so a straight read of it would drop them from the order and
+   * they would reappear at the end when shown again. They are pinned to the slots they already
+   * occupied and the visible ids are threaded through the gaps between them.
+   */
+  function commitDomOrder() {
+    var domVisible = Array.prototype.map.call(G.root.querySelectorAll('.dg-widget'),
+      function (w) { return w.getAttribute('data-widget-id'); });
+    var i = 0;
+    var merged = effectiveOrder().map(function (id) {
+      return G.isHidden(id) ? id : (domVisible[i++] || id);
+    });
+    G.layout.order = merged;
+    G.persist();
+    G.render();          // re-apply spans/heights and re-fit; the DOM order is already correct
   }
 
   /**
@@ -372,6 +385,13 @@
       var r = w.getBoundingClientRect();
       var inCorner = (r.right - e.clientX) <= RESIZE_CORNER_PX && (r.bottom - e.clientY) <= RESIZE_CORNER_PX;
       w.draggable = !inCorner;
+
+      // Release the height floor for the duration of the drag. A widget carries a min-height —
+      // the breakpoint's floor, or the exact content height written by the auto-fit pass — and the
+      // browser's resizer cannot drag a box below its own min-height. So the first resize worked,
+      // set a new floor at whatever height it landed on, and every attempt after that could only
+      // grow. Resizing was quietly one-way. The floor is restored on release.
+      if (inCorner) w.classList.add('dg-sizing');
     });
 
     rootEl.addEventListener('mouseup', function () {
@@ -388,41 +408,49 @@
       try { e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed = 'move'; } catch (err) { /* older engines */ }
     });
 
+    /**
+     * Live reflow: the grid parts to make room WHILE the drag is happening.
+     *
+     * The dragged widget is physically moved in the DOM on each dragover, so the layout the
+     * operator is looking at IS the layout they will get — the widgets around it shift into their
+     * new places before release, and dropping just commits what is already on screen. This is only
+     * affordable because frames are cached and moved rather than rebuilt: relocating a widget costs
+     * an appendChild and never touches the adopted content inside it.
+     *
+     * An edge marker was the first attempt. It draws a line where the widget WILL go and leaves the
+     * operator to imagine the result, which is precisely the guesswork this replaces.
+     */
     rootEl.addEventListener('dragover', function (e) {
       if (G.layout.locked || !dragId) return;
       e.preventDefault();                       // required, or the browser refuses the drop
       e.dataTransfer.dropEffect = 'move';
+
+      var dragged = rootEl.querySelector('[data-widget-id="' + dragId + '"]');
       var t = dropTargetAt(e.clientX, e.clientY);
-      clearDropMarks();
-      if (t && t.widget.getAttribute('data-widget-id') !== dragId) {
-        t.widget.classList.add(t.after ? 'dg-drop-after' : 'dg-drop-before');
-      }
+      if (!dragged || !t || t.widget === dragged) return;
+
+      // Where the widget should sit relative to the one under the pointer. Re-checked against the
+      // CURRENT DOM every time, so a slow drag across a row does not thrash the layout: if it is
+      // already in that position, nothing moves.
+      var ref = t.after ? t.widget.nextSibling : t.widget;
+      if (ref === dragged) return;                      // already there
+      if (t.after && t.widget.nextSibling === dragged) return;
+      rootEl.insertBefore(dragged, ref);
     });
 
     rootEl.addEventListener('drop', function (e) {
       if (G.layout.locked || !dragId) return;
       e.preventDefault();
-      var t = dropTargetAt(e.clientX, e.clientY);
-      clearDropMarks();
-      if (t) {
-        var targetId = t.widget.getAttribute('data-widget-id');
-        if (targetId !== dragId) {
-          // Dropping on the right half means "after this one", which is "before the one following
-          // it" in a list that is about to have the dragged widget removed from it.
-          var order = effectiveOrder().filter(function (x) { return x !== dragId; });
-          var at = order.indexOf(targetId);
-          var beforeId = t.after ? (order[at + 1] || null) : targetId;
-          G.moveBefore(dragId, beforeId);
-        }
-      }
+      commitDomOrder();                                 // what is on screen is what was asked for
       dragId = null;
     });
 
     rootEl.addEventListener('dragend', function () {
-      clearDropMarks();
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-dragging'),
         function (w) { w.classList.remove('dg-dragging'); });
-      dragId = null;
+      // A cancelled drag (Escape, or a drop outside the grid) never reaches `drop`, and the DOM has
+      // already been rearranged by the live preview. Re-render from the model to put it back.
+      if (dragId) { dragId = null; G.render(); }
     });
   }
 
@@ -435,19 +463,29 @@
    * rhythm, stored as a fraction, and then CLEARED — the grid owns width, the operator owns the
    * proportion. Leaving the inline width in place would freeze the widget at one breakpoint's pixel
    * measurement.
+   *
+   * Snapping happens on RELEASE, not while the pointer is down. It was previously debounced off
+   * size changes, which meant a pause mid-drag fired the snap while the operator was still holding
+   * the grip: the inline width was cleared underneath them, the browser carried on resizing from
+   * the width it still believed in, and the widget fought the cursor and landed on the wrong size.
+   * The end of a drag is a real event, so it is worth waiting for rather than inferring from a
+   * gap in a stream of them.
+   *
+   * Listened for on the document because the pointer is routinely released outside the widget —
+   * and outside the grid — at the end of a resize.
    */
   function watchResize() {
-    if (typeof ResizeObserver !== 'function') return;   // arrows and the menu still work
-    var timer = null;
-    var ro = new ResizeObserver(function (entries) {
-      if (G.layout.locked) return;
-      var touched = entries.map(function (en) { return en.target; })
-        .filter(function (w) { return w.style.width; });   // only a native resize sets inline width
-      if (!touched.length) return;
-      clearTimeout(timer);
-      timer = setTimeout(function () { touched.forEach(snapToGrid); }, 120);
+    document.addEventListener('mouseup', snapAnyResized);
+    document.addEventListener('pointerup', snapAnyResized);
+  }
+
+  function snapAnyResized() {
+    if (!G.root) return;
+    Array.prototype.forEach.call(G.root.querySelectorAll('.dg-sizing, .dg-widget'), function (w) {
+      var sized = w.style.width || w.style.height;          // only a native resize sets these
+      w.classList.remove('dg-sizing');                      // floor comes back either way
+      if (sized && !G.layout.locked) snapToGrid(w);
     });
-    G._observe = function (w) { try { ro.observe(w); } catch (e) { /* detached */ } };
   }
 
   function snapToGrid(w) {
@@ -477,11 +515,26 @@
    * so reordering costs nothing and — critically — never destroys a widget body. A hidden widget's
    * frame is detached but RETAINED, with its adopted content still inside it, so re-showing it is
    * a re-append rather than a re-adoption of a node that no longer exists.
+   *
+   * Widgets are moved ONLY when their position actually changes. Appending every widget in order
+   * was correct but rebuilt the whole sequence on every render: each append relocates a node to the
+   * end, so the content height collapsed and regrew mid-loop and the scroller clamped to the top.
+   * Hiding one widget near the bottom of a long dashboard threw the operator back to the first row.
    */
   G.render = function () {
     var rootEl = G.root;
     if (!rootEl) return;
     rootEl.classList.toggle('dg-unlocked', !G.layout.locked);
+
+    // Restored after the moves. Removing a widget legitimately shortens the page, so the browser
+    // may clamp this to the new maximum — that is fine and still lands the operator where they
+    // were looking, rather than at the top.
+    var scroller = scrollParentOf(rootEl);
+    var keepTop = scroller ? scroller.scrollTop : 0;
+
+    // Walks the existing children alongside the desired order; anything already in position is
+    // left untouched, so a hide or a reorder moves one node instead of seventeen.
+    var cursor = rootEl.firstChild;
 
     effectiveOrder().forEach(function (id) {
       var def = G.widgets[id];
@@ -497,11 +550,26 @@
       // Draggable only while unlocked: a dashboard being read must not move when a click slips.
       f.widget.draggable = !G.layout.locked;
       f.widget.classList.toggle('dg-resizable', !G.layout.locked);
-      if (G.isHidden(id)) { if (f.widget.parentNode) f.widget.parentNode.removeChild(f.widget); }
-      else rootEl.appendChild(f.widget);   // append = move into the right position
+      if (G.isHidden(id)) {
+        if (f.widget.parentNode) f.widget.parentNode.removeChild(f.widget);
+      } else if (f.widget === cursor) {
+        cursor = cursor.nextSibling;       // already in the right place: touch nothing
+      } else {
+        rootEl.insertBefore(f.widget, cursor);
+      }
     });
+    if (scroller) scroller.scrollTop = keepTop;
     markQuiet();
   };
+
+  /** The nearest ancestor that actually scrolls, so a re-render can put it back where it was. */
+  function scrollParentOf(node) {
+    for (var n = node.parentNode; n && n.nodeType === 1; n = n.parentNode) {
+      var oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+    }
+    return null;
+  }
 
   /** Columns in the grid right now. Read from CSS so the breakpoints stay the single source. */
   function columnCount() {
