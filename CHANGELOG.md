@@ -1,5 +1,29 @@
 # ANTHILL Changelog
 
+## v3.6.0 - Repository awareness: ask, do not stuff
+
+An agent answers "where is this handled" from a revision-keyed index by calling a tool, rather than
+having the repository poured into its context.
+
+- **The index is asked for, never injected.** That costs a round trip and buys the thing that
+  matters: the agent decides what it needs, and the context holds an answer rather than a repository.
+- **Stale is detectable, not merely old.** Every entry carries a content hash - an mtime tells you an
+  index is old, it cannot tell you whether the answer would still be true. Staleness is answered per
+  *file*, so a mission editing three files does not discard what the index knows about the rest.
+- **Symbols point rather than pronounce.** Pattern matching, not a compiler: an unusual declaration
+  is missed, a mention in a comment may appear, and every answer says so. A symbol index presented as
+  authoritative gets believed, and an agent told "declared nowhere" stops looking.
+- **References report how far they can be trusted.** A name declared in several places yields
+  mentions that *cannot* be attributed to any of them - and since "what calls this" feeds "what would
+  my change break", the caveat is printed before the list rather than after it.
+- **Incremental on the expensive half.** Every file is still read and hashed, because a cheaper check
+  would be a guess that fails when a tool rewrites a file to the same length; symbol extraction is
+  what gets skipped.
+- **A large repository degrades to inventory-only and says so**, because an empty symbol result has
+  to be distinguishable from "not searched".
+- No indexing path reads outside the workspace - the walk goes through the same guard every file tool
+  uses, so a symlink out of the workspace is refused.
+
 ## v3.5.0 — Mission workspaces: isolated, attributable, reviewable
 
 A code mission now works in a detached git worktree it cannot escape, and its work reaches the
