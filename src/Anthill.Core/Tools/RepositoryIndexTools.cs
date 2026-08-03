@@ -43,6 +43,7 @@ public sealed class RepositoryIndexTool : ITool
          "properties":{
            "name":{"type":"string","description":"Case-insensitive fragment of a file path to match"},
            "language":{"type":"string","description":"Restrict to one language, e.g. csharp, typescript"},
+           "symbol":{"type":"string","description":"Find where a class, function or type is DECLARED"},
            "summary":{"type":"boolean","description":"Return only the language breakdown (default when no filter is given)"}},
          "required":[]}
         """;
@@ -69,11 +70,37 @@ public sealed class RepositoryIndexTool : ITool
 
         var name = args.GetValueOrDefault("name")?.ToString();
         var language = args.GetValueOrDefault("language")?.ToString();
+        var symbol = args.GetValueOrDefault("symbol")?.ToString();
+
+        if (!string.IsNullOrWhiteSpace(symbol))
+        {
+            var found = index.FindSymbol(symbol);
+
+            report.Append("--- declarations matching '").Append(symbol).Append("' (")
+                  .Append(found.Count).Append(") ---\n");
+            foreach (var (path, declaration) in found.Take(MaxListed))
+                report.Append(path).Append(':').Append(declaration.Line).Append(": ")
+                      .Append(declaration.Kind).Append(' ').Append(declaration.Name).Append('\n');
+            if (found.Count > MaxListed)
+                report.Append("…(").Append(found.Count - MaxListed).Append(" more)\n");
+
+            // The honesty line, and it is not decoration. These come from pattern matching, not a
+            // compiler: an agent told "declared nowhere" would stop looking, and one told "these are
+            // all the callers" would change code on the strength of a list that was never complete.
+            // Saying so costs a sentence and prevents a class of confident wrong answer.
+            report.Append("NOTE: found by pattern matching, not by a compiler. These are candidates "
+                        + "to READ, not a complete or authoritative list — a declaration written in "
+                        + "an unusual shape will be missing, and a mention in a comment may appear.\n");
+
+            return new ToolResult(Name, true, report.ToString());
+        }
+
         var summaryOnly = args.GetValueOrDefault("summary") is true or "true" or "True"
                           || (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(language));
 
         if (summaryOnly)
         {
+            report.Append("symbols=").Append(index.SymbolCount).Append('\n');
             report.Append("--- languages ---\n");
             foreach (var (lang, count) in index.LanguageCounts)
                 report.Append(lang).Append(": ").Append(count).Append('\n');
