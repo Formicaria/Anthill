@@ -24,7 +24,7 @@ public sealed record ToolLoopResult(
 }
 
 /// <summary>
-/// v3.4.0 (ADR-003) — the agent loop: ask, run the tools it asks for, feed the results back, repeat.
+/// v3.4.0 (ADR-006) — the agent loop: ask, run the tools it asks for, feed the results back, repeat.
 ///
 /// This is the piece that turns "the colony CAN call tools" into "the colony does work". Everything
 /// under it already existed: the provider seam carries tool schemas and returns typed tool calls,

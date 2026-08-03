@@ -9,7 +9,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.4.0 (ADR-003) — the agent loop: ask, run the tools it asks for, feed the results back, repeat.
+/// v3.4.0 (ADR-006) — the agent loop: ask, run the tools it asks for, feed the results back, repeat.
 ///
 /// Driven by a SCRIPTED send function rather than a live provider, because the situations worth
 /// testing are the ones hardest to provoke on purpose: a model that calls the same tool forever, one

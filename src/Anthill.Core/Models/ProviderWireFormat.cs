@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 namespace Anthill.Core.Models;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — <see cref="ModelRequest"/> projected onto each provider's wire format, and
+/// v3.3.0 (ADR-006) — <see cref="ModelRequest"/> projected onto each provider's wire format, and
 /// their replies read back into <see cref="ModelResponse"/>.
 ///
 /// PURE FUNCTIONS, deliberately. The clients own HTTP — retries, timeouts, the circuit breaker —

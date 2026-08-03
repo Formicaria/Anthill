@@ -18,7 +18,7 @@ public interface ITool
     ToolResult Run(IReadOnlyDictionary<string, object?> args);
 
     /// <summary>
-    /// v3.4.0 (ADR-003): the tool's arguments as a JSON Schema object, for offering it to a model.
+    /// v3.4.0 (ADR-006): the tool's arguments as a JSON Schema object, for offering it to a model.
     ///
     /// A DEFAULT member, so no existing tool breaks and none is forced to describe itself before it
     /// has anything to describe. The default states an object with no declared properties — exactly

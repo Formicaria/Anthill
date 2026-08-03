@@ -14,7 +14,7 @@ using FailureClassify = Anthill.Core.Contracts.FailureClassify;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.4.0 (ADR-003) — the tool result says WHY it failed, typed.
+/// v3.4.0 (ADR-006) — the tool result says WHY it failed, typed.
 ///
 /// The gap this closes: the registry already distinguished "no such tool", "you may not run that"
 /// and "it threw", then flattened all three into one sentence and a false boolean, with

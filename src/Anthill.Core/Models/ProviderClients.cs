@@ -50,7 +50,7 @@ public sealed class OpenAiCompatibleClient : IModelClient
     }
 
     /// <summary>
-    /// v3.3.0 (ADR-003): typed, with the body now built by <see cref="ProviderWireFormat"/>.
+    /// v3.3.0 (ADR-006): typed, with the body now built by <see cref="ProviderWireFormat"/>.
     ///
     /// This is the client the substrate was built for. The hand-rolled anonymous object it replaces
     /// could only ever express a single user message; the projection carries messages, tools, a
@@ -167,7 +167,7 @@ public sealed class AnthropicClient : IModelClient
     }
 
     /// <summary>
-    /// v3.3.0 (ADR-003): typed, with the body built by <see cref="ProviderWireFormat"/>.
+    /// v3.3.0 (ADR-006): typed, with the body built by <see cref="ProviderWireFormat"/>.
     ///
     /// The projection is where Anthropic's two structural differences now live — the system prompt
     /// is a top-level field rather than a message, and tools use `input_schema` rather than
