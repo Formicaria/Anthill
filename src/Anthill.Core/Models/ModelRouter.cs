@@ -50,9 +50,26 @@ public interface IModelClient
 }
 
 /// <summary>
-/// Local Ollama client. Talks to the Ollama HTTP API with bounded retries and turns
-/// transport faults into the sentinel "ERROR:" strings the rest of the colony branches on,
-/// rather than throwing across the ant boundary.
+/// Local Ollama client, speaking OpenAI on the wire.
+///
+/// v3.3.0: this talks to Ollama's OPENAI-COMPATIBLE endpoint (<c>/v1/chat/completions</c>), not the
+/// native <c>/api/generate</c>. One decision, three consequences, and the first is the reason:
+///
+/// 1. <c>/api/generate</c> HAS NO TOOL-CALL CHANNEL. It takes a prompt string and returns a
+///    completion string, so a local model physically cannot ask to run a tool through it. Every
+///    local agent loop, every self-improvement cycle, every "read this file then patch it" is
+///    unreachable on that endpoint — not hard, unreachable. Function-calling local models
+///    (Hermes, Qwen, Llama 3.x) emit OpenAI-shaped <c>tool_calls</c>, and this is where they land.
+/// 2. It collapses a special case rather than adding one. Ollama now shares the exact request
+///    projection, tool schema and response reader with OpenAI, LM Studio, vLLM, llama.cpp and
+///    OpenRouter — so a tool-calling bug is fixed once for every provider, and the tests that
+///    cover the shape cover all of them.
+/// 3. Local stays first-class. No API key, no cost, no cloud round-trip; the only thing that
+///    changed is the dialect it is asked in.
+///
+/// What is deliberately KEPT is the diagnostic that matters most here: a 404 from Ollama nearly
+/// always means the model is not pulled, and saying so — with the exact <c>ollama pull</c> command
+/// — is the difference between a two-second fix and an operator debugging their network.
 /// </summary>
 public sealed class OllamaClient : IModelClient
 {
@@ -81,10 +98,15 @@ public sealed class OllamaClient : IModelClient
     /// </summary>
     public ModelResponse Send(ModelRequest request, int retries = 2)
     {
-        var url = $"{_host}/api/generate";
-        var prompt = Flatten(request);
+        // Ollama's OpenAI-compatible endpoint, not /api/generate. Same body, same tool schema and
+        // same reader as OpenAI, LM Studio, vLLM, llama.cpp and OpenRouter — see the class remarks.
+        var url = ChatEndpoint(_host);
         var model = request.Model ?? _model;
-        var payload = JsonSerializer.Serialize(new { model, prompt, stream = false });
+
+        // Negotiated here as everywhere else: tools go on the wire only if THIS model can use them.
+        var negotiated = ModelCapabilityCatalog.Negotiate(
+            request, ModelCapabilityCatalog.For("ollama", model));
+        var payload = ProviderWireFormat.OpenAiBody(negotiated, model).ToJsonString();
         // The operator-facing prose is unchanged throughout; only the STATUS is now carried
         // alongside it instead of being recoverable from it.
         var lastError = Fail(ModelCallOutcome.Empty, model, "");
@@ -114,20 +136,10 @@ public sealed class OllamaClient : IModelClient
                             $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.");
                 }
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                using var doc = JsonDocument.Parse(body);
-                var output = doc.RootElement.TryGetProperty("response", out var resp) ? resp.GetString()?.Trim() ?? "" : "";
-                return string.IsNullOrEmpty(output)
-                    ? Fail(ModelCallOutcome.Empty, model, "Ollama returned an empty response.")
-                    : new ModelResponse
-                    {
-                        Status = ModelCallOutcome.Ok, Content = output,
-                        Provider = "ollama", Model = model,
-                        // Ollama reports token counts on the response; absent on older builds,
-                        // which is UNKNOWN rather than zero.
-                        Usage = new ModelUsage(
-                            doc.RootElement.TryGetProperty("prompt_eval_count", out var pe) ? pe.GetInt32() : null,
-                            doc.RootElement.TryGetProperty("eval_count", out var ec) ? ec.GetInt32() : null),
-                    };
+                // The same tested reader every OpenAI-compatible provider uses. It recovers tool
+                // calls and usage, which is the entire point of moving off /api/generate: that
+                // endpoint has no tool-call channel, so a local model could never call anything.
+                return ProviderWireFormat.ReadOpenAi(body, "ollama", model);
             }
             catch (HttpRequestException error)
             {
@@ -162,23 +174,28 @@ public sealed class OllamaClient : IModelClient
         new() { Status = status, Content = message, Provider = "ollama", Model = model };
 
     /// <summary>
-    /// Messages to a single prompt for /api/generate. Roles are labelled rather than dropped, so a
-    /// multi-turn request degrades to something the model can still follow instead of silently
-    /// losing who said what. A lone user message — every call the colony makes today — flattens to
-    /// exactly the string that was previously sent, which is what keeps this step behaviour-neutral.
+    /// The chat endpoint for a configured Ollama host, tolerating what operators actually type.
+    ///
+    /// `ollama_host` has always meant the bare host ("http://10.10.10.57:11434") because the native
+    /// API lived at /api/*. Now that the OpenAI-compatible path is used, an operator who knows that
+    /// will reasonably paste "…:11434/v1" — the form every OpenAI client calls a base URL — and
+    /// blindly appending would post to /v1/v1/chat/completions and 404. Both forms are accepted, as
+    /// is a host that already carries the full path.
+    ///
+    /// Public and pure so it is testable without a network call, exactly like
+    /// <c>OpenAiCompatibleClient.NormalizeEndpoint</c>, whose job this is the Ollama-side twin of.
     /// </summary>
-    private static string Flatten(ModelRequest request)
+    public static string ChatEndpoint(string host)
     {
-        if (request.Messages.Count == 1) return request.Messages[0].Content ?? "";
-        var sb = new StringBuilder();
-        foreach (var m in request.Messages)
-        {
-            if (sb.Length > 0) sb.Append("\n\n");
-            if (m.Role != ModelMessage.User) sb.Append(m.Role.ToUpperInvariant()).Append(":\n");
-            sb.Append(m.Content);
-        }
-        return sb.ToString();
+        var trimmed = (host ?? "").Trim().TrimEnd('/');
+        if (trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return trimmed;
+        if (trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) return trimmed + "/chat/completions";
+        return trimmed + "/v1/chat/completions";
     }
+
+    // Flatten() lived here and is deleted with the endpoint that needed it. It squashed a message
+    // list into one prompt string because /api/generate accepted nothing else — a lossy step that
+    // the OpenAI-compatible endpoint makes unnecessary: roles now travel as roles.
 }
 
 /// <summary>Provider placeholders kept for forward-compatible routing config. Each fails closed with a clear message.</summary>
