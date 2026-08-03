@@ -136,6 +136,12 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // dispatched into one. A row left claiming Active by a process that died would otherwise be
         // handed to an agent as a live workspace, and something would wait forever for the agent
         // that row implies is already working in it.
+        // v3.7.0: the conversation runtime gets its production call site here. Without this the
+        // escalation gate is unreachable — ConversationScope.Evaluate returns null when nothing has
+        // entered a scope, so every gate check would silently pass.
+        Conversations = new Anthill.Core.Conversations.ConversationRunner(
+            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token));
+
         Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
         foreach (var note in Workspaces.Recover())
             Console.Error.WriteLine($"[workspace-recovery] {note}");
@@ -189,6 +195,16 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// and one that is unanswerable if the rejection only ever reached stderr.
     /// </summary>
     public IReadOnlyList<ToolRegistration> UserTools { get; private set; } = Array.Empty<ToolRegistration>();
+
+    /// <summary>
+    /// v3.7.0: the conversational surface. Owned here because escalation starts missions, and the
+    /// Queen is what runs a mission — the runner decides WHETHER, this decides what.
+    ///
+    /// Constructed at composition time rather than per request, so the live cancellation registry it
+    /// holds survives between calls. A per-request runner would forget every mission it started the
+    /// moment the request ended, which is the one thing it exists to remember.
+    /// </summary>
+    public Conversations.ConversationRunner Conversations { get; private set; } = null!;
 
     /// <summary>
     /// v3.5.0: disposable, attributable workspaces for code missions. Owned by the Queen because

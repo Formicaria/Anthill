@@ -71,6 +71,10 @@
 .ov2-health{grid-column:span 3;} .ov2-core{grid-column:span 5;} .ov2-active{grid-column:span 4;}
 .ov2-approvals{grid-column:span 4;} .ov2-resources{grid-column:span 4;} .ov2-actions{grid-column:span 4;}
 .ov2-attn{grid-column:span 4;} .ov2-mission{grid-column:span 4;} .ov2-events{grid-column:span 4;}
+/* v3.7.1: Conversations takes its own full-width row. It holds a composer plus rows that each
+   carry their own reply box and approve button, so at span 4 the button and the field wrap onto
+   separate lines — making the one state that needs a fast answer the fiddliest thing to act on. */
+.ov2-conv{grid-column:span 12;}
 #ov2-grid{align-items:stretch;}
 #ov2-grid>.ath-card{min-height:120px;max-height:340px;overflow-y:auto;}
 #ov2-grid>.hud-panel{margin:0;}
@@ -1486,6 +1490,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div class="hud-plan" id="ov-plan" style="display:none"></div>
             </div><!-- /ov-composer-body -->
+          </div>
+
+          <!-- v3.7.1: Conversations. Authored as real markup rather than created on demand by
+               gridMountTarget, for the same reason the composer was in v3.1.1: a body that only
+               ever exists once the grid adopts it is unreachable on the classic overview, and an
+               id that appears nowhere in the markup is an id nothing can be checked against. The
+               header sits OUTSIDE the wrapper because a panel supplies its own. -->
+          <div class="ath-card ov2-conv hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Conversations</span>
+              <span class="hud-hd-sub" id="conv-count"></span></div>
+            <div id="ov-conversations-body"><div class="ov2-empty">Connecting...</div></div><!-- /ov-conversations-body -->
           </div>
 
           <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" data-onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>

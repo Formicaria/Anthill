@@ -14,7 +14,11 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.7.0";
+    public const string Version = "3.7.1";
+    // Stays at 21 until the v3.8.0 tables actually ship. This number is STAMPED into every database
+    // (anthill_meta.schema_version) and reported as expected_schema_version, so releasing 22 from a
+    // build that has no task_attempts table would mark those databases as already migrated — and a
+    // later v3.8.0 upgrade, seeing 22, would skip the migration it needed to run.
     public const int SchemaVersion = 21;   // v3.7.0: conversations persisted (conversations, escalation_decisions)
 
     /// <summary>
