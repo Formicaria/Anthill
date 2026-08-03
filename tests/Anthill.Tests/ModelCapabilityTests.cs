@@ -4,7 +4,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — capability awareness, fail-closed.
+/// v3.3.0 (ADR-006) — capability awareness, fail-closed.
 ///
 /// Nothing in the codebase could express a model capability before this, so the orchestration layer
 /// had to assume every backend behaved identically. That assumption is invisible until it is wrong:
@@ -57,6 +57,81 @@ public class ModelCapabilityTests
     public void UnknownCapabilityNames_AreNotSilentlyGranted()
     {
         Assert.False(ModelCapabilities.Standard.Supports("telepathy"));
+    }
+
+    // ---- discovered capabilities: Ollama reports the truth, the name table only guesses ---------
+
+    /// <summary>
+    /// Three models actually installed on the operator's machine, with the capability arrays Ollama
+    /// itself returns. The declared fragment table was wrong on two of them — it called gemma4
+    /// text-only when Ollama reports tools AND thinking, and granted qwen3-coder a reasoning
+    /// capability Ollama does not claim. Guessing from a model NAME is guessing; the runtime
+    /// holding the weights knows.
+    /// </summary>
+    [Fact]
+    public void OllamaReportedCapabilities_BeatTheNameTable()
+    {
+        var gemma = ModelCapabilities.FromOllama(new[] { "completion", "tools", "thinking" });
+        Assert.True(gemma.ToolCalling);
+        Assert.True(gemma.Reasoning);
+        Assert.False(ModelCapabilityCatalog.For("ollama", "gemma4:31b").ToolCalling,
+            "the name table cannot know this — which is exactly why discovery wins");
+
+        var coder = ModelCapabilities.FromOllama(new[] { "completion", "tools" });
+        Assert.True(coder.ToolCalling);
+        Assert.False(coder.Reasoning);      // NOT claimed by Ollama, so not claimed here
+
+        var plain = ModelCapabilities.FromOllama(new[] { "completion" });
+        Assert.False(plain.ToolCalling);
+        Assert.False(plain.Reasoning);
+    }
+
+    /// <summary>Streaming is a property of the server, and Ollama does not list it per model.</summary>
+    [Fact]
+    public void OllamaAlwaysStreams_EvenForACompletionOnlyModel()
+    {
+        Assert.True(ModelCapabilities.FromOllama(new[] { "completion" }).Streaming);
+    }
+
+    /// <summary>
+    /// Fail closed on the way in too: a capability word a future Ollama adds must not silently
+    /// enable a path we have never tested.
+    /// </summary>
+    [Fact]
+    public void AnUnrecognisedReportedCapability_GrantsNothing()
+    {
+        var caps = ModelCapabilities.FromOllama(new[] { "completion", "telekinesis" });
+        Assert.False(caps.ToolCalling);
+        Assert.False(caps.Vision);
+        Assert.False(caps.Embeddings);
+    }
+
+    [Fact]
+    public void NoReportedCapabilities_IsTextOnly_NotEverything()
+    {
+        var caps = ModelCapabilities.FromOllama(null);
+        Assert.False(caps.ToolCalling);
+        Assert.False(caps.StructuredOutput);
+    }
+
+    // ---- endpoint normalization ----------------------------------------------------------------
+
+    /// <summary>
+    /// `ollama_host` has always meant the bare host, because the native API lived at /api/*. An
+    /// operator who knows the OpenAI-compatible path will reasonably paste ".../v1" — the form every
+    /// OpenAI client calls a base URL — and appending blindly would post to /v1/v1/chat/completions
+    /// and 404.
+    /// </summary>
+    [Theory]
+    [InlineData("http://10.10.10.57:11434")]
+    [InlineData("http://10.10.10.57:11434/")]
+    [InlineData("http://10.10.10.57:11434/v1")]
+    [InlineData("http://10.10.10.57:11434/v1/")]
+    [InlineData("http://10.10.10.57:11434/v1/chat/completions")]
+    public void EveryFormAnOperatorMightType_ResolvesToOneEndpoint(string configured)
+    {
+        Assert.Equal("http://10.10.10.57:11434/v1/chat/completions",
+            OllamaClient.ChatEndpoint(configured));
     }
 
     // ---- negotiation: ask for anything, receive only what can be served ------------------------

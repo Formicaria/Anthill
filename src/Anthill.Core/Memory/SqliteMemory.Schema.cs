@@ -193,6 +193,29 @@ public sealed partial class SqliteMemory : IDisposable
             metrics_json TEXT, recorded_at TEXT NOT NULL,
             FOREIGN KEY (mission_id) REFERENCES missions(id))",
         @"CREATE INDEX IF NOT EXISTS idx_task_results_mission ON task_results(mission_id)",
+        // v3.4.1: operator-defined tools. Name is the primary key because a tool name has exactly
+        // one live meaning — a model calling 'jira_issue' must not have to disambiguate between
+        // three stored versions of it. Disabled rows are KEPT rather than deleted, so an audit can
+        // still explain a transcript in which a since-revoked tool was called.
+        // v3.5.0: mission workspaces. The row OUTLIVES the directory — a cleaned workspace keeps
+        // its record, because "what was this change based on" is asked long after the files are
+        // gone. No foreign key to missions: a workspace can be prepared for a mission id before the
+        // mission row exists, and losing the workspace record to satisfy an ordering constraint
+        // would defeat the attribution this table exists to provide.
+        @"CREATE TABLE IF NOT EXISTS mission_workspaces (
+            id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, root TEXT NOT NULL DEFAULT '',
+            mode TEXT NOT NULL DEFAULT 'worktree', source_root TEXT NOT NULL DEFAULT '',
+            base_revision TEXT NOT NULL DEFAULT '', repository_fingerprint TEXT NOT NULL DEFAULT '',
+            branch TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
+            retained_by TEXT, retain_reason TEXT, note TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_mission_workspaces_mission ON mission_workspaces(mission_id)",
+        @"CREATE TABLE IF NOT EXISTS tool_definitions (
+            name TEXT PRIMARY KEY, description TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL, parameters_json TEXT NOT NULL DEFAULT '{}',
+            config_json TEXT NOT NULL DEFAULT '{}', allowed_roles_json TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT 'operator', created_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS events (
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, task_id TEXT, ant_name TEXT,
             event_type TEXT NOT NULL, message TEXT NOT NULL, metadata_json TEXT,
@@ -420,6 +443,8 @@ public sealed partial class SqliteMemory : IDisposable
             (12, "durable_skills", "V2.12 skills line persisted (skills table) — promotion state now survives restart."),
             (13, "skill_provenance", "tasks.skill_id records which proven procedure a task followed, closing the learning loop."),
             (14, "shadow_qualification", "Shadow recommendations and operator outcomes persisted — qualification can accumulate from live incidents, not only replayed scenarios."),
+            (15, "user_defined_tools", "Operator-defined tools (tool_definitions) persisted — the tool ecosystem outlives the release cycle."),
+            (16, "mission_workspaces", "Mission workspaces (mission_workspaces) persisted with base revision and lifecycle — changes become attributable and survive restart."),
         };
         foreach (var (id, name, description) in migrations)
         {

@@ -11,7 +11,11 @@ using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Planning;
 using Anthill.Core.Readiness;
+using Anthill.Core.Sandbox;   // LoopBudget — the agent loop's bounds
 using Anthill.Core.Security;
+using Anthill.Core.Tools;      // ToolInventory, ToolAuthorization — the /tools report
+// `Task` here is Anthill.Core.Domain.Task (the mission task). The threading one must be named.
+using ThreadingTask = System.Threading.Tasks.Task;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -179,6 +183,16 @@ public static partial class ApiHost
             }
             else Console.Error.WriteLine("--autonomous ignored: set autonomy_enabled=true in config to start the Director.");
         }
+
+        // Learn what the local models can do BEFORE the first agent run asks. The call path reads
+        // this cache and never fetches, so without a warm start the first run would negotiate
+        // against the declared table, strip tools from a tool-capable model, and get an answer
+        // invented instead of looked up. Backgrounded: a sleeping Ollama must not delay startup.
+        _ = ThreadingTask.Run(() =>
+        {
+            try { OllamaCapabilityCache.Warm(AnthillRuntime.OllamaHost); }
+            catch { /* best-effort: the table remains the fallback */ }
+        });
 
         app.Run();
         return 0;
@@ -527,6 +541,126 @@ public static partial class ApiHost
             if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
             if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
             return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+        });
+
+        /*
+         * v3.4.0 (ADR-006) — run one tool-calling conversation and return the whole transcript.
+         *
+         * This is the tool loop's first production call site, and it is deliberately the smallest
+         * one that is honest: an operator asks for something, the agent reasons and calls tools
+         * under its role's authorization, and every step comes back. Missions remain the durable,
+         * scheduled path — this is the direct one, for asking a question and seeing the work.
+         *
+         * SYNCHRONOUS, and bounded because of it. A tool-calling run is several model calls, so it
+         * takes as long as it takes; the LoopBudget caps turns, tool calls and wall-clock, and the
+         * request's own cancellation token aborts it if the operator gives up. Making this
+         * fire-and-forget would need a job record to be worth anything, and that is the mission
+         * path, which already exists.
+         *
+         * run_mission, not read_status: this SPENDS model budget and can invoke tools. Whether a
+         * given tool may run is still the registry's decision, per role.
+         */
+        app.MapPost("/agent/run", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (!MissionLimiter.IsAllowed(ClientIp(ctx)))
+                return ApiJson.Error("Agent run rate limit exceeded. Try again shortly.", "rate_limited");
+
+            AgentRunRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AgentRunRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var goal = (body?.Goal ?? "").Trim();
+            if (goal.Length == 0) return ApiJson.Error("A goal is required.", "bad_request");
+            if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength)
+                return ApiJson.Error("Goal is too long.", "bad_request");
+
+            // The role decides which tools exist for this run, so an unknown one must be refused
+            // rather than defaulted — silently downgrading to some other role's toolset would be a
+            // capability decision made by a typo.
+            var role = string.IsNullOrWhiteSpace(body?.Role) ? "researcher" : body!.Role!.Trim().ToLowerInvariant();
+            if (!AntRegistry.ExecutableRoleIds.Contains(role))
+                return ApiJson.Error($"Unknown or non-executable role '{role}'.", "bad_request");
+
+            var opening = new List<ModelMessage>();
+            if (!string.IsNullOrWhiteSpace(body?.System))
+                opening.Add(new ModelMessage(ModelMessage.System, body!.System!));
+            opening.Add(new ModelMessage(ModelMessage.User, goal));
+
+            var budget = new LoopBudget(
+                MaxTurns: Math.Clamp(body?.MaxTurns ?? 8, 1, 24),
+                MaxToolCalls: Math.Clamp(body?.MaxToolCalls ?? 24, 1, 96));
+
+            /*
+             * An agent run is recorded as a MISSION before it starts, and the reason is not
+             * bookkeeping.
+             *
+             * The first version passed no mission id, and the consequence was worse than untidy:
+             * ModelRouter only writes its model_call event and pheromone update when it HAS one, so
+             * a run spent real model budget, invoked real tools, and left no trace at all — nothing
+             * in /events, no route reinforcement, no token accounting. A run nobody can audit
+             * afterwards is not something an operator should be able to start, and the failure was
+             * invisible precisely because the endpoint's own response looked complete.
+             *
+             * It also has to be a real row rather than a synthetic id: `events` has a foreign key to
+             * missions(id), so a made-up id would be rejected and the logging would silently do
+             * nothing — the same shape of bug one layer down.
+             *
+             * Saved BEFORE the run so the trail exists even if the process dies mid-conversation,
+             * which is exactly when an operator most wants to know what it had already done.
+             */
+            var run = new Mission { Goal = goal, Status = MissionStatus.Running };
+            Queen.Memory.SaveMission(run);
+            Queen.Memory.LogEvent(run.Id, "agent_run_started",
+                $"Agent run started for role {role}.", null, role,
+                new() { ["role"] = role, ["max_turns"] = budget.MaxTurns, ["max_tool_calls"] = budget.MaxToolCalls });
+
+            var result = await ThreadingTask.Run(() => ToolCallingLoop.Run(
+                Queen.Router!, Queen.Tools, role, opening, budget,
+                missionId: run.Id,
+                model: string.IsNullOrWhiteSpace(body?.Model) ? null : body!.Model!.Trim(),
+                cancellationToken: ctx.RequestAborted), ctx.RequestAborted);
+
+            run.Status = result.Completed ? MissionStatus.Complete : MissionStatus.Failed;
+            run.FinalResult = result.Content;
+            // The transcript is the debug record: what it DID, which is the question asked of an
+            // agent run, and the one a final answer alone cannot answer.
+            run.DebugResult = string.Join("\n\n", result.Transcript.Select(m => $"[{m.Role}] {m.Content}"));
+            Queen.Memory.SaveMission(run);
+            Queen.Memory.LogEvent(run.Id, "agent_run_finished",
+                $"Agent run {result.StopReason} after {result.Turns} turn(s), {result.ToolCalls} tool call(s).",
+                null, role,
+                new()
+                {
+                    ["completed"] = result.Completed, ["stop_reason"] = result.StopReason,
+                    ["turns"] = result.Turns, ["tool_calls"] = result.ToolCalls,
+                    ["prompt_tokens"] = result.Usage.PromptTokens,
+                    ["completion_tokens"] = result.Usage.CompletionTokens,
+                });
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                // The run id is returned so an operator can find this conversation again — the
+                // browser losing its state must not lose the record of what the agent did.
+                ["run_id"] = run.Id,
+                ["role"] = role,
+                ["content"] = result.Content,
+                ["completed"] = result.Completed,
+                ["stop_reason"] = result.StopReason,
+                ["turns"] = result.Turns,
+                ["tool_calls"] = result.ToolCalls,
+                ["status"] = result.LastStatus.Name(),
+                // Absent usage stays absent — a provider that reports nothing is unknown, not free.
+                ["prompt_tokens"] = result.Usage.PromptTokens,
+                ["completion_tokens"] = result.Usage.CompletionTokens,
+                // The transcript IS the deliverable: what it did, not just what it concluded.
+                ["transcript"] = result.Transcript.Select(m => new Dictionary<string, object?>
+                {
+                    ["role"] = m.Role,
+                    ["content"] = m.Content,
+                    ["tool_call_id"] = m.ToolCallId,
+                }).ToList(),
+            }, result.Completed ? "Agent run completed." : $"Agent run stopped: {result.StopReason}.");
         });
 
         // v1.8.18 Mission Composer: dry-run the planner for a goal and return the task plan WITHOUT
@@ -1388,7 +1522,7 @@ public static partial class ApiHost
             RequireAuth(ctx, "read_providers") ?? ApiJson.Ok(Queen.Memory.ListProviderConnections()));
 
         /*
-         * v3.3.0 (ADR-003): what each provider/model pair can actually DO.
+         * v3.3.0 (ADR-006): what each provider/model pair can actually DO.
          *
          * Capability is a property of the MODEL, not of the provider that serves it — a tool-capable
          * model on Ollama is tool-capable, and a text-only model on OpenAI is not made tool-capable
@@ -1399,13 +1533,31 @@ public static partial class ApiHost
          * listed" would reasonably assume the page was broken, whereas "text only" is the actual,
          * deliberate, fail-closed answer.
          */
-        app.MapGet("/providers/capabilities", (HttpContext ctx) =>
+        app.MapGet("/providers/capabilities", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_providers"); if (auth is not null) return auth;
+
+            // v3.3.0: DISCOVERED capabilities where the runtime publishes them. Ollama reports a
+            // per-model `capabilities` array on /api/tags, and it is authoritative in a way a name
+            // table can never be: against three real local models the hand-written table was wrong
+            // twice — it called gemma4:31b text-only when Ollama reports tools AND thinking, so the
+            // operator's most capable local model would never have been offered a tool.
+            //
+            // Best-effort by design. An unreachable Ollama must not fail the whole page; the report
+            // falls back to declared capabilities and says which it used, per provider.
+            var discovered = await DiscoverOllamaModelsAsync();
+
+            // Seed the cache the MODEL CALL PATH reads. Before this, discovery informed the report
+            // and nothing else: the page said gemma4:31b supports tools while OllamaClient stripped
+            // them from every request, and the model — never shown a tool — answered from priors.
+            // A page that reports capabilities the runtime does not act on is a lie with a UI.
+            OllamaCapabilityCache.Warm(AnthillRuntime.OllamaHost);
 
             var report = new List<Dictionary<string, object?>>();
             foreach (var p in ProviderCatalog.All)
             {
+                var isOllama = string.Equals(p.Id, "ollama", StringComparison.OrdinalIgnoreCase);
+                var useDiscovered = isOllama && discovered.Count > 0;
                 // A provider whose catalog list is empty does not have "no models" — it has a
                 // DYNAMIC list. Ollama serves whatever the operator has pulled, so the static
                 // catalog cannot enumerate it and the live list comes from /ollama/models. Reporting
@@ -1413,14 +1565,19 @@ public static partial class ApiHost
                 // which is both wrong and the exact case this whole per-model design exists for.
                 var declared = p.Models ?? Array.Empty<string>();
                 var dynamicList = declared.Length == 0;
-                var listed = dynamicList
-                    ? new[] { p.DefaultModel }.Where(m => !string.IsNullOrWhiteSpace(m)).ToArray()
-                    : declared.ToArray();
+                var listed = useDiscovered
+                    ? discovered.Keys.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToArray()
+                    : dynamicList
+                        ? new[] { p.DefaultModel }.Where(m => !string.IsNullOrWhiteSpace(m)).ToArray()
+                        : declared.ToArray();
 
                 var models = new List<Dictionary<string, object?>>();
                 foreach (var model in listed)
                 {
-                    var caps = ModelCapabilityCatalog.For(p.Id, model);
+                    // What the runtime SAYS beats what the name suggests.
+                    var caps = useDiscovered && discovered.TryGetValue(model, out var reported)
+                        ? ModelCapabilities.FromOllama(reported)
+                        : ModelCapabilityCatalog.For(p.Id, model);
                     models.Add(new Dictionary<string, object?>
                     {
                         ["model"] = model,
@@ -1438,9 +1595,11 @@ public static partial class ApiHost
                 {
                     ["provider"] = p.Id,
                     ["name"] = p.Name,
-                    // Stated so the UI can explain a "no tools" model rather than looking wrong:
-                    // capabilities are declared from a table, not probed from the provider.
-                    ["source"] = "declared",
+                    // Per provider, and honest about which it was: "discovered" means the runtime
+                    // itself reported these, "declared" means we inferred them from a name table.
+                    // The UI needs the difference — a declared "no tool calling" is a guess worth
+                    // second-guessing, a discovered one is fact.
+                    ["source"] = useDiscovered ? "discovered" : "declared",
                     // The UI must join this with /ollama/models rather than treating the list as
                     // complete, and it can only know to do that if we say so.
                     ["models_are_dynamic"] = dynamicList,
@@ -1449,6 +1608,250 @@ public static partial class ApiHost
                 });
             }
             return ApiJson.Ok(report);
+        });
+
+        /*
+         * v3.4.0 (ADR-006) — the tool registry, inspectable.
+         *
+         * The harness is tool-centric and the tool inventory was the one thing about it an operator
+         * could not see: which tools exist, what arguments each takes, which roles may call it, and
+         * which declared tools have not been built. All of that lived in three source files that
+         * never compared themselves to each other.
+         *
+         * Authorization is REPORTED BY ASKING THE ENFORCER. Every "may this role use this tool" cell
+         * comes from ToolAuthorization.Evaluate — the same call RunTool makes — rather than from a
+         * copy of its rules. The capability page taught this lesson the hard way: a report derived
+         * independently of the code path it describes will eventually describe something else, and a
+         * page that disagrees with the runtime is worse than no page.
+         *
+         * Schemas come from the tools themselves, so this doubles as the operator's view of exactly
+         * what a model is offered.
+         */
+        app.MapGet("/tools", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            // Roles that can actually dispatch: the mission agents and specialists. Control-plane
+            // identities are omitted because they are permitted everything by design, and a column
+            // of unbroken "yes" tells an operator nothing.
+            var roles = AntExecutionCatalog.Contracts.Keys
+                .Concat(new[] { "researcher", "web", "file", "coder", "builder", "verifier" })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(r => r, StringComparer.Ordinal).ToList();
+
+            var registered = Queen.Tools.Tools.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+            var tools = new List<Dictionary<string, object?>>();
+            foreach (var name in ToolInventory.Implemented.OrderBy(n => n, StringComparer.Ordinal))
+            {
+                // Implemented but not registered means a config gate is off — a real and common
+                // state (file tools disabled), and one an operator needs distinguished from
+                // "this tool does not exist", because the remedies are completely different.
+                registered.TryGetValue(name, out var tool);
+
+                var allowed = roles.Where(r => ToolAuthorization.Evaluate(r, name).Allowed)
+                    .OrderBy(r => r, StringComparer.Ordinal).ToList();
+
+                tools.Add(new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["status"] = tool is not null ? "registered" : "gated_off",
+                    ["description"] = tool?.Description,
+                    ["parameters"] = tool is null ? null : System.Text.Json.Nodes.JsonNode.Parse(tool.ParametersJson),
+                    ["structurally_forbidden"] = ToolAuthorization.MissionAgentForbidden.Contains(name),
+                    ["allowed_roles"] = allowed,
+                });
+            }
+
+            // Declared-but-unbuilt tools are reported as first-class entries, not omitted. A role
+            // allowed only these is authorized to dispatch nothing, and that is precisely the fact
+            // an operator is trying to discover when a specialist ant runs and produces no work.
+            foreach (var name in ToolInventory.Planned.OrderBy(n => n, StringComparer.Ordinal))
+                tools.Add(new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["status"] = "planned",
+                    ["description"] = "Referenced by an ant contract; not implemented in this build.",
+                    ["parameters"] = null,
+                    ["structurally_forbidden"] = false,
+                    ["allowed_roles"] = AntExecutionCatalog.Contracts
+                        .Where(kv => kv.Value.AllowedTools.Contains(name))
+                        .Select(kv => kv.Key).OrderBy(r => r, StringComparer.Ordinal).ToList(),
+                });
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["tools"] = tools,
+                ["roles"] = roles,
+                // Computed on every request rather than stored, so it stops being true the moment a
+                // planned tool ships instead of outliving the problem it describes.
+                ["roles_blocked_by_missing_tools"] =
+                    ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts),
+
+                // v3.4.1: operator-defined tools, INCLUDING the ones this run refused to register.
+                // A rejected definition is the state an operator most needs to see: it is stored, it
+                // is visible in the editor, and it is not callable — which, unreported, looks
+                // exactly like the tool being broken.
+                ["user_tools"] = Queen.Memory.LoadToolDefinitions().Select(d =>
+                {
+                    var outcome = Queen.UserTools.FirstOrDefault(r =>
+                        string.Equals(r.Name, d.Name, StringComparison.OrdinalIgnoreCase));
+                    return new Dictionary<string, object?>
+                    {
+                        ["name"] = d.Name,
+                        ["description"] = d.Description,
+                        ["kind"] = d.Kind.ToString().ToLowerInvariant(),
+                        ["enabled"] = d.Enabled,
+                        ["status"] = outcome is { Registered: true } ? "registered" : "rejected",
+                        ["problems"] = outcome?.Problems ?? (IReadOnlyList<string>)Array.Empty<string>(),
+                        ["config"] = d.Config,
+                        // Empty means EVERY dispatching role — the permissive default the operator
+                        // chose. Reporting the empty list verbatim would read as "nobody".
+                        ["allowed_roles"] = d.AllowedRoles.Count > 0 ? d.AllowedRoles : roles,
+                        ["created_by"] = d.CreatedBy,
+                        ["created_at"] = d.CreatedAt.ToIso(),
+                    };
+                }).ToList(),
+                ["user_tools_enabled"] = AnthillRuntime.EnableUserTools,
+                ["user_tool_allowed_hosts"] = AnthillRuntime.UserToolAllowedHosts,
+
+                // v3.4.2: each contracted role checked against the model it is ACTUALLY routed to.
+                // Reported here rather than only at startup because every mismatch fails silently
+                // at runtime — a role routed to a model that cannot call tools produces a confident
+                // answer that skipped every tool, which in a transcript looks like a weak model
+                // rather than a misconfiguration an operator could fix in thirty seconds.
+                ["model_fitness"] = Queen.Router is null
+                    ? new List<Dictionary<string, object?>>()
+                    : AntModelFitness.CheckAll(Queen.Router, AntExecutionCatalog.Contracts)
+                        .Select(f => new Dictionary<string, object?>
+                        {
+                            ["role"] = f.RoleId,
+                            ["provider"] = f.Provider,
+                            ["model"] = f.Model,
+                            ["fit"] = f.Fit,
+                            ["unmet"] = f.Unmet,
+                        }).ToList(),
+            });
+        });
+
+        /*
+         * v3.5.0 — the mission workspaces, and what each change was based on.
+         *
+         * Reports CLEANED and ORPHANED workspaces alongside live ones, because the row outliving the
+         * directory is the point: "what was this merged change based on" is asked long after the
+         * files are gone, and a list showing only what currently exists cannot answer it.
+         *
+         * Orphaned is kept distinct from cleaned in the report for the same reason it is distinct in
+         * the model — "we removed it" and "it vanished under us" call for different responses, and a
+         * list that shows only "gone" hides the second entirely.
+         */
+        app.MapGet("/workspaces", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            var workspaces = Queen.Workspaces.All().Select(w => new Dictionary<string, object?>
+            {
+                ["id"] = w.Id,
+                ["mission_id"] = w.MissionId,
+                ["state"] = w.State.ToString().ToLowerInvariant(),
+                ["mode"] = w.Mode,
+                ["root"] = w.Root,
+                ["base_revision"] = w.BaseRevision,
+                ["repository_fingerprint"] = w.RepositoryFingerprint,
+                ["branch"] = w.Branch,
+                ["retained_by"] = w.RetainedBy,
+                ["retain_reason"] = w.RetainReason,
+                ["note"] = w.Note,
+                // Whether cleanup may take it. Reported rather than inferred from the state name, so
+                // the UI cannot draw a delete button the server would refuse.
+                ["deletable"] = w.Deletable,
+                ["usable"] = w.Usable,
+                ["created_at"] = w.CreatedAt.ToIso(),
+                ["updated_at"] = w.UpdatedAt.ToIso(),
+            }).ToList();
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["workspaces"] = workspaces,
+                ["root"] = Anthill.Core.Workspaces.MissionWorkspaceManager.Root,
+            });
+        });
+
+        /*
+         * v3.4.1 (ADR-006) — define a tool without a rebuild.
+         *
+         * Validated BEFORE it is stored, by the SAME validator the registrar uses at startup. A
+         * definition accepted here and rejected at the next restart would be the worst of both
+         * worlds: an operator told it worked, and a colony that quietly does not have it.
+         *
+         * Registration into the live registry is immediate, so the tool is usable in the next
+         * mission rather than after a restart — and it is the same ToolRegistry every built-in lives
+         * in. The absence of a separate path IS the feature; see Queen.BuildToolRegistry.
+         */
+        app.MapPost("/tools/user", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            if (!AnthillRuntime.EnableUserTools)
+                return ApiJson.Error("User-defined tools are disabled by config.", "permission_denied");
+
+            UserToolRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<UserToolRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body is null) return ApiJson.Error("A tool definition is required.", "bad_request");
+
+            var definition = new ToolDefinition
+            {
+                Name = (body.Name ?? "").Trim().ToLowerInvariant(),
+                Description = (body.Description ?? "").Trim(),
+                Kind = ToolKinds.Parse(body.Kind),
+                ParametersJson = string.IsNullOrWhiteSpace(body.Parameters)
+                    ? """{"type":"object","properties":{}}""" : body.Parameters!,
+                Config = body.Config ?? new Dictionary<string, string>(),
+                AllowedRoles = body.AllowedRoles ?? new List<string>(),
+                Enabled = body.Enabled ?? true,
+            };
+
+            var problems = UserToolRegistrar.Default().Validate(definition);
+            if (problems.Count > 0)
+                return ApiJson.Error($"Tool definition rejected: {string.Join("; ", problems)}",
+                    "bad_request", new Dictionary<string, object?> { ["problems"] = problems });
+
+            Queen.Memory.SaveToolDefinition(definition);
+            // The WHOLE set is re-registered rather than just this one, which keeps the grant table
+            // a wholesale replacement — the property that stops a since-removed definition from
+            // being granted forever.
+            Queen.ReloadUserTools();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "user_tool_registered",
+                $"Operator-defined tool '{definition.Name}' registered", null, "operator",
+                new() { ["tool_name"] = definition.Name, ["kind"] = definition.Kind.ToString() });
+
+            return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = definition.Name },
+                $"Tool '{definition.Name}' registered.");
+        });
+
+        // Revoke. DISABLING is the default because the row is evidence — a transcript that called
+        // the tool stays explainable. `?purge=true` deletes outright, for one created in error.
+        app.MapDelete("/tools/user/{name}", (HttpContext ctx, string name) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+
+            var purge = string.Equals(ctx.Request.Query["purge"], "true", StringComparison.OrdinalIgnoreCase);
+            var changed = purge
+                ? Queen.Memory.DeleteToolDefinition(name)
+                : Queen.Memory.SetToolDefinitionEnabled(name, false);
+            if (!changed) return ApiJson.Error($"No user-defined tool named '{name}'.", "not_found");
+
+            // Out of the LIVE registry too. Leaving it registered would keep offering a model a tool
+            // whose definition is gone, and every call would fail for a reason no transcript shows.
+            Queen.Tools.Unregister(name);
+            Queen.ReloadUserTools();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId,
+                purge ? "user_tool_deleted" : "user_tool_disabled",
+                $"Operator-defined tool '{name}' {(purge ? "deleted" : "disabled")}", null, "operator",
+                new() { ["tool_name"] = name });
+
+            return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = name },
+                purge ? $"Tool '{name}' deleted." : $"Tool '{name}' disabled.");
         });
 
         // Add or update a connection. api_key is optional on update (blank = leave the stored key
@@ -2186,6 +2589,49 @@ public static partial class ApiHost
     private static void ProtectedText(WebApplication app, string path, string permission, Func<string> handler) =>
         app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? Results.Text(handler(), "text/plain"));
 
+    /// <summary>
+    /// Ask Ollama which models it is holding and what each can do (/api/tags → capabilities[]).
+    ///
+    /// Best-effort ON PURPOSE. Ollama frequently lives on another host and is frequently down; a
+    /// capabilities page that fails because a local runtime is asleep is worse than one that falls
+    /// back to declared values and says so. An empty result therefore means "could not ask", never
+    /// "supports nothing" — the caller distinguishes them, and the response reports which it used.
+    /// </summary>
+    private static async Task<Dictionary<string, List<string>>> DiscoverOllamaModelsAsync()
+    {
+        var found = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var host = AnthillRuntime.OllamaHost.TrimEnd('/');
+            var resp = await InternalHttp.GetAsync($"{host}/api/tags", cts.Token);
+            if (!resp.IsSuccessStatusCode) return found;
+
+            var body = await resp.Content.ReadAsStringAsync(cts.Token);
+            var root = System.Text.Json.Nodes.JsonNode.Parse(body)?.AsObject();
+            foreach (var entry in root?["models"]?.AsArray() ?? new System.Text.Json.Nodes.JsonArray())
+            {
+                var name = entry?["name"]?.GetValue<string>() ?? entry?["model"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                var caps = new List<string>();
+                foreach (var c in entry?["capabilities"]?.AsArray() ?? new System.Text.Json.Nodes.JsonArray())
+                {
+                    var value = c?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(value)) caps.Add(value!);
+                }
+                found[name!] = caps;
+            }
+        }
+        catch (Exception)
+        {
+            // Unreachable, slow, or a shape we do not recognise: fall back to declared. Deliberately
+            // silent — this runs on every page load of a settings screen, and an operator with no
+            // local runtime configured should not be reading exception noise in their logs.
+        }
+        return found;
+    }
+
     private static IResult? RequireAuth(HttpContext ctx, string permission)
     {
         var ip = ClientIp(ctx);
@@ -2336,6 +2782,44 @@ public sealed class AttestBody
 }
 
 public sealed class MissionRequest { public string Goal { get; set; } = ""; }
+
+/// <summary>
+/// v3.4.0: one tool-calling agent run. Budgets are optional and clamped server-side — a client
+/// must not be able to ask for an unbounded loop, because the thing on the other end can run tools.
+/// </summary>
+public sealed class AgentRunRequest
+{
+    public string Goal { get; set; } = "";
+    /// <summary>Which role runs it. The role decides which tools exist for this run.</summary>
+    public string? Role { get; set; }
+    /// <summary>Optional system framing, prepended to the conversation.</summary>
+    public string? System { get; set; }
+    public int? MaxTurns { get; set; }
+    public int? MaxToolCalls { get; set; }
+    /// <summary>Pin this run to a specific model, overriding the role's route.</summary>
+    public string? Model { get; set; }
+}
+/// <summary>
+/// v3.4.1: an operator-defined tool, as submitted. Deliberately flat and stringly-typed at the
+/// wire: this is a form, and every field is validated by <see cref="UserToolRegistrar.Validate"/>
+/// before anything is stored — the same validator startup uses, so "accepted here, rejected at
+/// restart" cannot happen.
+/// </summary>
+public sealed class UserToolRequest
+{
+    public string? Name { get; set; }
+    public string? Description { get; set; }
+    /// <summary>http | composite | mcp | command. Only http is buildable in this release.</summary>
+    public string? Kind { get; set; }
+    /// <summary>JSON Schema for the arguments, as a string. Parsed during validation.</summary>
+    public string? Parameters { get; set; }
+    /// <summary>Kind-specific settings — for http: url, method, body, content_type, header.*</summary>
+    public Dictionary<string, string>? Config { get; set; }
+    /// <summary>Empty or absent means every dispatching role may call it.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("allowed_roles")]
+    public List<string>? AllowedRoles { get; set; }
+    public bool? Enabled { get; set; }
+}
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }

@@ -1,9 +1,9 @@
 # ADR-003: Durable Worker and Attempt Protocol
 
-**Status:** Accepted — implementation targeted at v3.4.0
+**Status:** Accepted — implementation targeted at v3.8.0 (was v3.4.0)
 **Date:** 2026-07-27
 **Baseline:** v3.0.0
-**Roadmap:** V3 ROADMAP § v3.4.0 · North Star §6.2 (Execution Plane)
+**Roadmap:** V3 ROADMAP § v3.8.0 · North Star §6.2 (Execution Plane)
 
 ---
 
@@ -47,7 +47,7 @@ Rules:
 
 ## 3. Consequences
 
-**Accepted costs.** A new table and a write on every attempt boundary. Mitigated by v3.4.0's
+**Accepted costs.** A new table and a write on every attempt boundary. Mitigated by v3.8.0's
 transactional batching of task transitions.
 
 **Explicitly rejected: distributing now.** The North Star says a distributed colony is not V3, only

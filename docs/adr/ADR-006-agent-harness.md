@@ -1,7 +1,10 @@
-# ADR-003 — Anthill as an agent harness: architecture assessment and roadmap refactor
+# ADR-006 — Anthill as an agent harness: architecture assessment and roadmap refactor
 
-**Status:** Proposed
-**Supersedes:** the ordering (not the content) of the v3.2.0 remainder and v3.3.0 in `ROADMAP.md`
+**Status:** Accepted — v3.3.0 and v3.4.0 shipped against it
+**Roadmap:** V3 ROADMAP § v3.3.0, § v3.4.0 · North Star §6 (Planes)
+**Supersedes:** the ORDERING (not the content) of the v3.2.0 remainder and the phase formerly
+numbered v3.3.0, which is now § v3.5.0. Numbered 006 rather than 003: `ADR-003-worker-protocol.md`
+already held that number, and two ADR-003s is the same defect as two v3.5.0 roadmap phases.
 
 ## What changed
 
