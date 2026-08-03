@@ -2,7 +2,7 @@
 
 ## Colony Execution Infrastructure
 
-**Baseline:** v2.26.0 · **Shipping release: v3.5.0** (the agent harness: a typed provider substrate, a bounded tool-calling loop, operator-defined tools, and contracts that declare what they need from a model — v3.3.0 carried the provider substrate, v3.4.0 the tool framework, v3.4.1 user-defined tools; v3.2.1 was the last dashboard release)
+**Baseline:** v2.26.0 · **Shipping release: v3.6.0** (the agent harness: a typed provider substrate, a bounded tool-calling loop, operator-defined tools, and contracts that declare what they need from a model — v3.3.0 carried the provider substrate, v3.4.0 the tool framework, v3.4.1 user-defined tools; v3.2.1 was the last dashboard release)
 **Target:** V4 Autonomous Software Engineering Colony
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 **Document version:** 1.0
