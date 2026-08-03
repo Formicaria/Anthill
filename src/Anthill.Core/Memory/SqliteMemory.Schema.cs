@@ -21,6 +21,19 @@ public sealed partial class SqliteMemory : IDisposable
     public string DbPath { get; }
     public bool FtsAvailable { get; private set; }
 
+    /// <summary>True when this instance is backed by a private in-memory database, not a file.</summary>
+    public bool IsInMemory { get; }
+
+    /// <summary>
+    /// Holds an in-memory database in existence.
+    ///
+    /// SQLite destroys an in-memory database when its last connection closes, and Connect() opens
+    /// and closes one per operation — so without a connection held open for the lifetime of this
+    /// object, the schema would be gone before the first read and every call would silently rebuild
+    /// an empty database. Null for file-backed instances, which need no such help.
+    /// </summary>
+    private readonly SqliteConnection? _keepAlive;
+
     private readonly FieldCipher _cipher;
     private readonly IMemoryCache _cache;
     private readonly object _writeLock = new();
@@ -32,25 +45,65 @@ public sealed partial class SqliteMemory : IDisposable
     {
         AnthillRuntime.Initialize();
         var raw = dbPath ?? AnthillRuntime.DbPath;
-        DbPath = Path.IsPathRooted(raw) ? Path.GetFullPath(raw) : Path.GetFullPath(Path.Combine(AnthillRuntime.ScriptDir, raw));
-        Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
+
+        IsInMemory = IsInMemoryRequest(raw);
+        if (IsInMemory)
+        {
+            // ":memory:" used to fall through to the path branch, and the consequences were quiet
+            // and platform-dependent. On Linux ':' is a legal filename character, so every caller
+            // asking for an in-memory database got a FILE literally named ":memory:" in ScriptDir —
+            // shared by all of them, on disk, surviving between runs. On Windows ':' is illegal and
+            // the same code threw "unable to open database file", which is how it was finally found:
+            // CI on windows-latest, not a local run.
+            //
+            // A GUID name rather than the literal, because shared-cache in-memory databases are
+            // keyed BY NAME: two instances both called ":memory:" would be one database, and the
+            // isolation every caller assumes would still not be there.
+            DbPath = "anthill-mem-" + Guid.NewGuid().ToString("N");
+        }
+        else
+        {
+            DbPath = Path.IsPathRooted(raw) ? Path.GetFullPath(raw) : Path.GetFullPath(Path.Combine(AnthillRuntime.ScriptDir, raw));
+            Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
+        }
+
         _cipher = cipher ?? FieldCipher.CreateDefault();
         _cache = cache ?? new MemoryCache(new MemoryCacheOptions());
+
+        if (IsInMemory)
+        {
+            _keepAlive = new SqliteConnection(ConnString);
+            _keepAlive.Open();
+        }
+
         InitDb();
         // v2.20.0 Stage 7: one-time reset of learning state derived under the pre-v2.19 completion
         // rule. Idempotent (durable meta marker); backs up before mutating; fresh DBs just get the
         // marker. Runs here so every entry point — API, CLI, tests — passes the same boundary.
         ApplyLearningReset();
-        HardenDbFiles();
+        if (!IsInMemory) HardenDbFiles();
     }
+
+    /// <summary>
+    /// The one spelling of "give me a throwaway database" this understands.
+    ///
+    /// Deliberately exact rather than a fuzzy match: a path that merely CONTAINS "memory" is a real
+    /// path someone meant, and silently redirecting it to a database that vanishes on dispose would
+    /// be far worse than the error they would otherwise get.
+    /// </summary>
+    public static bool IsInMemoryRequest(string? path) =>
+        string.Equals(path?.Trim(), ":memory:", StringComparison.OrdinalIgnoreCase);
 
     // Shared cache + WAL gives readers concurrency with a single writer, which matches the
     // parallel-ant execution model. Busy timeout absorbs brief write contention. Built once here so
     // Connect() and Dispose() (pool clear) always agree on the exact connection string.
+    //
+    // Shared cache is what makes the in-memory mode work at all: it is how several connections
+    // reach the SAME named in-memory database instead of each getting a private empty one.
     private string ConnString => new SqliteConnectionStringBuilder
     {
         DataSource = DbPath,
-        Mode = SqliteOpenMode.ReadWriteCreate,
+        Mode = IsInMemory ? SqliteOpenMode.Memory : SqliteOpenMode.ReadWriteCreate,
         Cache = SqliteCacheMode.Shared,
         Pooling = true,
     }.ToString();
@@ -100,6 +153,10 @@ public sealed partial class SqliteMemory : IDisposable
         // ClearPool is scoped to this connection string; the throwaway connection is only used to
         // identify the pool and is never opened.
         try { using var c = new SqliteConnection(ConnString); SqliteConnection.ClearPool(c); } catch { }
+        // Released LAST. Closing this is what destroys an in-memory database, so it must outlive
+        // the pool clear above — otherwise the pool would be clearing connections to a database
+        // that no longer exists.
+        try { _keepAlive?.Dispose(); } catch { }
     }
 
     private void InitDb()
@@ -215,6 +272,22 @@ public sealed partial class SqliteMemory : IDisposable
         // the tree is a set of answers about files nobody can read.
         // v3.7.0: conversations as first-class runtime objects. The transcript survives a restart,
         // and an escalated run reads as ONE history across the conversation/mission boundary.
+        // v3.8.0: workers and durable task attempts. Every retry is its own ROW, because a retry
+        // counter tells you something was tried three times but not that the first timed out, the
+        // second hit a provider fault, and the third produced a change nobody has looked at.
+        @"CREATE TABLE IF NOT EXISTS workers (
+            id TEXT PRIMARY KEY, roles_json TEXT NOT NULL DEFAULT '[]',
+            kind TEXT NOT NULL DEFAULT 'local', max_concurrent INTEGER NOT NULL DEFAULT 1,
+            last_heartbeat TEXT, registered_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS task_attempts (
+            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, mission_id TEXT NOT NULL,
+            number INTEGER NOT NULL DEFAULT 1, worker_id TEXT NOT NULL DEFAULT '',
+            state TEXT NOT NULL DEFAULT 'Running', provider TEXT, model TEXT,
+            may_have_side_effects INTEGER NOT NULL DEFAULT 0,
+            failure_class TEXT, failure_reason TEXT,
+            lease_until TEXT, started_at TEXT NOT NULL, finished_at TEXT)",
+        // The claim reads this index on every attempt to take a task, so it is not optional.
+        @"CREATE INDEX IF NOT EXISTS idx_task_attempts_live ON task_attempts(task_id, state, lease_until)",
         @"CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'researcher',
             policy TEXT NOT NULL DEFAULT 'Ask', policy_set_by TEXT, policy_set_at TEXT,
@@ -484,6 +557,7 @@ public sealed partial class SqliteMemory : IDisposable
             (16, "mission_workspaces", "Mission workspaces (mission_workspaces) persisted with base revision and lifecycle — changes become attributable and survive restart."),
             (17, "repository_index", "Repository index (repository_index, repository_index_files) persisted per workspace+revision — a restart reuses everything unchanged instead of re-walking the tree."),
             (18, "conversations", "Conversations, turns and escalation decisions persisted — a conversation survives restart and an escalated run reads as one history."),
+            (19, "durable_attempts", "Workers and task attempts persisted with leases — a claim is atomic, a retry is a distinct attempt, and expired work is reclaimable."),
         };
         foreach (var (id, name, description) in migrations)
         {
