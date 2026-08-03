@@ -37,7 +37,39 @@ public sealed class MissionWorkspaceManager
     public MissionWorkspaceManager(SqliteMemory memory, string sourceRoot)
     {
         _memory = memory;
-        _sourceRoot = Path.GetFullPath(sourceRoot);
+        _sourceRoot = ResolveRepositoryRoot(sourceRoot);
+    }
+
+    /// <summary>The checkout mission workspaces are taken from. Reported, so it is never a mystery.</summary>
+    public string SourceRoot => _sourceRoot;
+
+    /// <summary>
+    /// Find the git checkout that <paramref name="start"/> belongs to, walking upward.
+    ///
+    /// This exists because of a wiring mistake worth recording. The manager was first handed
+    /// <c>AllowedWorkspaceRoot</c> — which is the agent file-tool SANDBOX (<c>.anthill/workspace</c>
+    /// in a real deployment), not the repository a code mission modifies. Those are two different
+    /// concepts that happen to both be called "workspace", and the sandbox is never a git checkout,
+    /// so every Prepare would have been rejected and the whole feature would have silently done
+    /// nothing but log <c>workspace_unavailable</c>. Caught in the browser, against a live config.
+    ///
+    /// Walking up is the right default rather than a guess: the sandbox lives inside the repository
+    /// it belongs to, so the first enclosing <c>.git</c> is that repository. Falling back to the
+    /// original path when none is found keeps the failure honest — Prepare then rejects with "not a
+    /// git checkout", which is true and says so.
+    ///
+    /// The live checkout is still never written to; it is the SOURCE a detached worktree is taken
+    /// from, and <see cref="MissionWorkspaceScope"/> confines every write to that worktree.
+    /// </summary>
+    internal static string ResolveRepositoryRoot(string start)
+    {
+        var full = Path.GetFullPath(string.IsNullOrWhiteSpace(start) ? "." : start);
+
+        for (var dir = new DirectoryInfo(full); dir is not null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, ".git")))
+                return dir.FullName;
+
+        return full;
     }
 
     /// <summary>
