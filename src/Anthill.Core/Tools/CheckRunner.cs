@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Anthill.Core.Domain;
+using Anthill.Core.Workspaces;   // the mission's manifest decides which checks exist and where they run
 
 namespace Anthill.Core.Tools;
 
@@ -38,9 +39,34 @@ public sealed class RunAllowlistedCheckTool : ITool
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
         var id = args.TryGetValue("check_id", out var v) ? v?.ToString() ?? "" : "";
-        var def = CheckCatalog.Get(id);
+
+        // v3.5.0 — the mission's own workspace decides both WHERE a check runs and WHICH checks
+        // exist. Two things change together, and they have to:
+        //
+        //   - the working directory becomes the mission workspace, so a verification actually
+        //     verifies the changed files. Running in the live checkout would have tested code the
+        //     mission never touched and reported success about the wrong tree.
+        //   - the check comes from the workspace's detected manifest, so a Node workspace has Node
+        //     checks. The hard-coded catalog only ever knew .NET, which meant a frontend change had
+        //     nothing to verify with — and "no check exists" is exactly the pressure that turns into
+        //     handing a model a shell.
+        //
+        // Outside a mission scope this is the configured workdir and the declared catalog, unchanged.
+        var manifest = WorkspaceCapabilityManifest.ForCurrentMission();
+        var workdir = manifest.IsEmpty ? _workdir : manifest.Root;
+
+        // The manifest is consulted FIRST, then the global catalog. Both are declared in this
+        // repository under review; neither is ever read from the project being modified.
+        var def = manifest.Find(id) ?? CheckCatalog.Get(id);
         if (def is null)
-            return new ToolResult(Name, false, "", $"check '{id}' is not in the allowlisted catalog — refused", Contracts.FailureClass.AuthorizationFailure);
+        {
+            var available = manifest.IsEmpty
+                ? string.Join(", ", CheckCatalog.Ids)
+                : string.Join(", ", manifest.Checks.Select(c => c.Id));
+            return new ToolResult(Name, false, "",
+                $"check '{id}' is not in the allowlisted catalog — refused. Available here: {available}",
+                Contracts.FailureClass.AuthorizationFailure);
+        }
         if (!def.Enabled)
             return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused", Contracts.FailureClass.AuthorizationFailure);
 
@@ -51,7 +77,7 @@ public sealed class RunAllowlistedCheckTool : ITool
             {
                 StartInfo = new ProcessStartInfo(def.FileName, def.Arguments)
                 {
-                    WorkingDirectory = _workdir, RedirectStandardOutput = true,
+                    WorkingDirectory = workdir, RedirectStandardOutput = true,
                     RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
                 },
             };
