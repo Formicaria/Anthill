@@ -36,6 +36,46 @@ public enum EscalationPolicy
     Bypass,
 }
 
+/// <summary>
+/// v3.7.0 — ONE budget for a conversation, whichever way it executes.
+///
+/// The exit gate asks that chat and mission execution share one budget, approval and audit path —
+/// "not two". Approval and audit were unified by construction (one gate, one decision log); budget
+/// was not, and the two halves had genuinely independent limits: the tool loop bounded turns and
+/// tool calls, the mission pipeline bounded tasks and wall clock, and nothing related them.
+///
+/// The failure that allows is quiet rather than dramatic. A conversation that escalates repeatedly
+/// stays inside the loop budget every time — because each loop is a NEW loop — while the total work
+/// it authorises grows without limit. Per-execution budgets cannot see that; only a budget belonging
+/// to the CONVERSATION can.
+///
+/// So this is the single source, and both modes derive from it rather than carrying defaults of
+/// their own. It does not merge the two enforcement mechanisms — the loop still counts turns and the
+/// mission still counts tasks — but they now count against limits that came from one place, which is
+/// what makes the totals meaningful.
+/// </summary>
+public sealed record ConversationBudget(
+    int MaxTurns = 24,
+    int MaxToolCalls = 60,
+    int MaxSeconds = 900,
+    int MaxMissions = 5)
+{
+    public static readonly ConversationBudget Default = new();
+
+    /// <summary>
+    /// Whether another mission may start. The limit per-execution budgets structurally cannot
+    /// enforce, because each escalation looks like the first one to a budget that was created with it.
+    /// </summary>
+    public bool AllowsAnotherMission(int alreadyStarted) => alreadyStarted < MaxMissions;
+
+    /// <summary>
+    /// Projected onto the tool loop's own budget type, so the loop keeps its existing enforcement
+    /// and simply stops inventing its own numbers. One source, two consumers.
+    /// </summary>
+    public Sandbox.LoopBudget ForToolLoop() =>
+        new(MaxTurns: MaxTurns, MaxToolCalls: MaxToolCalls, MaxSeconds: MaxSeconds);
+}
+
 /// <summary>What was decided about one side-effecting action, and on whose authority.</summary>
 public sealed record EscalationDecision(
     string Id,
@@ -115,6 +155,13 @@ public sealed record Conversation
 
     /// <summary>Missions this conversation started. One history, across the escalation boundary.</summary>
     public IReadOnlyList<string> MissionIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// The ONE budget, shared by both execution modes. Never null — a conversation without limits is
+    /// not a feature, and a null here would mean every consumer inventing its own default again,
+    /// which is the state this replaced.
+    /// </summary>
+    public ConversationBudget Budget { get; init; } = ConversationBudget.Default;
 
     public bool Cancelled { get; init; }
     public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();

@@ -4,6 +4,7 @@ using Anthill.Core.Shadow;
 using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
+using Anthill.Core.Conversations;   // v3.7.0: conversations, escalation policy and run state
 using Anthill.Core.Diagnostics;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
@@ -1731,6 +1732,85 @@ public static partial class ApiHost
                             ["fit"] = f.Fit,
                             ["unmet"] = f.Unmet,
                         }).ToList(),
+            });
+        });
+
+        /*
+         * v3.7.0 — conversations, and what each one is doing.
+         *
+         * State is DERIVED on request, never stored. A stored status is a second thing to keep in
+         * step with reality and it goes wrong exactly where an operator relies on it: a process that
+         * died leaves its last write saying "running" forever.
+         */
+        app.MapGet("/conversations", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["conversations"] = Queen.Memory.LoadConversations().Select(c =>
+                {
+                    var state = ConversationStateReader.Read(Queen.Memory, c.Id);
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = c.Id,
+                        ["title"] = c.Title,
+                        ["role"] = c.Role,
+                        // The EFFECTIVE policy, not the stored one. An unattributed standing
+                        // permission falls back to Ask, and reporting the stored value would tell an
+                        // operator they had switched approvals off when they had not.
+                        ["policy"] = state.Policy.ToString().ToLowerInvariant(),
+                        ["policy_set_by"] = c.PolicySetBy,
+                        ["policy_attributed"] = c.PolicyIsAttributed,
+                        ["cancelled"] = c.Cancelled,
+                        ["mission_ids"] = c.MissionIds,
+                        ["doing"] = state.Doing,
+                        ["waiting_on"] = state.WaitingOn,
+                        // Hoisted so a UI can highlight it without re-deriving the rule: this is the
+                        // only state where nothing moves until a human acts.
+                        ["needs_operator"] = state.NeedsOperator,
+                        ["updated_at"] = c.UpdatedAt.ToIso(),
+                    };
+                }).ToList(),
+            });
+        });
+
+        // One conversation, with its transcript and its decision log. The two together are the
+        // whole audit: what was said, and what was permitted.
+        app.MapGet("/conversations/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+
+            var state = ConversationStateReader.Read(Queen.Memory, id);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = conversation.Id,
+                ["doing"] = state.Doing,
+                ["did"] = state.Did,
+                ["waiting_on"] = state.WaitingOn,
+                ["needs_operator"] = state.NeedsOperator,
+                ["policy"] = state.Policy.ToString().ToLowerInvariant(),
+                ["mission_ids"] = conversation.MissionIds,
+                ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>
+                {
+                    ["ordinal"] = t.Ordinal, ["role"] = t.Role, ["content"] = t.Content,
+                    ["provider"] = t.Provider, ["model"] = t.Model,
+                    ["tools_offered"] = t.ToolsOffered, ["tools_called"] = t.ToolsCalled,
+                    ["mission_id"] = t.MissionId, ["created_at"] = t.CreatedAt.ToIso(),
+                }).ToList(),
+                // Refusals included. An audit asking "did it try to do X" needs those most, because
+                // they are the attempts nobody saw happen.
+                ["decisions"] = Queen.Memory.LoadEscalationDecisions(id).Select(d => new Dictionary<string, object?>
+                {
+                    ["action"] = d.Action, ["allowed"] = d.Allowed,
+                    ["policy"] = d.Policy.ToString().ToLowerInvariant(),
+                    ["decided_by"] = d.DecidedBy, ["asked_directly"] = d.WasAskedDirectly,
+                    ["reason"] = d.Reason, ["decided_at"] = d.DecidedAt.ToIso(),
+                }).ToList(),
             });
         });
 
