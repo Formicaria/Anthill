@@ -136,8 +136,39 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         registry.Register(new WebSearchTool());
         registry.Register(new ShellCommandTool());
         registry.Register(new ApplyPatchTool(guard));
+
+        // v3.4.1: operator-defined tools join the SAME registry, last, and by the same Register call
+        // every built-in uses. That ordering is deliberate — a definition is validated against
+        // ToolInventory and cannot take a built-in's name, so arriving last can never displace one.
+        //
+        // Registering them here rather than through a parallel path is the entire exit gate: from
+        // this line onwards nothing in the harness — projection, authorization, dispatch, failure
+        // classification, /tools — knows or asks whether a tool was compiled in or declared.
+        UserTools = UserToolRegistrar.Default().RegisterAll(registry, Memory.LoadToolDefinitions());
+        foreach (var rejected in UserTools.Where(r => !r.Registered))
+            Console.Error.WriteLine(
+                $"[user-tools] '{rejected.Name}' not registered: {string.Join("; ", rejected.Problems)}");
+
         return registry;
     }
+
+    /// <summary>
+    /// The outcome of loading operator-defined tools for THIS run, rejections included. Held so the
+    /// API can answer "why is my tool not there" — the one question a rejected definition provokes,
+    /// and one that is unanswerable if the rejection only ever reached stderr.
+    /// </summary>
+    public IReadOnlyList<ToolRegistration> UserTools { get; private set; } = Array.Empty<ToolRegistration>();
+
+    /// <summary>
+    /// Re-read the stored definitions and re-register them into the live registry.
+    ///
+    /// Called after an operator adds, edits or revokes a tool, so the change takes effect for the
+    /// next mission rather than the next restart. It re-registers the WHOLE set rather than one
+    /// definition, because the grant table is replaced wholesale — that is what stops a definition
+    /// removed since the last load from staying granted.
+    /// </summary>
+    public void ReloadUserTools() =>
+        UserTools = UserToolRegistrar.Default().RegisterAll(Tools, Memory.LoadToolDefinitions());
 
     public string RunMission(string goal) => RunMission(goal, onMissionCreated: null);
 
