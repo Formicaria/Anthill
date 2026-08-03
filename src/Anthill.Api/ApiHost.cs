@@ -617,6 +617,7 @@ public static partial class ApiHost
             var result = await ThreadingTask.Run(() => ToolCallingLoop.Run(
                 Queen.Router!, Queen.Tools, role, opening, budget,
                 missionId: run.Id,
+                model: string.IsNullOrWhiteSpace(body?.Model) ? null : body!.Model!.Trim(),
                 cancellationToken: ctx.RequestAborted), ctx.RequestAborted);
 
             run.Status = result.Completed ? MissionStatus.Complete : MissionStatus.Failed;
@@ -2550,6 +2551,8 @@ public sealed class AgentRunRequest
     public string? System { get; set; }
     public int? MaxTurns { get; set; }
     public int? MaxToolCalls { get; set; }
+    /// <summary>Pin this run to a specific model, overriding the role's route.</summary>
+    public string? Model { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }

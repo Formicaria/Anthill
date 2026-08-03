@@ -308,6 +308,32 @@ public sealed class ModelRouter
     /// (stability-preferring: the configured route is only abandoned when proven unhealthy). This is
     /// a no-op when the breaker is disabled or when no distinct fallback is configured.
     /// </summary>
+    /// <summary>
+    /// What a provider/model pair can do. Discovered where the runtime publishes it (Ollama),
+    /// declared otherwise — the same source the call path negotiates against, so routing and
+    /// negotiation cannot disagree about whether a model can call tools.
+    /// </summary>
+    private static ModelCapabilities CapabilitiesFor(string provider, string model) =>
+        string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
+            ? OllamaCapabilityCache.For(AnthillRuntime.OllamaHost, model)
+            : ModelCapabilityCatalog.For(provider, model);
+
+    /// <summary>
+    /// A model this provider serves that CAN call tools, or null if none is known.
+    ///
+    /// Ordered by name for determinism: an agent that silently lands on a different model between
+    /// two identical runs is impossible to reason about, and prompt caching dies with it.
+    /// </summary>
+    private static string? FirstToolCapableModel(string provider)
+    {
+        if (!string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)) return null;
+        return OllamaCapabilityCache.Snapshot()
+            .Where(kv => kv.Value.ToolCalling)
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => kv.Key)
+            .FirstOrDefault();
+    }
+
     public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
     {
         var primary = GetRoute(role);
@@ -379,6 +405,37 @@ public sealed class ModelRouter
             };
 
         var (provider, model, rerouteReason) = ResolveRoute(role);
+
+        /*
+         * v3.4.0 — CAPABILITY-AWARE ROUTING. If this request needs tools and the routed model
+         * cannot use them, route to one that can.
+         *
+         * Found live, and it defeated everything above it: the researcher role routes to
+         * llama2-uncensored:70b, which Ollama itself reports as `completion` only. So the tool
+         * schemas were correctly stripped — the model genuinely cannot use them — the model was
+         * asked a question it could only guess at, and it answered "the system information tool
+         * shows that the host is running Linux Ubuntu" having called nothing. Every layer behaved
+         * correctly and the result was still a confident fabrication, because the route chose a
+         * model that cannot do the job.
+         *
+         * Reroute rather than fail: an operator asking a question should get an answer from a model
+         * that can actually look, not an error about routing tables. The substitution is RECORDED
+         * in the reroute reason, because silently answering from a different model than configured
+         * is its own kind of lie.
+         */
+        var toolCapableReroute = (string?)null;
+        if (request.Tools.Count > 0 && request.Model is null
+            && !CapabilitiesFor(provider, model).ToolCalling)
+        {
+            var candidate = FirstToolCapableModel(provider);
+            if (candidate is not null)
+            {
+                toolCapableReroute = $"{model} cannot call tools; used {candidate}";
+                model = candidate;
+            }
+        }
+        rerouteReason ??= toolCapableReroute;
+
         var routeKey = $"{provider}:{model}";
         var started = DateTime.UtcNow;
 
@@ -402,7 +459,10 @@ public sealed class ModelRouter
             // Classify(response) — recovering, by substring match, what the client already knew.
             // The model the ROUTE selected wins unless the caller pinned one explicitly — per-agent
             // model assignment is a request-level decision, route policy is the default.
-            result = GetClient(provider, model).Send(request with { Model = request.Model ?? model }, retries);
+            // The model the ROUTE selected wins unless the caller pinned one explicitly — per-agent
+            // model assignment is a request-level decision, route policy is the default.
+            var effective = request.Model ?? model;
+            result = GetClient(provider, model).Send(request with { Model = effective }, retries);
             _breaker?.Record(routeKey, result.Status.ToCircuitSignal());
         }
         var response = result.Content;
@@ -427,7 +487,13 @@ public sealed class ModelRouter
                 taskId: taskId, antName: antName ?? role,
                 metadata: new()
                 {
-                    ["role"] = role, ["provider"] = provider, ["model"] = model, ["success"] = success,
+                    ["role"] = role, ["provider"] = provider,
+                    // The model that ACTUALLY served this. Logging the route's choice hid both a
+                    // caller-pinned model and a capability reroute — a run attributed to a model
+                    // that never saw it is worse than no attribution.
+                    ["model"] = result.Model ?? request.Model ?? model,
+                    ["route_model"] = model,
+                    ["success"] = success,
                     ["outcome"] = outcome.Name(), ["circuit_open"] = blockedReason is not null,
                     ["reroute_reason"] = rerouteReason,
                     ["duration_ms"] = durationMs,

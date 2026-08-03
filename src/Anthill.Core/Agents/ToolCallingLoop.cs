@@ -57,9 +57,10 @@ public static class ToolCallingLoop
         LoopBudget? budget = null,
         string? missionId = null,
         string? taskId = null,
+        string? model = null,
         CancellationToken cancellationToken = default) =>
         Run(request => router.SendTyped(role, request, missionId, taskId, role),
-            registry, role, opening, budget, missionId, taskId, cancellationToken);
+            registry, role, opening, budget, missionId, taskId, model, cancellationToken);
 
     /// <summary>
     /// The same loop over an arbitrary send function.
@@ -82,6 +83,7 @@ public static class ToolCallingLoop
         LoopBudget? budget = null,
         string? missionId = null,
         string? taskId = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         var messages = new List<ModelMessage>(opening ?? Array.Empty<ModelMessage>());
@@ -98,7 +100,10 @@ public static class ToolCallingLoop
             // Messages are COPIED per turn: the request is a snapshot of the conversation so far,
             // and handing the live list over would let a later turn's appends mutate a request that
             // has already been sent.
-            var response = send(new ModelRequest { Messages = messages.ToList(), Tools = tools });
+            // An explicit model overrides the role's route. Per-agent model assignment is a
+            // request-level decision — "run this agent on the coder model" is a thing an operator
+            // wants to say without reconfiguring routing for every mission.
+            var response = send(new ModelRequest { Messages = messages.ToList(), Tools = tools, Model = model });
 
             lastStatus = response.Status;
             if (response.Usage.PromptTokens is { } p) { promptTokens += p; sawUsage = true; }
