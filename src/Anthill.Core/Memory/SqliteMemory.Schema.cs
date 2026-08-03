@@ -213,6 +213,28 @@ public sealed partial class SqliteMemory : IDisposable
         // v3.6.0: the repository index, keyed by workspace AND revision so a stored index can never
         // be applied to a tree it does not describe. Deleted with its workspace — an index outliving
         // the tree is a set of answers about files nobody can read.
+        // v3.7.0: conversations as first-class runtime objects. The transcript survives a restart,
+        // and an escalated run reads as ONE history across the conversation/mission boundary.
+        @"CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'researcher',
+            policy TEXT NOT NULL DEFAULT 'Ask', policy_set_by TEXT, policy_set_at TEXT,
+            mission_ids_json TEXT NOT NULL DEFAULT '[]', cancelled INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS conversation_turns (
+            id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+            role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+            provider TEXT, model TEXT,
+            tools_offered_json TEXT NOT NULL DEFAULT '[]', tools_called_json TEXT NOT NULL DEFAULT '[]',
+            mission_id TEXT, created_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_conversation_turns ON conversation_turns(conversation_id, ordinal)",
+        // Decisions are their own table: an operator asking "why was this allowed" is asking about
+        // ACTIONS, not turns, and one turn can take several. Refusals are stored too — a refused
+        // attempt is the one nobody saw happen.
+        @"CREATE TABLE IF NOT EXISTS escalation_decisions (
+            id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, action TEXT NOT NULL,
+            allowed INTEGER NOT NULL DEFAULT 0, policy TEXT NOT NULL DEFAULT 'Ask',
+            decided_by TEXT NOT NULL DEFAULT '', decided_at TEXT NOT NULL, reason TEXT)",
+        @"CREATE INDEX IF NOT EXISTS idx_escalation_decisions ON escalation_decisions(conversation_id)",
         @"CREATE TABLE IF NOT EXISTS repository_index (
             workspace_id TEXT NOT NULL, revision TEXT NOT NULL,
             fingerprint TEXT NOT NULL DEFAULT '', root TEXT NOT NULL DEFAULT '',
@@ -461,6 +483,7 @@ public sealed partial class SqliteMemory : IDisposable
             (15, "user_defined_tools", "Operator-defined tools (tool_definitions) persisted — the tool ecosystem outlives the release cycle."),
             (16, "mission_workspaces", "Mission workspaces (mission_workspaces) persisted with base revision and lifecycle — changes become attributable and survive restart."),
             (17, "repository_index", "Repository index (repository_index, repository_index_files) persisted per workspace+revision — a restart reuses everything unchanged instead of re-walking the tree."),
+            (18, "conversations", "Conversations, turns and escalation decisions persisted — a conversation survives restart and an escalated run reads as one history."),
         };
         foreach (var (id, name, description) in migrations)
         {
