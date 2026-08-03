@@ -197,12 +197,27 @@ public class ToolFailureClassTests
     [InlineData("src/Anthill.Core/Tools/CheckRunner.cs")]
     public void EveryToolFailureInTheSource_NamesItsFailureClass(string file)
     {
-        var unclassified = File.ReadAllLines(RepoFile(file))
-            .Select((line, i) => (line, number: i + 1))
-            .Where(x => x.line.Contains("new ToolResult(Name, false"))
-            .Where(x => !x.line.Contains("FailureClass.") && !x.line.Contains("ClassifyThrown"))
-            .Select(x => $"  {file}:{x.number}: {x.line.Trim()}")
-            .ToList();
+        var source = File.ReadAllText(RepoFile(file));
+        var unclassified = new List<string>();
+
+        // Whole STATEMENTS, not lines. The first version of this guard read line by line and fired
+        // on a perfectly well-classified failure that simply wrapped across three lines — a guard
+        // that constrains formatting rather than behaviour, which people fix by reformatting until
+        // it stops complaining. Scanning to the statement's closing paren asks the question actually
+        // worth asking: does this construction name a class anywhere in it?
+        const string marker = "new ToolResult(Name, false";
+        for (var at = source.IndexOf(marker, StringComparison.Ordinal); at >= 0;
+             at = source.IndexOf(marker, at + marker.Length, StringComparison.Ordinal))
+        {
+            var end = source.IndexOf(");", at, StringComparison.Ordinal);
+            if (end < 0) end = source.Length;
+            var statement = source[at..end];
+
+            if (statement.Contains("FailureClass.") || statement.Contains("ClassifyThrown")) continue;
+
+            var line = source.Take(at).Count(c => c == '\n') + 1;
+            unclassified.Add($"  {file}:{line}: {statement.Split('\n')[0].Trim()}");
+        }
 
         Assert.True(unclassified.Count == 0,
             "These tool failures do not say why they failed, so they default to InternalDefect and "
