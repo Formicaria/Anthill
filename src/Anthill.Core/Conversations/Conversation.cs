@@ -156,6 +156,14 @@ public static class EscalationGate
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "apply_patch", "write_text_file", "shell_command", "run_allowlisted_check",
+            // v3.7.0: turning a conversation into a MISSION is itself a side effect, and the most
+            // consequential one here — it is the moment bounded conversational work becomes
+            // autonomous multi-task execution. Listed here rather than special-cased in the runner,
+            // because a boundary enforced in two places eventually disagrees with itself.
+            //
+            // It is NOT a tool and never will be: no model may call it, and nothing registers it in
+            // the tool registry. It appears in this set purely so the one gate covers it.
+            ConversationRunner.StartMissionAction,
         };
 
     /// <summary>Whether <paramref name="action"/> needs an operator decision at all.</summary>
