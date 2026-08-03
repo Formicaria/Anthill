@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 public static class AnthillRuntime
 {
     public const string Version = "3.6.0";
-    public const int SchemaVersion = 20;   // v3.6.0: repository index persisted (repository_index)
+    public const int SchemaVersion = 21;   // v3.7.0: conversations persisted (conversations, escalation_decisions)
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
