@@ -136,7 +136,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // dispatched into one. A row left claiming Active by a process that died would otherwise be
         // handed to an agent as a live workspace, and something would wait forever for the agent
         // that row implies is already working in it.
-        Workspaces = new Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
+        Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
         foreach (var note in Workspaces.Recover())
             Console.Error.WriteLine($"[workspace-recovery] {note}");
         Execution = new ExecutionService(Memory, _ants);
@@ -187,7 +187,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// workspace lifecycle is deterministic orchestration — no model participates in deciding where
     /// an agent may write, for the same reason none picks its own tool authorization.
     /// </summary>
-    public Workspaces.MissionWorkspaceManager Workspaces { get; private set; } = null!;
+    public Anthill.Core.Workspaces.MissionWorkspaceManager Workspaces { get; private set; } = null!;
 
     /// <summary>
     /// Re-read the stored definitions and re-register them into the live registry.
@@ -199,6 +199,49 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// </summary>
     public void ReloadUserTools() =>
         UserTools = UserToolRegistrar.Default().RegisterAll(Tools, Memory.LoadToolDefinitions());
+
+    /// <summary>
+    /// Prepare a workspace for a mission that may write, and record the outcome on the mission's
+    /// own event stream.
+    ///
+    /// Returns null rather than throwing when preparation fails — which it legitimately does when
+    /// the workspace root is not a git checkout. A mission that cannot get an isolated workspace
+    /// still runs, under the configured root exactly as it did before v3.5.0; refusing to run at all
+    /// would make an isolation improvement into a breaking change for every non-git deployment.
+    /// The event says which happened, because "my changes went to the live checkout" must never be
+    /// something an operator has to infer.
+    /// </summary>
+    private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId)
+    {
+        try
+        {
+            var workspace = Workspaces.Prepare(missionId);
+            if (workspace.Usable)
+            {
+                Workspaces.Activate(workspace.Id);
+                Memory.LogEvent(missionId, "workspace_ready",
+                    $"Mission workspace {workspace.Id} prepared from {workspace.BaseRevision}", null, "queen",
+                    new()
+                    {
+                        ["workspace_id"] = workspace.Id,
+                        ["base_revision"] = workspace.BaseRevision,
+                        ["root"] = workspace.Root,
+                    });
+                return workspace;
+            }
+
+            Memory.LogEvent(missionId, "workspace_unavailable",
+                $"No isolated workspace: {workspace.Note}. File operations use the configured root.",
+                null, "queen", new() { ["reason"] = workspace.Note });
+            return null;
+        }
+        catch (Exception error)
+        {
+            Memory.LogEvent(missionId, "workspace_unavailable",
+                $"Workspace preparation failed: {error.Message}", null, "queen");
+            return null;
+        }
+    }
 
     public string RunMission(string goal) => RunMission(goal, onMissionCreated: null);
 
@@ -249,6 +292,18 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
         Memory.SaveMission(mission);
         onMissionCreated?.Invoke(mission.Id);
+
+        // v3.5.0 — a mission permitted to WRITE gets its own workspace, and every file operation for
+        // the rest of this mission is confined to it.
+        //
+        // Gated on the write capabilities rather than prepared for every mission: a read-only
+        // research mission has nothing to isolate, and taking a git worktree for it would cost a
+        // directory per question. The scope is entered even when preparation FAILS to produce a
+        // usable workspace — in which case CurrentRoot is null and the guard keeps its configured
+        // root, which is exactly the pre-v3.5.0 behaviour rather than a silent widening.
+        var wantsWorkspace = AnthillRuntime.EnableFileWriting || AnthillRuntime.EnablePatchApplication;
+        var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id) : null;
+        using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
         Memory.LogEvent(mission.Id, "mission_context_resolved",
             "Mission constraints, capability grants, deadline and budgets resolved at intake.",
             metadata: context.Snapshot());

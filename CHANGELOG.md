@@ -1,5 +1,86 @@
 # ANTHILL Changelog
 
+## v3.4.2 — Contracts say what they need from a model, and it is checked
+
+The capability model learned what each model *can* do in v3.3.0. Nothing said what each role
+*needs*, so the two halves never met.
+
+- **`ModelRequirement` on every contracted role.** ui_cartographer requires tool calling — it exists
+  to walk a repository, and a text-only route maps the UI from priors instead. soldier, medic and
+  archivist require structured output, because the colony *branches* on their results and prose
+  parsed as a schema yields an empty result. medic also requires reasoning; archivist declares a
+  32k context floor because it reads a whole mission history.
+- **`AntModelFitness` checks each role against its live route**, at startup and on `GET /tools`.
+  Every mismatch it catches fails *silently* at runtime — a model that cannot call tools is never
+  shown them, one without structured output returns prose that parses to nothing, a short window
+  truncates and answers confidently about the part that fit. None throw, and in a transcript all
+  three look like a weak model rather than a misconfiguration.
+- **It reports, never substitutes.** The router owns routing; two policies that disagree are worse
+  than one that is wrong.
+- **An unknown context window is not treated as too small.** Absence of a fact is not the fact of a
+  limit, and warning about every undescribed model trains an operator to ignore the report.
+- **Fixed: `ContextWindowTokens` was declared and assigned nowhere**, so the context floors above
+  were decorative the moment they were written. Found in the browser, not by a test. Now discovered
+  from Ollama's `/api/show` by key *suffix*, so a new architecture does not silently report unknown.
+
+## v3.4.1 — Tools an operator can define, without a rebuild
+
+Every tool until now was a C# class compiled into the build, which made the tool ecosystem exactly
+as extensible as the release cycle.
+
+- **A tool is data.** A definition names a `ToolKind` and supplies config; it cannot express "run
+  this". Each kind is a reviewed execution path with its own gate, so a model that can register
+  tools can only recombine powers a human already built and switched on.
+- **The HTTP kind, bounded by an allowlist a human maintains.** Arguments are URL-encoded, so
+  `../../admin` or a userinfo `@` cannot restructure the request; the allowlist is re-checked *after*
+  substitution; host matching is exact, never suffix; redirects are not followed, because a 302 off
+  an allowlisted host would turn the allowlist into a suggestion.
+- **No special case anywhere downstream.** A validated definition becomes an ordinary `ITool` in the
+  ordinary registry, so projection, dispatch and failure classification needed no changes at all.
+- **A definition may not shadow a built-in** — one that could take the name `apply_patch` would make
+  registration a privilege escalation.
+- `composite`, `mcp` and `command` kinds are declared and rejected as not-yet-built.
+- Definitions persist (schema 18). Revoking keeps the row, because a transcript that called the tool
+  must stay explainable.
+
+## v3.4.0 — The tool framework: the colony does work
+
+Turned "the colony *can* call tools" into "the colony does work".
+
+- **`ToolCallingLoop`** — ask, run what the model asks for, feed results back, repeat; bounded by
+  `BoundedAgentLoop` on turns, tool calls, wall clock and repeated actions. The transcript is the
+  artifact, because the question asked of an agent run is never "what was the answer" but "what did
+  it *do*".
+- **Assistant turns replay their `tool_calls`.** Without this, tool results answer requests absent
+  from the conversation, and a model replaying that transcript cannot see it already called the
+  tool — so it calls again. Measured live: three identical calls, all answered, no answer produced.
+- **`ToolSchemaProjection`** offers a role only the tools its authorization permits; one malformed
+  schema degrades that tool rather than the toolset.
+- **Typed tool results.** `FailureClass` with derived retryability, classified at every failure site
+  in every shipped tool. The loop turns the class into the one sentence that changes the model's next
+  move: route around a denial, fix the arguments, retry a transient failure.
+- **Capability-aware routing** — a route whose model cannot call tools reroutes to one that can, and
+  telemetry records both models.
+- **`POST /agent/run`** and **`GET /tools`**, the latter reporting authorization by asking the
+  enforcer rather than a second copy of its rules.
+
+## v3.3.0 — Provider substrate
+
+`IModelClient.Generate(string)` was string in, string out — with nowhere to put tool calls,
+structured output, streaming, usage or a per-call model. Adding a provider was a redesign.
+
+- **Typed `ModelRequest`/`ModelResponse`**, with `Send` as the primary method and `Generate` demoted
+  to a default interface member that narrows onto it.
+- **`ProviderWireFormat`** — pure projection onto OpenAI-compatible and Anthropic wire shapes, and
+  pure readers back, tested without a provider. Every mistake at that seam is silent: a tools array
+  nested wrongly is ignored, and usage read from a missing field reports zero cost forever.
+- **Ollama moved onto `/v1/chat/completions`**, so one OpenAI-compatible path serves Ollama, LM
+  Studio, vLLM, llama.cpp and OpenRouter.
+- **`ModelCapabilities`, fail-closed**, discovered per-model from the runtime that holds the weights
+  rather than guessed from the model's name — which was wrong twice out of three on real hardware.
+- **A reply of only tool calls is a success, not an empty response**, and a provider that reports no
+  usage reads as *unknown*, never zero.
+
 ## v3.2.1 — Direct manipulation: drag to arrange, corner to size
 
 The dashboard is arranged by hand now, not by buttons. In **Customise** mode every widget can be
