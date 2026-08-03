@@ -24,13 +24,52 @@ namespace Anthill.Core.Models;
 /// </summary>
 public interface IModelClient
 {
-    ModelCallResult Generate(string prompt, int retries = 2);
+    /// <summary>
+    /// v3.3.0 (ADR-006): the typed call. THE primary method — every client implements this one.
+    ///
+    /// Transport stays exactly where it was: bounded retries, the ambient cancellation token, the
+    /// per-call deadline and the status classification described above are unchanged and still live
+    /// in each client. What moved out is only the two ends — what goes on the wire, and what comes
+    /// back off it — into <see cref="ProviderWireFormat"/>, where they are pure and testable
+    /// without a provider.
+    /// </summary>
+    ModelResponse Send(ModelRequest request, int retries = 2);
+
+    /// <summary>
+    /// The string call, now a thin caller of the typed one rather than the other way round.
+    ///
+    /// The DIRECTION is the whole lesson of the v3.2.0 ant migration. A shim that widens a string
+    /// into a typed value has to invent the information the string never carried, which makes it
+    /// permanent by construction — that is how <c>string Run(Task, Mission)</c> survived four
+    /// releases. This one narrows a typed result to text at the outermost edge, for callers that
+    /// only ever wanted text: it discards rather than fabricates, and it deletes cleanly the moment
+    /// the last such caller moves.
+    /// </summary>
+    ModelCallResult Generate(string prompt, int retries = 2) =>
+        Send(ModelRequest.FromPrompt(prompt), retries).ToCallResult();
 }
 
 /// <summary>
-/// Local Ollama client. Talks to the Ollama HTTP API with bounded retries and turns
-/// transport faults into the sentinel "ERROR:" strings the rest of the colony branches on,
-/// rather than throwing across the ant boundary.
+/// Local Ollama client, speaking OpenAI on the wire.
+///
+/// v3.3.0: this talks to Ollama's OPENAI-COMPATIBLE endpoint (<c>/v1/chat/completions</c>), not the
+/// native <c>/api/generate</c>. One decision, three consequences, and the first is the reason:
+///
+/// 1. <c>/api/generate</c> HAS NO TOOL-CALL CHANNEL. It takes a prompt string and returns a
+///    completion string, so a local model physically cannot ask to run a tool through it. Every
+///    local agent loop, every self-improvement cycle, every "read this file then patch it" is
+///    unreachable on that endpoint — not hard, unreachable. Function-calling local models
+///    (Hermes, Qwen, Llama 3.x) emit OpenAI-shaped <c>tool_calls</c>, and this is where they land.
+/// 2. It collapses a special case rather than adding one. Ollama now shares the exact request
+///    projection, tool schema and response reader with OpenAI, LM Studio, vLLM, llama.cpp and
+///    OpenRouter — so a tool-calling bug is fixed once for every provider, and the tests that
+///    cover the shape cover all of them.
+/// 3. Local stays first-class. No API key, no cost, no cloud round-trip; the only thing that
+///    changed is the dialect it is asked in.
+///
+/// What is deliberately KEPT is the diagnostic that matters most here: a 404 from Ollama nearly
+/// always means the model is not pulled, and saying so — with the exact <c>ollama pull</c> command
+/// — is the difference between a two-second fix and an operator debugging their network.
 /// </summary>
 public sealed class OllamaClient : IModelClient
 {
@@ -44,13 +83,34 @@ public sealed class OllamaClient : IModelClient
         _host = (host ?? AnthillRuntime.OllamaHost).TrimEnd('/');
     }
 
-    public ModelCallResult Generate(string prompt, int retries = 2)
+    /// <summary>
+    /// v3.3.0: typed, still on /api/generate.
+    ///
+    /// The endpoint deliberately does NOT change in this increment. Ollama's /api/chat is where
+    /// tool calling and real multi-turn live, and it is where this is going — but moving the wire
+    /// AND the contract in one step would leave a broken local model call indistinguishable from a
+    /// broken refactor. This step is structural only: identical request on the wire, identical
+    /// bytes back, transport and error classification untouched.
+    ///
+    /// Messages are flattened with role labels. Lossy in principle, lossless in practice today —
+    /// every caller sends a single user message — and tools cannot arrive here because the
+    /// capability catalog gives the ollama PROVIDER no tool calling, so nothing offers them.
+    /// </summary>
+    public ModelResponse Send(ModelRequest request, int retries = 2)
     {
-        var url = $"{_host}/api/generate";
-        var payload = JsonSerializer.Serialize(new { model = _model, prompt, stream = false });
+        // Ollama's OpenAI-compatible endpoint, not /api/generate. Same body, same tool schema and
+        // same reader as OpenAI, LM Studio, vLLM, llama.cpp and OpenRouter — see the class remarks.
+        var url = ChatEndpoint(_host);
+        var model = request.Model ?? _model;
+
+        // Negotiated against what OLLAMA REPORTS about this model, not against a table of guesses.
+        // The name table remains the fallback inside the cache for a model Ollama does not describe.
+        var negotiated = ModelCapabilityCatalog.Negotiate(
+            request, OllamaCapabilityCache.For(_host, model));
+        var payload = ProviderWireFormat.OpenAiBody(negotiated, model).ToJsonString();
         // The operator-facing prose is unchanged throughout; only the STATUS is now carried
         // alongside it instead of being recoverable from it.
-        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
+        var lastError = Fail(ModelCallOutcome.Empty, model, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             // Link the mission's ambient token (so a timed-out/cancelled mission aborts this call)
@@ -71,22 +131,20 @@ public sealed class OllamaClient : IModelClient
                     var errBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                     var detail = errBody.Length > 0 && errBody.Length <= 300 ? $" — {errBody.Trim()}" : "";
                     return (int)response.StatusCode == 404
-                        ? new ModelCallResult(ModelCallOutcome.NotAvailable,
-                            $"ERROR: Ollama at {_host} is reachable but model '{_model}' is not available{detail}. Run: ollama pull {_model} (an offline machine needs the model blobs copied in — it cannot pull).")
-                        : new ModelCallResult(ModelCallOutcome.HttpError,
+                        ? Fail(ModelCallOutcome.NotAvailable, model,
+                            $"ERROR: Ollama at {_host} is reachable but model '{model}' is not available{detail}. Run: ollama pull {model} (an offline machine needs the model blobs copied in — it cannot pull).")
+                        : Fail(ModelCallOutcome.HttpError, model,
                             $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.");
                 }
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                using var doc = JsonDocument.Parse(body);
-                var output = doc.RootElement.TryGetProperty("response", out var resp) ? resp.GetString()?.Trim() ?? "" : "";
-                return string.IsNullOrEmpty(output)
-                    ? new ModelCallResult(ModelCallOutcome.Empty, "Ollama returned an empty response.")
-                    : new ModelCallResult(ModelCallOutcome.Ok, output);
+                // The same tested reader every OpenAI-compatible provider uses. It recovers tool
+                // calls and usage, which is the entire point of moving off /api/generate: that
+                // endpoint has no tool-call channel, so a local model could never call anything.
+                return ProviderWireFormat.ReadOpenAi(body, "ollama", model);
             }
             catch (HttpRequestException error)
             {
-                return new ModelCallResult(ModelCallOutcome.ConnectError,
-                    $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
+                return Fail(ModelCallOutcome.ConnectError, model, $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
                     + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
                     + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?");
             }
@@ -94,22 +152,51 @@ public sealed class OllamaClient : IModelClient
             {
                 // The mission itself was stopped (deadline reached or job cancelled) — abort cleanly
                 // and do NOT retry; retrying would just re-hit the already-cancelled token.
-                return new ModelCallResult(ModelCallOutcome.Cancelled,
-                    "ERROR: Ollama request cancelled because the mission was stopped.");
+                return Fail(ModelCallOutcome.Cancelled, model, "ERROR: Ollama request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Timeout,
-                    $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (Exception error)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Error,
-                    $"ERROR: Ollama request failed: {error.Message} (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Error, model, $"ERROR: Ollama request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
     }
+
+    /// <summary>
+    /// A failure, carrying which provider and model produced it. The operator prose is byte for
+    /// byte what it was — only the envelope changed — because these strings are what an operator
+    /// reads when a local model will not answer, and a refactor is not a licence to reword them.
+    /// </summary>
+    private static ModelResponse Fail(ModelCallOutcome status, string model, string message) =>
+        new() { Status = status, Content = message, Provider = "ollama", Model = model };
+
+    /// <summary>
+    /// The chat endpoint for a configured Ollama host, tolerating what operators actually type.
+    ///
+    /// `ollama_host` has always meant the bare host ("http://10.10.10.57:11434") because the native
+    /// API lived at /api/*. Now that the OpenAI-compatible path is used, an operator who knows that
+    /// will reasonably paste "…:11434/v1" — the form every OpenAI client calls a base URL — and
+    /// blindly appending would post to /v1/v1/chat/completions and 404. Both forms are accepted, as
+    /// is a host that already carries the full path.
+    ///
+    /// Public and pure so it is testable without a network call, exactly like
+    /// <c>OpenAiCompatibleClient.NormalizeEndpoint</c>, whose job this is the Ollama-side twin of.
+    /// </summary>
+    public static string ChatEndpoint(string host)
+    {
+        var trimmed = (host ?? "").Trim().TrimEnd('/');
+        if (trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return trimmed;
+        if (trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) return trimmed + "/chat/completions";
+        return trimmed + "/v1/chat/completions";
+    }
+
+    // Flatten() lived here and is deleted with the endpoint that needed it. It squashed a message
+    // list into one prompt string because /api/generate accepted nothing else — a lossy step that
+    // the OpenAI-compatible endpoint makes unnecessary: roles now travel as roles.
 }
 
 /// <summary>Provider placeholders kept for forward-compatible routing config. Each fails closed with a clear message.</summary>
@@ -121,9 +208,14 @@ public sealed class PlaceholderClient : IModelClient
     // boundary, and Error maps to CircuitSignal.Neutral. Promoting it to ConfigError would make it
     // Healthy and start CLEARING a provider's breaker — a behaviour change smuggled in under a
     // refactor. The status recorded here is the one this path already had.
-    public ModelCallResult Generate(string prompt, int retries = 2) =>
-        new(ModelCallOutcome.Error,
-            $"ERROR: {_provider} provider placeholder is not implemented in this build.");
+    public ModelResponse Send(ModelRequest request, int retries = 2) =>
+        new()
+        {
+            Status = ModelCallOutcome.Error,
+            Content = $"ERROR: {_provider} provider placeholder is not implemented in this build.",
+            Provider = _provider,
+            Model = request.Model,
+        };
 }
 
 /// <summary>
@@ -216,6 +308,38 @@ public sealed class ModelRouter
     /// (stability-preferring: the configured route is only abandoned when proven unhealthy). This is
     /// a no-op when the breaker is disabled or when no distinct fallback is configured.
     /// </summary>
+    /// <summary>
+    /// What a provider/model pair can do. Discovered where the runtime publishes it (Ollama),
+    /// declared otherwise — the same source the call path negotiates against, so routing and
+    /// negotiation cannot disagree about whether a model can call tools.
+    /// </summary>
+    /// <remarks>
+    /// Public since v3.4.2 so <c>AntModelFitness</c> can check a role's declared model requirements
+    /// against the SAME capability source the call path negotiates against. A fitness report derived
+    /// from a second source would eventually describe a different model than the one that runs —
+    /// the exact failure the capability endpoint already made once.
+    /// </remarks>
+    public static ModelCapabilities CapabilitiesFor(string provider, string model) =>
+        string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
+            ? OllamaCapabilityCache.For(AnthillRuntime.OllamaHost, model)
+            : ModelCapabilityCatalog.For(provider, model);
+
+    /// <summary>
+    /// A model this provider serves that CAN call tools, or null if none is known.
+    ///
+    /// Ordered by name for determinism: an agent that silently lands on a different model between
+    /// two identical runs is impossible to reason about, and prompt caching dies with it.
+    /// </summary>
+    private static string? FirstToolCapableModel(string provider)
+    {
+        if (!string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)) return null;
+        return OllamaCapabilityCache.Snapshot()
+            .Where(kv => kv.Value.ToolCalling)
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => kv.Key)
+            .FirstOrDefault();
+    }
+
     public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
     {
         var primary = GetRoute(role);
@@ -259,31 +383,92 @@ public sealed class ModelRouter
         GenerateCore(role, prompt, missionId, taskId, antName, retries).Content;
 
     private ModelCallResult GenerateCore(string role, string prompt, string? missionId, string? taskId,
+        string? antName, int retries) =>
+        SendCore(role, ModelRequest.FromPrompt(prompt), missionId, taskId, antName, retries).ToCallResult();
+
+    /// <summary>
+    /// v3.4.0 (ADR-006): route and send a TYPED request — the path a tool-calling agent loop needs,
+    /// because it must carry a conversation and a tool list, not a prompt string.
+    ///
+    /// Deliberately the SAME routing path the string call uses rather than a parallel one. Route
+    /// resolution, the circuit breaker, the model_call event and the pheromone trail all live here
+    /// once; a second copy for typed calls would drift, and the two would eventually disagree about
+    /// whether a route is healthy — which is the failure this method's own comments below record
+    /// happening before, when success had two definitions in one method.
+    /// </summary>
+    public ModelResponse SendTyped(string role, ModelRequest request, string? missionId = null,
+        string? taskId = null, string? antName = null, int retries = 2) =>
+        SendCore(role, request, missionId, taskId, antName, retries);
+
+    private ModelResponse SendCore(string role, ModelRequest request, string? missionId, string? taskId,
         string? antName, int retries)
     {
         if (!AnthillRuntime.UseOllama && AnthillRuntime.DefaultModelProvider == "ollama")
-            return new ModelCallResult(ModelCallOutcome.Error,
-                "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.");
+            return new ModelResponse
+            {
+                Status = ModelCallOutcome.Error,
+                Content = "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.",
+            };
 
         var (provider, model, rerouteReason) = ResolveRoute(role);
+
+        /*
+         * v3.4.0 — CAPABILITY-AWARE ROUTING. If this request needs tools and the routed model
+         * cannot use them, route to one that can.
+         *
+         * Found live, and it defeated everything above it: the researcher role routes to
+         * llama2-uncensored:70b, which Ollama itself reports as `completion` only. So the tool
+         * schemas were correctly stripped — the model genuinely cannot use them — the model was
+         * asked a question it could only guess at, and it answered "the system information tool
+         * shows that the host is running Linux Ubuntu" having called nothing. Every layer behaved
+         * correctly and the result was still a confident fabrication, because the route chose a
+         * model that cannot do the job.
+         *
+         * Reroute rather than fail: an operator asking a question should get an answer from a model
+         * that can actually look, not an error about routing tables. The substitution is RECORDED
+         * in the reroute reason, because silently answering from a different model than configured
+         * is its own kind of lie.
+         */
+        var toolCapableReroute = (string?)null;
+        if (request.Tools.Count > 0 && request.Model is null
+            && !CapabilitiesFor(provider, model).ToolCalling)
+        {
+            var candidate = FirstToolCapableModel(provider);
+            if (candidate is not null)
+            {
+                toolCapableReroute = $"{model} cannot call tools; used {candidate}";
+                model = candidate;
+            }
+        }
+        rerouteReason ??= toolCapableReroute;
+
         var routeKey = $"{provider}:{model}";
         var started = DateTime.UtcNow;
 
         // If this provider's breaker is open, fail fast without a network call — the whole point is to
         // stop a dead/slow provider from making every mission wait out a full timeout and pin the queue.
         var blockedReason = _breaker?.Blocked(routeKey);
-        ModelCallResult result;
+        ModelResponse result;
         if (blockedReason is not null)
         {
-            result = new ModelCallResult(ModelCallOutcome.ConnectError,
-                $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
-                + "Fast-failed without a network call to keep the mission queue moving.");
+            result = new ModelResponse
+            {
+                Status = ModelCallOutcome.ConnectError,
+                Content = $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
+                    + "Fast-failed without a network call to keep the mission queue moving.",
+                Provider = provider, Model = model,
+            };
         }
         else
         {
             // v3.2.0: the status arrives WITH the result. This used to be
             // Classify(response) — recovering, by substring match, what the client already knew.
-            result = GetClient(provider, model).Generate(prompt, retries);
+            // The model the ROUTE selected wins unless the caller pinned one explicitly — per-agent
+            // model assignment is a request-level decision, route policy is the default.
+            // The model the ROUTE selected wins unless the caller pinned one explicitly — per-agent
+            // model assignment is a request-level decision, route policy is the default.
+            var effective = request.Model ?? model;
+            result = GetClient(provider, model).Send(request with { Model = effective }, retries);
             _breaker?.Record(routeKey, result.Status.ToCircuitSignal());
         }
         var response = result.Content;
@@ -308,10 +493,24 @@ public sealed class ModelRouter
                 taskId: taskId, antName: antName ?? role,
                 metadata: new()
                 {
-                    ["role"] = role, ["provider"] = provider, ["model"] = model, ["success"] = success,
+                    ["role"] = role, ["provider"] = provider,
+                    // The model that ACTUALLY served this. Logging the route's choice hid both a
+                    // caller-pinned model and a capability reroute — a run attributed to a model
+                    // that never saw it is worse than no attribution.
+                    ["model"] = result.Model ?? request.Model ?? model,
+                    ["route_model"] = model,
+                    ["success"] = success,
                     ["outcome"] = outcome.Name(), ["circuit_open"] = blockedReason is not null,
                     ["reroute_reason"] = rerouteReason,
-                    ["duration_ms"] = durationMs, ["prompt_chars"] = prompt.Length, ["response_chars"] = response.Length,
+                    ["duration_ms"] = durationMs,
+                    ["prompt_chars"] = request.Messages.Sum(m => (m.Content ?? "").Length),
+                    ["response_chars"] = response.Length,
+                    // v3.4.0: what the call actually cost and whether it asked for tools. Absent
+                    // usage stays absent — a provider that reports nothing is unknown, not zero.
+                    ["prompt_tokens"] = result.Usage.PromptTokens,
+                    ["completion_tokens"] = result.Usage.CompletionTokens,
+                    ["tool_calls_requested"] = result.ToolCalls.Count,
+                    ["tools_offered"] = request.Tools.Count,
                     ["pheromone_delta"] = pheromoneDelta,
                 });
             _memory.UpdatePheromoneTrail($"model:{provider}:{model}:{role}", "model_route", success, pheromoneDelta,

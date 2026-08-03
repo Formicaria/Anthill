@@ -1,9 +1,9 @@
 # ADR-004: Artifact and Evidence Store
 
-**Status:** Accepted — implementation targeted at v3.5.0
+**Status:** Accepted — implementation targeted at v3.9.0 (was v3.5.0)
 **Date:** 2026-07-27
 **Baseline:** v3.0.0
-**Roadmap:** V3 ROADMAP § v3.5.0 · North Star §6.5 (Artifact and Evidence Plane)
+**Roadmap:** V3 ROADMAP § v3.9.0 · North Star §6.5 (Artifact and Evidence Plane)
 
 ---
 
@@ -36,7 +36,7 @@ artifact   id, schema, schema_version, producer_role, mission_id, task_id,
 evidence   id, kind, deterministic, passed, artifact_ids[], detail, created_at
 ```
 
-Schemas defined in v3.5.0: repository map, file set, UI map, change plan, patch set, test report,
+Schemas defined in v3.9.0: repository map, file set, UI map, change plan, patch set, test report,
 security review, failure diagnosis, verification bundle, operator summary, release notes, memory
 candidate.
 

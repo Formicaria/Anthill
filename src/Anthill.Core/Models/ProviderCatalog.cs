@@ -65,7 +65,46 @@ public static class ProviderCatalog
             "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat",
         });
 
-    public static readonly IReadOnlyList<ProviderInfo> All = new[] { Ollama, OpenAi, Anthropic, Perplexity, OpenRouter };
+    /*
+     * v3.3.0 (ADR-006) — local OpenAI-compatible servers.
+     *
+     * These three are the claim in ADR-006 made good: they need no new client, because
+     * OpenAiCompatibleClient already speaks /v1/chat/completions and that is exactly what they
+     * serve. What each one needs is a base URL and a key policy.
+     *
+     * RequiresKey: false, and that is the substantive difference from the hosted providers. All
+     * three run on the operator's own machine or network and accept any bearer token (commonly
+     * none at all), so demanding a key would make a keyless local server unreachable through the
+     * settings UI — the exact coupling this architecture exists to remove.
+     *
+     * Models is empty for all three for the same reason it is empty for Ollama: the list is
+     * whatever the operator has loaded, so it is DYNAMIC and the capabilities endpoint reports it
+     * as such rather than claiming the server offers nothing.
+     */
+
+    public static readonly ProviderInfo LmStudio = new(
+        Id: "lmstudio", Name: "LM Studio (local)", Kind: "free-local",
+        Description: "Local models served by LM Studio's OpenAI-compatible endpoint. No key, no per-token cost.",
+        RequiresKey: false, DefaultEndpoint: "http://localhost:1234/v1/chat/completions",
+        KeyHelpUrl: "https://lmstudio.ai",
+        DefaultModel: "", Models: Array.Empty<string>());
+
+    public static readonly ProviderInfo Vllm = new(
+        Id: "vllm", Name: "vLLM (self-hosted)", Kind: "free-local",
+        Description: "A vLLM server on your own hardware, through its OpenAI-compatible API.",
+        RequiresKey: false, DefaultEndpoint: "http://localhost:8000/v1/chat/completions",
+        KeyHelpUrl: "https://docs.vllm.ai",
+        DefaultModel: "", Models: Array.Empty<string>());
+
+    public static readonly ProviderInfo LlamaCpp = new(
+        Id: "llamacpp", Name: "llama.cpp server (local)", Kind: "free-local",
+        Description: "A llama.cpp server on your own machine, through its OpenAI-compatible API.",
+        RequiresKey: false, DefaultEndpoint: "http://localhost:8080/v1/chat/completions",
+        KeyHelpUrl: "https://github.com/ggml-org/llama.cpp",
+        DefaultModel: "", Models: Array.Empty<string>());
+
+    public static readonly IReadOnlyList<ProviderInfo> All =
+        new[] { Ollama, OpenAi, Anthropic, Perplexity, OpenRouter, LmStudio, Vllm, LlamaCpp };
 
     public static readonly HashSet<string> KnownProviders =
         new(All.Select(p => p.Id), StringComparer.OrdinalIgnoreCase);

@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.2.1";
-    public const int SchemaVersion = 17;   // v3.2.0: structured ant results persisted whole (task_results)
+    public const string Version = "3.4.2";
+    public const int SchemaVersion = 19;   // v3.5.0: mission workspaces persisted (mission_workspaces)
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
@@ -337,6 +337,17 @@ public static class AnthillRuntime
     // ---- Capability gates -------------------------------------------------
     public static bool EnableFileTools = true;
     public static bool EnableShellTool = false;
+
+    /// <summary>v3.4.1: operator-defined tools may be registered and dispatched.</summary>
+    public static bool EnableUserTools = false;
+
+    /// <summary>
+    /// Hosts an HTTP user tool may contact. The REAL boundary for the feature: the flag above only
+    /// decides whether definitions load, while this decides what any of them can reach. Empty means
+    /// nothing is reachable — never "anything", because a permissive reading of an unset allowlist
+    /// is how a gate becomes decoration.
+    /// </summary>
+    public static IReadOnlyList<string> UserToolAllowedHosts = Array.Empty<string>();
     /// <summary>Operator shell console (admin-only interactive host terminal). Distinct from EnableShellTool (the AI ants' allowlisted tool).</summary>
     public static bool EnableOperatorShell = true;
     /// <summary>Default working directory for the operator shell console; empty falls back to AllowedWorkspaceRoot.</summary>
@@ -570,6 +581,13 @@ public static class AnthillRuntime
         ApiPermissions["apply_patch"] = EnablePatchApplication;
         EnableFileWriting = config.FileWritingEnabled;
         EnableShellTool = config.ShellToolEnabled;
+        EnableUserTools = config.UserToolsEnabled;
+        // Normalised once, here, rather than at each call: hosts are compared case-insensitively
+        // against a URI's Host, and an allowlist entry that differs only in case or whitespace would
+        // otherwise silently fail to match the host it was written for.
+        UserToolAllowedHosts = (config.UserToolAllowedHosts ?? new())
+            .Select(h => (h ?? "").Trim().ToLowerInvariant())
+            .Where(h => h.Length > 0).Distinct().ToList();
         EnableOperatorShell = config.OperatorShellEnabled;
         OperatorShellDir = config.OperatorShellDir ?? "";
         EnableFileTools = config.FileToolsEnabled;
@@ -863,6 +881,10 @@ public static class AnthillRuntime
         ["operator_shell_enabled"] = EnableOperatorShell,
         ["operator_shell_dir"] = OperatorShellDir,
         ["file_tools_enabled"] = EnableFileTools,
+        // v3.4.1: reported alongside the other capability gates, because the allowlist — not the
+        // flag — is what an operator actually needs to see to know what user tools can reach.
+        ["user_tools_enabled"] = EnableUserTools,
+        ["user_tool_allowed_hosts"] = UserToolAllowedHosts,
         ["parallel_execution_enabled"] = EnableParallelExecution,
         ["max_parallel_workers"] = MaxParallelWorkers,
         ["max_web_searches_per_mission"] = MaxWebSearchesPerMission,

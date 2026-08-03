@@ -47,9 +47,9 @@ public class ModelCallCancellationTests
 
         var client = new OllamaClient("test-model", "http://127.0.0.1:1"); // unroutable — must never be reached
         var sw = Stopwatch.StartNew();
-        ModelCallResult result;
+        ModelResponse result;
         using (ModelCallScope.Enter(cts.Token))
-            result = client.Generate("say hi", retries: 3);
+            result = client.Send(ModelRequest.FromPrompt("say hi"), retries: 3);
         sw.Stop();
 
         // v3.2.0: the STATUS is the assertion. It used to be a prefix test on the prose, which
@@ -70,9 +70,9 @@ public class ModelCallCancellationTests
 
         // A non-empty key is required to reach the request path (an empty key fails closed earlier).
         var client = new OpenAiCompatibleClient("OpenAI", "http://127.0.0.1:1/v1", "sk-test", "test-model");
-        ModelCallResult result;
+        ModelResponse result;
         using (ModelCallScope.Enter(cts.Token))
-            result = client.Generate("say hi", retries: 3);
+            result = client.Send(ModelRequest.FromPrompt("say hi"), retries: 3);
 
         Assert.Equal(ModelCallOutcome.Cancelled, result.Status);
         Assert.False(result.Ok);

@@ -116,6 +116,29 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // the affected role unavailable (fail closed) and is loud, never silent.
         foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))
             Console.Error.WriteLine($"[startup-validation] {problem}");
+
+        // v3.4.2: does each role's route actually do what its contract needs? Reported at startup
+        // because EVERY mismatch here fails silently at runtime — a model that cannot call tools is
+        // never shown them and answers from priors; one without structured output returns prose
+        // where a schema was expected and parses to an empty result. Neither throws, neither opens a
+        // breaker, and in a transcript both look like a weak model rather than a misconfiguration.
+        //
+        // A warning, not a refusal: the operator's routing is theirs, the capability data can be
+        // incomplete for a model nothing has described yet, and refusing to start over a
+        // fail-closed guess would be worse than running with a warning they can act on.
+        if (Router is not null)
+            foreach (var fitness in AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts).Where(f => !f.Fit))
+                Console.Error.WriteLine(
+                    $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
+                  + $"which is missing: {string.Join("; ", fitness.Unmet)}");
+
+        // v3.5.0: reconcile recorded workspaces with what is on disk, before anything can be
+        // dispatched into one. A row left claiming Active by a process that died would otherwise be
+        // handed to an agent as a live workspace, and something would wait forever for the agent
+        // that row implies is already working in it.
+        Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
+        foreach (var note in Workspaces.Recover())
+            Console.Error.WriteLine($"[workspace-recovery] {note}");
         Execution = new ExecutionService(Memory, _ants);
     }
 
@@ -136,7 +159,88 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         registry.Register(new WebSearchTool());
         registry.Register(new ShellCommandTool());
         registry.Register(new ApplyPatchTool(guard));
+
+        // v3.4.1: operator-defined tools join the SAME registry, last, and by the same Register call
+        // every built-in uses. That ordering is deliberate — a definition is validated against
+        // ToolInventory and cannot take a built-in's name, so arriving last can never displace one.
+        //
+        // Registering them here rather than through a parallel path is the entire exit gate: from
+        // this line onwards nothing in the harness — projection, authorization, dispatch, failure
+        // classification, /tools — knows or asks whether a tool was compiled in or declared.
+        UserTools = UserToolRegistrar.Default().RegisterAll(registry, Memory.LoadToolDefinitions());
+        foreach (var rejected in UserTools.Where(r => !r.Registered))
+            Console.Error.WriteLine(
+                $"[user-tools] '{rejected.Name}' not registered: {string.Join("; ", rejected.Problems)}");
+
         return registry;
+    }
+
+    /// <summary>
+    /// The outcome of loading operator-defined tools for THIS run, rejections included. Held so the
+    /// API can answer "why is my tool not there" — the one question a rejected definition provokes,
+    /// and one that is unanswerable if the rejection only ever reached stderr.
+    /// </summary>
+    public IReadOnlyList<ToolRegistration> UserTools { get; private set; } = Array.Empty<ToolRegistration>();
+
+    /// <summary>
+    /// v3.5.0: disposable, attributable workspaces for code missions. Owned by the Queen because
+    /// workspace lifecycle is deterministic orchestration — no model participates in deciding where
+    /// an agent may write, for the same reason none picks its own tool authorization.
+    /// </summary>
+    public Anthill.Core.Workspaces.MissionWorkspaceManager Workspaces { get; private set; } = null!;
+
+    /// <summary>
+    /// Re-read the stored definitions and re-register them into the live registry.
+    ///
+    /// Called after an operator adds, edits or revokes a tool, so the change takes effect for the
+    /// next mission rather than the next restart. It re-registers the WHOLE set rather than one
+    /// definition, because the grant table is replaced wholesale — that is what stops a definition
+    /// removed since the last load from staying granted.
+    /// </summary>
+    public void ReloadUserTools() =>
+        UserTools = UserToolRegistrar.Default().RegisterAll(Tools, Memory.LoadToolDefinitions());
+
+    /// <summary>
+    /// Prepare a workspace for a mission that may write, and record the outcome on the mission's
+    /// own event stream.
+    ///
+    /// Returns null rather than throwing when preparation fails — which it legitimately does when
+    /// the workspace root is not a git checkout. A mission that cannot get an isolated workspace
+    /// still runs, under the configured root exactly as it did before v3.5.0; refusing to run at all
+    /// would make an isolation improvement into a breaking change for every non-git deployment.
+    /// The event says which happened, because "my changes went to the live checkout" must never be
+    /// something an operator has to infer.
+    /// </summary>
+    private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId)
+    {
+        try
+        {
+            var workspace = Workspaces.Prepare(missionId);
+            if (workspace.Usable)
+            {
+                Workspaces.Activate(workspace.Id);
+                Memory.LogEvent(missionId, "workspace_ready",
+                    $"Mission workspace {workspace.Id} prepared from {workspace.BaseRevision}", null, "queen",
+                    new()
+                    {
+                        ["workspace_id"] = workspace.Id,
+                        ["base_revision"] = workspace.BaseRevision,
+                        ["root"] = workspace.Root,
+                    });
+                return workspace;
+            }
+
+            Memory.LogEvent(missionId, "workspace_unavailable",
+                $"No isolated workspace: {workspace.Note}. File operations use the configured root.",
+                null, "queen", new() { ["reason"] = workspace.Note });
+            return null;
+        }
+        catch (Exception error)
+        {
+            Memory.LogEvent(missionId, "workspace_unavailable",
+                $"Workspace preparation failed: {error.Message}", null, "queen");
+            return null;
+        }
     }
 
     public string RunMission(string goal) => RunMission(goal, onMissionCreated: null);
@@ -188,6 +292,18 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
         Memory.SaveMission(mission);
         onMissionCreated?.Invoke(mission.Id);
+
+        // v3.5.0 — a mission permitted to WRITE gets its own workspace, and every file operation for
+        // the rest of this mission is confined to it.
+        //
+        // Gated on the write capabilities rather than prepared for every mission: a read-only
+        // research mission has nothing to isolate, and taking a git worktree for it would cost a
+        // directory per question. The scope is entered even when preparation FAILS to produce a
+        // usable workspace — in which case CurrentRoot is null and the guard keeps its configured
+        // root, which is exactly the pre-v3.5.0 behaviour rather than a silent widening.
+        var wantsWorkspace = AnthillRuntime.EnableFileWriting || AnthillRuntime.EnablePatchApplication;
+        var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id) : null;
+        using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
         Memory.LogEvent(mission.Id, "mission_context_resolved",
             "Mission constraints, capability grants, deadline and budgets resolved at intake.",
             metadata: context.Snapshot());

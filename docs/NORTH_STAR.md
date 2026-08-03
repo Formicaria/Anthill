@@ -2,7 +2,7 @@
 
 ## Colony Execution Infrastructure
 
-**Baseline:** v2.26.0 · **Shipping release: v3.2.1** (dashboard direct manipulation — drag to arrange, corner to size; v3.2.0 carried the dashboard redesign and typed model results, v3.0.1 the generation-integrity scoring fix)
+**Baseline:** v2.26.0 · **Shipping release: v3.4.2** (the agent harness: a typed provider substrate, a bounded tool-calling loop, operator-defined tools, and contracts that declare what they need from a model — v3.3.0 carried the provider substrate, v3.4.0 the tool framework, v3.4.1 user-defined tools; v3.2.1 was the last dashboard release)
 **Target:** V4 Autonomous Software Engineering Colony
 **Status:** Canonical (adopted at the V2 closeout; V2 documents archived at `docs/archive/v2/`)
 **Document version:** 1.0
@@ -315,9 +315,10 @@ V3 architecture decision records live in `docs/adr/` and are written BEFORE the 
 ```text
 docs/adr/ADR-001-runtime-composition.md   Runtime composition + Queen decomposition   (v3.1.0)
 docs/adr/ADR-002-mission-context.md       Immutable per-mission MissionContext        (v3.1.0)
-docs/adr/ADR-003-worker-protocol.md       Durable worker + attempt protocol           (v3.4.0)
-docs/adr/ADR-004-artifact-store.md        Artifact + evidence store                   (v3.5.0)
-docs/adr/ADR-005-workspace-manager.md     Mission workspace manager                   (v3.3.0)
+docs/adr/ADR-003-worker-protocol.md       Durable worker + attempt protocol           (v3.8.0)
+docs/adr/ADR-004-artifact-store.md        Artifact + evidence store                   (v3.9.0)
+docs/adr/ADR-005-workspace-manager.md     Mission workspace manager                   (v3.5.0)
+docs/adr/ADR-006-agent-harness.md         Anthill as an agent harness                 (v3.3.0)
 ```
 
 V2 planning documents (the V2 North Star, roadmap, remaining-work tracker, and completed project
