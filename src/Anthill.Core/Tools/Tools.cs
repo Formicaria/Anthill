@@ -112,6 +112,28 @@ public sealed class ToolRegistry
             return denied;
         }
 
+        // v3.7.0 — the escalation gate, at the SAME chokepoint as authorization.
+        //
+        // Deliberately after ToolAuthorization and before execution. Authorization asks "may this
+        // ROLE ever do this"; escalation asks "has the OPERATOR agreed to this happening now". They
+        // are different questions with different answers, and a tool must pass both — but there is
+        // no point asking the operator about something the role could never do anyway.
+        //
+        // Outside a conversation this returns null and nothing changes, which is why missions run
+        // exactly as they did.
+        var escalation = Conversations.ConversationScope.Evaluate(name);
+        if (escalation is { Allowed: false })
+        {
+            var refused = new ToolResult(name, false, "",
+                $"escalation_refused: {escalation.Reason}", Contracts.FailureClass.AuthorizationFailure);
+            if (missionId is not null)
+                _memory.LogEvent(missionId, "escalation_refused",
+                    $"Tool REFUSED pending operator decision: {name}", taskId, antName,
+                    new() { ["tool_name"] = name, ["decision_id"] = escalation.Id,
+                            ["policy"] = escalation.Policy.ToString(), ["reason"] = escalation.Reason });
+            return refused;
+        }
+
         ToolResult result;
         try
         {
