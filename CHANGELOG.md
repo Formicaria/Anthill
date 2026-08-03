@@ -1,5 +1,31 @@
 # ANTHILL Changelog
 
+## v3.7.0 - Conversation orchestration: chat that escalates, explicitly
+
+One conversational surface that starts as chat and escalates into autonomous execution, with the
+escalation itself explicit, bounded and recorded.
+
+- **Conversations are persisted** (schema 21) with the transcript, the tools offered and called, and
+  the model route *per turn* - because capability-aware routing can substitute a model
+  mid-conversation, and a transcript reporting only the configured route describes a conversation
+  that did not happen.
+- **The operator chooses the approval model**: ask each time, auto-approve, or bypass. The exit gate
+  requires a *recorded* decision, not a prompt - so choosing a standing policy IS the decision,
+  recorded once with an author. A standing permission with no author fails closed back to asking.
+- **Escalation is requested, never inferred.** The model does not decide when to start a mission;
+  that would make its judgement a security boundary, and a model that wants to be helpful escalates.
+  `start_mission` goes through the same gate as `apply_patch`.
+- **Refusals are recorded too** - the moment the colony wanted more authority than it had is the one
+  an audit most needs, because nobody saw it happen.
+- **Cancelling cancels.** The row is marked first, so no new work can start regardless of anyone's
+  cooperation; then every live token source is signalled, keyed by conversation because that is what
+  an operator cancels.
+- **One budget for both modes.** Per-execution budgets cannot bound a conversation: each escalation
+  gets a fresh loop budget and looks like the first, so a conversation that escalates repeatedly
+  stays inside its limits every time while the total work grows without bound.
+- Run state is derived on request, never stored - a stored status fails exactly where it is relied
+  on, since a process that dies leaves its last write saying "running" forever.
+
 ## v3.6.0 - Repository awareness: ask, do not stuff
 
 An agent answers "where is this handled" from a revision-keyed index by calling a tool, rather than

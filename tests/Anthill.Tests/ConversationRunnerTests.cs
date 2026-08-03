@@ -215,6 +215,152 @@ public class ConversationRunnerTests : IDisposable
         Assert.Equal(ConversationRunner.StartMissionAction, decision.Action);
     }
 
+    // ---- one budget, both modes -------------------------------------------------------------------
+
+    /// <summary>
+    /// The limit per-execution budgets structurally CANNOT enforce. Each escalation gets a fresh
+    /// loop budget and looks like the first one; only a budget belonging to the CONVERSATION can see
+    /// that the total work it has authorised keeps growing.
+    /// </summary>
+    [Fact]
+    public void TheConversationBudget_CapsHowMuchWorkOneConversationCanStart()
+    {
+        var runner = Runner();
+        var chat = Chat(EscalationPolicy.Bypass) with { Budget = new ConversationBudget(MaxMissions: 2) };
+        _memory.SaveConversation(chat);
+
+        for (var i = 0; i < 3; i++)
+            chat = _memory.LoadConversation("c1")! with { Budget = chat.Budget };
+
+        // start two, which the budget allows
+        runner.Run(chat, "one", ConversationMode.Mission);
+        chat = _memory.LoadConversation("c1")! with { Budget = new ConversationBudget(MaxMissions: 2) };
+        runner.Run(chat, "two", ConversationMode.Mission);
+        chat = _memory.LoadConversation("c1")! with { Budget = new ConversationBudget(MaxMissions: 2) };
+
+        var third = runner.Run(chat, "three", ConversationMode.Mission);
+
+        Assert.False(third.Started);
+        Assert.Equal(2, _missionsStarted);
+        Assert.Contains("budget exhausted", third.Summary);
+    }
+
+    /// <summary>
+    /// Budget is checked BEFORE the gate. Asking an operator to approve something that will be
+    /// refused anyway trains them to approve without reading — and the decision log should not fill
+    /// with approvals for work that never ran.
+    /// </summary>
+    [Fact]
+    public void AnExhaustedBudget_DoesNotAskTheOperator()
+    {
+        var runner = Runner();
+        var chat = Chat() with { Budget = new ConversationBudget(MaxMissions: 0) };
+        _memory.SaveConversation(chat);
+
+        var outcome = runner.Run(chat, "go", ConversationMode.Mission, Approve());
+
+        Assert.False(outcome.Started);
+        Assert.Null(outcome.Decision);
+        Assert.Empty(_memory.LoadEscalationDecisions("c1"));
+    }
+
+    /// <summary>
+    /// The tool loop stops inventing its own numbers: its budget is PROJECTED from the
+    /// conversation's, so both modes count against limits that came from one place.
+    /// </summary>
+    [Fact]
+    public void TheToolLoopBudget_ComesFromTheConversation()
+    {
+        var budget = new ConversationBudget(MaxTurns: 3, MaxToolCalls: 7, MaxSeconds: 42);
+
+        var loop = budget.ForToolLoop();
+
+        Assert.Equal(3, loop.MaxTurns);
+        Assert.Equal(7, loop.MaxToolCalls);
+        Assert.Equal(42, loop.MaxSeconds);
+    }
+
+    // ---- cancelling a conversation cancels its work ----------------------------------------------
+
+    /// <summary>
+    /// The exit gate, in full. Marking a row cancelled does not stop a mission that is ALREADY
+    /// RUNNING — this is the half that actually stops it, and without it the gate would have been
+    /// satisfied on paper by a flag nobody was reading.
+    /// </summary>
+    [Fact]
+    public void Cancelling_StopsWorkThatIsAlreadyRunning()
+    {
+        var runner = Runner();
+        runner.Run(Chat(EscalationPolicy.Bypass), "go", ConversationMode.Mission);
+
+        var stopped = runner.Cancel("c1");
+
+        Assert.Equal(1, stopped);
+        Assert.True(_lastToken.IsCancellationRequested);
+        Assert.True(_memory.LoadConversation("c1")!.Cancelled);
+    }
+
+    /// <summary>
+    /// A conversation that escalated several times has several things to stop, and the operator
+    /// should not have to know that — which is why live work is keyed by CONVERSATION, not mission.
+    /// </summary>
+    [Fact]
+    public void Cancelling_StopsEveryMissionTheConversationStarted()
+    {
+        var runner = Runner();
+        var chat = Chat(EscalationPolicy.Bypass);
+        runner.Run(chat, "first", ConversationMode.Mission);
+        runner.Run(chat, "second", ConversationMode.Mission);
+
+        Assert.Equal(2, runner.Cancel("c1"));
+    }
+
+    /// <summary>
+    /// The count distinguishes "stopped two missions" from "there was nothing running". Silence on
+    /// that distinction is what makes people press cancel twice.
+    /// </summary>
+    [Fact]
+    public void CancellingWithNothingRunning_ReportsZero_AndStillMarksCancelled()
+    {
+        var runner = Runner();
+        Chat();
+
+        Assert.Equal(0, runner.Cancel("c1"));
+        Assert.True(_memory.LoadConversation("c1")!.Cancelled);
+    }
+
+    /// <summary>
+    /// Cancelling twice is safe. An operator who does not see an immediate effect presses it again,
+    /// and the second press must not throw on a token source already disposed.
+    /// </summary>
+    [Fact]
+    public void CancellingTwice_IsSafe()
+    {
+        var runner = Runner();
+        runner.Run(Chat(EscalationPolicy.Bypass), "go", ConversationMode.Mission);
+
+        Assert.Equal(1, runner.Cancel("c1"));
+        Assert.Equal(0, runner.Cancel("c1"));
+    }
+
+    /// <summary>
+    /// And after cancelling, no NEW work can start — the guarantee that does not depend on anyone
+    /// else's cooperation, since it holds even for a mission that ignores its token.
+    /// </summary>
+    [Fact]
+    public void AfterCancelling_NoNewWorkStarts()
+    {
+        var runner = Runner();
+        var chat = Chat(EscalationPolicy.Bypass);
+        runner.Run(chat, "first", ConversationMode.Mission);
+        runner.Cancel("c1");
+
+        var outcome = runner.Run(_memory.LoadConversation("c1")!, "second", ConversationMode.Mission);
+
+        Assert.False(outcome.Started);
+        Assert.Equal(1, _missionsStarted);
+    }
+
     /// <summary>
     /// Starting a mission is registered in the ONE side-effect set, not special-cased in the runner.
     /// A boundary enforced in two places eventually disagrees with itself.
