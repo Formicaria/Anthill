@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Anthill.Core.Models;
@@ -125,7 +126,16 @@ public static class OllamaCapabilityCache
                         var value = c?.GetValue<string>();
                         if (!string.IsNullOrWhiteSpace(value)) reported.Add(value!);
                     }
-                    found[name!] = ModelCapabilities.FromOllama(reported);
+                    // The context window comes from /api/show, not /api/tags — tags does not carry
+                    // it. Discovered here rather than left null because a requirement nothing can
+                    // evaluate is a requirement that quietly stops being true: the archivist and
+                    // scribe contracts declare context floors, and with this field never populated
+                    // they reported FIT against every model regardless of window. Verified live —
+                    // the fitness report said archivist was fit on a model whose window was unknown.
+                    found[name!] = ModelCapabilities.FromOllama(reported) with
+                    {
+                        ContextWindowTokens = ContextWindowOf(normalized, name!),
+                    };
                 }
 
                 // Replaced wholesale rather than merged: a model the operator has REMOVED must stop
@@ -139,6 +149,64 @@ public static class OllamaCapabilityCache
                 // back to the declared table. Deliberately silent — this runs on the model call
                 // path, and an operator without a local runtime should not get log noise per call.
             }
+        }
+    }
+
+    /// <summary>
+    /// One model's context window, from <c>/api/show</c>.
+    ///
+    /// The key is architecture-prefixed — <c>llama.context_length</c>, <c>gemma3.context_length</c>,
+    /// <c>qwen3.context_length</c> — so it is found by SUFFIX rather than by a table of
+    /// architectures, which would need editing every time a new one ships and would silently report
+    /// "unknown" until someone noticed.
+    ///
+    /// Null on any doubt, and that is the safe direction: <see cref="Agents.AntModelFitness"/>
+    /// deliberately does not treat an unknown window as too small, so a failed probe costs a check
+    /// that does not fire rather than a false warning an operator learns to ignore.
+    ///
+    /// One extra request per model, inside <see cref="Warm"/>, which is already the only method here
+    /// that does I/O and is called off the call path.
+    /// </summary>
+    private static int? ContextWindowOf(string host, string model)
+    {
+        try
+        {
+            using var content = new StringContent(
+                new JsonObject { ["model"] = model }.ToJsonString(),
+                System.Text.Encoding.UTF8, "application/json");
+            var response = Http.PostAsync($"{host}/api/show", content).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode) return null;
+
+            return ReadContextWindow(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+        catch (Exception)
+        {
+            return null;   // unknown, never guessed — see the remarks above
+        }
+    }
+
+    /// <summary>
+    /// The parsing half, separated from the I/O so it is testable without a live runtime — the same
+    /// split <c>ProviderWireFormat</c> uses, and for the same reason: every mistake in reading a
+    /// provider's reply is a SILENT one, and silent mistakes need tests rather than integration luck.
+    /// </summary>
+    internal static int? ReadContextWindow(string json)
+    {
+        try
+        {
+            var info = JsonNode.Parse(json)?.AsObject()?["model_info"]?.AsObject();
+            if (info is null) return null;
+
+            foreach (var (key, value) in info)
+                if (key.EndsWith(".context_length", StringComparison.OrdinalIgnoreCase)
+                    && value?.GetValue<int>() is { } tokens and > 0)
+                    return tokens;
+
+            return null;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
         }
     }
 }
