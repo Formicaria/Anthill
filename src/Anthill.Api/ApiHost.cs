@@ -1399,13 +1399,25 @@ public static partial class ApiHost
          * listed" would reasonably assume the page was broken, whereas "text only" is the actual,
          * deliberate, fail-closed answer.
          */
-        app.MapGet("/providers/capabilities", (HttpContext ctx) =>
+        app.MapGet("/providers/capabilities", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_providers"); if (auth is not null) return auth;
+
+            // v3.3.0: DISCOVERED capabilities where the runtime publishes them. Ollama reports a
+            // per-model `capabilities` array on /api/tags, and it is authoritative in a way a name
+            // table can never be: against three real local models the hand-written table was wrong
+            // twice — it called gemma4:31b text-only when Ollama reports tools AND thinking, so the
+            // operator's most capable local model would never have been offered a tool.
+            //
+            // Best-effort by design. An unreachable Ollama must not fail the whole page; the report
+            // falls back to declared capabilities and says which it used, per provider.
+            var discovered = await DiscoverOllamaModelsAsync();
 
             var report = new List<Dictionary<string, object?>>();
             foreach (var p in ProviderCatalog.All)
             {
+                var isOllama = string.Equals(p.Id, "ollama", StringComparison.OrdinalIgnoreCase);
+                var useDiscovered = isOllama && discovered.Count > 0;
                 // A provider whose catalog list is empty does not have "no models" — it has a
                 // DYNAMIC list. Ollama serves whatever the operator has pulled, so the static
                 // catalog cannot enumerate it and the live list comes from /ollama/models. Reporting
@@ -1413,14 +1425,19 @@ public static partial class ApiHost
                 // which is both wrong and the exact case this whole per-model design exists for.
                 var declared = p.Models ?? Array.Empty<string>();
                 var dynamicList = declared.Length == 0;
-                var listed = dynamicList
-                    ? new[] { p.DefaultModel }.Where(m => !string.IsNullOrWhiteSpace(m)).ToArray()
-                    : declared.ToArray();
+                var listed = useDiscovered
+                    ? discovered.Keys.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToArray()
+                    : dynamicList
+                        ? new[] { p.DefaultModel }.Where(m => !string.IsNullOrWhiteSpace(m)).ToArray()
+                        : declared.ToArray();
 
                 var models = new List<Dictionary<string, object?>>();
                 foreach (var model in listed)
                 {
-                    var caps = ModelCapabilityCatalog.For(p.Id, model);
+                    // What the runtime SAYS beats what the name suggests.
+                    var caps = useDiscovered && discovered.TryGetValue(model, out var reported)
+                        ? ModelCapabilities.FromOllama(reported)
+                        : ModelCapabilityCatalog.For(p.Id, model);
                     models.Add(new Dictionary<string, object?>
                     {
                         ["model"] = model,
@@ -1438,9 +1455,11 @@ public static partial class ApiHost
                 {
                     ["provider"] = p.Id,
                     ["name"] = p.Name,
-                    // Stated so the UI can explain a "no tools" model rather than looking wrong:
-                    // capabilities are declared from a table, not probed from the provider.
-                    ["source"] = "declared",
+                    // Per provider, and honest about which it was: "discovered" means the runtime
+                    // itself reported these, "declared" means we inferred them from a name table.
+                    // The UI needs the difference — a declared "no tool calling" is a guess worth
+                    // second-guessing, a discovered one is fact.
+                    ["source"] = useDiscovered ? "discovered" : "declared",
                     // The UI must join this with /ollama/models rather than treating the list as
                     // complete, and it can only know to do that if we say so.
                     ["models_are_dynamic"] = dynamicList,
@@ -2185,6 +2204,49 @@ public static partial class ApiHost
 
     private static void ProtectedText(WebApplication app, string path, string permission, Func<string> handler) =>
         app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? Results.Text(handler(), "text/plain"));
+
+    /// <summary>
+    /// Ask Ollama which models it is holding and what each can do (/api/tags → capabilities[]).
+    ///
+    /// Best-effort ON PURPOSE. Ollama frequently lives on another host and is frequently down; a
+    /// capabilities page that fails because a local runtime is asleep is worse than one that falls
+    /// back to declared values and says so. An empty result therefore means "could not ask", never
+    /// "supports nothing" — the caller distinguishes them, and the response reports which it used.
+    /// </summary>
+    private static async Task<Dictionary<string, List<string>>> DiscoverOllamaModelsAsync()
+    {
+        var found = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var host = AnthillRuntime.OllamaHost.TrimEnd('/');
+            var resp = await InternalHttp.GetAsync($"{host}/api/tags", cts.Token);
+            if (!resp.IsSuccessStatusCode) return found;
+
+            var body = await resp.Content.ReadAsStringAsync(cts.Token);
+            var root = System.Text.Json.Nodes.JsonNode.Parse(body)?.AsObject();
+            foreach (var entry in root?["models"]?.AsArray() ?? new System.Text.Json.Nodes.JsonArray())
+            {
+                var name = entry?["name"]?.GetValue<string>() ?? entry?["model"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                var caps = new List<string>();
+                foreach (var c in entry?["capabilities"]?.AsArray() ?? new System.Text.Json.Nodes.JsonArray())
+                {
+                    var value = c?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(value)) caps.Add(value!);
+                }
+                found[name!] = caps;
+            }
+        }
+        catch (Exception)
+        {
+            // Unreachable, slow, or a shape we do not recognise: fall back to declared. Deliberately
+            // silent — this runs on every page load of a settings screen, and an operator with no
+            // local runtime configured should not be reading exception noise in their logs.
+        }
+        return found;
+    }
 
     private static IResult? RequireAuth(HttpContext ctx, string permission)
     {
