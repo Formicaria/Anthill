@@ -42,6 +42,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("file_writing_enabled")] public bool FileWritingEnabled { get; set; } = false;
     [JsonPropertyName("shell_tool_enabled")] public bool ShellToolEnabled { get; set; } = false;
     [JsonPropertyName("file_tools_enabled")] public bool FileToolsEnabled { get; set; } = true;
+
+    // v3.4.1: operator-defined tools. OFF by default, like every capability that reaches outside the
+    // process. The host allowlist is the real boundary, not the flag: an HTTP tool whose host is not
+    // listed can reach nothing, so turning the feature on by itself grants no network access. An
+    // empty allowlist is therefore a usable, deliberate state and NOT treated as "allow everything".
+    [JsonPropertyName("user_tools_enabled")] public bool UserToolsEnabled { get; set; } = false;
+    [JsonPropertyName("user_tool_allowed_hosts")] public List<string> UserToolAllowedHosts { get; set; } = new();
     // Operator shell console (Configuration -> Shell): an interactive host terminal for admins
     // ONLY. Distinct from shell_tool_enabled (which gates the AI ants' allowlisted shell tool) —
     // this is arbitrary command execution by a logged-in human admin, every command audit-logged.
