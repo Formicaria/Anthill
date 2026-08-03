@@ -11,7 +11,10 @@ using Anthill.Core.Models;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Planning;
 using Anthill.Core.Readiness;
+using Anthill.Core.Sandbox;   // LoopBudget — the agent loop's bounds
 using Anthill.Core.Security;
+// `Task` here is Anthill.Core.Domain.Task (the mission task). The threading one must be named.
+using ThreadingTask = System.Threading.Tasks.Task;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -527,6 +530,80 @@ public static partial class ApiHost
             if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
             if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
             return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+        });
+
+        /*
+         * v3.4.0 (ADR-003) — run one tool-calling conversation and return the whole transcript.
+         *
+         * This is the tool loop's first production call site, and it is deliberately the smallest
+         * one that is honest: an operator asks for something, the agent reasons and calls tools
+         * under its role's authorization, and every step comes back. Missions remain the durable,
+         * scheduled path — this is the direct one, for asking a question and seeing the work.
+         *
+         * SYNCHRONOUS, and bounded because of it. A tool-calling run is several model calls, so it
+         * takes as long as it takes; the LoopBudget caps turns, tool calls and wall-clock, and the
+         * request's own cancellation token aborts it if the operator gives up. Making this
+         * fire-and-forget would need a job record to be worth anything, and that is the mission
+         * path, which already exists.
+         *
+         * run_mission, not read_status: this SPENDS model budget and can invoke tools. Whether a
+         * given tool may run is still the registry's decision, per role.
+         */
+        app.MapPost("/agent/run", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (!MissionLimiter.IsAllowed(ClientIp(ctx)))
+                return ApiJson.Error("Agent run rate limit exceeded. Try again shortly.", "rate_limited");
+
+            AgentRunRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AgentRunRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var goal = (body?.Goal ?? "").Trim();
+            if (goal.Length == 0) return ApiJson.Error("A goal is required.", "bad_request");
+            if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength)
+                return ApiJson.Error("Goal is too long.", "bad_request");
+
+            // The role decides which tools exist for this run, so an unknown one must be refused
+            // rather than defaulted — silently downgrading to some other role's toolset would be a
+            // capability decision made by a typo.
+            var role = string.IsNullOrWhiteSpace(body?.Role) ? "researcher" : body!.Role!.Trim().ToLowerInvariant();
+            if (!AntRegistry.ExecutableRoleIds.Contains(role))
+                return ApiJson.Error($"Unknown or non-executable role '{role}'.", "bad_request");
+
+            var opening = new List<ModelMessage>();
+            if (!string.IsNullOrWhiteSpace(body?.System))
+                opening.Add(new ModelMessage(ModelMessage.System, body!.System!));
+            opening.Add(new ModelMessage(ModelMessage.User, goal));
+
+            var budget = new LoopBudget(
+                MaxTurns: Math.Clamp(body?.MaxTurns ?? 8, 1, 24),
+                MaxToolCalls: Math.Clamp(body?.MaxToolCalls ?? 24, 1, 96));
+
+            var result = await ThreadingTask.Run(() => ToolCallingLoop.Run(
+                Queen.Router!, Queen.Tools, role, opening, budget,
+                cancellationToken: ctx.RequestAborted), ctx.RequestAborted);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["role"] = role,
+                ["content"] = result.Content,
+                ["completed"] = result.Completed,
+                ["stop_reason"] = result.StopReason,
+                ["turns"] = result.Turns,
+                ["tool_calls"] = result.ToolCalls,
+                ["status"] = result.LastStatus.Name(),
+                // Absent usage stays absent — a provider that reports nothing is unknown, not free.
+                ["prompt_tokens"] = result.Usage.PromptTokens,
+                ["completion_tokens"] = result.Usage.CompletionTokens,
+                // The transcript IS the deliverable: what it did, not just what it concluded.
+                ["transcript"] = result.Transcript.Select(m => new Dictionary<string, object?>
+                {
+                    ["role"] = m.Role,
+                    ["content"] = m.Content,
+                    ["tool_call_id"] = m.ToolCallId,
+                }).ToList(),
+            }, result.Completed ? "Agent run completed." : $"Agent run stopped: {result.StopReason}.");
         });
 
         // v1.8.18 Mission Composer: dry-run the planner for a goal and return the task plan WITHOUT
@@ -2398,6 +2475,21 @@ public sealed class AttestBody
 }
 
 public sealed class MissionRequest { public string Goal { get; set; } = ""; }
+
+/// <summary>
+/// v3.4.0: one tool-calling agent run. Budgets are optional and clamped server-side — a client
+/// must not be able to ask for an unbounded loop, because the thing on the other end can run tools.
+/// </summary>
+public sealed class AgentRunRequest
+{
+    public string Goal { get; set; } = "";
+    /// <summary>Which role runs it. The role decides which tools exist for this run.</summary>
+    public string? Role { get; set; }
+    /// <summary>Optional system framing, prepended to the conversation.</summary>
+    public string? System { get; set; }
+    public int? MaxTurns { get; set; }
+    public int? MaxToolCalls { get; set; }
+}
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
