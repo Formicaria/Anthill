@@ -49,17 +49,31 @@ public sealed class OpenAiCompatibleClient : IModelClient
             : trimmed + "/chat/completions";
     }
 
-    public ModelCallResult Generate(string prompt, int retries = 2)
+    /// <summary>
+    /// v3.3.0 (ADR-003): typed, with the body now built by <see cref="ProviderWireFormat"/>.
+    ///
+    /// This is the client the substrate was built for. The hand-rolled anonymous object it replaces
+    /// could only ever express a single user message; the projection carries messages, tools, a
+    /// response schema and a per-call model — and it is unit-tested without a provider, which
+    /// matters because every mistake it can make is silent (a tools array nested one level wrong is
+    /// ignored, and the model simply answers without calling anything).
+    ///
+    /// Transport below is untouched: retries, the auth short-circuit, the ambient cancellation
+    /// token and the per-call deadline all behave exactly as before.
+    /// </summary>
+    public ModelResponse Send(ModelRequest request, int retries = 2)
     {
+        var model = request.Model ?? _model;
         if (string.IsNullOrWhiteSpace(_apiKey))
-            return new ModelCallResult(ModelCallOutcome.ConfigError, $"ERROR: {_providerLabel} API key not configured. Add it in Settings → Providers.");
+            return Fail(ModelCallOutcome.ConfigError, model,
+                $"ERROR: {_providerLabel} API key not configured. Add it in Settings → Providers.");
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            model = _model,
-            messages = new[] { new { role = "user", content = prompt } },
-        });
-        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
+        // Trim the ask to what this provider/model pair can actually serve — once, here. A caller
+        // may always request tools; whether they go on the wire is a property of the model.
+        var negotiated = ModelCapabilityCatalog.Negotiate(
+            request, ModelCapabilityCatalog.For(_providerLabel, model));
+        var payload = ProviderWireFormat.OpenAiBody(negotiated, model).ToJsonString();
+        var lastError = Fail(ModelCallOutcome.Empty, model, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             var ambient = ModelCallScope.Current;
@@ -67,19 +81,18 @@ public sealed class OpenAiCompatibleClient : IModelClient
             cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                 if (_extraHeaders is not null)
-                    foreach (var (name, value) in _extraHeaders) request.Headers.TryAddWithoutValidation(name, value);
-                request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    foreach (var (name, value) in _extraHeaders) httpRequest.Headers.TryAddWithoutValidation(name, value);
+                httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                using var response = Http.SendAsync(request, cts.Token).GetAwaiter().GetResult();
+                using var response = Http.SendAsync(httpRequest, cts.Token).GetAwaiter().GetResult();
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
-                    lastError = new ModelCallResult(
-                        response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
-                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError,
+                    lastError = Fail(response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError, model,
                         $"ERROR: {_providerLabel} request failed ({(int)response.StatusCode}): {Truncate(body)}");
                     // Auth/permission failures will not heal on retry — surface immediately.
                     if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
@@ -87,34 +100,36 @@ public sealed class OpenAiCompatibleClient : IModelClient
                     continue;
                 }
 
-                using var doc = JsonDocument.Parse(body);
-                var content = "";
-                if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0
-                    && choices[0].TryGetProperty("message", out var message) && message.TryGetProperty("content", out var c))
-                    content = c.GetString()?.Trim() ?? "";
-                return string.IsNullOrEmpty(content)
-                    ? new ModelCallResult(ModelCallOutcome.Empty, $"{_providerLabel} returned an empty response.")
-                    : new ModelCallResult(ModelCallOutcome.Ok, content);
+                // Parsed by the tested projection: it also recovers tool calls and usage, which
+                // the inline walk above could not see and therefore silently dropped.
+                return ProviderWireFormat.ReadOpenAi(body, _providerLabel, model);
             }
             catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                return new ModelCallResult(ModelCallOutcome.Cancelled, $"ERROR: {_providerLabel} request cancelled because the mission was stopped.");
+                return Fail(ModelCallOutcome.Cancelled, model, $"ERROR: {_providerLabel} request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Timeout, $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {
-                return new ModelCallResult(ModelCallOutcome.ConnectError, $"ERROR: Could not reach {_providerLabel}: {error.Message}");
+                return Fail(ModelCallOutcome.ConnectError, model, $"ERROR: Could not reach {_providerLabel}: {error.Message}");
             }
             catch (Exception error)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Error, $"ERROR: {_providerLabel} request failed: {error.Message} (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Error, model, $"ERROR: {_providerLabel} request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
     }
+
+    /// <summary>
+    /// A failure envelope carrying which provider and model produced it. The operator-facing prose
+    /// is byte for byte what it was — only the container changed.
+    /// </summary>
+    private ModelResponse Fail(ModelCallOutcome status, string model, string message) =>
+        new() { Status = status, Content = message, Provider = _providerLabel, Model = model };
 
     private static string Truncate(string text, int max = 300) => text.Length <= max ? text : text[..max] + "…";
 }
@@ -151,18 +166,24 @@ public sealed class AnthropicClient : IModelClient
         return trimmed.EndsWith("/messages", StringComparison.OrdinalIgnoreCase) ? trimmed : trimmed + "/messages";
     }
 
-    public ModelCallResult Generate(string prompt, int retries = 2)
+    /// <summary>
+    /// v3.3.0 (ADR-003): typed, with the body built by <see cref="ProviderWireFormat"/>.
+    ///
+    /// The projection is where Anthropic's two structural differences now live — the system prompt
+    /// is a top-level field rather than a message, and tools use `input_schema` rather than
+    /// `function.parameters`. The inline object it replaces could express neither, and would have
+    /// sent a system message as user text.
+    /// </summary>
+    public ModelResponse Send(ModelRequest request, int retries = 2)
     {
+        var model = request.Model ?? _model;
         if (string.IsNullOrWhiteSpace(_apiKey))
-            return new ModelCallResult(ModelCallOutcome.ConfigError, "ERROR: Anthropic API key not configured. Add it in Settings → Providers.");
+            return Fail(ModelCallOutcome.ConfigError, model, "ERROR: Anthropic API key not configured. Add it in Settings → Providers.");
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            model = _model,
-            max_tokens = 4096,
-            messages = new[] { new { role = "user", content = prompt } },
-        });
-        var lastError = new ModelCallResult(ModelCallOutcome.Empty, "");
+        var negotiated = ModelCapabilityCatalog.Negotiate(
+            request, ModelCapabilityCatalog.For("anthropic", model));
+        var payload = ProviderWireFormat.AnthropicBody(negotiated, model).ToJsonString();
+        var lastError = Fail(ModelCallOutcome.Empty, model, "");
         for (var attempt = 1; attempt <= retries; attempt++)
         {
             var ambient = ModelCallScope.Current;
@@ -170,56 +191,48 @@ public sealed class AnthropicClient : IModelClient
             cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-                request.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
-                request.Headers.TryAddWithoutValidation("anthropic-version", ApiVersion);
-                request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+                httpRequest.Headers.TryAddWithoutValidation("x-api-key", _apiKey);
+                httpRequest.Headers.TryAddWithoutValidation("anthropic-version", ApiVersion);
+                httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                using var response = Http.SendAsync(request, cts.Token).GetAwaiter().GetResult();
+                using var response = Http.SendAsync(httpRequest, cts.Token).GetAwaiter().GetResult();
                 var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!response.IsSuccessStatusCode)
                 {
-                    lastError = new ModelCallResult(
+                    lastError = Fail(
                         response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
-                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError,
+                            ? ModelCallOutcome.AuthError : ModelCallOutcome.HttpError, model,
                         $"ERROR: Anthropic request failed ({(int)response.StatusCode}): {Truncate(body)}");
                     if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
                         return lastError;
                     continue;
                 }
 
-                using var doc = JsonDocument.Parse(body);
-                var text = new StringBuilder();
-                if (doc.RootElement.TryGetProperty("content", out var blocks) && blocks.ValueKind == JsonValueKind.Array)
-                    foreach (var block in blocks.EnumerateArray())
-                        if (block.TryGetProperty("type", out var t) && t.GetString() == "text"
-                            && block.TryGetProperty("text", out var blockText))
-                            text.Append(blockText.GetString());
-
-                var completion = text.ToString().Trim();
-                return string.IsNullOrEmpty(completion)
-                    ? new ModelCallResult(ModelCallOutcome.Empty, "Anthropic returned an empty response.")
-                    : new ModelCallResult(ModelCallOutcome.Ok, completion);
+                return ProviderWireFormat.ReadAnthropic(body, model);
             }
             catch (OperationCanceledException) when (ambient.IsCancellationRequested)
             {
-                return new ModelCallResult(ModelCallOutcome.Cancelled, "ERROR: Anthropic request cancelled because the mission was stopped.");
+                return Fail(ModelCallOutcome.Cancelled, model, "ERROR: Anthropic request cancelled because the mission was stopped.");
             }
             catch (OperationCanceledException)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Timeout, $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {
-                return new ModelCallResult(ModelCallOutcome.ConnectError, $"ERROR: Could not reach Anthropic: {error.Message}");
+                return Fail(ModelCallOutcome.ConnectError, model, $"ERROR: Could not reach Anthropic: {error.Message}");
             }
             catch (Exception error)
             {
-                lastError = new ModelCallResult(ModelCallOutcome.Error, $"ERROR: Anthropic request failed: {error.Message} (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Error, model, $"ERROR: Anthropic request failed: {error.Message} (attempt {attempt}/{retries}).");
             }
         }
         return lastError;
     }
+
+    private static ModelResponse Fail(ModelCallOutcome status, string model, string message) =>
+        new() { Status = status, Content = message, Provider = "anthropic", Model = model };
 
     private static string Truncate(string text, int max = 300) => text.Length <= max ? text : text[..max] + "…";
 }
