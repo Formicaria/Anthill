@@ -1,9 +1,9 @@
 # ADR-005: Mission Workspace Manager
 
-**Status:** Accepted — implementation targeted at v3.3.0
+**Status:** Accepted — implementation targeted at v3.5.0 (was v3.3.0)
 **Date:** 2026-07-27
 **Baseline:** v3.0.0
-**Roadmap:** V3 ROADMAP § v3.3.0 · North Star §7 Stage 4 · Doctrine rule 8
+**Roadmap:** V3 ROADMAP § v3.5.0 · North Star §7 Stage 4 · Doctrine rule 8
 
 ---
 
@@ -35,7 +35,7 @@ states     requested -> preparing -> ready -> active -> checkpointed
 ```
 
 Paired with a `WorkspaceCapabilityManifest` that detects project type and declares the safe
-build/test/format commands for it — .NET and Node adapters ship in v3.3.0.
+build/test/format commands for it — .NET and Node adapters ship in v3.5.0.
 
 Rules:
 

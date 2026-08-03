@@ -6,7 +6,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.4.0 (ADR-003) — the registry projected into model-facing tool specs.
+/// v3.4.0 (ADR-006) — the registry projected into model-facing tool specs.
 ///
 /// The rule under test is that a role is offered only the tools it may actually run. Offering
 /// everything and letting authorization refuse at execution would be easier and wrong three ways:

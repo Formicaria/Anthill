@@ -1,7 +1,7 @@
 namespace Anthill.Core.Models;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — what a provider/model pair can actually do.
+/// v3.3.0 (ADR-006) — what a provider/model pair can actually do.
 ///
 /// Before this, nothing in the codebase could express a capability, so the orchestration layer had
 /// no choice but to assume every backend behaved identically. That assumption is invisible until it

@@ -73,4 +73,65 @@ public class DocsConsistencyTests
             $"These documents never mention the shipping version {current}, so they have fallen behind "
             + "the release they are supposed to describe: " + string.Join(", ", stale));
     }
+
+    /// <summary>
+    /// Every phase heading in the roadmap names a distinct version, and they ascend.
+    ///
+    /// Written because the roadmap had drifted into naming the same release twice: after the agent
+    /// harness direction change there were TWO `## v3.5.0` sections, a `## v3.4.0` section that
+    /// appeared after a v3.5.0 one, and no section at all for the two phases that had actually
+    /// shipped. A roadmap that names a release twice cannot answer "what is in this release", which
+    /// is the only question it exists to answer — and nothing was checking.
+    ///
+    /// Ordering is asserted as well as uniqueness, because renumbering a phase and leaving it in
+    /// place produces a document that is unique, wrong, and reads plausibly.
+    /// </summary>
+    [Fact]
+    public void RoadmapPhases_AreUniqueAndAscend()
+    {
+        var phases = Regex.Matches(Read("docs/ROADMAP.md"), @"^##\s+v(\d+)\.(\d+)\.(\d+)\b",
+                RegexOptions.Multiline)
+            .Select(m => (
+                text: m.Value.Trim(),
+                key: (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value))))
+            .ToList();
+
+        Assert.True(phases.Count >= 5, $"Expected the roadmap to have several phase headings, found {phases.Count}.");
+
+        var duplicates = phases.GroupBy(p => p.key).Where(g => g.Count() > 1)
+            .Select(g => string.Join(" AND ", g.Select(x => x.text))).ToList();
+        Assert.True(duplicates.Count == 0,
+            "The roadmap names the same version more than once, so it cannot say what is in that "
+          + "release:\n  " + string.Join("\n  ", duplicates));
+
+        var outOfOrder = phases.Zip(phases.Skip(1))
+            .Where(pair => pair.Second.key.CompareTo(pair.First.key) <= 0)
+            .Select(pair => $"{pair.Second.text} comes after {pair.First.text}").ToList();
+        Assert.True(outOfOrder.Count == 0,
+            "Roadmap phases must read in release order:\n  " + string.Join("\n  ", outOfOrder));
+    }
+
+    /// <summary>
+    /// Two ADRs must not share a number. `docs/ADR-003-AGENT-HARNESS.md` was written at the repo
+    /// root while `docs/adr/ADR-003-worker-protocol.md` already existed, so twenty source files
+    /// cited "ADR-003" meaning one of two different documents.
+    /// </summary>
+    [Fact]
+    public void AdrNumbers_AreUnique_AndAllAdrsLiveTogether()
+    {
+        // NUMBERED ADRs only. docs/ADR-ADAPTIVE-MISSION-RUNTIME.md is unnumbered and so cannot
+        // collide with anything; the invariant being protected is the numbering, not the filing.
+        var strays = Directory.GetFiles(Path.Combine(Root(), "docs"), "ADR-[0-9]*.md")
+            .Select(Path.GetFileName).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.True(strays.Count == 0,
+            "Numbered ADRs belong in docs/adr/, where a collision is visible: " + string.Join(", ", strays));
+
+        var duplicates = Directory.GetFiles(Path.Combine(Root(), "docs", "adr"), "ADR-[0-9]*.md")
+            .Select(f => Regex.Match(Path.GetFileName(f), @"^ADR-(\d+)"))
+            .Where(m => m.Success).GroupBy(m => m.Groups[1].Value)
+            .Where(g => g.Count() > 1).Select(g => "ADR-" + g.Key).ToList();
+        Assert.True(duplicates.Count == 0,
+            "These ADR numbers are used more than once, so a citation is ambiguous: "
+          + string.Join(", ", duplicates));
+    }
 }

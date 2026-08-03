@@ -4,7 +4,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — the wire contract, tested without a provider.
+/// v3.3.0 (ADR-006) — the wire contract, tested without a provider.
 ///
 /// Every mistake this file can make is a SILENT one: a tools array nested wrongly is ignored by the
 /// provider and the model simply answers without calling anything; usage read from a field that

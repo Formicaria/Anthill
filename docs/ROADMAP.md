@@ -333,7 +333,7 @@ model boundary, and adapter removal remain to be made universal here.
 - No core ant bypasses the contract, capability, metric, or artifact path.
 - Compatibility adapters are deleted, not merely deprecated.
 
-## DIRECTION CHANGE — Anthill as an agent harness (see `docs/ADR-003-AGENT-HARNESS.md`)
+## DIRECTION CHANGE — Anthill as an agent harness (see `docs/adr/ADR-006-agent-harness.md`)
 
 Anthill is becoming a general-purpose agentic AI harness: provider-agnostic, capability-aware and
 tool-centric, with the dashboard, Colony, missions and integrations as capabilities of the platform
@@ -352,15 +352,100 @@ What changes is ORDER, and one reversal:
   until the capability model exists. Writing them now means writing them twice.
 - The workspace/language-adapter phase below moves after the provider and tool substrate.
 
-Revised sequence: **v3.3.0 provider substrate** (typed request/response, async transport, model
-capabilities) → **v3.4.0 tool framework projection** (tool schemas, tool-call loop, core-ant
-contracts authored with capabilities) → **v3.5.0 mission workspace** (the phase below) → v3.6.0
-repository indexing → v3.7.0 conversation orchestration.
+Revised sequence, and the ONLY authoritative ordering — every phase below carries the number it
+has here:
+
+| Phase | Name | Status |
+|---|---|---|
+| v3.3.0 | Provider substrate — typed request/response, wire formats, model capabilities | shipped |
+| v3.4.0 | Tool framework projection — tool schemas, the agent loop, typed tool results | shipped |
+| v3.5.0 | Mission workspace and language adapter infrastructure | was v3.3.0 |
+| v3.6.0 | Repository indexing and awareness | new |
+| v3.7.0 | Conversation orchestration | new |
+| v3.8.0 | Durable worker and attempt runtime | was v3.4.0 |
+| v3.9.0 | Artifact, evidence, and context graph | was v3.5.0 |
+| v3.10.0 | Reconnaissance and quality ant activation | was v3.6.0 |
+| v3.11.0 | Repair, knowledge, documentation, and resource ant activation | was v3.7.0 |
+| v3.12.0 | Closed-loop software engineering workflows | was v3.8.0 |
+| v3.13.0 | Qualification, benchmarks, and V4 gate | was v3.9.0 |
+
+The renumbering is not cosmetic. Before it, this document contained two `v3.5.0` headings and a
+`v3.4.0` heading that appeared AFTER a v3.5.0 one, while the two phases actually shipped — the
+provider substrate and the tool framework — had no sections at all. A roadmap that names the same
+release twice cannot answer "what is in this release", which is the only question it exists to
+answer.
 
 The blocking defect is one interface: `IModelClient.Generate(string prompt, int retries)`. String in,
 string out — with nowhere to carry messages, tool schemas, structured-output formats, image parts,
 streaming, usage or a per-call model. Adding OpenRouter, LM Studio, vLLM or llama.cpp is mostly a
 `ProviderCatalog` entry against an OpenAI-compatible base URL and is NOT the hard part.
+
+## v3.3.0 - Provider Substrate
+
+### Goal
+
+Make the model seam capable of carrying everything an agent runtime needs, so that adding a provider
+is a catalog entry rather than a redesign.
+
+### Required Work
+
+- [x] Typed `ModelRequest`/`ModelResponse` with messages, tool specs, structured-output schemas,
+      content parts, per-call model selection and nullable usage.
+- [x] `ProviderWireFormat`: pure projection onto OpenAI-compatible and Anthropic wire shapes, and
+      pure readers back. Tested without a provider, because every mistake at this seam is silent.
+- [x] `IModelClient.Send(ModelRequest)` as the primary method; `Generate(string)` demoted to a
+      default interface method that narrows onto it.
+- [x] Ollama moved onto `/v1/chat/completions`, so one OpenAI-compatible path serves Ollama,
+      LM Studio, vLLM, llama.cpp and OpenRouter.
+- [x] `ModelCapabilities` + `ModelCapabilityCatalog`: fail-closed capability negotiation.
+- [x] `OllamaCapabilityCache`: per-model capabilities discovered from the runtime, warmed at
+      startup, read with NO I/O on the call path.
+- [x] `GET /providers/capabilities` reporting per-model capability with its source.
+- [ ] Async transport (`SendAsync`). Deferred: it is the prerequisite for `IAntExecutor.ExecuteAsync`
+      and remains the largest open item in the substrate.
+
+### Exit Gates
+
+- [x] A tools array is either correctly nested or a test fails — never silently ignored.
+- [x] A provider that does not report usage reads as UNKNOWN, never as zero.
+- [x] A reply carrying only tool calls is a success, not an empty response.
+- [x] Capability reporting and the model call path cannot disagree; the endpoint reads the same
+      cache the client negotiates against.
+- [x] An undiscovered model can fail to CONFIRM a capability but can never be granted one.
+
+## v3.4.0 - Tool Framework Projection
+
+### Goal
+
+Turn "the colony can call tools" into "the colony does work": offer tools to a model, run what it
+asks for, feed results back, and make every outcome typed enough to decide the next move.
+
+### Required Work
+
+- [x] `ITool.ParametersJson` — a self-describing JSON Schema, defaulted so no existing tool breaks.
+- [x] `ToolSchemaProjection`: offers a role only the tools its authorization permits; a malformed
+      schema degrades that one tool rather than the toolset.
+- [x] `ToolCallingLoop`: bounded by `BoundedAgentLoop`, with the transcript as the artifact.
+- [x] Assistant turns replay their `tool_calls`, so tool results answer requests that are present.
+- [x] Capability-aware routing: a route whose model cannot call tools reroutes to one that can, and
+      telemetry records both the effective and the routed model.
+- [x] `POST /agent/run` — one tool-calling conversation, persisted as a real mission with events.
+- [x] Typed tool results: `FailureClass` with derived retryability, classified at every failure site
+      in every shipped tool, turned into per-class guidance for the model.
+- [ ] Core-ant `AntExecutionContract`s authored with required model capabilities. Still blocked:
+      `ToolAuthorization` short-circuits on contract presence, so an incomplete `AllowedTools`
+      silently denies tools mid-mission. Needs tool-inventory evidence first.
+- [ ] User-defined tools: registration, schema validation, and authorization for tools the operator
+      adds without rebuilding.
+
+### Exit Gates
+
+- [x] A model is never offered a tool its role may not run.
+- [x] A denied or failed tool is reported back as text the model can act on, never dropped.
+- [x] An agent run cannot exceed its turn, tool-call, wall-clock or repeated-action budget.
+- [x] Every tool failure names its class; a source guard fails the build if a new one does not.
+- [x] Retryability has ONE definition, derived from the class rather than stored beside it.
+- [ ] A user-registered tool is subject to the same authorization and projection rules as a built-in.
 
 ## v3.5.0 - Mission Workspace and Language Adapter Infrastructure (was v3.3.0)
 
@@ -387,7 +472,62 @@ Give every code mission a disposable, reproducible workspace.
 - Cleanup cannot delete an operator-retained workspace.
 - Verification commands come from the manifest or operator configuration, never model invention.
 
-## v3.4.0 - Durable Worker and Attempt Runtime
+## v3.6.0 - Repository Indexing and Awareness
+
+### Goal
+
+Let an agent answer "where is this handled" from evidence rather than from a guess, without reading
+the repository into the context window.
+
+### Required Work
+
+- Build a durable repository index: file inventory, language, size, revision fingerprint, and
+  symbol-level entries for the languages the workspace adapters already declare.
+- Add a dependency/reference graph so "what calls this" and "what would this change break" are
+  queries rather than greps.
+- Ship indexing as TOOLS the loop can call (search, symbol lookup, neighbourhood expansion), not as
+  a context-stuffing preprocessor — the agent decides what it needs to see.
+- Incremental reindexing keyed on revision + content hash; a stale index must be detectable, not
+  merely old.
+- Bound every result: excerpts with provenance (path, revision, line span), never whole files.
+
+### Exit Gates
+
+- An index query returns the same answer for the same revision, or reports itself stale.
+- No indexing path can read outside the mission workspace boundary.
+- An agent asked a repository question calls a tool; it does not receive a pre-stuffed context blob.
+- Index build time and size are bounded and reported, and a large repository degrades to
+  file-inventory-only rather than failing.
+- Every excerpt an agent acts on can be traced to a path and revision.
+
+## v3.7.0 - Conversation Orchestration
+
+### Goal
+
+One conversational surface that starts as chat and ESCALATES into autonomous execution, with the
+escalation itself explicit, bounded and approved.
+
+### Required Work
+
+- Persist conversations as first-class runtime objects (currently in-memory sessions), with the
+  transcript, the tools offered, and the model route recorded per turn.
+- Define the escalation boundary: what turns a conversation into a mission, what the operator sees
+  before it happens, and what the agent may do on either side of it.
+- Route a conversation to `ToolCallingLoop` for bounded work and to the mission pipeline for
+  planned, multi-task work — the same conversation, two execution modes.
+- Surface run state conversationally: what it is doing now, what it did, what it is waiting on.
+- Approval gates for side-effecting escalation, reusing the existing approval pipeline rather than
+  inventing a second one.
+
+### Exit Gates
+
+- A conversation survives process restart with its transcript and route intact.
+- No conversation can begin side-effecting work without a recorded operator decision.
+- The transcript of an escalated run shows the conversation and the mission as one history.
+- Cancelling a conversation cancels the work it started.
+- Chat and mission execution share one budget, approval and audit path — not two.
+
+## v3.8.0 - Durable Worker and Attempt Runtime (was v3.4.0)
 
 ### Goal
 
@@ -411,7 +551,7 @@ Make task execution restart-safe, reclaimable, and ready for future worker distr
 - Two workers cannot claim the same non-parallel task.
 - Fault tests cover crash before execution, during model call, during tool call, after change, during verification, and during cleanup.
 
-## v3.5.0 - Artifact, Evidence, and Context Graph
+## v3.9.0 - Artifact, Evidence, and Context Graph (was v3.5.0)
 
 ### Goal
 
@@ -435,7 +575,7 @@ Replace transcript-shaped collaboration with durable typed collaboration.
 - Artifact hashes detect mutation or stale input.
 - UI/API can show why an artifact exists, who produced it, and what consumed it.
 
-## v3.6.0 - Reconnaissance and Quality Ant Activation
+## v3.10.0 - Reconnaissance and Quality Ant Activation (was v3.6.0)
 
 ### Goal
 
@@ -459,7 +599,7 @@ Activate the ants that improve planning accuracy and verification quality before
 - Verifier cannot pass a mission missing required deterministic evidence.
 - Each activated role has shadow comparison data and an operator-visible activation record.
 
-## v3.7.0 - Repair, Knowledge, Documentation, and Resource Ant Activation
+## v3.11.0 - Repair, Knowledge, Documentation, and Resource Ant Activation (was v3.7.0)
 
 ### Goal
 
@@ -483,7 +623,7 @@ Close the failure-repair-learning loop without allowing uncontrolled recursion.
 - Scribe cannot generate retained docs changes before the associated implementation is verified.
 - Quartermaster cannot raise authority or concurrency above operator ceilings.
 
-## v3.8.0 - Closed-Loop Software Engineering Workflows
+## v3.12.0 - Closed-Loop Software Engineering Workflows (was v3.8.0)
 
 ### Goal
 
@@ -515,7 +655,7 @@ Combine the infrastructure into repeatable end-to-end workflows similar to moder
 - The final answer matches the actual workspace state and evidence.
 - Rejecting retention leaves the active repository unchanged.
 
-## v3.9.0 - Qualification, Benchmarks, and V4 Gate
+## v3.13.0 - Qualification, Benchmarks, and V4 Gate (was v3.9.0)
 
 ### Goal
 

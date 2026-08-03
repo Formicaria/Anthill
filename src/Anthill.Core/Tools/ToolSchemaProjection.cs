@@ -3,7 +3,7 @@ using Anthill.Core.Models;
 namespace Anthill.Core.Tools;
 
 /// <summary>
-/// v3.4.0 (ADR-003) — the registered tools, projected into what a model can be offered.
+/// v3.4.0 (ADR-006) — the registered tools, projected into what a model can be offered.
 ///
 /// This is the join the harness needed: <see cref="ITool"/> already knows its name, description and
 /// (now) its argument schema, and <see cref="ModelToolSpec"/> is what the provider wire format

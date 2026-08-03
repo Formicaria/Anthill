@@ -315,9 +315,10 @@ V3 architecture decision records live in `docs/adr/` and are written BEFORE the 
 ```text
 docs/adr/ADR-001-runtime-composition.md   Runtime composition + Queen decomposition   (v3.1.0)
 docs/adr/ADR-002-mission-context.md       Immutable per-mission MissionContext        (v3.1.0)
-docs/adr/ADR-003-worker-protocol.md       Durable worker + attempt protocol           (v3.4.0)
-docs/adr/ADR-004-artifact-store.md        Artifact + evidence store                   (v3.5.0)
-docs/adr/ADR-005-workspace-manager.md     Mission workspace manager                   (v3.3.0)
+docs/adr/ADR-003-worker-protocol.md       Durable worker + attempt protocol           (v3.8.0)
+docs/adr/ADR-004-artifact-store.md        Artifact + evidence store                   (v3.9.0)
+docs/adr/ADR-005-workspace-manager.md     Mission workspace manager                   (v3.5.0)
+docs/adr/ADR-006-agent-harness.md         Anthill as an agent harness                 (v3.3.0)
 ```
 
 V2 planning documents (the V2 North Star, roadmap, remaining-work tracker, and completed project

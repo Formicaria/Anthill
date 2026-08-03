@@ -4,7 +4,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — capability awareness, fail-closed.
+/// v3.3.0 (ADR-006) — capability awareness, fail-closed.
 ///
 /// Nothing in the codebase could express a model capability before this, so the orchestration layer
 /// had to assume every backend behaved identically. That assumption is invisible until it is wrong:

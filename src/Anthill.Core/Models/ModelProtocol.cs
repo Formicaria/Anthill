@@ -1,7 +1,7 @@
 namespace Anthill.Core.Models;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — the typed request/response the provider seam is built on.
+/// v3.3.0 (ADR-006) — the typed request/response the provider seam is built on.
 ///
 /// What it replaces, and why the replacement is the whole point: <c>IModelClient.Generate(string)</c>
 /// is string in, string out. Tool calling, structured output, streaming, vision, embeddings,

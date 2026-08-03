@@ -66,9 +66,9 @@ public static class ProviderCatalog
         });
 
     /*
-     * v3.3.0 (ADR-003) — local OpenAI-compatible servers.
+     * v3.3.0 (ADR-006) — local OpenAI-compatible servers.
      *
-     * These three are the claim in ADR-003 made good: they need no new client, because
+     * These three are the claim in ADR-006 made good: they need no new client, because
      * OpenAiCompatibleClient already speaks /v1/chat/completions and that is exactly what they
      * serve. What each one needs is a base URL and a key policy.
      *

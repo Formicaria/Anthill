@@ -25,7 +25,7 @@ namespace Anthill.Core.Models;
 public interface IModelClient
 {
     /// <summary>
-    /// v3.3.0 (ADR-003): the typed call. THE primary method — every client implements this one.
+    /// v3.3.0 (ADR-006): the typed call. THE primary method — every client implements this one.
     ///
     /// Transport stays exactly where it was: bounded retries, the ambient cancellation token, the
     /// per-call deadline and the status classification described above are unchanged and still live
@@ -381,7 +381,7 @@ public sealed class ModelRouter
         SendCore(role, ModelRequest.FromPrompt(prompt), missionId, taskId, antName, retries).ToCallResult();
 
     /// <summary>
-    /// v3.4.0 (ADR-003): route and send a TYPED request — the path a tool-calling agent loop needs,
+    /// v3.4.0 (ADR-006): route and send a TYPED request — the path a tool-calling agent loop needs,
     /// because it must carry a conversation and a tool list, not a prompt string.
     ///
     /// Deliberately the SAME routing path the string call uses rather than a parallel one. Route

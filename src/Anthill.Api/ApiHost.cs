@@ -543,7 +543,7 @@ public static partial class ApiHost
         });
 
         /*
-         * v3.4.0 (ADR-003) — run one tool-calling conversation and return the whole transcript.
+         * v3.4.0 (ADR-006) — run one tool-calling conversation and return the whole transcript.
          *
          * This is the tool loop's first production call site, and it is deliberately the smallest
          * one that is honest: an operator asks for something, the agent reasons and calls tools
@@ -1521,7 +1521,7 @@ public static partial class ApiHost
             RequireAuth(ctx, "read_providers") ?? ApiJson.Ok(Queen.Memory.ListProviderConnections()));
 
         /*
-         * v3.3.0 (ADR-003): what each provider/model pair can actually DO.
+         * v3.3.0 (ADR-006): what each provider/model pair can actually DO.
          *
          * Capability is a property of the MODEL, not of the provider that serves it — a tool-capable
          * model on Ollama is tool-capable, and a text-only model on OpenAI is not made tool-capable
