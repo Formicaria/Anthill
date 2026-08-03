@@ -1687,7 +1687,111 @@ public static partial class ApiHost
                 // planned tool ships instead of outliving the problem it describes.
                 ["roles_blocked_by_missing_tools"] =
                     ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts),
+
+                // v3.4.1: operator-defined tools, INCLUDING the ones this run refused to register.
+                // A rejected definition is the state an operator most needs to see: it is stored, it
+                // is visible in the editor, and it is not callable — which, unreported, looks
+                // exactly like the tool being broken.
+                ["user_tools"] = Queen.Memory.LoadToolDefinitions().Select(d =>
+                {
+                    var outcome = Queen.UserTools.FirstOrDefault(r =>
+                        string.Equals(r.Name, d.Name, StringComparison.OrdinalIgnoreCase));
+                    return new Dictionary<string, object?>
+                    {
+                        ["name"] = d.Name,
+                        ["description"] = d.Description,
+                        ["kind"] = d.Kind.ToString().ToLowerInvariant(),
+                        ["enabled"] = d.Enabled,
+                        ["status"] = outcome is { Registered: true } ? "registered" : "rejected",
+                        ["problems"] = outcome?.Problems ?? (IReadOnlyList<string>)Array.Empty<string>(),
+                        ["config"] = d.Config,
+                        // Empty means EVERY dispatching role — the permissive default the operator
+                        // chose. Reporting the empty list verbatim would read as "nobody".
+                        ["allowed_roles"] = d.AllowedRoles.Count > 0 ? d.AllowedRoles : roles,
+                        ["created_by"] = d.CreatedBy,
+                        ["created_at"] = d.CreatedAt.ToIso(),
+                    };
+                }).ToList(),
+                ["user_tools_enabled"] = AnthillRuntime.EnableUserTools,
+                ["user_tool_allowed_hosts"] = AnthillRuntime.UserToolAllowedHosts,
             });
+        });
+
+        /*
+         * v3.4.1 (ADR-006) — define a tool without a rebuild.
+         *
+         * Validated BEFORE it is stored, by the SAME validator the registrar uses at startup. A
+         * definition accepted here and rejected at the next restart would be the worst of both
+         * worlds: an operator told it worked, and a colony that quietly does not have it.
+         *
+         * Registration into the live registry is immediate, so the tool is usable in the next
+         * mission rather than after a restart — and it is the same ToolRegistry every built-in lives
+         * in. The absence of a separate path IS the feature; see Queen.BuildToolRegistry.
+         */
+        app.MapPost("/tools/user", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            if (!AnthillRuntime.EnableUserTools)
+                return ApiJson.Error("User-defined tools are disabled by config.", "permission_denied");
+
+            UserToolRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<UserToolRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body is null) return ApiJson.Error("A tool definition is required.", "bad_request");
+
+            var definition = new ToolDefinition
+            {
+                Name = (body.Name ?? "").Trim().ToLowerInvariant(),
+                Description = (body.Description ?? "").Trim(),
+                Kind = ToolKinds.Parse(body.Kind),
+                ParametersJson = string.IsNullOrWhiteSpace(body.Parameters)
+                    ? """{"type":"object","properties":{}}""" : body.Parameters!,
+                Config = body.Config ?? new Dictionary<string, string>(),
+                AllowedRoles = body.AllowedRoles ?? new List<string>(),
+                Enabled = body.Enabled ?? true,
+            };
+
+            var problems = UserToolRegistrar.Default().Validate(definition);
+            if (problems.Count > 0)
+                return ApiJson.Error($"Tool definition rejected: {string.Join("; ", problems)}",
+                    "bad_request", new Dictionary<string, object?> { ["problems"] = problems });
+
+            Queen.Memory.SaveToolDefinition(definition);
+            // The WHOLE set is re-registered rather than just this one, which keeps the grant table
+            // a wholesale replacement — the property that stops a since-removed definition from
+            // being granted forever.
+            Queen.ReloadUserTools();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "user_tool_registered",
+                $"Operator-defined tool '{definition.Name}' registered", null, "operator",
+                new() { ["tool_name"] = definition.Name, ["kind"] = definition.Kind.ToString() });
+
+            return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = definition.Name },
+                $"Tool '{definition.Name}' registered.");
+        });
+
+        // Revoke. DISABLING is the default because the row is evidence — a transcript that called
+        // the tool stays explainable. `?purge=true` deletes outright, for one created in error.
+        app.MapDelete("/tools/user/{name}", (HttpContext ctx, string name) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+
+            var purge = string.Equals(ctx.Request.Query["purge"], "true", StringComparison.OrdinalIgnoreCase);
+            var changed = purge
+                ? Queen.Memory.DeleteToolDefinition(name)
+                : Queen.Memory.SetToolDefinitionEnabled(name, false);
+            if (!changed) return ApiJson.Error($"No user-defined tool named '{name}'.", "not_found");
+
+            // Out of the LIVE registry too. Leaving it registered would keep offering a model a tool
+            // whose definition is gone, and every call would fail for a reason no transcript shows.
+            Queen.Tools.Unregister(name);
+            Queen.ReloadUserTools();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId,
+                purge ? "user_tool_deleted" : "user_tool_disabled",
+                $"Operator-defined tool '{name}' {(purge ? "deleted" : "disabled")}", null, "operator",
+                new() { ["tool_name"] = name });
+
+            return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = name },
+                purge ? $"Tool '{name}' deleted." : $"Tool '{name}' disabled.");
         });
 
         // Add or update a connection. api_key is optional on update (blank = leave the stored key
@@ -2634,6 +2738,27 @@ public sealed class AgentRunRequest
     public int? MaxToolCalls { get; set; }
     /// <summary>Pin this run to a specific model, overriding the role's route.</summary>
     public string? Model { get; set; }
+}
+/// <summary>
+/// v3.4.1: an operator-defined tool, as submitted. Deliberately flat and stringly-typed at the
+/// wire: this is a form, and every field is validated by <see cref="UserToolRegistrar.Validate"/>
+/// before anything is stored — the same validator startup uses, so "accepted here, rejected at
+/// restart" cannot happen.
+/// </summary>
+public sealed class UserToolRequest
+{
+    public string? Name { get; set; }
+    public string? Description { get; set; }
+    /// <summary>http | composite | mcp | command. Only http is buildable in this release.</summary>
+    public string? Kind { get; set; }
+    /// <summary>JSON Schema for the arguments, as a string. Parsed during validation.</summary>
+    public string? Parameters { get; set; }
+    /// <summary>Kind-specific settings — for http: url, method, body, content_type, header.*</summary>
+    public Dictionary<string, string>? Config { get; set; }
+    /// <summary>Empty or absent means every dispatching role may call it.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("allowed_roles")]
+    public List<string>? AllowedRoles { get; set; }
+    public bool? Enabled { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
