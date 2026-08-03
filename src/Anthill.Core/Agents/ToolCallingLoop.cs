@@ -194,6 +194,33 @@ public static class ToolCallingLoop
         var result = registry.RunTool(call.Name, missionId, taskId, role, args);
         return result.Success
             ? result.Output
-            : $"ERROR: {call.Name} failed — {result.Error ?? "no reason given"}";
+            : $"ERROR: {call.Name} failed — {result.Error ?? "no reason given"}\n{Guidance(result)}";
     }
+
+    /// <summary>
+    /// Turn a typed failure into the one sentence that changes what the model does next.
+    ///
+    /// The classes exist so this decision stops being guesswork. Told only "the tool failed", a
+    /// model has one move available — call it again — and it will, until the budget is gone. Told
+    /// that it may not use the tool, it routes around; told the arguments were wrong, it fixes them;
+    /// told the failure was transient, retrying is the correct move rather than a waste.
+    ///
+    /// The wording is instruction, not description, because a model reading a status word decides
+    /// for itself what it implies, and "authorization_denied" reads to most models as something to
+    /// apologise for and then attempt again.
+    /// </summary>
+    internal static string Guidance(Domain.ToolResult result) => result.Failure switch
+    {
+        Contracts.FailureClass.AuthorizationFailure =>
+            "You are not permitted to use this tool. Do not call it again — achieve the goal another "
+          + "way, or say what you would need.",
+        Contracts.FailureClass.ValidationFailure =>
+            "The call itself was wrong, not the tool. Correct the tool name or the arguments against "
+          + "the schema and try once more.",
+        _ when result.Retryable =>
+            "This failure is transient. Calling it again with the same arguments may succeed.",
+        _ =>
+            "This failure will repeat if you call it the same way. Change approach or report that "
+          + "you could not complete the step.",
+    };
 }
