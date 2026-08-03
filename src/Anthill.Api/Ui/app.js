@@ -82,6 +82,25 @@ async function apiText(path) {
   return r.text();
 }
 
+/**
+ * Log a polling failure ONCE per distinct message, not once per tick.
+ *
+ * Found during the v3.7.1 browser sweep: the console held 4,478 errors, every one of them a
+ * six-second poll re-reporting the same "unauthenticated" or "Failed to fetch" it reported last
+ * time. Those two are the NORMAL state while logged out or while the API restarts, so the loudest
+ * thing in the console was the thing that mattered least — and a real error arriving in that stream
+ * is invisible. Repeats are counted and reported when the state finally changes, so nothing is lost.
+ */
+var _pollLastErr = {};
+function pollWarnOnce(scope, err){
+  var msg = (err && err.message) || String(err);
+  var prev = _pollLastErr[scope];
+  if(prev && prev.msg === msg){ prev.n++; return; }
+  if(prev && prev.n > 0) console.warn(scope+': previous error repeated '+prev.n+'× ('+prev.msg+')');
+  _pollLastErr[scope] = { msg: msg, n: 0 };
+  console.error(scope, err);
+}
+
 // -- Authentication ------------------------------------------------------------
 const setupEl = document.getElementById('setup-overlay');
 let ROLE = localStorage.getItem('anthill_role') || '';
@@ -2331,7 +2350,7 @@ async function pollApprovals(){
         </div>
       </div>`;
     }).join('');
-  }catch(e){console.error('pollApprovals',e);}
+  }catch(e){ pollWarnOnce('pollApprovals', e); }
 }
 
 async function doApproval(id,action,kind){
@@ -3822,6 +3841,7 @@ function startPolling(){
   setInterval(pollGraph,    2500); // drives the live activity view — keep it snappy
   setInterval(pollColonyPheromones, 15000); // Canvas 2.0 pheromone HUD (only fetches when Colony is visible)
   setInterval(pollApprovals,6000);
+  setInterval(pollConversations,5000); // v3.7.1: only fetches while the Overview is visible
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
   setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
@@ -7240,6 +7260,10 @@ function registerGridWidgets(){
     {id:'operator-attention', title:'Operator Attention', icon:'\u0021', size:'large',  body:'hud-attn-list'},
     {id:'mission-composer',   title:'Mission Command',    icon:'\u25b6', size:'large',  body:'ov-composer-body', cls:'mission-node'},
     {id:'missions',           title:'Active Missions',    icon:'\u26a1', size:'large',  body:'ov2-active-body'},
+    // v3.7.1: conversations sit ABOVE the Colony because they are where an operator ACTS —
+    // and because a conversation waiting for approval is the one thing on this page that stops
+    // the colony until a human answers.
+    {id:'conversations',      title:'Conversations',      icon:'\u2709', size:'large',  body:'ov-conversations-body'},
   ];
 
   // ---- below the Colony: detail, history and queues -------------------------
@@ -7316,7 +7340,7 @@ function gridMountTarget(bodyId, el, cls){
 var DEFAULT_DASHBOARD_VIEW = {
   locked: true,
   order: [
-    'mission-composer', 'colony-vitals', 'colony',
+    'mission-composer', 'conversations', 'colony-vitals', 'colony',
     'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
     // registered but off by default, in the order they appear in the Widgets menu
     'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
@@ -7768,3 +7792,162 @@ function hlAutoStory(run){
   }
 }
 
+
+/* ===========================================================================
+ * v3.7.1 — Conversations: the operator surface for the escalation boundary.
+ *
+ * This exists because the v3.7.0 backend shipped with no way for a human to
+ * reach it. Endpoints nobody can call from the console are the same "no call
+ * site, no feature" failure one layer up — the colony could gate escalation
+ * perfectly and no operator would ever see a gate.
+ *
+ * The design turns on ONE state. `needs_operator` means the colony has stopped
+ * and nothing moves until a human answers; every other state is informational.
+ * So that state gets the colour, the position and the button, and the rest is
+ * deliberately quiet. A panel where "waiting for you" looks like "running" is
+ * a panel that trains people to ignore it.
+ * ======================================================================== */
+
+/**
+ * Tell the operator something. Routed through the console's existing notifier rather than a new
+ * one — and guarded, because a panel that throws when the toast helper is absent takes the whole
+ * dashboard poll down with it.
+ */
+function convSay(msg, ok){ if(typeof pcToast==='function') pcToast(msg, ok!==false); }
+
+var CONV_POLICY_LABEL = { ask:'asks first', autoapprove:'auto-approves', bypass:'NO APPROVALS' };
+
+/** Poll + render. Cheap: one GET, and only while the Overview is on screen. */
+async function pollConversations(){
+  var body=document.getElementById('ov-conversations-body');
+  // The same visibility test every other Overview poll uses — copied deliberately rather than
+  // wrapped in a new helper, so this panel cannot drift from how the rest of the page behaves.
+  if(!body || !document.getElementById('page-overview')?.classList.contains('active')) return;
+  // Guarded like every other poll: an unhandled rejection here is an unhandled rejection on a
+  // five-second timer, and the panel that reports refusals must not become a source of noise itself.
+  try{
+    const r=await api('/conversations');
+    if(!r||!r.success) return;
+    renderConversations((r.data&&r.data.conversations)||[]);
+  }catch(e){ pollWarnOnce('pollConversations', e); }
+}
+
+function renderConversations(list){
+  const body=document.getElementById('ov-conversations-body');
+  if(!body) return;
+
+  // The composer is rebuilt only when absent, so typing survives a refresh. A poll that wipes a
+  // half-written message is a poll that makes the panel unusable.
+  if(!document.getElementById('conv-new-msg')){
+    body.innerHTML =
+      `<div class="conv-new">
+         <input id="conv-new-msg" class="conv-input" placeholder="Ask the colony something…" />
+         <select id="conv-new-policy" class="conv-select" title="How much do you want to be asked?">
+           <option value="ask">Ask me first</option>
+           <option value="autoapprove">Auto-approve</option>
+           <option value="bypass">No approvals</option>
+         </select>
+         <button class="conv-btn primary" data-onclick="convStart()">Start</button>
+       </div>
+       <div id="conv-list"></div>`;
+  }
+
+  // The header counts what is WAITING, not what exists. "12 conversations" is a number nobody can
+  // act on; "2 waiting for you" is the only count that changes what an operator does next.
+  const waitingCount=list.filter(c=>c.needs_operator).length;
+  const countEl=document.getElementById('conv-count');
+  if(countEl){
+    countEl.textContent = waitingCount ? waitingCount+' waiting for you'
+                        : list.length  ? list.length+' active' : '';
+    countEl.classList.toggle('conv-count-attn', waitingCount>0);
+  }
+
+  const listEl=document.getElementById('conv-list');
+  if(!listEl) return;
+
+  if(!list.length){
+    listEl.innerHTML='<div class="conv-empty">No conversations yet. Start one above — it stays chat until you approve real work.</div>';
+    return;
+  }
+
+  // Conversations needing a human float to the TOP. An attention state buried under six healthy
+  // rows is an attention state nobody acts on.
+  const sorted=list.slice().sort((a,b)=>(b.needs_operator?1:0)-(a.needs_operator?1:0));
+
+  listEl.innerHTML=sorted.slice(0,12).map(c=>{
+    const pol=(c.policy||'ask').toLowerCase();
+    const polCls=pol==='bypass'?'danger':pol==='autoapprove'?'warn':'';
+    const waiting=(c.waiting_on||[]);
+    const title=escapeHtml(c.title||'(untitled)');
+
+    // The one loud row: what it is waiting for, and the button that answers it.
+    const attention = c.needs_operator
+      ? `<div class="conv-attn">
+           <span class="conv-attn-label">Waiting for you:</span>
+           <span class="conv-attn-what">${escapeHtml(waiting.join(', '))}</span>
+           ${waiting.map(a=>`<button class="conv-btn approve" data-onclick="convApprove('${escapeHtml(c.id)}','${escapeHtml(a)}')">Approve ${escapeHtml(a)}</button>`).join('')}
+           <button class="conv-btn" data-onclick="convCancel('${escapeHtml(c.id)}')">Cancel</button>
+         </div>`
+      : '';
+
+    return `<div class="conv-item${c.needs_operator?' needs-op':''}${c.cancelled?' cancelled':''}">
+      <div class="conv-head">
+        <span class="conv-title">${title}</span>
+        <span class="conv-policy ${polCls}" title="Approval policy${c.policy_set_by?' — set by '+escapeHtml(c.policy_set_by):''}">${escapeHtml(CONV_POLICY_LABEL[pol]||pol)}</span>
+      </div>
+      <div class="conv-doing" title="${escapeHtml(c.doing||'')}">${escapeHtml((c.doing||'').slice(0,240))}</div>
+      ${(c.mission_ids&&c.mission_ids.length)?`<div class="conv-missions">${c.mission_ids.length} mission(s) started</div>`:''}
+      ${attention}
+      ${c.cancelled?'':`<div class="conv-say">
+        <input class="conv-input" id="conv-msg-${escapeHtml(c.id)}" placeholder="Say something…" />
+        <button class="conv-btn" data-onclick="convSend('${escapeHtml(c.id)}','chat')">Send</button>
+        <button class="conv-btn work" data-onclick="convSend('${escapeHtml(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
+      </div>`}
+    </div>`;
+  }).join('');
+}
+
+/** Start a conversation, then immediately send the first message if one was typed. */
+async function convStart(){
+  const msgEl=document.getElementById('conv-new-msg');
+  const polEl=document.getElementById('conv-new-policy');
+  const msg=(msgEl&&msgEl.value||'').trim();
+  const r=await api('/conversations','POST',{ title: msg.slice(0,48)||'Conversation', policy: polEl?polEl.value:'ask' });
+  if(!r||!r.success){ convSay(r&&r.message||'Could not start conversation', false); return; }
+  if(msg){ await api('/conversations/'+r.data.id+'/turns','POST',{ message:msg, mode:'chat' }); }
+  if(msgEl) msgEl.value='';
+  apiCacheBust('/conversations'); pollConversations();
+}
+
+async function convSend(id, mode){
+  const el=document.getElementById('conv-msg-'+id);
+  const msg=(el&&el.value||'').trim();
+  if(!msg){ convSay('Type something first.', false); return; }
+  const r=await api('/conversations/'+id+'/turns','POST',{ message:msg, mode:mode||'chat' });
+  if(el) el.value='';
+  // A refusal is the interesting outcome, so it is SAID rather than left to the next poll.
+  if(r&&r.data&&r.data.started===false) convSay(r.data.summary||'Refused', false);
+  apiCacheBust('/conversations'); pollConversations();
+}
+
+/**
+ * Answer a pending escalation.
+ *
+ * Re-sends the LAST message with the approval attached, which is what the operator means by
+ * "approve" — the request that was refused is the request they are now permitting.
+ */
+async function convApprove(id, action){
+  const detail=await api('/conversations/'+id);
+  const turns=(detail&&detail.data&&detail.data.turns)||[];
+  const last=turns.length?turns[turns.length-1].content:'';
+  const answers={}; answers[action]='approve';
+  const r=await api('/conversations/'+id+'/turns','POST',{ message:last||'proceed', mode:'mission', answers:answers });
+  if(r&&r.data) convSay(r.data.summary||'Approved', r.data.started!==false);
+  apiCacheBust('/conversations'); pollConversations();
+}
+
+async function convCancel(id){
+  const r=await api('/conversations/'+id+'/cancel','POST',{});
+  if(r) convSay(r.message||'Cancelled', true);
+  apiCacheBust('/conversations'); pollConversations();
+}
