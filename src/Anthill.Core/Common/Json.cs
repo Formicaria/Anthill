@@ -193,4 +193,24 @@ public static class Json
         JsonValueKind.Object => ToDictionary(element),
         _ => element.GetRawText(),
     };
+
+    /// <summary>
+    /// v3.7.0: read a JSON string array back, never throwing.
+    ///
+    /// The counterpart to <see cref="SafeDumps"/>, and it exists for the same reason: a malformed
+    /// blob in one column must not take out the row that contains it. An empty list is the honest
+    /// degradation — the caller loses one field rather than the whole record.
+    /// </summary>
+    public static IReadOnlyList<string> SafeLoadList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json!) ?? new List<string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
 }
