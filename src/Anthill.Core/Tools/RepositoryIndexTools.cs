@@ -34,9 +34,9 @@ public sealed class RepositoryIndexTool : ITool
 
     public string Name => "repository_index";
     public string Description =>
-        "Ask what is in the mission's repository: language breakdown, file counts, and file paths "
-      + "matching a name fragment or language. Answers from a revision-keyed index without reading "
-      + "file contents.";
+        "Ask what is in the mission's repository: language breakdown, file counts, file paths "
+      + "matching a name or language, where a symbol is declared, and where a name is mentioned. "
+      + "Answers from a revision-keyed index.";
 
     public string ParametersJson => """
         {"type":"object",
@@ -44,6 +44,7 @@ public sealed class RepositoryIndexTool : ITool
            "name":{"type":"string","description":"Case-insensitive fragment of a file path to match"},
            "language":{"type":"string","description":"Restrict to one language, e.g. csharp, typescript"},
            "symbol":{"type":"string","description":"Find where a class, function or type is DECLARED"},
+           "references":{"type":"string","description":"Find where a name is MENTIONED (excluding its declaration)"},
            "summary":{"type":"boolean","description":"Return only the language breakdown (default when no filter is given)"}},
          "required":[]}
         """;
@@ -91,6 +92,36 @@ public sealed class RepositoryIndexTool : ITool
             report.Append("NOTE: found by pattern matching, not by a compiler. These are candidates "
                         + "to READ, not a complete or authoritative list — a declaration written in "
                         + "an unusual shape will be missing, and a mention in a comment may appear.\n");
+
+            return new ToolResult(Name, true, report.ToString());
+        }
+
+        var references = args.GetValueOrDefault("references")?.ToString();
+        if (!string.IsNullOrWhiteSpace(references))
+        {
+            var found = RepositoryReferences.Find(index, workspace.Root, references);
+
+            // The caveat goes FIRST, before the list. Placed after, it is read as a footnote to an
+            // answer already accepted; placed first, it frames what follows. For "what would my
+            // change break" — the question these results feed — that ordering is the difference
+            // between an agent checking and an agent proceeding.
+            if (found.Caveat.Length > 0)
+                report.Append("CAUTION: ").Append(found.Caveat).Append('\n');
+
+            report.Append("--- mentions of '").Append(found.Name).Append("' (")
+                  .Append(found.References.Count)
+                  .Append(found.Truncated ? ", TRUNCATED" : "")
+                  .Append(") in ").Append(found.FilesScanned).Append(" file(s) ---\n");
+
+            foreach (var reference in found.References.Take(MaxListed))
+                report.Append(reference.Path).Append(':').Append(reference.Line)
+                      .Append(": ").Append(reference.Text).Append('\n');
+
+            report.Append(found.Attributable
+                ? "These mentions match a single declaration, but are still text matches: imports, "
+                + "overloads and scope are not resolved. Read before relying on them.\n"
+                : "These are TEXT MATCHES, not resolved references. Do not treat this as a complete "
+                + "or authoritative list of callers.\n");
 
             return new ToolResult(Name, true, report.ToString());
         }
