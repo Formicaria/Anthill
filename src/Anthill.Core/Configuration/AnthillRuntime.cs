@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 public static class AnthillRuntime
 {
     public const string Version = "3.2.1";
-    public const int SchemaVersion = 18;   // v3.4.1: operator-defined tools persisted (tool_definitions)
+    public const int SchemaVersion = 19;   // v3.5.0: mission workspaces persisted (mission_workspaces)
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a
