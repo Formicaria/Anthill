@@ -9,7 +9,7 @@ using ThreadingTask = System.Threading.Tasks.Task;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — Ollama speaks OpenAI on the wire, proven against a stub server.
+/// v3.3.0 (ADR-006) — Ollama speaks OpenAI on the wire, proven against a stub server.
 ///
 /// WHY A STUB RATHER THAN A LIVE OLLAMA: the operator's Ollama is frequently unreachable (it lives
 /// on another host), and a test that only runs when it happens to be up is a test that protects
