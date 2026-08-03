@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.6.0 — repository indexing: an agent answers 'where is this handled' from a revision-keyed index by CALLING a tool, rather than having the repository stuffed into its context. Symbol and reference answers state what they cannot claim — pattern matching is not a compiler, and a name declared in three places yields mentions that cannot be attributed to any of them. Preceded by v3.5.0 — mission workspaces: a code mission works in a detached git worktree it cannot escape, its changes are attributable to one workspace and one base revision, and its work reaches the operator as an ordinary reviewable change set. Verification commands come from a detected capability manifest rather than model invention. Preceded by v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
+**Latest:** v3.7.0 — conversation orchestration: one surface that starts as chat and ESCALATES into autonomous execution, with the escalation explicit and recorded. The operator chooses the approval model (ask, auto-approve, bypass) and that choice is itself the recorded decision; an unattributed standing permission fails closed. Preceded by v3.6.0 — repository indexing: an agent answers 'where is this handled' from a revision-keyed index by CALLING a tool, rather than having the repository stuffed into its context. Symbol and reference answers state what they cannot claim — pattern matching is not a compiler, and a name declared in three places yields mentions that cannot be attributed to any of them. Preceded by v3.5.0 — mission workspaces: a code mission works in a detached git worktree it cannot escape, its changes are attributable to one workspace and one base revision, and its work reaches the operator as an ordinary reviewable change set. Verification commands come from a detected capability manifest rather than model invention. Preceded by v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
 
 **Previously:** v3.2.1 — dashboard direct manipulation: widgets are dragged to position and resized from their corner, with widths stored as a proportion of the row so an arrangement means the same thing at every window size. Preceded by v3.2.0 (dashboard redesign + typed model results) — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
@@ -363,7 +363,7 @@ has here:
 | v3.4.0 | Tool framework projection — tool schemas, the agent loop, typed tool results | shipped |
 | v3.5.0 | Mission workspace and language adapter infrastructure | shipped |
 | v3.6.0 | Repository indexing and awareness | shipped |
-| v3.7.0 | Conversation orchestration | new |
+| v3.7.0 | Conversation orchestration | shipped |
 | v3.8.0 | Durable worker and attempt runtime | was v3.4.0 |
 | v3.9.0 | Artifact, evidence, and context graph | was v3.5.0 |
 | v3.10.0 | Reconnaissance and quality ant activation | was v3.6.0 |
@@ -546,23 +546,45 @@ escalation itself explicit, bounded and approved.
 
 ### Required Work
 
-- Persist conversations as first-class runtime objects (currently in-memory sessions), with the
-  transcript, the tools offered, and the model route recorded per turn.
-- Define the escalation boundary: what turns a conversation into a mission, what the operator sees
-  before it happens, and what the agent may do on either side of it.
-- Route a conversation to `ToolCallingLoop` for bounded work and to the mission pipeline for
-  planned, multi-task work — the same conversation, two execution modes.
-- Surface run state conversationally: what it is doing now, what it did, what it is waiting on.
-- Approval gates for side-effecting escalation, reusing the existing approval pipeline rather than
-  inventing a second one.
+- [x] Conversations persisted as first-class runtime objects (schema 21), with the transcript, the
+      tools offered and called, and the model route recorded PER TURN — the route can change
+      mid-conversation when capability-aware routing substitutes a model.
+- [x] The escalation boundary: `start_mission` is a side-effecting action gated by the same
+      `EscalationGate` as `apply_patch`. The CALLER asks; the model never decides.
+- [x] Two execution modes on one conversation — `Chat` bounded by the tool loop, `Mission` through
+      the pipeline, reached only by a gated escalation.
+- [x] Run state surfaced conversationally: what it is doing, what it did, what it is WAITING ON,
+      derived on request rather than stored.
+- [x] Approval reuses the existing gate rather than inventing a second one.
 
 ### Exit Gates
 
-- A conversation survives process restart with its transcript and route intact.
-- No conversation can begin side-effecting work without a recorded operator decision.
-- The transcript of an escalated run shows the conversation and the mission as one history.
-- Cancelling a conversation cancels the work it started.
-- Chat and mission execution share one budget, approval and audit path — not two.
+- [x] A conversation survives restart with its transcript and route intact.
+- [x] No conversation begins side-effecting work without a RECORDED operator decision. The gate is
+      about accountability, not prompting: choosing AutoApprove or Bypass IS the decision, recorded
+      once with an author. An UNATTRIBUTED standing permission fails closed back to Ask.
+- [x] Conversation and mission are one history — the link is written on both sides so the join
+      works from either direction.
+- [x] Cancelling a conversation cancels the work it started: the row is marked first (so no NEW work
+      can start regardless of anyone's cooperation), then every live token source is signalled.
+- [x] One budget, approval and audit path. `ConversationBudget` is the single source both modes
+      derive from — the tool loop's budget is PROJECTED from it rather than defaulted separately.
+
+### The failure the shared budget closes, stated plainly
+
+Per-execution budgets structurally cannot bound a conversation. Each escalation gets a fresh loop
+budget and looks like the first one, so a conversation that escalates repeatedly stays inside its
+limits every single time while the total work it authorises grows without bound. Only a budget
+belonging to the CONVERSATION can see that.
+
+### Known limits
+
+- The two enforcement mechanisms are not merged: the loop still counts turns, the mission still
+  counts tasks. They now count against limits that came from one place, which is what makes the
+  totals meaningful — but a single unified counter is not what shipped.
+- `ConversationRunner` holds live cancellation sources in memory. A process restart loses the
+  ability to signal work started before it, though the persisted `Cancelled` flag still prevents
+  anything new from starting.
 
 ## v3.8.0 - Durable Worker and Attempt Runtime (was v3.4.0)
 
