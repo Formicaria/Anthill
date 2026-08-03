@@ -116,6 +116,21 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // the affected role unavailable (fail closed) and is loud, never silent.
         foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))
             Console.Error.WriteLine($"[startup-validation] {problem}");
+
+        // v3.4.2: does each role's route actually do what its contract needs? Reported at startup
+        // because EVERY mismatch here fails silently at runtime — a model that cannot call tools is
+        // never shown them and answers from priors; one without structured output returns prose
+        // where a schema was expected and parses to an empty result. Neither throws, neither opens a
+        // breaker, and in a transcript both look like a weak model rather than a misconfiguration.
+        //
+        // A warning, not a refusal: the operator's routing is theirs, the capability data can be
+        // incomplete for a model nothing has described yet, and refusing to start over a
+        // fail-closed guess would be worse than running with a warning they can act on.
+        if (Router is not null)
+            foreach (var fitness in AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts).Where(f => !f.Fit))
+                Console.Error.WriteLine(
+                    $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
+                  + $"which is missing: {string.Join("; ", fitness.Unmet)}");
         Execution = new ExecutionService(Memory, _ants);
     }
 
