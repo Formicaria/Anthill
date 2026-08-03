@@ -129,9 +129,14 @@ public static class ToolCallingLoop
                 return new LoopStep(Done: true, ActionKey: "final_answer", ToolCallsUsed: 0);
             }
 
-            // The assistant's turn is recorded even when it is only tool calls, so the transcript
-            // reads as the conversation that actually happened rather than one with gaps in it.
-            messages.Add(new ModelMessage(ModelMessage.Assistant, response.Content));
+            // The assistant's turn carries the CALLS IT MADE, not just its (usually empty) prose.
+            // Recording only the text produced a conversation in which tool results answered
+            // requests that were not present, and a model replayed that transcript cannot see it
+            // already called the tool — so it calls again, forever, until the repeat guard fires.
+            messages.Add(new ModelMessage(ModelMessage.Assistant, response.Content)
+            {
+                ToolCalls = response.ToolCalls,
+            });
 
             foreach (var call in response.ToolCalls)
             {
