@@ -13,6 +13,7 @@ using Anthill.Core.Planning;
 using Anthill.Core.Readiness;
 using Anthill.Core.Sandbox;   // LoopBudget — the agent loop's bounds
 using Anthill.Core.Security;
+using Anthill.Core.Tools;      // ToolInventory, ToolAuthorization — the /tools report
 // `Task` here is Anthill.Core.Domain.Task (the mission task). The threading one must be named.
 using ThreadingTask = System.Threading.Tasks.Task;
 using Microsoft.AspNetCore.Builder;
@@ -1607,6 +1608,86 @@ public static partial class ApiHost
                 });
             }
             return ApiJson.Ok(report);
+        });
+
+        /*
+         * v3.4.0 (ADR-006) — the tool registry, inspectable.
+         *
+         * The harness is tool-centric and the tool inventory was the one thing about it an operator
+         * could not see: which tools exist, what arguments each takes, which roles may call it, and
+         * which declared tools have not been built. All of that lived in three source files that
+         * never compared themselves to each other.
+         *
+         * Authorization is REPORTED BY ASKING THE ENFORCER. Every "may this role use this tool" cell
+         * comes from ToolAuthorization.Evaluate — the same call RunTool makes — rather than from a
+         * copy of its rules. The capability page taught this lesson the hard way: a report derived
+         * independently of the code path it describes will eventually describe something else, and a
+         * page that disagrees with the runtime is worse than no page.
+         *
+         * Schemas come from the tools themselves, so this doubles as the operator's view of exactly
+         * what a model is offered.
+         */
+        app.MapGet("/tools", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            // Roles that can actually dispatch: the mission agents and specialists. Control-plane
+            // identities are omitted because they are permitted everything by design, and a column
+            // of unbroken "yes" tells an operator nothing.
+            var roles = AntExecutionCatalog.Contracts.Keys
+                .Concat(new[] { "researcher", "web", "file", "coder", "builder", "verifier" })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(r => r, StringComparer.Ordinal).ToList();
+
+            var registered = Queen.Tools.Tools.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+            var tools = new List<Dictionary<string, object?>>();
+            foreach (var name in ToolInventory.Implemented.OrderBy(n => n, StringComparer.Ordinal))
+            {
+                // Implemented but not registered means a config gate is off — a real and common
+                // state (file tools disabled), and one an operator needs distinguished from
+                // "this tool does not exist", because the remedies are completely different.
+                registered.TryGetValue(name, out var tool);
+
+                var allowed = roles.Where(r => ToolAuthorization.Evaluate(r, name).Allowed)
+                    .OrderBy(r => r, StringComparer.Ordinal).ToList();
+
+                tools.Add(new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["status"] = tool is not null ? "registered" : "gated_off",
+                    ["description"] = tool?.Description,
+                    ["parameters"] = tool is null ? null : System.Text.Json.Nodes.JsonNode.Parse(tool.ParametersJson),
+                    ["structurally_forbidden"] = ToolAuthorization.MissionAgentForbidden.Contains(name),
+                    ["allowed_roles"] = allowed,
+                });
+            }
+
+            // Declared-but-unbuilt tools are reported as first-class entries, not omitted. A role
+            // allowed only these is authorized to dispatch nothing, and that is precisely the fact
+            // an operator is trying to discover when a specialist ant runs and produces no work.
+            foreach (var name in ToolInventory.Planned.OrderBy(n => n, StringComparer.Ordinal))
+                tools.Add(new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["status"] = "planned",
+                    ["description"] = "Referenced by an ant contract; not implemented in this build.",
+                    ["parameters"] = null,
+                    ["structurally_forbidden"] = false,
+                    ["allowed_roles"] = AntExecutionCatalog.Contracts
+                        .Where(kv => kv.Value.AllowedTools.Contains(name))
+                        .Select(kv => kv.Key).OrderBy(r => r, StringComparer.Ordinal).ToList(),
+                });
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["tools"] = tools,
+                ["roles"] = roles,
+                // Computed on every request rather than stored, so it stops being true the moment a
+                // planned tool ships instead of outliving the problem it describes.
+                ["roles_blocked_by_missing_tools"] =
+                    ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts),
+            });
         });
 
         // Add or update a connection. api_key is optional on update (blank = leave the stored key
