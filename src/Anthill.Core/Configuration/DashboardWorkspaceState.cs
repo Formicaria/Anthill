@@ -81,6 +81,11 @@ public sealed class DashboardWorkspaceState
         // never a panel; in the grid it is a first-class widget like any other and must be known
         // to the server, or the ids guard reports a disagreement that is really just this gap.
         "colony",
+        // v3.7.1: Conversations. The consequence of omitting it is precise and quiet: Sanitize()
+        // treats an unknown id as a panel to DELETE, so an operator who moved or hid this widget
+        // would have that choice silently discarded on the next /ui/state round trip, and the
+        // widget would spring back to its default placement with no error anywhere.
+        "conversations",
     };
 
     /// <summary>

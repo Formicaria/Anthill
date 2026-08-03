@@ -4,7 +4,10 @@
 #
 # Blocks pushing a version tag (v*) UNLESS both are true:
 #   1. the tagged commit's AnthillRuntime.Version == the tag, and
-#   2. the tagged commit is already on origin/main (i.e. the PR is merged).
+#   2. the tagged commit is already on <remote>/main (i.e. the PR is merged).
+#      The remote is whichever one is being pushed to, not necessarily 'origin' —
+#      this repository pushes releases to 'upstream', and a message naming the wrong
+#      remote invites exactly the doubt it is supposed to remove.
 #
 # This is the guard for the recurring "tagged before the feature PR merged"
 # release failure (release.yml's verify-version job rejecting the tag).
@@ -58,7 +61,7 @@ while read -r _localref localsha remoteref _remotesha; do
     if ! git merge-base --is-ancestor "$localsha" FETCH_HEAD 2>/dev/null; then
       echo ""                                                                  >&2
       echo "  ✗ RELEASE GUARD blocked push of tag $tag"                        >&2
-      echo "      the tagged commit is not on origin/main yet."                >&2
+      echo "      the tagged commit is not on $remote/main yet."               >&2
       echo "      → Merge the PR and push main first, then re-tag."            >&2
       echo ""                                                                  >&2
       rc=1
@@ -66,7 +69,7 @@ while read -r _localref localsha remoteref _remotesha; do
     fi
   fi
 
-  echo "  ✓ release guard: $tag matches code Version $want and is on origin/main." >&2
+  echo "  ✓ release guard: $tag matches code Version $want and is on $remote/main." >&2
 done
 
 exit $rc
