@@ -61,6 +61,17 @@ public sealed class ConversationRunner
     private readonly Func<string, CancellationToken, string> _startMission;
 
     /// <summary>
+    /// Live work, by conversation. The exit gate says "cancelling a conversation cancels the work it
+    /// started" — and marking a row cancelled does not stop a mission that is already running. This
+    /// is the half that actually stops it.
+    ///
+    /// Keyed by conversation rather than by mission because that is what the operator cancels; a
+    /// conversation that escalated three times has three things to stop, and the operator should not
+    /// have to know that.
+    /// </summary>
+    private readonly Dictionary<string, List<CancellationTokenSource>> _running = new();
+
+    /// <summary>
     /// <paramref name="startMission"/> is the mission pipeline, injected. The runner decides WHETHER
     /// a mission starts; the Queen decides what a mission does. Keeping those apart is what lets the
     /// escalation boundary be tested without standing up a colony.
@@ -107,6 +118,17 @@ public sealed class ConversationRunner
                 "handled as bounded conversational work");
         }
 
+        // The shared budget, checked BEFORE the gate. A conversation that has spent its mission
+        // allowance is not asking for permission — it is out of budget, and asking the operator to
+        // approve something that will be refused anyway trains them to approve without reading.
+        if (!conversation.Budget.AllowsAnotherMission(conversation.MissionIds.Count))
+        {
+            RecordTurn(conversation, ordinal, message, null);
+            return new ConversationOutcome(ConversationMode.Mission, false, null,
+                $"conversation budget exhausted: {conversation.MissionIds.Count} of "
+              + $"{conversation.Budget.MaxMissions} missions already started");
+        }
+
         var decision = EscalationGate.Evaluate(conversation, StartMissionAction,
             answers?.GetValueOrDefault(StartMissionAction));
         try { _memory.SaveEscalationDecision(decision); } catch { }
@@ -121,7 +143,27 @@ public sealed class ConversationRunner
                 $"escalation refused: {decision.Reason}", decision);
         }
 
-        var missionId = _startMission(message, cancel);
+        // Linked, not replaced: the caller's own cancellation still applies, and the conversation
+        // gains a second way to stop the same work. Whichever fires first wins.
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        lock (_running)
+        {
+            if (!_running.TryGetValue(conversation.Id, out var live))
+                _running[conversation.Id] = live = new List<CancellationTokenSource>();
+            live.Add(cts);
+        }
+
+        string missionId;
+        try
+        {
+            missionId = _startMission(message, cts.Token);
+        }
+        catch
+        {
+            lock (_running) { _running[conversation.Id].Remove(cts); }
+            cts.Dispose();
+            throw;
+        }
 
         RecordTurn(conversation, ordinal, message, missionId);
         _memory.SaveConversation(conversation with
@@ -135,6 +177,49 @@ public sealed class ConversationRunner
 
         return new ConversationOutcome(ConversationMode.Mission, true, missionId,
             $"escalated into mission {missionId}", decision);
+    }
+
+    /// <summary>
+    /// Cancel a conversation AND the work it started.
+    ///
+    /// Both halves, in that order. Marking the row first means that even if cancelling in-flight work
+    /// fails — a mission that ignores its token, a token source already disposed — no NEW work can
+    /// start, which is the guarantee that does not depend on anyone else's cooperation.
+    ///
+    /// Returns how many live pieces of work were signalled, so an operator can tell "stopped two
+    /// missions" from "there was nothing running". Silence on that distinction is what makes people
+    /// press cancel twice.
+    /// </summary>
+    public int Cancel(string conversationId)
+    {
+        var conversation = _memory.LoadConversation(conversationId);
+        if (conversation is not null && !conversation.Cancelled)
+            _memory.SaveConversation(conversation with
+            {
+                Cancelled = true,
+                UpdatedAt = Common.AnthillTime.NowUtc(),
+            });
+
+        List<CancellationTokenSource> live;
+        lock (_running)
+        {
+            if (!_running.TryGetValue(conversationId ?? "", out var found)) return 0;
+            live = found;
+            _running.Remove(conversationId ?? "");
+        }
+
+        var signalled = 0;
+        foreach (var cts in live)
+        {
+            // Best-effort per source: one already-disposed token must not prevent cancelling the
+            // rest. A cancel that stops two of three things and throws is worse than one that stops
+            // what it can and says so.
+            try { if (!cts.IsCancellationRequested) { cts.Cancel(); signalled++; } }
+            catch (ObjectDisposedException) { }
+            finally { try { cts.Dispose(); } catch { } }
+        }
+
+        return signalled;
     }
 
     private void RecordTurn(Conversation conversation, int ordinal, string message, string? missionId) =>

@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.6.0";
+    public const string Version = "3.7.0";
     public const int SchemaVersion = 21;   // v3.7.0: conversations persisted (conversations, escalation_decisions)
 
     /// <summary>
