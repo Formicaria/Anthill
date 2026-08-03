@@ -116,6 +116,57 @@ public class OllamaCapabilityCacheTests : IDisposable
         Assert.Equal(snapshot["b:latest"].ToolCalling, OllamaCapabilityCache.For(Host, "b:latest").ToolCalling);
     }
 
+    // ---- context windows -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The key is architecture-prefixed, so it is found by SUFFIX rather than against a table of
+    /// architecture names. A table would need editing every time a new one ships, and until someone
+    /// noticed, every model of that architecture would silently report "unknown".
+    /// </summary>
+    [Theory]
+    [InlineData("llama.context_length", 131072)]
+    [InlineData("gemma3.context_length", 8192)]
+    [InlineData("qwen3moe.context_length", 262144)]
+    [InlineData("some.future.arch.context_length", 4096)]
+    public void TheContextWindow_IsFoundWhateverTheArchitecture(string key, int tokens)
+    {
+        // Concatenated rather than interpolated: the JSON ends in '}}', which a $$"""...""" literal
+        // reads as a closing interpolation brace.
+        var json = "{\"model_info\":{\"general.architecture\":\"x\",\""
+                 + key + "\":" + tokens + ",\"other\":1}}";
+        Assert.Equal(tokens, OllamaCapabilityCache.ReadContextWindow(json));
+    }
+
+    /// <summary>
+    /// Unknown, never guessed — and that is the safe direction, because AntModelFitness deliberately
+    /// does not treat an unknown window as too small. A failed probe costs a check that does not
+    /// fire, rather than a false warning an operator learns to ignore.
+    /// </summary>
+    [Theory]
+    [InlineData("not json at all")]
+    [InlineData("{}")]
+    [InlineData("""{"model_info":{"general.architecture":"llama"}}""")]
+    [InlineData("""{"model_info":{"llama.context_length":0}}""")]
+    public void AnUnreadableOrAbsentContextWindow_IsNull(string json) =>
+        Assert.Null(OllamaCapabilityCache.ReadContextWindow(json));
+
+    /// <summary>
+    /// The regression this closes — found in the browser, not by a test. ContextWindowTokens was
+    /// declared on ModelCapabilities and assigned NOWHERE, so the archivist's 32k contract
+    /// requirement reported FIT against every model regardless of its window. A field the code can
+    /// carry but never populates makes every requirement built on it decorative.
+    /// </summary>
+    [Fact]
+    public void ADiscoveredContextWindow_ReachesTheCallPath()
+    {
+        OllamaCapabilityCache.Seed(Host, new Dictionary<string, ModelCapabilities>
+        {
+            ["big:latest"] = ModelCapabilities.Standard with { ContextWindowTokens = 131_072 },
+        });
+
+        Assert.Equal(131_072, OllamaCapabilityCache.For(Host, "big:latest").ContextWindowTokens);
+    }
+
     [Fact]
     public void Invalidate_ClearsEverything()
     {
