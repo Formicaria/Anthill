@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
+**Latest:** v3.5.0 — mission workspaces: a code mission works in a detached git worktree it cannot escape, its changes are attributable to one workspace and one base revision, and its work reaches the operator as an ordinary reviewable change set. Verification commands come from a detected capability manifest rather than model invention. Preceded by v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
 
 **Previously:** v3.2.1 — dashboard direct manipulation: widgets are dragged to position and resized from their corner, with widths stored as a proportion of the row so an arrangement means the same thing at every window size. Preceded by v3.2.0 (dashboard redesign + typed model results) — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
@@ -361,7 +361,7 @@ has here:
 |---|---|---|
 | v3.3.0 | Provider substrate — typed request/response, wire formats, model capabilities | shipped |
 | v3.4.0 | Tool framework projection — tool schemas, the agent loop, typed tool results | shipped |
-| v3.5.0 | Mission workspace and language adapter infrastructure | was v3.3.0 |
+| v3.5.0 | Mission workspace and language adapter infrastructure | shipped |
 | v3.6.0 | Repository indexing and awareness | new |
 | v3.7.0 | Conversation orchestration | new |
 | v3.8.0 | Durable worker and attempt runtime | was v3.4.0 |
@@ -464,22 +464,34 @@ Give every code mission a disposable, reproducible workspace.
 
 ### Required Work
 
-- Implement `MissionWorkspaceManager` for Git worktrees, temporary clones, and operator-defined isolated workspaces.
-- Persist a workspace manifest with base revision, repository fingerprint, branch, paths, environment, adapter versions, and cleanup policy.
-- Add lifecycle states: requested, preparing, ready, active, checkpointed, retained, rejected, cleanup_pending, cleaned, orphaned.
-- Add scoped workspace tools for read, search, edit, diff, and change-set creation.
-- Prohibit Coder and Scribe write paths outside the mission workspace.
-- Add a `WorkspaceCapabilityManifest` that detects project types and declares safe build/test/format commands.
-- Ship .NET and Node/frontend reference adapters; adapters are declarative and replace hard-coded assumptions.
-- Add checkpoint and resume behavior for process restart.
+- [x] `MissionWorkspaceManager` — detached git worktrees, taken from the enclosing repository rather
+      than the agent sandbox. A non-git source is REJECTED rather than copied: a mission workspace
+      must be attributable, and a copy of an unversioned directory has no revision to record.
+- [x] The manifest persists (schema 19) with base revision, repository fingerprint (the root commit,
+      because remotes get renamed and paths say only where a directory sits today), branch and
+      paths. The row OUTLIVES the directory — attribution is asked long after the files are gone.
+- [x] All ten lifecycle states, stored by NAME rather than ordinal.
+- [x] Scoped workspace tools: read, `search_workspace`, edit (the existing write tools, now scoped),
+      `read_changed_files_summary`, and change-set creation into the existing PatchSet pipeline.
+- [x] Write paths confined by `MissionWorkspaceScope` — ambient and async-flow-local, because a
+      workspace is a property of the MISSION and the write tools are shared singletons.
+- [x] `WorkspaceCapabilityManifest` detects project types and supplies their declared checks.
+- [x] .NET, Node and Python reference adapters, declarative. Detection reads the project; EXECUTION
+      reads only the adapters in this repository.
+- [x] Checkpoint and resume: `Recover()` reconciles recorded workspaces with the disk at startup,
+      distinguishing orphaned, interrupted-preparation and active-at-restart.
 
 ### Exit Gates
 
-- A code mission cannot modify the active checkout through any agent path.
-- Every change is attributable to one workspace and base revision.
-- Workspace recovery after restart is tested.
-- Cleanup cannot delete an operator-retained workspace.
-- Verification commands come from the manifest or operator configuration, never model invention.
+- [x] A code mission cannot modify the active checkout through any agent path. (Before v3.5.0 this
+      was not merely unmet but INVERTED — the live checkout was the only writable location.)
+- [x] Every change is attributable to one workspace and base revision, and the change set anchors
+      its old content to that revision rather than to a checkout that may have moved on.
+- [x] Workspace recovery after restart is tested, against real git worktrees.
+- [x] Cleanup cannot delete an operator-retained workspace; the rule lives on the record so a
+      second caller cannot miss it.
+- [x] Verification commands come from the manifest, never model invention — enforced by guards that
+      no declared command may be a template or invoke a shell.
 
 ## v3.6.0 - Repository Indexing and Awareness
 
