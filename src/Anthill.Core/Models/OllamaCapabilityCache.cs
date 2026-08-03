@@ -75,6 +75,23 @@ public static class OllamaCapabilityCache
         lock (RefreshLock) { Known.Clear(); _lastRefresh = DateTime.MinValue; _lastHost = ""; }
     }
 
+    /// <summary>
+    /// Populate directly, without asking Ollama. A test seam, and the only way to exercise
+    /// capability-dependent behaviour — routing, negotiation — without a live runtime holding the
+    /// specific models a test needs. Named plainly rather than hidden, because a hidden seam gets
+    /// used in production by someone who does not realise what it bypasses.
+    /// </summary>
+    public static void Seed(string host, IReadOnlyDictionary<string, ModelCapabilities> models)
+    {
+        lock (RefreshLock)
+        {
+            Known.Clear();
+            foreach (var (name, caps) in models) Known[name] = caps;
+            _lastHost = (host ?? "").TrimEnd('/');
+            _lastRefresh = DateTime.UtcNow;   // treat as fresh, so nothing overwrites it mid-test
+        }
+    }
+
     private static void RefreshIfStale(string host)
     {
         var normalized = (host ?? "").TrimEnd('/');

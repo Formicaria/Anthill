@@ -32,6 +32,27 @@ public static class ProviderWireFormat
             var msg = new JsonObject { ["role"] = m.Role, ["content"] = m.Content };
             if (m.Role == ModelMessage.Tool && m.ToolCallId is not null)
                 msg["tool_call_id"] = m.ToolCallId;
+
+            // An assistant turn REPLAYS the tool calls it made. Without this the conversation sent
+            // back on the next turn contains tool results answering requests that are not in it, and
+            // a model reading that has no evidence it already called the tool — so it calls again.
+            // Measured against a live model: three identical calls, all answered, no answer produced.
+            if (m.Role == ModelMessage.Assistant && m.ToolCalls.Count > 0)
+            {
+                var calls = new JsonArray();
+                foreach (var call in m.ToolCalls)
+                    calls.Add(new JsonObject
+                    {
+                        ["id"] = call.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject
+                        {
+                            ["name"] = call.Name,
+                            ["arguments"] = call.ArgumentsJson,
+                        },
+                    });
+                msg["tool_calls"] = calls;
+            }
             messages.Add(msg);
         }
 
