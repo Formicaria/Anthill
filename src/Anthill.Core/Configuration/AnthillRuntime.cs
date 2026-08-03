@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.4.2";
+    public const string Version = "3.5.0";
     public const int SchemaVersion = 19;   // v3.5.0: mission workspaces persisted (mission_workspaces)
 
     /// <summary>

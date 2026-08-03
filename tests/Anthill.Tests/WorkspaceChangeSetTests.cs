@@ -90,6 +90,13 @@ public class WorkspaceChangeSetTests : IDisposable
     [Fact]
     public void OldContent_ComesFromTheBaseRevision_NotTheLiveCheckout()
     {
+        // The workspace is captured FIRST, pinning its base revision — as Prepare() does in
+        // production. The first version of this test built the workspace lazily inside the harvest,
+        // AFTER the commit below, so it pinned the new revision and read back "SOMEONE ELSE EDITED
+        // THIS". It reproduced, in the test, the exact hazard the production code exists to prevent:
+        // reading the revision too late. Worth leaving recorded here.
+        var workspace = Workspace();
+
         File.WriteAllText(Path.Combine(_worktree, "Existing.cs"), "changed\n");
 
         // meanwhile the operator edits and commits the same file in the live checkout
@@ -97,7 +104,8 @@ public class WorkspaceChangeSetTests : IDisposable
         Git(_repo, "add -A");
         Git(_repo, "commit -m unrelated");
 
-        var proposal = Assert.Single(Harvest().Proposals);
+        var proposal = Assert.Single(
+            WorkspaceChangeSet.Create(workspace, "m1", "t1", "summary").Proposals);
 
         Assert.Equal("original\n", proposal.OldContent);
         Assert.DoesNotContain("SOMEONE ELSE", proposal.OldContent);
