@@ -251,7 +251,7 @@ public static class AntExecutionCatalog
         ["ui_cartographer"] = new("ui_cartographer", V,
             SupportedTaskTypes: S("ui_mapping", "route_mapping", "component_mapping", "style_mapping", "frontend_dependency_mapping", "ui_change_impact"),
             RequiredCapabilities: S(Capability.RepoRead, Capability.RepoSearch),
-            AllowedTools: S("list_directory", "read_text_file", "search_workspace"),
+            AllowedTools: S("list_directory", "read_text_file", "search_workspace", "repository_index"),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("ui_map"),
             AllowedHandoffRoles: S("coder", "soldier"),
