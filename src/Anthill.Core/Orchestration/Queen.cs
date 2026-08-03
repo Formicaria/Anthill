@@ -131,6 +131,14 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 Console.Error.WriteLine(
                     $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
                   + $"which is missing: {string.Join("; ", fitness.Unmet)}");
+
+        // v3.5.0: reconcile recorded workspaces with what is on disk, before anything can be
+        // dispatched into one. A row left claiming Active by a process that died would otherwise be
+        // handed to an agent as a live workspace, and something would wait forever for the agent
+        // that row implies is already working in it.
+        Workspaces = new Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
+        foreach (var note in Workspaces.Recover())
+            Console.Error.WriteLine($"[workspace-recovery] {note}");
         Execution = new ExecutionService(Memory, _ants);
     }
 
@@ -173,6 +181,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// and one that is unanswerable if the rejection only ever reached stderr.
     /// </summary>
     public IReadOnlyList<ToolRegistration> UserTools { get; private set; } = Array.Empty<ToolRegistration>();
+
+    /// <summary>
+    /// v3.5.0: disposable, attributable workspaces for code missions. Owned by the Queen because
+    /// workspace lifecycle is deterministic orchestration — no model participates in deciding where
+    /// an agent may write, for the same reason none picks its own tool authorization.
+    /// </summary>
+    public Workspaces.MissionWorkspaceManager Workspaces { get; private set; } = null!;
 
     /// <summary>
     /// Re-read the stored definitions and re-register them into the live registry.

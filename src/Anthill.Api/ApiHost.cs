@@ -1735,6 +1735,49 @@ public static partial class ApiHost
         });
 
         /*
+         * v3.5.0 — the mission workspaces, and what each change was based on.
+         *
+         * Reports CLEANED and ORPHANED workspaces alongside live ones, because the row outliving the
+         * directory is the point: "what was this merged change based on" is asked long after the
+         * files are gone, and a list showing only what currently exists cannot answer it.
+         *
+         * Orphaned is kept distinct from cleaned in the report for the same reason it is distinct in
+         * the model — "we removed it" and "it vanished under us" call for different responses, and a
+         * list that shows only "gone" hides the second entirely.
+         */
+        app.MapGet("/workspaces", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            var workspaces = Queen.Workspaces.All().Select(w => new Dictionary<string, object?>
+            {
+                ["id"] = w.Id,
+                ["mission_id"] = w.MissionId,
+                ["state"] = w.State.ToString().ToLowerInvariant(),
+                ["mode"] = w.Mode,
+                ["root"] = w.Root,
+                ["base_revision"] = w.BaseRevision,
+                ["repository_fingerprint"] = w.RepositoryFingerprint,
+                ["branch"] = w.Branch,
+                ["retained_by"] = w.RetainedBy,
+                ["retain_reason"] = w.RetainReason,
+                ["note"] = w.Note,
+                // Whether cleanup may take it. Reported rather than inferred from the state name, so
+                // the UI cannot draw a delete button the server would refuse.
+                ["deletable"] = w.Deletable,
+                ["usable"] = w.Usable,
+                ["created_at"] = w.CreatedAt.ToIso(),
+                ["updated_at"] = w.UpdatedAt.ToIso(),
+            }).ToList();
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["workspaces"] = workspaces,
+                ["root"] = Anthill.Core.Workspaces.MissionWorkspaceManager.Root,
+            });
+        });
+
+        /*
          * v3.4.1 (ADR-006) — define a tool without a rebuild.
          *
          * Validated BEFORE it is stored, by the SAME validator the registrar uses at startup. A
