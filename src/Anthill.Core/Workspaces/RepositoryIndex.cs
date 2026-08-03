@@ -4,13 +4,33 @@ using Anthill.Core.Security;
 
 namespace Anthill.Core.Workspaces;
 
+/// <summary>
+/// A declaration found in a file, with the line it is on.
+///
+/// EVIDENCE, NOT AUTHORITY — and the distinction is the whole design. This comes from pattern
+/// matching, not from a compiler: it will occasionally name something inside a comment or a string,
+/// and it will miss declarations written in shapes the patterns do not cover. That is acceptable
+/// precisely because of what it is used for. The index POINTS; the agent then reads the file and
+/// sees for itself.
+///
+/// What would not be acceptable is claiming more. A symbol index presented as authoritative gets
+/// believed: an agent told "this function is declared nowhere" stops looking, and an agent told
+/// "these are all the callers" makes a change on the strength of a list that was never complete.
+/// So every answer built on these carries its path and line, and none of them says "all".
+/// </summary>
+public sealed record IndexedSymbol(string Name, string Kind, int Line);
+
 /// <summary>One indexed file. Excerpts an agent acts on trace back to these fields.</summary>
 public sealed record IndexedFile(
     string Path,
     string Language,
     long Bytes,
     int Lines,
-    string ContentHash);
+    string ContentHash)
+{
+    /// <summary>Declarations found in this file. Empty for languages with no declared patterns.</summary>
+    public IReadOnlyList<IndexedSymbol> Symbols { get; init; } = Array.Empty<IndexedSymbol>();
+}
 
 /// <summary>
 /// v3.6.0 — a durable inventory of what is in a repository, keyed to the revision it describes.
@@ -84,6 +104,29 @@ public sealed record RepositoryIndex
 
     public IndexedFile? Find(string path) =>
         Files.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Where a name is DECLARED, as far as the patterns can tell. Ordered by path so the same
+    /// question gives the same answer.
+    ///
+    /// Returns candidates, never a verdict — see <see cref="IndexedSymbol"/>. An empty result means
+    /// "not found by these patterns", which is emphatically not "does not exist".
+    /// </summary>
+    public IReadOnlyList<(string Path, IndexedSymbol Symbol)> FindSymbol(string? name, bool exact = false)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Array.Empty<(string, IndexedSymbol)>();
+
+        return Files
+            .SelectMany(f => f.Symbols.Select(s => (f.Path, Symbol: s)))
+            .Where(x => exact
+                ? string.Equals(x.Symbol.Name, name, StringComparison.Ordinal)
+                : x.Symbol.Name.Contains(name!, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Path, StringComparer.Ordinal)
+            .ThenBy(x => x.Symbol.Line)
+            .ToList();
+    }
+
+    public int SymbolCount => Files.Sum(f => f.Symbols.Count);
 }
 
 /// <summary>
@@ -182,17 +225,117 @@ public static class RepositoryIndexBuilder
                 return new IndexedFile(relative, LanguageOf(full), info.Length, 0, "");
 
             var bytes = File.ReadAllBytes(full);
+            var language = LanguageOf(full);
             return new IndexedFile(
                 relative,
-                LanguageOf(full),
+                language,
                 info.Length,
                 CountLines(bytes),
-                Convert.ToHexString(SHA256.HashData(bytes))[..16]);
+                Convert.ToHexString(SHA256.HashData(bytes))[..16])
+            {
+                Symbols = ExtractSymbols(language, bytes),
+            };
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
+
+    /// <summary>Symbols per file, capped. A generated file with 40,000 declarations is not a map.</summary>
+    public const int MaxSymbolsPerFile = 400;
+
+    /// <summary>
+    /// Declaration patterns, per language.
+    ///
+    /// PATTERNS, NOT A PARSER, and the choice is deliberate rather than lazy. A real parser per
+    /// language means a compiler dependency per language, versioned against the project being read —
+    /// which is a large amount of machinery to answer "where is this declared", a question the agent
+    /// verifies by reading the file anyway. See <see cref="IndexedSymbol"/> for why pointing is
+    /// enough and claiming authority would be worse.
+    ///
+    /// Each pattern captures the NAME in group 1 and is anchored to a line start with optional
+    /// modifiers, so a mention inside an expression is not mistaken for a declaration. Comments and
+    /// strings can still fool it; that is the cost of the trade and the reason nothing here says
+    /// "all".
+    /// </summary>
+    private static readonly Dictionary<string, (string Kind, System.Text.RegularExpressions.Regex Pattern)[]> Patterns =
+        new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["csharp"] = new[]
+        {
+            ("type", Rx(@"^\s*(?:public|internal|private|protected|abstract|sealed|static|partial|\s)*\b(?:class|interface|record|struct|enum)\s+([A-Za-z_]\w*)")),
+            ("method", Rx(@"^\s*(?:public|internal|private|protected|static|virtual|override|async|sealed|extern|unsafe|\s)+[\w<>\[\],\?\.]+\s+([A-Za-z_]\w*)\s*\(")),
+        },
+        ["typescript"] = TsPatterns,
+        ["javascript"] = TsPatterns,
+        ["python"] = new[]
+        {
+            ("type", Rx(@"^\s*class\s+([A-Za-z_]\w*)")),
+            ("function", Rx(@"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)")),
+        },
+        ["go"] = new[]
+        {
+            ("type", Rx(@"^\s*type\s+([A-Za-z_]\w*)")),
+            ("function", Rx(@"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)")),
+        },
+        ["rust"] = new[]
+        {
+            ("type", Rx(@"^\s*(?:pub\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)")),
+            ("function", Rx(@"^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)")),
+        },
+    };
+
+    private static (string, System.Text.RegularExpressions.Regex)[] TsPatterns => new[]
+    {
+        ("type", Rx(@"^\s*(?:export\s+)?(?:abstract\s+)?(?:class|interface|type|enum)\s+([A-Za-z_$][\w$]*)")),
+        ("function", Rx(@"^\s*(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)")),
+        ("function", Rx(@"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>")),
+    };
+
+    private static System.Text.RegularExpressions.Regex Rx(string pattern) =>
+        new(pattern, System.Text.RegularExpressions.RegexOptions.Compiled
+                   | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(250));
+
+    /// <summary>
+    /// Declarations in one file. Returns empty rather than throwing for anything unreadable — a
+    /// symbol scan that can fail an index build would make the index less reliable than no index.
+    /// </summary>
+    internal static IReadOnlyList<IndexedSymbol> ExtractSymbols(string language, byte[] bytes)
+    {
+        if (!Patterns.TryGetValue(language, out var patterns)) return Array.Empty<IndexedSymbol>();
+
+        var symbols = new List<IndexedSymbol>();
+        try
+        {
+            var text = Encoding.UTF8.GetString(bytes);
+            // A NUL byte means this is not source, whatever its extension says. Running patterns
+            // over a binary produces confident nonsense rather than an error.
+            if (text.Contains('\0')) return Array.Empty<IndexedSymbol>();
+
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length && symbols.Count < MaxSymbolsPerFile; i++)
+            {
+                var line = lines[i];
+                if (line.Length is 0 or > 500) continue;   // minified bundles are not maps either
+
+                foreach (var (kind, pattern) in patterns)
+                {
+                    var match = pattern.Match(line);
+                    if (!match.Success) continue;
+                    symbols.Add(new IndexedSymbol(match.Groups[1].Value, kind, i + 1));
+                    break;   // one declaration per line; the first pattern that fits wins
+                }
+            }
+        }
+        catch (Exception error) when (error is System.Text.RegularExpressions.RegexMatchTimeoutException
+                                          or ArgumentException or DecoderFallbackException)
+        {
+            return symbols;
+        }
+
+        return symbols;
     }
 
     private static int CountLines(byte[] bytes)

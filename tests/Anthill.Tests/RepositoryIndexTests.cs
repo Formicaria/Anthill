@@ -238,6 +238,120 @@ public class RepositoryIndexTests : IDisposable
         Assert.Equal(Anthill.Core.Contracts.FailureClass.UnsafeState, result.Failure);
     }
 
+    // ---- symbols: evidence, not authority -------------------------------------------------------
+
+    /// <summary>
+    /// The point of symbol entries: "where is this declared" answered without opening a file, with a
+    /// path and line the agent can then go and read.
+    /// </summary>
+    [Fact]
+    public void Symbols_LocateDeclarationsWithTheirLine()
+    {
+        var index = RepositoryIndexBuilder.Build(Workspace());
+
+        var program = Assert.Single(index.FindSymbol("Program", exact: true));
+        Assert.Equal("src/Program.cs", program.Path);
+        Assert.Equal("type", program.Symbol.Kind);
+        Assert.Equal(1, program.Symbol.Line);
+    }
+
+    [Theory]
+    [InlineData("csharp", "public sealed class Widget { }\n", "Widget", "type")]
+    [InlineData("csharp", "public interface IThing { }\n", "IThing", "type")]
+    [InlineData("csharp", "    public async Task<int> ComputeAsync(int x)\n", "ComputeAsync", "method")]
+    [InlineData("typescript", "export class Service { }\n", "Service", "type")]
+    [InlineData("typescript", "export function render(a) { }\n", "render", "function")]
+    [InlineData("typescript", "export const handler = async (req) => { }\n", "handler", "function")]
+    [InlineData("python", "class Widget:\n", "Widget", "type")]
+    [InlineData("python", "async def fetch(url):\n", "fetch", "function")]
+    [InlineData("go", "func Handle(w http.ResponseWriter) {\n", "Handle", "function")]
+    [InlineData("rust", "pub fn compute(x: i32) -> i32 {\n", "compute", "function")]
+    public void EachLanguage_YieldsItsDeclarations(string language, string source, string name, string kind)
+    {
+        var symbols = RepositoryIndexBuilder.ExtractSymbols(language, System.Text.Encoding.UTF8.GetBytes(source));
+
+        var found = Assert.Single(symbols.Where(s => s.Name == name));
+        Assert.Equal(kind, found.Kind);
+    }
+
+    /// <summary>
+    /// A language with no declared patterns yields nothing rather than guessing. Markdown headings
+    /// are not declarations, and inventing symbols for them would fill the index with noise an agent
+    /// would then chase.
+    /// </summary>
+    [Fact]
+    public void AnUnknownLanguage_YieldsNoSymbols() =>
+        Assert.Empty(RepositoryIndexBuilder.ExtractSymbols("markdown",
+            System.Text.Encoding.UTF8.GetBytes("# Heading\n## Another\n")));
+
+    /// <summary>
+    /// A binary that happens to carry a source extension produces NOTHING, not confident nonsense.
+    /// Pattern matching over bytes finds "declarations" wherever the bytes happen to look right.
+    /// </summary>
+    [Fact]
+    public void ABinaryFile_YieldsNoSymbols() =>
+        Assert.Empty(RepositoryIndexBuilder.ExtractSymbols("csharp",
+            new byte[] { 0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01, 0x02 }));
+
+    /// <summary>
+    /// Bounded per file. A generated or minified file with forty thousand declarations is not a map,
+    /// and letting one file dominate the index makes every other answer harder to find.
+    /// </summary>
+    [Fact]
+    public void SymbolsAreCappedPerFile()
+    {
+        var source = string.Concat(Enumerable.Range(0, RepositoryIndexBuilder.MaxSymbolsPerFile + 200)
+            .Select(i => $"class Type{i} {{ }}\n"));
+
+        var symbols = RepositoryIndexBuilder.ExtractSymbols("csharp", System.Text.Encoding.UTF8.GetBytes(source));
+
+        Assert.Equal(RepositoryIndexBuilder.MaxSymbolsPerFile, symbols.Count);
+    }
+
+    /// <summary>Symbol search is deterministic, like every other index answer.</summary>
+    [Fact]
+    public void SymbolSearch_IsOrderedAndRepeatable()
+    {
+        var index = RepositoryIndexBuilder.Build(Workspace());
+
+        Assert.Equal(index.FindSymbol("e").Select(x => (x.Path, x.Symbol.Line)),
+                     index.FindSymbol("e").Select(x => (x.Path, x.Symbol.Line)));
+    }
+
+    /// <summary>
+    /// The honesty requirement, asserted rather than trusted to a comment. An agent told
+    /// "declared nowhere" stops looking; one told "these are all the callers" changes code on the
+    /// strength of a list that was never complete. The tool must never let a symbol answer read as
+    /// authoritative.
+    /// </summary>
+    [Fact]
+    public void TheTool_SaysItsSymbolAnswersAreNotAuthoritative()
+    {
+        using (MissionWorkspaceScope.Enter(Workspace()))
+        {
+            var result = Tool().Run(new Dictionary<string, object?> { ["symbol"] = "Program" });
+
+            Assert.True(result.Success);
+            Assert.Contains("src/Program.cs:1", result.Output);
+            Assert.Contains("not by a compiler", result.Output);
+            Assert.Contains("not a complete or authoritative list", result.Output);
+        }
+    }
+
+    /// <summary>A name nothing declares is an empty answer, still carrying the caveat.</summary>
+    [Fact]
+    public void TheTool_FindingNoDeclaration_DoesNotClaimItDoesNotExist()
+    {
+        using (MissionWorkspaceScope.Enter(Workspace()))
+        {
+            var result = Tool().Run(new Dictionary<string, object?> { ["symbol"] = "NoSuchThing" });
+
+            Assert.True(result.Success);
+            Assert.Contains("(0)", result.Output);
+            Assert.Contains("not a complete or authoritative list", result.Output);
+        }
+    }
+
     /// <summary>
     /// The cartographer — the role whose entire purpose is mapping a repository — is allowed to ask.
     /// </summary>
