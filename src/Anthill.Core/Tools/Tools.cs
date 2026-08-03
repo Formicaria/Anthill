@@ -48,6 +48,22 @@ public sealed class ToolRegistry
     public void Register(ITool tool) => _tools[tool.Name] = tool;
 
     /// <summary>
+    /// v3.4.1: remove a tool from THIS run's registry. Exists for operator-defined tools, which are
+    /// the only kind that can stop existing while the process is alive — deleting a definition has
+    /// to take the tool out of the registry too, or a model keeps being offered a tool whose
+    /// definition is gone and every call fails for a reason the transcript cannot show.
+    ///
+    /// Built-ins are refused. Registration composes the run's capabilities from config, and a
+    /// runtime call able to strip <c>apply_patch</c> out of the registry would be a second, unaudited
+    /// way to change what the colony can do.
+    /// </summary>
+    public bool Unregister(string name)
+    {
+        if (ToolInventory.Implemented.Contains(name ?? "")) return false;
+        return _tools.Remove(name ?? "");
+    }
+
+    /// <summary>
     /// The tools actually registered for this run. v3.1.0: <see cref="Configuration.RuntimeProfile"/>
     /// reports the run's tool grants from THIS rather than re-deriving them from the capability
     /// gates — so the profile describes what was built, not what the gates imply should have been.
