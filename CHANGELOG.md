@@ -1,5 +1,53 @@
 # ANTHILL Changelog
 
+## v3.7.1 - The v3.7.0 fix release: making the escalation gate real
+
+v3.7.0 shipped with all five exit gates "met", a version bump, a tag and a push - and its entire
+runtime was unreachable. This release makes it true.
+
+- **The conversation runtime had no production call site.** `ConversationRunner` was never
+  constructed outside tests and `ConversationScope.Enter` was called only from tests, so the gate
+  wired into `ToolRegistry.RunTool` evaluated to null and passed silently on every real path. Every
+  gate was true of the code; none was true of the running system. Now owned by the Queen, with
+  `POST /conversations`, `POST /conversations/{id}/turns` and `POST /conversations/{id}/cancel`.
+- **An operator surface**, because endpoints nobody can reach from the console are the same failure
+  one layer up. A Conversations widget, on by default, where the approval model is chosen in words
+  ("Ask me first" / "Auto-approve" / "No approvals") and a conversation waiting on a human floats to
+  the top with the only filled button on the panel. Bypass is stated in red: nobody should be
+  surprised that approvals are off.
+- **Escalated missions now run in the background.** They ran synchronously inside the HTTP request -
+  which blocked the request, and far worse, meant a slow or crashed mission never recorded its turn
+  or its mission link at all. The "conversation and mission are one history" gate failed in exactly
+  the cases where the history matters. The mission id now arrives via `onMissionCreated`, which
+  fires as soon as the row exists.
+- **Structural guards** (`CallSiteAuditTests`) so this class of defect fails the build: the runtime
+  must be constructed in production, something must enter each ambient scope, every inventoried tool
+  must be registered, every table written and read. Unit tests cannot catch it - they are the thing
+  supplying the false call site.
+- Found and documented, not fixed: `task_result_summaries` is written on every task and read by
+  nothing, superseded by `task_results` in v3.2.0. Named as a known exception rather than papered
+  over; retiring it is an operator decision.
+
+### Found in the browser, not in the tests
+
+The live sweep of the new panel turned up four defects a green suite had nothing to say about.
+
+- **The Conversations widget was unknown to the server.** Registered in the client but missing from
+  `KnownPanelIds`, and `Sanitize()` deletes unknown panels - so an operator who moved or hid it
+  would have had that choice silently discarded on the next `/ui/state` round trip.
+- **Its body element existed only when the grid adopted it.** `gridMountTarget` creates a missing
+  body, which made it look fine; with the grid off it rendered into nothing. Now real markup on its
+  own full-width row - the same fix the composer needed in v3.1.1.
+- **A conversation's mission link could hold a mission *report* instead of an id**, left behind by
+  the pre-background code path that linked the pipeline's return value. It filled the panel with a
+  wall of text and made every conversation-to-mission join resolve silently to nothing. The runner
+  now refuses to link anything that is not plausibly an id and says so, and `.conv-doing` is clamped
+  to two lines so no producer can blow up the layout again.
+- **4,478 console errors**, every one a six-second poll re-reporting the same "unauthenticated" or
+  "Failed to fetch" - which is the normal state while logged out or restarting. The loudest thing in
+  the console was the thing that mattered least, and that is how a real error becomes invisible.
+  Repeats are now counted and reported once, when the state changes.
+
 ## v3.7.0 - Conversation orchestration: chat that escalates, explicitly
 
 One conversational surface that starts as chat and escalates into autonomous execution, with the
