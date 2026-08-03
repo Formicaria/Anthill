@@ -1736,6 +1736,109 @@ public static partial class ApiHost
         });
 
         /*
+         * v3.7.0 — START a conversation, and set its approval policy.
+         *
+         * The policy is recorded WITH ITS AUTHOR here, which is what makes a standing permission
+         * valid at all: an unattributed AutoApprove or Bypass fails closed back to Ask, so an
+         * endpoint that let one be set without naming who set it would produce a conversation whose
+         * policy silently does nothing.
+         */
+        app.MapPost("/conversations", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+
+            ConversationRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ConversationRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var policy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var p)
+                ? p : EscalationPolicy.Ask;
+            var who = CurrentUsername(ctx) ?? "operator";
+
+            var conversation = new Conversation
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Title = (body?.Title ?? "").Trim(),
+                Role = string.IsNullOrWhiteSpace(body?.Role) ? "researcher" : body!.Role!.Trim(),
+                Policy = policy,
+                // Attribution is written for ANY standing permission. Ask needs none — nobody has to
+                // sign for the safe default.
+                PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
+                PolicySetAt = policy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc(),
+            };
+
+            Queen.Memory.SaveConversation(conversation);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = conversation.Id,
+                ["policy"] = conversation.EffectivePolicy.ToString().ToLowerInvariant(),
+            }, $"Conversation {conversation.Id} started.");
+        });
+
+        /*
+         * Run one turn. THE call site that makes the v3.7.0 runtime real.
+         *
+         * The turn runs INSIDE a ConversationScope, which is what puts the escalation gate on the
+         * tool dispatch path: outside a scope ConversationScope.Evaluate returns null and every gate
+         * check silently passes. Without this endpoint the whole escalation mechanism was reachable
+         * only from tests — which is the "no call site, no feature" rule, failed.
+         */
+        app.MapPost("/conversations/{id}/turns", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+
+            TurnRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<TurnRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var message = (body?.Message ?? "").Trim();
+            if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
+
+            var mode = string.Equals(body?.Mode, "mission", StringComparison.OrdinalIgnoreCase)
+                ? ConversationMode.Mission : ConversationMode.Chat;
+            var answers = body?.Answers ?? new Dictionary<string, string>();
+
+            // Every tool call this turn makes is now gated, and every decision recorded — the same
+            // decision log the transcript endpoint reads back.
+            using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
+            {
+                var outcome = Queen.Conversations.Run(conversation, message, mode, answers);
+
+                return ApiJson.Ok(new Dictionary<string, object?>
+                {
+                    ["mode"] = outcome.Mode.ToString().ToLowerInvariant(),
+                    ["started"] = outcome.Started,
+                    ["mission_id"] = outcome.MissionId,
+                    ["summary"] = outcome.Summary,
+                    ["decision"] = outcome.Decision is null ? null : new Dictionary<string, object?>
+                    {
+                        ["action"] = outcome.Decision.Action,
+                        ["allowed"] = outcome.Decision.Allowed,
+                        ["decided_by"] = outcome.Decision.DecidedBy,
+                        ["reason"] = outcome.Decision.Reason,
+                    },
+                }, outcome.Summary);
+            }
+        });
+
+        // Cancel: marks the conversation AND signals the work it started. Reports how many live
+        // pieces were signalled, so "stopped two missions" is distinguishable from "nothing running".
+        app.MapPost("/conversations/{id}/cancel", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadConversation(id) is null)
+                return ApiJson.Error($"No conversation '{id}'.", "not_found");
+
+            var stopped = Queen.Conversations.Cancel(id);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["signalled"] = stopped },
+                stopped == 0 ? "Conversation cancelled; nothing was running."
+                             : $"Conversation cancelled; {stopped} running item(s) signalled.");
+        });
+
+        /*
          * v3.7.0 — conversations, and what each one is doing.
          *
          * State is DERIVED on request, never stored. A stored status is a second thing to keep in
@@ -2916,6 +3019,24 @@ public sealed class UserToolRequest
     [System.Text.Json.Serialization.JsonPropertyName("allowed_roles")]
     public List<string>? AllowedRoles { get; set; }
     public bool? Enabled { get; set; }
+}
+/// <summary>v3.7.0: start a conversation. Policy is parsed leniently; anything unknown is Ask.</summary>
+public sealed class ConversationRequest
+{
+    public string? Title { get; set; }
+    public string? Role { get; set; }
+    /// <summary>ask | autoapprove | bypass. Recorded with its author when it is not ask.</summary>
+    public string? Policy { get; set; }
+}
+
+/// <summary>v3.7.0: one turn, with the operator's answers for anything it needs permission to do.</summary>
+public sealed class TurnRequest
+{
+    public string? Message { get; set; }
+    /// <summary>chat | mission. Mission escalation is gated; chat is not.</summary>
+    public string? Mode { get; set; }
+    /// <summary>Action name to "approve". Absence is NOT consent.</summary>
+    public Dictionary<string, string>? Answers { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }

@@ -1,4 +1,5 @@
 using Anthill.Core.Memory;
+using ThreadingTask = System.Threading.Tasks.Task;
 
 namespace Anthill.Core.Conversations;
 
@@ -57,8 +58,32 @@ public sealed class ConversationRunner
     /// </summary>
     public const string StartMissionAction = "start_mission";
 
+    /// <summary>How long to wait for the mission ROW to exist before giving up on linking it.</summary>
+    public const int MissionIdTimeoutSeconds = 15;
+
+    /// <summary>Longest thing that can plausibly be a mission id. A GUID is 36 characters.</summary>
+    public const int MaxMissionIdLength = 64;
+
+    /// <summary>
+    /// Is this actually an id, or is it a report that arrived where an id was expected?
+    ///
+    /// Found in the running system rather than in a test. Before missions moved to the background,
+    /// the runner linked the pipeline's RETURN value — which is the mission REPORT, not its id — so
+    /// a conversation's MissionIds held a multi-kilobyte narrative. It rendered as a wall of text in
+    /// the console and, worse, made the conversation-to-mission join quietly useless: nothing could
+    /// ever look a mission up by that "id".
+    ///
+    /// The callback contract is correct now. This guard is what makes a future violation of it LOUD
+    /// instead of silently corrupting history — the same principle already applied just below, where
+    /// an id we do not have is refused rather than invented. One that is not an id is no better.
+    /// </summary>
+    public static bool LooksLikeMissionId(string? candidate) =>
+        !string.IsNullOrWhiteSpace(candidate)
+        && candidate!.Length <= MaxMissionIdLength
+        && !candidate.Any(char.IsWhiteSpace);
+
     private readonly SqliteMemory _memory;
-    private readonly Func<string, CancellationToken, string> _startMission;
+    private readonly Func<string, Action<string>, CancellationToken, string> _startMission;
 
     /// <summary>
     /// Live work, by conversation. The exit gate says "cancelling a conversation cancels the work it
@@ -76,7 +101,13 @@ public sealed class ConversationRunner
     /// a mission starts; the Queen decides what a mission does. Keeping those apart is what lets the
     /// escalation boundary be tested without standing up a colony.
     /// </summary>
-    public ConversationRunner(SqliteMemory memory, Func<string, CancellationToken, string> startMission)
+    /// <summary>
+    /// <paramref name="startMission"/> is the mission pipeline, injected. It reports the new mission
+    /// id through its callback AS SOON AS THE ROW EXISTS, then keeps running — the runner needs the
+    /// id to record history, and must not wait for the work to finish to get it.
+    /// </summary>
+    public ConversationRunner(SqliteMemory memory,
+        Func<string, Action<string>, CancellationToken, string> startMission)
     {
         _memory = memory;
         _startMission = startMission;
@@ -153,16 +184,70 @@ public sealed class ConversationRunner
             live.Add(cts);
         }
 
+        // The mission runs in the BACKGROUND and this returns as soon as the mission row exists.
+        //
+        // Found by running it: the first version called the pipeline synchronously and recorded the
+        // turn afterwards, which meant an HTTP request blocked for the whole mission AND — much
+        // worse — a mission that was slow, cancelled or crashed never got its turn or its link
+        // recorded at all. The "conversation and mission are one history" gate failed in exactly
+        // the cases where the history matters most.
+        //
+        // The id arrives through onMissionCreated, which the Queen already fires the moment the row
+        // is persisted. Waiting for THAT is bounded and quick; waiting for the work is neither.
+        var idReady = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _ = ThreadingTask.Run(() =>
+        {
+            try { _startMission(message, id => idReady.TrySetResult(id), cts.Token); }
+            catch (Exception error) { idReady.TrySetException(error); }
+            finally
+            {
+                // The lease on this conversation's cancellation source ends when the work does.
+                lock (_running)
+                {
+                    if (_running.TryGetValue(conversation.Id, out var live)) live.Remove(cts);
+                }
+                try { cts.Dispose(); } catch { }
+            }
+        });
+
         string missionId;
         try
         {
-            missionId = _startMission(message, cts.Token);
+            missionId = idReady.Task.Wait(TimeSpan.FromSeconds(MissionIdTimeoutSeconds))
+                ? idReady.Task.Result
+                : "";
         }
-        catch
+        catch (AggregateException error)
         {
-            lock (_running) { _running[conversation.Id].Remove(cts); }
-            cts.Dispose();
-            throw;
+            // The pipeline threw before creating a row. Recorded as a turn that started nothing,
+            // because it did — and a silent drop here would lose the attempt entirely.
+            RecordTurn(conversation, ordinal, message, null);
+            return new ConversationOutcome(ConversationMode.Mission, false, null,
+                $"mission failed to start: {error.InnerException?.Message ?? error.Message}", decision);
+        }
+
+        if (missionId.Length == 0)
+        {
+            // The row did not appear in time. The work may still be starting, so this is reported
+            // rather than treated as a failure — but it is NOT linked, because linking an id we do
+            // not have would be a fabricated history.
+            RecordTurn(conversation, ordinal, message, null);
+            return new ConversationOutcome(ConversationMode.Mission, true, null,
+                "mission started, but its id did not arrive in time to link — check the mission list",
+                decision);
+        }
+
+        if (!LooksLikeMissionId(missionId))
+        {
+            // Something that is not an id arrived where an id was expected. Recorded and reported
+            // rather than stored: a bad link is worse than a missing one, because a missing link
+            // shows up as a gap an operator can investigate and a bad one silently answers every
+            // future join with nothing while looking perfectly healthy.
+            RecordTurn(conversation, ordinal, message, null);
+            return new ConversationOutcome(ConversationMode.Mission, true, null,
+                "mission started, but the pipeline reported something that is not a mission id — "
+              + "not linking it; check the mission list", decision);
         }
 
         RecordTurn(conversation, ordinal, message, missionId);
