@@ -350,11 +350,32 @@ public sealed class ModelRouter
         GenerateCore(role, prompt, missionId, taskId, antName, retries).Content;
 
     private ModelCallResult GenerateCore(string role, string prompt, string? missionId, string? taskId,
+        string? antName, int retries) =>
+        SendCore(role, ModelRequest.FromPrompt(prompt), missionId, taskId, antName, retries).ToCallResult();
+
+    /// <summary>
+    /// v3.4.0 (ADR-003): route and send a TYPED request — the path a tool-calling agent loop needs,
+    /// because it must carry a conversation and a tool list, not a prompt string.
+    ///
+    /// Deliberately the SAME routing path the string call uses rather than a parallel one. Route
+    /// resolution, the circuit breaker, the model_call event and the pheromone trail all live here
+    /// once; a second copy for typed calls would drift, and the two would eventually disagree about
+    /// whether a route is healthy — which is the failure this method's own comments below record
+    /// happening before, when success had two definitions in one method.
+    /// </summary>
+    public ModelResponse SendTyped(string role, ModelRequest request, string? missionId = null,
+        string? taskId = null, string? antName = null, int retries = 2) =>
+        SendCore(role, request, missionId, taskId, antName, retries);
+
+    private ModelResponse SendCore(string role, ModelRequest request, string? missionId, string? taskId,
         string? antName, int retries)
     {
         if (!AnthillRuntime.UseOllama && AnthillRuntime.DefaultModelProvider == "ollama")
-            return new ModelCallResult(ModelCallOutcome.Error,
-                "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.");
+            return new ModelResponse
+            {
+                Status = ModelCallOutcome.Error,
+                Content = "ERROR: Model routing requested Ollama, but USE_OLLAMA is False.",
+            };
 
         var (provider, model, rerouteReason) = ResolveRoute(role);
         var routeKey = $"{provider}:{model}";
@@ -363,18 +384,24 @@ public sealed class ModelRouter
         // If this provider's breaker is open, fail fast without a network call — the whole point is to
         // stop a dead/slow provider from making every mission wait out a full timeout and pin the queue.
         var blockedReason = _breaker?.Blocked(routeKey);
-        ModelCallResult result;
+        ModelResponse result;
         if (blockedReason is not null)
         {
-            result = new ModelCallResult(ModelCallOutcome.ConnectError,
-                $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
-                + "Fast-failed without a network call to keep the mission queue moving.");
+            result = new ModelResponse
+            {
+                Status = ModelCallOutcome.ConnectError,
+                Content = $"ERROR: {provider} temporarily unavailable — {blockedReason}. "
+                    + "Fast-failed without a network call to keep the mission queue moving.",
+                Provider = provider, Model = model,
+            };
         }
         else
         {
             // v3.2.0: the status arrives WITH the result. This used to be
             // Classify(response) — recovering, by substring match, what the client already knew.
-            result = GetClient(provider, model).Generate(prompt, retries);
+            // The model the ROUTE selected wins unless the caller pinned one explicitly — per-agent
+            // model assignment is a request-level decision, route policy is the default.
+            result = GetClient(provider, model).Send(request with { Model = request.Model ?? model }, retries);
             _breaker?.Record(routeKey, result.Status.ToCircuitSignal());
         }
         var response = result.Content;
@@ -402,7 +429,15 @@ public sealed class ModelRouter
                     ["role"] = role, ["provider"] = provider, ["model"] = model, ["success"] = success,
                     ["outcome"] = outcome.Name(), ["circuit_open"] = blockedReason is not null,
                     ["reroute_reason"] = rerouteReason,
-                    ["duration_ms"] = durationMs, ["prompt_chars"] = prompt.Length, ["response_chars"] = response.Length,
+                    ["duration_ms"] = durationMs,
+                    ["prompt_chars"] = request.Messages.Sum(m => (m.Content ?? "").Length),
+                    ["response_chars"] = response.Length,
+                    // v3.4.0: what the call actually cost and whether it asked for tools. Absent
+                    // usage stays absent — a provider that reports nothing is unknown, not zero.
+                    ["prompt_tokens"] = result.Usage.PromptTokens,
+                    ["completion_tokens"] = result.Usage.CompletionTokens,
+                    ["tool_calls_requested"] = result.ToolCalls.Count,
+                    ["tools_offered"] = request.Tools.Count,
                     ["pheromone_delta"] = pheromoneDelta,
                 });
             _memory.UpdatePheromoneTrail($"model:{provider}:{model}:{role}", "model_route", success, pheromoneDelta,
