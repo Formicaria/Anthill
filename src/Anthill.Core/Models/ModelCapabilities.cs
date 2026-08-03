@@ -33,6 +33,44 @@ public sealed record ModelCapabilities
         ToolCalling = true, StructuredOutput = true, Streaming = true,
     };
 
+    /// <summary>
+    /// Capabilities as OLLAMA ITSELF reports them (`/api/tags` → `capabilities: [...]`).
+    ///
+    /// v3.3.0: this is the "declared → discovered" upgrade the catalog was shaped for, and the
+    /// operator's own machine proved why it matters. Against three real local models the hand-written
+    /// fragment table was wrong twice: it called `gemma4:31b` text-only when Ollama reports
+    /// `tools` AND `thinking`, and it granted `qwen3-coder` reasoning that Ollama does not claim.
+    /// Guessing from a model's NAME is guessing; the runtime holding the weights knows.
+    ///
+    /// Still fail-closed on the way in: an unrecognised capability word grants nothing, so a future
+    /// Ollama release adding a name we do not know cannot silently enable a path.
+    /// </summary>
+    public static ModelCapabilities FromOllama(IEnumerable<string>? reported)
+    {
+        // Streaming is a property of the SERVER here, not the model: Ollama streams anything it
+        // serves, and it does not list that among per-model capabilities.
+        var caps = TextOnly with { Streaming = true };
+        if (reported is null) return caps;
+
+        foreach (var raw in reported)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                // "tools" is the only one that gates the agent loop, so it is the one worth being
+                // exactly right about. Structured output rides with it: Ollama's OpenAI-compatible
+                // endpoint accepts response_format wherever it accepts tools.
+                case "tools": caps = caps with { ToolCalling = true, StructuredOutput = true }; break;
+                case "thinking": caps = caps with { Reasoning = true }; break;
+                case "vision": caps = caps with { Vision = true }; break;
+                case "embedding":
+                case "embeddings": caps = caps with { Embeddings = true }; break;
+                case "completion": break;      // the baseline; already true of everything
+                default: break;                // unknown word grants nothing
+            }
+        }
+        return caps;
+    }
+
     public bool Supports(string capability) => capability switch
     {
         "tool_calling" => ToolCalling,
@@ -84,7 +122,14 @@ public static class ModelCapabilityCatalog
     /// </summary>
     private static readonly (string Fragment, ModelCapabilities Caps)[] ByModelFragment =
     {
+        // Hermes is the reference local function-calling family — trained specifically to emit
+        // OpenAI-shaped tool calls, which is exactly what the OpenAI-compatible endpoint carries.
+        ("hermes", ModelCapabilities.Standard with { Streaming = true }),
+        ("nous-hermes", ModelCapabilities.Standard with { Streaming = true }),
         ("llama3.1", ModelCapabilities.Standard with { Streaming = true }),
+        ("llama3.3", ModelCapabilities.Standard with { Streaming = true }),
+        ("mistral-small", ModelCapabilities.Standard with { Streaming = true }),
+        ("devstral", ModelCapabilities.Standard with { Streaming = true }),
         ("llama3.2", ModelCapabilities.Standard with { Streaming = true, Vision = true }),
         ("qwen2.5", ModelCapabilities.Standard with { Streaming = true }),
         ("qwen3", ModelCapabilities.Standard with { Streaming = true, Reasoning = true }),
