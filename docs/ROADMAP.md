@@ -432,11 +432,14 @@ asks for, feed results back, and make every outcome typed enough to decide the n
 - [x] `POST /agent/run` — one tool-calling conversation, persisted as a real mission with events.
 - [x] Typed tool results: `FailureClass` with derived retryability, classified at every failure site
       in every shipped tool, turned into per-class guidance for the model.
-- [ ] Core-ant `AntExecutionContract`s authored with required model capabilities. Still blocked:
-      `ToolAuthorization` short-circuits on contract presence, so an incomplete `AllowedTools`
-      silently denies tools mid-mission. Needs tool-inventory evidence first.
-- [ ] User-defined tools: registration, schema validation, and authorization for tools the operator
-      adds without rebuilding.
+- [x] Core-ant `AntExecutionContract`s declare required MODEL capabilities (`ModelRequirement`),
+      checked against each role's live route by `AntModelFitness` at startup and on `GET /tools`.
+      The blocker is gone: `ToolInventory` supplied the tool evidence, and v3.3.0 supplied the
+      capability model this needed to be expressible at all.
+- [x] User-defined tools (v3.4.1): `ToolDefinition` as data, an `IToolKindExecutor` seam, the HTTP
+      kind bounded by a host allowlist, persistence (schema 18), and registration through the same
+      `ToolRegistry` every built-in uses — so projection, dispatch and classification needed no
+      special case. `composite`/`mcp`/`command` are declared and rejected as not-yet-built.
 
 ### Exit Gates
 
@@ -445,7 +448,11 @@ asks for, feed results back, and make every outcome typed enough to decide the n
 - [x] An agent run cannot exceed its turn, tool-call, wall-clock or repeated-action budget.
 - [x] Every tool failure names its class; a source guard fails the build if a new one does not.
 - [x] Retryability has ONE definition, derived from the class rather than stored beside it.
-- [ ] A user-registered tool is subject to the same authorization and projection rules as a built-in.
+- [x] A user-registered tool is subject to the same authorization and projection rules as a built-in.
+- [x] A definition cannot shadow a built-in, reach a non-allowlisted host, or survive a redirect off
+      one — and a substituted argument cannot restructure the URL it is substituted into.
+- [x] A role's model requirements are checked against its actual route, because every mismatch
+      fails silently at runtime and looks like a weak model rather than a misconfiguration.
 
 ## v3.5.0 - Mission Workspace and Language Adapter Infrastructure (was v3.3.0)
 

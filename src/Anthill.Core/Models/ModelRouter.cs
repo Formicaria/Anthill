@@ -313,7 +313,13 @@ public sealed class ModelRouter
     /// declared otherwise — the same source the call path negotiates against, so routing and
     /// negotiation cannot disagree about whether a model can call tools.
     /// </summary>
-    private static ModelCapabilities CapabilitiesFor(string provider, string model) =>
+    /// <remarks>
+    /// Public since v3.4.2 so <c>AntModelFitness</c> can check a role's declared model requirements
+    /// against the SAME capability source the call path negotiates against. A fitness report derived
+    /// from a second source would eventually describe a different model than the one that runs —
+    /// the exact failure the capability endpoint already made once.
+    /// </remarks>
+    public static ModelCapabilities CapabilitiesFor(string provider, string model) =>
         string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
             ? OllamaCapabilityCache.For(AnthillRuntime.OllamaHost, model)
             : ModelCapabilityCatalog.For(provider, model);
