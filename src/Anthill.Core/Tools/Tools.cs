@@ -71,7 +71,10 @@ public sealed class ToolRegistry
 
         if (!_tools.TryGetValue(name, out var tool))
         {
-            var missing = new ToolResult(name, false, "", $"Tool not found or not registered: {name}");
+            // ValidationFailure, not a defect: the CALL named something that does not exist, and a
+            // model can correct that by choosing from the tools it was actually offered.
+            var missing = new ToolResult(name, false, "", $"Tool not found or not registered: {name}",
+                Contracts.FailureClass.ValidationFailure);
             if (missionId is not null) LogToolResult(missionId, taskId, antName, missing);
             return missing;
         }
@@ -82,7 +85,11 @@ public sealed class ToolRegistry
         var decision = ToolAuthorization.Evaluate(antName, name);
         if (!decision.Allowed)
         {
-            var denied = new ToolResult(name, false, "", $"authorization_denied: {decision.Reason}");
+            // The class carries the denial now; the `authorization_denied:` prefix stays only as
+            // human-readable text. Nothing may recover the status by matching that prefix — the
+            // typed field is the one callers branch on.
+            var denied = new ToolResult(name, false, "", $"authorization_denied: {decision.Reason}",
+                Contracts.FailureClass.AuthorizationFailure);
             if (missionId is not null)
                 _memory.LogEvent(missionId, "tool_denied", $"Tool DENIED: {name}", taskId, antName,
                     new() { ["tool_name"] = name, ["ant_name"] = antName, ["reason"] = decision.Reason });
@@ -96,7 +103,8 @@ public sealed class ToolRegistry
         }
         catch (Exception error)
         {
-            result = new ToolResult(name, false, "", $"Tool execution failed: {error.Message}");
+            result = new ToolResult(name, false, "", $"Tool execution failed: {error.Message}",
+                ClassifyThrown(error));
         }
 
         if (missionId is not null)
@@ -108,6 +116,27 @@ public sealed class ToolRegistry
         return result;
     }
 
+    /// <summary>
+    /// Classify an exception that escaped a tool.
+    ///
+    /// This is a fallback, not the intended path: a tool that knows why it failed should say so by
+    /// returning a classified <see cref="ToolResult"/>, because the tool knows things the exception
+    /// type does not. What this catches is the tool that threw without ever considering failure —
+    /// and for that, the exception TYPE is the only honest evidence available.
+    ///
+    /// Anything unrecognised is an InternalDefect and therefore NOT retryable. Guessing "transient"
+    /// for an unknown fault is how a deterministic crash becomes a retry storm.
+    /// </summary>
+    internal static Contracts.FailureClass ClassifyThrown(Exception error) => error switch
+    {
+        OperationCanceledException or TimeoutException => Contracts.FailureClass.Timeout,
+        HttpRequestException or IOException => Contracts.FailureClass.TransientProviderFailure,
+        UnauthorizedAccessException => Contracts.FailureClass.AuthorizationFailure,
+        // The model chose the arguments, so a rejected argument is something it can fix and retry.
+        ArgumentException or FormatException or JsonException => Contracts.FailureClass.ValidationFailure,
+        _ => Contracts.FailureClass.InternalDefect,
+    };
+
     private void LogToolResult(string missionId, string? taskId, string? antName, ToolResult result) =>
         _memory.LogEvent(missionId, result.Success ? "tool_completed" : "tool_failed",
             $"Tool {(result.Success ? "completed" : "failed")}: {result.ToolName}", taskId, antName,
@@ -115,6 +144,9 @@ public sealed class ToolRegistry
             {
                 ["tool_name"] = result.ToolName, ["success"] = result.Success, ["error"] = result.Error,
                 ["output_preview"] = TextUtil.Truncate(result.Output, 500),
+                // The class is on the EVENT too, so "which tools fail, and how" is a query rather
+                // than an exercise in grepping error prose out of a metadata blob.
+                ["failure_class"] = result.Failure.ToString(), ["retryable"] = result.Retryable,
             });
 
     private static Dictionary<string, object?> SafeMetadata(IReadOnlyDictionary<string, object?> metadata)
@@ -168,13 +200,13 @@ public sealed class DirectoryListTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.");
+        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.", Contracts.FailureClass.AuthorizationFailure);
         var requested = (args.GetValueOrDefault("path")?.ToString()) ?? ".";
         string safePath;
         try { safePath = _guard.ResolveSafePath(requested); }
-        catch (Exception e) { return new ToolResult(Name, false, "", e.Message); }
-        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to list blocked internal/system path.");
-        if (!Directory.Exists(safePath)) return new ToolResult(Name, false, "", $"Directory does not exist: {safePath}");
+        catch (Exception e) { return new ToolResult(Name, false, "", e.Message, ToolRegistry.ClassifyThrown(e)); }
+        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to list blocked internal/system path.", Contracts.FailureClass.AuthorizationFailure);
+        if (!Directory.Exists(safePath)) return new ToolResult(Name, false, "", $"Directory does not exist: {safePath}", Contracts.FailureClass.ValidationFailure);
 
         var items = new List<string>();
         var entries = new DirectoryInfo(safePath).GetFileSystemInfos().OrderBy(p => p.Name.ToLowerInvariant()).ToList();
@@ -200,20 +232,20 @@ public sealed class ReadTextFileTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.");
+        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.", Contracts.FailureClass.AuthorizationFailure);
         var requested = args.GetValueOrDefault("path")?.ToString();
-        if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path");
+        if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path", Contracts.FailureClass.ValidationFailure);
         string safePath;
         try { safePath = _guard.ResolveSafePath(requested); }
-        catch (Exception e) { return new ToolResult(Name, false, "", e.Message); }
-        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to read from blocked internal/system path.");
+        catch (Exception e) { return new ToolResult(Name, false, "", e.Message, ToolRegistry.ClassifyThrown(e)); }
+        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to read from blocked internal/system path.", Contracts.FailureClass.AuthorizationFailure);
         var suffix = Path.GetExtension(safePath).ToLowerInvariant();
-        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read blocked file type: {suffix}");
-        if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"File does not exist: {safePath}");
-        if (!AnthillRuntime.PatchAllowedSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read unsupported file type: {suffix}");
+        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read blocked file type: {suffix}", Contracts.FailureClass.AuthorizationFailure);
+        if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"File does not exist: {safePath}", Contracts.FailureClass.ValidationFailure);
+        if (!AnthillRuntime.PatchAllowedSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read unsupported file type: {suffix}", Contracts.FailureClass.AuthorizationFailure);
         string content;
         try { content = File.ReadAllText(safePath); }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Could not read file: {e.Message}"); }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Could not read file: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
         content = TextUtil.Truncate(content, AnthillRuntime.MaxFileReadChars, $"...[file truncated after {AnthillRuntime.MaxFileReadChars} characters]");
         return new ToolResult(Name, true, content);
     }
@@ -228,24 +260,24 @@ public sealed class WriteTextFileTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.");
+        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.", Contracts.FailureClass.AuthorizationFailure);
         var requested = args.GetValueOrDefault("path")?.ToString();
         var content   = args.GetValueOrDefault("content")?.ToString();
-        if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path");
-        if (content is null)                 return new ToolResult(Name, false, "", "Missing required argument: content");
+        if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path", Contracts.FailureClass.ValidationFailure);
+        if (content is null)                 return new ToolResult(Name, false, "", "Missing required argument: content", Contracts.FailureClass.ValidationFailure);
         string safePath;
         try { safePath = _guard.ResolveSafePath(requested); }
-        catch (Exception e) { return new ToolResult(Name, false, "", e.Message); }
-        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to write to blocked internal/system path.");
+        catch (Exception e) { return new ToolResult(Name, false, "", e.Message, ToolRegistry.ClassifyThrown(e)); }
+        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to write to blocked internal/system path.", Contracts.FailureClass.AuthorizationFailure);
         var suffix = Path.GetExtension(safePath).ToLowerInvariant();
-        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to write blocked file type: {suffix}");
+        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to write blocked file type: {suffix}", Contracts.FailureClass.AuthorizationFailure);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
             File.WriteAllText(safePath, content);
             return new ToolResult(Name, true, $"Written {content.Length} chars to {safePath}");
         }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Could not write file: {e.Message}"); }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Could not write file: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
     }
 }
 
@@ -257,13 +289,13 @@ public sealed class ShellCommandTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableShellTool) return new ToolResult(Name, false, "", "Shell tool is disabled by config.");
+        if (!AnthillRuntime.EnableShellTool) return new ToolResult(Name, false, "", "Shell tool is disabled by config.", Contracts.FailureClass.AuthorizationFailure);
         var command = (args.GetValueOrDefault("command")?.ToString() ?? "").Trim();
-        if (command.Length == 0) return new ToolResult(Name, false, "", "Missing required argument: command");
+        if (command.Length == 0) return new ToolResult(Name, false, "", "Missing required argument: command", Contracts.FailureClass.ValidationFailure);
         var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return new ToolResult(Name, false, "", "Empty command after parsing.");
+        if (parts.Length == 0) return new ToolResult(Name, false, "", "Empty command after parsing.", Contracts.FailureClass.ValidationFailure);
         var baseCommand = parts[0].ToLowerInvariant();
-        if (!SafeCommands.Contains(baseCommand)) return new ToolResult(Name, false, "", $"Command is not allowlisted: {baseCommand}");
+        if (!SafeCommands.Contains(baseCommand)) return new ToolResult(Name, false, "", $"Command is not allowlisted: {baseCommand}", Contracts.FailureClass.AuthorizationFailure);
         try
         {
             var psi = new ProcessStartInfo(parts[0])
@@ -275,10 +307,10 @@ public sealed class ShellCommandTool : ITool
             using var proc = Process.Start(psi)!;
             var stdout = proc.StandardOutput.ReadToEnd();
             var stderr = proc.StandardError.ReadToEnd();
-            if (!proc.WaitForExit(30_000)) { try { proc.Kill(true); } catch { } return new ToolResult(Name, false, "", "Shell command timed out."); }
+            if (!proc.WaitForExit(30_000)) { try { proc.Kill(true); } catch { } return new ToolResult(Name, false, "", "Shell command timed out.", Contracts.FailureClass.Timeout); }
             return new ToolResult(Name, proc.ExitCode == 0, stdout.Trim(), string.IsNullOrEmpty(stderr.Trim()) ? null : stderr.Trim());
         }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Shell command failed: {e.Message}"); }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Shell command failed: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
     }
 }
 
@@ -291,14 +323,14 @@ public sealed class WebSearchTool : ITool
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
         if (!AnthillRuntime.EnableWebSearch)
-            return new ToolResult(Name, false, "", "Web search is disabled by config. Enable read-only external research to use it.");
+            return new ToolResult(Name, false, "", "Web search is disabled by config. Enable read-only external research to use it.", Contracts.FailureClass.AuthorizationFailure);
         var query = (args.GetValueOrDefault("query")?.ToString() ?? "").Trim();
         var maxResults = Math.Max(1, Math.Min(
             int.TryParse(args.GetValueOrDefault("max_results")?.ToString(), out var mr) ? mr : AnthillRuntime.MaxWebResults,
             AnthillRuntime.MaxWebResults));
-        if (query.Length == 0) return new ToolResult(Name, false, "", "Missing required argument: query");
+        if (query.Length == 0) return new ToolResult(Name, false, "", "Missing required argument: query", Contracts.FailureClass.ValidationFailure);
         try { return DuckDuckGoHtmlSearch(query, maxResults); }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Web search failed: {e.Message}"); }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Web search failed: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
     }
 
     private ToolResult DuckDuckGoHtmlSearch(string query, int maxResults)
@@ -343,10 +375,10 @@ public sealed class ApplyPatchTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnablePatchApplication) return new ToolResult(Name, false, "", "Patch application is disabled by config.");
-        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.");
+        if (!AnthillRuntime.EnablePatchApplication) return new ToolResult(Name, false, "", "Patch application is disabled by config.", Contracts.FailureClass.AuthorizationFailure);
+        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.", Contracts.FailureClass.AuthorizationFailure);
         if (args.GetValueOrDefault("patch") is not Dictionary<string, object?> patch)
-            return new ToolResult(Name, false, "", "Missing required dict argument: patch");
+            return new ToolResult(Name, false, "", "Missing required dict argument: patch", Contracts.FailureClass.ValidationFailure);
 
         var changeType = (patch.GetValueOrDefault("change_type")?.ToString() ?? "").Trim().ToLowerInvariant();
         var filePath = (patch.GetValueOrDefault("file_path")?.ToString() ?? "").Trim();
@@ -355,23 +387,23 @@ public sealed class ApplyPatchTool : ITool
 
         string safePath;
         try { Validation.ValidateSafePatchPath(filePath); safePath = _guard.ResolveSafePath(filePath); }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch path: {e.Message}"); }
-        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to patch blocked internal/system path.");
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch path: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
+        if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to patch blocked internal/system path.", Contracts.FailureClass.AuthorizationFailure);
         if (changeType is not ("add" or "modify"))
-            return new ToolResult(Name, false, "", $"ANTHILL currently supports only add and modify patches. Refusing change_type: {changeType}");
-        if (string.IsNullOrEmpty(newContent)) return new ToolResult(Name, false, "", "Patch new_content is required and must be non-empty.");
+            return new ToolResult(Name, false, "", $"ANTHILL currently supports only add and modify patches. Refusing change_type: {changeType}", Contracts.FailureClass.ValidationFailure);
+        if (string.IsNullOrEmpty(newContent)) return new ToolResult(Name, false, "", "Patch new_content is required and must be non-empty.", Contracts.FailureClass.ValidationFailure);
 
         try
         {
             return changeType switch
             {
                 "add" => ApplyAdd(safePath, newContent),
-                "modify" when string.IsNullOrEmpty(oldContent) => new ToolResult(Name, false, "", "MODIFY patches require old_content for exact replacement."),
+                "modify" when string.IsNullOrEmpty(oldContent) => new ToolResult(Name, false, "", "MODIFY patches require old_content for exact replacement.", Contracts.FailureClass.ValidationFailure),
                 "modify" => ApplyModify(safePath, oldContent!, newContent),
-                _ => new ToolResult(Name, false, "", $"Unsupported change_type: {changeType}"),
+                _ => new ToolResult(Name, false, "", $"Unsupported change_type: {changeType}", Contracts.FailureClass.ValidationFailure),
             };
         }
-        catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}"); }
+        catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
     }
 
     private string? BackupFile(string path)
@@ -406,11 +438,11 @@ public sealed class ApplyPatchTool : ITool
 
     private ToolResult ApplyModify(string safePath, string oldContent, string newContent)
     {
-        if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"MODIFY refused because file does not exist: {safePath}");
+        if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"MODIFY refused because file does not exist: {safePath}", Contracts.FailureClass.ValidationFailure);
         var current = File.ReadAllText(safePath);
         var occurrences = CountOccurrences(current, oldContent);
-        if (occurrences == 0) return new ToolResult(Name, false, "", "MODIFY refused because old_content was not found exactly in the target file.");
-        if (occurrences > 1) return new ToolResult(Name, false, "", $"MODIFY refused because old_content appears {occurrences} times. Patch must be unambiguous.");
+        if (occurrences == 0) return new ToolResult(Name, false, "", "MODIFY refused because old_content was not found exactly in the target file.", Contracts.FailureClass.TargetRejection);
+        if (occurrences > 1) return new ToolResult(Name, false, "", $"MODIFY refused because old_content appears {occurrences} times. Patch must be unambiguous.", Contracts.FailureClass.TargetRejection);
         var backupPath = BackupFile(safePath);
         var index = current.IndexOf(oldContent, StringComparison.Ordinal);
         var updated = current[..index] + newContent + current[(index + oldContent.Length)..];
