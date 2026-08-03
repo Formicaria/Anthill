@@ -224,6 +224,10 @@ public sealed class MissionWorkspaceManager
             if (!workspace.Deletable) continue;
 
             Remove(workspace);
+            // The index goes with the tree. An index outliving the workspace it describes is a set
+            // of answers about files nobody can read — and it would be reused by id if a later
+            // workspace happened to land on the same revision.
+            try { _memory.DeleteRepositoryIndexes(workspace.Id); } catch { }
             // The ROW SURVIVES the directory. Attribution outlives the files: an operator asking
             // six weeks later what a merged change was based on needs the base revision, and the
             // workspace it came from is long gone by then.

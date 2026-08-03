@@ -85,6 +85,13 @@ public sealed class RepositoryIndexTool : ITool
             if (found.Count > MaxListed)
                 report.Append("…(").Append(found.Count - MaxListed).Append(" more)\n");
 
+            // "Not looked for" and "not found" call for completely different next moves, and an
+            // agent that cannot tell them apart concludes the symbol does not exist.
+            if (index.InventoryOnly)
+                report.Append("NOTE: this repository is large enough that symbols were NOT indexed, "
+                            + "so an empty result here means NOT SEARCHED, not absent. Use the "
+                            + "search_workspace tool to look at file contents instead.\n");
+
             // The honesty line, and it is not decoration. These come from pattern matching, not a
             // compiler: an agent told "declared nowhere" would stop looking, and one told "these are
             // all the callers" would change code on the strength of a list that was never complete.
