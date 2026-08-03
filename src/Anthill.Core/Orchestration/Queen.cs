@@ -153,7 +153,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         {
             registry.Register(new DirectoryListTool(guard));
             registry.Register(new ReadTextFileTool(guard));
+            // v3.5.0: scoped workspace tools. The guard they share resolves to the MISSION workspace
+            // when one is in scope, so both read the tree the mission is actually changing.
+            registry.Register(new SearchWorkspaceTool(guard));
         }
+        registry.Register(new ChangedFilesSummaryTool());
         if (options.FileWriting)
             registry.Register(new WriteTextFileTool(guard));
         registry.Register(new WebSearchTool());
@@ -211,6 +215,59 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// The event says which happened, because "my changes went to the live checkout" must never be
     /// something an operator has to infer.
     /// </summary>
+    /// <summary>
+    /// Turn a finished mission's workspace changes into a patch set, and checkpoint the workspace.
+    ///
+    /// CHECKPOINTED, not cleaned. The change set references the workspace it came from, and an
+    /// operator reviewing a proposal an hour later frequently wants to look at the tree that
+    /// produced it. Reclaiming it the instant the mission ends would destroy the evidence at exactly
+    /// the moment it becomes interesting — cleanup stays an explicit decision, and retention still
+    /// beats it.
+    ///
+    /// Never throws into the mission. This runs after the outcome is decided, so a failure here can
+    /// cost the operator a change set but must not be able to turn a completed mission into a failed
+    /// one — the mission's work happened either way.
+    /// </summary>
+    private void HarvestWorkspaceChanges(Mission mission, Anthill.Core.Workspaces.MissionWorkspace? workspace)
+    {
+        if (workspace is null) return;
+
+        try
+        {
+            var changes = Anthill.Core.Workspaces.WorkspaceChangeSet.Create(
+                workspace, mission.Id, mission.BestOutputTaskId ?? "",
+                $"Changes from mission workspace {workspace.Id}");
+
+            if (changes.Proposals.Count > 0)
+            {
+                Memory.SavePatchSet(changes);
+                Memory.LogEvent(mission.Id, "workspace_change_set",
+                    $"{changes.Proposals.Count} file(s) proposed from workspace {workspace.Id}", null, "queen",
+                    new()
+                    {
+                        ["workspace_id"] = workspace.Id,
+                        ["base_revision"] = workspace.BaseRevision,
+                        ["files"] = changes.Proposals.Select(p => p.FilePath).ToList(),
+                    });
+            }
+            else
+            {
+                // A real, reportable outcome. A mission that ran and changed nothing is not broken,
+                // and silence here would leave an operator unable to tell it apart from a harvest
+                // that failed.
+                Memory.LogEvent(mission.Id, "workspace_no_changes",
+                    $"Workspace {workspace.Id} finished with no file changes", null, "queen");
+            }
+
+            Workspaces.Checkpoint(workspace.Id);
+        }
+        catch (Exception error)
+        {
+            Memory.LogEvent(mission.Id, "workspace_harvest_failed",
+                $"Could not build a change set from workspace {workspace.Id}: {error.Message}", null, "queen");
+        }
+    }
+
     private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId)
     {
         try
@@ -500,6 +557,23 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // decides WHEN learning happens: after every task is terminal, after the ONE canonical
         // evaluation exists, and before completion is published anywhere.
         _learning.Record(mission, context, evaluation);
+
+        // v3.5.0: whatever the mission changed in its workspace becomes a REVIEWABLE change set.
+        //
+        // This closes the loop the phase opened. Isolating an agent in a worktree it cannot escape
+        // is safe and, on its own, useless — the work has to reach the operator, and the only
+        // sanctioned route into the live checkout is the patch/approval pipeline that already
+        // exists. So the diff becomes an ordinary PatchSet the Patch Center already reviews.
+        //
+        // After learning, before completion is published: a change set is a RESULT of the mission,
+        // and producing one must never be able to alter the outcome that produced it.
+        //
+        // Read from the ambient scope rather than passed in. Finalization is a separate method and
+        // threading a workspace through its signature would put a parameter on it that only one
+        // caller could ever supply — while the scope already means exactly "the workspace this
+        // mission is using". Outside a scope it is null and this is a no-op, which is correct for
+        // the read-only missions that never get one.
+        HarvestWorkspaceChanges(mission, Anthill.Core.Workspaces.MissionWorkspaceScope.Current);
         // v3.1.0 (ADR-001): the three operator-facing accounts of a finished mission — raw best
         // output, full trace, and the plain-English answer — assembled behind one interface.
         _results.Assemble(mission, context);

@@ -1,5 +1,38 @@
 # ANTHILL Changelog
 
+## v3.5.0 — Mission workspaces: isolated, attributable, reviewable
+
+A code mission now works in a detached git worktree it cannot escape, and its work reaches the
+operator as a change set rather than as edits to the working tree.
+
+- **The gate was inverted, not just unmet.** Every write tool is a startup-constructed singleton
+  sharing one path guard rooted at the live checkout — so before this, the operator's working tree
+  was the *only* place an agent could write. `MissionWorkspaceScope` supplies the mission's
+  workspace ambiently (the same `AsyncLocal` shape already used for mission cancellation), because a
+  workspace is a property of the mission and the tools are shared. It only ever narrows: outside a
+  scope, behaviour is unchanged.
+- **Attribution is fixed at creation.** The base revision is captured once and never recomputed —
+  the whole value of "what was this based on" is that it does not move. The repository fingerprint
+  is the root commit, not a remote URL or path, because those change without the repository
+  changing.
+- **A non-git source is refused, not copied.** A copy of an unversioned directory has no revision to
+  record, and a workspace whose provenance is a fiction is worse than none.
+- **Ten lifecycle states, stored by name.** Recovery distinguishes *orphaned* (it vanished under us)
+  from *cleaned* (we removed it) and from an interrupted preparation — three restart cases that call
+  for three different responses.
+- **Cleanup cannot delete a retained workspace.** Retention is usually declared because something
+  already went wrong, and removing an operator's evidence is the worst moment to be efficient.
+- **Verification commands come from a detected manifest.** Detection reads the project; execution
+  reads only the adapters in this repository. In a self-improving harness the project under
+  modification is a set of files an agent can edit, so reading commands out of it would let an agent
+  rewrite its own verification step. .NET, Node and Python adapters ship; guards enforce that no
+  declared command is a template or invokes a shell.
+- **`search_workspace` and `read_changed_files_summary` were built**, unblocking two roles whose
+  contracts named tools nothing implemented — scribe could dispatch nothing at all.
+- **Change sets anchor to the base revision.** `apply_patch` does exact-match replacement, so old
+  content read from a checkout that has moved on can match the wrong occurrence in a file someone
+  else edited.
+
 ## v3.4.2 — Contracts say what they need from a model, and it is checked
 
 The capability model learned what each model *can* do in v3.3.0. Nothing said what each role
