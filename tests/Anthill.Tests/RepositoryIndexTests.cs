@@ -352,6 +352,144 @@ public class RepositoryIndexTests : IDisposable
         }
     }
 
+    // ---- references: the answer an agent most wants to over-trust ---------------------------------
+
+    private RepositoryIndex Indexed() => RepositoryIndexBuilder.Build(Workspace());
+
+    /// <summary>
+    /// The useful case: one declaration, a distinctive name. The mention in another file is found,
+    /// and the DECLARATION is not returned as its own first caller — which would inflate a count an
+    /// agent may be using to judge how risky a change is.
+    /// </summary>
+    [Fact]
+    public void References_FindMentionsAndExcludeTheDeclaration()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "Widget.cs"), "class WidgetFactory { }\n");
+        File.WriteAllText(Path.Combine(_root, "src", "Uses.cs"),
+            "class Uses\n{\n    WidgetFactory factory = new WidgetFactory();\n}\n");
+
+        var report = RepositoryReferences.Find(Indexed(), _root, "WidgetFactory");
+
+        Assert.True(report.Attributable);
+        Assert.Equal("", report.Caveat);
+        Assert.All(report.References, r => Assert.Equal("src/Uses.cs", r.Path));
+        Assert.NotEmpty(report.References);
+    }
+
+    /// <summary>
+    /// The case that makes this feature dangerous if handled naively. A name declared in several
+    /// places produces mentions that CANNOT be attributed to any one of them — and "what calls this"
+    /// is the input to "what would my change break", so a list that looks authoritative and is not
+    /// gets acted on.
+    /// </summary>
+    [Fact]
+    public void References_ToAnAmbiguousName_AreNotAttributable()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "A.cs"), "class Handler { }\n");
+        File.WriteAllText(Path.Combine(_root, "ui", "b.ts"), "export class Handler { }\n");
+
+        var report = RepositoryReferences.Find(Indexed(), _root, "Handler");
+
+        Assert.Equal(2, report.DeclarationCount);
+        Assert.False(report.Attributable);
+        Assert.Contains("declared in 2 places", report.Caveat);
+        Assert.Contains("CANNOT be attributed", report.Caveat);
+    }
+
+    /// <summary>A short name matches everywhere for unrelated reasons, and says so.</summary>
+    [Fact]
+    public void References_ToAShortName_AreFlaggedAsProbablyUnrelated()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "Id.cs"), "class Id { }\n");
+
+        var report = RepositoryReferences.Find(Indexed(), _root, "Id");
+
+        Assert.False(report.Attributable);
+        Assert.Contains("short enough", report.Caveat);
+    }
+
+    /// <summary>
+    /// A name the index found no declaration for is reported as exactly that — possibly external,
+    /// possibly written in a shape the patterns miss. Never as "does not exist".
+    /// </summary>
+    [Fact]
+    public void References_WithNoKnownDeclaration_SayTheDefinitionIsUnknown()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "Calls.cs"), "var x = ExternalThing.Go();\n");
+
+        var report = RepositoryReferences.Find(Indexed(), _root, "ExternalThing");
+
+        Assert.Equal(0, report.DeclarationCount);
+        Assert.False(report.Attributable);
+        Assert.Contains("possibly external", report.Caveat);
+    }
+
+    /// <summary>
+    /// Whole words only. Without boundaries, "User" matches "UserService", "Users" and
+    /// "ParseUserInput", and the result stops meaning anything.
+    /// </summary>
+    [Fact]
+    public void References_MatchWholeWordsOnly()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "User.cs"), "class UserAccount { }\n");
+        File.WriteAllText(Path.Combine(_root, "src", "Other2.cs"),
+            "class Other2\n{\n    UserAccountRepository repo;\n    UserAccount account;\n}\n");
+
+        var report = RepositoryReferences.Find(Indexed(), _root, "UserAccount");
+
+        // the line declaring UserAccountRepository must not count as a mention of UserAccount
+        Assert.DoesNotContain(report.References, r => r.Text.Contains("Repository"));
+        Assert.Contains(report.References, r => r.Text.Contains("account"));
+    }
+
+    [Fact]
+    public void References_ToNothing_AreAnEmptyReport()
+    {
+        var report = RepositoryReferences.Find(Indexed(), _root, "   ");
+
+        Assert.Empty(report.References);
+        Assert.Equal(0, report.FilesScanned);
+    }
+
+    /// <summary>
+    /// The tool puts the caveat FIRST. Placed after the list it reads as a footnote to an answer
+    /// already accepted; placed first it frames what follows — and for the question these results
+    /// feed, that ordering is the difference between an agent checking and an agent proceeding.
+    /// </summary>
+    [Fact]
+    public void TheTool_LeadsWithTheCaveat_WhenReferencesCannotBeAttributed()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "A.cs"), "class Handler { }\n");
+        File.WriteAllText(Path.Combine(_root, "ui", "b.ts"), "export class Handler { }\n");
+
+        using (MissionWorkspaceScope.Enter(Workspace()))
+        {
+            var result = Tool().Run(new Dictionary<string, object?> { ["references"] = "Handler" });
+
+            Assert.True(result.Success);
+            var caution = result.Output.IndexOf("CAUTION", StringComparison.Ordinal);
+            var list = result.Output.IndexOf("--- mentions", StringComparison.Ordinal);
+            Assert.True(caution >= 0 && caution < list, "the caveat must precede the list");
+            Assert.Contains("not resolved references", result.Output);
+        }
+    }
+
+    /// <summary>Even the trustworthy case refuses to claim resolution it did not perform.</summary>
+    [Fact]
+    public void TheTool_NeverClaimsToHaveResolvedReferences()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "Widget.cs"), "class WidgetFactory { }\n");
+        File.WriteAllText(Path.Combine(_root, "src", "Uses.cs"), "var f = new WidgetFactory();\n");
+
+        using (MissionWorkspaceScope.Enter(Workspace()))
+        {
+            var result = Tool().Run(new Dictionary<string, object?> { ["references"] = "WidgetFactory" });
+
+            Assert.Contains("still text matches", result.Output);
+            Assert.Contains("imports, overloads and scope are not resolved", result.Output);
+        }
+    }
+
     /// <summary>
     /// The cartographer — the role whose entire purpose is mapping a repository — is allowed to ask.
     /// </summary>
