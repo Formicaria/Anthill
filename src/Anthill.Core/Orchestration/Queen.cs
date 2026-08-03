@@ -158,6 +158,10 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             registry.Register(new SearchWorkspaceTool(guard));
         }
         registry.Register(new ChangedFilesSummaryTool());
+        // v3.6.0: repository questions answered from a revision-keyed index rather than by reading
+        // the tree into a prompt. Cached per workspace — a tool that rebuilt on every call would
+        // walk the repository once per question, which is the cost the index exists to avoid.
+        registry.Register(new RepositoryIndexTool(IndexFor));
         if (options.FileWriting)
             registry.Register(new WriteTextFileTool(guard));
         registry.Register(new WebSearchTool());
@@ -265,6 +269,29 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         {
             Memory.LogEvent(mission.Id, "workspace_harvest_failed",
                 $"Could not build a change set from workspace {workspace.Id}: {error.Message}", null, "queen");
+        }
+    }
+
+    private readonly Dictionary<string, Anthill.Core.Workspaces.RepositoryIndex> _indexes = new();
+
+    /// <summary>
+    /// The repository index for a workspace, built once and reused.
+    ///
+    /// Keyed by workspace AND revision, so an index cannot outlive the thing it describes: a
+    /// workspace rebased onto a new base revision gets a new index rather than confidently
+    /// answering from the old tree. Within one revision the mission's own edits do NOT invalidate it
+    /// — RepositoryIndex.FileChanged answers staleness per file, so three edited files do not throw
+    /// away what the index knows about twenty thousand others.
+    /// </summary>
+    private Anthill.Core.Workspaces.RepositoryIndex IndexFor(Anthill.Core.Workspaces.MissionWorkspace workspace)
+    {
+        var key = $"{workspace.Id}:{workspace.BaseRevision}";
+        lock (_indexes)
+        {
+            if (_indexes.TryGetValue(key, out var cached)) return cached;
+            var built = Anthill.Core.Workspaces.RepositoryIndexBuilder.Build(workspace);
+            _indexes[key] = built;
+            return built;
         }
     }
 

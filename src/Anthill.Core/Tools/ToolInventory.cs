@@ -50,6 +50,8 @@ public static class ToolInventory
         // no work, which reads as a weak model rather than as a missing tool.
         "search_workspace",
         "read_changed_files_summary",
+        // v3.6.0: structural repository questions, answered from the index without reading files.
+        "repository_index",
     };
 
     /// <summary>
