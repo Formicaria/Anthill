@@ -103,9 +103,10 @@ public sealed class OllamaClient : IModelClient
         var url = ChatEndpoint(_host);
         var model = request.Model ?? _model;
 
-        // Negotiated here as everywhere else: tools go on the wire only if THIS model can use them.
+        // Negotiated against what OLLAMA REPORTS about this model, not against a table of guesses.
+        // The name table remains the fallback inside the cache for a model Ollama does not describe.
         var negotiated = ModelCapabilityCatalog.Negotiate(
-            request, ModelCapabilityCatalog.For("ollama", model));
+            request, OllamaCapabilityCache.For(_host, model));
         var payload = ProviderWireFormat.OpenAiBody(negotiated, model).ToJsonString();
         // The operator-facing prose is unchanged throughout; only the STATUS is now carried
         // alongside it instead of being recoverable from it.

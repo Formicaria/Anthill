@@ -183,6 +183,16 @@ public static partial class ApiHost
             else Console.Error.WriteLine("--autonomous ignored: set autonomy_enabled=true in config to start the Director.");
         }
 
+        // Learn what the local models can do BEFORE the first agent run asks. The call path reads
+        // this cache and never fetches, so without a warm start the first run would negotiate
+        // against the declared table, strip tools from a tool-capable model, and get an answer
+        // invented instead of looked up. Backgrounded: a sleeping Ollama must not delay startup.
+        _ = ThreadingTask.Run(() =>
+        {
+            try { OllamaCapabilityCache.Warm(AnthillRuntime.OllamaHost); }
+            catch { /* best-effort: the table remains the fallback */ }
+        });
+
         app.Run();
         return 0;
     }
@@ -580,12 +590,57 @@ public static partial class ApiHost
                 MaxTurns: Math.Clamp(body?.MaxTurns ?? 8, 1, 24),
                 MaxToolCalls: Math.Clamp(body?.MaxToolCalls ?? 24, 1, 96));
 
+            /*
+             * An agent run is recorded as a MISSION before it starts, and the reason is not
+             * bookkeeping.
+             *
+             * The first version passed no mission id, and the consequence was worse than untidy:
+             * ModelRouter only writes its model_call event and pheromone update when it HAS one, so
+             * a run spent real model budget, invoked real tools, and left no trace at all — nothing
+             * in /events, no route reinforcement, no token accounting. A run nobody can audit
+             * afterwards is not something an operator should be able to start, and the failure was
+             * invisible precisely because the endpoint's own response looked complete.
+             *
+             * It also has to be a real row rather than a synthetic id: `events` has a foreign key to
+             * missions(id), so a made-up id would be rejected and the logging would silently do
+             * nothing — the same shape of bug one layer down.
+             *
+             * Saved BEFORE the run so the trail exists even if the process dies mid-conversation,
+             * which is exactly when an operator most wants to know what it had already done.
+             */
+            var run = new Mission { Goal = goal, Status = MissionStatus.Running };
+            Queen.Memory.SaveMission(run);
+            Queen.Memory.LogEvent(run.Id, "agent_run_started",
+                $"Agent run started for role {role}.", null, role,
+                new() { ["role"] = role, ["max_turns"] = budget.MaxTurns, ["max_tool_calls"] = budget.MaxToolCalls });
+
             var result = await ThreadingTask.Run(() => ToolCallingLoop.Run(
                 Queen.Router!, Queen.Tools, role, opening, budget,
+                missionId: run.Id,
                 cancellationToken: ctx.RequestAborted), ctx.RequestAborted);
+
+            run.Status = result.Completed ? MissionStatus.Complete : MissionStatus.Failed;
+            run.FinalResult = result.Content;
+            // The transcript is the debug record: what it DID, which is the question asked of an
+            // agent run, and the one a final answer alone cannot answer.
+            run.DebugResult = string.Join("\n\n", result.Transcript.Select(m => $"[{m.Role}] {m.Content}"));
+            Queen.Memory.SaveMission(run);
+            Queen.Memory.LogEvent(run.Id, "agent_run_finished",
+                $"Agent run {result.StopReason} after {result.Turns} turn(s), {result.ToolCalls} tool call(s).",
+                null, role,
+                new()
+                {
+                    ["completed"] = result.Completed, ["stop_reason"] = result.StopReason,
+                    ["turns"] = result.Turns, ["tool_calls"] = result.ToolCalls,
+                    ["prompt_tokens"] = result.Usage.PromptTokens,
+                    ["completion_tokens"] = result.Usage.CompletionTokens,
+                });
 
             return ApiJson.Ok(new Dictionary<string, object?>
             {
+                // The run id is returned so an operator can find this conversation again — the
+                // browser losing its state must not lose the record of what the agent did.
+                ["run_id"] = run.Id,
                 ["role"] = role,
                 ["content"] = result.Content,
                 ["completed"] = result.Completed,
@@ -1489,6 +1544,12 @@ public static partial class ApiHost
             // Best-effort by design. An unreachable Ollama must not fail the whole page; the report
             // falls back to declared capabilities and says which it used, per provider.
             var discovered = await DiscoverOllamaModelsAsync();
+
+            // Seed the cache the MODEL CALL PATH reads. Before this, discovery informed the report
+            // and nothing else: the page said gemma4:31b supports tools while OllamaClient stripped
+            // them from every request, and the model — never shown a tool — answered from priors.
+            // A page that reports capabilities the runtime does not act on is a lie with a UI.
+            OllamaCapabilityCache.Warm(AnthillRuntime.OllamaHost);
 
             var report = new List<Dictionary<string, object?>>();
             foreach (var p in ProviderCatalog.All)
