@@ -1770,6 +1770,23 @@ public static partial class ApiHost
                 ["updated_at"] = w.UpdatedAt.ToIso(),
             }).ToList();
 
+            // What each LIVE workspace can be verified with. Detected on request rather than stored,
+            // because a workspace's project types change the moment an agent adds a package.json —
+            // and a stored manifest would keep describing the repository as it was when it was made.
+            foreach (var entry in workspaces)
+            {
+                var root = entry["root"]?.ToString() ?? "";
+                if (entry["usable"] is not true || root.Length == 0) continue;
+
+                var manifest = Anthill.Core.Workspaces.WorkspaceCapabilityManifest.Detect(root);
+                entry["project_types"] = manifest.ProjectTypes;
+                entry["adapter_versions"] = manifest.AdapterVersions;
+                // The check IDS, not the command lines. An operator needs to know what can be run;
+                // publishing the argument strings would invite treating them as editable, and they
+                // are declared in the repository precisely so they are not.
+                entry["available_checks"] = manifest.Checks.Select(c => c.Id).ToList();
+            }
+
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["workspaces"] = workspaces,

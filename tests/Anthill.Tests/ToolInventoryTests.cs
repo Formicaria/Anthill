@@ -149,13 +149,19 @@ public class ToolInventoryTests
     /// This test PINS the set rather than demanding it be empty. Demanding empty would fail the
     /// build for work that is legitimately scheduled later; pinning it means the number can only go
     /// down deliberately, and a fifth role joining the list has to be an explicit decision.
+    ///
+    /// v3.5.0: SCRIBE CAME OFF THIS LIST. read_changed_files_summary was built as a scoped workspace
+    /// tool, so the role that writes release notes can dispatch something for the first time. The
+    /// pin moving is the deliberate decision this test exists to force — three roles remain, each
+    /// waiting on a tool that is genuinely not built yet (policy_scan, read_failure_context,
+    /// write_memory_candidate).
     /// </summary>
     [Fact]
     public void TheRolesBlockedByUnbuiltTools_AreExactlyTheKnownOnes()
     {
         var blocked = ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts);
 
-        Assert.Equal(new[] { "archivist", "medic", "scribe", "soldier" }, blocked);
+        Assert.Equal(new[] { "archivist", "medic", "soldier" }, blocked);
 
         // tester is the control: its one allowed tool is real, so a contract is not INHERENTLY
         // blocking. Without this the test above would still pass if contracts stopped working

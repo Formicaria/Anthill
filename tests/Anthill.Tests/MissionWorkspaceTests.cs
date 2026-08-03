@@ -389,6 +389,50 @@ public class MissionWorkspaceTests : IDisposable
         Assert.False(row.Usable);
     }
 
+    // ---- which checkout workspaces are taken from -------------------------------------------------
+
+    /// <summary>
+    /// The wiring bug this closes, found in the browser against a live config rather than by a test.
+    ///
+    /// The manager was handed AllowedWorkspaceRoot — the agent file-tool SANDBOX, which is
+    /// `.anthill/workspace` in a real deployment, not the repository a code mission modifies. Two
+    /// different concepts that are both called "workspace". The sandbox is never a git checkout, so
+    /// every Prepare would have been rejected and the feature would have silently done nothing but
+    /// log workspace_unavailable — on a machine where it looked installed and configured.
+    /// </summary>
+    [Fact]
+    public void ASandboxInsideARepository_ResolvesToThatRepository()
+    {
+        var sandbox = Path.Combine(_repo, ".anthill", "workspace");
+        Directory.CreateDirectory(sandbox);
+
+        var manager = new MissionWorkspaceManager(_memory, sandbox);
+
+        Assert.Equal(Path.GetFullPath(_repo), manager.SourceRoot);
+
+        // and it actually works from there — the point of the fix
+        var workspace = manager.Prepare("mission-1");
+        Assert.Equal(WorkspaceState.Ready, workspace.State);
+        Assert.Equal(Git(_repo, "rev-parse HEAD"), workspace.BaseRevision);
+    }
+
+    /// <summary>
+    /// With no enclosing checkout anywhere, the original path is kept so the rejection stays honest:
+    /// "not a git checkout" is then true and says so, rather than silently pointing somewhere else.
+    /// </summary>
+    [Fact]
+    public void WithNoEnclosingCheckout_ThePathIsKept_SoTheRejectionIsHonest()
+    {
+        var orphan = Path.Combine(Path.GetTempPath(), "anthill-no-git-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(orphan);
+        try
+        {
+            var resolved = MissionWorkspaceManager.ResolveRepositoryRoot(orphan);
+            Assert.Equal(Path.GetFullPath(orphan), resolved);
+        }
+        finally { try { Directory.Delete(orphan, true); } catch { } }
+    }
+
     [Fact]
     public void WorkspacesAreListedPerMission()
     {
