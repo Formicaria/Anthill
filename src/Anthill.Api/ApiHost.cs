@@ -1714,6 +1714,23 @@ public static partial class ApiHost
                 }).ToList(),
                 ["user_tools_enabled"] = AnthillRuntime.EnableUserTools,
                 ["user_tool_allowed_hosts"] = AnthillRuntime.UserToolAllowedHosts,
+
+                // v3.4.2: each contracted role checked against the model it is ACTUALLY routed to.
+                // Reported here rather than only at startup because every mismatch fails silently
+                // at runtime — a role routed to a model that cannot call tools produces a confident
+                // answer that skipped every tool, which in a transcript looks like a weak model
+                // rather than a misconfiguration an operator could fix in thirty seconds.
+                ["model_fitness"] = Queen.Router is null
+                    ? new List<Dictionary<string, object?>>()
+                    : AntModelFitness.CheckAll(Queen.Router, AntExecutionCatalog.Contracts)
+                        .Select(f => new Dictionary<string, object?>
+                        {
+                            ["role"] = f.RoleId,
+                            ["provider"] = f.Provider,
+                            ["model"] = f.Model,
+                            ["fit"] = f.Fit,
+                            ["unmet"] = f.Unmet,
+                        }).ToList(),
             });
         });
 
