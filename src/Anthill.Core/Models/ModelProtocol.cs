@@ -23,6 +23,18 @@ public sealed record ModelMessage(string Role, string Content)
     public string? ToolCallId { get; init; }
 
     /// <summary>
+    /// The tool calls an ASSISTANT turn made. Required, not decorative.
+    ///
+    /// The OpenAI protocol pairs every `tool` message with the assistant message that requested it,
+    /// by id. Recording the assistant's turn as empty content and dropping its tool_calls produces
+    /// a conversation where results arrive for requests that were never made — and a model replayed
+    /// that transcript cannot tell it already called the tool, so it calls again. Observed exactly
+    /// that against a live model: three identical system_info calls, each answered correctly, the
+    /// loop stopped by its own repeat guard with no answer produced.
+    /// </summary>
+    public IReadOnlyList<ModelToolCall> ToolCalls { get; init; } = Array.Empty<ModelToolCall>();
+
+    /// <summary>
     /// Non-text parts (images, documents). Empty for the text-only calls the colony makes today;
     /// present so a vision-capable provider is a capability question rather than a redesign.
     /// </summary>
