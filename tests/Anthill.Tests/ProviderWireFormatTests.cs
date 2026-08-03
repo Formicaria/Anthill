@@ -4,7 +4,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// v3.3.0 (ADR-003) — the wire contract, tested without a provider.
+/// v3.3.0 (ADR-006) — the wire contract, tested without a provider.
 ///
 /// Every mistake this file can make is a SILENT one: a tools array nested wrongly is ignored by the
 /// provider and the model simply answers without calling anything; usage read from a field that
@@ -43,6 +43,60 @@ public class ProviderWireFormatTests
         Assert.False(body.ContainsKey("tools"));
         Assert.False(body.ContainsKey("stream"));          // and streaming is opt-in
         Assert.False(body.ContainsKey("response_format"));
+    }
+
+    /// <summary>
+    /// An assistant turn must replay the tool calls it made.
+    ///
+    /// The protocol pairs each `tool` message with the assistant message that requested it, by id.
+    /// Sending the assistant turn as empty content with its tool_calls dropped produces a
+    /// conversation where results answer requests that are not in it — and a model reading that
+    /// back has no evidence it already called the tool, so it calls again.
+    ///
+    /// Measured against a live local model before this was fixed: system_info called three times
+    /// with identical arguments, answered correctly every time, and the run ended on the repeat
+    /// guard having produced no answer. The failure presents as a loop, never as an error, which is
+    /// why it needs a test rather than an eyeball.
+    /// </summary>
+    [Fact]
+    public void AnAssistantTurn_ReplaysItsToolCalls_SoResultsHaveARequest()
+    {
+        var request = new ModelRequest
+        {
+            Messages = new[]
+            {
+                new ModelMessage(ModelMessage.User, "what OS is this?"),
+                new ModelMessage(ModelMessage.Assistant, "")
+                {
+                    ToolCalls = new[] { new ModelToolCall("call_1", "system_info", "{}") },
+                },
+                new ModelMessage(ModelMessage.Tool, """{"os":"Pop!_OS"}""") { ToolCallId = "call_1" },
+            },
+        };
+
+        var body = ProviderWireFormat.OpenAiBody(request, "gemma4:31b");
+        var assistant = body["messages"]!.AsArray()[1]!;
+        var call = assistant["tool_calls"]!.AsArray()[0]!;
+
+        Assert.Equal("call_1", call["id"]!.GetValue<string>());
+        Assert.Equal("function", call["type"]!.GetValue<string>());
+        Assert.Equal("system_info", call["function"]!["name"]!.GetValue<string>());
+
+        // and the ids must MATCH, or the pairing the protocol relies on is broken
+        Assert.Equal(call["id"]!.GetValue<string>(),
+            body["messages"]!.AsArray()[2]!["tool_call_id"]!.GetValue<string>());
+    }
+
+    /// <summary>An assistant turn with no tool calls must not carry an empty array.</summary>
+    [Fact]
+    public void AnOrdinaryAssistantTurn_HasNoToolCallsKey()
+    {
+        var request = new ModelRequest
+        {
+            Messages = new[] { new ModelMessage(ModelMessage.Assistant, "just talking") },
+        };
+        var assistant = ProviderWireFormat.OpenAiBody(request, "m")["messages"]!.AsArray()[0]!.AsObject();
+        Assert.False(assistant.ContainsKey("tool_calls"));
     }
 
     /// <summary>

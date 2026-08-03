@@ -40,9 +40,9 @@ public sealed class RunAllowlistedCheckTool : ITool
         var id = args.TryGetValue("check_id", out var v) ? v?.ToString() ?? "" : "";
         var def = CheckCatalog.Get(id);
         if (def is null)
-            return new ToolResult(Name, false, "", $"check '{id}' is not in the allowlisted catalog — refused");
+            return new ToolResult(Name, false, "", $"check '{id}' is not in the allowlisted catalog — refused", Contracts.FailureClass.AuthorizationFailure);
         if (!def.Enabled)
-            return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused");
+            return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused", Contracts.FailureClass.AuthorizationFailure);
 
         var started = DateTime.UtcNow;
         try
@@ -61,17 +61,17 @@ public sealed class RunAllowlistedCheckTool : ITool
             if (!proc.WaitForExit(TimeSpan.FromSeconds(def.TimeoutSeconds)))
             {
                 try { proc.Kill(entireProcessTree: true); } catch { }
-                return new ToolResult(Name, false, "", $"check '{id}' timed out after {def.TimeoutSeconds}s");
+                return new ToolResult(Name, false, "", $"check '{id}' timed out after {def.TimeoutSeconds}s", Contracts.FailureClass.Timeout);
             }
             var output = $"check_id={id}\nexit_code={proc.ExitCode}\nduration_ms={(DateTime.UtcNow - started).TotalMilliseconds:F0}\n"
                 + $"--- output ---\n{Truncate(stdout.Result)}\n{Truncate(stderr.Result)}";
             return proc.ExitCode == 0
                 ? new ToolResult(Name, true, output, "")
-                : new ToolResult(Name, false, output, $"check '{id}' exited {proc.ExitCode}");
+                : new ToolResult(Name, false, output, $"check '{id}' exited {proc.ExitCode}", Contracts.FailureClass.VerificationFailure);
         }
         catch (Exception e)
         {
-            return new ToolResult(Name, false, "", $"check '{id}' could not start: {e.Message}");
+            return new ToolResult(Name, false, "", $"check '{id}' could not start: {e.Message}", ToolRegistry.ClassifyThrown(e));
         }
     }
 

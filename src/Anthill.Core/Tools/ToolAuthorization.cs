@@ -62,6 +62,29 @@ public static class ToolAuthorization
 
         if (ControlPlane.Contains(role)) return Decision.Ok;
 
+        // v3.4.1 — operator-defined tools carry their OWN grant, and it is consulted here, before
+        // the built-in tables. It has to be: every table below is a closed list of names compiled
+        // into the build, so a tool that did not exist at compile time is denied by all of them, and
+        // the feature would ship unable to be used by anyone.
+        //
+        // What this does NOT do is weaken the structural boundary. The prohibitions below are
+        // re-checked first, so a definition cannot name itself apply_patch or claim a tool a
+        // contract forbids. A definition widens the set of tools a role may call; it can never widen
+        // what a role is allowed to DO.
+        if (UserToolGrants.TryGet(toolName, out var definition))
+        {
+            if (MissionAgentForbidden.Contains(toolName))
+                return Decision.Deny($"tool '{toolName}' is structurally forbidden to mission agents (role '{role}')");
+
+            var declared = AntExecutionCatalog.ContractFor(role);
+            if (declared is not null && declared.ForbiddenTools.Contains(toolName))
+                return Decision.Deny($"tool '{toolName}' is forbidden to role '{role}' by its execution contract");
+
+            return definition.GrantsRole(role)
+                ? Decision.Ok
+                : Decision.Deny($"user-defined tool '{toolName}' does not grant role '{role}'");
+        }
+
         // Specialist contract roles (Stage A): enforce their declared contract even before
         // activation, so a prematurely wired handler still cannot exceed its contract.
         var contract = AntExecutionCatalog.ContractFor(role);

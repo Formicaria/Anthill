@@ -165,7 +165,7 @@ public class CharacterizationTests : IDisposable
     /// <summary>
     /// The three-way skill outcome split, pinned: promotable evidence advances standing, a verified
     /// mission with semantic-only evidence is NEUTRAL (no movement either way), and no evidence is
-    /// a failure. v3.7.0 touches this; it must reproduce or explicitly restate it.
+    /// a failure. v3.11.0 (was v3.7.0) touches this; it must reproduce or explicitly restate it.
     /// </summary>
     [Fact]
     public void SkillOutcomes_SplitThreeWays()
