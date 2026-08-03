@@ -334,3 +334,53 @@
    The class is still styled here for anything purely visual, so the two files do not fight over
    who owns the height. */
 .dg-widget.dg-quiet .dg-body { padding-top: 8px; }
+
+/* =============================================================================
+ * v3.7.1 — Conversations.
+ *
+ * One rule drives all of it: `needs-op` must not look like anything else on the
+ * page. It is the only state where the colony has stopped and will not move
+ * until a human answers, so it gets the amber edge, the filled background and
+ * the only primary-coloured button in the list. Everything else stays quiet.
+ * ========================================================================== */
+.conv-new{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.conv-input{flex:1 1 auto;min-width:0;background:var(--panel,#12151a);border:1px solid var(--line,#2a2f37);
+  color:var(--fg,#d7dae0);font-family:var(--mono);font-size:11px;padding:5px 7px;border-radius:3px}
+.conv-select{background:var(--panel,#12151a);border:1px solid var(--line,#2a2f37);color:var(--fg,#d7dae0);
+  font-family:var(--mono);font-size:10px;padding:5px 4px;border-radius:3px}
+.conv-btn{background:transparent;border:1px solid var(--line,#2a2f37);color:var(--muted,#8b93a1);
+  font-family:var(--mono);font-size:10px;padding:5px 9px;border-radius:3px;cursor:pointer;white-space:nowrap}
+.conv-btn:hover{border-color:var(--accent,#d9a441);color:var(--fg,#d7dae0)}
+.conv-btn.primary,.conv-btn.work{border-color:var(--accent,#d9a441);color:var(--accent,#d9a441)}
+/* The approve button is the only FILLED control here: it is the action that unblocks the colony. */
+.conv-btn.approve{background:var(--accent,#d9a441);border-color:var(--accent,#d9a441);color:#11141a;font-weight:600}
+
+.conv-item{border:1px solid var(--line,#2a2f37);border-radius:4px;padding:7px 9px;margin-bottom:6px}
+.conv-item.needs-op{border-color:var(--accent,#d9a441);background:rgba(217,164,65,.07)}
+.conv-item.cancelled{opacity:.55}
+.conv-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.conv-title{font-size:11px;color:var(--fg,#d7dae0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv-policy{font-family:var(--mono);font-size:9px;color:var(--muted,#8b93a1);border:1px solid var(--line,#2a2f37);
+  padding:1px 5px;border-radius:2px;white-space:nowrap}
+.conv-policy.warn{color:#d9a441;border-color:#d9a441}
+/* Bypass is stated in RED and in words. An operator must never be surprised that approvals are off. */
+.conv-policy.danger{color:var(--red,#c0554f);border-color:var(--red,#c0554f)}
+/* Clamped to two lines, and it must stay clamped.
+   "What is it doing" is a phrase, but it is built from data the panel does not control — a colony
+   carrying rows from an older build put a full mission report in this field and one row grew to
+   fill the entire dashboard, pushing every other conversation off screen. A summary line that can
+   be unbounded is a layout bug waiting for bad data, so the ceiling lives here rather than relying
+   on every producer to be brief. Hovering still gives the full text via title=. */
+.conv-doing{font-family:var(--mono);font-size:9px;color:var(--dim,#6b7280);margin-top:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  line-height:1.35;max-height:2.7em;word-break:break-word}
+.conv-missions{font-family:var(--mono);font-size:9px;color:var(--muted,#8b93a1);margin-top:2px}
+.conv-attn{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--accent,#d9a441)}
+.conv-attn-label{font-family:var(--mono);font-size:10px;color:var(--accent,#d9a441);font-weight:600}
+.conv-attn-what{font-family:var(--mono);font-size:10px;color:var(--fg,#d7dae0)}
+.conv-say{display:flex;gap:6px;margin-top:6px}
+.conv-empty{font-size:10px;color:var(--dim,#6b7280);text-align:center;padding:14px 6px;line-height:1.5}
+/* The header count is quiet until something is actually waiting. A sub-header that is always
+   coloured is a sub-header nobody reads, which defeats the point of colouring it at all. */
+.conv-count-attn{color:var(--accent,#d9a441);font-weight:600}

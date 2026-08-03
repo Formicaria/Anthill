@@ -26,6 +26,17 @@ public class ConversationRunnerTests : IDisposable
     private int _missionsStarted;
     private CancellationToken _lastToken;
 
+    /// <summary>
+    /// Holds the fake mission OPEN until a test lets it finish.
+    ///
+    /// Necessary rather than decorative: the runner releases a conversation's cancellation lease
+    /// when the work completes, so a fake that returns instantly has already finished by the time a
+    /// test calls Cancel — and every cancellation test would assert against a mission that is not
+    /// running. The scenario these tests exist for is a mission still in flight, so the fake has to
+    /// actually be in flight.
+    /// </summary>
+    private readonly ManualResetEventSlim _release = new(false);
+
     public ConversationRunnerTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "anthill-runner-" + Guid.NewGuid().ToString("N")[..10]);
@@ -35,16 +46,34 @@ public class ConversationRunnerTests : IDisposable
 
     public void Dispose()
     {
+        // Let any still-blocked fake mission end before the fixture goes away.
+        _release.Set();
+        _release.Dispose();
         _memory.Dispose();
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 
-    /// <summary>The mission pipeline, faked — the runner decides WHETHER, the Queen decides what.</summary>
-    private ConversationRunner Runner() => new(_memory, (_, token) =>
+    /// <summary>
+    /// The mission pipeline, faked — the runner decides WHETHER, the Queen decides what.
+    ///
+    /// The fake REPORTS ITS ID through the callback, because that is the contract the runner
+    /// depends on: the real pipeline fires onMissionCreated as soon as the mission row exists and
+    /// then keeps working, so the runner can record history without waiting for the work to finish.
+    /// A fake that only returned the id would test a pipeline that does not exist.
+    /// </summary>
+    private ConversationRunner Runner() => new(_memory, (_, onCreated, token) =>
     {
-        _missionsStarted++;
+        var id = $"mission-{Interlocked.Increment(ref _missionsStarted)}";
         _lastToken = token;
-        return $"mission-{_missionsStarted}";
+
+        // The id is reported IMMEDIATELY — that is the contract the runner depends on — and then the
+        // mission keeps running, exactly as the real pipeline does.
+        onCreated(id);
+
+        try { _release.Wait(TimeSpan.FromSeconds(10), token); }
+        catch (OperationCanceledException) { /* cancelled mid-flight, which is a valid ending */ }
+
+        return id;
     });
 
     private Conversation Chat(EscalationPolicy policy = EscalationPolicy.Ask, bool cancelled = false)
@@ -376,4 +405,66 @@ public class ConversationRunnerTests : IDisposable
     [Fact]
     public void StartingAMission_IsNotATool() =>
         Assert.False(Anthill.Core.Tools.ToolInventory.Exists(ConversationRunner.StartMissionAction));
+
+    // ---- an id, or nothing --------------------------------------------------------------------
+
+    /// <summary>
+    /// The defect this guards against was real, and was found in the RUNNING system rather than here.
+    ///
+    /// Before missions moved to the background the runner linked the pipeline's return value, which
+    /// is the mission REPORT rather than its id. A conversation's MissionIds ended up holding a
+    /// multi-kilobyte narrative: it filled the console panel end to end, and every
+    /// conversation-to-mission join silently resolved to nothing while the data looked healthy.
+    ///
+    /// A report is distinguishable from an id by two cheap properties — length and whitespace — and
+    /// that is deliberately all this checks. A stricter rule (GUIDs only) would reject id formats
+    /// the pipeline is free to adopt later, and a guard that fails on correct input gets deleted.
+    /// </summary>
+    [Theory]
+    [InlineData("Mission Failed\n\nGoal:\nrefactor everything")]
+    [InlineData("a mission id with spaces")]
+    public void AReportReportedWhereAnIdWasExpected_IsNotLinked(string notAnId)
+    {
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        {
+            onCreated(notAnId);
+            return notAnId;
+        });
+
+        var outcome = runner.Run(Chat(EscalationPolicy.Bypass), "go", ConversationMode.Mission);
+
+        // The work DID start, so that is reported honestly — but nothing is linked, because a bad
+        // link is worse than a missing one. A gap is something an operator can investigate.
+        Assert.True(outcome.Started);
+        Assert.Null(outcome.MissionId);
+        Assert.Contains("not a mission id", outcome.Summary);
+        Assert.Empty(_memory.LoadConversation("c1")!.MissionIds);
+        Assert.Null(Assert.Single(_memory.LoadConversationTurns("c1")).MissionId);
+    }
+
+    /// <summary>A real id is still linked — the guard must not cost the normal case.</summary>
+    [Fact]
+    public void ARealMissionId_IsStillLinked()
+    {
+        var id = Guid.NewGuid().ToString();
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated(id); return id; });
+
+        Assert.Equal(id, runner.Run(Chat(EscalationPolicy.Bypass), "go", ConversationMode.Mission).MissionId);
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("has space", false)]
+    [InlineData("has\nnewline", false)]
+    [InlineData("94c901b6-7626-4476-a8cf-856f192f9629", true)]
+    [InlineData("mission-1", true)]
+    public void LooksLikeMissionId_AcceptsIdsAndRejectsProse(string candidate, bool expected) =>
+        Assert.Equal(expected, ConversationRunner.LooksLikeMissionId(candidate));
+
+    /// <summary>Anything longer than a GUID by a wide margin is prose, not an identifier.</summary>
+    [Fact]
+    public void LooksLikeMissionId_RejectsSomethingFarTooLongToBeAnId() =>
+        Assert.False(ConversationRunner.LooksLikeMissionId(
+            new string('a', ConversationRunner.MaxMissionIdLength + 1)));
 }
