@@ -153,7 +153,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         {
             registry.Register(new DirectoryListTool(guard));
             registry.Register(new ReadTextFileTool(guard));
+            // v3.5.0: scoped workspace tools. The guard they share resolves to the MISSION workspace
+            // when one is in scope, so both read the tree the mission is actually changing.
+            registry.Register(new SearchWorkspaceTool(guard));
         }
+        registry.Register(new ChangedFilesSummaryTool());
         if (options.FileWriting)
             registry.Register(new WriteTextFileTool(guard));
         registry.Register(new WebSearchTool());

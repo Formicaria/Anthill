@@ -45,6 +45,11 @@ public static class ToolInventory
         "web_search",
         "shell_command",
         "apply_patch",
+        // v3.5.0: the scoped workspace tools. Both were declared by a contract and unbuilt, which
+        // left ui_cartographer and scribe authorized to dispatch NOTHING — they ran and produced
+        // no work, which reads as a weak model rather than as a missing tool.
+        "search_workspace",
+        "read_changed_files_summary",
     };
 
     /// <summary>
@@ -59,8 +64,9 @@ public static class ToolInventory
     ///   policy_scan               — soldier's security/policy review surface
     ///   read_failure_context      — medic's read-only view of a failed task's evidence
     ///   write_memory_candidate    — archivist's only write path, into the memory pipeline
-    ///   search_workspace          — ui_cartographer's repository search (v3.6.0 indexing)
-    ///   read_changed_files_summary— scribe's diff summary for release notes
+    ///
+    /// v3.5.0 moved search_workspace and read_changed_files_summary OUT of this list — they are
+    /// built, and both roles that were blocked on them can now dispatch.
     ///
     /// A name moving from here to <see cref="Implemented"/> is the whole point; a guard fails if one
     /// appears in both, because a contract that keeps treating a built tool as planned would keep
@@ -71,8 +77,6 @@ public static class ToolInventory
         "policy_scan",
         "read_failure_context",
         "write_memory_candidate",
-        "search_workspace",
-        "read_changed_files_summary",
     };
 
     /// <summary>True when the name refers to a tool that exists in this build.</summary>
