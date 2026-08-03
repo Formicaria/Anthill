@@ -68,6 +68,14 @@ public static class ModelCapabilityCatalog
         ["openrouter"] = ModelCapabilities.Standard,
         ["perplexity"] = ModelCapabilities.TextOnly with { Streaming = true },
         ["ollama"] = ModelCapabilities.TextOnly with { Streaming = true },
+
+        // Local OpenAI-compatible servers. Same reasoning as Ollama and for the same reason: the
+        // SERVER speaks the tool-calling protocol, but whether tools actually work depends on the
+        // model the operator loaded into it. The provider default therefore claims only streaming,
+        // and the model fragments below grant the rest.
+        ["lmstudio"] = ModelCapabilities.TextOnly with { Streaming = true },
+        ["vllm"] = ModelCapabilities.TextOnly with { Streaming = true },
+        ["llamacpp"] = ModelCapabilities.TextOnly with { Streaming = true },
     };
 
     /// <summary>
