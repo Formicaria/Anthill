@@ -490,6 +490,153 @@ public class RepositoryIndexTests : IDisposable
         }
     }
 
+    // ---- incremental, and durable -----------------------------------------------------------------
+
+    /// <summary>
+    /// Incremental on the EXPENSIVE half. Every file is still read and hashed — you cannot know a
+    /// file is unchanged without looking at it — but symbol extraction, the regex pass over every
+    /// line, is skipped when the content matches.
+    /// </summary>
+    [Fact]
+    public void ARebuild_ReusesFilesWhoseContentHasNotChanged()
+    {
+        var first = RepositoryIndexBuilder.Build(Workspace("rev-one"));
+
+        var second = RepositoryIndexBuilder.Build(Workspace("rev-one"), first);
+
+        Assert.Equal(first.Files.Count, second.ReusedFiles);
+        Assert.Equal(0, first.ReusedFiles);
+    }
+
+    /// <summary>An edited file is re-read; the rest are still reused.</summary>
+    [Fact]
+    public void ARebuild_RedoesOnlyWhatChanged()
+    {
+        var first = RepositoryIndexBuilder.Build(Workspace("rev-one"));
+        File.WriteAllText(Path.Combine(_root, "src", "Program.cs"), "class Renamed { }\n");
+
+        var second = RepositoryIndexBuilder.Build(Workspace("rev-one"), first);
+
+        Assert.Equal(first.Files.Count - 1, second.ReusedFiles);
+        Assert.Contains(second.FindSymbol("Renamed", exact: true), x => x.Path == "src/Program.cs");
+        Assert.Empty(second.FindSymbol("Program", exact: true));
+    }
+
+    /// <summary>
+    /// A previous index of a DIFFERENT revision is not reused. Different revision means different
+    /// content at the same paths, and reusing across that boundary produces an index describing a
+    /// tree nobody has.
+    /// </summary>
+    [Fact]
+    public void ARebuild_NeverReusesAcrossRevisions()
+    {
+        var first = RepositoryIndexBuilder.Build(Workspace("rev-one"));
+
+        var second = RepositoryIndexBuilder.Build(Workspace("rev-two"), first);
+
+        Assert.Equal(0, second.ReusedFiles);
+    }
+
+    /// <summary>
+    /// The index survives a restart, which is what makes "durable" true rather than aspirational.
+    /// Without it, every process start re-walks and re-parses the whole repository.
+    /// </summary>
+    [Fact]
+    public void TheIndex_SurvivesAReopenedDatabase()
+    {
+        var db = Path.Combine(_dir, "memory.db");
+        var built = RepositoryIndexBuilder.Build(Workspace("rev-one"));
+
+        using (var memory = new Anthill.Core.Memory.SqliteMemory(db))
+            memory.SaveRepositoryIndex(built);
+
+        using var reopened = new Anthill.Core.Memory.SqliteMemory(db);
+        var loaded = reopened.LoadRepositoryIndex("ws1", "rev-one");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(built.Files.Count, loaded!.Files.Count);
+        Assert.Equal(built.SymbolCount, loaded.SymbolCount);
+        Assert.Equal(built.Find("src/Program.cs")!.ContentHash, loaded.Find("src/Program.cs")!.ContentHash);
+    }
+
+    /// <summary>
+    /// A stored index is only ever returned for the revision it describes — the same rule the
+    /// in-memory cache follows, written down where it survives a restart.
+    /// </summary>
+    [Fact]
+    public void AStoredIndex_IsNotReturnedForAnotherRevision()
+    {
+        var db = Path.Combine(_dir, "memory.db");
+        using var memory = new Anthill.Core.Memory.SqliteMemory(db);
+        memory.SaveRepositoryIndex(RepositoryIndexBuilder.Build(Workspace("rev-one")));
+
+        Assert.Null(memory.LoadRepositoryIndex("ws1", "rev-two"));
+    }
+
+    /// <summary>
+    /// A MISS returns null, not an empty index. An empty index is a legitimate answer for an empty
+    /// repository, and conflating the two would make the first mission after a restart believe the
+    /// repository has no files at all.
+    /// </summary>
+    [Fact]
+    public void ANoStoredIndex_IsNullRatherThanEmpty()
+    {
+        using var memory = new Anthill.Core.Memory.SqliteMemory(Path.Combine(_dir, "memory.db"));
+
+        Assert.Null(memory.LoadRepositoryIndex("never-indexed", "rev"));
+    }
+
+    /// <summary>
+    /// Saving replaces wholesale. A file DELETED since the last index must disappear from it —
+    /// merging would keep answering with a path that no longer exists, and an agent sent to read it
+    /// gets a confusing failure instead of a correct absence.
+    /// </summary>
+    [Fact]
+    public void SavingAnIndex_DropsFilesThatNoLongerExist()
+    {
+        var db = Path.Combine(_dir, "memory.db");
+        using var memory = new Anthill.Core.Memory.SqliteMemory(db);
+        memory.SaveRepositoryIndex(RepositoryIndexBuilder.Build(Workspace("rev-one")));
+
+        File.Delete(Path.Combine(_root, "src", "Helper.cs"));
+        memory.SaveRepositoryIndex(RepositoryIndexBuilder.Build(Workspace("rev-one")));
+
+        Assert.Null(memory.LoadRepositoryIndex("ws1", "rev-one")!.Find("src/Helper.cs"));
+    }
+
+    /// <summary>
+    /// A small repository indexes symbols; the flag stays off. The control for the test below —
+    /// without it, that test would pass even if symbols were never extracted at all.
+    /// </summary>
+    [Fact]
+    public void ASmallRepository_IndexesSymbols()
+    {
+        var index = RepositoryIndexBuilder.Build(Workspace());
+
+        Assert.False(index.InventoryOnly);
+        Assert.True(index.SymbolCount > 0);
+    }
+
+    /// <summary>
+    /// The exit gate: "a large repository degrades to file-inventory-only rather than failing".
+    /// Symbols are the expensive part and, past a certain size, the least useful — a symbol search
+    /// returning two thousand candidates is not an answer.
+    /// </summary>
+    [Fact]
+    public void ALargeRepository_DegradesToInventoryOnly()
+    {
+        var many = Path.Combine(_dir, "big");
+        Directory.CreateDirectory(many);
+        for (var i = 0; i <= RepositoryIndex.MaxFilesForSymbols; i++)
+            File.WriteAllText(Path.Combine(many, $"F{i}.cs"), "class T { }\n");
+
+        var index = RepositoryIndexBuilder.Build(Workspace(root: many));
+
+        Assert.True(index.InventoryOnly);
+        Assert.NotEmpty(index.Files);          // it still knows what is THERE
+        Assert.Equal(0, index.SymbolCount);    // it just did not parse it
+    }
+
     /// <summary>
     /// The cartographer — the role whose entire purpose is mapping a repository — is allowed to ask.
     /// </summary>

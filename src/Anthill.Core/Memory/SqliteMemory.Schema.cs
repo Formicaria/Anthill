@@ -210,6 +210,21 @@ public sealed partial class SqliteMemory : IDisposable
             retained_by TEXT, retain_reason TEXT, note TEXT,
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_mission_workspaces_mission ON mission_workspaces(mission_id)",
+        // v3.6.0: the repository index, keyed by workspace AND revision so a stored index can never
+        // be applied to a tree it does not describe. Deleted with its workspace — an index outliving
+        // the tree is a set of answers about files nobody can read.
+        @"CREATE TABLE IF NOT EXISTS repository_index (
+            workspace_id TEXT NOT NULL, revision TEXT NOT NULL,
+            fingerprint TEXT NOT NULL DEFAULT '', root TEXT NOT NULL DEFAULT '',
+            truncated INTEGER NOT NULL DEFAULT 0, build_ms INTEGER NOT NULL DEFAULT 0,
+            reused_files INTEGER NOT NULL DEFAULT 0, built_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, revision))",
+        @"CREATE TABLE IF NOT EXISTS repository_index_files (
+            workspace_id TEXT NOT NULL, revision TEXT NOT NULL, path TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'other', bytes INTEGER NOT NULL DEFAULT 0,
+            lines INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL DEFAULT '',
+            symbols_json TEXT,
+            PRIMARY KEY (workspace_id, revision, path))",
         @"CREATE TABLE IF NOT EXISTS tool_definitions (
             name TEXT PRIMARY KEY, description TEXT NOT NULL DEFAULT '',
             kind TEXT NOT NULL, parameters_json TEXT NOT NULL DEFAULT '{}',
@@ -445,6 +460,7 @@ public sealed partial class SqliteMemory : IDisposable
             (14, "shadow_qualification", "Shadow recommendations and operator outcomes persisted — qualification can accumulate from live incidents, not only replayed scenarios."),
             (15, "user_defined_tools", "Operator-defined tools (tool_definitions) persisted — the tool ecosystem outlives the release cycle."),
             (16, "mission_workspaces", "Mission workspaces (mission_workspaces) persisted with base revision and lifecycle — changes become attributable and survive restart."),
+            (17, "repository_index", "Repository index (repository_index, repository_index_files) persisted per workspace+revision — a restart reuses everything unchanged instead of re-walking the tree."),
         };
         foreach (var (id, name, description) in migrations)
         {

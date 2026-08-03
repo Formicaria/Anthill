@@ -4,7 +4,7 @@
 
 **Baseline:** v2.26.0
 **Roadmap range:** v3.0.0 through v3.9.0
-**Latest:** v3.5.0 — mission workspaces: a code mission works in a detached git worktree it cannot escape, its changes are attributable to one workspace and one base revision, and its work reaches the operator as an ordinary reviewable change set. Verification commands come from a detected capability manifest rather than model invention. Preceded by v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
+**Latest:** v3.6.0 — repository indexing: an agent answers 'where is this handled' from a revision-keyed index by CALLING a tool, rather than having the repository stuffed into its context. Symbol and reference answers state what they cannot claim — pattern matching is not a compiler, and a name declared in three places yields mentions that cannot be attributed to any of them. Preceded by v3.5.0 — mission workspaces: a code mission works in a detached git worktree it cannot escape, its changes are attributable to one workspace and one base revision, and its work reaches the operator as an ordinary reviewable change set. Verification commands come from a detected capability manifest rather than model invention. Preceded by v3.4.2 — contracts declare what they need from a MODEL, checked against each role's live route at startup, because every such mismatch fails silently at runtime and reads as a weak model rather than a misconfiguration. Preceded by v3.4.1 (operator-defined tools, no rebuild required), v3.4.0 (the tool-calling loop and typed tool results) and v3.3.0 (the typed provider substrate). v3.5.0 — mission workspaces — is in progress on main and not yet released.
 
 **Previously:** v3.2.1 — dashboard direct manipulation: widgets are dragged to position and resized from their corner, with widths stored as a proportion of the row so an arrangement means the same thing at every window size. Preceded by v3.2.0 (dashboard redesign + typed model results) — see the release/phase note below. Phase release: v3.1.0 — runtime composition and Queen decomposition: configuration captured once per run, a mission's governing facts resolved once at intake, and the Queen reduced from 1,365 to 381 lines behind six service interfaces. No new features by design.
 **V4 target:** Codex/Claude-Code-style autonomous software workflow on ANTHILL's bounded colony framework
@@ -362,7 +362,7 @@ has here:
 | v3.3.0 | Provider substrate — typed request/response, wire formats, model capabilities | shipped |
 | v3.4.0 | Tool framework projection — tool schemas, the agent loop, typed tool results | shipped |
 | v3.5.0 | Mission workspace and language adapter infrastructure | shipped |
-| v3.6.0 | Repository indexing and awareness | new |
+| v3.6.0 | Repository indexing and awareness | shipped |
 | v3.7.0 | Conversation orchestration | new |
 | v3.8.0 | Durable worker and attempt runtime | was v3.4.0 |
 | v3.9.0 | Artifact, evidence, and context graph | was v3.5.0 |
@@ -502,24 +502,40 @@ the repository into the context window.
 
 ### Required Work
 
-- Build a durable repository index: file inventory, language, size, revision fingerprint, and
-  symbol-level entries for the languages the workspace adapters already declare.
-- Add a dependency/reference graph so "what calls this" and "what would this change break" are
-  queries rather than greps.
-- Ship indexing as TOOLS the loop can call (search, symbol lookup, neighbourhood expansion), not as
-  a context-stuffing preprocessor — the agent decides what it needs to see.
-- Incremental reindexing keyed on revision + content hash; a stale index must be detectable, not
-  merely old.
-- Bound every result: excerpts with provenance (path, revision, line span), never whole files.
+- [x] A durable repository index (schema 20): file inventory, language, size, line count, content
+      hash, revision fingerprint, and symbol entries for C#, TypeScript/JavaScript, Python, Go and
+      Rust.
+- [x] Reference lookup, with the honesty that makes it usable: results carry whether they can be
+      ATTRIBUTED to one declaration, because "what calls this" feeds "what would my change break"
+      and a list that looks authoritative gets acted on.
+- [x] Shipped as the `repository_index` TOOL. The index is never injected into a prompt — the agent
+      spends a turn to ask, and the context holds an answer rather than a repository.
+- [x] Incremental rebuild keyed on revision + content hash, reusing symbol extraction (the expensive
+      half) for unchanged files. Every file is still read and hashed, because a cheaper check would
+      be a guess.
+- [x] Every result bounded, with path, line and revision on the answer.
 
 ### Exit Gates
 
-- An index query returns the same answer for the same revision, or reports itself stale.
-- No indexing path can read outside the mission workspace boundary.
-- An agent asked a repository question calls a tool; it does not receive a pre-stuffed context blob.
-- Index build time and size are bounded and reported, and a large repository degrades to
-  file-inventory-only rather than failing.
-- Every excerpt an agent acts on can be traced to a path and revision.
+- [x] An index query returns the same answer for the same revision (paths sorted, symbols ordered),
+      and `FileChanged` reports staleness per FILE rather than invalidating everything a mission
+      touches.
+- [x] No indexing path reads outside the workspace: the walk resolves every path through the same
+      `WorkspacePathGuard` every file tool uses, so a symlink out of the workspace is refused.
+- [x] An agent calls a tool. Outside a mission the tool refuses rather than describing the live
+      checkout.
+- [x] Build time, file count, reuse count and truncation are reported; a large repository degrades
+      to inventory-only, and SAYS so — an empty symbol result must be distinguishable from "not
+      searched".
+- [x] Every excerpt carries its path and line, and every answer its revision.
+
+### Known limits, stated rather than implied
+
+- Symbols come from PATTERN MATCHING, not a compiler. A declaration in an unusual shape is missed
+  and a mention in a comment may appear. Every symbol answer says so.
+- References are text matches: imports, overloads and scope are not resolved. A name declared in
+  more than one place returns mentions that cannot be attributed to any of them, and the tool leads
+  with that caveat rather than appending it.
 
 ## v3.7.0 - Conversation Orchestration
 

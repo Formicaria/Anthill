@@ -289,8 +289,17 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         lock (_indexes)
         {
             if (_indexes.TryGetValue(key, out var cached)) return cached;
-            var built = Anthill.Core.Workspaces.RepositoryIndexBuilder.Build(workspace);
+
+            // Stored index first, then refresh against it. On the first mission after a restart this
+            // turns a full walk-and-parse into a walk that reuses every unchanged file — which on a
+            // large repository is the entire reason the index exists.
+            var stored = Memory.LoadRepositoryIndex(workspace.Id, workspace.BaseRevision);
+            var built = Anthill.Core.Workspaces.RepositoryIndexBuilder.Build(workspace, stored);
+
             _indexes[key] = built;
+            // Persisted best-effort: an index that fails to save costs the NEXT run some work, and
+            // must never cost THIS one its answer.
+            try { Memory.SaveRepositoryIndex(built); } catch { }
             return built;
         }
     }

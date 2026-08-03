@@ -57,6 +57,20 @@ public sealed record RepositoryIndex
     /// <summary>Above this a file is inventoried but not line-counted or hashed by content.</summary>
     public const long MaxHashedBytes = 4_000_000;
 
+    /// <summary>
+    /// Above this many files, symbol extraction is skipped and the index is inventory-only.
+    ///
+    /// The phase's exit gate asks for exactly this: "a large repository degrades to
+    /// file-inventory-only rather than failing". Symbols are the expensive part — a regex pass over
+    /// every line of every file — and on a very large repository they are also the least useful,
+    /// because a symbol search returning two thousand candidates is not an answer.
+    ///
+    /// Degrading beats both alternatives. Failing leaves the agent with nothing; grinding through
+    /// leaves it waiting, and an index that arrives after the mission has moved on was never worth
+    /// the wait.
+    /// </summary>
+    public const int MaxFilesForSymbols = 8_000;
+
     public required string WorkspaceId { get; init; }
     public required string Root { get; init; }
 
@@ -69,7 +83,22 @@ public sealed record RepositoryIndex
     /// <summary>True when <see cref="MaxFiles"/> stopped the walk. Reported, never silent.</summary>
     public bool Truncated { get; init; }
 
+    /// <summary>
+    /// True when the repository was large enough that symbols were skipped. Reported, because an
+    /// agent that gets no symbol results needs to know whether that means "not found" or "not
+    /// looked for" — those call for completely different next moves.
+    /// </summary>
+    public bool InventoryOnly { get; init; }
+
     public int BuildMilliseconds { get; init; }
+
+    /// <summary>
+    /// Files whose content was unchanged since the previous index, so their symbols were REUSED
+    /// rather than re-extracted. Reported because "the index rebuilt in 40ms" and "the index
+    /// rebuilt in 40ms because it re-did 12 files out of 9,000" are different facts, and only the
+    /// second tells an operator whether incremental indexing is actually working.
+    /// </summary>
+    public int ReusedFiles { get; init; }
     public DateTime BuiltAt { get; init; } = Common.AnthillTime.NowUtc();
 
     public long TotalBytes => Files.Sum(f => f.Bytes);
@@ -169,11 +198,36 @@ public static class RepositoryIndexBuilder
     /// workspace that cannot be walked yields an EMPTY index rather than an exception. Indexing is a
     /// convenience over the filesystem, and a convenience that can fail a mission is not one.
     /// </summary>
-    public static RepositoryIndex Build(MissionWorkspace workspace)
+    public static RepositoryIndex Build(MissionWorkspace workspace) => Build(workspace, previous: null);
+
+    /// <summary>
+    /// Rebuild, reusing what has not changed.
+    ///
+    /// Incremental on the EXPENSIVE half only, and the distinction is deliberate. Every file is
+    /// still read and hashed — you cannot know a file is unchanged without looking at it, and a
+    /// cheaper check (size and mtime) would be a guess that goes wrong exactly when a tool rewrites
+    /// a file to the same length. What is skipped is symbol extraction, which is the regex pass over
+    /// every line and the part that actually costs.
+    ///
+    /// So this trades a guaranteed-correct index for a smaller saving, rather than a larger saving
+    /// for an index that is occasionally, silently wrong. For something an agent uses to decide
+    /// where to make changes, that is the right way round.
+    /// </summary>
+    public static RepositoryIndex Build(MissionWorkspace workspace, RepositoryIndex? previous)
     {
         var started = DateTime.UtcNow;
         var files = new List<IndexedFile>();
+        var paths = new List<string>();
         var truncated = false;
+        var inventoryOnly = false;
+        var reused = 0;
+
+        // Only a PREVIOUS INDEX OF THE SAME REVISION may be reused. A different revision means
+        // different content at the same paths, and reusing symbols across that boundary would
+        // produce an index that describes a tree nobody has.
+        var reusable = previous is not null && previous.DescribesRevision(workspace?.BaseRevision)
+            ? previous
+            : null;
 
         if (workspace is not null && workspace.Usable && Directory.Exists(workspace.Root))
         {
@@ -181,7 +235,7 @@ public static class RepositoryIndexBuilder
 
             foreach (var full in Walk(workspace.Root))
             {
-                if (files.Count >= RepositoryIndex.MaxFiles) { truncated = true; break; }
+                if (paths.Count >= RepositoryIndex.MaxFiles) { truncated = true; break; }
 
                 try
                 {
@@ -192,7 +246,16 @@ public static class RepositoryIndexBuilder
                 }
                 catch (UnauthorizedAccessException) { continue; }
 
-                var indexed = Describe(workspace.Root, full);
+                paths.Add(full);
+            }
+
+            // Decided AFTER the walk, because the count is not knowable before it. A guess from the
+            // directory count would be wrong on exactly the repositories that matter.
+            inventoryOnly = paths.Count > RepositoryIndex.MaxFilesForSymbols;
+
+            foreach (var full in paths)
+            {
+                var indexed = Describe(workspace.Root, full, reusable, ref reused, inventoryOnly);
                 if (indexed is not null) files.Add(indexed);
             }
         }
@@ -208,11 +271,14 @@ public static class RepositoryIndexBuilder
             // order of the answer depends on what the filesystem felt like returning.
             Files = files.OrderBy(f => f.Path, StringComparer.Ordinal).ToList(),
             Truncated = truncated,
+            InventoryOnly = inventoryOnly,
             BuildMilliseconds = (int)(DateTime.UtcNow - started).TotalMilliseconds,
+            ReusedFiles = reused,
         };
     }
 
-    private static IndexedFile? Describe(string root, string full)
+    private static IndexedFile? Describe(string root, string full, RepositoryIndex? reusable,
+        ref int reused, bool inventoryOnly)
     {
         try
         {
@@ -226,14 +292,25 @@ public static class RepositoryIndexBuilder
 
             var bytes = File.ReadAllBytes(full);
             var language = LanguageOf(full);
+            var hash = Convert.ToHexString(SHA256.HashData(bytes))[..16];
+
+            // Unchanged content means the symbols found last time are still the symbols. Skipping
+            // the regex pass is the whole saving; the read and the hash above are what make the
+            // claim safe rather than hopeful.
+            if (reusable?.Find(relative) is { } before && before.ContentHash == hash)
+            {
+                reused++;
+                return before;
+            }
+
             return new IndexedFile(
                 relative,
                 language,
                 info.Length,
                 CountLines(bytes),
-                Convert.ToHexString(SHA256.HashData(bytes))[..16])
+                hash)
             {
-                Symbols = ExtractSymbols(language, bytes),
+                Symbols = inventoryOnly ? Array.Empty<IndexedSymbol>() : ExtractSymbols(language, bytes),
             };
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
