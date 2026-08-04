@@ -1,5 +1,45 @@
 # ANTHILL Changelog
 
+## v3.7.2 - The rest of the missing operator surface
+
+An endpoint sweep found sixteen routes with no client. Most are honestly machine-facing - readiness,
+config health, runtime inventory. Four were not: `GET /tools`, `POST` and `DELETE /tools/user`, and
+`GET /workspaces`. Those are v3.4.1, v3.4.2 and v3.5.0 - three shipped subsystems an operator could
+not see, let alone use. The same defect as v3.7.0's unreachable runtime, one layer further out.
+
+This release surfaces them rather than starting v3.8.0, because adding a fourth backend phase on top
+of three unusable ones compounds exactly the problem the previous release was spent correcting.
+
+- **Tools & Routing panel.** Leads with what is wrong, because a console that renders forty healthy
+  rows and one broken one, all alike, has technically displayed the problem and practically hidden
+  it. Model-fitness misfits are the only red thing on the panel and the only ones listed: a role
+  routed to a model that cannot call tools produces a confident answer that skipped every tool,
+  which in a transcript reads as a weak model rather than a misconfiguration fixable in seconds. On
+  this deployment it immediately reported `medic` routed to a model that cannot meet its reasoning
+  requirement, and three roles authorised to dispatch nothing.
+- **Tools that cannot run distinguish "switched off" from "not built"**, because the remedies differ:
+  one is a config flag, the other is a build without the code.
+- **Mission Workspaces panel** - live work first, then the records. A cleaned workspace is a record
+  rather than something to act on, and must not sit above one an agent is writing into.
+- **Operator-defined tools became reachable at all.** `user_tools_enabled` and
+  `user_tool_allowed_hosts` were never in the editable settings, so since v3.4.1 the only way to
+  switch the subsystem on was hand-editing config.json and restarting - the console could list
+  definitions and report them rejected while offering no way to enable the thing that would let any
+  of them register. Both keys are now editable under `manage_settings`, which already governs
+  `shell_tool_enabled` and `patch_application_enabled`; an HTTP tool pinned to an explicit host
+  allow-list is strictly less dangerous than either, so this is consistency rather than a loosening.
+- **`disabled` is now distinct from `rejected`.** Found in the browser: a tool the operator had
+  switched off rendered as rejected with an empty problem list, visually identical to a definition
+  that failed validation - and the remedies are opposites. Read from the typed `Enabled` field, not
+  by matching the registrar's prose, which is the pattern v3.4.0 removed from tool results.
+- **Disable / Enable / Delete now do what their labels say.** "Remove" called the disable endpoint
+  and left a row behind that looked broken. Enable re-submits the stored definition so nothing is
+  retyped; without it, disabling was a one-way door dressed up as a toggle. Delete is the only
+  confirmed action - a confirm on a reversible one teaches people to dismiss the confirm on the
+  irreversible one two buttons along.
+- The allow-list refusal now names where to fix it. "Add it to config" pointed at a file that no
+  longer needs touching, and an accurate refusal aimed at the wrong remedy still leaves someone stuck.
+
 ## v3.7.1 - The v3.7.0 fix release: making the escalation gate real
 
 v3.7.0 shipped with all five exit gates "met", a version bump, a tag and a push - and its entire
