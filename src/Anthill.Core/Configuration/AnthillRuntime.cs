@@ -14,12 +14,13 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.7.2";
-    // Stays at 21 until the v3.8.0 tables actually ship. This number is STAMPED into every database
-    // (anthill_meta.schema_version) and reported as expected_schema_version, so releasing 22 from a
-    // build that has no task_attempts table would mark those databases as already migrated — and a
-    // later v3.8.0 upgrade, seeing 22, would skip the migration it needed to run.
-    public const int SchemaVersion = 21;   // v3.7.0: conversations persisted (conversations, escalation_decisions)
+    public const string Version = "3.8.0";
+    // Bumped WITH the tables, not ahead of them. This number is stamped into every database
+    // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
+    // advertised 22 without a task_attempts table would mark those databases as already migrated and
+    // a later upgrade, seeing 22, would skip the migration it needed to run. That is why it sat at
+    // 21 through v3.7.1 and v3.7.2 while these tables were parked.
+    public const int SchemaVersion = 22;   // v3.8.0: workers and durable task attempts (workers, task_attempts)
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a

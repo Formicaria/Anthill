@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v3.8.0 - Durable worker and attempt runtime
+
+Task execution survives a crash. Every retry is its own row with its own reason, a claim is atomic,
+and work a dead process left behind is reclaimed at startup rather than waiting out a lease.
+
+This release also carries the v3.7.2 operator-surface work below, which was never tagged separately.
+
+- **The claim is one transaction, not a check followed by a write.** "Two workers cannot claim the
+  same non-parallel task" is unachievable by reading a row, checking it and writing it back: between
+  the read and the write another worker does the same thing and both see an unclaimed task. The
+  precondition lives in the statement, and the test races eight threads at one task because a
+  sequential test passes on the broken implementation.
+- **Every retry is a distinct attempt** carrying the route that ACTUALLY served it, how it ended and
+  why. A counter says "tried three times"; it cannot say the first timed out, the second hit a
+  provider fault and the third produced a change nobody has looked at.
+- **Abandoned is not Failed.** An attempt whose worker died was not observed failing — it may have
+  succeeded and died before saying so, which is exactly why its side effects cannot be assumed
+  absent. Calling it failed would invite a retry that duplicates completed work.
+- **A crash does not expire the lease** — found by running the kill test and getting no recovery
+  line. A killed process leaves its attempts Running with most of a 30-minute lease still on the
+  clock, so the expiry sweep correctly finds nothing and the task stays stranded until it runs out.
+  A restarting worker now reclaims its OWN orphans immediately; that inference is sound only about
+  itself, so the reclaim is scoped to a worker id rather than sweeping everything Running.
+- **Redelivery is decided by whether effects may exist**, not by trying harder. Read-only work is
+  redelivered freely; work that may have touched something waits for an operator who can look.
+  Fault coverage spans the six crash points the phase names: before execution, during the model
+  call, during a tool call, after a change, during verification, during cleanup.
+- **A Task Attempts panel**, because recovery previously reported to stderr at startup — nobody's
+  console. A decision that waits for a human it never reaches is a stall wearing the costume of a
+  policy. Attempts needing review are ordered oldest first: the longest-unanswered is the one most
+  likely forgotten.
+- Six call-site guards, because this phase had every ingredient to ship unreachable — schema,
+  records and an atomic claim can all exist, be tested, and never run during a mission.
+
 ## v3.7.2 - The rest of the missing operator surface
 
 An endpoint sweep found sixteen routes with no client. Most are honestly machine-facing - readiness,
