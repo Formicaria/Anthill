@@ -193,6 +193,16 @@ public static partial class ApiHost
         {
             try { OllamaCapabilityCache.Warm(AnthillRuntime.OllamaHost); }
             catch { /* best-effort: the table remains the fallback */ }
+
+            // v3.8.2: fitness is reported HERE, after the warm — never during construction.
+            //
+            // It used to run in the Queen's constructor, which happens before this task starts, so
+            // it judged every route against the declared name table instead of what Ollama reports.
+            // On a colony routed to gemma4:31b that produced five wrong warnings on every restart,
+            // for a model that reports tools and thinking. Startup stays non-blocking; the report
+            // simply waits for data worth reporting.
+            try { Queen.ReportModelFitness(); }
+            catch { /* a warning that throws would be worse than the mismatch it describes */ }
         });
 
         app.Run();

@@ -119,7 +119,26 @@ switch (command)
         return 0;
 }
 
-static Queen NewQueen() => new();
+/// <summary>
+/// v3.8.2 — the CLI warms the capability cache before it reports fitness, for the same reason the
+/// API does: a report built from the declared name table names roles that are fine and stays silent
+/// about ones that are not.
+///
+/// Synchronous here, unlike the API. A one-shot CLI run has nothing to keep responsive, and the
+/// warm is bounded by a five-second HTTP timeout — whereas the API serves a console that must come
+/// up whether or not Ollama is awake.
+/// </summary>
+static Queen NewQueen()
+{
+    var queen = new Queen();
+    try
+    {
+        Anthill.Core.Models.OllamaCapabilityCache.Warm(Anthill.Core.Configuration.AnthillRuntime.OllamaHost);
+        queen.ReportModelFitness();
+    }
+    catch { /* best-effort: the declared table remains the fallback */ }
+    return queen;
+}
 
 static void PrintHelp()
 {
