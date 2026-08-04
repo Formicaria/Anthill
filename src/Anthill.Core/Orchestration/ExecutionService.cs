@@ -12,6 +12,7 @@ using Anthill.Core.Scheduling;
 using Anthill.Core.Skills;
 using Anthill.Core.Security;
 using Anthill.Core.Tools;
+using Anthill.Core.Workers;
 
 namespace Anthill.Core.Orchestration;
 
@@ -75,6 +76,28 @@ public sealed class ExecutionService : IExecutionService
     /// race over the same fields, and separate locks would only make the race harder to see.
     /// </summary>
     private readonly object _executionLock = new();
+
+    /// <summary>
+    /// v3.8.0 — the live attempt for each running task, so the terminal path can close the one the
+    /// dispatch path opened.
+    ///
+    /// Keyed by task rather than kept in a local, because the claim happens in
+    /// <see cref="RunSingleTask"/> and the verdict is reached in <see cref="FinalizeTaskResult"/> —
+    /// a different method, called from eleven places. Threading an attempt id through all of them is
+    /// how one path gets missed, and a missed path leaves an attempt Running with a live lease,
+    /// blocking every retry of that task until the lease lapses.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _liveAttempts = new();
+
+    /// <summary>
+    /// How long a claim survives without renewal.
+    ///
+    /// Comfortably longer than any single task may run, because the lease exists to detect a DEAD
+    /// worker rather than a slow one. Too tight and it reclaims work still in progress, so the colony
+    /// does it twice; too generous and a real crash takes longer to notice. The second is the
+    /// cheaper mistake, so this errs that way.
+    /// </summary>
+    private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(30);
 
     public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants)
     {
@@ -342,6 +365,21 @@ public sealed class ExecutionService : IExecutionService
                 task.FinishedAt = null;
                 task.ElapsedSeconds = null;
             }
+            // v3.8.0: the durable claim, taken at the moment the task actually becomes this
+            // invocation's to run — after MarkRunning has already decided nobody else has it.
+            //
+            // The claim can legitimately return null: another process holds a live lease on this
+            // task. Execution continues anyway, because the in-process scheduler has ALREADY
+            // committed this task to running and refusing here would strand it in Running with
+            // nothing executing it. What is lost is the durable record, not the work — and that
+            // record's absence is itself visible, rather than a task that silently stops.
+            var claim = _memory.TryClaimTask(task.Id, mission.Id, LocalWorker.Id, ClaimLease);
+            if (claim is not null) _liveAttempts[task.Id] = claim.Id;
+            else
+                _memory.LogEvent(mission.Id, "attempt_claim_refused",
+                    "Task ran without a durable attempt: another worker holds a live lease on it.",
+                    task.Id, runtimeSelection.RuntimeNodeId, new() { ["worker_id"] = LocalWorker.Id });
+
             var runtimeMetadata = AntRuntime.Metadata(runtimeSelection);
             Console.WriteLine($"Task {index}/{total} -> {runtimeSelection.RuntimeNodeId} worker via {task.AssignedAnt} ant: {task.Title}");
             _memory.SaveTask(mission.Id, task); // live status: the canvas/graph sees "running" now
@@ -572,8 +610,56 @@ public sealed class ExecutionService : IExecutionService
         Console.WriteLine(task.Result);
     }
 
+    /// <summary>
+    /// v3.8.0 — close the durable attempt this task opened.
+    ///
+    /// Hooked into finalization rather than each terminal branch because finalization IS the choke
+    /// point: every path that ends a task passes through here with its final status already set.
+    /// Attaching to the branches instead would mean eleven places to remember, and the one that got
+    /// forgotten would leave a lease held against a task that finished.
+    ///
+    /// Skipped is deliberately Abandoned rather than Failed. A skipped task was never executed, so
+    /// nothing failed — and Failed would tell a later reader that something was tried and did not
+    /// work, which is a different and wrong story about the same row.
+    /// </summary>
+    private void CloseAttempt(Mission mission, Task task)
+    {
+        if (!_liveAttempts.TryRemove(task.Id, out var attemptId)) return;
+
+        var state = task.Status switch
+        {
+            TaskStatus.Complete => AttemptState.Succeeded,
+            TaskStatus.Failed   => AttemptState.Failed,
+
+            // A RETRYABLE failure leaves the task Ready for another attempt, so its status describes
+            // the task's future rather than this attempt's ending. This attempt failed, and was
+            // observed failing — recording it as Abandoned would claim nobody saw how it ended and
+            // would mark work that is about to be retried as possibly-completed, which is the exact
+            // confusion the Abandoned/Failed split exists to prevent.
+            TaskStatus.Ready or TaskStatus.Pending when !string.IsNullOrEmpty(task.FailureReason)
+                => AttemptState.Failed,
+
+            _ => AttemptState.Abandoned,
+        };
+
+        try
+        {
+            _memory.FinishAttempt(attemptId, state,
+                failureClass: task.FailureType, failureReason: task.FailureReason ?? task.BlockedReason);
+        }
+        catch (Exception error)
+        {
+            // Never let bookkeeping fail a task that has already finished. An unclosed attempt is
+            // recoverable — its lease lapses and the reclaim sweep marks it abandoned — whereas an
+            // exception thrown here would propagate out of finalization and lose the result itself.
+            _memory.LogEvent(mission.Id, "attempt_close_failed",
+                $"Could not close attempt {attemptId}: {error.Message}", task.Id, task.AssignedAnt);
+        }
+    }
+
     private void FinalizeTaskResult(Mission mission, Task task)
     {
+        CloseAttempt(mission, task);
         task.ResultChars = (task.Result ?? "").Length;
         task.EstimatedTokens = TextUtil.EstimateTokenCount(task.Result);
         task.ResultSummary = TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars);

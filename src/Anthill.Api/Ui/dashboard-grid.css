@@ -416,6 +416,9 @@
 /* The allow-list is stated next to the URL field, not buried in a tooltip: an unlisted host is the
    most common rejection, and it is the one thing an operator cannot discover by trying harder. */
 .tp-hosts{flex:1 1 100%;font-family:var(--mono);font-size:9px;color:var(--dim,#6b7280)}
+/* Says what the operator must actually DO. A red block naming a state without naming an action is
+   an alarm someone learns to acknowledge rather than answer. */
+.at-note{font-size:9px;color:var(--fg,#d7dae0);opacity:.85;margin-bottom:6px;line-height:1.45}
 
 .ws-item{border:1px solid var(--line,#2a2f37);border-radius:4px;padding:6px 8px;margin-bottom:5px}
 /* A live workspace is one an agent may be writing into right now; a cleaned one is a record. */
