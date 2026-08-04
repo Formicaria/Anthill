@@ -68,6 +68,17 @@ public class MissionWorkspaceTests : IDisposable
         return output.Trim();
     }
 
+    /// <summary>
+    /// Compare paths without arguing about separators.
+    ///
+    /// Windows CI found this: git reports worktree paths with FORWARD slashes even on Windows, while
+    /// .NET builds them with backslashes, so a substring comparison of two references to the same
+    /// directory failed. Production is unaffected — it hands paths TO git and never parses
+    /// `worktree list` — so the defect is in the assertion, not the manager. Normalising both sides
+    /// is the fix; asserting on a platform-specific spelling would just move the failure.
+    /// </summary>
+    private static string SameSlashes(string path) => path.Replace('\\', '/');
+
     // ---- attribution ------------------------------------------------------------------------
 
     /// <summary>
@@ -247,12 +258,12 @@ public class MissionWorkspaceTests : IDisposable
     public void CleanupPrunesTheWorktreeRegistration()
     {
         var workspace = _manager.Prepare("mission-1");
-        Assert.Contains(workspace.Root, Git(_repo, "worktree list"));
+        Assert.Contains(SameSlashes(workspace.Root), SameSlashes(Git(_repo, "worktree list")));
 
         _manager.RequestCleanup(workspace.Id);
         _manager.Cleanup();
 
-        Assert.DoesNotContain(workspace.Root, Git(_repo, "worktree list"));
+        Assert.DoesNotContain(SameSlashes(workspace.Root), SameSlashes(Git(_repo, "worktree list")));
     }
 
     // ---- recovery after restart ------------------------------------------------------------------
