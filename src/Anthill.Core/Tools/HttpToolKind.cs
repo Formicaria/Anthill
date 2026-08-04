@@ -61,8 +61,13 @@ public sealed class HttpToolKind : IToolKindExecutor
             else if (uri.Scheme is not ("http" or "https"))
                 problems.Add($"'url' scheme must be http or https, not '{uri.Scheme}'");
             else if (!HostIsAllowed(uri.Host))
-                problems.Add($"host '{uri.Host}' is not in user_tool_allowed_hosts — add it to config "
-                           + "first; registering a tool must not be able to widen what the colony can reach");
+                // Names the setting AND where to change it. Since v3.7.2 user_tool_allowed_hosts is
+                // operator-editable, so "add it to config" sent people to a file they no longer
+                // need to touch — an accurate refusal that points at the wrong remedy still leaves
+                // someone stuck.
+                problems.Add($"host '{uri.Host}' is not in user_tool_allowed_hosts — add it there "
+                           + "(Settings) first; registering a tool must not be able to widen what "
+                           + "the colony can reach");
         }
 
         if (method is not ("GET" or "POST" or "PUT" or "PATCH" or "DELETE"))
