@@ -241,7 +241,26 @@ public sealed class ModelRouter
             : null);
     }
 
-    public (string Provider, string Model) GetRoute(string role)
+    /// <summary>
+    /// Where a role's model calls go.
+    ///
+    /// v3.8.1 puts one step in front: when an operator has named a PRIORITY model, every role tries
+    /// it first, whatever its own route says. That is the point of the setting — "I have a better
+    /// model, use it everywhere" is one decision, and expressing it by rewriting fourteen per-role
+    /// routes is how half of them end up stale.
+    ///
+    /// The role's own route is not discarded, only outranked: it stays the first thing tried when
+    /// the priority route is unhealthy. A deliberate per-ant specialisation — a bigger context
+    /// window, a tool-calling model for an ant that needs one — survives the priority being switched
+    /// on and returns intact when it is switched off.
+    /// </summary>
+    public (string Provider, string Model) GetRoute(string role) =>
+        AnthillRuntime.HasModelPriority
+            ? (AnthillRuntime.ModelPriorityProvider, AnthillRuntime.ModelPriorityModel)
+            : RoleRoute(role);
+
+    /// <summary>The route configured for this role specifically, ignoring any priority override.</summary>
+    public (string Provider, string Model) RoleRoute(string role)
     {
         var route = AnthillRuntime.ModelRouting.GetValueOrDefault(role)
                     ?? AnthillRuntime.ModelRouting.GetValueOrDefault("fallback")
@@ -345,7 +364,11 @@ public sealed class ModelRouter
         var primary = GetRoute(role);
         if (_breaker is null) return (primary.Provider, primary.Model, null);
 
-        var fallback = GetRoute("fallback");
+        // The role's OWN route is what a priority override fails over to, before the global
+        // fallback. That ordering is the whole reason the priority is a preference rather than a
+        // replacement: when the promoted model is unhealthy, work should land on the model this ant
+        // was deliberately given, not on whatever everything else defaults to.
+        var fallback = AnthillRuntime.HasModelPriority ? RoleRoute(role) : RoleRoute("fallback");
         if (fallback.Provider == primary.Provider && fallback.Model == primary.Model)
             return (primary.Provider, primary.Model, null); // nothing distinct to fail over to
 
