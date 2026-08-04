@@ -3842,6 +3842,11 @@ function startPolling(){
   setInterval(pollColonyPheromones, 15000); // Canvas 2.0 pheromone HUD (only fetches when Colony is visible)
   setInterval(pollApprovals,6000);
   setInterval(pollConversations,5000); // v3.7.1: only fetches while the Overview is visible
+  // v3.7.2: slower on purpose. Tool registration and workspace state change when an operator or a
+  // mission acts, not continuously, so polling these at conversation speed would be traffic that
+  // buys nothing. Both also return early unless the Overview is on screen.
+  setInterval(pollToolsPanel,      20000);
+  setInterval(pollWorkspacesPanel, 10000);
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
   setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
@@ -7282,6 +7287,11 @@ function registerGridWidgets(){
     {id:'patch-activity',     title:'Patch Activity',     icon:'\u2726', size:'medium', body:'ov-sum-patches'},
     {id:'objectives',         title:'Objectives',         icon:'\u25ce', size:'large',  body:'ov-sum-objectives'},
     {id:'recent-jobs',        title:'Recent Jobs',        icon:'\u231b', size:'large',  body:'ov-jobs-list'},
+    // v3.7.2: the operator surface for v3.4.1, v3.4.2 and v3.5.0. Registered but off by default \u2014
+    // both answer questions an operator asks occasionally rather than continuously, and a console
+    // that opens on everything is a wall rather than a dashboard.
+    {id:'tools',              title:'Tools & Routing',    icon:'\u2692', size:'large',  body:'ov-tools-body'},
+    {id:'workspaces',         title:'Mission Workspaces', icon:'\u25a3', size:'medium', body:'ov-workspaces-body'},
   ];
 
   function reg(d){
@@ -7345,11 +7355,12 @@ var DEFAULT_DASHBOARD_VIEW = {
     // registered but off by default, in the order they appear in the Widgets menu
     'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
     'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs',
+    'tools', 'workspaces',
   ],
   hidden: {
     'operator-attention': true, 'missions': true, 'agent-inspector': true, 'live-telemetry': true,
     'recent-events': true, 'recent-missions': true, 'approvals': true, 'patch-activity': true,
-    'objectives': true, 'recent-jobs': true,
+    'objectives': true, 'recent-jobs': true, 'tools': true, 'workspaces': true,
   },
   spans: {}, heights: {},
 };
@@ -7950,4 +7961,264 @@ async function convCancel(id){
   const r=await api('/conversations/'+id+'/cancel','POST',{});
   if(r) convSay(r.message||'Cancelled', true);
   apiCacheBust('/conversations'); pollConversations();
+}
+
+/* ==========================================================================
+ * v3.7.2 — TOOLS AND WORKSPACES: the rest of the missing operator surface
+ *
+ * An endpoint sweep found sixteen routes no client calls. Most are honestly
+ * machine-facing (readiness, config health, runtime inventory). Four were not:
+ * GET /tools, POST and DELETE /tools/user, and GET /workspaces. Those are
+ * v3.4.1, v3.4.2 and v3.5.0 — three shipped subsystems an operator could not
+ * see, let alone use. Same defect as v3.7.0's unreachable runtime, one layer
+ * out: the feature exists, and nobody can get to it.
+ *
+ * Both panels are built around a single rule: SHOW WHAT IS WRONG FIRST. A
+ * console that renders forty healthy rows and one broken one, all alike, has
+ * technically displayed the problem and practically hidden it.
+ * ========================================================================== */
+
+var TOOL_STATUS_LABEL = {
+  registered:'ready', gated_off:'switched off', planned:'not built',
+  // "rejected" and "disabled" are deliberately worded to point at their DIFFERENT remedies: a
+  // rejected definition has to be rewritten, a disabled one is re-enabled in a click.
+  rejected:'rejected — see why', disabled:'switched off by you',
+};
+
+/** Poll + render both panels. One GET each, only while the Overview is on screen. */
+async function pollToolsPanel(){
+  var body=document.getElementById('ov-tools-body');
+  if(!body || !document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const r=await api('/tools');
+    if(!r||!r.success) return;
+    renderToolsPanel(r.data||{});
+  }catch(e){ pollWarnOnce('pollToolsPanel', e); }
+}
+
+function renderToolsPanel(d){
+  const body=document.getElementById('ov-tools-body');
+  if(!body) return;
+
+  const tools=d.tools||[], userTools=d.user_tools||[], fitness=d.model_fitness||[];
+
+  // ---- the loudest thing on the panel, because it fails SILENTLY -----------
+  //
+  // A role routed to a model that cannot call tools produces a confident answer that skipped every
+  // tool. In a transcript that reads as a weak model rather than as a misconfiguration an operator
+  // could fix in thirty seconds. Only the misfits are listed: a table of all-green is noise, and
+  // noise is what taught everyone to skim past this kind of panel.
+  const unfit=fitness.filter(f=>!f.fit);
+  const fitnessHtml = unfit.length
+    ? `<div class="tp-alarm">
+         <div class="tp-alarm-hd">${unfit.length} role(s) routed to a model that cannot do the job</div>
+         ${unfit.map(f=>`<div class="tp-alarm-row">
+            <span class="tp-role">${escapeHtml(f.role)}</span>
+            <span class="tp-model">${escapeHtml((f.provider||'')+' / '+(f.model||'—'))}</span>
+            <span class="tp-unmet">${escapeHtml((f.unmet||[]).join(', '))}</span>
+          </div>`).join('')}
+       </div>`
+    : fitness.length
+      ? `<div class="tp-quiet">All ${fitness.length} contracted roles are routed to a capable model.</div>`
+      : '';
+
+  // ---- tools that will not run, and why ------------------------------------
+  const broken=tools.filter(t=>t.status!=='registered');
+  const brokenHtml = broken.length
+    ? `<div class="tp-section-hd">${broken.length} of ${tools.length} tools cannot be dispatched</div>
+       ${broken.map(t=>`<div class="tp-item ${t.status==='planned'?'planned':'off'}">
+          <span class="tp-name">${escapeHtml(t.name)}</span>
+          <span class="tp-status">${escapeHtml(TOOL_STATUS_LABEL[t.status]||t.status)}</span>
+          <span class="tp-why">${t.status==='planned'
+            ? 'referenced by a contract, not implemented in this build'
+            : 'implemented, but a configuration gate is off'}</span>
+        </div>`).join('')}`
+    : `<div class="tp-quiet">All ${tools.length} tools are registered and dispatchable.</div>`;
+
+  // ---- roles blocked outright ---------------------------------------------
+  const blocked=d.roles_blocked_by_missing_tools||[];
+  const blockedHtml = blocked.length
+    ? `<div class="tp-blocked">Roles authorised to dispatch nothing: ${escapeHtml(blocked.join(', '))}</div>`
+    : '';
+
+  // ---- operator-defined tools ---------------------------------------------
+  //
+  // Rejected definitions are listed WITH their problems. A stored definition that did not register
+  // is the state most worth surfacing: it is present in the editor and not callable, which without
+  // this reads exactly like the tool being broken at runtime.
+  // The composer. Rebuilt only when absent, so a half-typed definition survives the poll — the
+  // same rule the Conversations panel needed, and for the same reason: this form takes a URL and a
+  // JSON schema, which is more than anyone wants to retype every twenty seconds.
+  //
+  // Only `http` is offered. The other three kinds parse and store, but nothing in this build
+  // BUILDS them, so listing them would be offering an operator a tool that saves and never runs.
+  const addHtml = `
+    <div class="tp-add">
+      <input id="tp-name" class="conv-input" placeholder="tool name (e.g. jira_issue)" />
+      <input id="tp-desc" class="conv-input" placeholder="what it does — the model reads this" />
+      <input id="tp-url"  class="conv-input" placeholder="https://host/path — host must be allow-listed" />
+      <select id="tp-method" class="conv-select">
+        <option value="GET">GET</option><option value="POST">POST</option>
+      </select>
+      <button class="conv-btn primary" data-onclick="toolAdd()">Add</button>
+      <div class="tp-hosts">Allow-listed hosts: ${escapeHtml((d.user_tool_allowed_hosts||[]).join(', ')||'none configured — every definition will be rejected')}</div>
+    </div>`;
+
+  const utHtml = !d.user_tools_enabled
+    ? `<div class="tp-quiet">Operator-defined tools are switched off in this build.</div>`
+    : addHtml + (userTools.length
+        ? userTools.map(u=>{
+            // The buttons say what they DO. "Remove" used to call the disable endpoint, which left
+            // a row behind that looked broken — the label promised one thing and the API did
+            // another, which is the worst possible pairing on a destructive control.
+            const actions = u.status==='disabled'
+              ? `<button class="conv-btn" data-onclick="toolEnable('${escapeHtml(u.name)}')">Enable</button>`
+              : `<button class="conv-btn" data-onclick="toolDisable('${escapeHtml(u.name)}')">Disable</button>`;
+            return `<div class="tp-item ${u.status==='registered'?'':'off'}">
+             <span class="tp-name">${escapeHtml(u.name)}</span>
+             <span class="tp-status">${escapeHtml(u.kind)} · ${escapeHtml(TOOL_STATUS_LABEL[u.status]||u.status)}</span>
+             <span class="tp-why">${escapeHtml((u.problems||[]).join('; ')||u.description||'')}</span>
+             ${actions}
+             <button class="conv-btn" data-onclick="toolDelete('${escapeHtml(u.name)}')">Delete</button>
+           </div>`;
+          }).join('')
+        : `<div class="tp-quiet">No operator-defined tools yet.</div>`);
+
+  // Like the Conversations header, this counts PROBLEMS rather than inventory. "31 tools" is a
+  // number nobody acts on; "2 problems" is the one that decides whether to open the panel.
+  const problems=unfit.length + broken.length + userTools.filter(u=>u.status==='rejected').length;
+  const countEl=document.getElementById('tools-count');
+  if(countEl){
+    countEl.textContent = problems ? problems+' need attention' : 'all healthy';
+    countEl.classList.toggle('conv-count-attn', problems>0);
+  }
+
+  // The whole panel re-renders, so anything half-typed is carried across explicitly. A twenty-second
+  // poll that erases a URL mid-entry makes the form unusable in a way that looks like a browser bug.
+  const keep=['tp-name','tp-desc','tp-url','tp-method']
+    .map(id=>[id, document.getElementById(id)?.value]);
+
+  body.innerHTML =
+    fitnessHtml + blockedHtml +
+    `<div class="tp-group">${brokenHtml}</div>` +
+    `<div class="tp-group"><div class="tp-section-hd">Operator-defined tools</div>${utHtml}</div>`;
+
+  for(const [id, value] of keep){
+    if(value===undefined || value==='') continue;
+    const el=document.getElementById(id); if(el) el.value=value;
+  }
+}
+
+/**
+ * Register an operator-defined HTTP tool.
+ *
+ * The server validates and REJECTS with a list of problems; those are shown verbatim rather than
+ * summarised, because they name the exact reason — an unlisted host, a malformed schema — and a
+ * generic "invalid definition" would send an operator back to guess which.
+ */
+async function toolAdd(){
+  const v=id=>(document.getElementById(id)?.value||'').trim();
+  const name=v('tp-name'), url=v('tp-url');
+  if(!name || !url){ convSay('A tool needs a name and a URL.', false); return; }
+
+  const r=await api('/tools/user','POST',{
+    name: name,
+    description: v('tp-desc'),
+    kind: 'http',
+    config: { url: url, method: v('tp-method')||'GET' },
+  });
+
+  if(r&&r.success){
+    ['tp-name','tp-desc','tp-url'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+    convSay(r.message||('Tool '+name+' registered'), true);
+  }else{
+    const problems=(r&&r.data&&r.data.problems)||[];
+    convSay(problems.length?problems.join('; '):((r&&r.message)||'Rejected'), false);
+  }
+  apiCacheBust('/tools'); pollToolsPanel();
+}
+
+/**
+ * Stop offering a tool, but KEEP its definition.
+ *
+ * Not confirmed, because it is reversible in one click — and a confirm on a reversible action is
+ * what teaches people to dismiss the confirm on the irreversible one two buttons along.
+ */
+async function toolDisable(name){
+  const r=await api('/tools/user/'+encodeURIComponent(name),'DELETE');
+  convSay((r&&r.message)||'Disabled', !!(r&&r.success));
+  apiCacheBust('/tools'); pollToolsPanel();
+}
+
+/**
+ * Turn a disabled tool back on by re-submitting its STORED definition.
+ *
+ * The listing already carries config, description and roles, so nothing has to be retyped. Without
+ * this, disabling was a one-way door dressed up as a toggle: the row stayed, the tool never came
+ * back, and the only route to re-enabling it was to remember the URL and add it again.
+ */
+async function toolEnable(name){
+  const listing=await api('/tools');
+  const d=((listing&&listing.data&&listing.data.user_tools)||[])
+    .find(u=>String(u.name).toLowerCase()===String(name).toLowerCase());
+  if(!d){ convSay('No stored definition for '+name, false); return; }
+
+  const r=await api('/tools/user','POST',{
+    name:d.name, description:d.description, kind:d.kind,
+    config:d.config||{}, allowed_roles:d.allowed_roles||[],
+  });
+  if(r&&r.success) convSay(r.message||('Tool '+name+' enabled'), true);
+  else convSay(((r&&r.data&&r.data.problems)||[]).join('; ')||((r&&r.message)||'Rejected'), false);
+  apiCacheBust('/tools'); pollToolsPanel();
+}
+
+/**
+ * Delete the definition outright.
+ *
+ * Confirmed, and the confirm says what is lost. `purge=true` is the difference between this and
+ * Disable: without it the server keeps the row deliberately, so an audit can still explain a
+ * transcript in which a since-revoked tool was called.
+ */
+async function toolDelete(name){
+  if(!window.confirm('Delete the definition for "'+name+'" permanently?\n\nDisable keeps it and stops offering it to agents. Delete cannot be undone from the console.')) return;
+  const r=await api('/tools/user/'+encodeURIComponent(name)+'?purge=true','DELETE');
+  convSay((r&&r.message)||'Deleted', !!(r&&r.success));
+  apiCacheBust('/tools'); pollToolsPanel();
+}
+
+async function pollWorkspacesPanel(){
+  var body=document.getElementById('ov-workspaces-body');
+  if(!body || !document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const r=await api('/workspaces');
+    if(!r||!r.success) return;
+    renderWorkspacesPanel((r.data&&r.data.workspaces)||[]);
+  }catch(e){ pollWarnOnce('pollWorkspacesPanel', e); }
+}
+
+function renderWorkspacesPanel(list){
+  const body=document.getElementById('ov-workspaces-body');
+  if(!body) return;
+
+  if(!list.length){
+    body.innerHTML='<div class="conv-empty">No mission workspaces. One is prepared when a code mission starts, and its record outlives the directory.</div>';
+    return;
+  }
+
+  // Live work first, then everything else newest-first. A cleaned workspace is a record, not a
+  // thing to act on, so it must not sit above one an agent is currently writing into.
+  const sorted=list.slice().sort((a,b)=>(b.usable?1:0)-(a.usable?1:0)||String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
+
+  body.innerHTML=sorted.slice(0,15).map(w=>`
+    <div class="ws-item${w.usable?' live':''}">
+      <div class="ws-head">
+        <span class="ws-state">${escapeHtml(w.state||'')}</span>
+        <span class="ws-mission">${escapeHtml(w.mission_id||'—')}</span>
+        ${w.retained_by?`<span class="ws-retained" title="${escapeHtml(w.retain_reason||'')}">retained by ${escapeHtml(w.retained_by)}</span>`:''}
+      </div>
+      <div class="ws-meta" title="${escapeHtml(w.root||'')}">
+        ${escapeHtml(w.mode||'')} · based on ${escapeHtml(String(w.base_revision||'').slice(0,10)||'—')}
+        ${(w.project_types&&w.project_types.length)?' · '+escapeHtml(w.project_types.join(', ')):''}
+      </div>
+    </div>`).join('');
 }
