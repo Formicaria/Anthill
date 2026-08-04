@@ -37,6 +37,18 @@ public sealed class AnthillConfig
     [JsonPropertyName("ollama_host")] public string OllamaHost { get; set; } = "http://localhost:11434";
     [JsonPropertyName("model_routes")] public Dictionary<string, Dictionary<string, string>> ModelRoutes { get; set; } = new();
 
+    /// <summary>
+    /// v3.8.1 — one model every ant tries FIRST, whatever its own route says.
+    ///
+    /// Two settings rather than one flag, because "which model" and "does it take precedence" are
+    /// questions an operator answers at different moments: naming a model is a setup step, promoting
+    /// it over every per-ant route is an operational decision made when a better model arrives or
+    /// the routed one goes missing. Empty means no priority — per-ant routing behaves exactly as
+    /// before, which is what makes this safe to leave unset forever.
+    /// </summary>
+    [JsonPropertyName("model_priority_provider")] public string ModelPriorityProvider { get; set; } = "";
+    [JsonPropertyName("model_priority_model")] public string ModelPriorityModel { get; set; } = "";
+
     [JsonPropertyName("web_search_enabled")] public bool WebSearchEnabled { get; set; } = false;
     [JsonPropertyName("patch_application_enabled")] public bool PatchApplicationEnabled { get; set; } = false;
     [JsonPropertyName("file_writing_enabled")] public bool FileWritingEnabled { get; set; } = false;
