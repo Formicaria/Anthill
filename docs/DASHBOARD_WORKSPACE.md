@@ -16,7 +16,7 @@ gate passes.
 > the historical record of why those mechanisms existed — several of their lessons were ported into
 > the grid's guards. See `docs/DASHBOARD_GRID_MIGRATION.md` for what replaced it.
 >
-> *(Dashboard work concluded at v3.2.1; the shipping release is now v3.7.2, which is harness work
+> *(Dashboard work concluded at v3.2.1; the shipping release is now v3.8.0, which is harness work
 > and does not touch this document's subject.)*
 >
 > **v3.2.1 returns direct manipulation, on the grid's terms.** Widgets are dragged to position and

@@ -1934,6 +1934,46 @@ public static partial class ApiHost
          * the model — "we removed it" and "it vanished under us" call for different responses, and a
          * list that shows only "gone" hides the second entirely.
          */
+        /*
+         * v3.8.0 — durable attempts, and the ones that need a human.
+         *
+         * Recovery already reports abandoned work to stderr at startup, which is exactly nobody's
+         * console. An attempt that MAY have left effects outside the process is, by design, not
+         * automatically redeliverable — it waits for an operator who can look — and a decision that
+         * waits for a human it never reaches is not a decision, it is a stall.
+         */
+        app.MapGet("/attempts", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+
+            static Dictionary<string, object?> Project(Anthill.Core.Workers.TaskAttempt a) => new()
+            {
+                ["id"] = a.Id,
+                ["task_id"] = a.TaskId,
+                ["mission_id"] = a.MissionId,
+                ["number"] = a.Number,
+                ["worker_id"] = a.WorkerId,
+                ["state"] = a.State.ToString().ToLowerInvariant(),
+                ["provider"] = a.Provider,
+                ["model"] = a.Model,
+                ["may_have_side_effects"] = a.MayHaveSideEffects,
+                // Reported rather than inferred from the state name, so the console cannot offer a
+                // retry the colony would consider unsafe.
+                ["safe_to_redeliver"] = a.SafeToRedeliver,
+                ["failure_class"] = a.FailureClass,
+                ["failure_reason"] = a.FailureReason,
+                ["started_at"] = a.StartedAt.ToIso(),
+                ["finished_at"] = a.FinishedAt?.ToIso(),
+            };
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["recent"] = Queen.Memory.LoadRecentAttempts().Select(Project).ToList(),
+                ["needs_review"] = Queen.Memory.LoadAttemptsNeedingReview().Select(Project).ToList(),
+                ["worker"] = Anthill.Core.Workers.LocalWorker.Id,
+            });
+        });
+
         app.MapGet("/workspaces", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;

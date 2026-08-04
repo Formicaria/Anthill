@@ -91,6 +91,9 @@ public sealed class DashboardWorkspaceState
         // v3.7.1 sweep found Conversations registered in one place and not the other, and the only
         // symptom was an operator's layout choice quietly failing to stick.
         "tools", "workspaces",
+        // v3.8.0: durable task attempts, including the ones that ended unobserved after touching
+        // something and are waiting on a person.
+        "attempts",
     };
 
     /// <summary>
