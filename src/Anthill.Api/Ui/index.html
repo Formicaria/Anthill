@@ -2510,6 +2510,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-primary" id="antcfg-save">Save Changes</button>
           </div>
         </div>
+        <!-- v3.8.1: colony-wide priority, then the roles that are NOT ants.
+             The planner is the reason this section exists: it makes model calls, it is not in the
+             ant roster, and so it had no control anywhere in the console — a colony whose planner
+             model went missing fell back to a static plan with no way to repoint it. -->
+        <div id="antcfg-global"></div>
+
         <div class="antcfg-grid" id="antcfg-grid">
           <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
         </div>
