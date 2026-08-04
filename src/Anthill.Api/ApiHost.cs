@@ -1703,7 +1703,13 @@ public static partial class ApiHost
                         ["description"] = d.Description,
                         ["kind"] = d.Kind.ToString().ToLowerInvariant(),
                         ["enabled"] = d.Enabled,
-                        ["status"] = outcome is { Registered: true } ? "registered" : "rejected",
+                        // Three states, not two. Collapsing "the operator switched this off" into
+                        // "rejected" was found in the browser: a disabled tool rendered as rejected
+                        // with an EMPTY problem list, which is indistinguishable from a definition
+                        // that failed validation — and the two have opposite remedies. One is
+                        // re-enabled in a click; the other has to be rewritten.
+                        ["status"] = !d.Enabled ? "disabled"
+                            : outcome is { Registered: true } ? "registered" : "rejected",
                         ["problems"] = outcome?.Problems ?? (IReadOnlyList<string>)Array.Empty<string>(),
                         ["config"] = d.Config,
                         // Empty means EVERY dispatching role — the permissive default the operator
