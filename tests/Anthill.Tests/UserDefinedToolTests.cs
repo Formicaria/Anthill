@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Anthill.Core.Configuration;
 using Anthill.Core.Memory;
 using Anthill.Core.Tools;
@@ -393,6 +394,64 @@ public class UserDefinedToolTests : IDisposable
             Assert.Empty(memory.LoadToolDefinitions());
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    /// <summary>
+    /// v3.7.2 — "the operator switched this off" is not "this definition is broken".
+    ///
+    /// Found in the browser. The console reported both as `rejected`, and a disabled tool arrived
+    /// with an empty problem list, so the row was visually identical to a definition that failed
+    /// validation. The remedies are opposites: one is re-enabled in a click, the other has to be
+    /// rewritten. An operator who cannot tell them apart will retype a definition that was never
+    /// wrong, or wait for a broken one to start working.
+    ///
+    /// The projection reads <c>Enabled</c> — a typed field — rather than matching on the registrar's
+    /// prose. Recovering a status by reading an error string is the exact pattern v3.4.0 removed
+    /// from tool results, and re-introducing it one layer up would be no better there than here.
+    /// </summary>
+    [Fact]
+    public void ADisabledDefinition_IsReportedAsDisabled_NotAsRejected()
+    {
+        var projection = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+
+        Assert.Contains("[\"status\"] = !d.Enabled ? \"disabled\"", projection);
+
+        // And the console must give the two states different words. Same status, different label is
+        // how a distinction gets made in the data and lost on the way to the person reading it.
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var labels = Regex.Match(app, @"var TOOL_STATUS_LABEL = \{.*?\};", RegexOptions.Singleline).Value;
+        Assert.NotEqual("", labels);
+        Assert.Contains("disabled:", labels);
+        Assert.Contains("rejected:", labels);
+    }
+
+    /// <summary>
+    /// Disabling must be REVERSIBLE from the console, or it is a one-way door dressed up as a
+    /// toggle: the row stays, the tool never returns, and re-enabling means remembering the URL.
+    /// The listing already carries the stored config, which is what lets Enable re-submit it.
+    /// </summary>
+    [Fact]
+    public void TheConsole_CanReEnableADisabledTool_WithoutRetypingIt()
+    {
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+
+        Assert.Contains("function toolEnable", app);
+        Assert.Contains("toolEnable(", app);          // and it is reachable from a control
+        // Re-submitted from the STORED definition, not from the form fields.
+        Assert.Contains("config:d.config", app.Replace(" ", ""));
+
+        // Delete is the only destructive one, and it must purge — without the flag it would silently
+        // be a second Disable button wearing a more frightening label.
+        Assert.Contains("?purge=true", app);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "src", "Anthill.Api")))
+            dir = dir.Parent;
+        Assert.True(dir is not null, "could not locate the repository root");
+        return dir!.FullName;
     }
 
     /// <summary>
