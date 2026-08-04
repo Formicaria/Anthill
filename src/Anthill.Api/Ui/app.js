@@ -4794,6 +4794,88 @@ function antcfgProviderOptions(curProvider){
   }).join('');
 }
 
+/**
+ * v3.8.1 — the colony-wide priority model, and the roles that are not ants.
+ *
+ * Two gaps, one section. The caste grid below is built from the ant ROSTER, so `planner` and
+ * `strategist` — which make model calls but are not ants — had no control anywhere in the console.
+ * A colony whose planner model had gone missing fell back to a static task plan and there was
+ * nowhere to repoint it. `fallback` had the same problem while being the route every unrouted role
+ * silently used.
+ *
+ * The priority is stated as what it DOES rather than as a toggle: "every ant tries this first". A
+ * checkbox labelled "priority" would leave an operator guessing whether it outranks the per-ant
+ * routes below it, which is the only question that matters here.
+ */
+var ORCHESTRATION_ROLES = [
+  { id:'planner',    label:'Planner',    why:'Turns a goal into the task plan. If this model is missing the colony silently falls back to a static plan.' },
+  { id:'strategist', label:'Strategist', why:'Adaptive mission control — decides whether to replan mid-mission.' },
+  { id:'fallback',   label:'Fallback',   why:'Used by any role with no route of its own, and when a preferred route is unhealthy.' },
+];
+
+function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
+  const host=document.getElementById('antcfg-global');
+  if(!host) return;
+
+  const active = !!(priorityProvider && priorityModel);
+
+  host.innerHTML = `
+    <div class="antcfg-card" style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:2px">Colony-wide priority model</div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">
+        When set, <strong>every ant tries this model first</strong>, whatever its own route says below.
+        Each ant's own route is kept and is what the colony falls back to if this model is unhealthy —
+        clearing this restores every per-ant choice exactly as it was.
+      </div>
+      <div class="antcfg-field">
+        <label>Provider</label>
+        <select id="antcfg-prio-provider" class="antcfg-model">${antcfgProviderOptions(priorityProvider||'ollama')}</select>
+      </div>
+      <div class="antcfg-field">
+        <label>Model</label>
+        <select id="antcfg-prio-model" class="antcfg-model" data-provider="${escapeHtml(priorityProvider||'ollama')}">
+          ${antcfgModelOptions(priorityProvider||'ollama', priorityModel||'')}
+        </select>
+      </div>
+      <div style="font-size:10px;margin-top:4px;color:${active?'var(--accent,#d9a441)':'var(--dim)'}">
+        ${active
+          ? 'Active — every ant tries '+escapeHtml(priorityModel)+' first.'
+          : 'Not set — each ant uses its own route below. Choose a model and Save to promote it.'}
+      </div>
+    </div>
+
+    <div class="antcfg-grid" style="margin-bottom:14px">
+      ${ORCHESTRATION_ROLES.map(r=>{
+        const p=routes[r.id]?.provider||'ollama', m=routes[r.id]?.model||'';
+        return `<div class="antcfg-card">
+          <div style="font-size:13px;font-weight:700">${escapeHtml(r.label)}</div>
+          <div class="antcfg-role">orchestration · ${escapeHtml(r.id)}</div>
+          <div style="font-size:10px;color:var(--muted);line-height:1.45;margin:6px 0 8px">${escapeHtml(r.why)}</div>
+          <div class="antcfg-field">
+            <label>Provider</label>
+            <select data-caste="${r.id}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(r.label)}">${antcfgProviderOptions(p)}</select>
+          </div>
+          <div class="antcfg-field">
+            <label>Model (route)</label>
+            <select data-caste="${r.id}" class="antcfg-model antcfg-modelname" data-provider="${escapeHtml(p)}" aria-label="Model route for ${escapeHtml(r.label)}">
+              ${antcfgModelOptions(p, m)}
+            </select>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // The priority model list follows its provider, the same way the per-caste pair does. Without
+  // this, switching provider leaves a model list from the previous one and the operator picks a
+  // model that provider has never heard of.
+  const provEl=document.getElementById('antcfg-prio-provider');
+  const modelEl=document.getElementById('antcfg-prio-model');
+  if(provEl && modelEl) provEl.addEventListener('change',()=>{
+    modelEl.dataset.provider=provEl.value;
+    modelEl.innerHTML=antcfgModelOptions(provEl.value,'');
+  });
+}
+
 async function openAntConfig(){
   // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
   // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
@@ -4803,6 +4885,15 @@ async function openAntConfig(){
   await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
   await ensureAntRouteCatalog();
   const routes=modelRoutes;
+
+  // v3.8.1: the priority model and the non-ant roles, above the caste grid.
+  let prioProvider='', prioModel='';
+  try{
+    const s=await api('/settings');
+    if(s&&s.success){ prioProvider=s.data.model_priority_provider||''; prioModel=s.data.model_priority_model||''; }
+  }catch{}
+  renderAntConfigGlobals(routes, prioProvider, prioModel);
+
   const grid=document.getElementById('antcfg-grid');
   const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
   const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
@@ -4811,7 +4902,21 @@ async function openAntConfig(){
     const d=ANT_DEFAULTS[c]||{role:roleColony(reg)},name=casteName(c),color=casteColor(c);
     const curProvider=uiState.castes[c]?.provider||routes[c]?.provider||'ollama';
     const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
-    const modelField=(c==='queen'||c==='director'||roleExecutable(reg)===false)?'':`
+    // v3.8.1: a role gets model controls when it HAS A ROUTE — not when it happens to be executable
+    // right now.
+    //
+    // The old rule hid the provider/model pair for any role whose Executable flag was false, which
+    // is computed from live specialist canary gates. archivist, medic, scribe, soldier, tester and
+    // ui_cartographer therefore rendered as cards with no way to set a model, and stayed pinned to
+    // whatever the seed default was — in this colony, a model the Ollama host does not even serve.
+    // Executability decides whether a role DISPATCHES today; it has nothing to do with whether an
+    // operator may say which model it should call when it does.
+    //
+    // Queen and director keep no controls because they hold no route: they are control-plane
+    // identities that make no model calls, and offering a selector for a route that does not exist
+    // would be a control that silently does nothing.
+    const hasRoute=Object.prototype.hasOwnProperty.call(routes,c);
+    const modelField=(c==='queen'||c==='director'||!hasRoute)?'':`
       <div class="antcfg-field">
         <label>Provider</label>
         <select data-caste="${c}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(name)}">${antcfgProviderOptions(curProvider)}</select>
@@ -4822,6 +4927,12 @@ async function openAntConfig(){
           ${antcfgModelOptions(curProvider,curModel)}
         </select>
       </div>`;
+    // Stated on the card rather than expressed by hiding the control. "Not dispatching today" and
+    // "you may not configure this" are different facts, and the old UI conflated them — an operator
+    // saw a card with no model selector and reasonably concluded the role had no model to set.
+    const dormant=(hasRoute && roleExecutable(reg)===false)
+      ? `<div style="font-size:10px;color:var(--dim);line-height:1.45;margin-bottom:6px">Not dispatching in this build — its route is still used when it is enabled.</div>`
+      : '';
     const perms=permList(rolePerms(reg)).join(', ')||'none';
     const workerList=roleWorkers(reg).map(w=>{
       const wid=workerId(w),tele=workerTelemetryById(wid),u=tele.usage||{},a=tele.audit||{};
@@ -4837,6 +4948,7 @@ async function openAntConfig(){
         <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} · ${escapeHtml(c)}${roleExecutable(reg)?'':' · visible'}</div></div>
       </div>
       <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">${escapeHtml(rolePurpose(reg))}</div>
+      ${dormant}
       <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" aria-label="Display name for ${escapeHtml(name)}" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
       <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" aria-label="Accent colour for ${escapeHtml(name)}" data-caste="${c}" type="color" value="${color}"></div>
       ${modelField}
@@ -4863,12 +4975,32 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
   document.querySelectorAll('.antcfg-name').forEach(i=>{const c=i.dataset.caste,v=i.value.trim();if(v)uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});});
   document.querySelectorAll('.antcfg-color').forEach(i=>{const c=i.dataset.caste;uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value});});
   const routeUpdate={};
+  // v3.8.1: orchestration roles share this control but are NOT castes — they have no node, colour
+  // or display name, and writing them into uiState.castes would invent visual state for something
+  // that never appears on the colony map.
+  const orchestration=new Set(ORCHESTRATION_ROLES.map(r=>r.id));
   document.querySelectorAll('.antcfg-modelname').forEach(s=>{
     const c=s.dataset.caste,v=s.value,provider=s.dataset.provider||'ollama';
-    uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined,provider:provider!=='ollama'?provider:undefined});
+    if(!orchestration.has(c))
+      uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined,provider:provider!=='ollama'?provider:undefined});
     if(v) routeUpdate[c]={provider,model:v};
   });
   applyUiState();saveUiState();
+
+  // v3.8.1: the priority model. Posted even when EMPTY, because clearing it is a real operator
+  // decision — "stop promoting that model" has to be expressible, and a save that only ever wrote
+  // non-empty values would make the priority impossible to turn off from the console.
+  try{
+    const p=document.getElementById('antcfg-prio-provider'), m=document.getElementById('antcfg-prio-model');
+    if(p&&m){
+      const r=await api('/settings','POST',{
+        model_priority_provider: m.value ? p.value : '',
+        model_priority_model: m.value || '',
+      });
+      if(!r||!r.success) throw new Error((r&&r.message)||'priority update rejected');
+    }
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Priority failed: '+e.message; return; }
+
   if(Object.keys(routeUpdate).length){
     // v2.14.13: merge, never replace. This used to post ONLY the castes rendered on this page,
     // which reset every route it omitted (strategist, fallback, and any caste with no model
