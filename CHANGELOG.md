@@ -1,11 +1,43 @@
 # ANTHILL Changelog
 
+## v3.8.1 - Every ant's model, settable
+
+Reported from the running colony: there was nowhere to change the planner's model. Chasing it found
+three separate reasons an operator could not point a role at a model, each invisible for a different
+release.
+
+- **The routing table seeded eight roles by hand while twelve ants ran.** archivist, file, medic,
+  scribe, soldier, tester and ui_cartographer appeared nowhere in it, so they appeared nowhere in the
+  console that renders it. They still ran, silently on the fallback route — nothing failed, there was
+  simply no way to point them elsewhere. Every routable role is now seeded from one list, and a test
+  pairs that list against the ant roster because neither can be safely derived from the other.
+- **`planner` and `strategist` are not ants**, so the caste grid — built from the ant roster — had no
+  card for them at all. A colony whose planner model had gone missing fell back to a static task plan
+  with nowhere to repoint it. Both now have controls, stating what they do and what breaks.
+- **Model controls were hidden for any role whose `Executable` flag was false**, and that flag is
+  computed from live specialist canary gates. Six ants rendered as configurable cards where the one
+  thing you could not configure was the model. Executability decides whether a role DISPATCHES today;
+  it says nothing about whether an operator may choose the model it calls. The control is now gated
+  on having a route, and dormant roles say so on the card instead of expressing it by omission.
+- **A colony-wide priority model.** "I have a better model, use it everywhere" is one decision, and
+  making an operator express it by rewriting fourteen routes is how half of them end up stale. It
+  OUTRANKS per-ant routes rather than replacing them: each ant's own route is what the colony falls
+  back to if the promoted model is unhealthy, and clearing the priority restores every choice intact.
+  Half a route — a provider with no model — is ignored rather than completed from defaults.
+- **The call-site audit could be disabled by a URL in a comment.** `StripComments` removed block
+  comments with one regex before removing line comments, so the characters `/*` inside the prose
+  "API lived at /api/*" opened a phantom comment that ran forward to the next genuine close, deleting
+  273 lines of ModelRouter.cs from the scanner's view. It surfaced as a false orphan, which is the
+  harmless direction; the same deletion would report a genuinely dead subsystem as healthy. Replaced
+  with a scanner that tracks strings, char literals and both comment forms. String literals survive
+  verbatim on purpose — role call sites are found by searching for the quoted role id.
+
 ## v3.8.0 - Durable worker and attempt runtime
 
 Task execution survives a crash. Every retry is its own row with its own reason, a claim is atomic,
 and work a dead process left behind is reclaimed at startup rather than waiting out a lease.
 
-This release also carries the v3.7.2 operator-surface work below, which was never tagged separately.
+Preceded by v3.7.2, which carried the operator surface these attempts are reported through.
 
 - **The claim is one transaction, not a check followed by a write.** "Two workers cannot claim the
   same non-parallel task" is unachievable by reading a row, checking it and writing it back: between
