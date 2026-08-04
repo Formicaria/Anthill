@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.0";
+    public const string Version = "3.8.1";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -114,6 +114,44 @@ public static class AnthillRuntime
     public static string OllamaHost = "http://localhost:11434";
 
     public static Dictionary<string, Dictionary<string, string>> ModelRouting { get; private set; } = new();
+
+    /// <summary>
+    /// v3.8.1 — the model every ant tries FIRST, when one is set.
+    ///
+    /// Empty by default, and that default is load-bearing: an unset priority must leave per-ant
+    /// routing byte-for-byte unchanged, or turning the feature on becomes the only safe state and
+    /// operators will set it just to know what they are getting.
+    /// </summary>
+    public static string ModelPriorityProvider = "";
+    public static string ModelPriorityModel = "";
+
+    /// <summary>A priority route counts only when BOTH halves are named — a provider without a model
+    /// is not a route, and silently completing it from defaults would route work somewhere nobody chose.</summary>
+    public static bool HasModelPriority =>
+        !string.IsNullOrWhiteSpace(ModelPriorityProvider) && !string.IsNullOrWhiteSpace(ModelPriorityModel);
+
+    /// <summary>
+    /// Every role that must appear in the routing table, so an operator can point ANY ant at its own
+    /// model.
+    ///
+    /// Written out rather than derived from AntRegistry on purpose: Configuration must not depend on
+    /// Agents, and a property read during ProjectConfig would be an initialization-order trap of
+    /// exactly the kind this file has been bitten by before. The pairing is checked by a test
+    /// instead, which is the same deliberate friction the tool inventory uses — the list and the
+    /// roster are two sides of one fact, and neither can be derived from the other safely.
+    /// </summary>
+    public static readonly string[] RoutableRoles =
+    {
+        // Orchestration roles: not ants, but they make model calls and so must be routable. The
+        // planner is the one that started this — its model was unreachable from the console, so a
+        // colony whose planner model was missing fell back to a static plan with no way to fix it.
+        "planner", "strategist",
+        // Every executable ant.
+        "archivist", "builder", "coder", "file", "medic", "researcher", "scribe", "soldier",
+        "tester", "ui_cartographer", "verifier", "web",
+        // The route used when a role has none of its own.
+        "fallback",
+    };
 
     // ---- Limits -----------------------------------------------------------
     public const int MaxGoalLength = 0;  // 0 = unlimited
@@ -714,13 +752,17 @@ public static class AnthillRuntime
         // Default routes: every role on the same local model, then overlay user routes.
         var defaultRoute = new Func<Dictionary<string, string>>(() =>
             new() { ["provider"] = "ollama", ["model"] = OllamaModel });
-        ModelRouting = new Dictionary<string, Dictionary<string, string>>
-        {
-            ["planner"] = defaultRoute(), ["researcher"] = defaultRoute(), ["coder"] = defaultRoute(),
-            ["builder"] = defaultRoute(), ["verifier"] = defaultRoute(), ["web"] = defaultRoute(),
-            ["strategist"] = defaultRoute(), ["fallback"] = defaultRoute(),
-        };
+        // EVERY routable role is seeded, not a hand-picked eight. Before v3.8.1 only eight had
+        // entries, so seven ants — archivist, file, medic, scribe, soldier, tester, ui_cartographer
+        // — appeared nowhere in the routing table and therefore nowhere in the console that renders
+        // it. They still RAN, silently on the fallback route, which is why the gap was invisible:
+        // nothing failed, there was simply no way to point them at a different model.
+        ModelRouting = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var role in RoutableRoles) ModelRouting[role] = defaultRoute();
         foreach (var (role, route) in config.ModelRoutes) ModelRouting[role] = new Dictionary<string, string>(route);
+
+        ModelPriorityProvider = (config.ModelPriorityProvider ?? "").Trim();
+        ModelPriorityModel = (config.ModelPriorityModel ?? "").Trim();
     }
 
     // ---- Live settings editing (web console) ------------------------------
@@ -730,6 +772,10 @@ public static class AnthillRuntime
     private static readonly HashSet<string> EditableConfigKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "use_ollama", "ollama_host", "ollama_model", "model_routes",
+        // v3.8.1: the priority model every ant tries first. Editable for the same reason the routes
+        // are — a model that has gone missing is an operational emergency, and the remedy must not
+        // require editing a file and restarting the colony.
+        "model_priority_provider", "model_priority_model",
         "web_search_enabled", "patch_application_enabled", "file_writing_enabled",
         "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
@@ -854,6 +900,11 @@ public static class AnthillRuntime
         ["ollama_host"] = OllamaHost,
         ["ollama_model"] = OllamaModel,
         ["model_routes"] = ModelRouting.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        ["model_priority_provider"] = ModelPriorityProvider,
+        ["model_priority_model"] = ModelPriorityModel,
+        // Reported rather than left for the console to recompute, so what the colony believes about
+        // its own precedence and what an operator is shown cannot drift apart.
+        ["model_priority_active"] = HasModelPriority,
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
         ["homelab_enabled"] = EnableHomelab,
