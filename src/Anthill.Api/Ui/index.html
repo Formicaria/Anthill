@@ -1503,6 +1503,20 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="ov-conversations-body"><div class="ov2-empty">Connecting...</div></div><!-- /ov-conversations-body -->
           </div>
 
+          <!-- v3.7.2: Tools & Routing and Mission Workspaces. Hidden by default in the grid, but
+               authored here for the same reason as the panel above: a body that only exists once a
+               widget adopts it is unreachable with the grid off. -->
+          <div class="ath-card ov2-conv hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Tools &amp; Routing</span>
+              <span class="hud-hd-sub" id="tools-count"></span></div>
+            <div id="ov-tools-body"><div class="ov2-empty">Connecting...</div></div><!-- /ov-tools-body -->
+          </div>
+
+          <div class="ath-card ov2-conv hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Mission Workspaces</span></div>
+            <div id="ov-workspaces-body"><div class="ov2-empty">Connecting...</div></div><!-- /ov-workspaces-body -->
+          </div>
+
           <div class="ath-card ov2-events"><div class="ath-card-title">Recent Events <a href="javascript:void(0)" data-onclick="showPage('events')" style="float:right;color:var(--anthill-dim)">all →</a></div><div id="ov2-events-body"><div class="ov2-empty">Connecting...</div></div></div>
         </div>
 
