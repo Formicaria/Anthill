@@ -34,12 +34,10 @@ release.
 
 ## v3.8.0 - Durable worker and attempt runtime
 
-*(Shipped within v3.8.1; never tagged separately.)*
-
 Task execution survives a crash. Every retry is its own row with its own reason, a claim is atomic,
 and work a dead process left behind is reclaimed at startup rather than waiting out a lease.
 
-This release also carries the v3.7.2 operator-surface work below, which was never tagged separately.
+Preceded by v3.7.2, which carried the operator surface these attempts are reported through.
 
 - **The claim is one transaction, not a check followed by a write.** "Two workers cannot claim the
   same non-parallel task" is unachievable by reading a row, checking it and writing it back: between
