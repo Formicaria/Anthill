@@ -93,6 +93,67 @@ public class CallSiteAuditTests
     }
 
     /// <summary>
+    /// v3.8.0 — the durable attempt layer must be REACHED by the dispatcher, not merely available.
+    ///
+    /// The same guard as the conversation runtime above, applied to the phase most likely to repeat
+    /// that mistake: schema, records and an atomic claim can all exist, be thoroughly tested, and
+    /// never once run during a mission. Every exit gate in this phase is about what survives a crash,
+    /// and not one of them is true of a claim nobody takes.
+    ///
+    /// SqliteMemory is excluded from each scan because it DEFINES these operations — counting a
+    /// method's own declaration as its call site is exactly how a dead subsystem passes an audit.
+    /// </summary>
+    [Fact]
+    public void TheDispatcher_TakesADurableClaim() =>
+        Assert.Contains("TryClaimTask", ProductionText("SqliteMemory.Attempts.cs"));
+
+    /// <summary>
+    /// And something must CLOSE what it opened. A claim taken and never finished holds a lease
+    /// against a task that has already ended, so every retry is refused until the lease lapses —
+    /// the durable layer would make the colony worse rather than better.
+    /// </summary>
+    [Fact]
+    public void SomethingInProduction_FinishesTheAttemptsItStarts() =>
+        Assert.Contains("FinishAttempt", ProductionText("SqliteMemory.Attempts.cs"));
+
+    /// <summary>
+    /// Startup must reconcile. "No accepted task is silently lost after crash or restart" is a
+    /// promise about the NEXT process, kept only if that process sweeps for what the last one left
+    /// holding — an expired lease nobody looks for is just a stuck task.
+    /// </summary>
+    [Fact]
+    public void Startup_ReclaimsWorkAbandonedByADeadProcess() =>
+        Assert.Contains("ReclaimExpiredAttempts", ProductionText("SqliteMemory.Attempts.cs"));
+
+    /// <summary>
+    /// And it must reclaim its OWN orphans, which the expiry sweep cannot see: a process killed
+    /// mid-task leaves its attempts Running with most of the lease still on the clock, so the sweep
+    /// finds nothing at restart and the task stays stranded until that lease runs out.
+    /// </summary>
+    [Fact]
+    public void Startup_ReclaimsTheOrphansThisWorkerLeftBehind() =>
+        Assert.Contains("ReclaimOwnAttempts", ProductionText("SqliteMemory.Attempts.cs"));
+
+    /// <summary>
+    /// And a worker must actually register. A lease is only meaningful against an identity that can
+    /// stop reporting; an attempt held by a worker nobody ever registered cannot be reasoned about
+    /// after a crash.
+    /// </summary>
+    [Fact]
+    public void ThisProcess_RegistersItselfAsAWorker() =>
+        Assert.Contains("LocalWorker.Register", ProductionText("LocalWorker.cs"));
+
+    /// <summary>
+    /// And it must keep reporting. Registration reports alive exactly once, so without a repeating
+    /// heartbeat the worker goes stale within minutes and reads as crashed while it sits there
+    /// working — which inverts the availability rule rather than merely weakening it: a healthy
+    /// colony would look dead, and a genuinely dead one would look identical.
+    /// </summary>
+    [Fact]
+    public void TheWorker_KeepsReportingItselfAlive() =>
+        Assert.Contains("Memory.Heartbeat", ProductionText("SqliteMemory.Attempts.cs"));
+
+    /// <summary>
     /// Every tool the inventory claims exists must be constructed by the composition root.
     ///
     /// A name in the inventory with no registration is a tool a role is AUTHORIZED to call and that
