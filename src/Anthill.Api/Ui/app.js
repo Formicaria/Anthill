@@ -3847,6 +3847,7 @@ function startPolling(){
   // buys nothing. Both also return early unless the Overview is on screen.
   setInterval(pollToolsPanel,      20000);
   setInterval(pollWorkspacesPanel, 10000);
+  setInterval(pollAttemptsPanel,   10000);
   setInterval(pollHealth,   8000); // Overview system-health panel (only fetches when Overview is visible)
   setInterval(pollHud,      6000); // Overview command dashboard (only fetches when Overview is visible)
   setInterval(pollModelInfo,15000);
@@ -7292,6 +7293,7 @@ function registerGridWidgets(){
     // that opens on everything is a wall rather than a dashboard.
     {id:'tools',              title:'Tools & Routing',    icon:'\u2692', size:'large',  body:'ov-tools-body'},
     {id:'workspaces',         title:'Mission Workspaces', icon:'\u25a3', size:'medium', body:'ov-workspaces-body'},
+    {id:'attempts',           title:'Task Attempts',      icon:'\u21bb', size:'large',  body:'ov-attempts-body'},
   ];
 
   function reg(d){
@@ -7355,12 +7357,12 @@ var DEFAULT_DASHBOARD_VIEW = {
     // registered but off by default, in the order they appear in the Widgets menu
     'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
     'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs',
-    'tools', 'workspaces',
+    'tools', 'workspaces', 'attempts',
   ],
   hidden: {
     'operator-attention': true, 'missions': true, 'agent-inspector': true, 'live-telemetry': true,
     'recent-events': true, 'recent-missions': true, 'approvals': true, 'patch-activity': true,
-    'objectives': true, 'recent-jobs': true, 'tools': true, 'workspaces': true,
+    'objectives': true, 'recent-jobs': true, 'tools': true, 'workspaces': true, 'attempts': true,
   },
   spans: {}, heights: {},
 };
@@ -8184,6 +8186,72 @@ async function toolDelete(name){
   const r=await api('/tools/user/'+encodeURIComponent(name)+'?purge=true','DELETE');
   convSay((r&&r.message)||'Deleted', !!(r&&r.success));
   apiCacheBust('/tools'); pollToolsPanel();
+}
+
+/**
+ * v3.8.0 — durable attempts, and the ones waiting on a person.
+ *
+ * Recovery reports abandoned work to stderr at startup, which is nobody's console. An attempt that
+ * may have left effects outside the process is deliberately NOT redelivered automatically — it waits
+ * for an operator who can look — and a decision waiting for a human it never reaches is a stall
+ * wearing the costume of a policy.
+ */
+async function pollAttemptsPanel(){
+  var body=document.getElementById('ov-attempts-body');
+  if(!body || !document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const r=await api('/attempts');
+    if(!r||!r.success) return;
+    renderAttemptsPanel(r.data||{});
+  }catch(e){ pollWarnOnce('pollAttemptsPanel', e); }
+}
+
+var ATTEMPT_STATE_LABEL = {
+  running:'running', succeeded:'succeeded', failed:'failed',
+  // Worded as the fact rather than the verdict: nobody watched this end, which is a different
+  // statement from "it did not work" and carries a different remedy.
+  abandoned:'ended unobserved',
+};
+
+function renderAttemptsPanel(d){
+  const body=document.getElementById('ov-attempts-body');
+  if(!body) return;
+
+  const review=d.needs_review||[], recent=d.recent||[];
+
+  const countEl=document.getElementById('attempts-count');
+  if(countEl){
+    countEl.textContent = review.length ? review.length+' need review'
+                        : recent.length ? recent.length+' recent' : '';
+    countEl.classList.toggle('conv-count-attn', review.length>0);
+  }
+
+  // The one loud block. These cannot be resolved by policy: the attempt may have completed the
+  // change it died during, and nothing observable says whether it did. Retrying is the operator's
+  // call because only a person can go and look.
+  const reviewHtml = review.length
+    ? `<div class="tp-alarm">
+         <div class="tp-alarm-hd">${review.length} attempt(s) ended unobserved after touching something</div>
+         <div class="at-note">Each may have completed the change it died during. Nothing in the record can
+           say whether it did — check the workspace or the target before retrying.</div>
+         ${review.map(a=>`<div class="tp-alarm-row">
+            <span class="tp-role">${escapeHtml(String(a.task_id).slice(0,8))}</span>
+            <span class="tp-model">attempt ${escapeHtml(String(a.number))} · worker ${escapeHtml(a.worker_id||'—')}</span>
+            <span class="tp-unmet">${escapeHtml(a.failure_reason||'no reason recorded')}</span>
+          </div>`).join('')}
+       </div>`
+    : '';
+
+  const recentHtml = recent.length
+    ? recent.slice(0,12).map(a=>`<div class="tp-item ${a.state==='succeeded'?'':'off'}">
+         <span class="tp-name">${escapeHtml(String(a.task_id).slice(0,8))} · #${escapeHtml(String(a.number))}</span>
+         <span class="tp-status">${escapeHtml(ATTEMPT_STATE_LABEL[a.state]||a.state)}</span>
+         <span class="tp-why">${escapeHtml(a.failure_reason||[a.provider,a.model].filter(Boolean).join(' / ')||'')}</span>
+       </div>`).join('')
+    : `<div class="conv-empty">No attempts recorded yet. One is written per task the moment a worker claims it.</div>`;
+
+  body.innerHTML = reviewHtml +
+    `<div class="tp-group"><div class="tp-section-hd">Recent attempts</div>${recentHtml}</div>`;
 }
 
 async function pollWorkspacesPanel(){
