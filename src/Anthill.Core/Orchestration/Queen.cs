@@ -24,7 +24,23 @@ namespace Anthill.Core.Orchestration;
 /// </summary>
 public sealed partial class Queen : IMissionCoordinator, IDisposable
 {
-    public void Dispose() => Memory.Dispose();
+    /// <summary>
+    /// v3.8.0 — the worker's proof of life, for as long as this process is alive.
+    ///
+    /// Registration reports alive ONCE. Without this the worker goes stale within minutes and reads
+    /// as crashed while it is sitting there working, which inverts the meaning of the whole
+    /// availability rule: a healthy colony would look dead, and a genuinely dead one would look
+    /// exactly the same.
+    /// </summary>
+    private readonly Timer? _workerHeartbeat;
+
+    public void Dispose()
+    {
+        // Stopped BEFORE the database closes. A timer that fires into a disposed SqliteMemory throws
+        // on a background thread, which is an ugly way to end an otherwise clean shutdown.
+        _workerHeartbeat?.Dispose();
+        Memory.Dispose();
+    }
 
     public SqliteMemory Memory { get; }
     public ModelRouter? Router { get; }
@@ -146,6 +162,52 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         foreach (var note in Workspaces.Recover())
             Console.Error.WriteLine($"[workspace-recovery] {note}");
         Execution = new ExecutionService(Memory, _ants);
+
+        // v3.8.0: this process registers as a worker, and startup reconciles what the last one left
+        // behind. Both halves are needed for the phase's first gate — "no accepted task is silently
+        // lost after crash or restart" — and neither works alone: an attempt with a lapsed lease is
+        // only reclaimable if something sweeps for it, and a sweep only means anything if claims
+        // carry a worker identity that can stop reporting.
+        //
+        // The id is derived from the database this colony serves, so a restart keeps one identity
+        // while two colonies on one machine cannot appear to be the same worker.
+        Anthill.Core.Workers.LocalWorker.Register(Memory,
+            id: "local-" + Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(Memory.DbPath)))[..8].ToLowerInvariant(),
+            roles: _ants.Keys.OrderBy(r => r, StringComparer.Ordinal).ToList(),
+            // From the RESOLVED options, not the live static. RuntimeCompositionTests refuses any
+            // read of a mutable gate in this file, and it is right to: the ceiling a worker
+            // advertises must be the one this runtime was composed with, so the registered row and
+            // the dispatcher cannot come to disagree when an operator edits the setting mid-run.
+            maxConcurrent: options.MaxParallelWorkers);
+
+        // Swallowed on purpose: a heartbeat that throws on a background thread would take the
+        // process down over bookkeeping. A missed beat is self-correcting — the next one lands — and
+        // if they all stop, that is exactly the signal this mechanism exists to send.
+        _workerHeartbeat = new Timer(_ =>
+            {
+                try { Memory.Heartbeat(Anthill.Core.Workers.LocalWorker.Id, Common.AnthillTime.NowUtc()); }
+                catch { }
+            },
+            null, Anthill.Core.Workers.LocalWorker.HeartbeatEvery, Anthill.Core.Workers.LocalWorker.HeartbeatEvery);
+
+        // Reported, never silent. An attempt abandoned by a dead process is exactly the evidence an
+        // operator needs to explain a mission that stopped halfway — and one that MAY have left
+        // effects outside the process is not automatically redeliverable, because an attempt that
+        // died mid-write may well have completed the write.
+        // Our OWN orphans first, and unconditionally. A process that crashed left its attempts
+        // Running with most of a thirty-minute lease still on the clock, so the expiry sweep below
+        // would find nothing at restart and the task would stay stranded for the rest of a lease
+        // held by a process that is demonstrably gone — this one is starting up in its place.
+        foreach (var abandoned in Memory.ReclaimOwnAttempts(Anthill.Core.Workers.LocalWorker.Id)
+                     .Concat(Memory.ReclaimExpiredAttempts()))
+            Console.Error.WriteLine(
+                $"[attempt-recovery] task {abandoned.TaskId} (attempt {abandoned.Number}) was abandoned by "
+              + $"worker {abandoned.WorkerId}; "
+              + (abandoned.SafeToRedeliver
+                    ? "read-only, safe to retry."
+                    : "it may have left effects outside the process — review before retrying."));
     }
 
     private ToolRegistry BuildToolRegistry(RuntimeOptions options)

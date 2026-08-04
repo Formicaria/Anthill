@@ -272,11 +272,27 @@ public sealed partial class SqliteMemory : IDisposable
         // the tree is a set of answers about files nobody can read.
         // v3.7.0: conversations as first-class runtime objects. The transcript survives a restart,
         // and an escalated run reads as ONE history across the conversation/mission boundary.
-        // The v3.8.0 tables (workers, task_attempts) are deliberately NOT here yet. They were
-        // written ahead of the code that uses them and rode into a patch release on the back of an
-        // unrelated commit; CallSiteAuditTests caught them as written-by-nothing, read-by-nothing,
-        // which is exactly its job. A table that ships before its readers is schema an operator
-        // carries and cannot use. They land with v3.8.0, together with the claim that fills them.
+        // v3.8.0: workers and durable task attempts. Every retry is its own ROW, because a retry
+        // counter tells you something was tried three times but not that the first timed out, the
+        // second hit a provider fault, and the third produced a change nobody has looked at.
+        //
+        // These were written once before, ahead of the code that reads them, and rode into a patch
+        // release on an unrelated commit — CallSiteAuditTests caught them as written-by-nothing and
+        // read-by-nothing, which is exactly its job. They are back now because the claim, the lease
+        // reclaim and their tests arrive with them.
+        @"CREATE TABLE IF NOT EXISTS workers (
+            id TEXT PRIMARY KEY, roles_json TEXT NOT NULL DEFAULT '[]',
+            kind TEXT NOT NULL DEFAULT 'local', max_concurrent INTEGER NOT NULL DEFAULT 1,
+            last_heartbeat TEXT, registered_at TEXT NOT NULL)",
+        @"CREATE TABLE IF NOT EXISTS task_attempts (
+            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, mission_id TEXT NOT NULL,
+            number INTEGER NOT NULL DEFAULT 1, worker_id TEXT NOT NULL DEFAULT '',
+            state TEXT NOT NULL DEFAULT 'Running', provider TEXT, model TEXT,
+            may_have_side_effects INTEGER NOT NULL DEFAULT 0,
+            failure_class TEXT, failure_reason TEXT,
+            lease_until TEXT, started_at TEXT NOT NULL, finished_at TEXT)",
+        // The claim reads this index on every attempt to take a task, so it is not optional.
+        @"CREATE INDEX IF NOT EXISTS idx_task_attempts_live ON task_attempts(task_id, state, lease_until)",
         @"CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'researcher',
             policy TEXT NOT NULL DEFAULT 'Ask', policy_set_by TEXT, policy_set_at TEXT,
@@ -546,6 +562,7 @@ public sealed partial class SqliteMemory : IDisposable
             (16, "mission_workspaces", "Mission workspaces (mission_workspaces) persisted with base revision and lifecycle — changes become attributable and survive restart."),
             (17, "repository_index", "Repository index (repository_index, repository_index_files) persisted per workspace+revision — a restart reuses everything unchanged instead of re-walking the tree."),
             (18, "conversations", "Conversations, turns and escalation decisions persisted — a conversation survives restart and an escalated run reads as one history."),
+            (19, "durable_attempts", "Workers and task attempts persisted with leases — a claim is atomic, a retry is a distinct attempt, and expired work is reclaimable."),
         };
         foreach (var (id, name, description) in migrations)
         {
