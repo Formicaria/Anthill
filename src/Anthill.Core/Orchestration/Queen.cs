@@ -133,21 +133,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))
             Console.Error.WriteLine($"[startup-validation] {problem}");
 
-        // v3.4.2: does each role's route actually do what its contract needs? Reported at startup
-        // because EVERY mismatch here fails silently at runtime — a model that cannot call tools is
-        // never shown them and answers from priors; one without structured output returns prose
-        // where a schema was expected and parses to an empty result. Neither throws, neither opens a
-        // breaker, and in a transcript both look like a weak model rather than a misconfiguration.
-        //
-        // A warning, not a refusal: the operator's routing is theirs, the capability data can be
-        // incomplete for a model nothing has described yet, and refusing to start over a
-        // fail-closed guess would be worse than running with a warning they can act on.
-        if (Router is not null)
-            foreach (var fitness in AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts).Where(f => !f.Fit))
-                Console.Error.WriteLine(
-                    $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
-                  + $"which is missing: {string.Join("; ", fitness.Unmet)}");
-
         // v3.5.0: reconcile recorded workspaces with what is on disk, before anything can be
         // dispatched into one. A row left claiming Active by a process that died would otherwise be
         // handed to an agent as a live workspace, and something would wait forever for the agent
@@ -208,6 +193,42 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
               + (abandoned.SafeToRedeliver
                     ? "read-only, safe to retry."
                     : "it may have left effects outside the process — review before retrying."));
+    }
+
+    /// <summary>
+    /// v3.4.2 — does each role's route actually do what its contract needs?
+    ///
+    /// Worth reporting because EVERY mismatch here fails silently at runtime: a model that cannot
+    /// call tools is never shown them and answers from priors; one without structured output returns
+    /// prose where a schema was expected and parses to an empty result. Neither throws, neither opens
+    /// a breaker, and in a transcript both read as a weak model rather than a misconfiguration.
+    ///
+    /// A warning, never a refusal — the operator's routing is theirs, and refusing to start over a
+    /// fail-closed guess would be worse than running with something they can act on.
+    ///
+    /// v3.8.2 — MUST be called after the capability cache is warm, which is why it is a method
+    /// rather than a few lines in the constructor.
+    ///
+    /// It used to run during construction, before anything had asked Ollama what its models can do.
+    /// So it evaluated against the hand-written name table, which does not know gemma4:31b, and
+    /// reported tool calling, structured output and reasoning missing on a model that reports all
+    /// three. Five roles were named on every restart, wrongly.
+    ///
+    /// Two consequences, and the second is the reason this got fixed rather than tuned. The console
+    /// log and the Tools &amp; Routing panel gave DIFFERENT answers about the same model, because
+    /// /tools computes fitness on request when the cache is warm. And an alarm that is wrong on
+    /// every restart is one an operator learns to scroll past — which costs nothing until the day it
+    /// is right.
+    /// </summary>
+    public void ReportModelFitness(TextWriter? to = null)
+    {
+        if (Router is null) return;
+        var output = to ?? Console.Error;
+
+        foreach (var fitness in AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts).Where(f => !f.Fit))
+            output.WriteLine(
+                $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
+              + $"which is missing: {string.Join("; ", fitness.Unmet)}");
     }
 
     private ToolRegistry BuildToolRegistry(RuntimeOptions options)

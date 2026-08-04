@@ -1,5 +1,28 @@
 # ANTHILL Changelog
 
+## v3.8.2 - Model fitness judged against what the provider actually serves
+
+Found by reading a real startup log: five roles reported as broken, every one of them wrong.
+
+- **The fitness report ran inside the Queen's constructor**, while the capability cache was warmed by
+  a background task started afterwards. So it judged every route against the hand-written name table
+  — which, by this repository's own record, "called gemma4:31b text-only when Ollama reports tools
+  AND thinking" — and named tool calling, structured output and reasoning as missing on a model that
+  has all three.
+- **The colony contradicted itself.** `/tools` computes fitness on request, by which time the cache
+  is warm, so the Tools & Routing panel and the console log gave different answers about the same
+  model. Whichever an operator read first was the one they would trust.
+- **An alarm that is wrong on every restart is one you learn to scroll past**, which costs nothing
+  until the day it is right. That is what makes this a defect rather than a cosmetic slip: the real
+  warning that started this work — medic routed to a model missing reasoning — was sitting in the
+  same list.
+- Reporting now waits for the warm. Startup stays non-blocking in the API, where a sleeping Ollama
+  must not delay the console; the CLI warms synchronously, because a one-shot run has nothing to keep
+  responsive and the fetch is bounded by a five-second timeout.
+- Guarded by relative source position rather than presence, because BOTH calls being in the file is
+  exactly the state that shipped the bug. No test of the fitness calculation could have caught this:
+  the code was correct and the data it read was not yet there.
+
 ## v3.8.1 - Every ant's model, settable
 
 Reported from the running colony: there was nowhere to change the planner's model. Chasing it found
