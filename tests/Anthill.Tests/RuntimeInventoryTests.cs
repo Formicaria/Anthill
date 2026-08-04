@@ -67,6 +67,74 @@ public class RuntimeInventoryTests
         Assert.Equal(new[] { "src/ActuallyUsesIt.cs" }, sites);
     }
 
+    /// <summary>
+    /// v3.8.1 — the characters "/*" inside a LINE comment must not open a block comment.
+    ///
+    /// This is the exact string that blinded the audit. ModelRouter.cs documents a legacy path as
+    /// "/api/*" in a doc comment; the old two-regex strip removed block comments FIRST, matched that
+    /// phantom opener forward to the next genuine close two hundred and seventy lines later, and
+    /// silently deleted every line between them.
+    ///
+    /// It surfaced as a false orphan, which is the harmless direction. The same deletion would hide
+    /// a REAL orphan whose call sites fell inside the swallowed window — a dead subsystem reported
+    /// as healthy, by the one tool built to prevent exactly that.
+    /// </summary>
+    [Fact]
+    public void ASlashStarInsideALineComment_DoesNotSwallowTheFile()
+    {
+        var source = RuntimeInventory.StripComments(
+            "/// API lived at /api/*. Legacy.\n" +
+            "class A { void M() { Gate.Read(); } }\n" +
+            "/* a real block comment */\n" +
+            "class B { void N() { Gate.Read(); } }\n");
+
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(source, @"Gate\.Read").Count);
+        Assert.DoesNotContain("a real block comment", source);
+        Assert.DoesNotContain("Legacy", source);
+    }
+
+    /// <summary>
+    /// And a "//" inside a BLOCK comment must not leave its closing "*/" behind as code — the
+    /// failure the obvious fix (swap the order of the two regexes) would have introduced instead,
+    /// trading false orphans for false call sites.
+    /// </summary>
+    [Fact]
+    public void ASlashSlashInsideABlockComment_DoesNotLeakCommentProse()
+    {
+        var source = RuntimeInventory.StripComments(
+            "/* see http://example.com/docs\n   more prose */\nclass A { }\n");
+
+        Assert.DoesNotContain("prose", source);
+        Assert.DoesNotContain("*/", source);
+        Assert.Contains("class A", source);
+    }
+
+    /// <summary>
+    /// String literals survive verbatim, and that is load-bearing rather than incidental: role call
+    /// sites are found by searching for the QUOTED role id, so stripping literals would blind the
+    /// audit to every role in the runtime — trading one hole for a larger one.
+    /// </summary>
+    [Fact]
+    public void StringLiteralsSurvive_BecauseRoleCallSitesLiveInThem()
+    {
+        var source = RuntimeInventory.StripComments(
+            "var roles = new[] { \"researcher\", \"coder\" }; // not these\n");
+
+        Assert.Contains("\"researcher\"", source);
+        Assert.Contains("\"coder\"", source);
+        Assert.DoesNotContain("not these", source);
+    }
+
+    /// <summary>A comment opener inside a string is text, not a comment.</summary>
+    [Fact]
+    public void ACommentOpenerInsideAString_IsJustText()
+    {
+        var source = RuntimeInventory.StripComments(
+            "var pattern = \"/*\"; class A { void M() { Gate.Read(); } }\n");
+
+        Assert.Contains("Gate.Read", source);
+    }
+
     /// <summary>Substring matches do not count: `MissionEvaluator` must not be credited as a
     /// consumer of `Mission`.</summary>
     [Fact]

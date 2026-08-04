@@ -81,13 +81,99 @@ public static class RuntimeInventory
                 p => StripComments(File.ReadAllText(p)));
     }
 
-    /// <summary>Comments are stripped before searching: a call site mentioned only in a doc comment
-    /// is exactly the false positive that let V2's dead code look alive.</summary>
+    /// <summary>
+    /// Comments are stripped before searching: a call site mentioned only in a doc comment is
+    /// exactly the false positive that let V2's dead code look alive.
+    ///
+    /// A SCANNER, not two regexes — and the reason is a defect this tool had for three releases.
+    /// The old implementation removed block comments first with <c>/\*.*?\*/</c>, which cannot tell a
+    /// real comment opener from the characters <c>/*</c> appearing inside a line comment or a string.
+    /// ModelRouter.cs contains the prose "API lived at /api/*" in a doc comment; that phantom opener
+    /// matched forward to the next genuine <c>*&#47;</c> two hundred and seventy lines later, and the
+    /// scanner silently deleted everything between them.
+    ///
+    /// Both directions of that failure matter, and the quiet one matters more. It reported a false
+    /// orphan for a gate that was wired — annoying, visible, fixable. It would equally have hidden a
+    /// REAL orphan whose only call sites fell inside the swallowed window, reporting a dead
+    /// subsystem as healthy. That is the precise failure this whole audit exists to prevent, in the
+    /// audit itself.
+    ///
+    /// Reordering the two regexes does not fix it: stripping line comments first truncates a
+    /// <c>*&#47;</c> that happens to follow a <c>//</c> inside a real block comment, leaving comment
+    /// prose in the source to be counted as code — false call sites instead of false orphans. Only a
+    /// pass that knows what it is inside gets both right.
+    /// </summary>
     internal static string StripComments(string source)
     {
-        var noBlock = Regex.Replace(source, @"/\*.*?\*/", "", RegexOptions.Singleline);
-        return string.Join("\n", noBlock.Split('\n')
-            .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
+        if (string.IsNullOrEmpty(source)) return source ?? "";
+
+        var output = new System.Text.StringBuilder(source.Length);
+        var i = 0;
+
+        while (i < source.Length)
+        {
+            var c = source[i];
+            var next = i + 1 < source.Length ? source[i + 1] : '\0';
+
+            // ---- comments ------------------------------------------------------------------
+            if (c == '/' && next == '/')
+            {
+                while (i < source.Length && source[i] != '\n') i++;
+                continue;                      // the newline itself is kept below
+            }
+            if (c == '/' && next == '*')
+            {
+                i += 2;
+                while (i < source.Length && !(source[i] == '*' && i + 1 < source.Length && source[i + 1] == '/'))
+                {
+                    // Newlines are preserved so line numbers and line-oriented searches still line
+                    // up with the original file.
+                    if (source[i] == '\n') output.Append('\n');
+                    i++;
+                }
+                i = Math.Min(i + 2, source.Length);
+                continue;
+            }
+
+            // ---- string and character literals ---------------------------------------------
+            // Kept VERBATIM. A symbol named inside a string is not a call site for a static gate,
+            // but it very much is one for a role id — Roles() searches for "\"researcher\"" — so
+            // stripping literals would blind the audit to every role in the runtime.
+            if (c == '"' && i >= 2 && source[i - 1] == '@' && source[i - 2] == '$'
+                || c == '"' && i >= 1 && source[i - 1] == '@')
+            {
+                // Verbatim: no escapes; a doubled "" is a literal quote.
+                output.Append(c); i++;
+                while (i < source.Length)
+                {
+                    if (source[i] == '"' && i + 1 < source.Length && source[i + 1] == '"')
+                    { output.Append('"').Append('"'); i += 2; continue; }
+                    if (source[i] == '"') { output.Append('"'); i++; break; }
+                    output.Append(source[i]); i++;
+                }
+                continue;
+            }
+            if (c == '"' || c == '\'')
+            {
+                var quote = c;
+                output.Append(c); i++;
+                while (i < source.Length && source[i] != quote)
+                {
+                    // An escaped quote does not end the literal, and \\ before a quote does.
+                    if (source[i] == '\\' && i + 1 < source.Length)
+                    { output.Append(source[i]).Append(source[i + 1]); i += 2; continue; }
+                    if (source[i] == '\n') break;   // unterminated: do not run away with the file
+                    output.Append(source[i]); i++;
+                }
+                if (i < source.Length && source[i] == quote) { output.Append(quote); i++; }
+                continue;
+            }
+
+            output.Append(c);
+            i++;
+        }
+
+        return output.ToString();
     }
 
     /// <summary>
