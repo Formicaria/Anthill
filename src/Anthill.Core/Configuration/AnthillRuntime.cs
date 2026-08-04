@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.7.1";
+    public const string Version = "3.7.2";
     // Stays at 21 until the v3.8.0 tables actually ship. This number is STAMPED into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so releasing 22 from a
     // build that has no task_attempts table would mark those databases as already migrated — and a
@@ -744,6 +744,19 @@ public static class AnthillRuntime
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
         "autonomy_oneshot_completion",
         "operator_shell_enabled", "operator_shell_dir",
+        // v3.7.2: operator-defined tools and their host allow-list.
+        //
+        // Omitted since v3.4.1, which made the whole subsystem reachable only by hand-editing
+        // config.json and restarting — the console could list definitions and refuse them, and
+        // offered no way to turn the feature on. That is the same "shipped but unreachable" defect
+        // as the endpoints themselves, one layer further down.
+        //
+        // Safe to expose under manage_settings, which already governs shell_tool_enabled,
+        // file_writing_enabled and patch_application_enabled. A defined HTTP tool restricted to an
+        // explicit host allow-list is strictly less dangerous than any of those, so adding these is
+        // consistency rather than a loosening. ResetConfig still clears both, because a reset builds
+        // a fresh config and neither field survives it.
+        "user_tools_enabled", "user_tool_allowed_hosts",
         "homelab_enabled", "homelab_scheduler_enabled", "homelab_mock_providers_enabled",
         "homelab_max_concurrent_checks",
         "homelab_health_interval_seconds", "homelab_health_timeout_ms",

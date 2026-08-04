@@ -86,6 +86,11 @@ public sealed class DashboardWorkspaceState
         // would have that choice silently discarded on the next /ui/state round trip, and the
         // widget would spring back to its default placement with no error anywhere.
         "conversations",
+        // v3.7.2: the panels for operator-defined tools, model routing fitness and mission
+        // workspaces. Added HERE at the same time as the client registration, deliberately — the
+        // v3.7.1 sweep found Conversations registered in one place and not the other, and the only
+        // symptom was an operator's layout choice quietly failing to stick.
+        "tools", "workspaces",
     };
 
     /// <summary>
