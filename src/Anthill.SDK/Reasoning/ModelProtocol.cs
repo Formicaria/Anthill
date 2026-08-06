@@ -1,4 +1,4 @@
-namespace Anthill.Core.Models;
+namespace Anthill.SDK.Reasoning;
 
 /// <summary>
 /// v3.3.0 (ADR-006) — the typed request/response the provider seam is built on.

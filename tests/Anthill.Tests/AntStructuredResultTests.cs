@@ -27,7 +27,7 @@ namespace Anthill.Tests;
 /// deleted code path would have been inventing a subject for them.
 ///
 /// The behaviours they protected did not disappear, they MOVED, and each is covered where it now
-/// lives: provider failure is classified from <see cref="Anthill.Core.Models.ModelCallResult"/> at
+/// lives: provider failure is classified from <see cref="Anthill.SDK.Reasoning.ModelCallResult"/> at
 /// the call site (ModelCallOutcome tests, and each ant's own tests), and an empty model response is
 /// rejected by the ant that made the call — which is what lets the researcher degrade to local
 /// context while the coder fails outright, a distinction one shared fallback could not draw.

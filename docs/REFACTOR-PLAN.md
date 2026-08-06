@@ -187,12 +187,42 @@ stop showing stale data while keeping their existing refresh logic.
 
 ### Phase 2 — Reasoning providers → module
 
-- [ ] **Move** `Models/ModelProtocol.cs` and `Models/ModelCallOutcome.cs` into `Anthill.SDK/Reasoning/`
-      (they are already provider-agnostic — do not duplicate them)
-- [ ] Move `IModelClient` to the SDK, renamed `IReasoningProvider`; keep `IModelClient` as a
-      `[Obsolete]` alias for one release for backwards compatibility
-- [ ] Move to `Anthill.Modules.Reasoning`: `ProviderClients.cs`, `ProviderWireFormat.cs`,
-      `ProviderCatalog.cs`, `OllamaCapabilityCache.cs`
+Split in two on contact with the code. `ModelRouter.cs` turned out to contain `OllamaClient` and
+`PlaceholderClient` as well as the router, and `OllamaCapabilityCache` is a static called from Core,
+Api *and* Cli — so "move the providers" is really "invert construction, then move", and doing both
+in one step would have been a large unverifiable change.
+
+#### Phase 2a — contracts to the SDK — **DONE, pending local gate** (v3.8.4)
+
+- [x] Moved to `Anthill.SDK/Reasoning/`: `ModelProtocol.cs`, `ModelCallOutcome.cs`,
+      `ModelCapabilities.cs`, `ProviderCatalog.cs`, `ModelCallScope.cs` (all five were
+      dependency-free — namespace declaration and nothing more)
+- [x] `IReasoningProvider` in the SDK, from `IModelClient`
+- [x] `IModelClient` kept in Core as `interface IModelClient : IReasoningProvider {}` — no members,
+      so implementers and consumers compile untouched. Not `[Obsolete]` yet; that goes on when the
+      last in-tree caller has migrated, and the alias is deleted a release after that.
+- [x] `global using Anthill.SDK.Reasoning;` in Core, Api and Tests rather than ~20 per-file imports
+
+**Gate:** `dotnet build Anthill.sln && dotnet test`.
+
+**Decision:** the checklist above originally said "define `IReasoningProvider`" as new work.
+Inspection showed `IModelClient` *was* already that interface — typed both ways, covering tool
+calling, structured output, vision parts, reasoning content and token accounting, with wire encoding
+already outside it. Writing a second one beside it would have created the duplication requirement #9
+exists to remove, so the existing contract was moved and renamed instead.
+
+#### Phase 2b — implementations to the module — NEXT
+
+- [ ] SDK: `IReasoningProviderFactory` — `CanServe(providerId)` + `Create(context)` — the inversion
+      point, so `ModelRouter` stops naming provider types
+- [ ] SDK: `IModelCapabilityProbe`, so Core can ask what a model supports without depending on the
+      Ollama cache that answers
+- [ ] Split `ModelRouter.cs`: routing and the circuit breaker stay; `OllamaClient` moves out
+- [ ] Core: `UnavailableProvider` (from `PlaceholderClient`) as the null object when nothing is
+      registered — a typed failure, never a throw
+- [ ] Move to `Anthill.Modules.Reasoning`: the Ollama client, `ProviderClients.cs`,
+      `ProviderWireFormat.cs`, `OllamaCapabilityCache.cs`, plus `ReasoningModule : IAnthillModule`
+- [ ] Reconcile the three `OllamaCapabilityCache.Warm` call sites (`ApiHost` ×2, `Cli`)
 - [ ] Keep in Core: `ModelRouter` (routing *policy* is a core scheduling concern),
       `ModelRoutingPolicy`, `ModelCircuitBreaker`, `ModelCallOutcome`, `ModelCallScope`,
       `ModelCapabilities`, `ModelProtocol`
