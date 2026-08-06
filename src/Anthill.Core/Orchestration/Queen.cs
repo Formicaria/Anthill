@@ -43,6 +43,10 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         _workerHeartbeat?.Dispose();
         // The bus goes down BEFORE the memory too, and for the same reason: its pump is a
         // background thread, and a subscriber woken after the database closed would fault there.
+        //
+        // Disposed even when adopted from a composition root. The Queen outlives the module host in
+        // every arrangement the colony actually has, so "whoever created it disposes it" would mean
+        // the bus outliving the database it reports on — which is the fault this line prevents.
         (Events as IDisposable)?.Dispose();
         Memory.Dispose();
     }
@@ -122,7 +126,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // Assigned onto Memory whether or not this Queen created it, so a caller-supplied memory is
         // wired identically — which is the reason EventBus is a property rather than a constructor
         // argument on SqliteMemory.
-        Events = new InProcessEventBus();
+        //
+        // v3.8.6 — ADOPTS an already-wired bus instead of replacing it. A composition root has to
+        // build the memory and the bus BEFORE the Queen, because modules must be loaded before she
+        // is composed (a Queen built first would report model fitness against a colony with no
+        // providers). Overwriting the bus here would orphan every subscriber attached during module
+        // loading — the module-registration events would be persisted and announced to nobody.
+        Events = Memory.EventBus is NullEventBus ? new InProcessEventBus() : Memory.EventBus;
         Memory.EventBus = Events;
 
         // Captured BEFORE anything is built, so every component below sees one consistent answer.

@@ -1,5 +1,6 @@
 using Anthill.SDK.Events;
 using Anthill.SDK.Memory;
+using Anthill.SDK.Reasoning;
 using Microsoft.Extensions.Logging;
 
 namespace Anthill.SDK.Modules;
@@ -42,6 +43,30 @@ public interface IModuleContext
     IReadOnlyDictionary<string, object?> Configuration { get; }
 
     ILoggerFactory LoggerFactory { get; }
+
+    /// <summary>
+    /// Contribute reasoning. v3.8.6.
+    ///
+    /// A module cannot register itself: the registry lives in <c>Anthill.Core</c>, which a module
+    /// may not reference. Before this existed, <c>Anthill.Api</c> reached past the module system and
+    /// poked the core registry with a factory it had constructed itself — which worked, and left
+    /// <see cref="IAnthillModule"/> declared and never once invoked. A contract nothing calls is not
+    /// a boundary, it is a comment.
+    ///
+    /// Typed rather than a generic <c>RegisterService&lt;T&gt;</c>, deliberately. A generic
+    /// registration surface is a service locator: it makes the set of things a module can contribute
+    /// unbounded and unreadable, and the core would have to search it by type at the point of use.
+    /// Reasoning is a capability the core explicitly recognises and explicitly works without, so it
+    /// gets a named method and its absence stays meaningful.
+    /// </summary>
+    void RegisterReasoningProvider(IReasoningProviderFactory factory);
+
+    /// <summary>
+    /// Contribute capability discovery — what a provider's models can actually do, as opposed to
+    /// what their names suggest. Optional: with none registered the core falls back to its declared
+    /// name table.
+    /// </summary>
+    void RegisterCapabilityProbe(IModelCapabilityProbe probe);
 
     // Tool registration is NOT here yet, and its absence is deliberate.
     //

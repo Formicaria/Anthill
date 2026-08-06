@@ -110,6 +110,12 @@ public static class EventTypes
     public const string ShadowOutcomeRecorded = "shadow_outcome_recorded";
     public const string ShadowRecommendationRecorded = "shadow_recommendation_recorded";
 
+    // ---- modules -----------------------------------------------------------
+
+    /// <summary>v3.8.6 — a module contributed its capability at startup. The first event type in
+    /// this file that was not read out of the existing tree, because module loading is new.</summary>
+    public const string ModuleRegistered = "module_registered";
+
     // ---- diagnostics and health --------------------------------------------
 
     public const string ConfigHealthFinding = "config_health_finding";

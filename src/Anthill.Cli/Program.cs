@@ -130,13 +130,19 @@ switch (command)
 /// </summary>
 static Queen NewQueen()
 {
-    // v3.8.5: the CLI is a composition root too, and registers BEFORE constructing the colony for
-    // the same reason the API does — a Queen built first would report fitness against no providers.
-    Anthill.Core.Models.ReasoningProviders.Register(new Anthill.Modules.Reasoning.ReasoningProviderFactory());
-    Anthill.Core.Models.ReasoningProviders.RegisterProbe(
-        new Anthill.Modules.Reasoning.OllamaCapabilityProbe(Anthill.Core.Configuration.AnthillRuntime.OllamaHost));
+    // v3.8.6: the CLI is a composition root too, and loads modules BEFORE constructing the colony
+    // for the same reason the API does — a Queen built first would report fitness against a colony
+    // with no providers. The memory and bus are built here so the Queen can adopt them, rather than
+    // replacing the bus the module's registration event was published to.
+    var memory = new Anthill.Core.Memory.SqliteMemory();
+    var events = new Anthill.Core.Events.InProcessEventBus();
+    memory.EventBus = events;
 
-    var queen = new Queen();
+    var modules = new Anthill.Core.Modules.ModuleHost(memory, events);
+    modules.Load(new Anthill.Modules.Reasoning.ReasoningModule(
+        Anthill.Core.Configuration.AnthillRuntime.OllamaHost));
+
+    var queen = new Queen(memory);
     try
     {
         Anthill.Modules.Reasoning.OllamaCapabilityCache.Warm(Anthill.Core.Configuration.AnthillRuntime.OllamaHost);

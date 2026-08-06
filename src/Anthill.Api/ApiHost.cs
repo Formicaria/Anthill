@@ -37,6 +37,16 @@ public static partial class ApiHost
     /// <summary>The host's Queen. A projection of <see cref="Host"/>, kept as a static because the
     /// endpoint closures read it directly; it is no longer where a Queen is created.</summary>
     public static Queen Queen { get; private set; } = null!;
+
+    /// <summary>
+    /// The modules loaded into this process. v3.8.6.
+    ///
+    /// Held rather than discarded because "which capabilities does this build actually have" is an
+    /// operator question, and the honest answer is this list — not a config flag saying a provider
+    /// is enabled, which describes intent rather than what loaded.
+    /// </summary>
+    public static ModuleHost Modules { get; private set; } = null!;
+
     public static ApiJobRegistry Jobs { get; private set; } = null!;
     public static ColonyDirector Director { get; private set; } = null!;
     private static RateLimiter MissionLimiter = null!;
@@ -79,20 +89,28 @@ public static partial class ApiHost
         // closures that read it — replacing those is churn without benefit — but it is now a
         // projection of a host that CAN be instantiated more than once, rather than the only
         // way a Queen comes into existence.
-        // v3.8.5 — modules are composed HERE, and before the colony is built.
+        // v3.8.6 — modules are composed HERE, and before the colony is built.
         //
-        // Before it, so that a Queen constructed on the next line already has reasoning available:
-        // registration after composition would leave the startup fitness report, and any mission
-        // arriving in that window, looking at a colony with no providers.
+        // Before it, so that a Queen constructed below already has reasoning available: loading
+        // after composition would leave the startup fitness report, and any mission arriving in
+        // that window, looking at a colony with no providers.
         //
-        // This is also the whole of the module boundary in practice. These two lines are the only
-        // place in the process where Anthill.Modules.Reasoning is named; delete them and the core
-        // still builds, still boots, still plans and dispatches, and every model call returns
-        // UnavailableProvider's typed refusal instead of an answer.
-        ReasoningProviders.Register(new ReasoningProviderFactory());
-        ReasoningProviders.RegisterProbe(new OllamaCapabilityProbe(AnthillRuntime.OllamaHost));
+        // Which forces the memory and the bus to exist first, and the Queen to ADOPT them rather
+        // than build her own — otherwise the events these modules publish while registering would
+        // be announced to a bus she then replaced.
+        //
+        // This is the whole of the module boundary in practice. `new ReasoningModule(...)` is the
+        // only place in the process where Anthill.Modules.Reasoning is named; delete that one
+        // argument and the core still builds, still boots, still plans and dispatches, and every
+        // model call returns UnavailableProvider's typed refusal instead of an answer.
+        var memory = new SqliteMemory();
+        var events = new InProcessEventBus();
+        memory.EventBus = events;
 
-        Host = RuntimeHost.Create();
+        Modules = new ModuleHost(memory, events);
+        Modules.Load(new ReasoningModule(AnthillRuntime.OllamaHost));
+
+        Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;
         // Phase 3: the Director multiplexes its concurrent missions through this same worker
         // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
