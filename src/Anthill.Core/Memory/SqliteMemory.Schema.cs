@@ -2,7 +2,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Caching.Memory;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
+using Anthill.Core.Events;
 using Anthill.Core.Security;
+using Anthill.SDK.Events;
 
 namespace Anthill.Core.Memory;
 
@@ -33,6 +35,21 @@ public sealed partial class SqliteMemory : IDisposable
     /// an empty database. Null for file-backed instances, which need no such help.
     /// </summary>
     private readonly SqliteConnection? _keepAlive;
+
+    /// <summary>
+    /// Where <see cref="LogEvent"/> announces what it just recorded. v3.8.3.
+    ///
+    /// Settable rather than a constructor parameter, because of how the colony is actually built:
+    /// <c>Queen</c> accepts an optional pre-constructed memory, so a bus passed to
+    /// <see cref="SqliteMemory"/>'s constructor would only ever reach instances the Queen created
+    /// herself — and every caller supplying their own memory (the CLI, the API in some
+    /// configurations, several hundred tests) would get a silently unwired one. A property covers
+    /// both construction paths with one mechanism.
+    ///
+    /// Never null. It defaults to <see cref="NullEventBus"/> so that an unwired memory behaves
+    /// exactly as it did before there was a bus, and so no publication site needs a null check.
+    /// </summary>
+    public IEventBus EventBus { get; set; } = NullEventBus.Instance;
 
     private readonly FieldCipher _cipher;
     private readonly IMemoryCache _cache;

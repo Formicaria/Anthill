@@ -27,6 +27,70 @@ function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
   for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
 function apiCacheBust(prefix){ for(const k of Array.from(_apiCache.keys())) if(!prefix||k.startsWith(prefix)) _apiCache.delete(k); }
 
+// ---- live event stream (v3.8.3) -------------------------------------------
+// The colony now pushes. This is the first half of retiring the pollers: rather than rewriting
+// every /events/json caller at once, an arriving event invalidates the cached copy so the very
+// next read is fresh instead of serving something up to three seconds old. Panels keep their
+// existing refresh logic and simply stop showing stale data. Phase 6 replaces the polling itself.
+//
+// fetch() rather than EventSource, deliberately. EventSource cannot set request headers, so
+// adopting it would have meant accepting the auth token as a query parameter — putting a live
+// credential into proxy logs, browser history and Referer headers to save a few lines of parsing.
+// Streaming the response by hand keeps the Authorization header exactly where every other call
+// puts it.
+const _evtSubs = new Set();
+let _evtCtl = null, _evtBackoff = 1000;
+
+function onColonyEvent(fn){ _evtSubs.add(fn); return () => _evtSubs.delete(fn); }
+
+function _evtDispatch(ev){
+  apiCacheBust('/events/json');
+  // Mission-shaped events change more than the log: the mission list, the graph, the status line.
+  if(ev.event_type && (ev.event_type.startsWith('mission_') || ev.event_type.startsWith('task_'))){
+    apiCacheBust('/missions/json'); apiCacheBust('/status');
+  }
+  for(const fn of _evtSubs){ try{ fn(ev); }catch(e){ console.warn('event subscriber failed', e); } }
+}
+
+async function startEventStream(){
+  if(_evtCtl) return;                                   // already connected
+  if(typeof authLost!=='undefined' && authLost) return; // logged out: do not touch the network
+  _evtCtl = new AbortController();
+  try{
+    const r = await fetch(url('/events/stream'), {
+      headers: { 'Authorization': 'Bearer '+TOKEN, 'Accept': 'text/event-stream' },
+      signal: _evtCtl.signal,
+    });
+    if(!r.ok || !r.body) throw new Error('stream unavailable (HTTP '+r.status+')');
+    _evtBackoff = 1000; // a successful connect resets the ladder
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for(;;){
+      const { value, done } = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, { stream:true });
+      // Frames are separated by a blank line. Anything after the last one is a partial frame and
+      // stays in the buffer — a chunk boundary can land mid-JSON, and parsing early throws.
+      const frames = buf.split('\n\n'); buf = frames.pop();
+      for(const frame of frames){
+        const line = frame.split('\n').find(l => l.startsWith('data:'));
+        if(!line) continue;   // ':' comment — the heartbeat
+        try{ _evtDispatch(JSON.parse(line.slice(5).trim())); }catch{ /* ignore a malformed frame */ }
+      }
+    }
+  }catch(e){
+    if(_evtCtl && _evtCtl.signal.aborted) return;  // deliberate teardown, not a failure
+  }finally{
+    _evtCtl = null;
+  }
+  // Reconnect with backoff. The stream is an optimisation over polling, never a dependency of it:
+  // if it never comes back, every panel still works exactly as it did before this existed.
+  _evtBackoff = Math.min(_evtBackoff * 2, 30000);
+  setTimeout(startEventStream, _evtBackoff);
+}
+
+function stopEventStream(){ if(_evtCtl){ const c=_evtCtl; _evtCtl=null; c.abort(); } }
+
 async function api(path, method='GET', body=null) {
   const isGet=method==='GET'&&!body;
   // Auth gate: while logged out, only auth endpoints may touch the network.
@@ -185,6 +249,9 @@ let authLost=false;
 function onUnauthorized(){
   authLost=true;
   clearSession();
+  // Drop the stream too. Left running, its reconnect ladder would keep hitting the API with a dead
+  // token — exactly the 401 storm the auth-lost gate above exists to prevent.
+  stopEventStream();
   // Re-assert the login screen on ANY 401 while the app shell is still showing — not just the first.
   // The old early-return meant that if a session went invalid mid-flight (e.g. the server rotating its
   // session secret during a redeploy), the page could stay stuck half-loaded behind failing background
@@ -215,6 +282,7 @@ function enterApp(){
   applyRoleVisibility();
   enableInput(true);
   if(!pollingStarted){ pollingStarted=true; startPolling(); }
+  startEventStream();   // v3.8.3: live push alongside the pollers, not instead of them yet
   // Restore nav collapse state
   if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
 }

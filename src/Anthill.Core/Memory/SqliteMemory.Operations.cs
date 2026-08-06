@@ -3,6 +3,7 @@ using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Outcomes;
+using Anthill.SDK.Events;
 
 namespace Anthill.Core.Memory;
 
@@ -588,6 +589,25 @@ public sealed partial class SqliteMemory
 
     // ---- events -----------------------------------------------------------
 
+    /// <summary>
+    /// Record an event durably, then announce it.
+    ///
+    /// v3.8.3 — the second half of that sentence is new; the first half is unchanged, and that is
+    /// the whole design of the retrofit. This method already WAS the colony's event stream: ~85
+    /// call sites across the Queen, the execution service, the tool layer and the scheduler,
+    /// producing seventy-odd distinct event types, read back by the dashboard through
+    /// <see cref="GetRecentEvents"/>. What it lacked was a live outlet, so every observer had to
+    /// poll the table.
+    ///
+    /// Publication is therefore additive: no call site changed, no signature changed, and with the
+    /// default <see cref="NullEventBus"/> the behaviour is byte-for-byte what it was.
+    ///
+    /// ORDER IS LOAD-BEARING. The insert happens first, inside the write lock, and publication
+    /// happens after it — never the reverse, and never inside the lock. Publishing first would mean
+    /// a subscriber could observe and act on an event that a subsequent database failure leaves
+    /// unrecorded, turning a durable log into a best-effort one the moment a bus was introduced.
+    /// Publishing inside the lock would put subscriber dispatch on the colony's write path.
+    /// </summary>
     public Event LogEvent(string missionId, string eventType, string message, string? taskId = null,
         string? antName = null, Dictionary<string, object?>? metadata = null)
     {
@@ -605,8 +625,31 @@ public sealed partial class SqliteMemory
                 ("@id", ev.Id), ("@mid", ev.MissionId), ("@tid", ev.TaskId), ("@ant", ev.AntName),
                 ("@et", ev.EventType), ("@msg", ev.Message), ("@meta", Json.SafeDumps(ev.Metadata)), ("@created", ev.CreatedAt.ToIso()));
         }
+
+        // Persisted. Now, and only now, tell whoever is listening.
+        EventBus.Publish(ToColonyEvent(ev));
         return ev;
     }
+
+    /// <summary>
+    /// Translate the stored row into the SDK's transport shape.
+    ///
+    /// The two types carry identical fields by deliberate construction — see the note on
+    /// <see cref="ColonyEvent"/> — so this is a rename, not a projection, and nothing is dropped on
+    /// the way to a subscriber. If this method ever needs a decision in it, the two shapes have
+    /// drifted and one of them is wrong.
+    /// </summary>
+    private static ColonyEvent ToColonyEvent(Event ev) => new()
+    {
+        Id = ev.Id,
+        MissionId = ev.MissionId,
+        TaskId = ev.TaskId,
+        AntName = ev.AntName,
+        EventType = ev.EventType,
+        Message = ev.Message,
+        Metadata = ev.Metadata,
+        CreatedAt = ev.CreatedAt,
+    };
 
     public List<Dictionary<string, object?>> GetRecentEvents(int limit = 30, string? eventType = null, string? missionId = null)
     {
