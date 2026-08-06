@@ -1,8 +1,8 @@
-namespace Anthill.Core.Models;
+namespace Anthill.SDK.Reasoning;
 
 /// <summary>
 /// Ambient, async-flow-local cancellation for model calls. A mission enters a scope carrying its
-/// deadline/cancel token; every <see cref="IModelClient"/> links that token into each HTTP request
+/// deadline/cancel token; every <see cref="IReasoningProvider"/> links that token into each HTTP request
 /// so an in-flight generation aborts the instant the mission times out or its job is cancelled —
 /// without having to thread a <see cref="System.Threading.CancellationToken"/> through every ant
 /// method signature.

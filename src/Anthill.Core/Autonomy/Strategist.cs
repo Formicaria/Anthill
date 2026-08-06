@@ -58,7 +58,7 @@ public sealed class Strategist
 
         if (_router is null) return fallback;
 
-        Models.ModelCallResult result;
+        ModelCallResult result;
         try
         {
             result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist");

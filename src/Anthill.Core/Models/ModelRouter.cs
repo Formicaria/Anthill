@@ -6,48 +6,23 @@ using Anthill.Core.Memory;
 namespace Anthill.Core.Models;
 
 /// <summary>
-/// Abstraction over a text-generation backend. Implementations are role-routed by
-/// <see cref="ModelRouter"/>.
+/// v3.8.4 — the old name for <see cref="IReasoningProvider"/>, kept so nothing breaks in the move.
 ///
-/// v3.2.0 (ROADMAP § v3.2.0, "no <c>ERROR:</c> prefix determines success"): a client returns a
-/// TYPED <see cref="ModelCallResult"/>. It does not throw across the ant boundary — that contract
-/// is unchanged — but it no longer encodes what went wrong into prose for someone downstream to
-/// parse back out.
+/// The interface itself now lives in <c>Anthill.SDK.Reasoning</c>, because a provider contract that
+/// lives in the core is a core that cannot be built without providers. This declares NO members of
+/// its own: an implementation of <c>IModelClient</c> is an implementation of
+/// <c>IReasoningProvider</c> and vice versa, so existing implementers and existing consumers both
+/// keep compiling unchanged.
 ///
-/// Why that round-trip had to go: every failure site in a client already knows exactly what
-/// happened — a 404, a refused connection, the mission's token, the per-call deadline. It then
-/// formatted that knowledge into a sentence, and <c>Classify</c> recovered it by substring match.
-/// Editing one of those sentences — "timed out" to "exceeded its deadline", say — would silently
-/// reclassify the fault, the circuit breaker would stop seeing a TransientFault, and it would stop
-/// tripping. Nothing would fail; the protection would just quietly stop working. Status is now set
-/// where it is known.
+/// Deliberately not marked <c>[Obsolete]</c> yet. Doing so in the same release that moves the type
+/// would fill the build with warnings about a rename nothing has had a chance to react to; the
+/// attribute goes on when the last in-tree caller has migrated, and the alias goes away a release
+/// after that.
 /// </summary>
-public interface IModelClient
+public interface IModelClient : IReasoningProvider
 {
-    /// <summary>
-    /// v3.3.0 (ADR-006): the typed call. THE primary method — every client implements this one.
-    ///
-    /// Transport stays exactly where it was: bounded retries, the ambient cancellation token, the
-    /// per-call deadline and the status classification described above are unchanged and still live
-    /// in each client. What moved out is only the two ends — what goes on the wire, and what comes
-    /// back off it — into <see cref="ProviderWireFormat"/>, where they are pure and testable
-    /// without a provider.
-    /// </summary>
-    ModelResponse Send(ModelRequest request, int retries = 2);
-
-    /// <summary>
-    /// The string call, now a thin caller of the typed one rather than the other way round.
-    ///
-    /// The DIRECTION is the whole lesson of the v3.2.0 ant migration. A shim that widens a string
-    /// into a typed value has to invent the information the string never carried, which makes it
-    /// permanent by construction — that is how <c>string Run(Task, Mission)</c> survived four
-    /// releases. This one narrows a typed result to text at the outermost edge, for callers that
-    /// only ever wanted text: it discards rather than fabricates, and it deletes cleanly the moment
-    /// the last such caller moves.
-    /// </summary>
-    ModelCallResult Generate(string prompt, int retries = 2) =>
-        Send(ModelRequest.FromPrompt(prompt), retries).ToCallResult();
 }
+
 
 /// <summary>
 /// Local Ollama client, speaking OpenAI on the wire.

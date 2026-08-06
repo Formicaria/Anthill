@@ -1,5 +1,34 @@
 # ANTHILL Changelog
 
+## v3.8.4 - Reasoning becomes a contract, not a core service
+
+Phase 2a of the Core/Modules split (`docs/REFACTOR-PLAN.md`). Types moved between assemblies; no
+member changed, no behaviour changed, no call site changed meaning.
+
+- **The reasoning protocol moved to `Anthill.SDK.Reasoning`**: `ModelProtocol` (request, response,
+  message, tool spec, tool call, content part, usage), `ModelCallOutcome`, `ModelCapabilities` and
+  its catalog, `ProviderCatalog`, and `ModelCallScope`. All five files were dependency-free — they
+  declared a namespace and nothing else — so the move is exactly what it looks like.
+- **`IModelClient` became `IReasoningProvider`, in the SDK.** The rename is the substantive part.
+  "Model client" names a thing that talks to a model, which quietly implies the colony needs one.
+  "Reasoning provider" names a capability the colony may or may not have — and the core is required
+  to work when it has none.
+- **`IModelClient` survives as `interface IModelClient : IReasoningProvider {}`** with no members of
+  its own, so every existing implementer and consumer compiles untouched. It is deliberately NOT
+  marked `[Obsolete]` yet: doing that in the same release that moves the type would fill the build
+  with warnings about a rename nothing has had a chance to react to.
+- **The plan called for writing a new reasoning interface; that would have been a mistake.**
+  `IModelClient` was already typed request in, typed response out, covering tool calling, structured
+  output, vision parts, reasoning content and token accounting, with wire encoding kept outside it.
+  A second interface beside a correct one is the duplication this refactor exists to remove.
+- **Imports are global rather than per-file.** Twenty files would otherwise have gained a `using`
+  line, and the review that matters here — did anything move that shouldn't have — is exactly what a
+  diff full of import churn hides.
+
+Deliberately NOT in this release: the provider implementations. `ModelRouter` still constructs
+`OllamaClient`, `OpenAiCompatibleClient` and `AnthropicClient` by name, and `OllamaCapabilityCache`
+is still called from Core, Api and Cli. Inverting that construction is phase 2b.
+
 ## v3.8.3 - The colony gets a nervous system
 
 Refactor phases 0 and 1 of the Core/Modules split (see `docs/REFACTOR-PLAN.md`). No capability was

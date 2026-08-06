@@ -1,4 +1,4 @@
-namespace Anthill.Core.Models;
+namespace Anthill.SDK.Reasoning;
 
 /// <summary>
 /// v3.3.0 (ADR-006) — what a provider/model pair can actually do.

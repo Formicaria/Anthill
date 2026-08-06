@@ -1,4 +1,4 @@
-namespace Anthill.Core.Models;
+namespace Anthill.SDK.Reasoning;
 
 /// <summary>How the circuit breaker should treat a model-call outcome.</summary>
 public enum CircuitSignal
@@ -13,7 +13,7 @@ public enum CircuitSignal
 
 /// <summary>
 /// Classifies the sentinel strings the model clients return (they never throw across the ant
-/// boundary — see <see cref="IModelClient"/>) into a small, stable outcome vocabulary. This is the
+/// boundary — see <see cref="IReasoningProvider"/>) into a small, stable outcome vocabulary. This is the
 /// one place that knows those strings, so the router can log a precise <c>outcome</c> and the
 /// circuit breaker can tell a provider-is-down fault from a config error or a mission cancellation.
 /// </summary>

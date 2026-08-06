@@ -5,3 +5,5 @@ global using Task = Anthill.Core.Domain.Task;
 // the Anthill types globally so all test files resolve to the correct symbols.
 global using TaskScheduler = Anthill.Core.Scheduling.TaskScheduler;
 global using TaskStatus = Anthill.Core.Domain.TaskStatus;
+// v3.8.4 — mirrors Anthill.Core: the reasoning protocol now lives in Anthill.SDK.Reasoning.
+global using Anthill.SDK.Reasoning;
