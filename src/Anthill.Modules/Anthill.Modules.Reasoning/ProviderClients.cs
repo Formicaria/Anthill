@@ -1,9 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Anthill.Core.Configuration;
+using Anthill.SDK.Reasoning;
 
-namespace Anthill.Core.Models;
+namespace Anthill.Modules.Reasoning;
 
 /// <summary>
 /// Chat-completions client for OpenAI-shaped APIs: OpenAI itself, Perplexity, and OpenRouter all
@@ -12,7 +12,7 @@ namespace Anthill.Core.Models;
 /// (e.g. OpenRouter's attribution headers). One implementation covers all three so a new
 /// OpenAI-compatible provider is just a catalog entry, not a new class.
 /// </summary>
-public sealed class OpenAiCompatibleClient : IModelClient
+public sealed class OpenAiCompatibleClient : IReasoningProvider
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
     private readonly string _providerLabel;
@@ -20,14 +20,16 @@ public sealed class OpenAiCompatibleClient : IModelClient
     private readonly string? _apiKey;
     private readonly string _model;
     private readonly Dictionary<string, string>? _extraHeaders;
+    private readonly IReasoningRuntimeOptions _options;
 
     public OpenAiCompatibleClient(string providerLabel, string endpoint, string? apiKey, string model,
-        Dictionary<string, string>? extraHeaders = null)
+        IReasoningRuntimeOptions? options = null, Dictionary<string, string>? extraHeaders = null)
     {
         _providerLabel = providerLabel;
         _endpoint = NormalizeEndpoint(endpoint);
         _apiKey = apiKey;
         _model = model;
+        _options = options ?? DefaultReasoningRuntimeOptions.Instance;
         _extraHeaders = extraHeaders;
     }
 
@@ -78,7 +80,7 @@ public sealed class OpenAiCompatibleClient : IModelClient
         {
             var ambient = ModelCallScope.Current;
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
-            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
+            cts.CancelAfter(TimeSpan.FromSeconds(_options.ModelCallTimeoutSeconds));
             try
             {
                 using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -110,7 +112,7 @@ public sealed class OpenAiCompatibleClient : IModelClient
             }
             catch (OperationCanceledException)
             {
-                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: {_providerLabel} request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: {_providerLabel} request timed out after {_options.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {
@@ -139,7 +141,7 @@ public sealed class OpenAiCompatibleClient : IModelClient
 /// Claude's request/response shape (top-level <c>max_tokens</c>, <c>x-api-key</c> header,
 /// <c>content[]</c> block array) differs from the OpenAI-style contract.
 /// </summary>
-public sealed class AnthropicClient : IModelClient
+public sealed class AnthropicClient : IReasoningProvider
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
     private const string DefaultEndpoint = "https://api.anthropic.com/v1/messages";
@@ -147,14 +149,16 @@ public sealed class AnthropicClient : IModelClient
     private readonly string _endpoint;
     private readonly string? _apiKey;
     private readonly string _model;
+    private readonly IReasoningRuntimeOptions _options;
 
     /// <summary>endpoint: optional Base URL override from Settings → Providers. Same normalization
     /// rationale as <see cref="OpenAiCompatibleClient"/> — accept the conventional "just the host
     /// prefix" form (e.g. "https://api.anthropic.com/v1") as well as the full path.</summary>
-    public AnthropicClient(string? apiKey, string model, string? endpoint = null)
+    public AnthropicClient(string? apiKey, string model, IReasoningRuntimeOptions? options = null, string? endpoint = null)
     {
         _apiKey = apiKey;
         _model = model;
+        _options = options ?? DefaultReasoningRuntimeOptions.Instance;
         _endpoint = NormalizeEndpoint(endpoint);
     }
 
@@ -188,7 +192,7 @@ public sealed class AnthropicClient : IModelClient
         {
             var ambient = ModelCallScope.Current;
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
-            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
+            cts.CancelAfter(TimeSpan.FromSeconds(_options.ModelCallTimeoutSeconds));
             try
             {
                 using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -217,7 +221,7 @@ public sealed class AnthropicClient : IModelClient
             }
             catch (OperationCanceledException)
             {
-                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: Anthropic request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
+                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: Anthropic request timed out after {_options.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
             }
             catch (HttpRequestException error)
             {

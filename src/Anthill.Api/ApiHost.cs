@@ -79,6 +79,19 @@ public static partial class ApiHost
         // closures that read it — replacing those is churn without benefit — but it is now a
         // projection of a host that CAN be instantiated more than once, rather than the only
         // way a Queen comes into existence.
+        // v3.8.5 — modules are composed HERE, and before the colony is built.
+        //
+        // Before it, so that a Queen constructed on the next line already has reasoning available:
+        // registration after composition would leave the startup fitness report, and any mission
+        // arriving in that window, looking at a colony with no providers.
+        //
+        // This is also the whole of the module boundary in practice. These two lines are the only
+        // place in the process where Anthill.Modules.Reasoning is named; delete them and the core
+        // still builds, still boots, still plans and dispatches, and every model call returns
+        // UnavailableProvider's typed refusal instead of an answer.
+        ReasoningProviders.Register(new ReasoningProviderFactory());
+        ReasoningProviders.RegisterProbe(new OllamaCapabilityProbe(AnthillRuntime.OllamaHost));
+
         Host = RuntimeHost.Create();
         Queen = Host.Queen;
         // Phase 3: the Director multiplexes its concurrent missions through this same worker

@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Anthill.SDK.Reasoning;
 
-namespace Anthill.Core.Models;
+namespace Anthill.Modules.Reasoning;
 
 /// <summary>
 /// v3.4.0 — what Ollama reports about its own models, cached, and used by the CALL PATH.
