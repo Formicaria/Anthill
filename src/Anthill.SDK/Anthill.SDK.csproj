@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.SDK</RootNamespace>
+    <AssemblyName>Anthill.SDK</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    CONTRACTS ONLY. This project is the pivot of the module boundary: Core and every module
+    reference it, and it references nothing that could drag an implementation along with it.
+
+    The package list is deliberately near-empty and should stay that way. The moment the SDK
+    takes a dependency on a database driver, an HTTP client, or a provider SDK, every module in
+    the colony inherits it and the boundary this project exists to draw stops meaning anything.
+    Logging.Abstractions is admitted because it is abstractions by construction.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
+</Project>
