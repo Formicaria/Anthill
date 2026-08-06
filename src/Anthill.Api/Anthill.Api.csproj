@@ -12,6 +12,8 @@
          directly (the SSE endpoint consumes IEventBus), and a reference you depend on by name
          should not rely on another project continuing to bring it along. -->
     <ProjectReference Include="..\Anthill.SDK\Anthill.SDK.csproj" />
+    <!-- Composition root: modules are wired in here, never referenced by the core. -->
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
   </ItemGroup>
 
   <!-- Let the test suite exercise internal helpers (e.g. the mission-report formatter). -->

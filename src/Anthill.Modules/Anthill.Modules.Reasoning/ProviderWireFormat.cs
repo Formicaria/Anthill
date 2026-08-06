@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Anthill.SDK.Reasoning;
 
-namespace Anthill.Core.Models;
+namespace Anthill.Modules.Reasoning;
 
 /// <summary>
 /// v3.3.0 (ADR-006) — <see cref="ModelRequest"/> projected onto each provider's wire format, and

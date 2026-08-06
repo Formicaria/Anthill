@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v3.8.5 - The colony runs without AI
+
+Phase 2b of the Core/Modules split (`docs/REFACTOR-PLAN.md`), and the first module.
+
+- **"The core can run without any AI provider" was not merely untested — it was impossible.**
+  `ModelRouter` held two switch statements naming `OllamaClient`, `OpenAiCompatibleClient` and
+  `AnthropicClient`, so the core could not COMPILE without every provider implementation present.
+  That single edge was the whole gap between the plan's stated goal and the code.
+- **Construction inverted behind `IReasoningProviderFactory`.** The core asks for a provider by id
+  and gets one, or gets `UnavailableProvider` and degrades. With no module composed in, missions
+  still plan, tasks still dispatch, tools still run, and model calls return a typed refusal.
+  `CoreWithoutProviderTests` asserts exactly that, so the criterion is now checkable rather than
+  claimed.
+- **`Anthill.Modules.Reasoning` — the first module.** Ollama, OpenAI, Perplexity, OpenRouter and
+  Anthropic live here. It references `Anthill.SDK` and nothing else; there is no path from it to the
+  core, and the two registration lines in `ApiHost` are the only place in the process that names it.
+- **Its only real coupling to the core was one `using`.** These files needed
+  `AnthillRuntime.ModelCallTimeoutSeconds`, `OllamaHost` and `OllamaModel` — three settings. Host and
+  model now travel in `ReasoningProviderContext`; the timeout arrives through
+  `IReasoningRuntimeOptions` and is read LIVE rather than captured, because snapshotting it would
+  have quietly broken timeout changes for the one cached client and the symptom would have been "the
+  setting does nothing, but only for local models, and only until restart".
+- **Capability discovery moved behind `IModelCapabilityProbe`.** Discovery means an HTTP call to
+  Ollama, so it cannot live in the core; but the precedence it established in v3.8.2 — discovered
+  capabilities beat the hand-written name table — is unchanged. A probe that cannot describe a model
+  returns null rather than an empty capability set, because "I don't know" falls back to the table
+  and "it supports nothing" would not. Conflating those is the v3.8.2 defect.
+- **Credentials stay in the core.** The router still resolves API keys and base URLs from the
+  encrypted store and hands them over already resolved. A module that fetched its own key would need
+  the database, and the boundary would be gone at the first provider.
+- **Keyed providers are still rebuilt per call**, cached ones still cached, and an
+  `UnavailableProvider` is deliberately never cached — that would pin the colony to "no AI" for the
+  life of the process even after a module registered.
+
 ## v3.8.4 - Reasoning becomes a contract, not a core service
 
 Phase 2a of the Core/Modules split (`docs/REFACTOR-PLAN.md`). Types moved between assemblies; no

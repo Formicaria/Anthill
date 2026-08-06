@@ -130,10 +130,16 @@ switch (command)
 /// </summary>
 static Queen NewQueen()
 {
+    // v3.8.5: the CLI is a composition root too, and registers BEFORE constructing the colony for
+    // the same reason the API does — a Queen built first would report fitness against no providers.
+    Anthill.Core.Models.ReasoningProviders.Register(new Anthill.Modules.Reasoning.ReasoningProviderFactory());
+    Anthill.Core.Models.ReasoningProviders.RegisterProbe(
+        new Anthill.Modules.Reasoning.OllamaCapabilityProbe(Anthill.Core.Configuration.AnthillRuntime.OllamaHost));
+
     var queen = new Queen();
     try
     {
-        Anthill.Core.Models.OllamaCapabilityCache.Warm(Anthill.Core.Configuration.AnthillRuntime.OllamaHost);
+        Anthill.Modules.Reasoning.OllamaCapabilityCache.Warm(Anthill.Core.Configuration.AnthillRuntime.OllamaHost);
         queen.ReportModelFitness();
     }
     catch { /* best-effort: the declared table remains the fallback */ }

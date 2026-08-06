@@ -7,3 +7,6 @@ global using TaskScheduler = Anthill.Core.Scheduling.TaskScheduler;
 global using TaskStatus = Anthill.Core.Domain.TaskStatus;
 // v3.8.4 — mirrors Anthill.Core: the reasoning protocol now lives in Anthill.SDK.Reasoning.
 global using Anthill.SDK.Reasoning;
+// v3.8.5 — the provider implementations (OllamaClient, OpenAiCompatibleClient, AnthropicClient,
+// OllamaCapabilityCache) moved out of the core into their module. Their tests follow them.
+global using Anthill.Modules.Reasoning;
