@@ -1,5 +1,5 @@
 using Anthill.Core.Agents;
-using Anthill.Core.Contracts;
+using Anthill.SDK.Contracts;
 using Xunit;
 
 namespace Anthill.Tests;
