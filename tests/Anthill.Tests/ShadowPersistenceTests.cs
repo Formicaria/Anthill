@@ -1,5 +1,5 @@
 using Anthill.Core.Memory;
-using Anthill.Core.SafeAction;
+using Anthill.SDK.Actions;
 using Anthill.Core.Shadow;
 using Xunit;
 

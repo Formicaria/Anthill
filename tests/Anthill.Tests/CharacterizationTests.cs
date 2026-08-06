@@ -1,7 +1,7 @@
 using Anthill.Core.Agents;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
-using Anthill.Core.Homelab.Actions;
+using Anthill.Modules.Homelab.Actions;
 using Anthill.Core.Memory;
 using Anthill.Core.Outcomes;
 using Anthill.Core.Skills;
@@ -268,7 +268,7 @@ public class CharacterizationTests : IDisposable
     [InlineData("executed")]
     [InlineData("nonsense")]
     public void NoActionState_ReachesExecutingWithoutApproval(string legacy) =>
-        Assert.False(ActionLifecycleBridge.Guard(legacy, Anthill.Core.SafeAction.ActionState.Executing).Ok);
+        Assert.False(ActionLifecycleBridge.Guard(legacy, Anthill.SDK.Actions.ActionState.Executing).Ok);
 
     // ---- 6. TASK OUTCOME MAPPING --------------------------------------------------------------------
 

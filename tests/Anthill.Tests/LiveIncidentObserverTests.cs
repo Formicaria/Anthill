@@ -1,7 +1,8 @@
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
-using Anthill.Core.Homelab;
+using Anthill.Modules.Homelab;
 using Anthill.Core.Memory;
+using Anthill.Api;                      // v3.8.7: LiveIncidentObserver moved to the composition root
 using Anthill.Core.Shadow;
 using Anthill.Core.Skills;
 using Xunit;
@@ -178,7 +179,12 @@ public class LiveIncidentObserverTests : IDisposable
     [Fact]
     public void TheIncidentManagerInvokesTheHook_AfterTheRepositoryAcceptsANewIncident()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Incidents", "IncidentManager.cs"));
+        // v3.8.7: the incident layer left the core with the rest of the homelab. This guard reads
+        // source by PATH, so it is one of the few things a file move genuinely breaks — and it is
+        // supposed to: a path-based assertion that silently stopped finding its file would pass by
+        // vacuity, which is worse than failing.
+        var source = File.ReadAllText(Path.Combine(RepoRoot(),
+            "src", "Anthill.Modules", "Anthill.Modules.Homelab", "Incidents", "IncidentManager.cs"));
         var code = string.Join("\n", source.Split('\n')
             .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
 

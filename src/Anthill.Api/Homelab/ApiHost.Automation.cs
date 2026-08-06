@@ -1,7 +1,7 @@
 using Anthill.Core.Configuration;
-using Anthill.Core.Homelab.Automation;
-using Anthill.Core.Homelab.Notifications;
-using Anthill.Core.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Automation;
+using Anthill.Modules.Homelab.Notifications;
+using Anthill.Modules.Homelab.Scheduling;
 
 namespace Anthill.Api;
 
@@ -33,7 +33,7 @@ public static partial class ApiHost
         {
             var fired = HomelabAutomation!.EvaluateAll();
             return System.Threading.Tasks.Task.FromResult(
-                Anthill.Core.Homelab.HomelabProviderResult.Success($"automation evaluated ({fired.Count} rule outcome(s))", fired.Count));
+                Anthill.Modules.Homelab.HomelabProviderResult.Success($"automation evaluated ({fired.Count} rule outcome(s))", fired.Count));
         }));
     }
 

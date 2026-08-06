@@ -1,6 +1,6 @@
 using Anthill.Core.Common;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Backup;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Backup;
 
 namespace Anthill.Api;
 

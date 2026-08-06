@@ -1,5 +1,5 @@
 using Anthill.Core.Configuration;
-using Anthill.Core.Homelab.Actions;
+using Anthill.Modules.Homelab.Actions;
 
 namespace Anthill.Api;
 
@@ -108,7 +108,7 @@ public static partial class ApiHost
             if (proposal.State is not ("pending" or "approved"))
                 return ApiJson.Error($"Rollback note can only be set while pending/approved — this proposal is '{proposal.State}'.", "refused");
             proposal.RollbackNote = body!.RollbackNote!.Trim();
-            Anthill.Core.Homelab.Actions.BlastRadius.Apply(proposal); // note presence lowers the score — recompute honestly
+            Anthill.Modules.Homelab.Actions.BlastRadius.Apply(proposal); // note presence lowers the score — recompute honestly
             Homelab.UpdateActionProposal(proposal);
             return ApiJson.Ok(proposal, $"Rollback note saved (blast radius now {proposal.BlastRadiusScore} = {proposal.RiskLevel}).");
         });
@@ -137,7 +137,7 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<KillSwitchRequest>(); } catch { /* reason is optional */ }
             var by = CurrentUsername(ctx) ?? "operator";
             HomelabActionControl.Stop($"{by}: {(string.IsNullOrWhiteSpace(body?.Reason) ? "manual stop" : body!.Reason!.Trim())}");
-            Homelab.RecordEvent(new Anthill.Core.Homelab.HomelabEvent
+            Homelab.RecordEvent(new Anthill.Modules.Homelab.HomelabEvent
             {
                 EventType = "homelab_stop_engaged", SubjectKind = "kill_switch", SubjectId = "HOMELAB_STOP",
                 Severity = "warning", Message = $"[{by}] HOMELAB_STOP engaged — no homelab action may execute.",
@@ -151,7 +151,7 @@ public static partial class ApiHost
             var by = CurrentUsername(ctx) ?? "operator";
             HomelabActionControl.Resume();
             var still = HomelabActionControl.IsStopped; // file deletion can fail — report honestly
-            Homelab.RecordEvent(new Anthill.Core.Homelab.HomelabEvent
+            Homelab.RecordEvent(new Anthill.Modules.Homelab.HomelabEvent
             {
                 EventType = still ? "homelab_resume_failed" : "homelab_resumed", SubjectKind = "kill_switch",
                 SubjectId = "HOMELAB_STOP", Severity = still ? "error" : "info",

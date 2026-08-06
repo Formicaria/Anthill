@@ -210,7 +210,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // if they all stop, that is exactly the signal this mechanism exists to send.
         _workerHeartbeat = new Timer(_ =>
             {
-                try { Memory.Heartbeat(Anthill.Core.Workers.LocalWorker.Id, Common.AnthillTime.NowUtc()); }
+                try { Memory.Heartbeat(Anthill.Core.Workers.LocalWorker.Id, AnthillTime.NowUtc()); }
                 catch { }
             },
             null, Anthill.Core.Workers.LocalWorker.HeartbeatEvery, Anthill.Core.Workers.LocalWorker.HeartbeatEvery);

@@ -1,5 +1,56 @@
 # ANTHILL Changelog
 
+## v3.8.7 - The homelab leaves the core
+
+Phase 4a of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisites for moving
+Homelab and Integrations out, plus a gap the survey exposed.
+
+- **The homelab coupling was two files, not twenty.** Homelab and Integrations are 6,549 lines and
+  import `Anthill.Core.Common` twenty times — but they use exactly two of its helpers: `AnthillTime`
+  (56 call sites) and `Json` (10). Both are dependency-free and I/O-free, so they moved to
+  `Anthill.SDK.Common` and the rest of `Common` stayed put. Measuring the seam before cutting it
+  turned a feared prerequisite into a two-file change.
+- **`HomelabRepository.RecordEvent` was a second event stream with no live outlet** — its own table,
+  its own severity vocabulary, nineteen call sites, durable since v1.9.0 and never once visible on
+  the console. A VM restarting, a credential being used, an inventory drifting: all recorded, none
+  announced. This is v3.8.3's discovery repeating in a different part of the codebase, and it takes
+  the same retrofit: persist, then publish, never inside the write lock.
+- **With one wrinkle the mission log does not have.** Homelab inserts are `OR IGNORE`, because
+  providers use stable ids (`pve-task:<UPID>`) and a re-sync re-offers events already stored. So
+  publication is gated on rows actually written — otherwise every Proxmox re-sync would replay
+  recent history onto the console, and the stream would fill with events that did not just happen.
+- **Homelab event types are prefixed, not passed through.** `homelab_inventory_changed`, not
+  `inventory_changed`. The two vocabularies are independent, and a console filtering on a bare name
+  would silently mix infrastructure activity into mission panels the first time they agreed on a
+  word. The original type stays in the metadata for anything that wants to group by it.
+- Unwired behaviour is unchanged in both cases: the moved helpers are the same code in a different
+  assembly, and a repository with no bus behaves exactly as it did before the property existed.
+
+### 4b — the move itself
+
+- **`Anthill.Modules.Homelab`: 6,549 lines out of the core**, plus health and incidents. Core is
+  **25,692 lines, down from the 34,247 baseline — a 25% reduction**, and all of it real: nothing was
+  deleted, and no capability changed.
+- **The action vocabulary went to the SDK, not the module.** `ActionLifecycle`, `RiskEngine`,
+  `ChangeSetTransaction`, `RecoveryOrchestrator` and `RiskLevel` are all fully pure — not one core
+  import between them — and they are SHARED: shadow mode is core, the homelab is a module, and both
+  speak them. Shared pure vocabulary is exactly what the SDK is for.
+- **The last two dependencies became contracts.** Eleven `AnthillRuntime` settings arrive as
+  `HomelabOptions`; `FieldCipher` arrives as `IFieldCipher`, whose implementation stays in the core
+  because it resolves its key from a configured path. A module that constructed a cipher would need
+  the key resolution, and the key resolution needs the runtime.
+- **`LiveIncidentObserver` moved to the composition root.** It is the one component the extraction
+  could not leave alone: it reads `IncidentRecord` (now a module type) and writes to `SqliteMemory`
+  and the skill registry (core types). A bridge cannot live on either bank — in the core it would
+  make the core depend on a module; in the module it would need the colony's memory. `Anthill.Api`
+  is where both legitimately exist, and where its only caller already was.
+- **Every `using Anthill.Core.*` in the module was deleted.** That deletion is the phase, and the
+  test is mechanical rather than a matter of taste: if the module needs a core type, either the type
+  belongs in the SDK or the module is reaching for coordination it should not have.
+- **Credentials degrade rather than refuse.** With no cipher supplied the store keeps plaintext,
+  because that is what the colony does by default; a homelab stricter than the core it lives in
+  would be a behaviour change smuggled in under a refactor.
+
 ## v3.8.6 - The module contract acquires a caller
 
 Phase 3 of the Core/Modules split (`docs/REFACTOR-PLAN.md`), triggered by a defect the refactor
