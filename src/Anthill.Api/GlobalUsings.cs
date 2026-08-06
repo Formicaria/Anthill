@@ -9,3 +9,8 @@ global using Anthill.SDK.Reasoning;
 // It registers the reasoning factory and capability probe at startup and warms the probe off the
 // request path. If this import ever appears in Anthill.Core, the boundary has been broken.
 global using Anthill.Modules.Reasoning;
+
+// v3.8.6 — the module lifecycle: ModuleHost hands each module an IModuleContext, which is the only
+// surface a module gets onto the colony.
+global using Anthill.Core.Modules;
+global using Anthill.Core.Events;

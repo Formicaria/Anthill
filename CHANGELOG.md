@@ -1,5 +1,40 @@
 # ANTHILL Changelog
 
+## v3.8.6 - The module contract acquires a caller
+
+Phase 3 of the Core/Modules split (`docs/REFACTOR-PLAN.md`), triggered by a defect the refactor
+introduced.
+
+- **v3.8.5 shipped `IAnthillModule` and `IModuleContext` that nothing ever invoked.** The API
+  reached past the module system and registered a reasoning factory it had constructed itself. It
+  worked, and it left a subsystem with no production entry point — precisely what `CallSiteAudit`
+  exists to catch, introduced by the refactor meant to prevent that class of mistake. `ModuleHost`
+  now hands each module an `IModuleContext`, and `ReasoningModule.Register` is what puts the
+  provider factory into the core registry.
+- **A module cannot register itself**, because the registry is in the core and a module may not
+  reference the core. `IModuleContext` gained `RegisterReasoningProvider` and
+  `RegisterCapabilityProbe` — typed rather than a generic `RegisterService<T>`, which would be a
+  service locator: unbounded, unreadable, and searched by type at the point of use. Reasoning is a
+  capability the core explicitly recognises *and explicitly works without*, so it gets a name.
+- **Phase 3's memory segregation, forced rather than speculative.** `IModuleContext` could not be
+  implemented without `IPheromoneMemory` and `IEventLog`, which had been declared in phase 0 and
+  left unimplemented. `SqliteMemory` now implements both EXPLICITLY — reachable only through the
+  interface, so no core call site can drift into the module-facing shape. A module holds two narrow
+  views of a class with 177 public methods spanning provider credentials, user records and shadow
+  runs; handing it the class would have made the boundary decorative.
+- **A module's events are indistinguishable from the core's.** `IEventLog.Append` goes through the
+  same `LogEvent` — same table, same publication, same persist-then-publish ordering. A separate
+  path would have produced a second event stream the dashboard knew nothing about.
+- **Composition order is now explicit.** Modules must load before the Queen, or the startup fitness
+  report describes a colony with no providers. So the memory and bus are built first and the Queen
+  **adopts** them rather than constructing her own — overwriting the bus would have orphaned every
+  subscriber attached during module loading, and the registration events would have been persisted
+  and announced to nobody.
+- **A module that throws while registering takes the colony down, deliberately.** Unlike a failure
+  at call time — where a missing provider must degrade to a typed refusal so the mission can still
+  report — a module that cannot register is a misconfigured build, and booting anyway yields a
+  colony silently lacking a capability the operator installed it to have.
+
 ## v3.8.5 - The colony runs without AI
 
 Phase 2b of the Core/Modules split (`docs/REFACTOR-PLAN.md`), and the first module.
