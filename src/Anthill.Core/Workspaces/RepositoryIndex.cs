@@ -99,7 +99,7 @@ public sealed record RepositoryIndex
     /// second tells an operator whether incremental indexing is actually working.
     /// </summary>
     public int ReusedFiles { get; init; }
-    public DateTime BuiltAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime BuiltAt { get; init; } = AnthillTime.NowUtc();
 
     public long TotalBytes => Files.Sum(f => f.Bytes);
 

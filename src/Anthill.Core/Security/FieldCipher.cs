@@ -18,7 +18,7 @@ namespace Anthill.Core.Security;
 ///   1. ANTHILL_ENCRYPTION_KEY env var (base64 or hex, 32 bytes)
 ///   2. a 0600 key file under the workspace (auto-generated once, owner-only)
 /// </summary>
-public sealed class FieldCipher
+public sealed class FieldCipher : Anthill.SDK.Security.IFieldCipher
 {
     private const string Prefix = "enc:v1:";
     private readonly byte[] _key;

@@ -1,7 +1,7 @@
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Scheduling;
-using Anthill.Core.Homelab.Security;
-using Anthill.Core.Integrations;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Security;
+using Anthill.Modules.Homelab.Integrations;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

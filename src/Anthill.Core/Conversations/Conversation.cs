@@ -116,7 +116,7 @@ public sealed record ConversationTurn(
     /// <summary>Set when this turn escalated the conversation into mission work.</summary>
     public string? MissionId { get; init; }
 
-    public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
 }
 
 /// <summary>
@@ -164,8 +164,8 @@ public sealed record Conversation
     public ConversationBudget Budget { get; init; } = ConversationBudget.Default;
 
     public bool Cancelled { get; init; }
-    public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
-    public DateTime UpdatedAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
+    public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 
     /// <summary>
     /// Whether the policy is validly recorded. A conversation claiming AutoApprove or Bypass with
@@ -228,7 +228,7 @@ public static class EscalationGate
     public static EscalationDecision Evaluate(Conversation conversation, string action, string? operatorAnswer = null)
     {
         var policy = conversation.EffectivePolicy;
-        var now = Common.AnthillTime.NowUtc();
+        var now = AnthillTime.NowUtc();
 
         // Not side-effecting: allowed, and recorded as such. Reading and searching are the bulk of a
         // conversation, and a decision record for each would bury the ones that matter — so this

@@ -1,12 +1,12 @@
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Scheduling;
-using Anthill.Core.Integrations.Arr;
-using Anthill.Core.Integrations.Download;
-using Anthill.Core.Integrations.MediaRequests;
-using Anthill.Core.Integrations.Media;
-using Anthill.Core.Integrations.Monitoring;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Integrations.Arr;
+using Anthill.Modules.Homelab.Integrations.Download;
+using Anthill.Modules.Homelab.Integrations.MediaRequests;
+using Anthill.Modules.Homelab.Integrations.Media;
+using Anthill.Modules.Homelab.Integrations.Monitoring;
 
 namespace Anthill.Api;
 

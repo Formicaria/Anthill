@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Anthill.Core\Anthill.Core.csproj" />
+    <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
   </ItemGroup>
 
 </Project>

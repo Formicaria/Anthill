@@ -1,8 +1,8 @@
 using Anthill.Core.Agents;
 using Anthill.Core.Common;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Scheduling;
-using Anthill.Core.Homelab.Security;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Security;
 using Anthill.Core.Security;
 using Xunit;
 

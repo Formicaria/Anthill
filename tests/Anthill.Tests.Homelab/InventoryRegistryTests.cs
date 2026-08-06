@@ -1,4 +1,4 @@
-using Anthill.Core.Homelab;
+using Anthill.Modules.Homelab;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;
@@ -112,7 +112,7 @@ public class InventoryRegistryTests : IDisposable
     {
         using var repo = new HomelabRepository(NewDbPath());
         Seed(repo);
-        var store = new Anthill.Core.Homelab.Security.HomelabCredentialStore(repo);
+        var store = new Anthill.Modules.Homelab.Security.HomelabCredentialStore(repo);
         const string secret = "proxmox-secret-QWERTY99";
         store.SaveCredential("prox", "proxmox_api_token", "192.168.1.5", secret, "tester");
         repo.AddAllowlistEntry(new TargetAllowlistRecord { Target = "10.0.0.0/24", AddedBy = "tester" });

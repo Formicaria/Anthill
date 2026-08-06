@@ -1,6 +1,6 @@
-using Anthill.Core.Health;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Security;
+using Anthill.Modules.Homelab.Health;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Security;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

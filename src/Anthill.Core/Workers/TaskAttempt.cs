@@ -68,7 +68,7 @@ public sealed record TaskAttempt
     /// </summary>
     public DateTime? LeaseUntil { get; init; }
 
-    public DateTime StartedAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime StartedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime? FinishedAt { get; init; }
 
     public bool IsTerminal => State is not AttemptState.Running;
@@ -115,7 +115,7 @@ public sealed record WorkerRegistration
     public int MaxConcurrent { get; init; } = 1;
 
     public DateTime? LastHeartbeat { get; init; }
-    public DateTime RegisteredAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime RegisteredAt { get; init; } = AnthillTime.NowUtc();
 
     /// <summary>
     /// Whether this worker has reported recently enough to be given work.

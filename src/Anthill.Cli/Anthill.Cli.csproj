@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Anthill.Api\Anthill.Api.csproj" />
     <!-- Composition root: modules are wired in here, never referenced by the core. -->
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
   </ItemGroup>
 
 </Project>

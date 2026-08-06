@@ -1,7 +1,7 @@
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Actions;
-using Anthill.Core.Homelab.Approvals;
-using Anthill.Core.SafeAction;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Actions;
+using Anthill.Modules.Homelab.Approvals;
+using Anthill.SDK.Actions;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

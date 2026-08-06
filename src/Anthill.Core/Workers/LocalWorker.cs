@@ -45,7 +45,7 @@ public static class LocalWorker
     {
         Id = string.IsNullOrWhiteSpace(id) ? "local" : id.Trim();
 
-        var now = Common.AnthillTime.NowUtc();
+        var now = AnthillTime.NowUtc();
         var worker = new WorkerRegistration
         {
             Id = Id,

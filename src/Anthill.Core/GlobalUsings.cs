@@ -18,3 +18,15 @@ global using TaskStatus = Anthill.Core.Domain.TaskStatus;
 // and the review that matters here is "did anything move that shouldn't have", which a diff full of
 // import churn actively hides.
 global using Anthill.SDK.Reasoning;
+
+// v3.8.7 — AnthillTime and Json moved from Anthill.Core.Common to Anthill.SDK.Common.
+// They were the only two Common helpers with no dependency on the core and no I/O, and the
+// only two that Homelab and Integrations actually use (56 and 10 call sites) — so they are
+// what has to move first for anything else to follow them out of the core.
+global using Anthill.SDK.Common;
+
+// v3.8.7 — the action vocabulary (ActionLifecycle, RiskEngine, ChangeSetTransaction,
+// RecoveryOrchestrator, RiskLevel) moved to Anthill.SDK.Actions. All five were fully pure —
+// no core imports at all — and they are SHARED: shadow mode is in the core, the homelab is a
+// module, and both speak this vocabulary. Shared pure vocabulary is exactly what the SDK is for.
+global using Anthill.SDK.Actions;

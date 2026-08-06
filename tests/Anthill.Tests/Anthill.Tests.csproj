@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\Anthill.Api\Anthill.Api.csproj" />
     <!-- The provider implementations moved out of the core in v3.8.5; their tests follow them. -->
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
+    <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
   </ItemGroup>
 
 </Project>

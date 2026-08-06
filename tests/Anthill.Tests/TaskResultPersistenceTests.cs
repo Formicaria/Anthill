@@ -140,7 +140,7 @@ public class TaskResultPersistenceTests
     [Fact]
     public void ACorruptCollectionColumn_DegradesToEmpty_RatherThanThrowing()
     {
-        Assert.Empty(Anthill.Core.Common.Json.TryParseList<AntArtifact>("{not json"));
-        Assert.Null(Anthill.Core.Common.Json.TryParseTyped<AntMetrics>("{not json"));
+        Assert.Empty(Json.TryParseList<AntArtifact>("{not json"));
+        Assert.Null(Json.TryParseTyped<AntMetrics>("{not json"));
     }
 }

@@ -2,11 +2,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Security;
-using Anthill.Core.Integrations.Docker;
-using Anthill.Core.Integrations.Hyperv;
-using Anthill.Core.Integrations.VSphere;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Security;
+using Anthill.Modules.Homelab.Integrations.Docker;
+using Anthill.Modules.Homelab.Integrations.Hyperv;
+using Anthill.Modules.Homelab.Integrations.VSphere;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

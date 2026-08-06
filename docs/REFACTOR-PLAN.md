@@ -261,7 +261,40 @@ The unglamorous phase that makes phases 4–6 possible. Interfaces first; the cl
 
 ### Phase 4 — Homelab + Integrations → module
 
-Largest single core reduction (~4,000 LOC).
+Measured, not estimated: `Homelab/` is 4,259 lines across 19 files and `Integrations/` is 2,290
+across 13 — **6,549 lines**, plus 1,441 in `Anthill.Api/Homelab/`. Split in two.
+
+#### Phase 4a — prerequisites — **DONE, pending local gate** (v3.8.7)
+
+- [x] `AnthillTime.cs` and `Json.cs` → `Anthill.SDK/Common/`. The survey's useful finding: Homelab
+      and Integrations import `Anthill.Core.Common` twenty times but use only these two helpers
+      (56 and 10 call sites), and both are dependency-free and I/O-free. The rest of `Common` stays.
+- [x] `HomelabRepository.RecordEvent` persists **then** publishes to `IEventBus`, gated on rows
+      actually written because the insert is `OR IGNORE`
+- [x] Homelab event types prefixed `homelab_` on the colony stream; original type kept in metadata
+- [x] Wired at the API composition root, to the same bus the mission log publishes to
+
+**Gate:** `dotnet build Anthill.sln && dotnet test`, both suites.
+
+#### Phase 4b — the move itself — NEXT
+
+Remaining coupling to resolve first, measured from the imports:
+
+| Needs | Where it goes |
+|---|---|
+| `Health/` (272 LOC) | follows homelab into the module — it *is* homelab health |
+| `SafeAction/` (333 LOC) | assess: approval is coordination, so it may be core |
+| `Security` (1 import) | credential handling — likely an SDK contract |
+| `AnthillRuntime` (3 imports) | pass values in, as `ReasoningProviderContext` does |
+| `SqliteMemory` (3 uses) | narrow interfaces, as phase 3 did |
+
+- [ ] SDK contracts first: `IHomelabRepository`, `IIntegrationDefinition`, `IInventoryProvider`,
+      `IHomelabActionRunner`, `IHomelabTargetGuard`
+- [ ] `IHomelabEventSink` deleted — 4a made it redundant as an announcement path; it is now only
+      persistence, and `IHomelabRepository` already carries that
+- [ ] Move `Homelab/**` and `Integrations/**` to `Anthill.Modules.Homelab`
+- [ ] Reconcile `Incidents/IncidentManager.cs`, `Shadow/LiveIncidentObserver.cs`, `ApiHost.cs`
+- [ ] `Anthill.Api/Homelab/*` endpoints register through the module
 
 - [ ] SDK contracts first: `IHomelabRepository`, `IIntegrationDefinition`, `IInventoryProvider`,
       `IHomelabActionRunner`, `IHomelabTargetGuard` (several already exist in Core — move the

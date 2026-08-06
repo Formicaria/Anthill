@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Anthill.Core.Homelab;
-using Anthill.Core.Integrations;
-using Anthill.Core.Integrations.Arr;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Integrations;
+using Anthill.Modules.Homelab.Integrations.Arr;
 
 namespace Anthill.Api;
 

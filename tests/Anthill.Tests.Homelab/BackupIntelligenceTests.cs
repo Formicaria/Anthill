@@ -1,5 +1,5 @@
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Backup;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Backup;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

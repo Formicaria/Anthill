@@ -1,4 +1,4 @@
-using Anthill.Core.SafeAction;
+using Anthill.SDK.Actions;
 using Xunit;
 
 namespace Anthill.Tests;

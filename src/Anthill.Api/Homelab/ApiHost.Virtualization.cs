@@ -1,17 +1,17 @@
 using Anthill.Core.Configuration;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Scheduling;
-using Anthill.Core.Integrations.Docker;
-using Anthill.Core.Integrations.Hyperv;
-using Anthill.Core.Integrations.Proxmox;
-using Anthill.Core.Integrations.VSphere;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Integrations.Docker;
+using Anthill.Modules.Homelab.Integrations.Hyperv;
+using Anthill.Modules.Homelab.Integrations.Proxmox;
+using Anthill.Modules.Homelab.Integrations.VSphere;
 
 namespace Anthill.Api;
 
 /// <summary>
 /// Unified read-only virtualization layer (v2.1.0). Proxmox, ESXi/vSphere, Docker, and Hyper-V all
 /// project into ONE inventory (nodes/VMs/containers/storage) through the same
-/// <see cref="Anthill.Core.Homelab.IInventoryProvider"/> shape. Providers are built ON DEMAND from
+/// <see cref="Anthill.Modules.Homelab.IInventoryProvider"/> shape. Providers are built ON DEMAND from
 /// current config, so a connection edited in the UI (host / credential id / enable) takes effect on the
 /// next sync WITHOUT a restart. Every client is read-only by construction (no start/stop/delete exists).
 /// </summary>
@@ -20,7 +20,7 @@ public static partial class ApiHost
     internal static readonly string[] VirtKinds = { "proxmox", "esxi", "docker", "hyperv" };
 
     /// <summary>Builds the inventory provider for one kind from CURRENT config; null when disabled/unset.</summary>
-    internal static Anthill.Core.Homelab.IInventoryProvider? BuildVirtProvider(string kind)
+    internal static Anthill.Modules.Homelab.IInventoryProvider? BuildVirtProvider(string kind)
     {
         switch (kind)
         {

@@ -2,10 +2,10 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Anthill.Core.Configuration;
-using Anthill.Core.Health;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Notifications;
-using Anthill.Core.Homelab.Security;
+using Anthill.Modules.Homelab.Health;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Notifications;
+using Anthill.Modules.Homelab.Security;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;
@@ -21,8 +21,7 @@ public class HealthAndNotificationTests : IDisposable
     private readonly string _dir;
     private readonly HomelabRepository _repo;
     private readonly HomelabTargetGuard _guard;
-    private readonly bool _savedEnabled;
-    private readonly string _savedGeneric, _savedSlack, _savedDiscord;
+    private readonly HomelabOptions _savedOptions;
 
     public HealthAndNotificationTests()
     {
@@ -30,18 +29,14 @@ public class HealthAndNotificationTests : IDisposable
         Directory.CreateDirectory(_dir);
         _repo = new HomelabRepository(Path.Combine(_dir, "health.db"));
         _guard = new HomelabTargetGuard(_repo);
-        _savedEnabled = AnthillRuntime.EnableHomelabNotifications;
-        _savedGeneric = AnthillRuntime.HomelabGenericWebhook;
-        _savedSlack = AnthillRuntime.HomelabSlackWebhook;
-        _savedDiscord = AnthillRuntime.HomelabDiscordWebhook;
+        // v3.8.7: notification settings live on the module now, not the core runtime — the
+        // homelab reads HomelabRuntime.Options, which a composition root supplies.
+        _savedOptions = HomelabRuntime.Options;
     }
 
     public void Dispose()
     {
-        AnthillRuntime.EnableHomelabNotifications = _savedEnabled;
-        AnthillRuntime.HomelabGenericWebhook = _savedGeneric;
-        AnthillRuntime.HomelabSlackWebhook = _savedSlack;
-        AnthillRuntime.HomelabDiscordWebhook = _savedDiscord;
+        HomelabRuntime.Configure(_savedOptions);
         _repo.Dispose();
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
@@ -190,13 +185,28 @@ public class HealthAndNotificationTests : IDisposable
         Assert.Single(events, e => e.EventType == "incident_candidate"); // fires once per streak, at N=3
     }
 
+    /// <summary>
+    /// v3.8.7 — reconfigure the module rather than the core runtime.
+    ///
+    /// Slack and Discord are blanked on every call, not left as they were: these tests assert on a
+    /// DELIVERY COUNT, and a webhook surviving from a previous test would make the count wrong in a
+    /// way that reads as a bug in the notifier.
+    /// </summary>
+    private static void ConfigureNotifications(bool enabled, string? generic) =>
+        HomelabRuntime.Configure(HomelabRuntime.Options with
+        {
+            NotificationsEnabled = enabled,
+            GenericWebhook = generic,
+            SlackWebhook = "",
+            DiscordWebhook = "",
+        });
+
     // ---- Notifications ---------------------------------------------------------------------------
 
     [Fact]
     public async System.Threading.Tasks.Task Notifications_DisabledByDefault_SendsNothing()
     {
-        AnthillRuntime.EnableHomelabNotifications = false;
-        AnthillRuntime.HomelabGenericWebhook = "http://127.0.0.1:9/never";
+        ConfigureNotifications(enabled: false, generic: "http://127.0.0.1:9/never");
         var notifier = new NotificationService(_repo);
         Assert.Equal(0, await notifier.SendAsync(new AlertRecord { Kind = "test", Message = "x" }));
     }
@@ -205,9 +215,7 @@ public class HealthAndNotificationTests : IDisposable
     public async System.Threading.Tasks.Task Notifications_DeliverToGenericWebhook_AndAuditWithoutUrl()
     {
         using var hook = new MiniHttpServer(_ => 200);
-        AnthillRuntime.EnableHomelabNotifications = true;
-        AnthillRuntime.HomelabGenericWebhook = $"http://127.0.0.1:{hook.Port}/hook-secret-path";
-        AnthillRuntime.HomelabSlackWebhook = ""; AnthillRuntime.HomelabDiscordWebhook = "";
+        ConfigureNotifications(enabled: true, generic: $"http://127.0.0.1:{hook.Port}/hook-secret-path");
         var notifier = new NotificationService(_repo);
 
         var delivered = await notifier.SendAsync(new AlertRecord { Kind = "health_check_failure", Target = "nas.lan", Severity = "warning", Message = "tcp check: refused" });
@@ -222,9 +230,7 @@ public class HealthAndNotificationTests : IDisposable
     [Fact]
     public async System.Threading.Tasks.Task Notifications_UnreachableWebhook_FailsSoftAndAudits()
     {
-        AnthillRuntime.EnableHomelabNotifications = true;
-        AnthillRuntime.HomelabGenericWebhook = "http://127.0.0.1:1/void"; // refused instantly
-        AnthillRuntime.HomelabSlackWebhook = ""; AnthillRuntime.HomelabDiscordWebhook = "";
+        ConfigureNotifications(enabled: true, generic: "http://127.0.0.1:1/void"); // refused instantly
         var notifier = new NotificationService(_repo, TimeSpan.FromSeconds(2));
         Assert.Equal(0, await notifier.SendAsync(new AlertRecord { Kind = "test", Message = "x" }));
         Assert.Contains(_repo.RecentEvents(10), e => e.EventType == "notification_failed");

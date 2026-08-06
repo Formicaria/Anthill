@@ -257,7 +257,7 @@ public sealed class ConversationRunner
             // gate. Recorded on both sides: the turn says which mission it started, and the
             // conversation lists what it has started, so the join works from either direction.
             MissionIds = conversation.MissionIds.Append(missionId).Distinct().ToList(),
-            UpdatedAt = Common.AnthillTime.NowUtc(),
+            UpdatedAt = AnthillTime.NowUtc(),
         });
 
         return new ConversationOutcome(ConversationMode.Mission, true, missionId,
@@ -282,7 +282,7 @@ public sealed class ConversationRunner
             _memory.SaveConversation(conversation with
             {
                 Cancelled = true,
-                UpdatedAt = Common.AnthillTime.NowUtc(),
+                UpdatedAt = AnthillTime.NowUtc(),
             });
 
         List<CancellationTokenSource> live;

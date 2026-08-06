@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using Anthill.Core.Homelab;
-using Anthill.Core.Integrations;
-using Anthill.Core.Integrations.Download;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Integrations;
+using Anthill.Modules.Homelab.Integrations.Download;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

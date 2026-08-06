@@ -103,8 +103,8 @@ public sealed record MissionWorkspace
     /// <summary>Why it was rejected or orphaned. Never used for control flow; read by operators.</summary>
     public string? Note { get; init; }
 
-    public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
-    public DateTime UpdatedAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
+    public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 
     /// <summary>
     /// States in which the directory is expected to exist on disk. Recovery compares this against
