@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Modules.Reasoning</RootNamespace>
+    <AssemblyName>Anthill.Modules.Reasoning</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    THE SDK, AND NOTHING ELSE.
+
+    There is deliberately no reference to Anthill.Core here, and adding one would undo the phase.
+    The check is mechanical: if this project ever needs a type from the core, the type is in the
+    wrong place — either it is a contract and belongs in Anthill.SDK, or the module is reaching for
+    coordination it should not have. That test caught the only real coupling these files had, a
+    single `using Anthill.Core.Configuration` for the call timeout, which now arrives through
+    IReasoningRuntimeOptions.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
+</Project>

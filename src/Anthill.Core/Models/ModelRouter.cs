@@ -23,176 +23,6 @@ public interface IModelClient : IReasoningProvider
 {
 }
 
-
-/// <summary>
-/// Local Ollama client, speaking OpenAI on the wire.
-///
-/// v3.3.0: this talks to Ollama's OPENAI-COMPATIBLE endpoint (<c>/v1/chat/completions</c>), not the
-/// native <c>/api/generate</c>. One decision, three consequences, and the first is the reason:
-///
-/// 1. <c>/api/generate</c> HAS NO TOOL-CALL CHANNEL. It takes a prompt string and returns a
-///    completion string, so a local model physically cannot ask to run a tool through it. Every
-///    local agent loop, every self-improvement cycle, every "read this file then patch it" is
-///    unreachable on that endpoint — not hard, unreachable. Function-calling local models
-///    (Hermes, Qwen, Llama 3.x) emit OpenAI-shaped <c>tool_calls</c>, and this is where they land.
-/// 2. It collapses a special case rather than adding one. Ollama now shares the exact request
-///    projection, tool schema and response reader with OpenAI, LM Studio, vLLM, llama.cpp and
-///    OpenRouter — so a tool-calling bug is fixed once for every provider, and the tests that
-///    cover the shape cover all of them.
-/// 3. Local stays first-class. No API key, no cost, no cloud round-trip; the only thing that
-///    changed is the dialect it is asked in.
-///
-/// What is deliberately KEPT is the diagnostic that matters most here: a 404 from Ollama nearly
-/// always means the model is not pulled, and saying so — with the exact <c>ollama pull</c> command
-/// — is the difference between a two-second fix and an operator debugging their network.
-/// </summary>
-public sealed class OllamaClient : IModelClient
-{
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(185) };
-    private readonly string _model;
-    private readonly string _host;
-
-    public OllamaClient(string? model = null, string? host = null)
-    {
-        _model = model ?? AnthillRuntime.OllamaModel;
-        _host = (host ?? AnthillRuntime.OllamaHost).TrimEnd('/');
-    }
-
-    /// <summary>
-    /// v3.3.0: typed, still on /api/generate.
-    ///
-    /// The endpoint deliberately does NOT change in this increment. Ollama's /api/chat is where
-    /// tool calling and real multi-turn live, and it is where this is going — but moving the wire
-    /// AND the contract in one step would leave a broken local model call indistinguishable from a
-    /// broken refactor. This step is structural only: identical request on the wire, identical
-    /// bytes back, transport and error classification untouched.
-    ///
-    /// Messages are flattened with role labels. Lossy in principle, lossless in practice today —
-    /// every caller sends a single user message — and tools cannot arrive here because the
-    /// capability catalog gives the ollama PROVIDER no tool calling, so nothing offers them.
-    /// </summary>
-    public ModelResponse Send(ModelRequest request, int retries = 2)
-    {
-        // Ollama's OpenAI-compatible endpoint, not /api/generate. Same body, same tool schema and
-        // same reader as OpenAI, LM Studio, vLLM, llama.cpp and OpenRouter — see the class remarks.
-        var url = ChatEndpoint(_host);
-        var model = request.Model ?? _model;
-
-        // Negotiated against what OLLAMA REPORTS about this model, not against a table of guesses.
-        // The name table remains the fallback inside the cache for a model Ollama does not describe.
-        var negotiated = ModelCapabilityCatalog.Negotiate(
-            request, OllamaCapabilityCache.For(_host, model));
-        var payload = ProviderWireFormat.OpenAiBody(negotiated, model).ToJsonString();
-        // The operator-facing prose is unchanged throughout; only the STATUS is now carried
-        // alongside it instead of being recoverable from it.
-        var lastError = Fail(ModelCallOutcome.Empty, model, "");
-        for (var attempt = 1; attempt <= retries; attempt++)
-        {
-            // Link the mission's ambient token (so a timed-out/cancelled mission aborts this call)
-            // with a hard per-call deadline — the wait is now bounded AND cancellable, never the
-            // old up-to-185s-per-attempt block that could freeze the single-writer job queue.
-            var ambient = ModelCallScope.Current;
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
-            cts.CancelAfter(TimeSpan.FromSeconds(AnthillRuntime.ModelCallTimeoutSeconds));
-            try
-            {
-                using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-                using var response = Http.PostAsync(url, content, cts.Token).GetAwaiter().GetResult();
-                // v2.4.3: a non-2xx is NOT a connection failure — report what Ollama actually said.
-                // The classic trap: a 404 here almost always means the model is not pulled, which
-                // used to masquerade as "could not connect" and sent operators chasing networking.
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    var detail = errBody.Length > 0 && errBody.Length <= 300 ? $" — {errBody.Trim()}" : "";
-                    return (int)response.StatusCode == 404
-                        ? Fail(ModelCallOutcome.NotAvailable, model,
-                            $"ERROR: Ollama at {_host} is reachable but model '{model}' is not available{detail}. Run: ollama pull {model} (an offline machine needs the model blobs copied in — it cannot pull).")
-                        : Fail(ModelCallOutcome.HttpError, model,
-                            $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.");
-                }
-                var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                // The same tested reader every OpenAI-compatible provider uses. It recovers tool
-                // calls and usage, which is the entire point of moving off /api/generate: that
-                // endpoint has no tool-call channel, so a local model could never call anything.
-                return ProviderWireFormat.ReadOpenAi(body, "ollama", model);
-            }
-            catch (HttpRequestException error)
-            {
-                return Fail(ModelCallOutcome.ConnectError, model, $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
-                    + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
-                    + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?");
-            }
-            catch (OperationCanceledException) when (ambient.IsCancellationRequested)
-            {
-                // The mission itself was stopped (deadline reached or job cancelled) — abort cleanly
-                // and do NOT retry; retrying would just re-hit the already-cancelled token.
-                return Fail(ModelCallOutcome.Cancelled, model, "ERROR: Ollama request cancelled because the mission was stopped.");
-            }
-            catch (OperationCanceledException)
-            {
-                lastError = Fail(ModelCallOutcome.Timeout, model, $"ERROR: Ollama request timed out after {AnthillRuntime.ModelCallTimeoutSeconds}s (attempt {attempt}/{retries}).");
-            }
-            catch (Exception error)
-            {
-                lastError = Fail(ModelCallOutcome.Error, model, $"ERROR: Ollama request failed: {error.Message} (attempt {attempt}/{retries}).");
-            }
-        }
-        return lastError;
-    }
-
-    /// <summary>
-    /// A failure, carrying which provider and model produced it. The operator prose is byte for
-    /// byte what it was — only the envelope changed — because these strings are what an operator
-    /// reads when a local model will not answer, and a refactor is not a licence to reword them.
-    /// </summary>
-    private static ModelResponse Fail(ModelCallOutcome status, string model, string message) =>
-        new() { Status = status, Content = message, Provider = "ollama", Model = model };
-
-    /// <summary>
-    /// The chat endpoint for a configured Ollama host, tolerating what operators actually type.
-    ///
-    /// `ollama_host` has always meant the bare host ("http://10.10.10.57:11434") because the native
-    /// API lived at /api/*. Now that the OpenAI-compatible path is used, an operator who knows that
-    /// will reasonably paste "…:11434/v1" — the form every OpenAI client calls a base URL — and
-    /// blindly appending would post to /v1/v1/chat/completions and 404. Both forms are accepted, as
-    /// is a host that already carries the full path.
-    ///
-    /// Public and pure so it is testable without a network call, exactly like
-    /// <c>OpenAiCompatibleClient.NormalizeEndpoint</c>, whose job this is the Ollama-side twin of.
-    /// </summary>
-    public static string ChatEndpoint(string host)
-    {
-        var trimmed = (host ?? "").Trim().TrimEnd('/');
-        if (trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return trimmed;
-        if (trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) return trimmed + "/chat/completions";
-        return trimmed + "/v1/chat/completions";
-    }
-
-    // Flatten() lived here and is deleted with the endpoint that needed it. It squashed a message
-    // list into one prompt string because /api/generate accepted nothing else — a lossy step that
-    // the OpenAI-compatible endpoint makes unnecessary: roles now travel as roles.
-}
-
-/// <summary>Provider placeholders kept for forward-compatible routing config. Each fails closed with a clear message.</summary>
-public sealed class PlaceholderClient : IModelClient
-{
-    private readonly string _provider;
-    public PlaceholderClient(string provider) => _provider = provider;
-    // Error, deliberately, not ConfigError: this classified as the generic Error before the typed
-    // boundary, and Error maps to CircuitSignal.Neutral. Promoting it to ConfigError would make it
-    // Healthy and start CLEARING a provider's breaker — a behaviour change smuggled in under a
-    // refactor. The status recorded here is the one this path already had.
-    public ModelResponse Send(ModelRequest request, int retries = 2) =>
-        new()
-        {
-            Status = ModelCallOutcome.Error,
-            Content = $"ERROR: {_provider} provider placeholder is not implemented in this build.",
-            Provider = _provider,
-            Model = request.Model,
-        };
-}
-
 /// <summary>
 /// Role-based model routing. Resolves a provider/model per role, caches clients, records
 /// each call as an event, and reinforces or decays the model-route pheromone trail by outcome.
@@ -244,49 +74,54 @@ public sealed class ModelRouter
                 route.GetValueOrDefault("model", AnthillRuntime.OllamaModel));
     }
 
+    /// <summary>
+    /// v3.8.5 — the router asks for a provider; it no longer knows how to build one.
+    ///
+    /// What used to be here were two switch statements naming <c>OllamaClient</c>,
+    /// <c>OpenAiCompatibleClient</c> and <c>AnthropicClient</c>. They were the one edge that made
+    /// "the core runs without any AI provider" false: the core could not even COMPILE without every
+    /// provider implementation present. Construction now lives in <c>Anthill.Modules.Reasoning</c>
+    /// behind <see cref="IReasoningProviderFactory"/>, and this resolves through
+    /// <see cref="ReasoningProviders"/>.
+    ///
+    /// What is unchanged is everything the router is actually for. Credential resolution still
+    /// happens HERE, because the core owns the encrypted store and a module must never reach into
+    /// it. The caching rule is untouched, and it is the interesting part:
+    ///
+    /// Keyed providers are rebuilt on EVERY call rather than cached, because the API key lives in
+    /// provider_credentials and can be rotated or revoked from Settings → Providers at any moment.
+    /// A cached client would keep using a stale — or just-deleted — key until process restart.
+    /// Construction is cheap (each client shares one static HttpClient), so this costs an
+    /// allocation and buys correctness.
+    /// </summary>
     private IModelClient GetClient(string provider, string model)
     {
-        // Keyed providers (OpenAI/Anthropic/Perplexity/OpenRouter/...) are built fresh on every
-        // call instead of cached: the API key lives in provider_credentials and can be rotated or
-        // revoked from Settings → Providers at any time, and a cached client would keep using a
-        // stale (or just-deleted) key until process restart. Construction itself is cheap — each
-        // client shares one static HttpClient — so this costs nothing but an allocation.
-        if (ProviderCatalog.KeyedProviders.Contains(provider))
-            return BuildKeyedClient(provider, model);
+        var info = ProviderCatalog.Find(provider);
+        var keyed = ProviderCatalog.KeyedProviders.Contains(provider);
 
-        var key = $"{provider}:{model}";
+        var apiKey = keyed ? _memory?.GetDecryptedApiKey(provider) : null;
+        var storedBaseUrl = _memory?.GetProviderBaseUrl(provider);
+        var endpoint = string.IsNullOrWhiteSpace(storedBaseUrl)
+            ? info?.DefaultEndpoint ?? (keyed ? "" : AnthillRuntime.OllamaHost)
+            : storedBaseUrl;
+        var effectiveModel = string.IsNullOrWhiteSpace(model)
+            ? info?.DefaultModel ?? AnthillRuntime.OllamaModel
+            : model;
+
+        if (keyed) return ReasoningProviders.Resolve(provider, effectiveModel, apiKey, endpoint);
+
+        var key = $"{provider}:{effectiveModel}";
         lock (_lock)
         {
             if (_clients.TryGetValue(key, out var existing)) return existing;
-            IModelClient client = provider switch
-            {
-                "ollama" => new OllamaClient(model),
-                _ => new OllamaClient(AnthillRuntime.OllamaModel),
-            };
-            _clients[key] = client;
+            var client = ReasoningProviders.Resolve(provider, effectiveModel, apiKey, endpoint);
+            // Only a real provider is cached. Caching an UnavailableProvider would pin the colony
+            // to "no AI" for the life of the process even after a module registered — and the
+            // registration order between a composition root and a first mission is not something
+            // this class should have to be sure about.
+            if (client is not UnavailableProvider) _clients[key] = client;
             return client;
         }
-    }
-
-    /// <summary>Builds a client for a keyed external provider, resolving its API key and endpoint
-    /// from <see cref="SqliteMemory"/> (see <c>SqliteMemory.Providers.cs</c>).</summary>
-    private IModelClient BuildKeyedClient(string provider, string model)
-    {
-        var info = ProviderCatalog.Find(provider);
-        var apiKey = _memory?.GetDecryptedApiKey(provider);
-        var storedBaseUrl = _memory?.GetProviderBaseUrl(provider);
-        var endpoint = string.IsNullOrWhiteSpace(storedBaseUrl) ? info?.DefaultEndpoint ?? "" : storedBaseUrl;
-        var effectiveModel = string.IsNullOrWhiteSpace(model) ? info?.DefaultModel ?? model : model;
-
-        return provider switch
-        {
-            "openai" => new OpenAiCompatibleClient("OpenAI", endpoint, apiKey, effectiveModel),
-            "perplexity" => new OpenAiCompatibleClient("Perplexity", endpoint, apiKey, effectiveModel),
-            "openrouter" => new OpenAiCompatibleClient("OpenRouter", endpoint, apiKey, effectiveModel,
-                new Dictionary<string, string> { ["HTTP-Referer"] = "https://anthill.local", ["X-Title"] = "ANTHILL" }),
-            "anthropic" => new AnthropicClient(apiKey, effectiveModel, storedBaseUrl),
-            _ => new PlaceholderClient(provider),
-        };
     }
 
     /// <summary>Builds a client for an ad-hoc connection test — the same routing used at mission
@@ -313,21 +148,32 @@ public sealed class ModelRouter
     /// from a second source would eventually describe a different model than the one that runs —
     /// the exact failure the capability endpoint already made once.
     /// </remarks>
+    /// <remarks>
+    /// v3.8.5: the Ollama-specific branch became a probe lookup. The PRECEDENCE is deliberately
+    /// unchanged — a registered probe's answer still beats the hand-written name table, which is
+    /// the whole lesson of v3.8.2, where the table reported five roles broken on every restart for
+    /// a model that reports tools and thinking. What is new is only that the probe may be absent,
+    /// and a probe that cannot describe a model returns null rather than an empty capability set:
+    /// "I don't know" falls through to the table, "it supports nothing" would not.
+    /// </remarks>
     public static ModelCapabilities CapabilitiesFor(string provider, string model) =>
-        string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
-            ? OllamaCapabilityCache.For(AnthillRuntime.OllamaHost, model)
-            : ModelCapabilityCatalog.For(provider, model);
+        ReasoningProviders.Capabilities?.For(provider, model)
+        ?? ModelCapabilityCatalog.For(provider, model);
 
     /// <summary>
     /// A model this provider serves that CAN call tools, or null if none is known.
     ///
     /// Ordered by name for determinism: an agent that silently lands on a different model between
     /// two identical runs is impossible to reason about, and prompt caching dies with it.
+    ///
+    /// Answerable only from DISCOVERED capabilities, so with no probe registered this is null and
+    /// the caller falls back — the name table cannot enumerate what a host happens to have pulled.
     /// </summary>
     private static string? FirstToolCapableModel(string provider)
     {
-        if (!string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)) return null;
-        return OllamaCapabilityCache.Snapshot()
+        var probe = ReasoningProviders.Capabilities;
+        if (probe is null) return null;
+        return probe.Snapshot(provider)
             .Where(kv => kv.Value.ToolCalling)
             .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
             .Select(kv => kv.Key)
