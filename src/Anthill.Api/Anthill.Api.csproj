@@ -8,6 +8,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Anthill.Core\Anthill.Core.csproj" />
+    <!-- Explicit, though it would arrive transitively through Core: the API names SDK types
+         directly (the SSE endpoint consumes IEventBus), and a reference you depend on by name
+         should not rely on another project continuing to bring it along. -->
+    <ProjectReference Include="..\Anthill.SDK\Anthill.SDK.csproj" />
   </ItemGroup>
 
   <!-- Let the test suite exercise internal helpers (e.g. the mission-report formatter). -->

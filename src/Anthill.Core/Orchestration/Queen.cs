@@ -4,6 +4,7 @@ using Anthill.Core.Outcomes;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Events;
 using Anthill.Core.Memory;
 using Anthill.Core.Models;
 using Anthill.Core.Pheromones;
@@ -12,6 +13,7 @@ using Anthill.Core.Scheduling;
 using Anthill.Core.Skills;
 using Anthill.Core.Security;
 using Anthill.Core.Tools;
+using Anthill.SDK.Events;
 
 namespace Anthill.Core.Orchestration;
 
@@ -39,10 +41,24 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // Stopped BEFORE the database closes. A timer that fires into a disposed SqliteMemory throws
         // on a background thread, which is an ugly way to end an otherwise clean shutdown.
         _workerHeartbeat?.Dispose();
+        // The bus goes down BEFORE the memory too, and for the same reason: its pump is a
+        // background thread, and a subscriber woken after the database closed would fault there.
+        (Events as IDisposable)?.Dispose();
         Memory.Dispose();
     }
 
     public SqliteMemory Memory { get; }
+
+    /// <summary>
+    /// The colony's live event stream. v3.8.3.
+    ///
+    /// Owned by the Queen because its lifetime is the colony's lifetime, and because she is the one
+    /// component guaranteed to exist. Publication does not go through her — <c>SqliteMemory.LogEvent</c>
+    /// publishes at the point of record, so every existing emitter is already on the bus without
+    /// having been touched. What this property provides is the SUBSCRIBE side: the API's event
+    /// stream, and in later phases the modules, attach here.
+    /// </summary>
+    public IEventBus Events { get; }
     public ModelRouter? Router { get; }
     public ToolRegistry Tools { get; }
     /// <summary>The capability set this Queen was composed from. Missions resolve their context
@@ -97,6 +113,18 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     {
         AnthillRuntime.Initialize();
         Memory = memory ?? new SqliteMemory();
+
+        // v3.8.3 — wired FIRST, before any component below is constructed. Several of them log
+        // events during construction (tool-registry validation, workspace reconciliation, config
+        // health findings), and those are precisely the events an operator watching a cold start
+        // wants to see. Wiring the bus after composition would persist them and announce none.
+        //
+        // Assigned onto Memory whether or not this Queen created it, so a caller-supplied memory is
+        // wired identically — which is the reason EventBus is a property rather than a constructor
+        // argument on SqliteMemory.
+        Events = new InProcessEventBus();
+        Memory.EventBus = Events;
+
         // Captured BEFORE anything is built, so every component below sees one consistent answer.
         var options = (profile ?? RuntimeProfile.Resolve(RuntimeOptions.Capture(), Array.Empty<string>())).Options;
         Router = options.ModelRouting ? new ModelRouter(Memory) : null;

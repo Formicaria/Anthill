@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v3.8.3 - The colony gets a nervous system
+
+Refactor phases 0 and 1 of the Core/Modules split (see `docs/REFACTOR-PLAN.md`). No capability was
+removed and no public behaviour changed; what arrived is the seam everything after this depends on.
+
+- **`Anthill.SDK`, a contracts-only project.** `IEventBus`, `ColonyEvent`, `EventTypes`,
+  `IAnthillModule`, `IModuleContext`, `IPheromoneMemory`, `IEventLog`. No implementations, no I/O,
+  and a package list that stops at `Logging.Abstractions` — the moment the SDK depends on a database
+  driver or a provider client, every module inherits it and the boundary means nothing.
+- **The event bus was already there; it just had no live outlet.** `SqliteMemory.LogEvent` has been
+  the colony's event stream all along — ~85 call sites, seventy-odd event types, read back by the
+  dashboard through `GetRecentEvents`. So the bus was retrofitted *behind* it: `LogEvent` persists
+  exactly as before, then publishes. Not one call site changed. With no bus wired the behaviour is
+  byte-for-byte what it was, because the default is a no-op bus rather than a null one.
+- **Persist, then publish — never the reverse.** A subscriber must not be able to observe an event
+  that a subsequent database failure leaves unrecorded; that would quietly turn a durable log into a
+  best-effort one the moment a bus was introduced. There is a test for the ordering, not just a
+  comment.
+- **An observer cannot break the colony.** Publication never blocks and never throws, dispatch runs
+  off the publisher's thread, and a subscriber that throws is logged and left subscribed — the other
+  subscribers still get the event, and a handler that fails on one malformed event is usually still
+  correct for the next. Under sustained backpressure the bus drops oldest-first, which loses liveness
+  and never history, because the durable record was written before publication.
+- **`GET /events/stream` (SSE).** Replay of recent history followed by the live stream, both through
+  one serialiser so a client needs one parser rather than two. Subscription is opened before the
+  replay is read, deliberately: an event landing in the gap would otherwise be seen by nobody.
+  Heartbeats every 20s so idle proxies don't silently kill the connection.
+- **The dashboard listens.** The stream invalidates the cached `/events/json` copy on arrival, so
+  panels stop serving data up to three seconds stale. Polling stays as the fallback and the stream
+  is never a dependency of it — if it never reconnects, every panel works exactly as before. Read
+  with `fetch` rather than `EventSource`, because `EventSource` cannot set headers and adopting it
+  would have meant putting a live auth token in the query string, and from there into proxy logs and
+  browser history.
+
 ## v3.8.2 - Model fitness judged against what the provider actually serves
 
 Found by reading a real startup log: five roles reported as broken, every one of them wrong.
@@ -589,7 +623,7 @@ principle that you cannot safely decompose a system you cannot inventory.
 ### The V3 document set is canonical
 
 `docs/NORTH_STAR.md` and `docs/ROADMAP.md` are now the V3 documents — Colony Execution
-Infrastructure, v3.0.0 through v3.9.0. The nine completed V2 planning documents moved to
+Infrastructure, v3.0.0 through v3.8.3. The nine completed V2 planning documents moved to
 `docs/archive/v2/` with a README mapping each to the release that closed it. History, not
 authority.
 

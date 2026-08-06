@@ -12,6 +12,15 @@
     <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
   </ItemGroup>
 
+  <!--
+    The contracts project. Core implements SDK interfaces; it must never reference a module.
+    Added in Phase 0 while still unused, so the reference is proven to compile before Phase 1
+    depends on it.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- ADO.NET SQLite provider — the managed replacement for Python's sqlite3 module. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />

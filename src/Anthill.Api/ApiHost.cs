@@ -153,6 +153,7 @@ public static partial class ApiHost
 
         MapEndpoints(app);
         MapHomelabEndpoints(app);
+        MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
         AssertNoDuplicateRoutes(app);
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");
