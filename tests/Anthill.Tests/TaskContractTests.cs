@@ -1,4 +1,4 @@
-using Anthill.SDK.Contracts;
+using Anthill.Core.Contracts;
 using Xunit;
 using DomainTask = Anthill.Core.Domain.Task;
 

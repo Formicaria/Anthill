@@ -1,24 +1,5 @@
 # ANTHILL Changelog
 
-## v3.8.9 - The contract vocabulary joins the SDK
-
-Phase 5a of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisite the tool extraction
-turned out to need.
-
-- **`Anthill.Core.Contracts` → `Anthill.SDK.Contracts`.** `FailureClass`, `FailureClassify`,
-  `ToolDescriptor`, `ToolCatalog`, `TaskContract`, `ContractGate`, `Capability`: 196 lines, one
-  `System.Text.Json.Serialization` import, nothing else. The same test that moved `SafeAction` in
-  v3.8.7 — pure vocabulary shared across the boundary belongs in the SDK.
-- **This is what unblocks `ITool`.** The survey for phase 5 found that `ITool.Run` returns
-  `ToolResult`, which carries `FailureClass` — so the tool interface could not move to the SDK until
-  the failure vocabulary did. Interfaces before implementations, and prerequisites before
-  interfaces.
-
-Deliberately NOT in this release: `ToolResult`, `ITool`, and `IModuleContext.RegisterTool`. Each is
-a small step on its own and each deserves its own build gate; batching them is how a refactor
-produces a diff nobody can review.
-
-
 ## v3.8.8 - The boundary stops depending on discipline
 
 The keystone of phase 7, brought forward: `ModuleBoundaryTests` asserts the Core/Modules split from
@@ -34,6 +15,8 @@ assembly metadata rather than from review.
   modules, so the other three cannot be satisfied by the reading where nothing composes anything.
 - **Assembly references, not source text.** An unused project reference still fails, deliberately:
   the reference is what permits the coupling, and it is what a future edit would quietly use.
+
+No source moved in this release. One new test file and the version markers, nothing else.
 
 
 ## v3.8.7 - The homelab leaves the core
