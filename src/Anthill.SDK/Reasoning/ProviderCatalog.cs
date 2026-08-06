@@ -1,4 +1,4 @@
-namespace Anthill.Core.Models;
+namespace Anthill.SDK.Reasoning;
 
 /// <summary>
 /// Static metadata about a model provider the colony can talk to: how to reach it, whether it
@@ -19,7 +19,7 @@ public sealed record ProviderInfo(
 /// <summary>
 /// The fixed set of providers ANTHILL knows how to route to. Ollama is always available and
 /// keyless (local); everything else needs a connection configured in Settings → Providers before
-/// <see cref="ModelRouter"/> will route any role to it.
+/// the core's router will route any role to it.
 /// </summary>
 public static class ProviderCatalog
 {

@@ -140,7 +140,7 @@ Return format:
 - Research Need:
 ";
         var call = _router.GenerateTyped("researcher", prompt, mission.Id, task.Id, Name);
-        if (call.Status == Models.ModelCallOutcome.Empty)
+        if (call.Status == ModelCallOutcome.Empty)
             return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
                 "Researcher: routed model returned an empty response.");
         if (!call.Ok)
@@ -702,7 +702,7 @@ Rules:
 - Mention that ANTHILL supports dependency-aware parallel execution, FTS memory search, and role-based model routing.
 ";
         var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name);
-        if (call.Status == Models.ModelCallOutcome.Empty)
+        if (call.Status == ModelCallOutcome.Empty)
             return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
                 "Builder: routed model returned an empty response.");
         if (!call.Ok)
