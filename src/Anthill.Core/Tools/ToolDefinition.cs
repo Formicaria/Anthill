@@ -69,7 +69,7 @@ public sealed record ToolDefinition
     public bool Enabled { get; init; } = true;
 
     public string CreatedBy { get; init; } = "operator";
-    public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
+    public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
 
     /// <summary>
     /// Whether <paramref name="role"/> may dispatch this. The grant list only WIDENS from empty;

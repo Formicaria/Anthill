@@ -1,14 +1,14 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Shadow;
-using Anthill.Core.Health;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Approvals;
-using Anthill.Core.Incidents;
-using Anthill.Core.Homelab.Notifications;
-using Anthill.Core.Homelab.Scheduling;
-using Anthill.Core.Homelab.Security;
-using Anthill.Core.Integrations;
-using Anthill.Core.Integrations.Proxmox;
+using Anthill.Modules.Homelab.Health;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Approvals;
+using Anthill.Modules.Homelab.Incidents;
+using Anthill.Modules.Homelab.Notifications;
+using Anthill.Modules.Homelab.Scheduling;
+using Anthill.Modules.Homelab.Security;
+using Anthill.Modules.Homelab.Integrations;
+using Anthill.Modules.Homelab.Integrations.Proxmox;
 
 namespace Anthill.Api;
 
@@ -48,6 +48,13 @@ public static partial class ApiHost
     private static void InitHomelab()
     {
         Homelab = new HomelabRepository();
+        // v3.8.7 — the homelab joins the colony's live event stream.
+        //
+        // Its nineteen RecordEvent call sites have always been durable and never visible: an
+        // operator watching a VM restart, a credential being used or an inventory drifting saw
+        // nothing on the console stream until they went looking in a different panel. Wired to the
+        // SAME bus the mission log publishes to, so one stream carries the whole colony.
+        Homelab.EventBus = Queen.Events;
         HomelabCredentials = new HomelabCredentialStore(Homelab);
         HomelabTargets = new HomelabTargetGuard(Homelab);
         HomelabJobs = new HomelabScheduler(Homelab, AnthillRuntime.HomelabMaxConcurrentChecks);
@@ -589,7 +596,7 @@ public static partial class ApiHost
             var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
             if (!NotificationService.Enabled)
                 return ApiJson.Error("Notifications are disabled — set homelab_notifications_enabled=true and configure a webhook first.", "disabled");
-            var delivered = await HomelabNotifier.SendAsync(new Anthill.Core.Health.AlertRecord
+            var delivered = await HomelabNotifier.SendAsync(new Anthill.Modules.Homelab.Health.AlertRecord
             {
                 Kind = "test", Severity = "info",
                 Message = $"ANTHILL v{AnthillRuntime.Version} notification test from {CurrentUsername(ctx) ?? "operator"}",

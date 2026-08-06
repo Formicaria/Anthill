@@ -2,10 +2,10 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using Anthill.Core.Health;
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Security;
-using Anthill.Core.Integrations.Proxmox;
+using Anthill.Modules.Homelab.Health;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Security;
+using Anthill.Modules.Homelab.Integrations.Proxmox;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

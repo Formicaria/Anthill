@@ -108,7 +108,25 @@ public static partial class ApiHost
         memory.EventBus = events;
 
         Modules = new ModuleHost(memory, events);
-        Modules.Load(new ReasoningModule(AnthillRuntime.OllamaHost));
+        Modules.LoadAll(
+            new ReasoningModule(AnthillRuntime.OllamaHost),
+            // v3.8.7: the homelab is configuration-only at registration, so an asleep Proxmox
+            // node cannot stop the colony booting. InitHomelab() below still builds the
+            // repository and scheduler; this only tells the module what it is running inside.
+            new HomelabModule(
+                new HomelabOptions(
+                    DatabasePath: Path.IsPathRooted(AnthillRuntime.DbPath)
+                        ? AnthillRuntime.DbPath
+                        : Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.DbPath),
+                    StopFileName: AnthillRuntime.HomelabStopFileName,
+                    HealthTimeoutMs: AnthillRuntime.HomelabHealthTimeoutMs,
+                    NotificationsEnabled: AnthillRuntime.EnableHomelabNotifications,
+                    SlackWebhook: AnthillRuntime.HomelabSlackWebhook,
+                    DiscordWebhook: AnthillRuntime.HomelabDiscordWebhook,
+                    GenericWebhook: AnthillRuntime.HomelabGenericWebhook,
+                    ColonyVersion: AnthillRuntime.Version,
+                    WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath),
+                FieldCipher.CreateDefault()));
 
         Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;
@@ -2310,7 +2328,7 @@ public static partial class ApiHost
                 },
                 ["autonomy_enabled"] = AnthillRuntime.EnableAutonomy,
                 ["stop_engaged"] = AutonomyControl.IsStopped,
-                ["homelab_stop_engaged"] = Anthill.Core.Homelab.Actions.HomelabActionControl.IsStopped,
+                ["homelab_stop_engaged"] = Anthill.Modules.Homelab.Actions.HomelabActionControl.IsStopped,
                 ["director_running"] = Director.IsRunning,
                 ["can_write_files"] = AnthillRuntime.EnableFileWriting,
                 ["can_apply_patches"] = AnthillRuntime.EnablePatchApplication,

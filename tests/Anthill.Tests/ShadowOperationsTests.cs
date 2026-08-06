@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Anthill.Core.SafeAction;
+using Anthill.SDK.Actions;
 using Anthill.Core.Shadow;
 using Anthill.Core.Skills;
 using Xunit;

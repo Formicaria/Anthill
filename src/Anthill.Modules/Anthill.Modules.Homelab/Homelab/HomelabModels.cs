@@ -1,0 +1,283 @@
+using System.Text.Json.Serialization;
+
+namespace Anthill.Modules.Homelab;
+
+/// <summary>
+/// Homelab foundation models (v1.9.0, NORTH_STAR Phase 4). Read-only schemas only: these records
+/// describe what exists in the homelab, what changed, and what is at risk. Nothing in this file can
+/// control infrastructure — control actions arrive in V2.1 through IApprovable proposals.
+/// All timestamps are ISO-8601 UTC strings, matching the rest of the memory schema.
+/// </summary>
+public sealed class HomelabNode
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "host"; // host | hypervisor | nas | router | iot | other
+    [JsonPropertyName("address")] public string Address { get; set; } = "";
+    [JsonPropertyName("os")] public string Os { get; set; } = "";
+    [JsonPropertyName("role_tags")] public List<string> RoleTags { get; set; } = new();
+    [JsonPropertyName("notes")] public string Notes { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class NetworkDevice
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "unknown"; // switch | ap | firewall | printer | unknown
+    [JsonPropertyName("mac")] public string Mac { get; set; } = "";
+    [JsonPropertyName("ip")] public string Ip { get; set; } = "";
+    [JsonPropertyName("vlan")] public string Vlan { get; set; } = "";
+    [JsonPropertyName("known")] public bool Known { get; set; } = true;
+    [JsonPropertyName("notes")] public string Notes { get; set; } = "";
+    [JsonPropertyName("first_seen")] public string FirstSeen { get; set; } = "";
+    [JsonPropertyName("last_seen")] public string LastSeen { get; set; } = "";
+}
+
+public sealed class ServiceRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("url")] public string Url { get; set; } = "";
+    [JsonPropertyName("ports")] public List<int> Ports { get; set; } = new();
+    [JsonPropertyName("protocol")] public string Protocol { get; set; } = "";
+    [JsonPropertyName("owner")] public string Owner { get; set; } = "";
+    [JsonPropertyName("criticality")] public string Criticality { get; set; } = "normal"; // low | normal | high | critical
+    [JsonPropertyName("internet_exposed")] public bool InternetExposed { get; set; }
+    [JsonPropertyName("notes")] public string Notes { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class VmRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("vm_id")] public string VmId { get; set; } = "";       // provider id (e.g. Proxmox VMID)
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown";
+    [JsonPropertyName("cpu_cores")] public int CpuCores { get; set; }
+    [JsonPropertyName("memory_mb")] public long MemoryMb { get; set; }
+    [JsonPropertyName("uptime_seconds")] public long UptimeSeconds { get; set; }
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class ContainerRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("container_id")] public string ContainerId { get; set; } = ""; // provider id (LXC CTID / docker id)
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "lxc"; // lxc | docker | other
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class StoragePoolRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = ""; // zfs | lvm | dir | nfs | smb | other
+    [JsonPropertyName("total_bytes")] public long TotalBytes { get; set; }
+    [JsonPropertyName("used_bytes")] public long UsedBytes { get; set; }
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class StorageDeviceRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("name")] public string Name { get; set; } = ""; // /dev/sda, nvme0n1 ...
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("pool_id")] public string PoolId { get; set; } = "";
+    [JsonPropertyName("model")] public string Model { get; set; } = "";
+    [JsonPropertyName("size_bytes")] public long SizeBytes { get; set; }
+    [JsonPropertyName("smart_status")] public string SmartStatus { get; set; } = "unknown";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class BackupRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("target_kind")] public string TargetKind { get; set; } = ""; // vm | container | host | service | dataset
+    [JsonPropertyName("target_id")] public string TargetId { get; set; } = "";
+    [JsonPropertyName("location")] public string Location { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown"; // ok | failed | stale | unknown
+    [JsonPropertyName("last_success")] public string LastSuccess { get; set; } = "";
+    [JsonPropertyName("last_attempt")] public string LastAttempt { get; set; } = "";
+    [JsonPropertyName("size_bytes")] public long SizeBytes { get; set; }
+    [JsonPropertyName("notes")] public string Notes { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+public sealed class HealthCheckResult
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("check_kind")] public string CheckKind { get; set; } = ""; // ping | http | tcp | service_url | disk | uptime
+    [JsonPropertyName("target")] public string Target { get; set; } = "";
+    [JsonPropertyName("service_id")] public string ServiceId { get; set; } = "";
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown"; // healthy | degraded | failed | unknown
+    [JsonPropertyName("latency_ms")] public double LatencyMs { get; set; }
+    [JsonPropertyName("detail")] public string Detail { get; set; } = "";
+    [JsonPropertyName("checked_at")] public string CheckedAt { get; set; } = "";
+}
+
+public sealed class HomelabEvent
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("event_type")] public string EventType { get; set; } = ""; // scheduler_job | credential_used | inventory_changed | ...
+    [JsonPropertyName("subject_kind")] public string SubjectKind { get; set; } = "";
+    [JsonPropertyName("subject_id")] public string SubjectId { get; set; } = "";
+    [JsonPropertyName("severity")] public string Severity { get; set; } = "info"; // info | warning | error
+    [JsonPropertyName("message")] public string Message { get; set; } = "";
+    [JsonPropertyName("mission_id")] public string MissionId { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+}
+
+public sealed class ChangeRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("subject_kind")] public string SubjectKind { get; set; } = ""; // host | service | vm | config | credential | allowlist
+    [JsonPropertyName("subject_id")] public string SubjectId { get; set; } = "";
+    [JsonPropertyName("change_kind")] public string ChangeKind { get; set; } = ""; // created | updated | removed | imported
+    [JsonPropertyName("summary")] public string Summary { get; set; } = "";
+    [JsonPropertyName("changed_by")] public string ChangedBy { get; set; } = "";
+    [JsonPropertyName("mission_id")] public string MissionId { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+}
+
+public sealed class IncidentRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "open"; // open | investigating | resolved
+    [JsonPropertyName("severity")] public string Severity { get; set; } = "warning";
+    [JsonPropertyName("subject_kind")] public string SubjectKind { get; set; } = "";
+    [JsonPropertyName("subject_id")] public string SubjectId { get; set; } = "";
+    [JsonPropertyName("root_cause")] public string RootCause { get; set; } = "";
+    [JsonPropertyName("opened_at")] public string OpenedAt { get; set; } = "";
+    [JsonPropertyName("resolved_at")] public string ResolvedAt { get; set; } = "";
+}
+
+public sealed class DependencyRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("from_kind")] public string FromKind { get; set; } = ""; // service | vm | container | host
+    [JsonPropertyName("from_id")] public string FromId { get; set; } = "";
+    [JsonPropertyName("to_kind")] public string ToKind { get; set; } = "";
+    [JsonPropertyName("to_id")] public string ToId { get; set; } = "";
+    [JsonPropertyName("dependency_kind")] public string DependencyKind { get; set; } = "runs_on"; // runs_on | needs | stores_on
+    [JsonPropertyName("notes")] public string Notes { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+}
+
+public sealed class RiskRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("finding_kind")] public string FindingKind { get; set; } = ""; // risky_open_port | unknown_device | no_backup | exposed_service | ...
+    [JsonPropertyName("subject_kind")] public string SubjectKind { get; set; } = "";
+    [JsonPropertyName("subject_id")] public string SubjectId { get; set; } = "";
+    [JsonPropertyName("severity")] public string Severity { get; set; } = "warning";
+    [JsonPropertyName("summary")] public string Summary { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "open"; // open | acknowledged | resolved
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// A stored homelab credential. The secret payload is encrypted at rest with the existing
+/// FieldCipher and is NEVER exposed through the API — status responses carry only
+/// configured/last-verified metadata. Every secret use writes an audit HomelabEvent.
+/// </summary>
+public sealed class CredentialRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";              // operator-chosen, e.g. "proxmox-main"
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";          // proxmox_api_token | ssh_key | webhook | basic_auth | other
+    [JsonPropertyName("target_host")] public string TargetHost { get; set; } = "";
+    [JsonPropertyName("configured")] public bool Configured { get; set; }
+    [JsonPropertyName("last_verified")] public string LastVerified { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// One operator-maintained allowlist entry that lets deterministic homelab providers reach a
+/// trusted private host. This list is consulted ONLY by IHomelabTargetGuard — the general SSRF
+/// guard (UrlSafety) is untouched and keeps blocking private/loopback ranges for LLM-directed
+/// tools. Entries are an exact hostname, an exact IP, or an IPv4 CIDR block.
+/// </summary>
+public sealed class TargetAllowlistRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("target")] public string Target { get; set; } = ""; // "nas.lan" | "192.168.1.10" | "10.0.0.0/24"
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "allow"; // v2.5.4 R4: allow | deny (deny beats allow)
+    [JsonPropertyName("note")] public string Note { get; set; } = "";
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
+    [JsonPropertyName("added_by")] public string AddedBy { get; set; } = "";
+    [JsonPropertyName("created_at")] public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// v1.10.0: the import/export envelope for the manual inventory (NORTH_STAR Phase 6).
+/// Deliberately excludes credentials, allowlist entries, and events — inventory only.
+/// </summary>
+public sealed class HomelabInventoryExport
+{
+    [JsonPropertyName("exported_at")] public string ExportedAt { get; set; } = "";
+    [JsonPropertyName("anthill_version")] public string AnthillVersion { get; set; } = "";
+    [JsonPropertyName("nodes")] public List<HomelabNode> Nodes { get; set; } = new();
+    [JsonPropertyName("services")] public List<ServiceRecord> Services { get; set; } = new();
+    [JsonPropertyName("dependencies")] public List<DependencyRecord> Dependencies { get; set; } = new();
+    /// <summary>v1.13.0: network devices ride the same bundle (subnet/VLAN/IP inventory).</summary>
+    [JsonPropertyName("devices")] public List<NetworkDevice> Devices { get; set; } = new();
+}
+
+/// <summary>Secret-free status of one integration/provider, for the summary endpoint and UI.</summary>
+public sealed class IntegrationStatus
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+    [JsonPropertyName("state")] public string State { get; set; } = "not_configured"; // not_configured | idle | ok | failing
+    [JsonPropertyName("last_run")] public string LastRun { get; set; } = "";
+    [JsonPropertyName("last_result")] public string LastResult { get; set; } = "";
+}
+
+/// <summary>v2.3.3: point-in-time resource metrics for a hypervisor/virtualization node.</summary>
+public sealed class NodeMetricRecord
+{
+    [JsonPropertyName("node_id")] public string NodeId { get; set; } = "";     // homelab_nodes.id
+    [JsonPropertyName("node_name")] public string NodeName { get; set; } = "";
+    [JsonPropertyName("source")] public string Source { get; set; } = "";       // proxmox | docker | esxi | hyperv
+    [JsonPropertyName("cpu_percent")] public double CpuPercent { get; set; } = -1;  // -1 = not reported by this source
+    [JsonPropertyName("cpu_cores")] public int CpuCores { get; set; }
+    [JsonPropertyName("mem_used_bytes")] public long MemUsedBytes { get; set; } = -1;
+    [JsonPropertyName("mem_total_bytes")] public long MemTotalBytes { get; set; } = -1;
+    [JsonPropertyName("disk_used_bytes")] public long DiskUsedBytes { get; set; } = -1;
+    [JsonPropertyName("disk_total_bytes")] public long DiskTotalBytes { get; set; } = -1;
+    [JsonPropertyName("uptime_seconds")] public long UptimeSeconds { get; set; }
+    [JsonPropertyName("updated_at")] public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// v2.3.3: a configured *arr-stack application (Homarr-style integration). The API key lives in
+/// the credential store (referenced by CredentialId, never here); sync results are read-only.
+/// </summary>
+public sealed class ArrAppRecord
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";           // sonarr|radarr|lidarr|readarr|prowlarr|bazarr|whisparr
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("url")] public string Url { get; set; } = "";
+    [JsonPropertyName("credential_id")] public string CredentialId { get; set; } = "";
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
+    [JsonPropertyName("status")] public string Status { get; set; } = "unknown"; // ok | error | unknown
+    [JsonPropertyName("version")] public string Version { get; set; } = "";
+    [JsonPropertyName("health_warnings")] public int HealthWarnings { get; set; }
+    [JsonPropertyName("queue_count")] public int QueueCount { get; set; } = -1;  // -1 = kind has no queue
+    [JsonPropertyName("last_message")] public string LastMessage { get; set; } = "";
+    [JsonPropertyName("last_checked")] public string LastChecked { get; set; } = "";
+}

@@ -1,5 +1,5 @@
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Security;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Security;
 using Microsoft.Data.Sqlite;
 using Xunit;
 

@@ -1,7 +1,7 @@
-using Anthill.Core.Homelab;
-using Anthill.Core.Homelab.Actions;
-using Anthill.Core.Homelab.Automation;
-using Anthill.Core.Health;
+using Anthill.Modules.Homelab;
+using Anthill.Modules.Homelab.Actions;
+using Anthill.Modules.Homelab.Automation;
+using Anthill.Modules.Homelab.Health;
 using Xunit;
 
 namespace Anthill.Tests.Homelab;

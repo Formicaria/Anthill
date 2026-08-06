@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Modules.Homelab</RootNamespace>
+    <AssemblyName>Anthill.Modules.Homelab</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    THE SDK, AND NOTHING ELSE. No Anthill.Core reference, and adding one undoes the phase.
+
+    This is the largest thing that has ever left the core: 6,549 lines of homelab and integrations,
+    plus health and incidents. What made it possible was measuring the seam instead of estimating
+    it — the coupling turned out to be two pure helpers, one pure action vocabulary shared with
+    shadow mode, eleven settings, and one cipher.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+    <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
+  </ItemGroup>
+
+</Project>
