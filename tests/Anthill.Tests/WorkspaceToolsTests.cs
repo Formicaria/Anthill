@@ -162,12 +162,12 @@ public class WorkspaceToolsTests : IDisposable
         var result = tool.Run(Args(("query", "([unclosed"), ("regex", true)));
 
         Assert.False(result.Success);
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.ValidationFailure, result.Failure);
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.ValidationFailure, result.Failure);
     }
 
     [Fact]
     public void Search_RequiresAQuery() =>
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.ValidationFailure,
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.ValidationFailure,
             new SearchWorkspaceTool(new WorkspacePathGuard(_repo)).Run(Args(("query", " "))).Failure);
 
     /// <summary>No matches is a SUCCESS with nothing found — not a failure.</summary>
@@ -196,7 +196,7 @@ public class WorkspaceToolsTests : IDisposable
             .Run(Args(("query", "needle"), ("path", "../elsewhere")));
 
         Assert.False(result.Success);
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.AuthorizationFailure, result.Failure);
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.AuthorizationFailure, result.Failure);
     }
 
     // ---- change summary ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ public class WorkspaceToolsTests : IDisposable
         var result = new ChangedFilesSummaryTool().Run(Args());
 
         Assert.False(result.Success);
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.UnsafeState, result.Failure);
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.UnsafeState, result.Failure);
         Assert.Contains("no mission workspace", result.Output + result.Error);
     }
 

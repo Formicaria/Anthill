@@ -311,7 +311,40 @@ Remaining coupling to resolve first, measured from the imports:
 
 ---
 
-### Phase 5 — Shell / Git / Filesystem / Vision tools → modules
+### Phase 5 — Shell / Git / Filesystem tools → modules — NOT the same shape as phase 4
+
+Surveyed before starting, and the survey says this one is harder than homelab rather than easier.
+Recorded here so it is not rediscovered.
+
+**The tool layer is coordination, not capability.** `Anthill.Core.Tools` (1,913 LOC) is consumed by
+`Agents/Ants`, `Agents/SpecialistAnts`, `Agents/ToolCallingLoop`, `Orchestration/Queen`,
+`ExecutionService`, `PlanningService`, `Verification` and `SqliteMemory.UserTools` — because `ITool`,
+`ToolRegistry` and `ToolResult` *are* the dispatch vocabulary. Only the tool IMPLEMENTATIONS are
+module material.
+
+**`ITool` drags the domain with it.** `ITool.Run` returns `ToolResult`, which lives in
+`Anthill.Core.Domain`. Moving the interface to the SDK means moving that model, and `ToolResult`
+carries the typed failure classification the ants read.
+
+**Workspaces going out is a hot-path change** (decided: they follow the tools). `Sandbox/` (381 LOC)
+is used by `Ants` — a core agent running sandboxed code — and `SqliteMemory.Workspaces.cs` persists
+workspace records. So the move needs: workspace + sandbox MODELS in the SDK, core memory partials
+referencing SDK types, and a sandbox-execution contract the core ants call through. Unlike homelab,
+this lands on the mission execution path rather than on an isolated subsystem.
+
+**Also note:** only one `ToolKind` (`Http`) is registered today, so shell/git/filesystem tools are
+NOT behind `IToolKindExecutor` yet. That indirection has to be built before it can be used.
+
+Suggested order, each its own gate:
+
+- [ ] 5a: `ToolResult` + `ITool` + `IToolKindExecutor` → `Anthill.SDK/Tools/`; add
+      `IModuleContext.RegisterTool(ITool)`, deliberately omitted in phase 0 rather than typed as
+      `object`
+- [ ] 5b: workspace + sandbox models → SDK; sandbox execution behind a contract for core ants
+- [ ] 5c: implementations → `Anthill.Modules.Tools.{Shell,Git,FileSystem}` + workspace lifecycle
+- [ ] Core keeps `ToolRegistry`, `ToolAuthorization`, `ToolDefinition`, `ToolInventory`
+
+### Phase 5 (original scope note) — Vision tools
 
 - [ ] `ITool` and `IToolKindExecutor` move to the SDK (already clean interfaces)
 - [ ] Split by kind into `Anthill.Modules.Tools.{Shell,Git,FileSystem,Http,Vision}`

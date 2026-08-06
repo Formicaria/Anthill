@@ -96,13 +96,13 @@ public class ToolAuthorizationTests : IDisposable
     public void ContextEvaluation_ChecksCapabilities_AllowForbidden()
     {
         var ctx = new ToolExecutionContext("m1", "t1", "ui_cartographer", "ui_cartographer.route_mapper",
-            GrantedCapabilities: new HashSet<string> { Anthill.Core.Contracts.Capability.RepoRead, Anthill.Core.Contracts.Capability.RepoSearch },
+            GrantedCapabilities: new HashSet<string> { Anthill.SDK.Contracts.Capability.RepoRead, Anthill.SDK.Contracts.Capability.RepoSearch },
             AllowedTools: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "read_text_file", "list_directory" },
             ForbiddenTools: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "web_search" });
         Assert.True(ToolAuthorization.Evaluate(ctx, "read_text_file").Allowed);
         Assert.False(ToolAuthorization.Evaluate(ctx, "web_search").Allowed);   // forbidden wins
         Assert.False(ToolAuthorization.Evaluate(ctx, "apply_patch").Allowed);  // structural, even if someone allowlists it
-        var partial = ctx with { GrantedCapabilities = new HashSet<string> { Anthill.Core.Contracts.Capability.RepoRead } };
+        var partial = ctx with { GrantedCapabilities = new HashSet<string> { Anthill.SDK.Contracts.Capability.RepoRead } };
         Assert.False(ToolAuthorization.Evaluate(partial, "read_text_file").Allowed); // missing capability
     }
 }

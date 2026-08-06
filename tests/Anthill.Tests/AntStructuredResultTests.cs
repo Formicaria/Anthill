@@ -1,5 +1,5 @@
 using Anthill.Core.Agents;
-using Anthill.Core.Contracts;
+using Anthill.SDK.Contracts;
 using Anthill.Core.Domain;
 using Xunit;
 using DomainTask = Anthill.Core.Domain.Task;
