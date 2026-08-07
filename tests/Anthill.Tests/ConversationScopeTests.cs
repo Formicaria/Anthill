@@ -79,7 +79,7 @@ public class ConversationScopeTests : IDisposable
             var result = _registry.RunTool("apply_patch", antName: "queen");
 
             Assert.False(result.Success);
-            Assert.Equal(Anthill.Core.Contracts.FailureClass.AuthorizationFailure, result.Failure);
+            Assert.Equal(Anthill.SDK.Contracts.FailureClass.AuthorizationFailure, result.Failure);
             Assert.Contains("escalation_refused", result.Error);
         }
 

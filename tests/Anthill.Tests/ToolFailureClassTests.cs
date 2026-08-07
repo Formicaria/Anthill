@@ -8,8 +8,8 @@ using Xunit;
 // ambiguous. Aliasing the two types actually used keeps this file unambiguous and makes the
 // still-open design question visible: there are two same-named result types, and the dispatch one
 // tested here is the one every ITool returns.
-using FailureClass = Anthill.Core.Contracts.FailureClass;
-using FailureClassify = Anthill.Core.Contracts.FailureClassify;
+using FailureClass = Anthill.SDK.Contracts.FailureClass;
+using FailureClassify = Anthill.SDK.Contracts.FailureClassify;
 
 namespace Anthill.Tests;
 

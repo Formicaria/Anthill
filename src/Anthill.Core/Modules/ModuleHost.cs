@@ -4,6 +4,7 @@ using Anthill.SDK.Events;
 using Anthill.SDK.Memory;
 using Anthill.SDK.Modules;
 using Anthill.SDK.Reasoning;
+using Anthill.SDK.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,6 +37,20 @@ public sealed class ModuleHost
 
     /// <summary>The modules loaded into this colony, in load order. For diagnostics and reporting.</summary>
     public IReadOnlyList<IAnthillModule> Loaded => _loaded;
+
+    /// <summary>
+    /// Tools contributed by modules, awaiting the registry. v3.8.10.
+    ///
+    /// Buffered rather than registered directly, because of an ordering the composition root cannot
+    /// avoid: modules must load BEFORE the Queen (a Queen built first would report model fitness
+    /// against a colony with no providers), and the tool registry is built BY the Queen. So a module
+    /// registering a tool has nowhere to put it yet.
+    ///
+    /// The composition root drains this into <c>Queen.Tools</c> once she exists. Making the module
+    /// wait for a registry it cannot see would have meant a lazier, more surprising contract than
+    /// simply handing the tool over and letting the root place it.
+    /// </summary>
+    public IReadOnlyList<ITool> ContributedTools => _context.Tools;
 
     /// <summary>
     /// Load a module: hand it a context and let it contribute.
@@ -98,5 +113,23 @@ public sealed class ModuleHost
 
         public void RegisterCapabilityProbe(IModelCapabilityProbe probe) =>
             ReasoningProviders.RegisterProbe(probe);
+
+        internal List<ITool> Tools { get; } = new();
+
+        /// <summary>
+        /// A duplicate name throws rather than overwriting. <c>ToolRegistry.Register</c> assigns by
+        /// key and last-write-wins, which is right for the core replacing its own built-ins — but
+        /// two MODULES both claiming "shell" is a build misconfiguration, and silently running one
+        /// of them is not a failure anyone notices until the wrong one executes.
+        /// </summary>
+        public void RegisterTool(ITool tool)
+        {
+            ArgumentNullException.ThrowIfNull(tool);
+            if (Tools.Any(t => string.Equals(t.Name, tool.Name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(
+                    $"Two modules both registered a tool named '{tool.Name}'. Tool names are the "
+                  + "colony's dispatch keys and must be unique across modules.");
+            Tools.Add(tool);
+        }
     }
 }

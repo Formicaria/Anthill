@@ -117,7 +117,7 @@ public class TesterAntTests : IDisposable
 
         Assert.Equal("blocked", result.StatusCode);
         Assert.False(result.Success);
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.AuthorizationFailure, result.Failure!.Class);
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.AuthorizationFailure, result.Failure!.Class);
     }
 
     // ---- Boundaries + gates --------------------------------------------------------------------

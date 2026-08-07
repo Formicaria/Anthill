@@ -1,6 +1,7 @@
 using Anthill.SDK.Events;
 using Anthill.SDK.Memory;
 using Anthill.SDK.Reasoning;
+using Anthill.SDK.Tools;
 using Microsoft.Extensions.Logging;
 
 namespace Anthill.SDK.Modules;
@@ -68,14 +69,18 @@ public interface IModuleContext
     /// </summary>
     void RegisterCapabilityProbe(IModelCapabilityProbe probe);
 
-    // Tool registration is NOT here yet, and its absence is deliberate.
-    //
-    // Modules will need to offer tools, but `ITool` currently lives in Anthill.Core and does not
-    // move to the SDK until Phase 5. The two ways to have it now are both worse than waiting:
-    // declaring `RegisterTool(string, object)` gives up the type system at precisely the seam
-    // that exists to enforce types, and declaring a parallel SDK tool interface creates a
-    // duplicate of a contract that is already correct — the thing this refactor is meant to
-    // remove, introduced by the refactor itself.
-    //
-    // Phase 5 moves `ITool` and `IToolKindExecutor` here and adds `RegisterTool(ITool)` then.
+    /// <summary>
+    /// Offer a tool to the colony. v3.8.10 — the phase-0 deferral, closed.
+    ///
+    /// This was deliberately omitted when <see cref="IModuleContext"/> was written, because
+    /// <c>ITool</c> still lived in <c>Anthill.Core</c> and the only ways to declare it then were
+    /// <c>RegisterTool(string, object)</c> — abandoning the type system at the seam whose job is
+    /// enforcing types — or a duplicate SDK tool interface. Both were worse than waiting. `ITool`
+    /// reached the SDK in this release, so the method can finally be what it should have been.
+    ///
+    /// Registration makes a tool AVAILABLE, not permitted: the core still owns authorization and
+    /// dispatch. A duplicate name is an error rather than a silent overwrite — two modules quietly
+    /// both claiming "shell" is not a conflict anyone notices until the wrong one runs.
+    /// </summary>
+    void RegisterTool(ITool tool);
 }

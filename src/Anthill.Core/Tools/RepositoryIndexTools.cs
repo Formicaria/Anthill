@@ -57,7 +57,7 @@ public sealed class RepositoryIndexTool : ITool
             // forbidden to touch would be worse than no answer: it would be confidently irrelevant.
             return new ToolResult(Name, false, "",
                 "There is no mission workspace in scope, so there is no repository to describe.",
-                Contracts.FailureClass.UnsafeState);
+                FailureClass.UnsafeState);
 
         var index = _index(workspace);
 
