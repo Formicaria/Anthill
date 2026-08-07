@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v3.8.14 - TextUtil joins the SDK
+
+Phase 5c step 2, second half (`docs/REFACTOR-PLAN.md`). The widest of the three helper moves by
+consumer count and the narrowest by configuration.
+
+- **`TextUtil` moves to `Anthill.SDK.Common`.** 18 consuming files in `src` plus `JsonSafetyTests`,
+  and 119 of its 121 references needed no edit — they resolve through the global using that has been
+  in place since v3.8.7. Only two were qualified as `Common.TextUtil`, both in `EvidenceFollowUps.cs`.
+- **One mutable setting out of thirteen methods.** `ShouldUseWebSearch` is the only one that reads
+  anything that can change, so it takes an optional `IToolRuntimeOptions` and everything else moved
+  unchanged. The keyword list sits beside `WebSearchEnabled` on that interface because they answer
+  two halves of one question — whether the colony MAY search, and whether this goal SUGGESTS it.
+- **`MaxResultSummaryChars` and `TokenEstimateCharsPerToken` are declared once**, on `TextUtil`, with
+  `AnthillRuntime` re-exporting them. Same treatment the id caps got in v3.8.12, for the same reason:
+  a `const` behind an interface advertises a flexibility that does not exist.
+- **First helper move to cross into `Anthill.Api`.** `ApiHost.cs` is among the consumers; neither
+  `UrlSafety` nor `Validation` reached it. Nothing about the design changed — the blast radius did.
+
+`Anthill.Core/Common` now holds three files. `IToolKindExecutor` + `ToolDefinition` is next, then the
+seven tool implementations.
+
+
 ## v3.8.13 - The console stops interpreting model output
 
 An external review found it, and it holds up: a patch filename could dispatch a second action in the

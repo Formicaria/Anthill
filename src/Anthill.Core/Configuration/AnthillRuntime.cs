@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.13";
+    public const string Version = "3.8.14";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -434,7 +434,9 @@ public static class AnthillRuntime
     public static int MaxContextPacketChars = 7000;
     public const int MaxContextItemChars = 1600;
     public const int MaxContextSummaryChars = 700;
-    public const int MaxResultSummaryChars = 900;
+    // v3.8.14 — declared in Anthill.SDK.Common.TextUtil, which is what applies them. Re-exported
+    // here so the operator-facing surface is unchanged while there is still one declaration.
+    public const int MaxResultSummaryChars = TextUtil.MaxResultSummaryChars;
     public const int MaxContextItemsPerPacket = 8;
     public static readonly Dictionary<string, HashSet<string>> RawContextRoles = new()
     {
@@ -443,7 +445,7 @@ public static class AnthillRuntime
         ["builder"] = new() { "coder", "file", "researcher" },
         ["verifier"] = new() { "builder", "coder" },
     };
-    public const int TokenEstimateCharsPerToken = 4;
+    public const int TokenEstimateCharsPerToken = TextUtil.TokenEstimateCharsPerToken;
 
     public static bool EnableAgentCommunicationLedger = true;
     public static bool EnableTaskGraphExport = true;
