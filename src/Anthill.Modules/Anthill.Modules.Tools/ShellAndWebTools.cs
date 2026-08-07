@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Anthill.SDK.Common;
 using Anthill.SDK.Contracts;
+using Anthill.SDK.Security;
 using Anthill.SDK.Tools;
 
 namespace Anthill.Modules.Tools;
@@ -58,8 +59,19 @@ public sealed class ShellCommandTool : ITool
 public sealed class WebSearchTool : ITool
 {
     private readonly IToolRuntimeOptions _options;
+    private readonly ISsrfPolicy _ssrf;
 
-    public WebSearchTool(IToolRuntimeOptions? options = null) => _options = options ?? SafetyPolicy.RequiredToolOptions;
+    /// <param name="ssrf">
+    /// The outbound blocklist this tool drops results against. v3.8.18 — added because
+    /// <c>IsBlockedOutboundUrl</c> was called with no policy, so the SSRF guard on the colony's only
+    /// outbound-fetching tool read process-global state while the tool's enable gate read its
+    /// injected contract. Same defect as the patch validator, on the other end of the module.
+    /// </param>
+    public WebSearchTool(IToolRuntimeOptions? options = null, ISsrfPolicy? ssrf = null)
+    {
+        _options = options ?? SafetyPolicy.RequiredToolOptions;
+        _ssrf = ssrf ?? SafetyPolicy.Ssrf;
+    }
     public string Name => "web_search";
     public string Description => "Read-only web search tool for current/public information. Disabled unless web search is enabled.";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(ToolLimits.WebSearchTimeoutSeconds) };
@@ -96,7 +108,7 @@ public sealed class WebSearchTool : ITool
             if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(rawUrl)) continue;
             var cleanUrl = UrlSafety.DecodeSearchUrl(rawUrl);
             // SSRF guard: drop any result resolving to a private/loopback/local host.
-            if (UrlSafety.IsBlockedOutboundUrl(cleanUrl)) continue;
+            if (UrlSafety.IsBlockedOutboundUrl(cleanUrl, _ssrf)) continue;
             results.Add(new() { ["title"] = title, ["url"] = cleanUrl, ["snippet"] = "", ["source"] = ToolLimits.WebSearchProvider });
             if (results.Count >= maxResults) break;
         }

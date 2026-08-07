@@ -20,7 +20,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      v3.8.18 — SafetyPolicy.Configure/Reset became internal, so the assemblies allowed to install
+      or reset process-wide safety policy are named here rather than being "anyone who references
+      the SDK". Anthill.Core installs the live readers from its module initializer; the test
+      projects need Reset to prove the unconfigured path. Nothing else may.
+    -->
+    <InternalsVisibleTo Include="Anthill.Core" />
     <InternalsVisibleTo Include="Anthill.Tests" />
+    <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
   </ItemGroup>
 
 </Project>

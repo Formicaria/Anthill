@@ -143,6 +143,55 @@ jobs:
         if: always()
         run: docker rm -f anthill-ci || true
 
+  no-ui-boot:
+    name: API boots with the UI assets absent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # Refactor success criterion "core runs without UI", as a BUILD rather than a simulation.
+      # -p:AnthillNoUi=true drops every EmbeddedResource in Anthill.Api.csproj, so the binary
+      # genuinely has no console assets — not a lookup that misses.
+      - name: Publish the API with no console assets
+        run: |
+          dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
+            -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:AnthillNoUi=true \
+            -o /tmp/anthill-noui
+
+      - name: Assert the assets really are absent
+        run: |
+          if strings /tmp/anthill-noui/anthill | grep -q "dashboard-grid.css"; then
+            echo "::error::AnthillNoUi=true still embedded the console assets — the gate proves nothing"
+            exit 1
+          fi
+          echo "No console assets in the binary."
+
+      - name: Boot it and serve the API
+        run: |
+          cd /tmp/anthill-noui
+          ANTHILL_API_TOKEN="ci-no-ui-boot-token-that-is-long-enough-32" \
+            ./anthill --api --host 127.0.0.1 --port 8714 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8714/health -o /tmp/health-noui.json 2>/dev/null; then break; fi
+            sleep 2
+          done
+          cat /tmp/health-noui.json
+          grep -q '"status":"ok"' /tmp/health-noui.json || (echo "::error::API did not serve /health without UI assets"; exit 1)
+
+      # And the console degrades rather than crashing: the shell route must still answer.
+      - name: The UI route degrades instead of throwing
+        run: |
+          code=$(curl -s -o /tmp/ui-noui.html -w "%{http_code}" http://127.0.0.1:8714/ui || echo 000)
+          echo "GET /ui -> $code"
+          [ "$code" = "200" ] || (echo "::error::/ui did not answer without assets"; exit 1)
+          grep -qi "UI resource missing" /tmp/ui-noui.html || (echo "::error::/ui served something unexpected"; cat /tmp/ui-noui.html; exit 1)
+
   lint-lxc-installer:
     name: Shellcheck the LXC installer
     runs-on: ubuntu-latest
