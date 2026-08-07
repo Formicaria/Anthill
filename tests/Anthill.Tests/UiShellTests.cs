@@ -52,10 +52,10 @@ public class UiShellTests
     public void GridAssets_AreEmbedded_Served_AndReferencedByThePage()
     {
         var csproj = Src("src", "Anthill.Api", "Anthill.Api.csproj");
-        Assert.Contains("Ui\\dashboard-grid.js", csproj);
-        Assert.Contains("Ui\\dashboard-grid.css", csproj);
+        Assert.Contains("Anthill.UI\\dashboard-grid.js", csproj);
+        Assert.Contains("Anthill.UI\\dashboard-grid.css", csproj);
 
-        var host = Src("src", "Anthill.Api", "ApiHost.cs");
+        var host = ApiHostSource.All();
         Assert.Contains("/ui/dashboard-grid.js", host);
         Assert.Contains("/ui/dashboard-grid.css", host);
         Assert.Contains("LoadUiAsset(\"dashboard-grid.js\")", host);
@@ -68,7 +68,7 @@ public class UiShellTests
     [Fact]
     public void CspRemains_ScriptSrcSelf_WithoutUnsafeInline()
     {
-        var host = Src("src", "Anthill.Api", "ApiHost.cs");
+        var host = ApiHostSource.All();
         Assert.Contains("script-src 'self'", host);
         Assert.DoesNotContain("script-src 'self' 'unsafe-inline'", host);
     }
@@ -220,7 +220,7 @@ public class UiShellTests
     [Fact]
     public void MissionReport_ExposesAnswerAndRawOutputSeparately()
     {
-        var api = Src("src", "Anthill.Api", "ApiHost.cs");
+        var api = ApiHostSource.All();
         Assert.Contains("[\"final_output\"] = mission.GetValueOrDefault(\"final_result\")", api);
         Assert.Contains("[\"raw_output\"] = mission.GetValueOrDefault(\"user_result\")", api);
     }
@@ -363,8 +363,8 @@ public class UiShellTests
     [Fact]
     public void MissionThreadModule_IsShippedAndLoaded()
     {
-        Assert.Contains("Ui\\mission-thread.js", Src("src", "Anthill.Api", "Anthill.Api.csproj"));
-        var host = Src("src", "Anthill.Api", "ApiHost.cs");
+        Assert.Contains("Anthill.UI\\mission-thread.js", Src("src", "Anthill.Api", "Anthill.Api.csproj"));
+        var host = ApiHostSource.All();
         Assert.Contains("LoadUiAsset(\"mission-thread.js\")", host);
         Assert.Contains("/ui/mission-thread.js", host);
 
@@ -399,7 +399,7 @@ public class UiShellTests
     [Fact]
     public void MissionsJson_CarriesTheAnswer()
     {
-        var api = Src("src", "Anthill.Api", "ApiHost.cs");
+        var api = ApiHostSource.All();
         var idx = api.IndexOf("MapGet(\"/missions/json\"", StringComparison.Ordinal);
         Assert.True(idx > 0, "/missions/json endpoint not found");
         var handler = api.Substring(idx, Math.Min(2200, api.Length - idx));
