@@ -131,12 +131,21 @@ public static class ArtifactSchemas
     /// </summary>
     public const string SourceSet = "source_set";
 
+    /// <summary>
+    /// The tree a verification actually ran against. v3.8.23 — added because a verdict without one
+    /// cannot be checked. "Build passed" is a claim about a specific set of bytes in a specific
+    /// directory, and v3.8.22 recorded build verdicts whose directory was the primary workspace
+    /// rather than the patched one: true statements about the wrong tree, indistinguishable in the
+    /// store from true statements about the right one.
+    /// </summary>
+    public const string WorkspaceSnapshot = "workspace_snapshot";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
-            ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet,
+            ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
         };
 
     /// <summary>
@@ -167,6 +176,7 @@ public static class ArtifactSchemas
         "operator_summary" => OperatorSummary,
         "release_notes" => ReleaseNotes,
         "verification_bundle" => VerificationBundle,
+        "workspace_snapshot" => WorkspaceSnapshot,
         _ => null,
     };
 }

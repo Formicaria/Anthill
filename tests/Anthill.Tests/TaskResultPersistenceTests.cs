@@ -82,25 +82,31 @@ public class TaskResultPersistenceTests
     }
 
     /// <summary>
-    /// A recorded result is listed for its mission, and it is recorded for roles that carry a
-    /// versioned contract and roles that do not.
+    /// A recorded result is listed for its mission, and every mission role now carries a versioned
+    /// contract to record against it.
     ///
-    /// The first version of this test asserted that "coder" has a contract version to record. It
-    /// does not: AntExecutionCatalog holds contracts for the six SPECIALISTS only, so
-    /// ContractFor("coder") is null and every core-ant result stores contract_version = NULL. That
-    /// is the open required-work item "apply versioned AntExecutionContract records to all active
-    /// and standby mission agents, not only specialists" — recorded here rather than papered over,
-    /// because a test asserting the version exists would have to be deleted to close that gap
-    /// honestly, and one asserting it does not would entrench it.
+    /// THIS TEST'S HISTORY IS THE POINT. It used to assert <c>ContractFor("coder")</c> is NULL, and
+    /// said so deliberately: AntExecutionCatalog held contracts for the six specialists only, so
+    /// every core-ant result stored <c>contract_version = NULL</c>. Its own comment named that as
+    /// the open item — "apply versioned AntExecutionContract records to all active and standby
+    /// mission agents, not only specialists" — and predicted exactly how it would end: "a test
+    /// asserting the version exists would have to be deleted to close that gap honestly, and one
+    /// asserting it does not would entrench it."
+    ///
+    /// v3.8.23 closed the gap, so the assertion inverts. Keeping the reasoning attached to the flip
+    /// is what makes it a closure rather than a deletion — the next reader can see that the coder
+    /// went from unspecified to contracted, and when.
     /// </summary>
     [Fact]
-    public void ResultsAreListedForTheirMission_ForContractedAndUncontractedRoles()
+    public void ResultsAreListedForTheirMission_AndEveryRoleIsContracted()
     {
         var memory = NewMemory();
-        memory.SaveTaskResult("m1", "t3", "coder", RichResult());     // no contract today
-        memory.SaveTaskResult("m1", "t3b", "tester", RichResult());   // has one
+        memory.SaveTaskResult("m1", "t3", "coder", RichResult());
+        memory.SaveTaskResult("m1", "t3b", "tester", RichResult());
 
-        Assert.Null(AntExecutionCatalog.ContractFor("coder"));
+        // Was null until v3.8.23. The coder produces every source change this colony makes and was
+        // the last role in it with no declared surface.
+        Assert.NotNull(AntExecutionCatalog.ContractFor("coder"));
         Assert.NotNull(AntExecutionCatalog.ContractFor("tester"));
 
         var listed = memory.LoadMissionTaskResults("m1");
