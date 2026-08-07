@@ -123,12 +123,20 @@ public static class ArtifactSchemas
     /// </summary>
     public const string RepairRecommendation = "repair_recommendation";
 
+    /// <summary>
+    /// The external sources a research task actually consulted. v3.8.21 — added because
+    /// <c>WebResearchAnt</c> already builds and persists a <c>List&lt;SourceRecord&gt;</c>, which is
+    /// genuinely structured data that had no way to reach the graph. A schema added because the
+    /// colony produces the shape, not because the ADR imagined it.
+    /// </summary>
+    public const string SourceSet = "source_set";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
-            ReleaseNotes, MemoryCandidate, RepairRecommendation,
+            ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet,
         };
 
     /// <summary>
@@ -151,6 +159,7 @@ public static class ArtifactSchemas
         "test_report" => TestReport,
         "ui_map" => UiMap,
         "repair_recommendation" => RepairRecommendation,
+        "source_set" => SourceSet,
         "docs_patch_set" or "patch_set" => PatchSet,
         "repository_map" => RepositoryMap,
         "file_set" => FileSet,
