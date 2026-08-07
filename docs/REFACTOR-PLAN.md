@@ -1,8 +1,9 @@
 # ANTHILL Core Refactor — Migration Plan
 
 **Status:** **CLOSED at v3.8.18.** Phases 0–7 shipped by v3.8.17; v3.8.18 closed the acceptance gap
-an external review found. Two plan items were superseded on measurement and said so; two success
-criteria remain honestly partial.
+an external review found. Two plan items were superseded on measurement and said so; three success
+criteria remain honestly unmet or partial — including the no-UI gate, whose CI job failed twice and
+was withdrawn rather than made non-blocking.
 **Baseline:** v3.8.2, `main` · **Final:** v3.8.18
 **Goal:** a smaller, stable core that runs with no AI provider and no UI, while preserving public behavior.
 
@@ -797,7 +798,7 @@ fallback instead of throwing, because a manual gate is one nobody performs twice
 |---|---|---|
 | Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 24,973, down 9,274 (27%), nothing deleted |
 | Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) | **MET** — v3.8.5, with a test class for the case |
-| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | **MET (v3.8.18)** — the `no-ui-boot` CI job publishes with `-p:AnthillNoUi=true`, asserts the assets are absent from the binary, boots it and requires `/health`. v3.8.17 claimed this on `UiAbsenceTests`, which only proved a null check — see §7 |
+| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | **NOT PROVEN** — v3.8.17 claimed it on `UiAbsenceTests`, which only proves a null check (§7). v3.8.18 added `-p:AnthillNoUi=true`, which genuinely drops the assets, and a `no-ui-boot` CI job to build and boot without them. The job failed twice — the API stayed up but never answered `/health` — and was withdrawn rather than made non-blocking. **The build flag ships; the gate does not.** Claiming this met on a gate that is not running would be the same defect a third time |
 | Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) | **MET** — `ModuleBoundaryTests`, v3.8.8, pulled forward |
 | Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | **PARTIAL, corrected v3.8.18** — the second clause holds: no test was deleted in seventeen releases, and the three that were re-composed said so. The first does NOT: v3.8.17 was merged with CI runs #196 and #197 red, and only #198 was green. v3.8.15 was tagged after a green run; v3.8.16 was not built before its PR. The final tree is green, which is not the same claim |
 | Easier feature development | A new integration is added as a module with zero Core edits | **PARTIAL, now measured (v3.8.18)** — `ZeroCoreEditModuleTests` builds the fixture. A module written against the SDK alone registers a tool the core has never heard of, is offered to models, and runs on the system-internal and control-plane paths, with no core edit. It is REFUSED to every mission agent, because `ToolAuthorization`'s role allowlists and execution contracts are closed lists compiled into the core. So: extensible for capability, not for permission |
@@ -874,7 +875,7 @@ different clothes: **a check that answers a question adjacent to the one being a
 
 | Finding | Verdict | Closed by |
 |---|---|---|
-| `UiAbsenceTests` is wrong-green — assets are `EmbeddedResource`, so they cannot be absent; the test asks for a fabricated name and watches a null check | valid, and it had been used to flip a success-criteria row to MET | the `no-ui-boot` CI job: publishes with `-p:AnthillNoUi=true`, asserts the binary contains no assets, boots it, requires `/health` |
+| `UiAbsenceTests` is wrong-green — assets are `EmbeddedResource`, so they cannot be absent; the test asks for a fabricated name and watches a null check | valid, and it had been used to flip a success-criteria row to MET | **partly**. `-p:AnthillNoUi=true` ships and does drop every UI resource; the `no-ui-boot` job that would boot such a build failed twice and was withdrawn. `UiAbsenceTests` no longer claims the criterion, and the criterion is back to NOT PROVEN — see the note below |
 | `SafetyPolicy` is publicly mutable process-global state | valid — any assembly referencing the SDK could clear the SSRF blocklist for the whole process | `Configure`/`Reset` are `internal`, visible only to `Anthill.Core` and the test projects |
 | Injected tool policy is bypassed at execution: `ApplyPatchTool` held `_options` and called `ValidateSafePatchPath(filePath)` without it; `WorkspacePathGuard.IsBlockedPath` read `AnthillRuntime` | valid, and wider than reported — `WebSearchTool` had it too, on the SSRF blocklist | options threaded end to end; `ToolPolicyIsolationTests` makes ambient and injected policy DISAGREE, which is the only way to catch it |
 | The two-host test delegates shell/web/patch/suffix/blocklist back to global state, so it tests profile isolation, not execution isolation | valid — `HostGates` said so in its own comment | `HostGates` holds per-host values; the guard is constructed with them |
@@ -886,7 +887,15 @@ had ambient and injected policy agreeing, or because the assertion was cheaper t
 it. The rule that follows is rule 6 in §6: *a guard that cannot fail is not a guard.* Where a check
 depends on configuration, make the configurations disagree; where it depends on a build, build it.
 
-**What is still open at close.** Two criteria are partial and stay partial:
+**The no-UI gate is unfinished, and saying so is the point.** `-p:AnthillNoUi=true` works and is
+worth having: it is the mechanism that makes the criterion testable at all. The CI job that would
+exercise it failed twice — the API process stayed alive but never served `/health` on the port it was
+given — and rather than mark it `continue-on-error` and call the criterion met, the job was withdrawn
+and the row set back to NOT PROVEN. A gate that cannot fail the build is the wrong-green this section
+exists to record; shipping one to close out a review about wrong-greens would be absurd. Finishing it
+needs the job's own log, which is the next small piece of work.
+
+**What is still open at close.** Three criteria are partial and stay partial:
 
 - `SafetyPolicy` remains process-global. v3.8.18 fixed WHO may write it, and threaded the tool path
   so a host's tools enforce that host's rules — but `UrlSafety` and `Validation` still resolve
