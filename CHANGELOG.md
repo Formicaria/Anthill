@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v3.8.12 - The SSRF and patch-path guards join the SDK
+
+Phase 5c step 2 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the first half, `UrlSafety` and
+`Validation`. `TextUtil` has 18 consumers and reaches well beyond the tool layer, so it moves on its
+own and has not moved yet.
+
+- **`UrlSafety` and `Validation` move to `Anthill.SDK.Common`, and not one of their 21 call sites
+  changed.** All four projects have carried `global using Anthill.SDK.Common;` since v3.8.7, so the
+  bare names resolved to the new location on their own. Enumerated by full qualified string first, as
+  every phase since 5a has been: 17 `UrlSafety` and 19 `Validation` references, every one of them
+  bare, and no second declaration of either name anywhere in the repository.
+- **The config surface was five settings, not two files.** Of the eleven methods across the two
+  types, exactly two read anything mutable — `IsBlockedOutboundUrl` and `ValidateSafePatchPath`.
+  `DecodeSearchUrl`, `ExtractDomain`, `NormalizeUrlForDedupe`, `SourceIdFromUrl`,
+  `IsLoopbackBindHost` and the id validators are pure or read `const`. Measuring that first is what
+  kept this from being a `HomelabOptions`-sized job.
+- **An optional options argument, not constructor injection.** Both helpers are static and every call
+  site calls them statically. Instance types would have rewritten all 21 sites and forced `Queen`,
+  `SelfTest` and `PheromoneEngine` to hold options objects they have no other use for. The two impure
+  methods take a trailing optional argument instead; `null` reads the live default.
+- **`IToolRuntimeOptions` gained one member, not a new interface.** `ValidateSafePatchPath` needs
+  `PatchAllowedSuffixes`, `BlockedFileSuffixes` and `BlockedPathParts`. The first two were already on
+  the v3.8.11 contract, so `Validation` takes that interface whole and only `BlockedPathParts` was
+  added. A parallel interface re-declaring the other two would have been two contracts for one
+  setting, free to drift apart.
+- **The defaults are installed by a module initializer, not a composition root.** This is the part
+  that could have gone quietly wrong. `SelfTest`, `PheromoneEngine`, `Queen.Views` and most of the
+  test suite reach these helpers without building a colony, so a `Configure` call at startup would
+  have left those paths reading the SDK's built-in fallbacks. Because the fallbacks are identical to
+  the core's declared defaults, nothing would have failed — the divergence appears only when an
+  operator or a test changes a setting and the guard ignores it. `SafetyPolicyTests` pins it: a host
+  blocked AFTER the guard's first use changes the answer on the next call, for both guards.
+- **The three id caps are declared once.** `ApprovalIdMaxChars`, `PatchIdMaxChars` and
+  `SourceIdMaxChars` are `const` and now live on `Validation`, which is what enforces them;
+  `AnthillRuntime` re-exports them so the operator-facing surface is unchanged.
+- **Two corrections to the plan, both recorded there.** `SsrfBlockedHostSuffixes` does exist, and the
+  survey said it did not — it is a `string[]` rather than the `HashSet` its neighbour is, matched by
+  `EndsWith` and therefore ordered, so the contract carries it as `IReadOnlyList<string>`. The
+  settings table also omitted `BlockedFileSuffixes` and `PatchAllowedSuffixes`. The "4 consuming
+  files each" figure held exactly, and means core files; the three `UrlSafety` hits inside
+  `Anthill.Modules.Homelab` are XML doc comments, so the SDK-only boundary is untouched.
+
+
 ## v3.8.11 - The tool gates become a contract
 
 Phase 5c step 1 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisite for moving the

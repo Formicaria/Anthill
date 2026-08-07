@@ -428,6 +428,44 @@ the file-writing and patch-application gates — the ones that decide whether an
    Note the trap this survey already avoided once: `SsrfBlockedHostSuffixes` appears in the tool
    layer's reads but does NOT exist under that name in `AnthillRuntime`. Resolve every setting name
    against the declaration before designing the contract around it.
+
+   **CORRECTED WHEN EXECUTED (v3.8.12). The table above is incomplete and the trap note is wrong.**
+   Both were written from the tool layer's reads rather than from the two files' own bodies.
+
+   - `SsrfBlockedHostSuffixes` DOES exist — `AnthillRuntime.cs:96` — but as `static readonly string[]`,
+     not a `HashSet` like `SsrfBlockedHostnames` on the line above it. The warning was right that
+     something was off about the name and wrong about what. Matched by `EndsWith` and ordered, so it
+     is an `IReadOnlyList<string>` on the contract while its sibling is an `IReadOnlySet<string>`.
+   - The table omits `BlockedFileSuffixes` and `PatchAllowedSuffixes`, which `ValidateSafePatchPath`
+     reads. Neither needed a new contract member: **`IToolRuntimeOptions` already declared both**, so
+     `Validation` takes that interface whole and only `BlockedPathParts` was added to it. A second
+     interface re-declaring them would have been two contracts for one setting, free to drift.
+   - "4 consuming files each" held exactly, and it means CORE files. Add `SecurityTests.cs` for both
+     and `HomelabFoundationTests.cs` for `UrlSafety`. The three `UrlSafety` hits inside
+     `Anthill.Modules.Homelab` are XML doc comments, not code — the SDK-only boundary is intact.
+
+   **The measurement that decided the shape.** Of 21 call sites, only two methods read mutable
+   config at all: `UrlSafety.IsBlockedOutboundUrl` and `Validation.ValidateSafePatchPath`. Everything
+   else — `DecodeSearchUrl`, `ExtractDomain`, `NormalizeUrlForDedupe`, `SourceIdFromUrl`,
+   `IsLoopbackBindHost`, the id validators — is pure or const-only. The config surface is five
+   settings, not the whole of both files.
+
+   **DECIDED (operator, this session): optional options argument, live default.** The impure methods
+   take a trailing optional argument; `null` resolves to a settable default that reads `AnthillRuntime`
+   through. Instance types with constructor injection were the consistent-looking alternative and were
+   rejected: they would have rewritten all 21 call sites and forced `Queen`, `SelfTest` and
+   `PheromoneEngine` to carry options objects they have no other use for. All four projects already
+   carry `global using Anthill.SDK.Common;`, so landing the types in that namespace changed zero call
+   sites.
+
+   **The hazard that design creates, and what closes it.** A settable default can be left unset. The
+   SDK's built-in fallbacks are byte-identical to `AnthillRuntime`'s declared defaults, so an unset
+   process is never MORE PERMISSIVE — it simply stops tracking later edits, and nothing fails until an
+   operator or a test changes a setting the guard then ignores. That is the v3.8.11 wrong-green shape
+   exactly. Closed with a `[ModuleInitializer]` in `Anthill.Core` rather than a composition-root call,
+   because `SelfTest`, `PheromoneEngine`, `Queen.Views` and most of the test suite reach these helpers
+   without building a colony. `SafetyPolicyTests` pins it: a host blocked AFTER first use changes the
+   answer on the next call.
 3. `IToolKindExecutor` + `ToolDefinition` → SDK
 4. The seven implementations → `Anthill.Modules.Tools.*`, registered through
    `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by

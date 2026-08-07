@@ -1,9 +1,9 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using Anthill.Core.Configuration;
+using Anthill.SDK.Security;
 
-namespace Anthill.Core.Common;
+namespace Anthill.SDK.Common;
 
 /// <summary>
 /// URL decoding, normalisation, and SSRF/local-target filtering.
@@ -12,6 +12,11 @@ namespace Anthill.Core.Common;
 /// deliberately DNS-free: it rejects non-http(s) schemes, localhost-style names,
 /// and private/loopback/link-local/reserved IP literals before any agent sees them.
 /// Direct port of the matching Python helpers.
+///
+/// v3.8.12 — moved from <c>Anthill.Core.Common</c>. Six of its seven methods were already pure;
+/// only <see cref="IsBlockedOutboundUrl"/> read configuration, and it now takes an optional
+/// <see cref="ISsrfPolicy"/> that defaults to <see cref="SafetyPolicy.Ssrf"/>. Every existing call
+/// site passes nothing and behaves exactly as before.
 /// </summary>
 public static class UrlSafety
 {
@@ -83,17 +88,23 @@ public static class UrlSafety
         }
     }
 
-    public static bool IsBlockedOutboundUrl(string url)
+    /// <param name="policy">
+    /// The blocklist to check against. Null — which is every call site in the colony today — reads
+    /// <see cref="SafetyPolicy.Ssrf"/> live, so an operator or test that adds a blocked host after
+    /// this type was first touched is still honoured.
+    /// </param>
+    public static bool IsBlockedOutboundUrl(string url, ISsrfPolicy? policy = null)
     {
         try
         {
+            var gates = policy ?? SafetyPolicy.Ssrf;
             if (!Uri.TryCreate(DecodeSearchUrl(url), UriKind.Absolute, out var parsed)) return true;
             var scheme = parsed.Scheme.ToLowerInvariant();
             if (scheme is not ("http" or "https")) return true;
             var host = NormalizeHost(parsed.Host);
             if (host.Length == 0) return true;
-            if (AnthillRuntime.SsrfBlockedHostnames.Contains(host) ||
-                AnthillRuntime.SsrfBlockedHostSuffixes.Any(s => host.EndsWith(s, StringComparison.OrdinalIgnoreCase)))
+            if (gates.BlockedHostnames.Contains(host) ||
+                gates.BlockedHostSuffixes.Any(s => host.EndsWith(s, StringComparison.OrdinalIgnoreCase)))
                 return true;
             if (IPAddress.TryParse(host, out var ip))
             {

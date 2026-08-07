@@ -27,6 +27,8 @@ public class ToolRuntimeOptionsTests
         public bool PatchApplicationEnabled { get; set; }
         public IReadOnlySet<string> PatchAllowedSuffixes { get; set; } = new HashSet<string> { ".cs" };
         public IReadOnlySet<string> BlockedFileSuffixes { get; set; } = new HashSet<string> { ".db" };
+        // v3.8.12 — added to the interface so Validation.ValidateSafePatchPath can take it whole.
+        public IReadOnlySet<string> BlockedPathParts { get; set; } = new HashSet<string> { ".git" };
         public string ScriptDirectory { get; set; } = ".";
         public string BackupDirectory { get; set; } = "data/backups";
     }
