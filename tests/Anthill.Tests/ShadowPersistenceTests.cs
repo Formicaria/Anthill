@@ -247,7 +247,7 @@ public class ShadowPersistenceTests : IDisposable
     [Fact]
     public void TheShadowEndpointExists_AndAnEmptyScoreboardIsNotAPass()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+        var source = ApiHostSource.All();
         var code = string.Join("\n", source.Split('\n')
             .Select(l => { var i = l.IndexOf("//", StringComparison.Ordinal); return i >= 0 ? l[..i] : l; }));
 
