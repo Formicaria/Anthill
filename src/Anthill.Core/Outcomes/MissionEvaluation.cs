@@ -56,7 +56,16 @@ public static class MissionEvaluator
 {
     /// <summary>Bumped whenever the evaluation rules change, so a persisted evaluation always says
     /// which rules produced it. "legacy" marks rows that predate persisted evaluation.</summary>
-    public const string Version = "evaluator-v1";
+    /// <summary>
+    /// v3.8.22 — bumped to v2. The deterministic-block layer can flip an outcome from
+    /// completed_verified to completed_unverified, so an evaluation produced before it and one
+    /// produced after it are not comparable, and a stored row must say which rules made it. That is
+    /// the entire purpose of this constant and it had never been exercised: the generation-integrity
+    /// layer in v3.0.1 was the same kind of change and left the version at v1, which means every row
+    /// between v3.0.1 and here claims a rule set it was not evaluated under. Not retroactively
+    /// fixable; noted so the next rules change does not repeat it.
+    /// </summary>
+    public const string Version = "evaluator-v2";
     public const string LegacyVersion = "legacy";
 
     /// <summary>
@@ -105,7 +114,18 @@ public static class MissionEvaluator
         // what stopped an all-fallback (provider-down) run from reporting a perfect completion.
         var generationDegraded = mission.Tasks.Any(t => t.GenerationDegraded);
 
-        var outcome = Resolve(mission.Status, stopReason, verification, deliverable, generationDegraded);
+        // Deterministic-block layer (v3.8.22): a reproducible check said no — the build verifier
+        // failed, a patch fell outside its approved scope, or the soldier's policy engine matched a
+        // blocking rule. Any one of those makes a verified outcome impossible, and none of them is a
+        // judgment call that later evidence can outweigh.
+        //
+        // This layer exists because both signals were already computed and neither was read. The
+        // verification layer above cannot cover it: it asks whether a VERIFIER TASK passed, and a
+        // patch set's build failure is not a task — it is a verdict about a task's output.
+        var deterministicBlock = mission.Tasks.FirstOrDefault(t => t.DeterministicBlock is not null)?.DeterministicBlock;
+
+        var outcome = Resolve(mission.Status, stopReason, verification, deliverable, generationDegraded,
+            deterministicBlock is not null);
         return new MissionEvaluation(
             MissionId: mission.Id,
             OutcomeCode: outcome,
@@ -115,11 +135,12 @@ public static class MissionEvaluator
             StopReason: string.IsNullOrWhiteSpace(stopReason) ? null : stopReason,
             EvaluatorVersion: Version,
             EvaluatedAt: AnthillTime.NowUtc().ToIso(),
-            Explanation: Explain(outcome, structural, verification, deliverable, stopReason, generationDegraded));
+            Explanation: Explain(outcome, structural, verification, deliverable, stopReason, generationDegraded)
+                + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}"));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,
-        string verification, string deliverable, bool generationDegraded)
+        string verification, string deliverable, bool generationDegraded, bool deterministicBlock = false)
     {
         // An interrupted mission is never completed, whatever the tasks say.
         if (stopReason == "mission_cancelled") return MissionOutcome.Cancelled;
@@ -134,7 +155,8 @@ public static class MissionEvaluator
         // layer keeps pre-v2.26 behaviour, and is visible as "not_checked" rather than hidden.
         var verified = verification == MissionEvaluation.Verification.Passed
                        && deliverable != MissionEvaluation.Deliverable.NotSatisfied
-                       && !generationDegraded;
+                       && !generationDegraded
+                       && !deterministicBlock;   // v3.8.22 — a reproducible "no" is final
         return verified ? MissionOutcome.CompletedVerified : MissionOutcome.CompletedUnverified;
     }
 

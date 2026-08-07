@@ -740,30 +740,63 @@ public sealed class ExecutionService : IExecutionService
 
         try
         {
-            var bundle = _verification.Run(new Verification.VerificationRequest(
+            // v3.8.22: one request PER PROPOSAL, carrying the change. v3.8.21 sent a single request
+            // with neither ChangedPath nor content, which DiffVerifier answers with "no changed path
+            // supplied — nothing to verify" and a FAIL. It also passed task.TaskType unresolved, so
+            // the planner's `patch_proposal` matched no policy key and only security_policy ran.
+            // Both halves are fixed here and in VerificationPolicy.Canonical.
+            var requests = patchSet.Proposals.Select(p => new Verification.VerificationRequest(
                 TaskType: task.TaskType,
-                WorkspaceRoot: AnthillRuntime.AllowedWorkspaceRoot));
+                WorkspaceRoot: AnthillRuntime.AllowedWorkspaceRoot,
+                ChangedPath: p.FilePath,
+                NewContent: p.NewContent,
+                OldContent: p.OldContent)).ToList();
+
+            var bundles = _verification.RunForEach(requests);
 
             var store = (Anthill.SDK.Artifacts.IEvidenceStore)_memory;
-            foreach (var verdict in bundle.Results)
-                store.Put(Anthill.SDK.Artifacts.Evidence.Create(
-                    kind: verdict.Verifier,
-                    deterministic: verdict.Deterministic,
-                    passed: verdict.Passed,
-                    missionId: mission.Id,
-                    detail: verdict.Summary,
-                    taskId: task.Id));
+            for (var i = 0; i < bundles.Count; i++)
+                foreach (var verdict in bundles[i].Results)
+                    store.Put(Anthill.SDK.Artifacts.Evidence.Create(
+                        kind: verdict.Verifier,
+                        deterministic: verdict.Deterministic,
+                        passed: verdict.Passed,
+                        missionId: mission.Id,
+                        // The proposal the verdict is ABOUT. Evidence that cannot be traced to the
+                        // change it judged is why per-proposal verification was worth the work.
+                        detail: $"[{patchSet.Proposals[i].FilePath}] {verdict.Summary}",
+                        taskId: task.Id));
+
+            // The set is promotable only if EVERY proposal is. One unverifiable change in a set is an
+            // unverifiable set — a patch is applied as a unit, so it must be judged as one.
+            var failed = bundles.Where(b => !b.Promotable).ToList();
+            var promotable = failed.Count == 0;
 
             _memory.LogEvent(mission.Id, "patch_set_verified",
-                $"Verification ran for {task.TaskType}: {bundle.Results.Count(r => r.Passed)}/{bundle.Results.Count} passed.",
+                $"Verification ran for {task.TaskType} (resolved: {Verification.VerificationPolicy.Canonical(task.TaskType)}) " +
+                $"over {bundles.Count} proposal(s): {bundles.Count - failed.Count}/{bundles.Count} promotable.",
                 task.Id, task.AssignedAnt,
                 new()
                 {
                     ["patch_set_id"] = patchSet.Id,
-                    ["promotable"] = bundle.Promotable,
-                    ["deterministic_evidence"] = bundle.HasDeterministicEvidence,
-                    ["blocked_reasons"] = string.Join("; ", bundle.BlockedReasons),
+                    ["promotable"] = promotable,
+                    ["proposals"] = bundles.Count,
+                    ["resolved_task_type"] = Verification.VerificationPolicy.Canonical(task.TaskType),
+                    ["required_verifiers"] = string.Join(",", Verification.VerificationPolicy.For(task.TaskType)),
+                    ["deterministic_evidence"] = bundles.All(b => b.HasDeterministicEvidence),
+                    ["blocked_reasons"] = string.Join("; ",
+                        failed.SelectMany(b => b.BlockedReasons.Concat(
+                            b.Results.Where(r => !r.Passed).Select(r => $"{r.Verifier}: {r.Summary}")))
+                            .Distinct()),
                 });
+
+            // v3.8.22: the verdict is now CONSEQUENTIAL. Until this line a non-promotable bundle was
+            // written to an event row and read by nothing, so a patch that failed the build verifier
+            // reached completed_verified exactly as if it had passed.
+            if (!promotable)
+                task.DeterministicBlock =
+                    $"patch set {patchSet.Id}: {failed.Count} of {bundles.Count} proposal(s) not promotable — " +
+                    string.Join("; ", failed.Take(3).Select(b => b.Explain()));
         }
         catch (Exception error)
         {
@@ -853,6 +886,19 @@ public sealed class ExecutionService : IExecutionService
         // provider_failure warning — this reads that structure, never the result prose.
         task.GenerationDegraded = execution.StatusCode == "succeeded_with_warnings"
             && execution.Warnings.Any(w => w.Contains("provider_failure", StringComparison.Ordinal));
+
+        // v3.8.22: the same treatment for a deterministic policy block. The soldier computes its
+        // verdict from PolicyScan before any model text exists and marks a blocking result; this
+        // carries that onto the task so the canonical evaluator sees it. Nothing read the soldier's
+        // block before this line, which made "not overridable" in its own summary untrue.
+        //
+        // NOT overwritten if something already set it — a task can be blocked by more than one
+        // deterministic check (a patch set here, its policy review there) and the first reason is as
+        // valid as the second. Losing one to a later assignment would understate why.
+        if (task.DeterministicBlock is null
+            && execution.Warnings.Any(w => string.Equals(w, Agents.SoldierAnt.SoldierBlockMarker, StringComparison.Ordinal)))
+            task.DeterministicBlock =
+                $"policy review blocked: {string.Join(", ", execution.Warnings.Where(w => w != Agents.SoldierAnt.SoldierBlockMarker))}";
 
         _memory.LogEvent(mission.Id, "task_execution_recorded",
             $"Structured result recorded: {execution.StatusCode}", task.Id, runtimeSelection.RuntimeNodeId,
