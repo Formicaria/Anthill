@@ -2,6 +2,8 @@ using Anthill.Core.Agents;
 using Anthill.Core.Common;
 using Anthill.Core.Contracts;
 
+using Anthill.SDK.Artifacts;
+
 namespace Anthill.Core.Memory;
 
 /// <summary>
@@ -75,6 +77,64 @@ public sealed partial class SqliteMemory
         catch (Exception error)
         {
             Console.Error.WriteLine($"Could not record the ant result for task {taskId}: {error.Message}");
+        }
+
+        BridgeArtifactsToStore(missionId, taskId, antName ?? "", result);
+    }
+
+    /// <summary>
+    /// Promote an ant's declared artifacts into the ADR-004 store. v3.8.20.
+    ///
+    /// Ants have emitted typed <c>AntArtifact</c>s since v2.19.0, and they were serialised straight
+    /// into <c>artifacts_json</c> above — a blob, unqueryable, unhashed, with no provenance and no
+    /// identity. This is the bridge that makes them first-class rows, and it is why the store stops
+    /// being empty without a single ant changing.
+    ///
+    /// SEPARATE TRY, AND SEPARATE FROM THE ROW ABOVE, deliberately. The JSON blob remains the
+    /// authority for the task result; this is a projection of it. If the projection fails, the task
+    /// result is still correct and the mission still completes — the same reasoning that already
+    /// wraps the row write, applied one level out. A store that can fail a mission is worse than a
+    /// store with a gap in it.
+    ///
+    /// WHAT IS NOT BRIDGED: <c>result.Evidence</c>. An <c>AntEvidence</c> is a CITATION — its kinds
+    /// are <c>file_path</c>, <c>mission_id</c>, <c>failure_id</c>, <c>check</c>, <c>policy_rule</c> —
+    /// and ADR-004 evidence is a VERDICT: this check ran, deterministically, and passed. Mapping one
+    /// onto the other would record "the ant mentioned a file" as proof that something was verified,
+    /// which is exactly the confusion the deterministic flag exists to prevent. Real evidence is
+    /// produced where checks actually run; see <c>VerificationEvidence</c>.
+    /// </summary>
+    private void BridgeArtifactsToStore(string missionId, string taskId, string antName, AntExecutionResult result)
+    {
+        if (result.Artifacts is null || result.Artifacts.Count == 0) return;
+
+        try
+        {
+            var store = (IArtifactStore)this;
+            foreach (var declared in result.Artifacts)
+            {
+                var schema = ArtifactSchemas.ForAntKind(declared?.Kind);
+                // An unrecognised kind is SKIPPED, not guessed at. Inventing a schema for it would
+                // put a row in the graph whose type is a lie, and the graph's whole value is that a
+                // consumer can trust what a schema says it is holding.
+                if (schema is null || declared is null) continue;
+
+                store.Put(Artifact.Create(
+                    schema: schema,
+                    producerRole: antName,
+                    missionId: missionId,
+                    payload: declared.Content ?? "",
+                    taskId: taskId,
+                    // Provenance is empty here and that is honest: the ant declared no inputs, so
+                    // the bridge has none to record. Inferring "everything this mission produced
+                    // earlier" would fabricate edges nobody asserted.
+                    sourceArtifactIds: null,
+                    visibility: ArtifactVisibility.Colony));
+            }
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"Could not project artifacts for task {taskId} into the artifact store: {error.Message}");
         }
     }
 

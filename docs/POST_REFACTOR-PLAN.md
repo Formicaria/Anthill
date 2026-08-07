@@ -31,11 +31,21 @@ section adds. Measured against the tree at v3.8.19:
                             UNSTABLE...); trail_type is a free string. BLOCKED BY S5 for the same
                             reason as S2.
 
-  S5  Knowledge graph       FOUNDATION SHIPPED (v3.8.19), no producers. ADR-004's artifact and
-                            evidence stores exist, hash, and carry provenance both ways. The graph
-                            is real and empty: Task.Result is still a string? and ants still pass
-                            prose. NEXT RELEASE: make ants emit artifacts. This is the keystone —
-                            S2, S4, S7 and S14 all wait on it.
+  S5  Knowledge graph       PRODUCERS SHIPPED (v3.8.20). The stores are no longer empty: an ant's
+                            declared AntArtifacts become first-class rows at SaveTaskResult, and
+                            deterministic evidence is recorded at the tool chokepoint. Five of the
+                            seven kinds ants emit mapped onto schemas declared before the bridge.
+                            STILL OPEN, and it is the real work: the six CORE ants emit
+                            AntArtifact("text") — prose with a label. Typing them means giving their
+                            output STRUCTURE, per ant, not mapping a name; relabelling prose as
+                            `change_plan` is the "two channels, one wins" failure ADR-004 rejects.
+                            And artifacts are not yet the INTERCHANGE — tasks still read the previous
+                            task's prose. That last step is roadmap v3.9.0 proper.
+
+                            Finding worth carrying: VerificationRunner, which owns BuildVerifier and
+                            TestVerifier, HAS NO PRODUCTION CALL SITE — tests construct it and
+                            nothing else does. The verification framework is a well-tested subsystem
+                            that never runs. Activating it is its own piece of work.
 
   S6-S15                    NOT STARTED. S10 (distributed) and S15 (self-sustaining) are end states
                             rather than work items and should not be scheduled as phases.

@@ -115,11 +115,49 @@ public static class ArtifactSchemas
     public const string ReleaseNotes = "release_notes";
     public const string MemoryCandidate = "memory_candidate";
 
+    /// <summary>
+    /// v3.8.20 — added when the ant bridge was built, because the medic already emits
+    /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
+    /// the list above. A schema the colony already produces and the vocabulary did not name is a
+    /// gap in the vocabulary, not a reason to rename what the ant emits.
+    /// </summary>
+    public const string RepairRecommendation = "repair_recommendation";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
-            ReleaseNotes, MemoryCandidate,
+            ReleaseNotes, MemoryCandidate, RepairRecommendation,
         };
+
+    /// <summary>
+    /// What an ant's <c>AntArtifact.Kind</c> means in this vocabulary. v3.8.20.
+    ///
+    /// Ants have emitted typed artifacts since v2.19.0 — they were just serialised into a JSON blob
+    /// on <c>task_results</c> and never became rows. Five of the seven kinds already matched a schema
+    /// name exactly, which is the evidence that the vocabulary was drawn from the right place; the
+    /// two that did not are mapped here rather than renamed at the ant, because the ant's name is the
+    /// one an operator reads in a transcript.
+    ///
+    /// An unrecognised kind maps to NULL and is skipped rather than guessed at. A bridge that
+    /// invented a schema for an unknown kind would fill the graph with rows whose type is a lie.
+    /// </summary>
+    public static string? ForAntKind(string? antKind) => (antKind ?? "").ToLowerInvariant() switch
+    {
+        "failure_diagnosis" => FailureDiagnosis,
+        "memory_candidate" => MemoryCandidate,
+        "security_review" => SecurityReview,
+        "test_report" => TestReport,
+        "ui_map" => UiMap,
+        "repair_recommendation" => RepairRecommendation,
+        "docs_patch_set" or "patch_set" => PatchSet,
+        "repository_map" => RepositoryMap,
+        "file_set" => FileSet,
+        "change_plan" => ChangePlan,
+        "operator_summary" => OperatorSummary,
+        "release_notes" => ReleaseNotes,
+        "verification_bundle" => VerificationBundle,
+        _ => null,
+    };
 }
