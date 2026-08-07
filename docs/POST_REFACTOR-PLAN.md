@@ -3,6 +3,50 @@ OPERATION ANTHILL
 POST REFACTOR STAGING
 ===========================================================
 
+-----------------------------------------------------------
+EXECUTION STATUS  (added v3.8.19 — measured, not estimated)
+-----------------------------------------------------------
+
+This document is a DIRECTION. It has no measurements, no file names and no acceptance criteria, so
+it cannot be executed against directly — the refactor plan's habit of surveying first is what this
+section adds. Measured against the tree at v3.8.19:
+
+  S1  Foundation            LARGELY DONE by the refactor (v3.8.3-v3.8.18). Dependency inversion,
+                            standardized interfaces, the event bus and the duplicate-logic sweep all
+                            shipped. Open: 9 /events/json pollers in app.js, config standardization
+                            (166 public statics on AnthillRuntime), a per-subsystem test audit.
+
+  S2  Persistent workers    PARTIAL. workers + task_attempts persist with leases and heartbeats;
+                            skills persist separately. MISSING: reputation, confidence, efficiency,
+                            preferred task types — the workers table has six columns and none is a
+                            score. BLOCKED BY S5: a score learned before artifacts is a score
+                            learned from prose.
+
+  S3  Colony memory         DONE for storage, DONE for retrieval as of v3.8.19. 32 tables held the
+                            data and exactly two methods read it back; SqliteMemory.Recall.cs now
+                            answers the four questions the stage names.
+
+  S4  Pheromone layer       HALF DONE (v3.8.19). Time decay ships — trails had never faded in the
+                            project's history. MISSING: the typed vocabulary (SUCCESS, FAST_PATH,
+                            UNSTABLE...); trail_type is a free string. BLOCKED BY S5 for the same
+                            reason as S2.
+
+  S5  Knowledge graph       FOUNDATION SHIPPED (v3.8.19), no producers. ADR-004's artifact and
+                            evidence stores exist, hash, and carry provenance both ways. The graph
+                            is real and empty: Task.Result is still a string? and ants still pass
+                            prose. NEXT RELEASE: make ants emit artifacts. This is the keystone —
+                            S2, S4, S7 and S14 all wait on it.
+
+  S6-S15                    NOT STARTED. S10 (distributed) and S15 (self-sustaining) are end states
+                            rather than work items and should not be scheduled as phases.
+
+THE ORDERING IN THIS DOCUMENT IS NARRATIVE, NOT DEPENDENCY. Stage 2 (reputation) is numbered three
+stages before Stage 5 (knowledge graph), but ADR-004 is Accepted and the standing peer-review
+recommendation is explicit: build the evidence graph BEFORE any reputation or learning work, because
+reputation learned before reproducible evidence rewards persuasive prose rather than demonstrated
+work. Read the dependency order, not the numbering.
+
+
 Current Architecture Goal
 
 The colony itself is the intelligence.
