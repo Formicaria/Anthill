@@ -425,6 +425,23 @@ the file-writing and patch-application gates — the ones that decide whether an
    Suggested order: `UrlSafety` + `Validation` first (small, and they carry the SSRF and path
    guards the tools actually need), then `TextUtil` separately.
 
+   **`TextUtil` SURVEYED (v3.8.13 session), not yet moved.** Smaller than its consumer count implies.
+
+   | Measure | Result |
+   |---|---|
+   | qualification forms | 119 bare (resolve through the existing global using — no edit), 2 `Common.TextUtil` (rewrite) |
+   | consuming files | 18 in `src` — matching the figure above, same core-files convention — plus `JsonSafetyTests.cs` |
+   | mutable settings | ONE: `WebSearchKeywords` |
+   | const settings | `MaxResultSummaryChars`, `TokenEstimateCharsPerToken` → SDK constants, as the id caps were in v3.8.12 |
+   | collisions | none; single declaration |
+
+   `WebSearchKeywords` belongs on `IToolRuntimeOptions`, which already carries `WebSearchEnabled` —
+   the same reasoning that put `BlockedPathParts` there rather than in a rival interface.
+
+   The one thing genuinely wider than v3.8.12: 19 files touched instead of 8, and `Anthill.Api/ApiHost.cs`
+   is among them, which neither earlier helper reached. Nothing about that changes the design; it
+   changes how long the edit takes and how much a mistake costs.
+
    Note the trap this survey already avoided once: `SsrfBlockedHostSuffixes` appears in the tool
    layer's reads but does NOT exist under that name in `AnthillRuntime`. Resolve every setting name
    against the declaration before designing the contract around it.
