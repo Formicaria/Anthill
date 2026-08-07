@@ -37,6 +37,13 @@ public interface IToolRuntimeOptions
     /// <summary>Outbound web search. Off by default.</summary>
     bool WebSearchEnabled { get; }
 
+    /// <summary>
+    /// Goal words that suggest a mission needs the live web. Added in v3.8.14 so
+    /// <c>TextUtil.ShouldUseWebSearch</c> can read them live; it sits beside
+    /// <see cref="WebSearchEnabled"/> because they answer two halves of the same question.
+    /// </summary>
+    IReadOnlySet<string> WebSearchKeywords { get; }
+
     /// <summary>Applying patches to the working tree. Off by default.</summary>
     bool PatchApplicationEnabled { get; }
 

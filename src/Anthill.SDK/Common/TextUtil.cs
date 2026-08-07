@@ -1,15 +1,29 @@
 using System.Text.RegularExpressions;
-using Anthill.Core.Configuration;
+using Anthill.SDK.Tools;
 
-namespace Anthill.Core.Common;
+namespace Anthill.SDK.Common;
 
 /// <summary>
 /// Pure text helpers: truncation, token estimation, whitespace compaction, summary
 /// creation, keyword extraction, and HTML stripping. Direct ports of the matching
 /// free functions in the Python runtime, kept allocation-light for the hot context paths.
+///
+/// v3.8.14 — moved from <c>Anthill.Core.Common</c>, the second half of phase 5c step 2. The widest
+/// of the three helper moves by consumer count (18 files in src plus one test) and the narrowest by
+/// configuration: of thirteen methods, exactly one reads a mutable setting.
+/// <see cref="ShouldUseWebSearch"/> takes an optional <see cref="IToolRuntimeOptions"/>, which
+/// already carried <see cref="IToolRuntimeOptions.WebSearchEnabled"/> and is therefore where the
+/// keyword list belongs. The two caps were <c>const</c> and are declared here for the reason
+/// <see cref="Validation"/> gives: a value that cannot vary should not be dressed as one that can.
 /// </summary>
 public static partial class TextUtil
 {
+    /// <summary>Default cap for <see cref="CreateResultSummary"/>. Was <c>AnthillRuntime.MaxResultSummaryChars</c>.</summary>
+    public const int MaxResultSummaryChars = 900;
+
+    /// <summary>Chars per token for the cheap estimate. Was <c>AnthillRuntime.TokenEstimateCharsPerToken</c>.</summary>
+    public const int TokenEstimateCharsPerToken = 4;
+
     public static string Truncate(string? text, int maxChars, string suffix = "...[truncated]")
     {
         if (text is null) return "";
@@ -49,20 +63,20 @@ public static partial class TextUtil
     public static int EstimateTokenCount(string? text)
     {
         if (string.IsNullOrEmpty(text)) return 0;
-        return Math.Max(1, text.Length / AnthillRuntime.TokenEstimateCharsPerToken);
+        return Math.Max(1, text.Length / TokenEstimateCharsPerToken);
     }
 
     /// <summary>v2.26.0: the same estimate straight from a character count — callers that only
     /// know a length must not allocate a fake string to divide it by four.</summary>
     public static int EstimateTokenCountFromChars(int chars) =>
-        chars <= 0 ? 0 : Math.Max(1, chars / AnthillRuntime.TokenEstimateCharsPerToken);
+        chars <= 0 ? 0 : Math.Max(1, chars / TokenEstimateCharsPerToken);
 
     public static string CompactWhitespace(string text) =>
         MultiNewline().Replace((text ?? "").Trim(), "\n\n");
 
     public static string CreateResultSummary(string? text, int maxChars = -1)
     {
-        if (maxChars < 0) maxChars = AnthillRuntime.MaxResultSummaryChars;
+        if (maxChars < 0) maxChars = MaxResultSummaryChars;
         if (string.IsNullOrEmpty(text)) return "";
         var cleaned = CompactWhitespace(text);
         // Prefer leading content because most ants put summaries first; a later version
@@ -123,11 +137,26 @@ public static partial class TextUtil
         _ => "general",
     };
 
-    public static bool ShouldUseWebSearch(string goal)
+    /// <param name="options">
+    /// The keyword list to match against. Null — every call site in the colony today — reads
+    /// <see cref="SafetyPolicy.ToolOptions"/> live, so a keyword added at runtime is honoured on the
+    /// next call. Falls back to the built-in list below if no composition root has run.
+    /// </param>
+    public static bool ShouldUseWebSearch(string goal, IToolRuntimeOptions? options = null)
     {
         var lowered = (goal ?? "").ToLowerInvariant();
-        return AnthillRuntime.WebSearchKeywords.Any(k => lowered.Contains(k));
+        var keywords = (options ?? SafetyPolicy.ToolOptions)?.WebSearchKeywords ?? DefaultWebSearchKeywords;
+        return keywords.Any(k => lowered.Contains(k));
     }
+
+    // Mirrors AnthillRuntime.WebSearchKeywords as declared, so an unconfigured process behaves as a
+    // configured one does at rest. The core overwrites this via SafetyPolicy.Configure at load.
+    private static readonly IReadOnlySet<string> DefaultWebSearchKeywords =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "latest", "current", "today", "news", "recent", "web", "internet", "search", "lookup", "look up",
+            "online", "price", "version", "docs", "documentation", "advisory", "security advisory", "cve", "release",
+        };
 
     [GeneratedRegex(@"\n{3,}")] private static partial Regex MultiNewline();
     [GeneratedRegex(@"[a-zA-Z0-9_]+")] private static partial Regex WordToken();

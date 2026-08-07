@@ -24,6 +24,8 @@ public class ToolRuntimeOptionsTests
         public bool FileWritingEnabled { get; set; }
         public bool ShellToolEnabled { get; set; }
         public bool WebSearchEnabled { get; set; }
+        // v3.8.14 — added to the interface so TextUtil.ShouldUseWebSearch can read it live.
+        public IReadOnlySet<string> WebSearchKeywords { get; set; } = new HashSet<string> { "latest" };
         public bool PatchApplicationEnabled { get; set; }
         public IReadOnlySet<string> PatchAllowedSuffixes { get; set; } = new HashSet<string> { ".cs" };
         public IReadOnlySet<string> BlockedFileSuffixes { get; set; } = new HashSet<string> { ".db" };

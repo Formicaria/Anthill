@@ -114,8 +114,8 @@ public static class EvidenceFollowUps
         {
             followUps.Add(new Objective
             {
-                Title = Common.TextUtil.Truncate(step, 120),
-                Charter = $"Verification of '{Common.TextUtil.Truncate(parent.Title, 80)}' recorded this as "
+                Title = TextUtil.Truncate(step, 120),
+                Charter = $"Verification of '{TextUtil.Truncate(parent.Title, 80)}' recorded this as "
                         + $"missing: {step}",
                 Status = ObjectiveStatus.Pending,
                 ParentObjectiveId = parent.Id,
