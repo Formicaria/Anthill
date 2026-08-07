@@ -192,9 +192,15 @@ public class ToolFailureClassTests
     /// specific config gates and filesystem states to reach; the property being protected is a
     /// property of the CODE, so the code is what gets asserted.
     /// </summary>
+    // v3.8.16 — the six tools that act on the machine moved to Anthill.Modules.Tools, and this guard
+    // followed them. It is the reason to check: a module is exactly where an unclassified failure
+    // would be easiest to add and hardest to notice.
     [Theory]
     [InlineData("src/Anthill.Core/Tools/Tools.cs")]
     [InlineData("src/Anthill.Core/Tools/CheckRunner.cs")]
+    [InlineData("src/Anthill.Modules/Anthill.Modules.Tools/FileTools.cs")]
+    [InlineData("src/Anthill.Modules/Anthill.Modules.Tools/ShellAndWebTools.cs")]
+    [InlineData("src/Anthill.Modules/Anthill.Modules.Tools/ApplyPatchTool.cs")]
     public void EveryToolFailureInTheSource_NamesItsFailureClass(string file)
     {
         var source = File.ReadAllText(RepoFile(file));
@@ -213,7 +219,12 @@ public class ToolFailureClassTests
             if (end < 0) end = source.Length;
             var statement = source[at..end];
 
-            if (statement.Contains("FailureClass.") || statement.Contains("ClassifyThrown")) continue;
+            // v3.8.16 — `ToolFailure.Classify` is the module-side spelling of `ClassifyThrown`, which
+            // is now a delegating alias in the core. Both count as naming a class; missing the new
+            // one would have made this guard fire on six correctly-classified tools.
+            if (statement.Contains("FailureClass.")
+             || statement.Contains("ClassifyThrown")
+             || statement.Contains("ToolFailure.Classify")) continue;
 
             var line = source.Take(at).Count(c => c == '\n') + 1;
             unclassified.Add($"  {file}:{line}: {statement.Split('\n')[0].Trim()}");

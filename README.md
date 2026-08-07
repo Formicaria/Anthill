@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v3.8.15
+**Current version:** v3.8.16
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,9 +58,11 @@ planning documents are archived under `docs/archive/v2/`; `docs/NORTH_STAR.md` a
 described V2 and is kept only in the archive.)
 
 Since v3.8.3 the codebase has been under the Core/Modules refactor recorded in
-`docs/REFACTOR-PLAN.md`: `Anthill.Core` is down from 34,247 lines to 25,267 with nothing deleted,
-the reasoning providers and the whole homelab now live in `Anthill.Modules.*`, and the boundary is
-enforced by assembly-reference tests rather than by review.
+`docs/REFACTOR-PLAN.md`, and v3.8.16 completes it through phase 5: `Anthill.Core` is down from
+34,247 lines to 24,973 with nothing deleted, the reasoning providers, the whole homelab and the
+tools that act on the machine now live in `Anthill.Modules.*`, and the boundary is enforced by
+assembly-reference tests rather than by review. `docs/adr/ADR-007-module-boundary.md` records the
+rule and what it costs.
 
 The table below stops at v3.0.1 and is not maintained release by release — **`CHANGELOG.md` is the
 complete record.** What is kept here is the handful of entries that explain how the project got its

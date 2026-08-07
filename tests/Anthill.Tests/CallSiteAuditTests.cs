@@ -168,8 +168,26 @@ public class CallSiteAuditTests
     [Fact]
     public void EveryImplementedTool_IsRegisteredByTheCompositionRoot()
     {
-        var queen = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
-        var constructed = Regex.Matches(queen, @"new\s+([A-Za-z]+Tool)\s*\(")
+        // v3.8.16 — there are now TWO places a tool can be constructed, and the guard has to read
+        // both or it fails on the six that moved. Queen.BuildToolRegistry still composes the tools
+        // that stayed; ToolsModule.Register composes the ones that left.
+        //
+        // Reading both is not a weakening. The property under test is "every name the inventory
+        // claims is actually constructed somewhere the colony composes", and a tool constructed in
+        // NEITHER file still fails. What would weaken it is scanning the whole tree, because then
+        // any `new ShellCommandTool(` in a test would satisfy it — which is why these are two named
+        // files rather than a glob.
+        var roots = new[]
+        {
+            Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"),
+            Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Tools", "ToolsModule.cs"),
+        };
+
+        foreach (var root in roots)
+            Assert.True(File.Exists(root), $"A composition root this guard reads is missing: {root}");
+
+        var source = string.Concat(roots.Select(File.ReadAllText));
+        var constructed = Regex.Matches(source, @"new\s+([A-Za-z]+Tool)\s*\(")
             .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
 
         var implementedBy = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -200,8 +218,39 @@ public class CallSiteAuditTests
             .ToList();
 
         Assert.True(missing.Count == 0,
-            "These tools are declared implemented but never constructed in Queen.BuildToolRegistry, "
-          + "so a role allowed them would be told the tool does not exist: " + string.Join(", ", missing));
+            "These tools are declared implemented but constructed by neither Queen.BuildToolRegistry "
+          + "nor ToolsModule.Register, so a role allowed them would be told the tool does not "
+          + "exist: " + string.Join(", ", missing));
+    }
+
+    /// <summary>
+    /// Both composition roots must load the tools module AND drain what it contributed.
+    ///
+    /// v3.8.16 — the exact regression this repository keeps producing, caught before it shipped
+    /// rather than after. `Anthill.Cli` has loaded modules since v3.8.6 and never once read
+    /// <c>ContributedTools</c>: harmless for ten releases because no module shipped a tool, and the
+    /// moment one did, `anthill --mission` would have lost list_directory, read_text_file,
+    /// write_text_file, web_search, shell_command and apply_patch.
+    ///
+    /// It would have lost them SILENTLY. An unregistered tool returns a typed ValidationFailure, so
+    /// the mission completes, reports success, and simply does less — which reads as a weak model
+    /// rather than as a missing capability. That is the same failure shape as the specialist
+    /// contracts naming tools nobody built, which is why <c>ToolInventory</c> exists.
+    ///
+    /// Loading without draining is the interesting half: it compiles, it boots, and every guard that
+    /// only checks the module is composed would pass.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Anthill.Api/ApiHost.cs")]
+    [InlineData("src/Anthill.Cli/Program.cs")]
+    public void EveryCompositionRoot_LoadsTheToolsModule_AndDrainsIt(string relativePath)
+    {
+        var source = File.ReadAllText(Path.Combine(RepoRoot(),
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        Assert.Contains("ToolsModule(", source);
+        Assert.Contains("AdoptModuleTools(", source);
+        Assert.Contains("ContributedTools", source);
     }
 
     /// <summary>

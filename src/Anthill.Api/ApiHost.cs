@@ -126,16 +126,27 @@ public static partial class ApiHost
                     GenericWebhook: AnthillRuntime.HomelabGenericWebhook,
                     ColonyVersion: AnthillRuntime.Version,
                     WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath),
-                FieldCipher.CreateDefault()));
+                FieldCipher.CreateDefault()),
+            // v3.8.16: the six tools that act on the machine. The guard is built here rather than
+            // inside the module because it reads the current mission's workspace through an ambient
+            // scope, and missions are core. Same root the Queen builds hers from.
+            new ToolsModule(new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot)));
 
         Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;
 
         // v3.8.10 — hand module-contributed tools to the registry the Queen just built. Modules load
         // before she exists, so a tool registered during Register() has nowhere to go until now;
-        // ModuleHost buffers them and this is the drain. Empty today — no module ships a tool yet —
-        // but the path is live, so the first one that does needs no further wiring.
-        foreach (var tool in Modules.ContributedTools) Queen.Tools.Register(tool);
+        // ModuleHost buffers them and this is the drain.
+        //
+        // v3.8.16: no longer empty. Six of the colony's eleven tools arrive through here, so this
+        // line is now load-bearing rather than a live-but-unused path — remove it and the colony
+        // boots without file, shell, web or patch tools.
+        //
+        // AdoptModuleTools rather than a foreach over Tools.Register, because the Queen's runtime
+        // profile is resolved from the registry as it stood at construction: registering without
+        // re-resolving would leave /status reporting five tool grants for an eleven-tool colony.
+        Queen.AdoptModuleTools(Modules.ContributedTools);
         // Phase 3: the Director multiplexes its concurrent missions through this same worker
         // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
         // ensuring autonomous missions can actually run side by side without starving user jobs.

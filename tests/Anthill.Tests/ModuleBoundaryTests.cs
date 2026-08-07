@@ -51,6 +51,7 @@ public class ModuleBoundaryTests
     [Theory]
     [InlineData("Anthill.Modules.Reasoning")]
     [InlineData("Anthill.Modules.Homelab")]
+    [InlineData("Anthill.Modules.Tools")]
     public void AModuleReferencesTheSdkAndNothingElseOfOurs(string moduleName)
     {
         var module = Assembly.Load(moduleName);
@@ -97,11 +98,17 @@ public class ModuleBoundaryTests
     /// satisfied by the trivial reading where nothing composes anything.
     /// </summary>
     [Fact]
-    public void TheApiComposesBothModules()
+    public void TheApiComposesEveryModule()
     {
         var refs = ReferencesOf(typeof(Anthill.Api.ApiHost).Assembly);
 
         Assert.Contains("Anthill.Modules.Reasoning", refs);
         Assert.Contains("Anthill.Modules.Homelab", refs);
+        Assert.Contains("Anthill.Modules.Tools", refs);
     }
+
+    // The CLI is a composition root too, and it must load AND drain the tools module. That is
+    // asserted in CallSiteAuditTests rather than here: this file reads assembly metadata, and
+    // Anthill.Tests does not reference Anthill.Cli, so there is no CLI assembly to read. The
+    // property that would actually regress is the drain call, which is source anyway.
 }

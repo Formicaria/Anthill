@@ -3,6 +3,9 @@ using Anthill.Core.Security;
 using Anthill.Core.Tools;
 using Anthill.SDK.Contracts;
 using Anthill.SDK.Tools;
+// v3.8.16 — the tool implementations moved to Anthill.Modules.Tools. Anthill.Core.Tools is
+// still imported above: the registry, authorization and inventory they run under stayed.
+using Anthill.Modules.Tools;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -40,7 +43,7 @@ public class ToolRuntimeOptionsTests
     [Fact]
     public void A_disabled_shell_tool_refuses_with_an_authorization_failure()
     {
-        var result = new ShellCommandTool(new Gates { ShellToolEnabled = false })
+        var result = new ShellCommandTool(Guard(), new Gates { ShellToolEnabled = false })
             .Run(new Dictionary<string, object?> { ["command"] = "echo hi" });
 
         Assert.False(result.Success);
@@ -65,7 +68,7 @@ public class ToolRuntimeOptionsTests
     public void A_gate_flipped_after_construction_takes_effect_on_the_next_call()
     {
         var gates = new Gates { ShellToolEnabled = false };
-        var tool = new ShellCommandTool(gates);
+        var tool = new ShellCommandTool(Guard(), gates);
         var args = new Dictionary<string, object?> { ["command"] = "echo hi" };
 
         Assert.Equal(FailureClass.AuthorizationFailure, tool.Run(args).Failure);
@@ -78,8 +81,17 @@ public class ToolRuntimeOptionsTests
     }
 
     /// <summary>
-    /// The default is the live runtime, so every existing construction — all of them, since the
-    /// Queen still builds every tool — behaves exactly as it did before the interface existed.
+    /// The default is the live runtime, so a tool constructed without options behaves exactly as it
+    /// did before the interface existed.
+    ///
+    /// v3.8.16 — the route changed and the property did not. It used to fall back to
+    /// <c>ToolRuntime.Live</c> directly; now the tool lives in a module that cannot see that type, so
+    /// it falls back to <c>SafetyPolicy.RequiredToolOptions</c>, which <c>Anthill.Core</c>'s module
+    /// initializer has already pointed at <c>ToolRuntime.Live</c> before this test runs.
+    ///
+    /// Note what this test does NOT prove: it asserts a refusal, and the SDK's unconfigured fallback
+    /// also refuses, so a missed installation would still pass here. <c>SafetyPolicyTests</c> is what
+    /// pins the installation itself. The two together are what make the fallback safe AND observed.
     /// </summary>
     [Fact]
     public void An_uninjected_tool_reads_the_live_runtime()
@@ -88,7 +100,7 @@ public class ToolRuntimeOptionsTests
         try
         {
             AnthillRuntime.EnableShellTool = false;
-            var tool = new ShellCommandTool();
+            var tool = new ShellCommandTool(Guard());
 
             Assert.Equal(FailureClass.AuthorizationFailure,
                 tool.Run(new Dictionary<string, object?> { ["command"] = "echo hi" }).Failure);

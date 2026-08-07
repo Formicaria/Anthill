@@ -1,6 +1,12 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Memory;
+using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Security;
+using Anthill.Core.Tools;
+using Anthill.Modules.Tools;
+using Anthill.SDK.Events;
+using Anthill.SDK.Tools;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -21,6 +27,14 @@ namespace Anthill.Tests;
 /// still mutates globals, so they build their hosts from EXPLICIT options rather than from the
 /// ambient runtime. That is the point: a host composed from explicit options is immune to what
 /// the statics are doing, and that immunity is exactly what the exit gate asks for.
+///
+/// v3.8.16 — the gate survived the tools leaving the core, but not for free, and the failure was
+/// worth having. Six tools moved to <c>Anthill.Modules.Tools</c>, taking with them the registration
+/// gating that used to read each host's own <see cref="RuntimeOptions"/>. The module gates on
+/// <c>IToolRuntimeOptions</c>, and the production roots hand it the AMBIENT runtime — right for a
+/// process with one colony, wrong for this file. These tests now compose the way a multi-host root
+/// would have to: <see cref="HostGates"/> presents each host's own options to its own module
+/// instance. Left alone, they would have gone green with both hosts having no file tools at all.
 /// </summary>
 public class RuntimeIsolationTests : IDisposable
 {
@@ -40,6 +54,57 @@ public class RuntimeIsolationTests : IDisposable
         basis with { FileTools = fileTools, FileWriting = fileWriting, ModelRouting = modelRouting };
 
     /// <summary>
+    /// v3.8.16 — a host's OWN capability gates, presented to the tools module.
+    ///
+    /// This exists because the six file/shell/web/patch tools left the core, and with them the part
+    /// of <c>Queen.BuildToolRegistry</c> that gated registration on THIS HOST's
+    /// <see cref="RuntimeOptions"/>. <c>ToolsModule</c> gates on an
+    /// <see cref="IToolRuntimeOptions"/>, and the production composition roots hand it the ambient
+    /// runtime — correct there, because a process has one colony.
+    ///
+    /// It is NOT correct here, and that is the whole point of this file: two hosts in one process
+    /// must be able to disagree. So the tests compose the way a multi-host root would have to, by
+    /// giving each host a gates view of its own options. Without this the tests below would still
+    /// pass — both hosts would simply have no file tools at all — which is a green that proves
+    /// nothing.
+    /// </summary>
+    private sealed class HostGates : IToolRuntimeOptions
+    {
+        private readonly RuntimeOptions _options;
+        public HostGates(RuntimeOptions options) => _options = options;
+
+        public bool FileToolsEnabled => _options.FileTools;
+        public bool FileWritingEnabled => _options.FileWriting;
+
+        // Not part of what this file isolates; the ambient runtime is the honest answer for these.
+        public bool ShellToolEnabled => ToolRuntime.Live.ShellToolEnabled;
+        public bool WebSearchEnabled => ToolRuntime.Live.WebSearchEnabled;
+        public bool PatchApplicationEnabled => ToolRuntime.Live.PatchApplicationEnabled;
+        public IReadOnlySet<string> WebSearchKeywords => ToolRuntime.Live.WebSearchKeywords;
+        public IReadOnlySet<string> PatchAllowedSuffixes => ToolRuntime.Live.PatchAllowedSuffixes;
+        public IReadOnlySet<string> BlockedFileSuffixes => ToolRuntime.Live.BlockedFileSuffixes;
+        public IReadOnlySet<string> BlockedPathParts => ToolRuntime.Live.BlockedPathParts;
+        public string ScriptDirectory => ToolRuntime.Live.ScriptDirectory;
+        public string BackupDirectory => ToolRuntime.Live.BackupDirectory;
+    }
+
+    /// <summary>
+    /// Build a host the way a composition root does: create it, then adopt what the tools module
+    /// contributed for THAT host's gates. <c>AdoptModuleTools</c> rather than a bare registration
+    /// loop, so the host's profile is re-resolved and <c>HasTool</c> answers about the colony that
+    /// actually exists.
+    /// </summary>
+    private static RuntimeHost Compose(SqliteMemory db, RuntimeOptions options)
+    {
+        var host = RuntimeHost.Create(db, options);
+        var modules = new ModuleHost(host.Memory, NullEventBus.Instance);
+        modules.Load(new ToolsModule(
+            new WorkspacePathGuard(options.AllowedWorkspaceRoot), new HostGates(options)));
+        host.Queen.AdoptModuleTools(modules.ContributedTools);
+        return host;
+    }
+
+    /// <summary>
     /// THE gate. Two hosts, different capability configuration, same process, alive at the same
     /// time — each keeping its own answer.
     /// </summary>
@@ -48,9 +113,9 @@ public class RuntimeIsolationTests : IDisposable
     {
         var basis = RuntimeOptions.Capture();
 
-        using var restricted = RuntimeHost.Create(Db("restricted"),
+        using var restricted = Compose(Db("restricted"),
             With(basis, fileTools: false, fileWriting: false, modelRouting: false));
-        using var permissive = RuntimeHost.Create(Db("permissive"),
+        using var permissive = Compose(Db("permissive"),
             With(basis, fileTools: true, fileWriting: true, modelRouting: false));
 
         // Configuration
@@ -83,16 +148,16 @@ public class RuntimeIsolationTests : IDisposable
         var restrictedOptions = With(basis, fileTools: false, fileWriting: false, modelRouting: false);
         var permissiveOptions = With(basis, fileTools: true, fileWriting: true, modelRouting: false);
 
-        using (var a = RuntimeHost.Create(Db("a1"), restrictedOptions))
-        using (var b = RuntimeHost.Create(Db("b1"), permissiveOptions))
+        using (var a = Compose(Db("a1"), restrictedOptions))
+        using (var b = Compose(Db("b1"), permissiveOptions))
         {
             Assert.False(a.Profile.HasTool("write_text_file"));
             Assert.True(b.Profile.HasTool("write_text_file"));
         }
 
         // Same two hosts, built in the opposite order.
-        using (var b = RuntimeHost.Create(Db("b2"), permissiveOptions))
-        using (var a = RuntimeHost.Create(Db("a2"), restrictedOptions))
+        using (var b = Compose(Db("b2"), permissiveOptions))
+        using (var a = Compose(Db("a2"), restrictedOptions))
         {
             Assert.False(a.Profile.HasTool("write_text_file"));
             Assert.True(b.Profile.HasTool("write_text_file"));
@@ -107,7 +172,7 @@ public class RuntimeIsolationTests : IDisposable
     public void MutatingTheGlobalAfterConstruction_DoesNotReachAnExistingHost()
     {
         var basis = RuntimeOptions.Capture();
-        using var host = RuntimeHost.Create(Db("immune"), With(basis, fileTools: true, fileWriting: false, modelRouting: false));
+        using var host = Compose(Db("immune"), With(basis, fileTools: true, fileWriting: false, modelRouting: false));
 
         Assert.False(host.Profile.Options.FileWriting);
         Assert.False(host.Profile.HasTool("write_text_file"));
@@ -167,7 +232,7 @@ public class RuntimeIsolationTests : IDisposable
     public void AMissionsPlanIsGovernedByItsOwnHostsProfile()
     {
         var basis = RuntimeOptions.Capture();
-        using var readOnlyHost = RuntimeHost.Create(Db("plan-readonly"),
+        using var readOnlyHost = Compose(Db("plan-readonly"),
             With(basis, fileTools: true, fileWriting: false, modelRouting: false));
 
         var plan = readOnlyHost.Coordinator.PlanPreview("verify the parser only; no patches and do not modify files");

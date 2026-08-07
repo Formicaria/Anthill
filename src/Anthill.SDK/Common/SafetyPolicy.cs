@@ -51,6 +51,22 @@ public static class SafetyPolicy
     }
 
     /// <summary>
+    /// The same gates as <see cref="ToolOptions"/>, but never null. v3.8.16.
+    ///
+    /// Added when the tool implementations moved to <c>Anthill.Modules.Tools</c>. They used to fall
+    /// back to <c>ToolRuntime.Live</c>, a core type a module cannot see, and every one of them needs
+    /// a non-null default because the gate check runs on every call.
+    ///
+    /// The fallback DENIES EVERYTHING. That is deliberately more restrictive than the core's declared
+    /// defaults — <c>EnableFileTools</c> is true at rest — because the two cases are not symmetrical:
+    /// an unconfigured process is one where nothing has said what this colony may do, and the answer
+    /// to "may I write to disk" in the absence of an answer is no. In any real process
+    /// <c>Anthill.Core</c>'s module initializer has already installed the live readers before a tool
+    /// is ever constructed, so this path is unreachable outside a test that resets the policy.
+    /// </summary>
+    public static IToolRuntimeOptions RequiredToolOptions => ToolOptions ?? DeniedToolOptions.Instance;
+
+    /// <summary>
     /// What a build reserves, refuses and can construct, for <see cref="ToolDefinition.Validate"/>.
     /// v3.8.15.
     ///
@@ -116,6 +132,27 @@ public static class SafetyPolicy
     /// forgetting this list fails the build rather than quietly widening what a definition may
     /// shadow in a process that never loaded the core.
     /// </summary>
+    /// <summary>
+    /// Every gate off, every list empty. See <see cref="RequiredToolOptions"/> for why the fallback
+    /// is closed rather than mirroring the core's defaults the way the other two do.
+    /// </summary>
+    internal sealed class DeniedToolOptions : IToolRuntimeOptions
+    {
+        public static readonly DeniedToolOptions Instance = new();
+
+        public bool FileToolsEnabled => false;
+        public bool FileWritingEnabled => false;
+        public bool ShellToolEnabled => false;
+        public bool WebSearchEnabled => false;
+        public bool PatchApplicationEnabled => false;
+        public IReadOnlySet<string> WebSearchKeywords { get; } = new HashSet<string>();
+        public IReadOnlySet<string> PatchAllowedSuffixes { get; } = new HashSet<string>();
+        public IReadOnlySet<string> BlockedFileSuffixes { get; } = new HashSet<string>();
+        public IReadOnlySet<string> BlockedPathParts { get; } = new HashSet<string>();
+        public string ScriptDirectory => "";
+        public string BackupDirectory => "";
+    }
+
     /// <remarks>
     /// Internal rather than private so <c>ToolDefinitionPolicyTests</c> can compare it against the
     /// core's tables directly. The alternative — reading it back through

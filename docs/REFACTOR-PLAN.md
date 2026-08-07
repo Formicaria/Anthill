@@ -1,16 +1,17 @@
 # ANTHILL Core Refactor — Migration Plan
 
-**Status:** in execution — phases 0 through 5c step 3 shipped
-**Baseline:** v3.8.2, `main` · **Current:** v3.8.15
+**Status:** in execution — **phases 0 through 5 complete**; phase 7 begun; phase 6 not started
+**Baseline:** v3.8.2, `main` · **Current:** v3.8.16
 **Goal:** a smaller, stable core that runs with no AI provider and no UI, while preserving public behavior.
 
-| Measure | Baseline (v3.8.2) | Now (v3.8.15) |
+| Measure | Baseline (v3.8.2) | Now (v3.8.16) |
 |---|---:|---:|
-| `Anthill.Core` | 34,247 | 25,267 |
-| `Anthill.SDK` | 0 | 3,004 |
+| `Anthill.Core` | 34,247 | 24,973 |
+| `Anthill.SDK` | 0 | 3,152 |
+| `Anthill.Modules.*` | 0 | Reasoning, Homelab, Tools |
 | `Anthill.Api/ApiHost.cs` | 3,227 | 3,283 |
 
-Core is down **8,980 lines, 26%**, with nothing deleted — every line moved to the SDK or to a
+Core is down **9,274 lines, 27%**, with nothing deleted — every line moved to the SDK or to a
 module. `ApiHost.cs` grew rather than shrank, which is the expected shape: it is the composition
 root, and each extracted module is composed there. Phase 6 is where that is addressed.
 
@@ -564,7 +565,42 @@ the file-writing and patch-application gates — the ones that decide whether an
 
 4. The tool implementations → `Anthill.Modules.Tools`, registered through
    `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by
-   `ApiHost` into `Queen.Tools`) — **SURVEYED, next**
+   `ApiHost` into `Queen.Tools`) — **DONE (v3.8.16). Phase 5 ends here.**
+
+   The survey below held. Three things it did not predict, all found by reading rather than by
+   running, and all of the same shape — a change that compiles, boots, and gives a wrong answer:
+
+   - **`Queen.Profile` is resolved in the constructor from `Tools.Names`**, and module tools arrive
+     after it. Registering them would have left `Profile.ToolGrants` naming five tools while eleven
+     were dispatchable, so `/status`, the runtime profile and every mission context would have
+     described a colony less capable than the one running. Nothing would have failed.
+     `Queen.AdoptModuleTools` now does the registration AND the re-resolve, so a composition root
+     cannot do the first and forget the second.
+   - **The SDK cannot name `HttpRequestException.`** `ToolRegistry.ClassifyThrown` matched on it, and
+     moving that logic to the SDK would have emitted a `System.Net.Http` assembly reference —
+     forbidden by `ModuleBoundaryTests` precisely because everything inherits what the SDK depends
+     on. `ToolFailure.Classify` matches by type name and walks the base chain. The alternative was to
+     relax the guard for a carve-out it cannot express.
+   - **Registration gating had to move with the tools.** `Queen.BuildToolRegistry` held the first of
+     the colony's two gates. Had `ToolsModule.Register` offered everything unconditionally and left
+     the call-time re-check to catch it, the two gates would have silently become one and every
+     existing test would still have passed.
+
+   **And one the test suite caught that the survey did not.** `Queen.BuildToolRegistry` gated
+   registration on the host's own `RuntimeOptions`; `ToolsModule` gates on `IToolRuntimeOptions`,
+   and both production roots hand it the AMBIENT runtime. For a process with one colony those are
+   the same answer. For two hosts in one process they are not — which is precisely ADR-001's exit
+   gate, "two runtime instances can execute tests in the same process without configuration
+   leakage", asserted in `RuntimeIsolationTests` through `Profile.HasTool("read_text_file")`.
+
+   Left alone those tests would have gone GREEN, both hosts simply having no file tools at all. They
+   now compose the way a multi-host root would have to, giving each host a gates view of its own
+   options. The production roots are unchanged and remain correct for one colony per process; if a
+   second host ever has to coexist, it needs its own `ToolsModule` instance rather than a shared one.
+
+   The three guards were repaired as predicted, and two of them were redesigned rather than
+   repointed: they now read two NAMED files — `Queen.cs` and `ToolsModule.cs` — because globbing the
+   tree would let any `new ShellCommandTool(` in a test satisfy them.
 
    `Tools.cs` splits cleanly: `ToolRegistry` is lines 18–178, the implementations are 180–536. Core
    names none of the tool TYPES outside `Queen.BuildToolRegistry` — `Ants`, `SpecialistAnts` and
@@ -670,9 +706,17 @@ it must still serve the API. This is success criterion "core runs without UI."
 
 ---
 
-### Phase 7 — Cleanup
+### Phase 7 — Cleanup — BEGUN (v3.8.16)
 
-- [ ] Delete `py.old/`, `test/` (superseded by `tests/`), root `test.txt`
+- [x] Delete `test/` (superseded by `tests/`) and the empty root `test.txt` — v3.8.16
+- [ ] **Delete `py.old/` — BLOCKED on a decision, not on work.** `.github/workflows/ci.yml` carries a
+      `py.old is immutable on pull requests` job that fails on any change to that path, so removing
+      the directory means removing the guard that protects it. That guard exists because agents must
+      not edit archived history; deleting the archive deliberately is a different act from an agent
+      touching it, and the CI job cannot tell them apart. 4.3 MB, recoverable from git history. The
+      companion `No Python files outside py.old` check stays useful either way and should not be
+      removed with it. Needs an operator decision; `README.md` and `.github/pull_request_template.md`
+      also reference the directory.
 - [ ] Remove dead code and abstractions with a single implementation and no seam value
 - [ ] Collapse duplicate logic surfaced by the moves
 - [x] Add an architecture test asserting `Anthill.Core` references no `Anthill.Modules.*` assembly —
@@ -680,9 +724,10 @@ it must still serve the API. This is success criterion "core runs without UI."
       pull it forward: every phase up to then had verified the boundary by hand with a grep, which
       would have passed right up until someone added a using statement. `ModuleBoundaryTests` reads
       assembly metadata, so an unused project reference fails it too.
-- [ ] Write ADR-007 recording the module boundary
+- [x] Write ADR-007 recording the module boundary — `docs/adr/ADR-007-module-boundary.md`, v3.8.16
 
-**Gate:** build + tests; re-measure Core LOC against the 34,247 baseline.
+**Gate:** build + tests; re-measure Core LOC against the 34,247 baseline. *24,973 at v3.8.16 — down
+9,274 lines, 27%, with nothing deleted.*
 
 ---
 
@@ -690,12 +735,12 @@ it must still serve the API. This is success criterion "core runs without UI."
 
 | Criterion | Test | Status at v3.8.15 |
 |---|---|---|
-| Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 25,267, down 8,980 (26%), nothing deleted |
+| Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 24,973, down 9,274 (27%), nothing deleted |
 | Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) | **MET** — v3.8.5, with a test class for the case |
 | Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | not yet — phase 6 |
 | Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) | **MET** — `ModuleBoundaryTests`, v3.8.8, pulled forward |
 | Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | holding — no test has been deleted |
-| Easier feature development | A new integration is added as a module with zero Core edits | not yet demonstrated — no new integration has been added since the boundary existed |
+| Easier feature development | A new integration is added as a module with zero Core edits | partial — `Anthill.Modules.Tools` (v3.8.16) was a new module, but it took the seam apart rather than plugging into it: three SDK contracts and a `Queen` method. The criterion means an ADDITION, and that has still not been demonstrated |
 
 ## 5. Risks
 

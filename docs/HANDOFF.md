@@ -13,8 +13,8 @@ Repo: C:\Users\jconn\OneDrive\Documents\vscode\anthill\operation-anthill. Origin
 `-c Release` (that's what CI uses). I run the builds; you don't have a .NET SDK, and you have no
 GitHub credentials either — you can read from origin but not push.
 
-State: main is at v3.8.15, tagged and green. Core is 25,267 lines, down from the 34,247 baseline.
-Phases 0 through 5c step 3 are shipped. `Anthill.Core/Common` is down to FileSecurity,
+State: main is at v3.8.16, tagged and green. Core is 24,973 lines, down from the 34,247 baseline
+(27%, nothing deleted). PHASE 5 IS COMPLETE; phase 7 has begun. `Anthill.Core/Common` is down to FileSecurity,
 MissionConstraints and NetworkUtil, none of them on the tool path.
 
 Recent releases, for the patterns they establish:
@@ -27,29 +27,29 @@ Recent releases, for the patterns they establish:
   with `ToolAuthorization` and `ToolInventory`"; measured, that was three lines inside `Validate()`,
   which now reach the core through `IToolDefinitionPolicy` on the same `SafetyPolicy` mechanism.
   All 60 references were bare, so nothing needed an edit.
+- v3.8.16 — six tool implementations to `Anthill.Modules.Tools`, ending phase 5. Three findings
+  worth more than the move, all of the same shape (compiles, boots, wrong answer): `Queen.Profile`
+  is resolved at construction so module tools would not have appeared in its grants — closed by
+  `Queen.AdoptModuleTools`, which registers and re-resolves in one call; the CLI had never drained
+  `ContributedTools`; and the SDK cannot name `HttpRequestException` without acquiring a
+  `System.Net.Http` reference every module inherits. Also ADR-007, recording the boundary.
 
-NEXT: phase 5c step 4, the end of phase 5. **It is fully surveyed in REFACTOR-PLAN.md §5c item 4 —
-read that before proposing anything.** The short version:
+NEXT: **phase 6 (UI decoupling) — ASK BEFORE STARTING IT.** It is the largest remaining phase and
+the only one with no survey recorded: `ApiHost.cs` is 3,283 lines, `app.js` is 498 KB and
+unstructured with 9 pollers still to replace with the SSE stream, and the file carries the densest
+source-scanning guards in the repo. The plan's phase 6 section is an outline, not a measurement.
+Survey it and show the operator before editing anything.
 
-Six of the seven tool implementations (`DirectoryListTool`, `ReadTextFileTool`, `WriteTextFileTool`,
-`ShellCommandTool`, `WebSearchTool`, `ApplyPatchTool`) move to a new `Anthill.Modules.Tools`,
-registered through `IModuleContext.RegisterTool`. `SystemInfoTool` stays — operator decision; it
-reports core internals rather than gating a capability. Copy `Anthill.Modules.Homelab.csproj` for the
-new project: SDK reference only, no `Anthill.Core`, which `ModuleBoundaryTests` enforces from
-assembly metadata.
+Two smaller things are also open and are much cheaper:
 
-Four things that release has to get right, all recorded in the plan with their resolutions:
-`WorkspacePathGuard` becomes an SDK interface injected through the module constructor;
-`ToolRegistry.ClassifyThrown` needs an SDK home; five `const` settings become SDK constants; and
-`SafetyPolicy.ToolOptions` already carries `ToolRuntime.Live`, so the injected default needs no new
-plumbing.
-
-Two silent regressions to avoid: `Anthill.Cli/Program.cs` loads modules but never drains
-`ContributedTools` (only `ApiHost.cs:138` does), and `Queen.Views` calls `apply_patch` by name at
-lines 87 and 127. Three source-scanning guards break, and two of them —
-`CallSiteAuditTests.EveryImplementedTool_IsRegisteredByTheCompositionRoot` and
-`ToolInventoryTests.TheInventory_MatchesWhatTheCompositionRootRegisters` — encode "the composition
-root is `Queen.BuildToolRegistry`" and need redesigning rather than a path edit.
+- **`py.old/` deletion (phase 7)** is BLOCKED on a decision rather than on work. CI has a
+  `py.old is immutable on pull requests` job, so deleting the directory means deleting the guard that
+  protects it — and that guard exists because agents must not edit archived history, which is a
+  different act from an operator deliberately removing the archive. 4.3 MB, recoverable from git.
+  `README.md` and `.github/pull_request_template.md` reference it too. The companion
+  `No Python files outside py.old` check should survive either way.
+- **Phase 7's remaining sweep**: dead code, abstractions with a single implementation and no seam
+  value, and duplicate logic surfaced by the moves. Nothing is known-stale; it needs a survey.
 
 Version bumps touch SEVEN markers and two test classes enforce them. `RegressionGuardTests` checks
 `Directory.Build.props`, `AnthillRuntime.Version`, the `**Current version:** vX.Y.Z` line in

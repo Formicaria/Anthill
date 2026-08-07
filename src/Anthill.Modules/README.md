@@ -10,7 +10,7 @@ Deliberately. Modules are **one project per domain**, not one shared assembly:
 src/Anthill.Modules/
   Anthill.Modules.Reasoning/     # Ollama, OpenAI-compatible, Anthropic   (Phase 2, v3.8.5)
   Anthill.Modules.Homelab/       # homelab repository + integrations      (Phase 4, v3.8.7)
-  Anthill.Modules.Tools/         # the file, shell, web and patch tools   (Phase 5c step 4)
+  Anthill.Modules.Tools/         # the file, shell, web and patch tools   (Phase 5, v3.8.16)
 ```
 
 The tool split was originally drawn as `Anthill.Modules.Tools.{Shell,Git,FileSystem,Http,Vision}`.
