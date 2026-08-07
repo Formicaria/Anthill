@@ -68,6 +68,8 @@ public sealed class ExecutionService : IExecutionService
     private readonly SqliteMemory _memory;
     private readonly IReadOnlyDictionary<string, BaseAnt> _ants;
     private readonly PatchProposalParser _patchParser = new();
+    // v3.8.21 — the verification framework's first production call site. See VerifyPatchSet.
+    private readonly Verification.VerificationRunner _verification = new();
     private readonly AdaptiveMissionController _adaptive = new();
 
     /// <summary>
@@ -676,6 +678,102 @@ public sealed class ExecutionService : IExecutionService
             new() { ["result_chars"] = task.ResultChars, ["summary_chars"] = (task.ResultSummary ?? "").Length, ["estimated_tokens"] = task.EstimatedTokens });
     }
 
+    /// <summary>
+    /// The patch set as a typed artifact. v3.8.21.
+    ///
+    /// This is the coder's real output, and it is genuinely structured — file paths, change types,
+    /// risk. It just was not reachable as an artifact, because the STRUCTURE is produced here rather
+    /// than in the ant: the coder emits prose and <c>PatchProposalParser</c> turns it into a
+    /// <c>PatchSet</c> one layer up. So the artifact is emitted where the structure exists, not where
+    /// the text was written.
+    /// </summary>
+    private void RecordPatchArtifact(Mission mission, Task task, PatchSet patchSet)
+    {
+        try
+        {
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet,
+                producerRole: task.AssignedAnt,
+                missionId: mission.Id,
+                payload: Json.Dumps(new
+                {
+                    patch_set_id = patchSet.Id,
+                    summary = patchSet.Summary,
+                    proposals = patchSet.Proposals.Select(pr => new
+                    {
+                        pr.FilePath, change_type = pr.ChangeType.Value(), pr.Risk, pr.RequiresApproval,
+                    }),
+                }, indented: true),
+                taskId: task.Id));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Could not record the patch set artifact for task {task.Id}: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Actually verify the patch. v3.8.21 — and this is a behaviour change, stated plainly.
+    ///
+    /// <c>VerificationRunner</c>, <c>BuildVerifier</c>, <c>TestVerifier</c>, <c>DiffVerifier</c>,
+    /// <c>SecurityPolicyVerifier</c> and <c>VerificationPolicy</c> have all existed and been tested
+    /// since v2.12, and NOTHING IN PRODUCTION EVER CALLED THEM. The framework declared that a
+    /// <c>code_patch</c> requires diff + build + test + security_policy, and no code patch was ever
+    /// checked against it. This is that call site.
+    ///
+    /// What changes: a code-patch task now runs the real toolchain, so a patch that does not compile
+    /// can no longer reach a verified outcome. Missions get slower, and missions that used to pass on
+    /// a patch that never built will now fail — which is the point, and is why it is called out here
+    /// rather than buried.
+    ///
+    /// The results become ADR-004 evidence, deterministic flag and all. That is what makes
+    /// <c>HasDeterministicPass</c> mean something for code work, and it is the input worker
+    /// reputation needs before it can be learned from anything but prose.
+    ///
+    /// A verification fault must never fail the task that produced the patch: the proposals are
+    /// already saved and the approval pipeline still owns whether anything is applied. A colony that
+    /// loses a patch because the verifier crashed is worse than one that records no evidence for it.
+    /// </summary>
+    private void VerifyPatchSet(Mission mission, Task task, PatchSet patchSet)
+    {
+        if (patchSet.Proposals.Count == 0) return;
+
+        try
+        {
+            var bundle = _verification.Run(new Verification.VerificationRequest(
+                TaskType: task.TaskType,
+                WorkspaceRoot: AnthillRuntime.AllowedWorkspaceRoot));
+
+            var store = (Anthill.SDK.Artifacts.IEvidenceStore)_memory;
+            foreach (var verdict in bundle.Results)
+                store.Put(Anthill.SDK.Artifacts.Evidence.Create(
+                    kind: verdict.Verifier,
+                    deterministic: verdict.Deterministic,
+                    passed: verdict.Passed,
+                    missionId: mission.Id,
+                    detail: verdict.Summary,
+                    taskId: task.Id));
+
+            _memory.LogEvent(mission.Id, "patch_set_verified",
+                $"Verification ran for {task.TaskType}: {bundle.Results.Count(r => r.Passed)}/{bundle.Results.Count} passed.",
+                task.Id, task.AssignedAnt,
+                new()
+                {
+                    ["patch_set_id"] = patchSet.Id,
+                    ["promotable"] = bundle.Promotable,
+                    ["deterministic_evidence"] = bundle.HasDeterministicEvidence,
+                    ["blocked_reasons"] = string.Join("; ", bundle.BlockedReasons),
+                });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Verification faulted for task {task.Id}: {error.Message}");
+            _memory.LogEvent(mission.Id, "patch_set_verification_faulted",
+                $"Verification could not run: {error.Message}", task.Id, task.AssignedAnt,
+                new() { ["patch_set_id"] = patchSet.Id });
+        }
+    }
+
     private void ProcessPatchProposals(Mission mission, Task task)
     {
         if (string.IsNullOrEmpty(task.Result)) return;
@@ -683,6 +781,8 @@ public sealed class ExecutionService : IExecutionService
         {
             var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id);
             _memory.SavePatchSet(patchSet);
+            RecordPatchArtifact(mission, task, patchSet);
+            VerifyPatchSet(mission, task, patchSet);
             _memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
                 new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
             if (patchSet.Proposals.Count == 0)

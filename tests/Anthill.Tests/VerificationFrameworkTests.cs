@@ -21,15 +21,35 @@ public class VerificationFrameworkTests : IDisposable
 
     // ---- Policy --------------------------------------------------------------------------------
 
+    /// <summary>
+    /// v3.8.21 — this test used to assert that <c>code_patch</c> requires test as well, and the
+    /// policy was narrowed by operator decision when the framework got its first production call
+    /// site. The reason is recorded in <c>VerificationPolicy</c>: <c>TestVerifier</c> runs the ENTIRE
+    /// suite (<c>dotnet test -c Release</c>, 1200s cap) and <c>BuildVerifier</c> a full build at
+    /// 600s, so requiring both meant up to half an hour per patch task — and a mission running
+    /// during the suite would invoke the suite from inside itself.
+    ///
+    /// Asserted EXACTLY rather than with Contains, so the narrowing cannot drift further without
+    /// this failing. Build stays because it is the check that matters: a patch that does not compile
+    /// can no longer reach a verified outcome.
+    /// </summary>
     [Fact]
-    public void CodePatch_RequiresDiffBuildTestAndSecurity()
+    public void CodePatch_RequiresDiffBuildAndSecurity_ButNotTheFullSuite()
     {
         var req = VerificationPolicy.For("code_patch");
-        Assert.Contains("diff", req);
-        Assert.Contains("build", req);
-        Assert.Contains("test", req);
-        Assert.Contains("security_policy", req);
+
+        Assert.Equal(new[] { "diff", "build", "security_policy" }, req);
+        Assert.DoesNotContain("test", req);
     }
+
+    /// <summary>
+    /// And the stricter policy still exists for anyone who wants that trade. Pinned so the narrowing
+    /// above is a CHOICE between two declared policies rather than a capability that quietly left.
+    /// </summary>
+    [Fact]
+    public void TheFullPolicy_StillRequiresTheSuite() =>
+        Assert.Equal(new[] { "diff", "build", "test", "security_policy" },
+                     VerificationPolicy.For("code_patch_full"));
 
     [Fact]
     public void UnknownTaskType_StillRequiresPolicyScan_FailClosed()

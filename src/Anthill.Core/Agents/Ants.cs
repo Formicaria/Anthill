@@ -76,6 +76,27 @@ public abstract class BaseAnt
         };
     }
 
+    /// <summary>
+    /// Attach a TYPED artifact to a result, alongside the untyped narrative one. v3.8.21.
+    ///
+    /// Appends rather than replaces, deliberately. <see cref="TextResult"/> already carries an
+    /// <c>AntArtifact("text", ...)</c> — the prose an operator reads — and that stays: the narrative
+    /// is still the human record. What this adds is the machine copy, and only where the ant is
+    /// holding something with a genuine shape.
+    ///
+    /// Three of the six core ants can honestly do this and three cannot. <c>FileAnt</c> holds the
+    /// paths it read, <c>WebResearchAnt</c> holds <c>SourceRecord</c>s it already persists, and the
+    /// coder's output becomes a real <c>PatchSet</c> one layer up. The researcher, builder and
+    /// verifier produce prose synthesis — giving that a schema name would be relabelling, which is
+    /// the "two channels and the prose one wins" failure ADR-004 exists to prevent.
+    /// </summary>
+    protected static AntExecutionResult WithArtifact(
+        AntExecutionResult result, string kind, string title, string content) =>
+        result with
+        {
+            Artifacts = result.Artifacts.Concat(new[] { new AntArtifact(kind, title, content) }).ToList(),
+        };
+
     // ModelUnavailable() lived here and is deleted with the adapter that was its only caller.
     //
     // It existed to recover a status the string contract had destroyed, so it had to answer for
@@ -347,10 +368,22 @@ public sealed class WebResearchAnt : BaseAnt
         // Sourced research succeeded; uniformly low-confidence sources succeed WITH the caveat
         // disclosed — advisory quality, never silently equated with proven truth.
         var allLow = savedSources.All(src => src.ConfidenceScore < 0.55);
-        return allLow
+        var researched = allLow
             ? AntExecutionResult.SucceededWithWarnings($"Saved {savedSources.Count} source record(s), all low-confidence.",
                 new[] { "low_confidence_sources: every saved source scored below 0.55 heuristic confidence" }, narrative)
             : TextResult(Name, narrative);
+
+        // v3.8.21 — the sources as data rather than as a rendered list. Confidence travels with each
+        // one, because a source set whose scores are stripped reads as stronger than it is.
+        return WithArtifact(researched, "source_set", "Sources consulted",
+            Json.Dumps(new
+            {
+                query,
+                sources = savedSources.Select(src => new
+                {
+                    src.Title, src.Url, src.Domain, confidence = src.ConfidenceScore,
+                }),
+            }, indented: true));
     }
 
     private static string BuildQuery(Task task, Mission mission) =>
@@ -425,9 +458,17 @@ public sealed partial class FileAnt : BaseAnt
         if (readsFailed > 0) warnings.Add($"partial_read_failures: {readsFailed} of {readsOk + readsFailed} file read(s) failed");
         if (candidatePaths.Count == 0 && ShouldAttemptFileReads(task, mission))
             warnings.Add("no_target_paths: the mission suggested file reads but named no identifiable paths — listing only");
-        return warnings.Count > 0
+        var inspected = warnings.Count > 0
             ? AntExecutionResult.SucceededWithWarnings($"Workspace inspected: listing ok, {readsOk} read(s) ok, {readsFailed} failed.", warnings, narrative)
             : TextResult(Name, narrative);
+
+        // v3.8.21 — the paths this ant actually read, as data. It has held them all along; they were
+        // only ever reachable by parsing the narrative back out, which is exactly what a typed
+        // artifact removes the need to do.
+        return candidatePaths.Count == 0
+            ? inspected
+            : WithArtifact(inspected, "file_set", "Files examined",
+                           Json.Dumps(new { files = candidatePaths, read_ok = readsOk, read_failed = readsFailed }, indented: true));
     }
 
     private static bool ShouldAttemptFileReads(Task task, Mission mission)

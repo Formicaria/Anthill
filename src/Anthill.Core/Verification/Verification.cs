@@ -44,7 +44,21 @@ public static class VerificationPolicy
 {
     private static readonly Dictionary<string, string[]> Required = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["code_patch"] = new[] { "diff", "build", "test", "security_policy" },
+        // v3.8.21 — `test` REMOVED from the default, deliberately and with the reason recorded.
+        //
+        // TestVerifier runs `dotnet test -c Release` — the entire suite, with a 1200-second cap —
+        // and BuildVerifier runs `dotnet build -c Release` at 600. Requiring both meant up to half
+        // an hour of wall clock per code-patch task, serially, on the Director thread. Worse, it is
+        // self-referential: a mission that runs while the suite is running would invoke the suite
+        // from inside itself.
+        //
+        // This table sat unenforced from v2.12 to v3.8.21 because nothing called the runner, so the
+        // cost was never paid and never noticed. Wiring it up is what surfaced the number. Build is
+        // kept because it is the check that matters most and is bounded — a patch that does not
+        // compile can no longer reach a verified outcome. `test` remains a registered verifier and
+        // can be required per task type when someone wants that trade.
+        ["code_patch"] = new[] { "diff", "build", "security_policy" },
+        ["code_patch_full"] = new[] { "diff", "build", "test", "security_policy" },
         ["docs_patch"] = new[] { "diff", "security_policy" },
         ["config_change"] = new[] { "diff", "security_policy", "build" },
         ["artifact_production"] = new[] { "artifact" },
