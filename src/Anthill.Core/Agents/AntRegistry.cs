@@ -160,7 +160,7 @@ public static class AntRegistry
             new($"{parent}.{id}", name, parent, purpose, true, perms, allowed, forbidden);
         AntRoleDefinition R(string id, string name, string colony, string purpose, bool exec, AntPermissionContract perms,
             string[] allowed, string[] forbidden, params AntWorkerDefinition[] workers) =>
-            new(id, name, colony, purpose, true, exec, perms, allowed, forbidden, Array.Empty<string>(), new[] { "py.old/", ".git/", "data/", ".venv/" }, workers);
+            new(id, name, colony, purpose, true, exec, perms, allowed, forbidden, Array.Empty<string>(), new[] { ".git/", "data/", ".venv/" }, workers);
 
         var noApply = new[] { "apply_patch", "python_file_creation", "python_file_modification" };
         return new List<AntRoleDefinition>

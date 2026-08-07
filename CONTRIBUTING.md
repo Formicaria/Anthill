@@ -94,7 +94,7 @@ Each notable feature or fix is a patch/maintenance bump (`v1.8.x` / `v1.8.x.y`).
 version, update **every** marker (the console checks and the release job enforce this):
 
 - `src/Anthill.Core/Configuration/AnthillRuntime.cs` → `Version`
-- `src/Anthill.Api/Ui/index.html` → `<title>`, auth-logo, `nav-logo-ver`
+- `src/Anthill.UI/index.html` → `<title>`, auth-logo, `nav-logo-ver`
 - `src/Anthill.Cli/Program.cs` and `src/Anthill.Api/Program.cs` entry-point comments
 - `build.sh` header and the `README.md` version badge
 - add a `## v<version>` section to `CHANGELOG.md`

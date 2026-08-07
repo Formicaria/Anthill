@@ -44,7 +44,7 @@ One-shot, read-only training mission, do not modify files: map the ANTHILL repos
 missions. Produce a concise project map covering: the solution layout (src/Anthill.Core,
 src/Anthill.Api, src/Anthill.Cli, tests/Anthill.Tests, native/anthill_kernel), the runtime flow
 from CLI/API entry to Queen to Planner to ants to memory, where the HTTP API endpoints are
-registered, where the embedded web UI lives (src/Anthill.Api/Ui/index.html), where tests live,
+registered, where the embedded web UI lives (src/Anthill.UI/index.html), where tests live,
 where configuration is read (config.json, AnthillRuntime, AnthillConfig), the deploy options
 (Docker, LXC), and where version markers live (AnthillRuntime.Version, Directory.Build.props,
 README, CHANGELOG). Summarize as a structured reference document in the final result.
@@ -78,7 +78,7 @@ the version-completion checklist in docs/NORTH_STAR.md section 7.
 ```text
 One-shot, read-only training mission, do not modify files: document the embedded console UI so
 future UI missions modify it safely. Cover: the single-file vanilla HTML/CSS/JS architecture of
-src/Anthill.Api/Ui/index.html (no React, no Tailwind, no build step), the CSS-variable theme
+src/Anthill.UI/index.html (no React, no Tailwind, no build step), the CSS-variable theme
 system and hud-* component classes, how pages are structured and rendered, which API endpoints the
 UI calls, the known encoding hazard (icon glyphs flattened to '?' when the file is saved as
 non-UTF-8, guarded by CI ui-integrity), and a safe-modification checklist: additive changes only,

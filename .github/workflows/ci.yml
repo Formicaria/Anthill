@@ -169,7 +169,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import re, sys
-          p = "src/Anthill.Api/Ui/index.html"
+          p = "src/Anthill.UI/index.html"
           s = open(p, encoding="utf-8").read()
           problems = []
           n = s.count("�")
@@ -197,7 +197,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import re
-          s = open("src/Anthill.Api/Ui/index.html", encoding="utf-8").read()
+          s = open("src/Anthill.UI/index.html", encoding="utf-8").read()
           blocks = [b for b in re.findall(r"<script\b[^>]*>(.*?)</script>", s, re.S) if b.strip()]
           open("/tmp/ui.js", "w", encoding="utf-8").write("\n;\n".join(blocks))
           PY
@@ -242,32 +242,27 @@ jobs:
           PY
 
   repo-guards:
-    name: Repo guards (py.old immutable, no stray Python)
+    name: Repo guards (no stray Python)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # NORTH_STAR §3.1 rule 13 / §4 guard 11: py.old/ is archived history and must never change;
-      # no active Python may exist anywhere else in the repo.
-      - name: py.old is immutable on pull requests
-        if: github.event_name == 'pull_request'
+      # NORTH_STAR §3.1 rule 13 / §4 guard 11: no active Python may exist in the repo.
+      #
+      # v3.8.17 (phase 7) — the companion "py.old is immutable on pull requests" job is gone with
+      # the directory. It existed so an agent could not edit archived history; the archive was
+      # deleted deliberately by the operator, which is a different act, and this job could not tell
+      # the two apart. The history remains reachable in git.
+      #
+      # This half survives and is the one that mattered: the ban is on Python being ACTIVE in this
+      # repository, and that is now a plain statement with no exception to carve out.
+      - name: No Python files in the repo
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'py.old/' || true)
-          if [ -n "$changed" ]; then
-            echo "::error::This PR modifies archived py.old/ content (forbidden by docs/NORTH_STAR.md):"
-            echo "$changed"
-            exit 1
-          fi
-          echo "py.old untouched."
-
-      - name: No Python files outside py.old
-        run: |
-          stray=$(find . -name '*.py' -not -path './py.old/*' -not -path './.git/*' -not -path '*/bin/*' -not -path '*/obj/*' || true)
+          stray=$(find . -name '*.py' -not -path './.git/*' -not -path '*/bin/*' -not -path '*/obj/*' || true)
           if [ -n "$stray" ]; then
-            echo "::error::Active Python files found outside py.old/ (forbidden by docs/NORTH_STAR.md):"
+            echo "::error::Active Python files found (forbidden by docs/NORTH_STAR.md):"
             echo "$stray"
             exit 1
           fi

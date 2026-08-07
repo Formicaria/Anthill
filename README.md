@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v3.8.16
+**Current version:** v3.8.17
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -46,7 +46,8 @@ ANTHILL runs a local workflow loop:
 
 The active codebase is .NET-first. The optional native C++ kernel is used for some dependency/scheduler work when available. If the native kernel is not present, ANTHILL falls back to the managed C# implementation.
 
-`py.old/` is historical archive material only. It should not be used for current development.
+The Python original was archived at `py.old/` and deleted in v3.8.17 (refactor phase 7). It is
+reachable in git history if it is ever needed; nothing in the build refers to it.
 
 ---
 
@@ -913,7 +914,6 @@ build.ps1                 Windows build script
 config.example.json       Default runtime config
 Dockerfile                Container build
 docker-compose.yml        Docker Compose deployment
-py.old/                   Historical archive only; not active code
 ```
 
 ---

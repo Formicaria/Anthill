@@ -33,7 +33,7 @@ if ($Full) {
 $node = Get-Command node -ErrorAction SilentlyContinue
 if ($node) {
     Write-Host "==> node --check on embedded UI JavaScript" -ForegroundColor Cyan
-    $html = Get-Content -Raw src/Anthill.Api/Ui/index.html
+    $html = Get-Content -Raw src/Anthill.UI/index.html
     $blocks = [regex]::Matches($html, '(?s)<script\b[^>]*>(.*?)</script>') |
         ForEach-Object { $_.Groups[1].Value } | Where-Object { $_.Trim() }
     $js = ($blocks -join "`n;`n")

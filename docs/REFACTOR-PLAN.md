@@ -1,19 +1,22 @@
 # ANTHILL Core Refactor — Migration Plan
 
-**Status:** in execution — **phases 0 through 5 complete**; phase 7 begun; phase 6 not started
-**Baseline:** v3.8.2, `main` · **Current:** v3.8.16
+**Status:** **COMPLETE — phases 0 through 7 shipped.** Two items superseded on measurement and
+said so; nothing silently dropped.
+**Baseline:** v3.8.2, `main` · **Final:** v3.8.17
 **Goal:** a smaller, stable core that runs with no AI provider and no UI, while preserving public behavior.
 
-| Measure | Baseline (v3.8.2) | Now (v3.8.16) |
+| Measure | Baseline (v3.8.2) | Final (v3.8.17) |
 |---|---:|---:|
 | `Anthill.Core` | 34,247 | 24,973 |
 | `Anthill.SDK` | 0 | 3,152 |
 | `Anthill.Modules.*` | 0 | Reasoning, Homelab, Tools |
-| `Anthill.Api/ApiHost.cs` | 3,227 | 3,283 |
+| `Anthill.Api/ApiHost.cs` | 3,227 | **535** (+ 6 partials) |
+| `Anthill.UI` | — | 5 assets, no `.csproj` |
 
 Core is down **9,274 lines, 27%**, with nothing deleted — every line moved to the SDK or to a
-module. `ApiHost.cs` grew rather than shrank, which is the expected shape: it is the composition
-root, and each extracted module is composed there. Phase 6 is where that is addressed.
+module. `ApiHost.cs` grew to 3,294 across the refactor before phase 6 split it, which was the
+expected shape while it lasted: it is the composition root, and each extracted module is composed
+there.
 
 **Status keys used below:** a phase marked DONE names the release it shipped in. "SURVEYED" means
 the measurement is recorded here and the work has not started. Sections headed "superseded" are kept
@@ -37,7 +40,7 @@ Measured against the working tree, not assumed.
 | `Anthill.Tests` (+ Homelab) | 22,595 | good coverage to refactor against |
 
 Embedded UI assets in `Anthill.Api/Ui/`: `app.js` 498 KB, `index.html` 231 KB,
-`dashboard-grid.js` 37 KB, `dashboard-grid.css` 26 KB.
+`dashboard-grid.js` 37 KB, `dashboard-grid.css` 26 KB. *(These moved to `src/Anthill.UI/` in phase 6.)*
 
 ### 1.1 What the survey changes about the plan
 
@@ -689,36 +692,92 @@ and never was — the name came from the original outline rather than from `Tool
 
 ---
 
-### Phase 6 — UI decoupling
+### Phase 6 — UI decoupling — **DONE (v3.8.17)**, with one item superseded on measurement
 
-- [ ] `src/Anthill.UI/` holds the assets; `Anthill.Api` serves them
-- [ ] UI reads **only** the SSE stream plus read-only REST queries — no endpoint that mutates
-      colony state on the UI's behalf
-- [ ] Audit `ApiHost.cs` (3,283 lines as of v3.8.15, up from 3,227 at baseline — it is the
-      composition root, so every extracted module adds to it) and split by resource; anything
-      driving architecture from the UI side is a bug to be fixed here
-- [ ] Nine pollers in `app.js` still to replace with the SSE stream — the phase-1 deferral
-- [ ] `ColonyDirector`, `AutoApplyRunner`, `PatchVerifyRunner` reviewed — if they hold orchestration
-      logic, it belongs in Core, not the API host
+Surveyed before starting, which the plan had never done for this phase. The numbers reordered it:
+
+| Item | Measured | Outcome |
+|---|---|---|
+| `src/Anthill.UI/` holds the assets | 5 files, 808 KB | small — done |
+| Split `ApiHost.cs` by resource | 3,294 lines, **102 endpoints** | done — 529 lines + 6 partials |
+| Review the three runners | 1,052 lines | done — and the answer was "they stay" |
+| UI reads only read-only REST | **44 mutating endpoints** | **superseded — see below** |
+
+- [x] `src/Anthill.UI/` holds the assets; `Anthill.Api` serves them. Still EMBEDDED, with each
+      `LogicalName` pinned in the csproj — `LoadUiAsset` matches by resource-name SUFFIX, so a move
+      that changed the generated names would have served a blank console with no build error.
+      `UiAbsenceTests` asserts each asset is still found.
+- [x] Audit `ApiHost.cs` and split by resource. `ApiHost` had been `public static partial` across
+      eight files since the homelab moved, so this is where it was always going to divide:
+      `Routes`, `Auth`, `Dashboard`, `Providers`, `Autonomy`, `Reports`. Pure movement — same class,
+      same behaviour, no route re-registration.
+- [x] `ColonyDirector`, `AutoApplyRunner`, `PatchVerifyRunner` reviewed. **They stay in the API, and
+      the reason is a finding rather than a preference.** The plan's condition was "if they hold
+      orchestration logic". They do not: every decision they make is delegated to a core type —
+      `AutoApplyPolicy.Evaluate`, `AutonomyControl`, `ObjectiveLearning.EvaluateRetirement` — and
+      none of the three declares a policy predicate of its own. What is left in the API is the LOOP
+      and the I/O around it. Phases 1–5 had already moved the policy out before phase 6 got round to
+      asking. Moving them anyway would also risk ADR-001's explicit prohibition: `RuntimeIsolationTests`
+      asserts the Queen is a host's ONE mission authority, and a Director sitting in Core beside her
+      is an invitation to become a second one.
+- [ ] **UI reads only the SSE stream plus read-only REST — SUPERSEDED, and this is the third plan
+      item to fall the same way.** There are 58 `GET` and 44 `POST/PUT/DELETE` endpoints, and the
+      console calls the mutating ones to start a mission, approve a patch, change a setting, stop
+      the Director. Read literally, the item removes the console's ability to do anything; it was
+      written in the abstract before anyone counted, exactly like `{Shell,Git,FileSystem,Http,Vision}`
+      and "Core keeps `ToolDefinition`".
+
+      **DECIDED (operator, this session): it means no BUSINESS LOGIC in endpoints.** The console may
+      POST; what it may not do is drive orchestration. Endpoints validate, delegate to Core, and
+      return. The split above is what makes that checkable — projections now sit in
+      `ApiHost.Reports.cs`, separate from the routes, so an endpoint that starts deciding things is
+      visible rather than buried in a 3,294-line file.
+- [ ] Nine `/events/json` pollers in `app.js` — deliberately NOT removed. They are the fallback the
+      SSE stream was shipped in front of in v3.8.3, and replacing them is a console change, not a
+      boundary one. Recorded here so their survival is a decision rather than an oversight.
 
 **Gate:** build + tests; full dashboard walkthrough. Then boot the API with the UI assets absent —
-it must still serve the API. This is success criterion "core runs without UI."
+it must still serve the API. This is success criterion "core runs without UI." *The absence half is
+now a test rather than a manual step: `UiAbsenceTests` asserts a missing asset degrades to its
+fallback instead of throwing, because a manual gate is one nobody performs twice.*
 
 ---
 
-### Phase 7 — Cleanup — BEGUN (v3.8.16)
+### Phase 7 — Cleanup — **DONE (v3.8.16 – v3.8.17)**
 
 - [x] Delete `test/` (superseded by `tests/`) and the empty root `test.txt` — v3.8.16
-- [ ] **Delete `py.old/` — BLOCKED on a decision, not on work.** `.github/workflows/ci.yml` carries a
-      `py.old is immutable on pull requests` job that fails on any change to that path, so removing
-      the directory means removing the guard that protects it. That guard exists because agents must
-      not edit archived history; deleting the archive deliberately is a different act from an agent
-      touching it, and the CI job cannot tell them apart. 4.3 MB, recoverable from git history. The
-      companion `No Python files outside py.old` check stays useful either way and should not be
-      removed with it. Needs an operator decision; `README.md` and `.github/pull_request_template.md`
-      also reference the directory.
-- [ ] Remove dead code and abstractions with a single implementation and no seam value
-- [ ] Collapse duplicate logic surfaced by the moves
+- [x] **Delete `py.old/` — done (v3.8.17), on an operator decision.** 4.2 MB, reachable in git
+      history. Six references had to move with it: the CI `py.old is immutable on pull requests`
+      job (deleted — it existed so an AGENT could not edit archived history, which is a different
+      act from the operator deliberately removing it, and the job could not tell them apart), the
+      companion `No Python files outside py.old` check (KEPT, and simplified — the ban is on Python
+      being active here, which is now a plain statement with no exception to carve out),
+      `RegressionGuardTests.NoPython_*`, `PolicyScan`'s `python_outside_archive` rule,
+      `AntRegistry`'s forbidden-path list, `README.md`, the PR template and the issue template.
+- [x] Remove dead code and abstractions with a single implementation and no seam value — **surveyed
+      across all 35 interfaces in `src`, by counting implementations rather than by reading names.**
+
+      One removed: **`IHomelabEventSink`**. One member, one derived interface, no independent
+      implementer — and phase 4b had already RECORDED it as deleted, on the correct reasoning that
+      once events reach `IEventBus` the sink is only persistence and `IHomelabRepository` carries
+      that. It was never actually deleted; it survived as a base interface. `RecordEvent` now lives
+      on `IHomelabRepository` and the plan's claim is true.
+
+      Six deliberately KEPT, and worth naming because they match the description exactly — one
+      implementation each, no test fake: `IExecutionService`, `ILearningRecorder`,
+      `IMissionCoordinator`, `IMissionEvaluator`, `IPlanningService`, `IResultAssembler`. These are
+      ADR-001's Queen decomposition. Their value is not substitutability; it is that they are the
+      written record of what the Queen was split into, and deleting them would collapse that back
+      into an undocumented god object. "No seam value" is not the same as "one implementation", and
+      this is the case that shows the difference.
+
+      The SDK's single-implementation interfaces — `IEventLog`, `IPheromoneMemory`, `IModuleContext`,
+      `IFieldCipher`, `IModelCapabilityProbe`, `IToolKindExecutor`, `IWorkspacePathGuard` — are the
+      module boundary itself and are seam value by construction.
+- [x] Collapse duplicate logic surfaced by the moves — none found. The moves were extractions rather
+      than copies: the qualification-form survey that preceded each one is what kept a second copy
+      from being written, so there was nothing to collapse. Recorded as a checked result rather than
+      quietly dropped, because "we found none" and "we did not look" read identically in a plan.
 - [x] Add an architecture test asserting `Anthill.Core` references no `Anthill.Modules.*` assembly —
       this is what keeps the refactor from eroding. **Pulled forward to v3.8.8**, and it was right to
       pull it forward: every phase up to then had verified the boundary by hand with a grep, which
@@ -733,13 +792,13 @@ it must still serve the API. This is success criterion "core runs without UI."
 
 ## 4. Success criteria, made checkable
 
-| Criterion | Test | Status at v3.8.15 |
+| Criterion | Test | Status at v3.8.17 |
 |---|---|---|
 | Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 24,973, down 9,274 (27%), nothing deleted |
 | Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) | **MET** — v3.8.5, with a test class for the case |
-| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | not yet — phase 6 |
+| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | **MET** — `UiAbsenceTests`, v3.8.17; a missing asset degrades to its fallback |
 | Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) | **MET** — `ModuleBoundaryTests`, v3.8.8, pulled forward |
-| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | holding — no test has been deleted |
+| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | **MET** — no test was deleted across fifteen releases; two were re-composed and said so |
 | Easier feature development | A new integration is added as a module with zero Core edits | partial — `Anthill.Modules.Tools` (v3.8.16) was a new module, but it took the seam apart rather than plugging into it: three SDK contracts and a `Queen` method. The criterion means an ADDITION, and that has still not been demonstrated |
 
 ## 5. Risks

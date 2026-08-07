@@ -71,7 +71,7 @@ public class AutoApplyPolicyTests : IDisposable
     public void DeniedWhenPathNotAllowlisted()
     {
         Assert.False(AutoApplyPolicy.Evaluate(Patch("deploy/lxc/setup.sh")).Eligible);      // not under docs/ or src/**/*.cs
-        Assert.False(AutoApplyPolicy.Evaluate(Patch("src/Anthill.Api/Ui/index.html")).Eligible); // .html, not .cs
+        Assert.False(AutoApplyPolicy.Evaluate(Patch("src/Anthill.UI/index.html")).Eligible); // .html, not .cs
     }
 
     [Fact]

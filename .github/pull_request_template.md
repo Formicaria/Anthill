@@ -31,7 +31,7 @@ Closes #<!-- issue number -->
 
 - [ ] Mission submission, autonomy controls, and patch approval/apply still work
 - [ ] Settings, Users, Security, Shell, Event Log, and navigation intact
-- [ ] No Python files created or modified; `py.old/` untouched
+- [ ] No Python files created or modified
 - [ ] No fake/simulated values presented as real data (UI)
 
 ## Screenshots / notes

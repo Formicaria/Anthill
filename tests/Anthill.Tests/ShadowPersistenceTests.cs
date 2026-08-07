@@ -261,7 +261,7 @@ public class ShadowPersistenceTests : IDisposable
         Assert.Contains("QualificationScoreboard.Compute(Queen.Memory.LoadScoreableRecommendations", code);
 
         // The dashboard panel reads it, and states an empty scoreboard as "not qualified".
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
         Assert.Contains("hlLoadShadow", ui);
         Assert.Contains("'/shadow/json'", ui);
         Assert.Contains("not qualified", ui);
