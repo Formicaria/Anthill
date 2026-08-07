@@ -1,5 +1,41 @@
 # ANTHILL Changelog
 
+## v3.8.21 - patches are actually verified
+
+Two things: the ants that hold structure now emit it, and the verification framework runs for the
+first time in the project's history.
+
+**`VerificationRunner` had no production call site.** `BuildVerifier`, `TestVerifier`,
+`DiffVerifier`, `SecurityPolicyVerifier` and a `VerificationPolicy` table declaring that a
+`code_patch` requires diff + build + test + security_policy have existed and been tested since v2.12.
+Nothing ever called them. Every code patch this colony has produced went unverified against the
+policy that said what verifying one means. `ExecutionService.ProcessPatchProposals` is now that call
+site, and the results become ADR-004 evidence carrying each verifier's own deterministic flag.
+
+**A patch that does not compile can no longer reach a verified outcome.** That is the behaviour
+change, stated plainly: missions get slower, and a mission that used to pass on a patch that never
+built will now fail.
+
+**The default policy was narrowed, deliberately, and the reason is recorded.** `TestVerifier` runs
+`dotnet test -c Release` — the ENTIRE suite, 1200-second cap — and `BuildVerifier` a full build at
+600. Requiring both meant up to half an hour of wall clock per code-patch task, serially, on the
+Director thread, and it is self-referential: a mission running while the suite runs would invoke the
+suite from inside itself. `code_patch` now requires diff + build + security_policy;
+`code_patch_full` keeps all four for anyone who wants that trade. **The table sat unenforced for
+nineteen months, so the cost had never been paid and never noticed — wiring it up is what surfaced
+the number.**
+
+**Three core ants now emit typed artifacts, three deliberately do not.** `FileAnt` holds the paths it
+read (`file_set`), `WebResearchAnt` holds the `SourceRecord`s it already persists (`source_set`, a
+schema added because the colony produces the shape), and the coder's output becomes a real `PatchSet`
+one layer up, so the artifact is emitted where the structure exists rather than where the text was
+written. Researcher, builder and verifier produce prose synthesis and stay untyped: naming prose
+`change_plan` would create a row whose type is a claim nobody can rely on, and `NarrativeOutput_
+StillHasNoSchema` pins that so a later release cannot quietly "finish the job" with a mapping.
+
+**Typed artifacts APPEND to the narrative one rather than replacing it.** The prose is what an
+operator reads and it stays; what is added is the machine copy.
+
 ## v3.8.20 - the store stops being empty
 
 v3.8.19 shipped ADR-004's artifact and evidence stores with no producer. This release gives them
