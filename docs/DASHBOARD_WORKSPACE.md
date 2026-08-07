@@ -16,7 +16,7 @@ gate passes.
 > the historical record of why those mechanisms existed — several of their lessons were ported into
 > the grid's guards. See `docs/DASHBOARD_GRID_MIGRATION.md` for what replaced it.
 >
-> *(Dashboard work concluded at v3.2.1; the shipping release is now v3.8.19. That release does
+> *(Dashboard work concluded at v3.2.1; the shipping release is now v3.8.20. That release does
 > touch the console, but only in how it is FED: `/events/stream` pushes events so panels stop
 > serving data up to three seconds stale. The layout and workspace model this document
 > describes are unchanged, and polling remains the fallback.)*

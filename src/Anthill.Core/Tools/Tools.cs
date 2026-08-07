@@ -132,8 +132,37 @@ public sealed class ToolRegistry
             LogToolResult(missionId, taskId, antName, result);
             _memory.UpdatePheromoneTrail($"tool:{name}", "tool", result.Success, result.Success ? 0.02 : -0.04,
                 new() { ["mission_id"] = missionId, ["task_id"] = taskId, ["ant_name"] = antName });
+            RecordEvidence(name, result, missionId, taskId);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Record a deterministic tool outcome as ADR-004 evidence. v3.8.20.
+    ///
+    /// This is the dispatch chokepoint — it already knows the mission, the task, the ant and the
+    /// result, which is why the event log and the pheromone reinforcement live here too. Evidence
+    /// belongs beside them for the same reason.
+    ///
+    /// Only <see cref="ToolEvidence"/>'s short closed list produces anything; everything else
+    /// returns null and nothing is written. And like the pheromone write above, a failure here must
+    /// never fail the tool call: the result has already been produced and returned to the caller, so
+    /// losing the record is strictly smaller than losing the work.
+    /// </summary>
+    private void RecordEvidence(string toolName, ToolResult result, string missionId, string? taskId)
+    {
+        if (!ToolEvidence.IsDeterministic(toolName)) return;
+
+        try
+        {
+            var evidence = ToolEvidence.For(toolName, result.Success, missionId, taskId,
+                                            result.Success ? result.Output : result.Error ?? "");
+            if (evidence is not null) ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).Put(evidence);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Could not record tool evidence for {toolName}: {error.Message}");
+        }
     }
 
     /// <summary>

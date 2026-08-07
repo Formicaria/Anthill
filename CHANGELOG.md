@@ -1,5 +1,42 @@
 # ANTHILL Changelog
 
+## v3.8.20 - the store stops being empty
+
+v3.8.19 shipped ADR-004's artifact and evidence stores with no producer. This release gives them
+two, and both are bridges at an existing chokepoint rather than a rewrite of any ant.
+
+**Ants already emitted typed artifacts. They were going into a JSON blob.** `AntArtifact` has existed
+since v2.19.0 and was serialised straight into `task_results.artifacts_json` — unqueryable, unhashed,
+with no identity and no provenance. `SaveTaskResult` now also projects them into the artifact store as
+first-class rows. **Five of the seven kinds ants emit mapped exactly onto schemas declared last
+release**, before this bridge existed, which is the evidence that vocabulary came from the colony
+rather than from the ADR alone. `repair_recommendation` was the one real gap and is now a schema.
+
+**Deterministic evidence exists in production for the first time.** The obvious producer turned out
+to be a mirage: `VerificationRunner` owns `BuildVerifier` and `TestVerifier`, both genuinely
+deterministic, and **has no production call site** — it is constructed only by tests. The one bundle
+production does build, `LearningRecorder.MissionEvidenceBundle`, declares `Deterministic: false`. So
+the colony produced no deterministic evidence anywhere, and a store waiting on the verification
+framework would have waited indefinitely. Evidence is instead recorded at the tool dispatch
+chokepoint, where `run_allowlisted_check` runs a declared command from a catalog and its exit code is
+a fact. `HasDeterministicPass` can now return true.
+
+**The list of evidence-producing tools is short and closed on purpose.** `web_search` is not
+reproducible — the internet changes. `shell_command` runs whatever it was handed. `read_text_file`
+reports state rather than testing a claim. Recording those would put "the ant looked at a file" in the
+same table as "the suite passed", which is exactly what the deterministic flag exists to prevent.
+
+**What was scoped in and then honestly dropped: giving the six core ants typed artifacts.** They
+already emit one — `AntArtifact("text", ...)`, prose with a label. Mapping that to `change_plan` or
+`file_set` would have satisfied the checklist and produced rows whose type is a claim nobody can rely
+on. "Two channels and the prose one wins" is the failure ADR-004 explicitly rejects, and relabelling
+is how you get there. Typing the core ants means giving their output STRUCTURE, which is per-ant
+design work rather than a mapping, and it is the next release rather than a line in this one.
+
+**`AntEvidence` is not ADR-004 evidence, and is deliberately not bridged.** Its kinds are `file_path`,
+`mission_id`, `failure_id`, `check`, `policy_rule` — citations, not verdicts. "The ant mentioned a
+file" is not proof that anything was verified.
+
 ## v3.8.19 - the colony starts remembering
 
 First release after the refactor. Four post-refactor stages touched, and the sequencing is the point:
