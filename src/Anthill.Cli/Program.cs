@@ -147,7 +147,10 @@ static Queen NewQueen()
     // and patch tools the moment one did.
     modules.Load(new Anthill.Modules.Tools.ToolsModule(
         new Anthill.Core.Security.WorkspacePathGuard(
-            Anthill.Core.Configuration.AnthillRuntime.AllowedWorkspaceRoot)));
+            Anthill.Core.Configuration.AnthillRuntime.AllowedWorkspaceRoot,
+            Anthill.Core.Tools.ToolRuntime.Live),
+        Anthill.Core.Tools.ToolRuntime.Live,
+        Anthill.Core.Security.SsrfRuntime.Live));
 
     var queen = new Queen(memory);
     queen.AdoptModuleTools(modules.ContributedTools);

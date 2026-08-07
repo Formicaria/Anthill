@@ -15,8 +15,22 @@ public sealed class WorkspacePathGuard : IWorkspacePathGuard
     /// <summary>The root this guard was BUILT with. Not necessarily the one it enforces — see <see cref="EffectiveRoot"/>.</summary>
     public string Root { get; }
 
-    public WorkspacePathGuard(string? root = null)
+    private readonly IToolRuntimeOptions? _options;
+
+    /// <param name="options">
+    /// The gates this guard enforces. v3.8.18 — added because <see cref="IsBlockedPath"/> read
+    /// <c>AnthillRuntime.BlockedPathParts</c> directly, so a host composed from explicit options
+    /// still had its blocked-path list answered by process-global state. A guard built for one host
+    /// must not consult another's configuration.
+    ///
+    /// Optional, and <c>null</c> keeps the previous behaviour exactly: it resolves through
+    /// <see cref="SafetyPolicy"/>, which the core installs from a module initializer. Every one of
+    /// the thirty existing call sites passes a root and nothing else, and none of them needed to
+    /// change.
+    /// </param>
+    public WorkspacePathGuard(string? root = null, IToolRuntimeOptions? options = null)
     {
+        _options = options;
         var raw = root ?? AnthillRuntime.AllowedWorkspaceRoot;
         Root = Path.IsPathRooted(raw)
             ? Path.GetFullPath(raw)
@@ -66,8 +80,12 @@ public sealed class WorkspacePathGuard : IWorkspacePathGuard
 
     public bool IsBlockedPath(string path)
     {
+        // v3.8.18 — the injected gates when this guard was given any, the installed policy otherwise.
+        // Previously this read AnthillRuntime directly, which meant a host built from explicit
+        // options answered "is this path blocked" from global state regardless.
+        var blocked = (_options ?? SafetyPolicy.RequiredToolOptions).BlockedPathParts;
         var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                         .Select(p => p.ToLowerInvariant());
-        return parts.ToHashSet().Overlaps(AnthillRuntime.BlockedPathParts);
+        return parts.ToHashSet().Overlaps(blocked);
     }
 }

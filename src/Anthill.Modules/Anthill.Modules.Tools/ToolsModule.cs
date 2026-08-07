@@ -1,5 +1,6 @@
 using Anthill.SDK.Common;
 using Anthill.SDK.Events;
+using Anthill.SDK.Security;
 using Anthill.SDK.Modules;
 using Anthill.SDK.Tools;
 
@@ -29,6 +30,7 @@ public sealed class ToolsModule : IAnthillModule
 {
     private readonly IWorkspacePathGuard _guard;
     private readonly IToolRuntimeOptions _options;
+    private readonly ISsrfPolicy _ssrf;
 
     /// <param name="guard">
     /// The workspace containment check. Supplied by the composition root because the implementation
@@ -38,11 +40,17 @@ public sealed class ToolsModule : IAnthillModule
     /// The capability gates, read live. Defaults to whatever <c>Anthill.Core</c> installed on
     /// <see cref="SafetyPolicy"/>, which in any real process is the live runtime.
     /// </param>
-    public ToolsModule(IWorkspacePathGuard guard, IToolRuntimeOptions? options = null)
+    /// <param name="ssrf">
+    /// The outbound blocklist <c>web_search</c> drops results against. v3.8.18 — threaded through
+    /// so a host that supplies its own gates also supplies its own SSRF policy, rather than having
+    /// half its tool policy injected and half of it ambient.
+    /// </param>
+    public ToolsModule(IWorkspacePathGuard guard, IToolRuntimeOptions? options = null, ISsrfPolicy? ssrf = null)
     {
         ArgumentNullException.ThrowIfNull(guard);
         _guard = guard;
         _options = options ?? SafetyPolicy.RequiredToolOptions;
+        _ssrf = ssrf ?? SafetyPolicy.Ssrf;
     }
 
     public string Name => "tools";
@@ -79,7 +87,7 @@ public sealed class ToolsModule : IAnthillModule
         // refuse at call time, and the /tools report is more useful when it can say "present but
         // disabled" rather than going silent — a missing tool and a switched-off one are different
         // operator problems with the same symptom.
-        Offer(new WebSearchTool(_options));
+        Offer(new WebSearchTool(_options, _ssrf));
         Offer(new ShellCommandTool(_guard, _options));
         Offer(new ApplyPatchTool(_guard, _options));
 
