@@ -46,6 +46,13 @@ public interface IToolRuntimeOptions
     /// <summary>Suffixes no file tool may touch — the colony's own database among them.</summary>
     IReadOnlySet<string> BlockedFileSuffixes { get; }
 
+    /// <summary>
+    /// Path segments a patch may not target — <c>.git</c>, <c>data</c>, virtualenvs and caches.
+    /// Added in v3.8.12 so <c>Validation.ValidateSafePatchPath</c> can take this contract whole
+    /// instead of a second interface re-declaring the two suffix sets above.
+    /// </summary>
+    IReadOnlySet<string> BlockedPathParts { get; }
+
     /// <summary>Resolved root for relative paths.</summary>
     string ScriptDirectory { get; }
 
