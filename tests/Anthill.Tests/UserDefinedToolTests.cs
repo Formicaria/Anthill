@@ -418,7 +418,7 @@ public class UserDefinedToolTests : IDisposable
 
         // And the console must give the two states different words. Same status, different label is
         // how a distinction gets made in the data and lost on the way to the person reading it.
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
         var labels = Regex.Match(app, @"var TOOL_STATUS_LABEL = \{.*?\};", RegexOptions.Singleline).Value;
         Assert.NotEqual("", labels);
         Assert.Contains("disabled:", labels);
@@ -433,7 +433,7 @@ public class UserDefinedToolTests : IDisposable
     [Fact]
     public void TheConsole_CanReEnableADisabledTool_WithoutRetypingIt()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         Assert.Contains("function toolEnable", app);
         Assert.Contains("toolEnable(", app);          // and it is reachable from a control

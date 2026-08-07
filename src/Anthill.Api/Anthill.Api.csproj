@@ -27,12 +27,24 @@
        app.js (served 'self') so the console carries no inline JS — required to drop CSP
        script-src 'unsafe-inline'. -->
   <ItemGroup>
-    <EmbeddedResource Include="Ui\index.html" />
-    <EmbeddedResource Include="Ui\app.js" />
-    <EmbeddedResource Include="Ui\mission-thread.js" />
+    <!--
+      v3.8.17 (phase 6) — the assets live in src/Anthill.UI/ and the API serves them. Still
+      EMBEDDED rather than copied to disk, because a self-contained binary is the deployment model
+      and phase 6's gate is that the API boots and serves when the assets are ABSENT, not that they
+      are loose files.
+
+      LogicalName is pinned deliberately. Without it the resource name is derived from the file's
+      path relative to the project, and these now sit outside it — so the generated names would
+      change. `LoadUiAsset` finds assets by name SUFFIX, so a changed prefix would still have
+      worked and a changed suffix would have served a blank console with no build error. Naming
+      them explicitly means the move cannot alter what is served.
+    -->
+    <EmbeddedResource Include="..\Anthill.UI\index.html" LogicalName="Anthill.Api.Ui.index.html" />
+    <EmbeddedResource Include="..\Anthill.UI\app.js" LogicalName="Anthill.Api.Ui.app.js" />
+    <EmbeddedResource Include="..\Anthill.UI\mission-thread.js" LogicalName="Anthill.Api.Ui.mission-thread.js" />
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
-    <EmbeddedResource Include="Ui\dashboard-grid.js" />
-    <EmbeddedResource Include="Ui\dashboard-grid.css" />
+    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" />
+    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" />
   </ItemGroup>
 
 </Project>

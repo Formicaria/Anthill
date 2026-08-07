@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v3.8.17 - the refactor ends
+
+Phases 6 and 7 (`docs/REFACTOR-PLAN.md`). Fifteen releases from v3.8.3, no capability removed, no
+test deleted.
+
+- **`ApiHost.cs`: 3,294 lines → 535.** Split by resource into `ApiHost.Routes`, `.Auth`,
+  `.Dashboard`, `.Providers`, `.Autonomy` and `.Reports`. Pure movement — `ApiHost` has been
+  `public static partial` across eight files since the homelab moved, so this is where it was always
+  going to divide. No route is re-registered and no behaviour changes.
+- **The console assets move to `src/Anthill.UI/`.** Still embedded, with each `LogicalName` pinned in
+  the csproj — `LoadUiAsset` matches by resource-name SUFFIX, so a move that changed the generated
+  names would have served a blank console with no build error and nothing failing.
+- **Phase 6's exit gate is a test now, not a manual step.** "Boot the API with the UI assets absent"
+  is a check performed once, on the day it is written. `UiAbsenceTests` asserts a missing asset
+  degrades to its fallback rather than throwing, and that every shipped asset is still found.
+- **One phase 6 item was superseded on measurement, and the plan says so.** "UI reads only the SSE
+  stream plus read-only REST" was written before anyone counted: there are 58 `GET` and 44
+  `POST/PUT/DELETE` endpoints, and the console calls the mutating ones to start a mission, approve a
+  patch or stop the Director. Read literally it removes the console's ability to do anything. It now
+  means what it was reaching for — **no business logic in endpoints** — and the split is what makes
+  that checkable.
+- **The three runners stay in the API, and the review is why.** The plan's condition was "if they
+  hold orchestration logic, it belongs in Core." Measured: every decision `ColonyDirector`,
+  `AutoApplyRunner` and `PatchVerifyRunner` make is delegated to a core type — `AutoApplyPolicy`,
+  `AutonomyControl`, `ObjectiveLearning` — and none declares a policy predicate of its own. Phases
+  1–5 had already moved the policy out. Moving them anyway would also put a second supervisor beside
+  the Queen, which ADR-001 explicitly prohibits.
+- **`py.old/` is deleted** (4.2 MB, reachable in git history), with the six references that had to
+  move with it. The CI `py.old is immutable` job goes too — it existed so an AGENT could not edit
+  archived history, which is a different act from the operator removing it, and the job could not
+  tell them apart. The `no active Python` half survives and is now a plain rule with no exception.
+- **A dead abstraction the plan had already recorded as dead.** `IHomelabEventSink` was written up as
+  deleted in phase 4b and never was — it survived as a base interface with one member and no
+  independent implementer. `RecordEvent` moves onto `IHomelabRepository`. All 35 interfaces in `src`
+  were counted; six single-implementation ones in `Anthill.Core/Orchestration` are ADR-001's Queen
+  decomposition and are deliberately kept, because "one implementation" and "no seam value" are not
+  the same thing.
+
+**Final measurements.** `Anthill.Core` 34,247 → 24,973 lines (−27%, nothing deleted).
+`Anthill.SDK` 3,152. Three modules. Five of six success criteria met; the sixth — "a new integration
+is added as a module with zero Core edits" — is honestly still undemonstrated, because every module
+so far was an extraction rather than an addition.
+
 ## v3.8.16 - the tools leave the core, and phase 5 ends
 
 Phase 5c step 4 plus the start of phase 7 (`docs/REFACTOR-PLAN.md`). `Anthill.Core` is 24,973 lines,

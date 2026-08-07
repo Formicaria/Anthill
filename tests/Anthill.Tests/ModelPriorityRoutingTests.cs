@@ -169,7 +169,7 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void EveryRoleThatIsNotAnAnt_HasAConsoleControl()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         // The full ROSTER, not ExecutableRoleIds. The latter is computed from live specialist gates,
         // so it shrinks and grows with configuration — a role whose canary gate happens to be closed
@@ -208,7 +208,7 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void ModelControls_AreGatedOnHavingARoute_NotOnExecutability()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         var condition = Regex.Match(app, @"const modelField=\([^)]*\)").Value;
         Assert.NotEqual("", condition);
@@ -229,7 +229,7 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void ThePriority_CanBeClearedFromTheConsole()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         Assert.Contains("model_priority_provider", app);
         Assert.Contains("m.value ? p.value : ''", app);

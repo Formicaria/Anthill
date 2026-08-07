@@ -26,12 +26,6 @@ public interface IHealthCheckProvider
     System.Threading.Tasks.Task<HealthCheckResult> CheckAsync(string target, CancellationToken ct);
 }
 
-/// <summary>Sink for homelab events so every subsystem writes the same audit/event stream.</summary>
-public interface IHomelabEventSink
-{
-    void RecordEvent(HomelabEvent evt);
-}
-
 /// <summary>Secret-free status for one integration, surfaced on the summary endpoint and UI.</summary>
 public interface IIntegrationStatusProvider
 {
@@ -67,8 +61,21 @@ public interface ICredentialProvider
 /// Persistence for the homelab foundation tables. One SQLite home (the existing colony DB) so
 /// memory, missions, and homelab knowledge can be linked and searched together.
 /// </summary>
-public interface IHomelabRepository : IHomelabEventSink
+public interface IHomelabRepository
 {
+    /// <summary>
+    /// The homelab's own audit stream, persisted here and additionally published to the colony bus
+    /// by the implementation (v3.8.7, phase 4a).
+    ///
+    /// v3.8.17 (phase 7) — this was a separate one-member <c>IHomelabEventSink</c> that only this
+    /// interface ever derived from and only this interface's implementer ever satisfied. The plan
+    /// recorded it as DELETED in phase 4b, on the correct reasoning that once events reach
+    /// <c>IEventBus</c> the sink is only persistence and the repository already carries that. It was
+    /// not actually deleted — it survived as a base interface, which is how a plan and a codebase
+    /// come to disagree quietly. Now the record is true.
+    /// </summary>
+    void RecordEvent(HomelabEvent evt);
+
     void UpsertNode(HomelabNode node, string changedBy);
     IReadOnlyList<HomelabNode> ListNodes();
     void UpsertService(ServiceRecord service, string changedBy);

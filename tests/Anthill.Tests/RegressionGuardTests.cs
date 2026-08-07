@@ -116,7 +116,7 @@ public class RegressionGuardTests : IDisposable
         // v2.15.2 added dashboard-workspace.js to the scan, because leaving a UI file outside every
         // guard that uses UiSource is how whole files go unchecked. v3.3.0 keeps the rule and
         // swaps the file: the grid replaced the workspace.
-        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.UI");
         var parts = new List<string> { File.ReadAllText(Path.Combine(dir, "index.html")) };
         foreach (var js in new[] { "app.js", "dashboard-grid.js" })
         {
@@ -154,7 +154,7 @@ public class RegressionGuardTests : IDisposable
         if (ternary > 0) problems.Add($"{ternary} \"'?':'?'\" caret ternary(ies)");
 
         Assert.True(problems.Count == 0,
-            "UI encoding corruption in src/Anthill.Api/Ui/index.html: " + string.Join("; ", problems));
+            "UI encoding corruption in src/Anthill.UI/index.html: " + string.Join("; ", problems));
     }
 
     /// <summary>
@@ -165,7 +165,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_NoHardcodedVersionInMarkup()
     {
-        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "index.html"));
+        var ui = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "index.html"));
         var hardcoded = Regex.Matches(ui, @">\s*v\d+\.\d+[\d.]*\s*<");
         Assert.True(hardcoded.Count == 0,
             "Hardcoded version string(s) in UI markup (must come from /health at runtime): "
@@ -260,7 +260,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_ColonyAndChamberSymbolsAreDeclared()
     {
-        var appJs = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js");
+        var appJs = Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js");
         var code = StripJsLiteralsAndComments(File.ReadAllText(appJs));
 
         var declared = new HashSet<string>(StringComparer.Ordinal);
@@ -302,7 +302,7 @@ public class RegressionGuardTests : IDisposable
         }
 
         Assert.True(undeclared.Count == 0,
-            "src/Anthill.Api/Ui/app.js references colony/chamber symbols that are never declared, " +
+            "src/Anthill.UI/app.js references colony/chamber symbols that are never declared, " +
             "which throws a ReferenceError at runtime while `node --check` still passes: " +
             string.Join("; ", undeclared.Select(kv => $"{kv.Key} (line {kv.Value})")));
     }
@@ -326,7 +326,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_OperatorControlledFieldsAreEscapedBeforeMarkup()
     {
-        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         // Only markup sinks matter. Assigning a template to .textContent or .value sets TEXT, not
         // HTML — escaping there would be a bug in the other direction, rendering a literal
@@ -363,7 +363,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_TopologyHasOneRendererAndPassesPointersThrough()
     {
-        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.UI");
         var html = File.ReadAllText(Path.Combine(dir, "index.html"));
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
         var gridCss = File.ReadAllText(Path.Combine(dir, "dashboard-grid.css"));
@@ -428,7 +428,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void Workspace_CanonicalIdsMatchTheClientRegistrations()
     {
-        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        var appJs = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
         // v3.3.0: the grid replaced the floating workspace, so this reads the GRID widget
         // registrations. Both def shapes start `{id:'x', title:'...'` — the grid's carry a `size:`
@@ -466,7 +466,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiState_HasASingleWriter()
     {
-        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.UI");
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
 
         Assert.Contains("const UiStateWriter", appJs);
@@ -489,7 +489,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
     {
-        var dir = Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui");
+        var dir = Path.Combine(RepoRoot(), "src", "Anthill.UI");
         var html = File.ReadAllText(Path.Combine(dir, "index.html"));
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
         var missing = new List<string>();
@@ -565,19 +565,19 @@ public class RegressionGuardTests : IDisposable
     }
 
     // ---- No active Python ------------------------------------------------------------------------
-    // py.old/ is archived history. No .py file may exist anywhere else in the repo.
+    // v3.8.17 (phase 7): py.old/ is deleted, so the exception this guard used to carve out is gone
+    // and the rule is now what it always meant — this repository contains no active Python.
 
     [Fact]
-    public void NoPython_NoPyFilesOutsidePyOld()
+    public void NoPython_NoPyFilesAnywhere()
     {
         var root = RepoRoot();
         var offenders = Directory.EnumerateFiles(root, "*.py", SearchOption.AllDirectories)
             .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
-            .Where(p => !p.StartsWith("py.old/", StringComparison.OrdinalIgnoreCase))
             .Where(p => !p.Contains("/bin/") && !p.Contains("/obj/") && !p.StartsWith(".git/"))
             .ToList();
         Assert.True(offenders.Count == 0,
-            "Active Python files found outside py.old/ (forbidden by NORTH_STAR §3.1 rule 13): "
+            "Active Python files found (forbidden by NORTH_STAR \u00a73.1 rule 13): "
             + string.Join(", ", offenders));
     }
 }

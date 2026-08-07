@@ -30,7 +30,7 @@ public class UiActionDispatchTests
     }
 
     private static string AppJs() =>
-        File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Ui", "app.js"));
+        File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
 
     /// <summary>
     /// The regression itself: no executable attribute may interpolate a patch file path.

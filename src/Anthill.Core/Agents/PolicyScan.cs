@@ -19,7 +19,7 @@ public static class PolicyScan
         new("blocked_path_ci", "high", true, Rx(@"\.github[/\\]workflows[/\\]"), "CI/workflow files may not be modified by missions"),
         new("blocked_path_deploy", "high", true, Rx(@"\bdeploy[/\\]lxc[/\\]"), "deployment scripts are protected"),
         new("blocked_path_security", "critical", true, Rx(@"Anthill\.Core[/\\]Security[/\\]"), "security primitives are protected"),
-        new("python_outside_archive", "high", true, Rx(@"(?<!py\.old[/\\])[\w\-]+\.py\b"), "Python outside py.old/ is forbidden (NORTH_STAR rule 13)"),
+        new("python_outside_archive", "high", true, Rx(@"[\w\-]+\.py\b"), "Python is forbidden in this repository (NORTH_STAR rule 13)"),
         new("secret_material", "critical", true, Rx(@"-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:password|passwd|api[_-]?key|token|secret)\s*[:=]\s*['""][^'""\s]{6,}"), "secret-like content detected"),
         new("permission_expansion", "critical", true, Rx(@"ApplyPatches\s*=\s*true|apply_patch.*(?:allow|grant|enable)|(?:allow|grant|enable).*apply_patch"), "attempt to grant patch application"),
         new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|homelab_target_allowlist|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),

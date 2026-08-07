@@ -86,7 +86,7 @@ public class UiCartographerAntTests : IDisposable
     [Fact]
     public void UnreadableKnownPaths_WarnButDoNotFailTheMap()
     {
-        // The harness workspace has no src/Anthill.Api/Ui/*, which the ant always probes. Those
+        // The harness workspace has no src/Anthill.UI/*, which the ant always probes. Those
         // misses are warnings, not failures -- a partial map is still usable to the coder, and a
         // warning must never be recorded as a failed task.
         var (ant, _) = Harness();

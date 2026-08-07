@@ -24,7 +24,7 @@ public class UiShellTests
         return dir!.FullName;
     }
 
-    private static string Ui(string file) => File.ReadAllText(Path.Combine(Root(), "src", "Anthill.Api", "Ui", file));
+    private static string Ui(string file) => File.ReadAllText(Path.Combine(Root(), "src", "Anthill.UI", file));
     private static string Src(params string[] parts) => File.ReadAllText(Path.Combine(new[] { Root() }.Concat(parts).ToArray()));
 
     private static string BodyOf(string js, string signature)
