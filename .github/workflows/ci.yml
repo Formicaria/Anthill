@@ -155,42 +155,65 @@ jobs:
           dotnet-version: '9.0.x'
 
       # Refactor success criterion "core runs without UI", as a BUILD rather than a simulation.
-      # -p:AnthillNoUi=true drops every EmbeddedResource in Anthill.Api.csproj, so the binary
-      # genuinely has no console assets — not a lookup that misses.
-      - name: Publish the API with no console assets
+      # -p:AnthillNoUi=true drops every UI EmbeddedResource from Anthill.Api.csproj.
+      #
+      # Framework-dependent and NOT single-file, deliberately: the check below greps the managed
+      # assembly, and a single-file bundle can compress its payload, so grepping THAT would answer
+      # "absent" whether or not the assets were embedded. A check that cannot fail is not a check —
+      # which is the rule this very release added to the plan.
+      - name: Publish twice — with the console, and without it
         run: |
-          dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
-            -c Release -r linux-x64 --self-contained true \
-            -p:PublishSingleFile=true -p:AnthillNoUi=true \
-            -o /tmp/anthill-noui
+          dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -o /tmp/ui-yes
+          dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -p:AnthillNoUi=true -o /tmp/ui-no
 
-      - name: Assert the assets really are absent
+      # Falsifiable in both directions: the marker must be PRESENT in the ordinary build and ABSENT
+      # in the no-UI one. If the flag silently stopped working, the first assertion fails.
+      - name: The flag actually removes the assets
         run: |
-          if strings /tmp/anthill-noui/anthill | grep -q "dashboard-grid.css"; then
-            echo "::error::AnthillNoUi=true still embedded the console assets — the gate proves nothing"
+          if ! grep -qa "dashboard-grid.css" /tmp/ui-yes/Anthill.Api.dll; then
+            echo "::error::Ordinary build has no console assets — this check is not measuring anything"
             exit 1
           fi
-          echo "No console assets in the binary."
+          if grep -qa "dashboard-grid.css" /tmp/ui-no/Anthill.Api.dll; then
+            echo "::error::AnthillNoUi=true still embedded the console assets"
+            exit 1
+          fi
+          echo "Assets present with the console, absent without it."
 
-      - name: Boot it and serve the API
+      # Boot and both probes in ONE step. A process backgrounded in one `run:` block is not
+      # guaranteed to survive into the next one, so splitting these would test nothing reliably.
+      - name: Boot without assets and serve the API
         run: |
-          cd /tmp/anthill-noui
-          ANTHILL_API_TOKEN="ci-no-ui-boot-token-that-is-long-enough-32" \
-            ./anthill --api --host 127.0.0.1 --port 8714 &
+          set -euo pipefail
+          export ANTHILL_API_TOKEN="ci-no-ui-boot-token-long-enough-for-the-32-char-minimum"
+          dotnet /tmp/ui-no/anthill.dll --api --host 127.0.0.1 --port 8714 > /tmp/noui.log 2>&1 &
+          API_PID=$!
+          trap 'kill $API_PID 2>/dev/null || true' EXIT
+
+          ok=""
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8714/health -o /tmp/health-noui.json 2>/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:8714/health -o /tmp/health-noui.json 2>/dev/null; then ok=1; break; fi
+            if ! kill -0 $API_PID 2>/dev/null; then
+              echo "::error::The API exited during startup without its UI assets"
+              cat /tmp/noui.log
+              exit 1
+            fi
             sleep 2
           done
+          if [ -z "$ok" ]; then
+            echo "::error::/health never answered within 60s"
+            cat /tmp/noui.log
+            exit 1
+          fi
           cat /tmp/health-noui.json
-          grep -q '"status":"ok"' /tmp/health-noui.json || (echo "::error::API did not serve /health without UI assets"; exit 1)
+          grep -q '"status":"ok"' /tmp/health-noui.json
 
-      # And the console degrades rather than crashing: the shell route must still answer.
-      - name: The UI route degrades instead of throwing
-        run: |
+          # And the console degrades rather than crashing.
           code=$(curl -s -o /tmp/ui-noui.html -w "%{http_code}" http://127.0.0.1:8714/ui || echo 000)
           echo "GET /ui -> $code"
-          [ "$code" = "200" ] || (echo "::error::/ui did not answer without assets"; exit 1)
-          grep -qi "UI resource missing" /tmp/ui-noui.html || (echo "::error::/ui served something unexpected"; cat /tmp/ui-noui.html; exit 1)
+          [ "$code" = "200" ]
+          grep -qi "UI resource missing" /tmp/ui-noui.html || (echo "::error::/ui served something unexpected"; head -c 400 /tmp/ui-noui.html; exit 1)
+          echo "API served /health and degraded /ui with no console assets."
 
   lint-lxc-installer:
     name: Shellcheck the LXC installer
