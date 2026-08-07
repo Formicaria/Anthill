@@ -39,12 +39,19 @@
       worked and a changed suffix would have served a blank console with no build error. Naming
       them explicitly means the move cannot alter what is served.
     -->
-    <EmbeddedResource Include="..\Anthill.UI\index.html" LogicalName="Anthill.Api.Ui.index.html" />
-    <EmbeddedResource Include="..\Anthill.UI\app.js" LogicalName="Anthill.Api.Ui.app.js" />
-    <EmbeddedResource Include="..\Anthill.UI\mission-thread.js" LogicalName="Anthill.Api.Ui.mission-thread.js" />
+    <!--
+      v3.8.18 — conditioned on AnthillNoUi so the "core runs without UI" criterion can be BUILT
+      rather than simulated. `dotnet build -p:AnthillNoUi=true` produces an API with no console
+      assets embedded at all; CI then boots it and hits /health. The previous gate asked
+      LoadUiAsset for a fabricated resource name and watched it return the fallback, which proves a
+      null check and nothing about a build. An external review called that wrong-green and was right.
+    -->
+    <EmbeddedResource Include="..\Anthill.UI\index.html" LogicalName="Anthill.Api.Ui.index.html" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\app.js" LogicalName="Anthill.Api.Ui.app.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\mission-thread.js" LogicalName="Anthill.Api.Ui.mission-thread.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
-    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" />
-    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" />
+    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" Condition="'$(AnthillNoUi)' != 'true'" />
   </ItemGroup>
 
 </Project>

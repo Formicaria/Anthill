@@ -76,16 +76,19 @@ public class RuntimeIsolationTests : IDisposable
         public bool FileToolsEnabled => _options.FileTools;
         public bool FileWritingEnabled => _options.FileWriting;
 
-        // Not part of what this file isolates; the ambient runtime is the honest answer for these.
-        public bool ShellToolEnabled => ToolRuntime.Live.ShellToolEnabled;
-        public bool WebSearchEnabled => ToolRuntime.Live.WebSearchEnabled;
-        public bool PatchApplicationEnabled => ToolRuntime.Live.PatchApplicationEnabled;
-        public IReadOnlySet<string> WebSearchKeywords => ToolRuntime.Live.WebSearchKeywords;
-        public IReadOnlySet<string> PatchAllowedSuffixes => ToolRuntime.Live.PatchAllowedSuffixes;
-        public IReadOnlySet<string> BlockedFileSuffixes => ToolRuntime.Live.BlockedFileSuffixes;
-        public IReadOnlySet<string> BlockedPathParts => ToolRuntime.Live.BlockedPathParts;
-        public string ScriptDirectory => ToolRuntime.Live.ScriptDirectory;
-        public string BackupDirectory => ToolRuntime.Live.BackupDirectory;
+        // v3.8.18 — these used to delegate to ToolRuntime.Live, i.e. straight back to process-global
+        // state. An external review pointed out that made this file a test of PROFILE isolation
+        // dressed as a test of execution isolation: two hosts could differ on file gates while
+        // sharing every shell, web, patch and blocklist answer. They are now per-host values.
+        public bool ShellToolEnabled => _options.ShellTool;
+        public bool WebSearchEnabled { get; init; }
+        public bool PatchApplicationEnabled { get; init; }
+        public IReadOnlySet<string> WebSearchKeywords { get; init; } = new HashSet<string>();
+        public IReadOnlySet<string> PatchAllowedSuffixes { get; init; } = new HashSet<string> { ".cs", ".md" };
+        public IReadOnlySet<string> BlockedFileSuffixes { get; init; } = new HashSet<string> { ".db" };
+        public IReadOnlySet<string> BlockedPathParts { get; init; } = new HashSet<string> { ".git" };
+        public string ScriptDirectory { get; init; } = ".";
+        public string BackupDirectory { get; init; } = "data/backups";
     }
 
     /// <summary>
@@ -98,8 +101,9 @@ public class RuntimeIsolationTests : IDisposable
     {
         var host = RuntimeHost.Create(db, options);
         var modules = new ModuleHost(host.Memory, NullEventBus.Instance);
+        var gates = new HostGates(options);
         modules.Load(new ToolsModule(
-            new WorkspacePathGuard(options.AllowedWorkspaceRoot), new HostGates(options)));
+            new WorkspacePathGuard(options.AllowedWorkspaceRoot, gates), gates));
         host.Queen.AdoptModuleTools(modules.ContributedTools);
         return host;
     }

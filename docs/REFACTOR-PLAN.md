@@ -1,8 +1,9 @@
 # ANTHILL Core Refactor — Migration Plan
 
-**Status:** **COMPLETE — phases 0 through 7 shipped.** Two items superseded on measurement and
-said so; nothing silently dropped.
-**Baseline:** v3.8.2, `main` · **Final:** v3.8.17
+**Status:** **CLOSED at v3.8.18.** Phases 0–7 shipped by v3.8.17; v3.8.18 closed the acceptance gap
+an external review found. Two plan items were superseded on measurement and said so; two success
+criteria remain honestly partial.
+**Baseline:** v3.8.2, `main` · **Final:** v3.8.18
 **Goal:** a smaller, stable core that runs with no AI provider and no UI, while preserving public behavior.
 
 | Measure | Baseline (v3.8.2) | Final (v3.8.17) |
@@ -796,10 +797,10 @@ fallback instead of throwing, because a manual gate is one nobody performs twice
 |---|---|---|
 | Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 24,973, down 9,274 (27%), nothing deleted |
 | Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) | **MET** — v3.8.5, with a test class for the case |
-| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | **MET** — `UiAbsenceTests`, v3.8.17; a missing asset degrades to its fallback |
+| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | **MET (v3.8.18)** — the `no-ui-boot` CI job publishes with `-p:AnthillNoUi=true`, asserts the assets are absent from the binary, boots it and requires `/health`. v3.8.17 claimed this on `UiAbsenceTests`, which only proved a null check — see §7 |
 | Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) | **MET** — `ModuleBoundaryTests`, v3.8.8, pulled forward |
-| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | **MET** — no test was deleted across fifteen releases; two were re-composed and said so |
-| Easier feature development | A new integration is added as a module with zero Core edits | partial — `Anthill.Modules.Tools` (v3.8.16) was a new module, but it took the seam apart rather than plugging into it: three SDK contracts and a `Queen` method. The criterion means an ADDITION, and that has still not been demonstrated |
+| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | **PARTIAL, corrected v3.8.18** — the second clause holds: no test was deleted in seventeen releases, and the three that were re-composed said so. The first does NOT: v3.8.17 was merged with CI runs #196 and #197 red, and only #198 was green. v3.8.15 was tagged after a green run; v3.8.16 was not built before its PR. The final tree is green, which is not the same claim |
+| Easier feature development | A new integration is added as a module with zero Core edits | **PARTIAL, now measured (v3.8.18)** — `ZeroCoreEditModuleTests` builds the fixture. A module written against the SDK alone registers a tool the core has never heard of, is offered to models, and runs on the system-internal and control-plane paths, with no core edit. It is REFUSED to every mission agent, because `ToolAuthorization`'s role allowlists and execution contracts are closed lists compiled into the core. So: extensible for capability, not for permission |
 
 ## 5. Risks
 
@@ -846,7 +847,12 @@ produced them is.
 
 4. **One release in the working tree at a time.** Do not start edits for N+1 until N is committed.
 
-5. **Measure the seam; do not estimate it.** Every phase that came in smaller than feared did so
+5. **A guard that cannot fail is not a guard.** Where a check depends on configuration, make the
+   configurations DISAGREE; where it depends on a build, build it. Five of the six findings in §7
+   passed because ambient and injected policy happened to agree in the test process, or because the
+   assertion was cheaper than the claim written above it.
+
+6. **Measure the seam; do not estimate it.** Every phase that came in smaller than feared did so
    because the coupling was counted rather than inferred from names: twenty `Common` imports in the
    homelab were two helpers, 151 `ToolResult` references were 13 edits, and `ToolDefinition`'s
    "entanglement with `ToolAuthorization` and `ToolInventory`" was three lines. Every phase that
@@ -855,3 +861,38 @@ produced them is.
 
 If a session proposes something that contradicts this document, this document is probably right —
 it is the record of what was measured rather than what was assumed.
+
+
+---
+
+## 7. The sign-off review, and what it found
+
+v3.8.17 declared the refactor complete. An external review disagreed with the framing —
+"implementation complete, acceptance incomplete" — and was right on all six of its findings. They are
+recorded here rather than quietly fixed, because five of the six are the SAME defect wearing
+different clothes: **a check that answers a question adjacent to the one being asked, and passes.**
+
+| Finding | Verdict | Closed by |
+|---|---|---|
+| `UiAbsenceTests` is wrong-green — assets are `EmbeddedResource`, so they cannot be absent; the test asks for a fabricated name and watches a null check | valid, and it had been used to flip a success-criteria row to MET | the `no-ui-boot` CI job: publishes with `-p:AnthillNoUi=true`, asserts the binary contains no assets, boots it, requires `/health` |
+| `SafetyPolicy` is publicly mutable process-global state | valid — any assembly referencing the SDK could clear the SSRF blocklist for the whole process | `Configure`/`Reset` are `internal`, visible only to `Anthill.Core` and the test projects |
+| Injected tool policy is bypassed at execution: `ApplyPatchTool` held `_options` and called `ValidateSafePatchPath(filePath)` without it; `WorkspacePathGuard.IsBlockedPath` read `AnthillRuntime` | valid, and wider than reported — `WebSearchTool` had it too, on the SSRF blocklist | options threaded end to end; `ToolPolicyIsolationTests` makes ambient and injected policy DISAGREE, which is the only way to catch it |
+| The two-host test delegates shell/web/patch/suffix/blocklist back to global state, so it tests profile isolation, not execution isolation | valid — `HostGates` said so in its own comment | `HostGates` holds per-host values; the guard is constructed with them |
+| Extensibility is structurally coupled to Core — contributed tool names must exist in `ToolInventory` | valid | `ZeroCoreEditModuleTests` measures exactly where it stops: capability yes, permission no |
+| "Full suite green at every gate" is not accurate — v3.8.17 merged over red #196 and #197 | valid | the criteria table now says so |
+
+**The pattern is worth more than the fixes.** Four of these passed because the process they ran in
+had ambient and injected policy agreeing, or because the assertion was cheaper than the claim above
+it. The rule that follows is rule 6 in §6: *a guard that cannot fail is not a guard.* Where a check
+depends on configuration, make the configurations disagree; where it depends on a build, build it.
+
+**What is still open at close.** Two criteria are partial and stay partial:
+
+- `SafetyPolicy` remains process-global. v3.8.18 fixed WHO may write it, and threaded the tool path
+  so a host's tools enforce that host's rules — but `UrlSafety` and `Validation` still resolve
+  through it when called with no argument. Genuinely host-scoped policy means an options object on
+  every call site, and that is a change to the core's shape rather than a defect to patch.
+- A module can add capability without a core edit, and cannot grant permission for it. Lifting that
+  means either module-supplied authorization grants — the mechanism operator-defined tools already
+  have — or moving role allowlists out of compiled tables. Both change how permission works, which is
+  coordination, which is core. The boundary refusing is arguably it working.

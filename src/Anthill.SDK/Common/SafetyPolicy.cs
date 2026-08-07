@@ -21,11 +21,22 @@ namespace Anthill.SDK.Common;
 /// precisely the failure v3.8.11 was written to avoid: a test that passes while the production path
 /// reads something else.
 ///
-/// WHY THE BUILT-IN FALLBACKS ARE STILL SAFE. Until a composition root calls <see cref="Configure"/>,
+/// WHY THE BUILT-IN FALLBACKS ARE STILL SAFE. Until <c>Anthill.Core</c> calls <see cref="Configure"/>,
 /// these return the same values <c>AnthillRuntime</c> declares as ITS defaults. An unconfigured
 /// process is therefore never more permissive than a configured one — it just cannot see subsequent
 /// operator edits. <c>Anthill.Core</c> installs the live readers from a module initializer, so any
 /// process that loads the core is configured before its first line of colony code runs.
+///
+/// WHO MAY CHANGE IT. v3.8.18 — <see cref="Configure"/> and <see cref="Reset"/> are INTERNAL, visible
+/// only to <c>Anthill.Core</c> and the test projects. They were public, which meant any assembly
+/// referencing the SDK could replace or clear the SSRF blocklist, the patch-path gates and the
+/// reserved tool names for the whole process. An external review named it, correctly: a safety
+/// policy anyone can overwrite is a default, not a policy.
+///
+/// This is process-global state and remains so. What changed is who can write it. Genuinely
+/// host-scoped policy means threading it through every call site, and the tool path now does exactly
+/// that — see <c>ToolsModule</c>, which takes its own gates and SSRF policy — but <c>UrlSafety</c>
+/// and <c>Validation</c> still resolve here when called without arguments.
 /// </summary>
 public static class SafetyPolicy
 {
@@ -84,7 +95,7 @@ public static class SafetyPolicy
     /// definition is constructed. <c>Anthill.Core</c> calls this from a module initializer, so tests
     /// that never build a colony still get the live readers.
     /// </summary>
-    public static void Configure(
+    internal static void Configure(
         ISsrfPolicy? ssrf = null,
         IToolRuntimeOptions? toolOptions = null,
         IToolDefinitionPolicy? toolDefinitions = null)
@@ -98,7 +109,7 @@ public static class SafetyPolicy
     }
 
     /// <summary>Restores the built-in fallbacks. For tests that need to prove the unconfigured path.</summary>
-    public static void Reset()
+    internal static void Reset()
     {
         lock (Gate)
         {
@@ -117,21 +128,6 @@ public static class SafetyPolicy
         public IReadOnlyList<string> BlockedHostSuffixes { get; } = new[] { ".localhost", ".local" };
     }
 
-    /// <summary>
-    /// Mirrors <c>ToolInventory.Implemented</c>, <c>ToolAuthorization.MissionAgentForbidden</c> and
-    /// the kinds <c>UserToolRegistrar.Default()</c> constructs, as the core declares them today.
-    ///
-    /// A duplicated list is a drift hazard and this one is deliberate, for the same reason
-    /// <see cref="BuiltInSsrfPolicy"/> is: the alternative to mirroring is an unconfigured process
-    /// with an EMPTY reserved-name set, which is not a smaller failure than drift — it is a process
-    /// in which a definition may take a built-in's name. Mirroring makes the unconfigured path
-    /// strictly no more permissive than the configured one; it merely stops tracking later edits.
-    ///
-    /// The drift is closed by a test rather than by discipline: <c>ToolDefinitionPolicyTests</c>
-    /// asserts this set equals the core's live tables, so ADDING A TOOL to the inventory and
-    /// forgetting this list fails the build rather than quietly widening what a definition may
-    /// shadow in a process that never loaded the core.
-    /// </summary>
     /// <summary>
     /// Every gate off, every list empty. See <see cref="RequiredToolOptions"/> for why the fallback
     /// is closed rather than mirroring the core's defaults the way the other two do.
@@ -153,6 +149,21 @@ public static class SafetyPolicy
         public string BackupDirectory => "";
     }
 
+    /// <summary>
+    /// Mirrors <c>ToolInventory.Implemented</c>, <c>ToolAuthorization.MissionAgentForbidden</c> and
+    /// the kinds <c>UserToolRegistrar.Default()</c> constructs, as the core declares them today.
+    ///
+    /// A duplicated list is a drift hazard and this one is deliberate, for the same reason
+    /// <see cref="BuiltInSsrfPolicy"/> is: the alternative to mirroring is an unconfigured process
+    /// with an EMPTY reserved-name set, which is not a smaller failure than drift — it is a process
+    /// in which a definition may take a built-in's name. Mirroring makes the unconfigured path
+    /// strictly no more permissive than the configured one; it merely stops tracking later edits.
+    ///
+    /// The drift is closed by a test rather than by discipline: <c>ToolDefinitionPolicyTests</c>
+    /// asserts this set equals the core's live tables, so ADDING A TOOL to the inventory and
+    /// forgetting this list fails the build rather than quietly widening what a definition may
+    /// shadow in a process that never loaded the core.
+    /// </summary>
     /// <remarks>
     /// Internal rather than private so <c>ToolDefinitionPolicyTests</c> can compare it against the
     /// core's tables directly. The alternative — reading it back through

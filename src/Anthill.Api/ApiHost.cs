@@ -130,7 +130,8 @@ public static partial class ApiHost
             // v3.8.16: the six tools that act on the machine. The guard is built here rather than
             // inside the module because it reads the current mission's workspace through an ambient
             // scope, and missions are core. Same root the Queen builds hers from.
-            new ToolsModule(new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot)));
+            new ToolsModule(new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot, ToolRuntime.Live),
+                ToolRuntime.Live, SsrfRuntime.Live));
 
         Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;

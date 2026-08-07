@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v3.8.18 - refactor sign-off: the acceptance gap
+
+v3.8.17 declared the Core/Modules refactor complete. An external review disagreed with the framing —
+"implementation complete, acceptance incomplete" — and was right on all six findings. This release
+closes them. `docs/REFACTOR-PLAN.md` §7 records the review in full.
+
+Five of the six were the same defect in different clothes: **a check that answers a question adjacent
+to the one being asked, and passes.**
+
+- **Injected tool policy now executes.** `ApplyPatchTool` held an `IToolRuntimeOptions` and called
+  `ValidateSafePatchPath(filePath)` WITHOUT it, so the suffix allow-list and blocked-path parts came
+  from process-global state while the tool's own gates came from the contract. `WebSearchTool` had
+  the same defect on the SSRF blocklist — wider than reported. `WorkspacePathGuard.IsBlockedPath`
+  read `AnthillRuntime` directly and now takes options too. `ToolsModule` threads both through.
+- **The doc comment was the worse half.** `ApplyPatchTool`'s header asserted "None of that moved: the
+  gates arrive through `IToolRuntimeOptions`" — false for that one path, in the file's own summary,
+  on the tool that writes to disk. Corrected in place rather than deleted.
+- **`SafetyPolicy.Configure`/`Reset` are `internal`.** They were public, so any assembly referencing
+  the SDK could replace or clear the SSRF blocklist, patch-path gates and reserved tool names for the
+  whole process. Visible now only to `Anthill.Core` and the test projects. It remains process-global;
+  what changed is who may write it, and the plan says so rather than claiming more.
+- **A real no-UI gate.** `-p:AnthillNoUi=true` drops every UI `EmbeddedResource`, and the new
+  `no-ui-boot` CI job publishes with it, asserts the assets are genuinely absent from the binary,
+  boots it, and requires `/health` and a degraded `/ui`. The previous gate — `UiAbsenceTests` asking
+  for a fabricated resource name — proved a null check, and had been used to mark the criterion met.
+  That test survives with an honest docstring and no claim on the criterion.
+- **The isolation test stops delegating.** `RuntimeIsolationTests.HostGates` sent shell, web, patch,
+  suffix and blocklist policy straight back to `ToolRuntime.Live`, making it a test of profile
+  isolation dressed as execution isolation. Per-host values now, and `ToolPolicyIsolationTests` makes
+  ambient and injected policy DISAGREE — the only arrangement in which the bug above is visible.
+- **The last criterion is measured, not asserted.** `ZeroCoreEditModuleTests` builds the fixture the
+  review asked for: a module written against the SDK alone registers a tool the core has never heard
+  of, is offered to models, and runs on the system-internal and control-plane paths with zero core
+  edits — and is REFUSED to every mission agent, because `ToolAuthorization`'s allowlists are closed
+  lists compiled into the core. Extensible for capability, not for permission. That is now a test
+  rather than a hedge.
+- **The record is corrected.** "Full suite green at every gate" was marked MET by restating it as
+  "no test was deleted" — answering the easier clause. v3.8.17 merged over red CI runs #196 and #197.
+  The criteria table says so.
+
+Also: a new rule in the plan's §6 — *a guard that cannot fail is not a guard.* And a doc block that
+had been orphaned onto the wrong class in `SafetyPolicy` since v3.8.16 is back where it belongs.
+
 ## v3.8.17 - the refactor ends
 
 Phases 6 and 7 (`docs/REFACTOR-PLAN.md`). Fifteen releases from v3.8.3, no capability removed, no

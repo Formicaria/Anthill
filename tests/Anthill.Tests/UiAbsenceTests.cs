@@ -4,17 +4,21 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// Phase 6's exit gate, made executable. v3.8.17.
+/// The FALLBACK behaviour of <c>ApiHost.LoadUiAsset</c>. Not the no-UI gate.
 ///
-/// The plan wrote it as a manual step — "boot the API with the UI assets absent; it must still serve
-/// the API" — which is the kind of gate that is performed once, on the day it is written, and never
-/// again. It is also the criterion the whole phase exists to satisfy: "the core runs without UI".
+/// v3.8.17 claimed this file was "phase 6's exit gate, made executable", and used it to mark the
+/// "core runs without UI" criterion met. That was wrong, and an external review said so: every asset
+/// is an <c>EmbeddedResource</c>, so they are required at BUILD time and cannot be absent from a
+/// binary that exists. Asking for a fabricated resource name exercises <c>FirstOrDefault</c>
+/// returning null. It proves a null check.
 ///
-/// The degradation lives in exactly one method, <c>ApiHost.LoadUiAsset</c>, so the gate does not
-/// need a running host to be checked. What matters is that a missing asset is a MISSING ASSET and
-/// not an exception: the console goes blank, the API keeps answering. An asset lookup that threw
-/// would take the whole host down at startup, and it would do so only in the deployment where the
-/// assets were stripped — which is to say, in production and never in a test.
+/// The real gate is the <c>no-ui-boot</c> CI job added in v3.8.18: it publishes with
+/// <c>-p:AnthillNoUi=true</c>, asserts the assets are genuinely not in the binary, boots it, and
+/// requires <c>/health</c> to answer. That needs a build and a running process, so it lives in CI
+/// rather than here.
+///
+/// What THIS file is still worth: the fallback path is what makes that boot survivable rather than a
+/// crash, and it is cheap to pin. Kept for that, and only that.
 /// </summary>
 public class UiAbsenceTests
 {
@@ -40,13 +44,12 @@ public class UiAbsenceTests
     }
 
     /// <summary>
-    /// And the assets that DO ship are still found after phase 6 moved them out of the API project.
+    /// And the assets that DO ship are found after phase 6 moved them out of the API project.
     ///
-    /// This is the other half of the move's risk, and the more dangerous half. `LoadUiAsset` matches
-    /// by resource-name SUFFIX, so a move that changed the resource name prefix would still have
-    /// worked, and one that changed the suffix would have served an empty console with no build
-    /// error and no failing test. The csproj pins each `LogicalName` for that reason; this asserts
-    /// the pinning holds.
+    /// This one is load-bearing in the ordinary build. `LoadUiAsset` matches by resource-name SUFFIX,
+    /// so a move that changed the prefix would still have worked and one that changed the suffix
+    /// would have served an empty console with no build error and no failing test. The csproj pins
+    /// each `LogicalName`; this asserts the pinning holds.
     /// </summary>
     [Theory]
     [InlineData("index.html")]
@@ -54,13 +57,14 @@ public class UiAbsenceTests
     [InlineData("mission-thread.js")]
     [InlineData("dashboard-grid.js")]
     [InlineData("dashboard-grid.css")]
-    public void EveryShippedAsset_IsStillEmbeddedAndFound(string asset)
+    public void EveryShippedAsset_IsEmbeddedAndFound(string asset)
     {
         var content = ApiHost.LoadUiAsset(asset);
 
         Assert.False(string.IsNullOrWhiteSpace(content),
             $"The embedded UI asset '{asset}' was not found. Phase 6 moved these to src/Anthill.UI/ "
           + "and pins each LogicalName in Anthill.Api.csproj — if that pinning is broken, the "
-          + "console serves blank with no other symptom.");
+          + "console serves blank with no other symptom. (This assertion assumes a normal build; "
+          + "the AnthillNoUi build deliberately has none of them, and is checked in CI instead.)");
     }
 }

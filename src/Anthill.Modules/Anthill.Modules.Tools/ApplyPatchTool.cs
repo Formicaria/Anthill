@@ -14,6 +14,12 @@ namespace Anthill.Modules.Tools;
 /// gates arrive through <see cref="IToolRuntimeOptions"/>, the containment through
 /// <see cref="IWorkspacePathGuard"/>, and <c>Validation.ValidateSafePatchPath</c> has been in the SDK
 /// since v3.8.12. What moved is only the part that reads and writes bytes.
+///
+/// CORRECTED IN v3.8.18. The paragraph above was written in v3.8.16 and was false for one path:
+/// <c>ValidateSafePatchPath</c> was called WITHOUT the injected options, so the suffix allow-list
+/// and blocked-path parts resolved through ambient state while every other gate on this tool used
+/// the contract. An external review found it. The comment being wrong was the worse half — it is
+/// the first thing a reader checking this boundary would have trusted.
 /// </summary>
 public sealed class ApplyPatchTool : ITool
 {
@@ -41,7 +47,11 @@ public sealed class ApplyPatchTool : ITool
         var newContent = patch.GetValueOrDefault("new_content") as string;
 
         string safePath;
-        try { Validation.ValidateSafePatchPath(filePath); safePath = _guard.ResolveSafePath(filePath); }
+        // v3.8.18 — _options is PASSED. It was held and not passed, so the suffix allow-list and
+        // blocked-path parts this tool validates against came from process-global state while the
+        // tool's own gates came from the injected contract. Two answers to one question, on the
+        // tool that writes to disk.
+        try { Validation.ValidateSafePatchPath(filePath, _options); safePath = _guard.ResolveSafePath(filePath); }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch path: {e.Message}", ToolFailure.Classify(e)); }
         if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to patch blocked internal/system path.", FailureClass.AuthorizationFailure);
         if (changeType is not ("add" or "modify"))
