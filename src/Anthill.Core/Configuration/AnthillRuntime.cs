@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.11";
+    public const string Version = "3.8.12";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -481,9 +481,11 @@ public static class AnthillRuntime
     public const int MemoryResultChars = 400;
     public const int MaxPatchProposalsPerSet = 10;
     public const int MaxPatchContentChars = 8000;
-    public const int ApprovalIdMaxChars = 80;
-    public const int PatchIdMaxChars = 80;
-    public const int SourceIdMaxChars = 80;
+    // v3.8.12 — these moved to Anthill.SDK.Common.Validation, which is what enforces them. Re-exported
+    // here so the operator-facing surface is unchanged while there is still exactly one declaration.
+    public const int ApprovalIdMaxChars = Validation.ApprovalIdMaxChars;
+    public const int PatchIdMaxChars = Validation.PatchIdMaxChars;
+    public const int SourceIdMaxChars = Validation.SourceIdMaxChars;
 
     public static readonly HashSet<string> BlockedFileSuffixes = new(StringComparer.OrdinalIgnoreCase) { ".db", ".sqlite", ".sqlite3" };
     public static readonly HashSet<string> BlockedPathParts = new(StringComparer.OrdinalIgnoreCase)

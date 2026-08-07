@@ -39,6 +39,8 @@ public sealed class ToolRuntime : IToolRuntimeOptions
 
     public IReadOnlySet<string> BlockedFileSuffixes => AnthillRuntime.BlockedFileSuffixes;
 
+    public IReadOnlySet<string> BlockedPathParts => AnthillRuntime.BlockedPathParts;
+
     public string ScriptDirectory => AnthillRuntime.ScriptDir;
 
     public string BackupDirectory => AnthillRuntime.BackupDir;
