@@ -33,6 +33,8 @@ public sealed class ToolRuntime : IToolRuntimeOptions
 
     public bool WebSearchEnabled => AnthillRuntime.EnableWebSearch;
 
+    public IReadOnlySet<string> WebSearchKeywords => AnthillRuntime.WebSearchKeywords;
+
     public bool PatchApplicationEnabled => AnthillRuntime.EnablePatchApplication;
 
     public IReadOnlySet<string> PatchAllowedSuffixes => AnthillRuntime.PatchAllowedSuffixes;
