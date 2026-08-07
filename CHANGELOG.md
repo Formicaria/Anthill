@@ -1,5 +1,39 @@
 # ANTHILL Changelog
 
+## v3.8.13 - The console stops interpreting model output
+
+An external review found it, and it holds up: a patch filename could dispatch a second action in the
+operator's session.
+
+- **`data-onclick` is a micro-interpreter, and a filename was being fed to it.** The attribute is
+  split on `;` and each fragment resolved against `window`. Patch links interpolated the file path
+  into a quoted argument, and `escapeHtml` does not encode apostrophes — so a filename could close
+  the argument, append a statement, and have it invoked when the operator clicked the link. Not
+  arbitrary JavaScript: the parser only calls existing globals. But `window.api` is one of them, so
+  it could reach privileged endpoints under the operator's session, skipping the confirmation the
+  real button would have shown.
+- **The server had no reason to stop it.** `ValidateSafePatchPath` rejects absolute paths, `..`,
+  blocked directories and disallowed suffixes. Quotes and semicolons are not path traversal, and a
+  `.md` filename containing them is legitimately valid. The two validators were each correct and the
+  gap was between them.
+- **Fixed structurally, not by escaping harder.** The filename now travels in a plain `data-file`
+  attribute and the action is a name looked up in a fixed map, with `hasOwnProperty` so the prototype
+  chain cannot resolve. Encoding alone would NOT have worked: `getAttribute()` decodes entities
+  before the parser runs, so an encoded apostrophe arrives as an apostrophe. `escapeHtml` encodes it
+  anyway, marked in the source as defence in depth rather than the fix.
+- **The other 45 interpolation sites were surveyed, not assumed.** Of 112 executable attributes, 46
+  interpolate a value. The rest carry server-generated UUIDs. Three that looked dangerous are
+  defended by unrelated validators — usernames by `^[a-z0-9_.-]+$`, tool names by
+  `^[a-z][a-z0-9_]{2,63}$`. That is worth stating plainly: those sites are safe by accident, because
+  a validator written for another purpose happens to exclude apostrophes. Two remain unresolved and
+  are recorded for follow-up — a Proxmox container id, which is external data ANTHILL never
+  validates, and a conversation approval action whose origin was not traced.
+- **`UiActionDispatchTests` guards the boundary by scanning source**, as the repo's other UI guards
+  do, since there is no browser harness. The load-bearing one matches on `file_path` reaching any
+  executable attribute rather than on the specific call that was removed, so reintroducing the defect
+  through a different handler still fails.
+
+
 ## v3.8.12 - The SSRF and patch-path guards join the SDK
 
 Phase 5c step 2 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the first half, `UrlSafety` and
