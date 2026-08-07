@@ -6,7 +6,8 @@ using Anthill.SDK.Common;
 namespace Anthill.Core.Configuration;
 
 /// <summary>
-/// Installs the core's live settings readers into the SDK's safety helpers. v3.8.12.
+/// Installs the core's live settings readers into the SDK's safety helpers. v3.8.12, extended in
+/// v3.8.15 with the tool-definition policy.
 ///
 /// WHY A MODULE INITIALIZER RATHER THAN A COMPOSITION-ROOT CALL. <c>UrlSafety</c> and
 /// <c>Validation</c> are static, and plenty of code reaches them without building a colony first —
@@ -24,6 +25,13 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 internal static class SafetyPolicyBootstrap
 {
+    /// <summary>
+    /// v3.8.15 adds <see cref="ToolDefinitionPolicy"/> for the same reason and with the same
+    /// hazard: <c>UserDefinedToolTests</c> validates definitions without a colony, and an
+    /// uninstalled policy would silently check them against the SDK's mirrored copy of the core's
+    /// tables rather than the tables themselves.
+    /// </summary>
     [ModuleInitializer]
-    internal static void Install() => SafetyPolicy.Configure(SsrfRuntime.Live, ToolRuntime.Live);
+    internal static void Install() =>
+        SafetyPolicy.Configure(SsrfRuntime.Live, ToolRuntime.Live, ToolDefinitionPolicy.Live);
 }

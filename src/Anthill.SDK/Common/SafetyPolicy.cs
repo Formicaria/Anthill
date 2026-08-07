@@ -4,8 +4,9 @@ using Anthill.SDK.Tools;
 namespace Anthill.SDK.Common;
 
 /// <summary>
-/// The settings <see cref="UrlSafety"/> and <see cref="Validation"/> fall back to when no options
-/// argument is passed. v3.8.12.
+/// The settings <see cref="UrlSafety"/>, <see cref="Validation"/> and
+/// <see cref="ToolDefinition.Validate"/> fall back to when no options argument is passed. v3.8.12,
+/// extended in v3.8.15.
 ///
 /// WHY THIS EXISTS AT ALL. Both helpers are static, and all 21 call sites across the core call them
 /// statically. Converting them to instance types would have rewritten every one of those call sites
@@ -31,6 +32,7 @@ public static class SafetyPolicy
     private static readonly object Gate = new();
     private static ISsrfPolicy _ssrf = new BuiltInSsrfPolicy();
     private static IToolRuntimeOptions? _toolOptions;
+    private static IToolDefinitionPolicy _toolDefinitions = new BuiltInToolDefinitionPolicy();
 
     /// <summary>The outbound blocklist <see cref="UrlSafety.IsBlockedOutboundUrl"/> uses by default.</summary>
     public static ISsrfPolicy Ssrf
@@ -49,16 +51,33 @@ public static class SafetyPolicy
     }
 
     /// <summary>
-    /// Called once at startup, before anything that validates a URL or a patch path is constructed.
-    /// <c>Anthill.Core</c> calls this from a module initializer, so tests that never build a colony
-    /// still get the live readers.
+    /// What a build reserves, refuses and can construct, for <see cref="ToolDefinition.Validate"/>.
+    /// v3.8.15.
+    ///
+    /// Never null, unlike <see cref="ToolOptions"/>. A definition validated against no policy at all
+    /// would be a definition free to shadow <c>apply_patch</c>, so the unconfigured path gets the
+    /// built-in mirror below rather than a permissive default.
     /// </summary>
-    public static void Configure(ISsrfPolicy? ssrf = null, IToolRuntimeOptions? toolOptions = null)
+    public static IToolDefinitionPolicy ToolDefinitions
+    {
+        get { lock (Gate) return _toolDefinitions; }
+    }
+
+    /// <summary>
+    /// Called once at startup, before anything that validates a URL, a patch path or a tool
+    /// definition is constructed. <c>Anthill.Core</c> calls this from a module initializer, so tests
+    /// that never build a colony still get the live readers.
+    /// </summary>
+    public static void Configure(
+        ISsrfPolicy? ssrf = null,
+        IToolRuntimeOptions? toolOptions = null,
+        IToolDefinitionPolicy? toolDefinitions = null)
     {
         lock (Gate)
         {
             if (ssrf is not null) _ssrf = ssrf;
             if (toolOptions is not null) _toolOptions = toolOptions;
+            if (toolDefinitions is not null) _toolDefinitions = toolDefinitions;
         }
     }
 
@@ -69,6 +88,7 @@ public static class SafetyPolicy
         {
             _ssrf = new BuiltInSsrfPolicy();
             _toolOptions = null;
+            _toolDefinitions = new BuiltInToolDefinitionPolicy();
         }
     }
 
@@ -79,5 +99,53 @@ public static class SafetyPolicy
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "localhost" };
 
         public IReadOnlyList<string> BlockedHostSuffixes { get; } = new[] { ".localhost", ".local" };
+    }
+
+    /// <summary>
+    /// Mirrors <c>ToolInventory.Implemented</c>, <c>ToolAuthorization.MissionAgentForbidden</c> and
+    /// the kinds <c>UserToolRegistrar.Default()</c> constructs, as the core declares them today.
+    ///
+    /// A duplicated list is a drift hazard and this one is deliberate, for the same reason
+    /// <see cref="BuiltInSsrfPolicy"/> is: the alternative to mirroring is an unconfigured process
+    /// with an EMPTY reserved-name set, which is not a smaller failure than drift — it is a process
+    /// in which a definition may take a built-in's name. Mirroring makes the unconfigured path
+    /// strictly no more permissive than the configured one; it merely stops tracking later edits.
+    ///
+    /// The drift is closed by a test rather than by discipline: <c>ToolDefinitionPolicyTests</c>
+    /// asserts this set equals the core's live tables, so ADDING A TOOL to the inventory and
+    /// forgetting this list fails the build rather than quietly widening what a definition may
+    /// shadow in a process that never loaded the core.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private so <c>ToolDefinitionPolicyTests</c> can compare it against the
+    /// core's tables directly. The alternative — reading it back through
+    /// <see cref="Reset"/> — would have the pinning test mutate process-wide safety state to
+    /// inspect it, which is a strange thing for a test of safety state to do.
+    /// </remarks>
+    internal sealed class BuiltInToolDefinitionPolicy : IToolDefinitionPolicy
+    {
+        public IReadOnlySet<string> ReservedToolNames { get; } =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "system_info",
+                "run_allowlisted_check",
+                "list_directory",
+                "read_text_file",
+                "write_text_file",
+                "web_search",
+                "shell_command",
+                "apply_patch",
+                "search_workspace",
+                "read_changed_files_summary",
+                "repository_index",
+            };
+
+        public IReadOnlySet<string> ForbiddenToolNames { get; } =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "apply_patch", "shell_command", "write_text_file",
+            };
+
+        public IReadOnlySet<ToolKind> BuildableKinds { get; } = new HashSet<ToolKind> { ToolKind.Http };
     }
 }

@@ -1,5 +1,47 @@
 # ANTHILL Changelog
 
+## v3.8.15 - the tool-definition contract joins the SDK
+
+Phase 5c step 3 (`docs/REFACTOR-PLAN.md`). `IToolKindExecutor` names `ToolDefinition` in its
+signature, so neither could move without the other — and the plan recorded the record as "entangled
+with `ToolAuthorization` and `ToolInventory`" without saying how much. Measured: three lines, all
+inside `Validate()`.
+
+- **`ToolDefinition`, `ToolKind`, `ToolKinds`, `IToolKindExecutor` and `UserDefinedTool` move to
+  `Anthill.SDK.Tools`.** Every one of their 60 references across six files was already bare — zero
+  partially- or fully-qualified forms, zero collisions — and all four projects have carried
+  `global using Anthill.SDK.Tools;` since v3.8.10, so no reference needed an edit. Nothing was
+  renamed and no shape was altered.
+- **The three checks that read the core now ask it.** A definition may not shadow a built-in
+  (`ToolInventory.Implemented`), may not claim a structurally forbidden name
+  (`ToolAuthorization.MissionAgentForbidden`), and may not name a kind this build cannot construct.
+  All three describe what the CORE registers, so none of them followed the record into the SDK.
+  They arrive through `IToolDefinitionPolicy`, resolved exactly as the SSRF and patch-path guards
+  have been since v3.8.12: an optional argument whose `null` reads a settable default that
+  `Anthill.Core` installs from the existing `[ModuleInitializer]`.
+- **The alternative was rejected for what it did to a test.** Splitting `Validate()` — shape in the
+  SDK, reserved names in `UserToolRegistrar` — needed no mirrored list at all, but it would have
+  retargeted `ADefinition_MayNotShadowABuiltIn` from the definition to the registrar. That test
+  asserts the load-bearing property of this whole feature, and moving its subject to preserve a
+  refactor is how a guard quietly starts checking something easier.
+- **`ToolKinds.Buildable` is now derived rather than declared.** It was a hand-maintained set beside
+  the enum, and a second kind would have had to be added in two places; it now reads the executors
+  `UserToolRegistrar.Default()` actually constructs, so "declared buildable" and "has an executor"
+  cannot disagree.
+- **The mirror is pinned, not trusted.** The SDK carries a copy of the core's tables for the
+  unconfigured case, because the alternative default is an EMPTY reserved-name set — a process in
+  which a definition may take a built-in's name. `ToolDefinitionPolicyTests` asserts the copy equals
+  the core's live tables and that the live policy reads them by reference rather than snapshotting
+  them, so adding a tool to the inventory and forgetting the mirror fails the build.
+
+`HttpToolKind` stays in the core: it needs `HttpClient`, and `ModuleBoundaryTests` forbids
+`System.Net.Http` in the SDK because everything inherits what the SDK depends on. `ToolRegistry`,
+`ToolAuthorization`, `ToolInventory`, `UserToolGrants` and `UserToolRegistrar` stay for the reason
+phase 5 opened with — registration, authorization and dispatch are coordination.
+
+`IModuleContext` gained no `RegisterToolKind`. The contracts are in place for one; adding the
+plumbing before anything ships a second kind would be building a seam against no requirement.
+
 ## v3.8.14 - TextUtil joins the SDK
 
 Phase 5c step 2, second half (`docs/REFACTOR-PLAN.md`). The widest of the three helper moves by
