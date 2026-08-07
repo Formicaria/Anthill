@@ -97,6 +97,13 @@ public class WorkspaceToolsTests : IDisposable
     /// difference between mapping a repository and guessing at one.
     ///
     /// Scribe's only allowed tool was the phantom, so it genuinely could dispatch nothing.
+    ///
+    /// v3.8.23: the list is now EMPTY, and the other three did not get their tools built. Their
+    /// contracts stopped naming tools that never existed — soldier's PolicyScan is an in-process
+    /// deterministic service and belongs out of a model's reach, medic needs orchestration to
+    /// assemble a typed failure context rather than a tool to fetch one, and archivist's write path
+    /// already runs through artifacts and would have been duplicated. Scribe remains the one role
+    /// that came off this list by having something BUILT for it, which is what this test measures.
     /// </summary>
     [Fact]
     public void Scribe_ComesOffTheBlockedList()
@@ -104,8 +111,13 @@ public class WorkspaceToolsTests : IDisposable
         var blocked = ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts);
 
         Assert.DoesNotContain("scribe", blocked);
-        // the three that remain are waiting on tools that genuinely are not built
-        Assert.Equal(new[] { "archivist", "medic", "soldier" }, blocked);
+        Assert.Empty(blocked);
+
+        // The control that keeps the assertion above meaningful: scribe is off the list because its
+        // tool EXISTS, not because its contract stopped asking for one. Without this, emptying every
+        // allowlist in the codebase would pass.
+        Assert.Contains("read_changed_files_summary", AntExecutionCatalog.Contracts["scribe"].AllowedTools);
+        Assert.True(ToolInventory.Exists("read_changed_files_summary"));
     }
 
     // ---- search ---------------------------------------------------------------------------------

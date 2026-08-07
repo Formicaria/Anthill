@@ -713,6 +713,46 @@ public sealed class ExecutionService : IExecutionService
     }
 
     /// <summary>
+    /// The tree the verdicts describe, as a first-class artifact. v3.8.23.
+    ///
+    /// A verification bundle without this is unfalsifiable: "build passed" is a claim about a
+    /// specific set of bytes in a specific directory, and until v3.8.23 the only record of which
+    /// directory that was is that it happened to be the primary workspace — which is precisely how
+    /// v3.8.22 shipped build verdicts that were true and irrelevant.
+    ///
+    /// Three hashes rather than one, because they answer three different questions: the base
+    /// revision says what the patch was applied to, the patch-set hash says what was asked for, and
+    /// the applied-tree hash says what actually landed. A replay that reproduces all three has
+    /// reproduced the verification; one that reproduces only the first two has reproduced the
+    /// intent.
+    /// </summary>
+    private void RecordWorkspaceSnapshot(Mission mission, Task task, PatchSet patchSet,
+        Verification.MaterializedPatchSet materialized)
+    {
+        try
+        {
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.WorkspaceSnapshot,
+                producerRole: "queen",   // the Queen materialises; the coder only proposes
+                missionId: mission.Id,
+                payload: Json.Dumps(new
+                {
+                    patch_set_id = patchSet.Id,
+                    base_revision = materialized.BaseRevision,
+                    patch_set_hash = materialized.PatchSetHash,
+                    applied_tree_hash = materialized.AppliedTreeHash,
+                    workspace_mode = materialized.Mode,
+                    applied_paths = materialized.AppliedPaths,
+                }, indented: true),
+                taskId: task.Id));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Could not record the workspace snapshot for task {task.Id}: {error.Message}");
+        }
+    }
+
+    /// <summary>
     /// Actually verify the patch. v3.8.21 — and this is a behaviour change, stated plainly.
     ///
     /// <c>VerificationRunner</c>, <c>BuildVerifier</c>, <c>TestVerifier</c>, <c>DiffVerifier</c>,
@@ -740,6 +780,50 @@ public sealed class ExecutionService : IExecutionService
 
         try
         {
+            // v3.8.23: write the patch set into a disposable copy of the workspace and verify THAT.
+            //
+            // v3.8.22 pointed every request at AnthillRuntime.AllowedWorkspaceRoot — the primary
+            // tree, which does not contain the patch. BuildVerifier therefore compiled the
+            // repository as it already was and reported success about code the proposal never
+            // touched. The gate ran; it just answered a question adjacent to the one asked, which is
+            // the sixth instance of that shape in this codebase and the reason this release exists.
+            var materialization = Verification.PatchSetMaterializer.Materialize(
+                patchSet, AnthillRuntime.AllowedWorkspaceRoot);
+
+            if (!materialization.Ok)
+            {
+                // Fail CLOSED. An unverifiable patch set is not a verified one, and the most likely
+                // cause of a materialisation failure is a proposal whose path escapes the sandbox —
+                // which is a security finding, not a skip.
+                _memory.LogEvent(mission.Id, "patch_set_materialization_failed",
+                    $"Patch set {patchSet.Id} could not be written to an isolated workspace: {materialization.Problem}",
+                    task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["problem"] = materialization.Problem });
+                task.DeterministicBlock =
+                    $"patch set {patchSet.Id} could not be materialised for verification: {materialization.Problem}";
+                return;
+            }
+
+            using var materialized = materialization.Materialized!;
+
+            // The scope is load-bearing, not decoration. RunAllowlistedCheckTool resolves its working
+            // directory and its check catalog from WorkspaceCapabilityManifest.ForCurrentMission()
+            // when a scope is active, and from its injected workdir otherwise — so without this,
+            // an ambient mission workspace could silently redirect the build back to a different
+            // tree. Entering the scope for the patched sandbox makes the manifest describe the tree
+            // being verified, and gets check SELECTION from it too: a Node patch set gets Node
+            // checks rather than dotnet_build.
+            using var scope = Workspaces.MissionWorkspaceScope.Enter(new Workspaces.MissionWorkspace
+            {
+                Id = $"verify-{patchSet.Id}",
+                MissionId = mission.Id,
+                Root = materialized.Root,
+                Mode = materialized.Mode,
+                SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
+                BaseRevision = materialized.BaseRevision,
+                State = Workspaces.WorkspaceState.Active,
+            });
+
             // v3.8.22: one request PER PROPOSAL, carrying the change. v3.8.21 sent a single request
             // with neither ChangedPath nor content, which DiffVerifier answers with "no changed path
             // supplied — nothing to verify" and a FAIL. It also passed task.TaskType unresolved, so
@@ -747,12 +831,16 @@ public sealed class ExecutionService : IExecutionService
             // Both halves are fixed here and in VerificationPolicy.Canonical.
             var requests = patchSet.Proposals.Select(p => new Verification.VerificationRequest(
                 TaskType: task.TaskType,
-                WorkspaceRoot: AnthillRuntime.AllowedWorkspaceRoot,
+                WorkspaceRoot: materialized.Root,
                 ChangedPath: p.FilePath,
                 NewContent: p.NewContent,
                 OldContent: p.OldContent)).ToList();
 
             var bundles = _verification.RunForEach(requests);
+
+            // The snapshot the verdicts are bound to. Recorded BEFORE the results, so evidence that
+            // references it can never point at a snapshot row that does not exist.
+            RecordWorkspaceSnapshot(mission, task, patchSet, materialized);
 
             var store = (Anthill.SDK.Artifacts.IEvidenceStore)_memory;
             for (var i = 0; i < bundles.Count; i++)
@@ -762,9 +850,12 @@ public sealed class ExecutionService : IExecutionService
                         deterministic: verdict.Deterministic,
                         passed: verdict.Passed,
                         missionId: mission.Id,
-                        // The proposal the verdict is ABOUT. Evidence that cannot be traced to the
-                        // change it judged is why per-proposal verification was worth the work.
-                        detail: $"[{patchSet.Proposals[i].FilePath}] {verdict.Summary}",
+                        // The proposal the verdict is ABOUT, and the SNAPSHOT it was computed
+                        // against. Evidence that cannot be traced to the change it judged is why
+                        // per-proposal verification was worth the work; evidence that cannot be
+                        // traced to the tree it ran in is why v3.8.22's build verdicts were
+                        // meaningless — they were true statements about the wrong workspace.
+                        detail: $"[{patchSet.Proposals[i].FilePath} @ {materialized.AppliedTreeHash[..12]}] {verdict.Summary}",
                         taskId: task.Id));
 
             // The set is promotable only if EVERY proposal is. One unverifiable change in a set is an
@@ -784,6 +875,12 @@ public sealed class ExecutionService : IExecutionService
                     ["resolved_task_type"] = Verification.VerificationPolicy.Canonical(task.TaskType),
                     ["required_verifiers"] = string.Join(",", Verification.VerificationPolicy.For(task.TaskType)),
                     ["deterministic_evidence"] = bundles.All(b => b.HasDeterministicEvidence),
+                    // Which tree the verdicts describe. Without these an operator reading a passing
+                    // build has no way to tell whether it compiled the patch or the repository.
+                    ["base_revision"] = materialized.BaseRevision,
+                    ["patch_set_hash"] = materialized.PatchSetHash,
+                    ["applied_tree_hash"] = materialized.AppliedTreeHash,
+                    ["workspace_mode"] = materialized.Mode,
                     ["blocked_reasons"] = string.Join("; ",
                         failed.SelectMany(b => b.BlockedReasons.Concat(
                             b.Results.Where(r => !r.Passed).Select(r => $"{r.Verifier}: {r.Summary}")))

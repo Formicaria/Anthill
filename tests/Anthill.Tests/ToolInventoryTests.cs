@@ -167,22 +167,49 @@ public class ToolInventoryTests
     /// down deliberately, and a fifth role joining the list has to be an explicit decision.
     ///
     /// v3.5.0: SCRIBE CAME OFF THIS LIST. read_changed_files_summary was built as a scoped workspace
-    /// tool, so the role that writes release notes can dispatch something for the first time. The
-    /// pin moving is the deliberate decision this test exists to force — three roles remain, each
-    /// waiting on a tool that is genuinely not built yet (policy_scan, read_failure_context,
-    /// write_memory_candidate).
+    /// tool, so the role that writes release notes can dispatch something for the first time.
+    ///
+    /// v3.8.23: THE LIST IS NOW EMPTY, and the way it emptied is the point. The three remaining
+    /// roles — soldier, medic, archivist — did not get their tools built. Their contracts stopped
+    /// naming tools that do not exist, because on inspection none of the three should have been a
+    /// tool: soldier's PolicyScan is a deterministic in-process service and belongs out of a model's
+    /// reach, medic needs orchestration to ASSEMBLE a typed failure context rather than a tool to go
+    /// fetch one, and archivist's write path already exists through artifacts and would have been
+    /// duplicated. Building all three would have produced the same green with more attack surface
+    /// and one redundant write channel.
+    ///
+    /// The assertion is now "empty", which is stronger than the old pin: a role newly blocked on an
+    /// unbuilt tool fails the build immediately rather than being added to a tolerated list.
     /// </summary>
     [Fact]
-    public void TheRolesBlockedByUnbuiltTools_AreExactlyTheKnownOnes()
+    public void NoRoleIsBlockedByAnUnbuiltTool()
     {
         var blocked = ToolInventory.RolesBlockedByMissingTools(AntExecutionCatalog.Contracts);
 
-        Assert.Equal(new[] { "archivist", "medic", "soldier" }, blocked);
+        Assert.Empty(blocked);
 
         // tester is the control: its one allowed tool is real, so a contract is not INHERENTLY
-        // blocking. Without this the test above would still pass if contracts stopped working
+        // blocking. Without this the assertion above would still pass if contracts stopped working
         // entirely, and would be measuring nothing.
-        Assert.DoesNotContain("tester", blocked);
         Assert.True(ToolInventory.Exists("run_allowlisted_check"));
+        Assert.Contains("run_allowlisted_check", AntExecutionCatalog.Contracts["tester"].AllowedTools);
+    }
+
+    /// <summary>
+    /// The Planned list is empty and must STAY load-bearing. A contract naming a tool that is in
+    /// neither Implemented nor Planned is a phantom, and this is the guard that catches the next one
+    /// the moment it is written rather than three releases later.
+    /// </summary>
+    [Fact]
+    public void NoContractNamesAToolThatDoesNotExist()
+    {
+        var phantoms = AntExecutionCatalog.Contracts
+            .SelectMany(kv => kv.Value.AllowedTools.Select(t => (Role: kv.Key, Tool: t)))
+            .Where(x => !ToolInventory.Exists(x.Tool) && !ToolInventory.Planned.Contains(x.Tool))
+            .ToList();
+
+        Assert.True(phantoms.Count == 0,
+            "These contracts name tools nothing implements: "
+            + string.Join(", ", phantoms.Select(p => $"{p.Role}->{p.Tool}")));
     }
 }

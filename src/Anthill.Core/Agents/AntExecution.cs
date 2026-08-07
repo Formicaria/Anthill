@@ -23,6 +23,43 @@ public enum AntRuntimeKind
 
 public enum AntWorkState { Offline, Idle, Assigned, Running, Waiting, Blocked, Failed }
 
+/// <summary>
+/// HOW a role gets scheduled. v3.8.23.
+///
+/// Declared on the contract rather than inferred, because the four modes have genuinely different
+/// safety properties and the difference was previously invisible: every role was, in principle,
+/// something the planner could put in a plan. That is wrong for four of the twelve in ways that
+/// cause real defects.
+///
+/// The medic is the clearest case. Planning a diagnosis before anything has failed gives it nothing
+/// to diagnose — <c>MedicAnt.Execute</c> opens by returning Blocked when no failed task exists, which
+/// is a handler defending itself against a scheduler that should never have called it. The archivist
+/// is the mirror image: it needs a TERMINAL mission and the planner schedules it while tasks are
+/// still running.
+///
+/// And the three safety roles must not depend on a model remembering to include them. A plan that
+/// omits the tester is not a plan that skipped a step; it is a plan whose patches are unverified,
+/// produced by exactly the component least able to be relied on for that.
+/// </summary>
+public enum SchedulingMode
+{
+    /// <summary>The planner may include this role in a plan. The default, and correct for the
+    /// roles that do the mission's actual work.</summary>
+    PlannerSelectable,
+
+    /// <summary>Inserted by POLICY whenever its inputs exist, whatever the plan says. Tester,
+    /// soldier and verifier — the steps a plan must not be able to omit.</summary>
+    PolicyInserted,
+
+    /// <summary>Runs only in response to a typed retryable failure. The medic; never scheduled
+    /// speculatively, and bounded by a repair budget.</summary>
+    FailureTriggered,
+
+    /// <summary>Runs after the canonical mission evaluation is persisted — a lifecycle worker rather
+    /// than a planner task. The archivist.</summary>
+    PostFinalization,
+}
+
 /// <summary>Versioned execution contract for mission agents (spec §4.2). The runtime rejects
 /// tasks that do not match the assigned role's contract.</summary>
 public sealed record AntExecutionContract(
@@ -37,8 +74,26 @@ public sealed record AntExecutionContract(
     bool AllowsModelCalls,
     bool AllowsSideEffects,
     bool ProducesPatchProposals,
-    ModelRequirement? Model = null)
+    ModelRequirement? Model = null,
+    // v3.8.23. Defaulted to PlannerSelectable so the six contracts that predate this parameter keep
+    // their existing meaning without being rewritten — and then four of them immediately override
+    // it, because tester/soldier/medic/archivist were never really planner-selectable and the
+    // declaration is what makes that checkable.
+    SchedulingMode Scheduling = SchedulingMode.PlannerSelectable,
+    // Artifact schemas this role needs as INPUT before it can run. v3.8.23.
+    //
+    // Empty means "no typed input required", which is the honest state for every role today: tasks
+    // still hand each other prose, and until that changes a declared input requirement would be a
+    // promise the runtime cannot keep. Declared now so the vocabulary exists before the first
+    // consumer needs it — the ui_cartographer -> coder dependency is the case that will use it.
+    IReadOnlySet<string>? RequiredInputArtifactTypes = null)
 {
+    private static readonly IReadOnlySet<string> NoInputs =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Never null to a caller, for the same reason <see cref="ModelNeeds"/> is not.</summary>
+    public IReadOnlySet<string> RequiredInputs => RequiredInputArtifactTypes ?? NoInputs;
+
     public bool SupportsTaskType(string taskType) =>
         SupportedTaskTypes.Count == 0 || SupportedTaskTypes.Contains(taskType ?? "");
 
@@ -194,11 +249,138 @@ public static class AntExecutionCatalog
     private static IReadOnlySet<string> S(params string[] xs) => xs.ToHashSet(StringComparer.OrdinalIgnoreCase);
     private const string V = "1"; // contract version for every Stage A declaration
 
-    /// <summary>Versioned contracts for the specialist roles (spec §6). Declared now, enforced in
-    /// Stage B (dispatch) and honored by handlers in Stage D. NO role here has apply_patch, ever.</summary>
+    /// <summary>
+    /// Versioned contracts for EVERY mission role (spec §4.2/§6). Declared in Stage A, enforced in
+    /// Stage B (dispatch) and honored by handlers in Stage D. NO role here has apply_patch, ever.
+    ///
+    /// v3.8.23 — the six CORE ants join. Until this release this table held only the six specialists,
+    /// which meant the roles that do almost all of the colony's actual work — researcher, web, file,
+    /// coder, builder, verifier — ran with no declared surface at all: no supported task types, no
+    /// tool allowlist, no forbidden list, no model requirement. Worse, <c>AntExecutorCatalog</c>
+    /// only REQUIRED a contract for specialists, so their absence was not a gap the runtime could
+    /// see. The colony's most privileged role (the coder, which produces patches) was its least
+    /// specified.
+    ///
+    /// These six are written from what the handlers MEASURABLY do — the tools they dispatch, the
+    /// artifacts they emit, the task types the planner assigns them — not from what the roadmap
+    /// wants them to do. Where reality is thinner than the spec, the contract states reality and the
+    /// gap is left visible; a contract that describes an aspiration is a contract the runtime will
+    /// enforce against work nobody is doing.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, AntExecutionContract> Contracts =
         new Dictionary<string, AntExecutionContract>(StringComparer.OrdinalIgnoreCase)
     {
+        // ---- core mission ants (v3.8.23) -------------------------------------------------------
+
+        ["researcher"] = new("researcher", V,
+            SupportedTaskTypes: S("research", "section_analysis", "synthesis"),
+            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead),
+            // What ResearcherAnt actually dispatches today. repository_index and search_workspace
+            // are what the spec wants it to use and are deliberately NOT listed: adding a tool to an
+            // allowlist does not make a handler call it, and an allowlist that grants unused reach
+            // is how a role's real surface stops matching its declared one.
+            AllowedTools: S("system_info", "list_directory"),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("text"),
+            AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),
+            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
+            // Context, and nothing else. It assembles a brief from the goal, recalled memory and a
+            // directory listing, and emits prose — so it needs neither structured output nor tool
+            // calling, and claiming either would be a requirement nothing checks against reality.
+            // The FIRST draft of this contract said `StructuredOutput: false`, which is identical to
+            // ModelRequirement.None and declares nothing at all; AntModelFitnessTests caught it.
+            // A declaration that looks like one and isn't is the exact failure this release is about.
+            Model: new ModelRequirement(MinContextTokens: 8_000)),
+
+        ["web"] = new("web", V,
+            SupportedTaskTypes: S("external_research"),
+            RequiredCapabilities: S(Capability.ModelInvoke, Capability.NetworkHttpPublic),
+            // system_info is not dispatched by WebResearchAnt today, and is here anyway: the legacy
+            // RoleAllowedTools table granted it, and a contract SHORT-CIRCUITS that table. Dropping
+            // it would silently narrow the role in the same release that moves where its
+            // authorization is declared, and then a break would have two candidate causes. The
+            // narrowing can be its own decision, with its own evidence.
+            AllowedTools: S("web_search", "system_info"),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            // Genuinely typed since v3.8.21: WebResearchAnt persists a List<SourceRecord> and now
+            // emits it as source_set alongside the narrative.
+            ProducedArtifactTypes: S("source_set", "text"),
+            AllowedHandoffRoles: S("researcher", "builder", "verifier"),
+            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
+            // Its SourceRecords come from the web_search TOOL, not from parsing model output, so
+            // structured output is not required. What it does need is room for several sources and
+            // their snippets at once.
+            Model: new ModelRequirement(MinContextTokens: 8_000)),
+
+        ["file"] = new("file", V,
+            SupportedTaskTypes: S("file_inspection"),
+            RequiredCapabilities: S(Capability.RepoRead),
+            // system_info: legacy-parity, as for web above.
+            AllowedTools: S("list_directory", "read_text_file", "system_info"),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("file_set", "text"),
+            AllowedHandoffRoles: S("researcher", "ui_cartographer", "coder", "tester"),
+            // The one core ant that needs no model: it reads what is there and reports it. Stating
+            // ModelRequirement.None explicitly rather than leaving it null, as tester does.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: ModelRequirement.None),
+
+        ["coder"] = new("coder", V,
+            SupportedTaskTypes: S("patch_proposal", "patch", "code_change"),
+            // PatchPropose, never PatchApply. The two exist as separate capabilities precisely so
+            // this line can grant one and withhold the other.
+            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoPatchPropose),
+            // NO tools, deliberately. The coder proposes; it does not act. Its patch set reaches the
+            // world only through the Queen's materialisation and the operator's approval, and
+            // giving it apply_patch would collapse propose-then-approve into one step performed by
+            // the least accountable component in the system.
+            AllowedTools: S(),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("patch_set"),
+            AllowedHandoffRoles: S("tester", "soldier", "verifier"),
+            AllowsModelCalls: true, AllowsSideEffects: false,
+            // The only role for which this is true, and the reason its contract matters most.
+            ProducesPatchProposals: true,
+            // Strict structure by necessity: the output is parsed into a PatchSet and materialised
+            // into a real tree. Prose that looks like a patch is not a patch. Reasoning is required
+            // because it must hold a change across several files consistently.
+            Model: new ModelRequirement(StructuredOutput: true, Reasoning: true)),
+
+        ["builder"] = new("builder", V,
+            SupportedTaskTypes: S("build_answer", "synthesis"),
+            RequiredCapabilities: S(Capability.ModelInvoke),
+            AllowedTools: S(),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("text"),
+            AllowedHandoffRoles: S("verifier", "scribe"),
+            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
+            // The largest input of the three prose roles: it reads EVERY prior task result to write
+            // the operator's answer. Same shape as the archivist's context argument, one step down —
+            // it reads the mission's results rather than its whole history, so 16k rather than 32k.
+            // A short window here does not fail; it silently truncates the mission and produces a
+            // confident summary of part of it.
+            Model: new ModelRequirement(MinContextTokens: 16_000)),
+
+        ["verifier"] = new("verifier", V,
+            SupportedTaskTypes: S("verification"),
+            RequiredCapabilities: S(Capability.ModelInvoke),
+            AllowedTools: S(),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("text"),
+            AllowedHandoffRoles: S("builder", "scribe", "medic"),
+            // AllowsModelCalls stays TRUE and this is the honest, uncomfortable entry in the table.
+            // The spec wants the verifier to be a deterministic reader of the evidence store that
+            // never treats prose as proof. Today VerifierAnt asks a model and emits a verdict string
+            // that MissionVerification parses. That is a real gap, and writing the contract as if it
+            // were already closed would hide the one place where a model's opinion still reaches a
+            // verification decision. It is bounded by v3.8.22's rule — only deterministic evidence
+            // promotes, and a DeterministicBlock cannot be argued away — but it is not yet what the
+            // spec describes.
+            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: new ModelRequirement(StructuredOutput: true)),
+
+        // ---- specialist ants ------------------------------------------------------------------
+
         ["tester"] = new("tester", V,
             SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check"),
             RequiredCapabilities: S(Capability.ProcessExecuteReadonly, Capability.RepoRead),
@@ -209,23 +391,39 @@ public static class AntExecutionCatalog
             AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
             // Deterministic: it runs allowlisted checks and reports exit codes. No model, so no
             // model requirement — stating None explicitly rather than leaving it null.
-            Model: ModelRequirement.None),
+            Model: ModelRequirement.None,
+            // v3.8.23: inserted by policy, not chosen by a plan. A plan that omits the tester is not
+            // a plan that skipped a step — it is a plan whose patches are unverified.
+            Scheduling: SchedulingMode.PolicyInserted),
         ["soldier"] = new("soldier", V,
             SupportedTaskTypes: S("security_review", "patch_risk_review", "permission_review", "policy_review", "scope_review", "dependency_risk_review"),
             RequiredCapabilities: S(Capability.RepoRead),
-            AllowedTools: S("policy_scan"),
+            // v3.8.23: no tools. SoldierAnt calls PolicyScan as an in-process DETERMINISTIC
+            // SERVICE, which is the right shape for it — a policy verdict that must not be
+            // influenced by anything a model can reach. `policy_scan` was a contract-only name with
+            // no implementation, no registration and no dispatch; wrapping the service in a tool
+            // purely to make an inventory look complete would add a call path and no capability.
+            AllowedTools: S(),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("security_review"),
             AllowedHandoffRoles: S("verifier", "medic", "builder"),
             AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
             // A review is a VERDICT the colony branches on, so it must come back as a schema rather
             // than as prose to be parsed — the whole reason v3.2.0 removed prose-derived control
-            // flow. Tool calling is not required: policy_scan hands it the evidence.
-            Model: new ModelRequirement(StructuredOutput: true)),
+            // flow. Tool calling is not required: PolicyScan hands it the evidence directly.
+            Model: new ModelRequirement(StructuredOutput: true),
+            // v3.8.23: the review of a state-changing patch set is not optional and must not depend
+            // on a model remembering to plan it.
+            Scheduling: SchedulingMode.PolicyInserted),
         ["medic"] = new("medic", V,
             SupportedTaskTypes: S("failure_diagnosis", "repair_triage", "retry_classification", "root_cause_analysis", "recovery_recommendation"),
             RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead),
-            AllowedTools: S("read_failure_context"),
+            // v3.8.23: no tools. `read_failure_context` was a contract-only name. The medic reads
+            // mission state in process; the reach it actually LACKS is the durable attempt history
+            // and the colony's recurring failure classes, and the spec's answer to that is a typed
+            // failure_context artifact assembled by orchestration, not a tool the medic dispatches.
+            // Removed rather than built, so the contract stops naming something that does not exist.
+            AllowedTools: S(),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("failure_diagnosis", "repair_recommendation"),
             AllowedHandoffRoles: S("coder", "ui_cartographer", "tester", "builder"),
@@ -234,11 +432,21 @@ public static class AntExecutionCatalog
             // output is structured by necessity. Reasoning is required rather than preferred: it
             // infers a cause from evidence that does not state one, and a model that cannot hold a
             // chain of inference produces a plausible diagnosis of the wrong thing.
-            Model: new ModelRequirement(StructuredOutput: true, Reasoning: true)),
+            Model: new ModelRequirement(StructuredOutput: true, Reasoning: true),
+            // v3.8.23: only ever in response to a real failure. MedicAnt.Execute already opens by
+            // returning Blocked when no failed task exists — a handler defending itself against a
+            // scheduler that should never have called it. This is that rule, declared.
+            Scheduling: SchedulingMode.FailureTriggered),
         ["archivist"] = new("archivist", V,
             SupportedTaskTypes: S("memory_consolidation", "lesson_extraction", "negative_memory", "rule_archival", "mission_summary", "skill_candidate_extraction"),
             RequiredCapabilities: S(Capability.ModelInvoke),
-            AllowedTools: S("write_memory_candidate"),
+            // v3.8.23: no tools, and this one is REDUNDANT rather than missing. The archivist
+            // already emits memory_candidate artifacts; ExecutionService.IngestMemoryCandidates
+            // turns them into durable events; LearningRecorder rebuilds candidates from those
+            // events. A write tool would be a SECOND channel writing the same fact — the "two
+            // channels and the prose one wins" failure ADR-004 exists to prevent. Memory persistence
+            // stays under the Queen's post-finalization pipeline.
+            AllowedTools: S(),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("memory_candidate"),
             AllowedHandoffRoles: S(),
@@ -247,7 +455,11 @@ public static class AntExecutionCatalog
             // history to extract lessons. A short window does not fail here — it silently truncates
             // the history and produces confident lessons drawn from part of the evidence, which is
             // worse than no lesson because it is written to durable memory.
-            Model: new ModelRequirement(StructuredOutput: true, MinContextTokens: 32_000)),
+            Model: new ModelRequirement(StructuredOutput: true, MinContextTokens: 32_000),
+            // v3.8.23: a lifecycle worker, not a planner task. It reads a TERMINAL mission, and the
+            // planner schedules tasks while the mission is still running — so planning it has always
+            // meant running it against a mission that cannot yet be summarised.
+            Scheduling: SchedulingMode.PostFinalization),
         ["ui_cartographer"] = new("ui_cartographer", V,
             SupportedTaskTypes: S("ui_mapping", "route_mapping", "component_mapping", "style_mapping", "frontend_dependency_mapping", "ui_change_impact"),
             RequiredCapabilities: S(Capability.RepoRead, Capability.RepoSearch),
