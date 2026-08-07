@@ -1,7 +1,9 @@
 # ANTHILL Approvals — The IApprovable Design (v1.14.0, NORTH_STAR Phase 10)
 
 Status: Canonical design for the unified approval system. Reviewed and shipped as code in v1.14.0
-(`src/Anthill.Core/Homelab/Approvals/IApprovable.cs`); the execution side shipped in v2.3.0
+(`src/Anthill.Modules/Anthill.Modules.Homelab/Homelab/Approvals/IApprovable.cs` — it was
+`src/Anthill.Core/Homelab/` until v3.8.7, when the homelab left the core); the execution side
+shipped in v2.3.0
 (`Homelab/Actions/`) against this contract without changing it — the v1.14 fields gained only
 additive execution metadata (payload, blast-radius score, decided/executed stamps). See
 `docs/NORTH_STAR.md` §6 rule 1: **one approval system**.
