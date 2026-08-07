@@ -1,5 +1,44 @@
 # ANTHILL Changelog
 
+## v3.8.22 - deterministic blocks actually block
+
+A correction release. v3.8.21 claimed patches were verified for the first time. They were not, and
+an external review caught it.
+
+**The task type never matched.** The planner emits `patch_proposal` — it is in the plan prompt and
+hard-coded in the deterministic fallback plan. `VerificationPolicy` is keyed `code_patch`. Nothing
+mapped one to the other, so `VerificationPolicy.For` fell through to its unknown-type default and
+ran `security_policy` alone. `diff` and `build` — the two deterministic verifiers, the entire reason
+for wiring the runner up — never ran on a single real patch.
+
+This was worse than leaving it unwired. The event row said verification had run, the bundle reported
+itself promotable off one non-deterministic pass, and a proposal containing code that does not
+compile could reach `completed_verified`. The tests did not catch it because they passed
+`"code_patch"` literally, which is a task type production never produces.
+
+**The request carried no patch.** Even had the policy resolved, `VerificationRequest` was built with
+neither `ChangedPath` nor content, and `DiffVerifier`'s first line answers that with "no changed path
+supplied — nothing to verify" and a FAIL. Each proposal now gets its own request carrying its path,
+new content and old content, and its own bundle; the set is promotable only if every proposal is,
+because a patch is applied as a unit and must be judged as one.
+
+That made per-proposal cost the next problem: `BuildVerifier` is capped at 600 seconds and
+`TestVerifier` at 1200, so a five-file patch set would run tens of minutes of identical builds.
+`IVerifier.WorkspaceScoped` declares which verifiers read only the workspace; `RunForEach` runs those
+once and shares the result. The default is false — a verifier that has not thought about it runs per
+proposal, which is the slow answer rather than the wrong one.
+
+**And nothing read the verdict.** `bundle.Promotable` was written to an event row and consumed by
+nothing at all. The same was true of the soldier: it has computed a deterministic policy verdict
+since v2.19.0, summarised it as "deterministic block, not overridable", and emitted it as bare
+rule-id strings that no downstream gate recognised. Both now set `Task.DeterministicBlock`, and the
+canonical evaluator treats it as a demoting layer beside `GenerationDegraded` — same mechanism, same
+reason. A reproducible "no" cannot be outweighed by a model's pass.
+
+Roster activation — the three phantom tools and the six gated specialists — was surveyed and
+deferred. Fixing a gate that does not hold is not work to do after turning on more of the things it
+is supposed to gate.
+
 ## v3.8.21 - patches are actually verified
 
 Two things: the ants that hold structure now emit it, and the verification framework runs for the

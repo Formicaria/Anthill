@@ -47,8 +47,87 @@ section adds. Measured against the tree at v3.8.19:
                             nothing else does. The verification framework is a well-tested subsystem
                             that never runs. Activating it is its own piece of work.
 
+                            v3.8.21 gave it that call site. v3.8.22 had to fix it — see below.
+
   S6-S15                    NOT STARTED. S10 (distributed) and S15 (self-sustaining) are end states
                             rather than work items and should not be scheduled as phases.
+
+-----------------------------------------------------------
+THE v3.8.21 VERIFICATION DEFECT  (added v3.8.22)
+-----------------------------------------------------------
+
+Recorded at length because the SHAPE of this mistake is more valuable than the fix, and because it
+is the second time in three releases the same shape appeared.
+
+v3.8.21 wired VerificationRunner into ProcessPatchProposals and reported patch verification as
+working. An external review found it was not, on three counts:
+
+  1. The planner emits task type `patch_proposal`. VerificationPolicy is keyed `code_patch`. Nothing
+     mapped them, so For() returned its unknown-type fallback — `security_policy` alone. The two
+     DETERMINISTIC verifiers never ran on a single patch.
+  2. The request was built with neither ChangedPath nor content. DiffVerifier's first branch answers
+     that with "no changed path supplied — nothing to verify" and a FAIL, so fixing (1) alone would
+     have turned a silent pass into a universal failure.
+  3. bundle.Promotable was written to an event row and read by NOTHING.
+
+Each alone made the wiring decorative. Together they produced something worse than no wiring: an
+event row asserting that verification had run, over a patch that had not been examined, on a mission
+that could still reach completed_verified with code that does not compile.
+
+THE SHAPE: a check that answers a question ADJACENT to the one asked, and passes. v3.8.18's sign-off
+review found five instances of it. This is the sixth. The tell each time is a test that constructs
+its own inputs from the vocabulary of the thing being tested rather than from the vocabulary of the
+thing that CALLS it — here, tests that passed the literal string "code_patch", which is a task type
+production never produces. A test written from the callee's dictionary can only ever prove the callee
+is self-consistent.
+
+THE RULE ADDED: a test for a production wiring must be keyed to a value the PRODUCER actually emits.
+DeterministicBlockTests is written that way throughout, and says so.
+
+Also closed here: the soldier's deterministic policy block. It has computed a verdict from PolicyScan
+before any model text exists since v2.19.0, summarised it in its own output as "not overridable", and
+emitted it as bare rule-id strings that no downstream gate recognised. It was overridable by anything.
+Both signals now set Task.DeterministicBlock, which the canonical evaluator reads as a demoting layer
+beside GenerationDegraded.
+
+-----------------------------------------------------------
+ROSTER ACTIVATION — SURVEYED, DEFERRED  (added v3.8.22)
+-----------------------------------------------------------
+
+Twelve ants are registered; six specialists sit behind rollout gates. The survey that preceded the
+v3.8.22 scope change found the roster is NOT six config changes away from working, and the three
+"phantom" tools should not simply be added to make the inventory green:
+
+  soldier / policy_scan            The CAPABILITY exists — PolicyScan.Scan is implemented and
+                                   SoldierAnt calls it directly, in-process, bypassing the tool
+                                   chokepoint. Only the wrapper is missing. Wrapping it buys real
+                                   things (authorization, events, evidence at one place).
+
+  medic / read_failure_context     Genuinely absent. MedicAnt reads mission.Tasks in memory, so it
+                                   sees THIS mission's task list and not the durable attempt history
+                                   (LoadMissionAttempts) or the colony's recurring failure classes
+                                   (WhatUsuallyFails). A tool would add reach it does not have.
+
+  archivist / write_memory_candidate
+                                   REDUNDANT, not missing. The archivist already emits
+                                   memory_candidate artifacts; ExecutionService.IngestMemoryCandidates
+                                   turns them into durable events; LearningRecorder rebuilds
+                                   candidates from those events. A tool would be a SECOND write
+                                   channel for the same fact — the "two channels and one wins"
+                                   failure ADR-004 rejects. The honest fix is to remove it from the
+                                   contract and record why, not to build it.
+
+Deferred deliberately: activating specialists sits BEHIND the verification gate holding. There is no
+value in switching on more of the things a gate is supposed to gate while the gate does not hold.
+
+The standing external review's fuller program (roughly 7-10 focused PRs) is compatible with this and
+should be read alongside it: truthful runtime declarations (all twelve workers need versioned
+contracts; the core six have none), ToolExecutionContext having only test call sites, five specialist
+contracts claiming model usage whose handlers make no model calls, invocation MODES (medic must not
+be plannable without a failure; archivist must not be plannable while the mission runs), artifacts as
+the interchange rather than prose, and per-role graduation criteria. The end-to-end gates it proposes
+are the right acceptance tests, and the first of them is the one v3.8.22 makes true: a broken patch
+cannot become verified.
 
 THE ORDERING IN THIS DOCUMENT IS NARRATIVE, NOT DEPENDENCY. Stage 2 (reputation) is numbered three
 stages before Stage 5 (knowledge graph), but ADR-004 is Accepted and the standing peer-review

@@ -36,6 +36,23 @@ public interface IVerifier
     string Name { get; }
     bool Deterministic { get; }
     VerificationResult Verify(VerificationRequest request);
+
+    /// <summary>
+    /// True when this verifier's answer depends ONLY on the workspace, not on the individual change
+    /// being verified. v3.8.22.
+    ///
+    /// <see cref="BuildVerifier"/> and <see cref="TestVerifier"/> shell out to the toolchain and read
+    /// nothing from the request but <c>WorkspaceRoot</c> — so for a patch set of five proposals they
+    /// would return the same answer five times, at up to 600 and 1200 seconds each. Declaring the
+    /// scope lets <see cref="VerificationRunner.RunForEach"/> run them once and share the result,
+    /// which is what makes per-proposal verification affordable at all.
+    ///
+    /// A DEFAULT member returning false: a verifier that has not thought about this is treated as
+    /// change-dependent and runs per proposal. That is the slow answer, never the wrong one — the
+    /// failure mode of guessing true is a verdict computed from a different change than the one it
+    /// is recorded against.
+    /// </summary>
+    bool WorkspaceScoped => false;
 }
 
 /// <summary>Which verifiers a task type REQUIRES. A task cannot be declared verified without
@@ -64,10 +81,52 @@ public static class VerificationPolicy
         ["artifact_production"] = new[] { "artifact" },
     };
 
-    public static IReadOnlyList<string> For(string taskType) =>
-        Required.TryGetValue(taskType ?? "", out var v) ? v : new[] { "security_policy" }; // unknown → at minimum policy-scan
+    /// <summary>
+    /// What the PLANNER emits, mapped to what this table is keyed by. v3.8.22 — the fix for a
+    /// defect v3.8.21 shipped.
+    ///
+    /// The table above was written against the vocabulary of the verification spec; the planner
+    /// emits <c>patch_proposal</c> (see Planner's plan prompt and its deterministic fallback plan).
+    /// Neither name is wrong, and nothing connected them. When v3.8.21 gave the runner its first
+    /// production call site it passed <c>task.TaskType</c> straight through, every real patch missed
+    /// every key here, and <see cref="For"/> returned the unknown-type fallback — <c>security_policy</c>
+    /// alone. The two DETERMINISTIC verifiers, diff and build, never ran on a single patch.
+    ///
+    /// The effect was worse than no wiring at all: patch verification appeared to be running, the
+    /// event row said so, and a proposal containing code that does not compile could reach
+    /// <c>completed_verified</c>. Tests did not catch it because they passed <c>"code_patch"</c>
+    /// literally — a task type production never produces. <c>TheTaskTypeThePlannerActuallyEmits_*</c>
+    /// in the suite now pins the real one.
+    ///
+    /// Aliases rather than extra table keys, so there stays exactly ONE row per verification policy.
+    /// Duplicating <c>code_patch</c>'s verifier list under three names is how the two copies drift.
+    /// </summary>
+    private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["patch_proposal"] = "code_patch",
+        ["patch"] = "code_patch",
+        ["code_change"] = "code_patch",
+        ["docs_update"] = "docs_patch",
+        ["documentation"] = "docs_patch",
+    };
 
-    public static bool IsKnown(string taskType) => Required.ContainsKey(taskType ?? "");
+    /// <summary>
+    /// The policy key for a task type: itself when the table knows it, its alias when one exists,
+    /// otherwise the type unchanged (so an unknown type still reaches the fallback in <see cref="For"/>).
+    /// An explicit table key always wins over an alias — a policy written for a name is never
+    /// redirected away from it.
+    /// </summary>
+    public static string Canonical(string? taskType)
+    {
+        var t = taskType ?? "";
+        if (Required.ContainsKey(t)) return t;
+        return Aliases.TryGetValue(t, out var canonical) ? canonical : t;
+    }
+
+    public static IReadOnlyList<string> For(string taskType) =>
+        Required.TryGetValue(Canonical(taskType), out var v) ? v : new[] { "security_policy" }; // unknown → at minimum policy-scan
+
+    public static bool IsKnown(string taskType) => Required.ContainsKey(Canonical(taskType));
 }
 
 /// <summary>The persisted proof for one verification run. Structural completion can never create
@@ -153,6 +212,7 @@ public sealed class BuildVerifier : IVerifier
 {
     public string Name => "build";
     public bool Deterministic => true;
+    public bool WorkspaceScoped => true;   // reads WorkspaceRoot and nothing else about the change
 
     public VerificationResult Verify(VerificationRequest r)
     {
@@ -175,6 +235,7 @@ public sealed class TestVerifier : IVerifier
 {
     public string Name => "test";
     public bool Deterministic => true;
+    public bool WorkspaceScoped => true;   // as BuildVerifier: the suite is per workspace, not per proposal
 
     public VerificationResult Verify(VerificationRequest r)
     {
@@ -284,5 +345,66 @@ public sealed class VerificationRunner
         if (!bundle.HasDeterministicEvidence)
             bundle.BlockedReasons.Add("no passing deterministic evidence — semantic judgment alone cannot verify");
         return bundle;
+    }
+
+    /// <summary>
+    /// Verify EVERY change in a set, sharing the workspace-scoped verifiers across them. v3.8.22.
+    ///
+    /// A patch set is not one change. Verifying it with a single request meant at most one proposal
+    /// was examined and the rest were verified by implication — and in v3.8.21 the request carried no
+    /// proposal at all, so <see cref="DiffVerifier"/> answered "no changed path supplied — nothing to
+    /// verify" and failed. Every proposal now gets its own request and its own verdict.
+    ///
+    /// The verifiers that declare <see cref="IVerifier.WorkspaceScoped"/> run ONCE for the whole set
+    /// and their single result is recorded against each proposal. That is not an approximation: their
+    /// answer is by declaration independent of which change is being verified, so running them per
+    /// proposal would produce identical verdicts at N times the cost. Everything else runs per change.
+    ///
+    /// One bundle per request comes back, in the order given. The CALLER decides what a set of bundles
+    /// means — this returns evidence and judges nothing, which is why it cannot quietly promote a set
+    /// where one proposal failed.
+    /// </summary>
+    public IReadOnlyList<VerificationBundle> RunForEach(IReadOnlyList<VerificationRequest> requests)
+    {
+        if (requests.Count == 0) return Array.Empty<VerificationBundle>();
+
+        // Keyed by verifier name: the one result a workspace-scoped verifier produces for this set.
+        var shared = new Dictionary<string, VerificationResult>(StringComparer.OrdinalIgnoreCase);
+        var bundles = new List<VerificationBundle>(requests.Count);
+
+        foreach (var request in requests)
+        {
+            var required = VerificationPolicy.For(request.TaskType).ToList();
+            var bundle = new VerificationBundle { TaskType = request.TaskType, Required = required };
+            foreach (var name in required)
+            {
+                if (!_verifiers.TryGetValue(name, out var verifier))
+                {
+                    bundle.BlockedReasons.Add($"required verifier '{name}' is not registered");
+                    continue;
+                }
+                if (verifier.WorkspaceScoped && shared.TryGetValue(name, out var already))
+                {
+                    bundle.Results.Add(already);
+                    continue;
+                }
+                VerificationResult result;
+                try { result = verifier.Verify(request); }
+                catch (Exception e)
+                {
+                    result = new(name, false, verifier.Deterministic, $"verifier faulted: {e.Message}",
+                        new List<VerificationEvidence> { new("error", e.GetType().Name) });
+                }
+                // Cache the fault too. A build that faulted once will fault the same way for every
+                // other proposal in this set, and re-running it to rediscover that costs the full
+                // timeout each time.
+                if (verifier.WorkspaceScoped) shared[name] = result;
+                bundle.Results.Add(result);
+            }
+            if (!bundle.HasDeterministicEvidence)
+                bundle.BlockedReasons.Add("no passing deterministic evidence — semantic judgment alone cannot verify");
+            bundles.Add(bundle);
+        }
+        return bundles;
     }
 }
