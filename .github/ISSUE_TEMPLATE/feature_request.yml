@@ -60,5 +60,5 @@ body:
     attributes:
       label: Constraints
       options:
-        - label: No Python is written, modified, or treated as active code (py.old/ is archive only)
+        - label: No Python is written, modified, or treated as active code
         - label: Additive over destructive — no existing page/route/API behavior removed

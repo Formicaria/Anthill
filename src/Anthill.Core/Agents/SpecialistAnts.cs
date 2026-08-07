@@ -44,8 +44,8 @@ public sealed class UiCartographerAnt : BaseAnt
             .Select(m => m.Value.Replace('\\', '/'))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaxFilesToRead).ToList();
-        // The embedded console UI lives under src/Anthill.Api/Ui — try the known locations too.
-        foreach (var known in new[] { "src/Anthill.Api/Ui/index.html", "src/Anthill.Api/Ui/app.js" })
+        // The embedded console UI lives under src/Anthill.UI — try the known locations too.
+        foreach (var known in new[] { "src/Anthill.UI/index.html", "src/Anthill.UI/app.js" })
             if (!candidates.Contains(known)) candidates.Add(known);
 
         // 2. Read each (bounded) and extract structure deterministically.
