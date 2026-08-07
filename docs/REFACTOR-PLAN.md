@@ -1,8 +1,23 @@
 # ANTHILL Core Refactor — Migration Plan
 
-**Status:** proposed
-**Baseline:** v3.8.2, `main`
+**Status:** in execution — phases 0 through 5c step 3 shipped
+**Baseline:** v3.8.2, `main` · **Current:** v3.8.15
 **Goal:** a smaller, stable core that runs with no AI provider and no UI, while preserving public behavior.
+
+| Measure | Baseline (v3.8.2) | Now (v3.8.15) |
+|---|---:|---:|
+| `Anthill.Core` | 34,247 | 25,267 |
+| `Anthill.SDK` | 0 | 3,004 |
+| `Anthill.Api/ApiHost.cs` | 3,227 | 3,283 |
+
+Core is down **8,980 lines, 26%**, with nothing deleted — every line moved to the SDK or to a
+module. `ApiHost.cs` grew rather than shrank, which is the expected shape: it is the composition
+root, and each extracted module is composed there. Phase 6 is where that is addressed.
+
+**Status keys used below:** a phase marked DONE names the release it shipped in. "SURVEYED" means
+the measurement is recorded here and the work has not started. Sections headed "superseded" are kept
+because the reasoning that replaced them is worth reading against them, not because they describe
+the plan.
 
 This is an *architectural* refactor, not a feature rewrite. No capability is removed unless it is
 redundant and replaced.
@@ -82,8 +97,10 @@ Anthill.SDK        — contracts only. No implementations, no I/O, no dependenci
 Anthill.Core       — Queen, Objective→Mission→Task→Action, scheduler, task queue,
                      event bus, worker manager, pheromone memory, worker framework.
                      References SDK only.
-Anthill.Modules.*  — providers, homelab, integrations, shell, git, filesystem, vision,
-                     analytics. Reference SDK. NEVER referenced by Core.
+Anthill.Modules.*  — providers, homelab, integrations, tools. Reference SDK. NEVER
+                     referenced by Core. (The original line also named git, vision and
+                     analytics modules; none of those capabilities exist, and naming
+                     unbuilt modules in a boundary sketch is how a plan acquires scope.)
 Anthill.Api        — HTTP + SSE surface. References Core + SDK. Composes modules at
                      startup by configuration.
 Anthill.UI         — assets only; consumes the SSE event stream. No Core reference.
@@ -100,7 +117,7 @@ module implements it. When in doubt, it is a module.
 Each phase is independently shippable and independently revertible. Do not start a phase until the
 previous gate is green.
 
-### Phase 0 — SDK scaffold (additive; nothing moves) — **DONE, pending local build**
+### Phase 0 — SDK scaffold (additive; nothing moves) — **DONE (v3.8.3)**
 
 - [x] `src/Anthill.SDK/Anthill.SDK.csproj` — no package refs beyond `Logging.Abstractions`
 - [x] `Events/ColonyEvent.cs` — mirrors the `LogEvent` shape field for field (Id, MissionId, TaskId,
@@ -114,8 +131,7 @@ previous gate is green.
 - [x] `Anthill.SDK` added to `Anthill.sln`; `Anthill.Core` references it (unused, but proven to compile)
 - [x] `src/Anthill.Modules/README.md` — boundary rules and per-domain project layout
 
-**Gate:** `dotnet build Anthill.sln` succeeds; test counts unchanged. *Not yet run — no .NET SDK in
-the assistant sandbox. Run locally before Phase 1.*
+**Gate:** `dotnet build Anthill.sln` succeeds; test counts unchanged. *Passed locally, v3.8.3.*
 
 #### Three decisions made during implementation
 
@@ -141,7 +157,7 @@ layout and the boundary rules.
 
 ---
 
-### Phase 1 — Event bus behind `LogEvent` — **DONE, pending local gate** (v3.8.3)
+### Phase 1 — Event bus behind `LogEvent` — **DONE (v3.8.3)**
 
 - [x] `Anthill.Core/Events/InProcessEventBus.cs` — bounded drop-oldest channel, single-reader pump
       preserving publication order, subscriber faults caught and logged, disposable handles
@@ -192,7 +208,7 @@ Split in two on contact with the code. `ModelRouter.cs` turned out to contain `O
 Api *and* Cli — so "move the providers" is really "invert construction, then move", and doing both
 in one step would have been a large unverifiable change.
 
-#### Phase 2a — contracts to the SDK — **DONE, pending local gate** (v3.8.4)
+#### Phase 2a — contracts to the SDK — **DONE (v3.8.4)**
 
 - [x] Moved to `Anthill.SDK/Reasoning/`: `ModelProtocol.cs`, `ModelCallOutcome.cs`,
       `ModelCapabilities.cs`, `ProviderCatalog.cs`, `ModelCallScope.cs` (all five were
@@ -211,51 +227,71 @@ calling, structured output, vision parts, reasoning content and token accounting
 already outside it. Writing a second one beside it would have created the duplication requirement #9
 exists to remove, so the existing contract was moved and renamed instead.
 
-#### Phase 2b — implementations to the module — NEXT
+#### Phase 2b — implementations to the module — **DONE (v3.8.5)**
 
-- [ ] SDK: `IReasoningProviderFactory` — `CanServe(providerId)` + `Create(context)` — the inversion
+- [x] SDK: `IReasoningProviderFactory` — `CanServe(providerId)` + `Create(context)` — the inversion
       point, so `ModelRouter` stops naming provider types
-- [ ] SDK: `IModelCapabilityProbe`, so Core can ask what a model supports without depending on the
+- [x] SDK: `IModelCapabilityProbe`, so Core can ask what a model supports without depending on the
       Ollama cache that answers
-- [ ] Split `ModelRouter.cs`: routing and the circuit breaker stay; `OllamaClient` moves out
-- [ ] Core: `UnavailableProvider` (from `PlaceholderClient`) as the null object when nothing is
+- [x] Split `ModelRouter.cs`: routing and the circuit breaker stay; `OllamaClient` moves out
+- [x] Core: `UnavailableProvider` (from `PlaceholderClient`) as the null object when nothing is
       registered — a typed failure, never a throw
-- [ ] Move to `Anthill.Modules.Reasoning`: the Ollama client, `ProviderClients.cs`,
+- [x] Move to `Anthill.Modules.Reasoning`: the Ollama client, `ProviderClients.cs`,
       `ProviderWireFormat.cs`, `OllamaCapabilityCache.cs`, plus `ReasoningModule : IAnthillModule`
-- [ ] Reconcile the three `OllamaCapabilityCache.Warm` call sites (`ApiHost` ×2, `Cli`)
-- [ ] Keep in Core: `ModelRouter` (routing *policy* is a core scheduling concern),
+- [x] Reconcile the three `OllamaCapabilityCache.Warm` call sites (`ApiHost` ×2, `Cli`)
+- [x] Keep in Core: `ModelRouter` (routing *policy* is a core scheduling concern),
       `ModelRoutingPolicy`, `ModelCircuitBreaker`, `ModelCallOutcome`, `ModelCallScope`,
       `ModelCapabilities`, `ModelProtocol`
-- [ ] Core's `Router` becomes nullable-by-design; assert a mission can be planned and a task
+- [x] Core's `Router` becomes nullable-by-design; assert a mission can be planned and a task
       dispatched with **zero** providers registered
-- [ ] Reconcile the 10 outside-`Models/` referencing files: `Planning/Planner.cs`,
+- [x] Reconcile the 10 outside-`Models/` referencing files: `Planning/Planner.cs`,
       `Tools/ToolSchemaProjection.cs`, `Autonomy/Strategist.cs`, `Agents/Ants.cs`,
       `Agents/AntModelFitness.cs`, `Agents/ToolCallingLoop.cs`, `Memory/SqliteMemory.Providers.cs`,
       `Orchestration/Queen.cs`, `Orchestration/ExecutionService.cs`,
       `Orchestration/ResultAssembler.cs`
-- [ ] Provider registration moves to `Anthill.Api` composition root
+- [x] Provider registration moves to `Anthill.Api` composition root
 
 **Gate:** build + tests; **and** boot the API with every provider disabled — it must start, accept a
 mission, and degrade gracefully rather than throw. This is success criterion "core runs without any
-AI provider."
+AI provider." *Passed, v3.8.5, with a test class for exactly that case.*
+
+**What the execution found that the checklist did not say.** The core could not merely run without a
+provider — it could not COMPILE without one. `ModelRouter` named `OllamaClient`,
+`OpenAiCompatibleClient` and `AnthropicClient` in two switch statements, so "the colony runs with no
+AI" had been claimed as a goal since phase 0 while being structurally impossible. The module's only
+real coupling back to the core turned out to be one `using` for the call timeout, which now arrives
+through the context and is read live.
 
 ---
 
-### Phase 3 — Segregate `SqliteMemory`
+### Phase 3 — Segregate `SqliteMemory` — **DONE (v3.8.6), narrower than planned and deliberately so**
 
 The unglamorous phase that makes phases 4–6 possible. Interfaces first; the class is not split yet.
 
-- [ ] Carve role interfaces over the existing partials — `IPheromoneMemory`, `IEventLog`,
-      `IMissionStore`, `IWorkerStore`, `IWorkspaceStore`, `ISkillStore`, `IJobStore` — and have
-      `SqliteMemory` implement all of them. Zero behavior change; purely additive.
-- [ ] Retarget consumers to the narrowest interface they need instead of the concrete class
-- [ ] Module-only partials (`Providers`, `Shadow`, `RepositoryIndex`, `FaultInjection`,
-      `Workspaces`) get their own store interfaces, so later extraction does not drag `SqliteMemory`
-      into a module
-- [ ] `IModuleContext` exposes only `IEventBus` + the store interfaces a module legitimately needs —
-      never `SqliteMemory` itself
+- [x] Carve role interfaces over the existing partials — `IPheromoneMemory` and `IEventLog` — and
+      have `SqliteMemory` implement them EXPLICITLY, in `SqliteMemory.SdkContracts.cs`. Zero
+      behavior change; purely additive.
+- [x] `IModuleContext` exposes only `IEventBus` + those two store views — never `SqliteMemory`
+      itself. A module holds two narrow views of a class with 177 public methods.
+- [ ] `IMissionStore`, `IWorkerStore`, `IWorkspaceStore`, `ISkillStore`, `IJobStore` — **not
+      written, and not currently needed.** Each was to be carved so a later module extraction would
+      not drag `SqliteMemory` with it; phases 4 and 5 then extracted the homelab, the providers and
+      the tool contracts without any of them, because none of those modules needed to persist
+      anything through the core. An interface with no implementer-side demand is a guess about a
+      future consumer, and this repository's own history says those guesses go stale before they are
+      used. They get written when a module needs one.
+- [ ] Retarget in-core consumers to the narrowest interface they need instead of the concrete class
+      — deferred. The value is real but it is internal tidiness, not boundary enforcement, and it
+      touches a very large number of call sites for no change in what is possible.
 
 **Gate:** build + tests. Verify by inspection that no module-facing type names `SqliteMemory`.
+*Passed, v3.8.6, and since v3.8.8 it is enforced mechanically rather than by inspection:
+`ModuleBoundaryTests` reads assembly references.*
+
+**Why the phase was forced to be real.** It was written as preparation and would have stayed
+theoretical, because nothing yet consumed the interfaces. `ModuleHost` arriving in the same release
+is what made it concrete — the moment a module had to be handed something, the question of what it
+may touch stopped being a design note.
 
 ---
 
@@ -264,7 +300,7 @@ The unglamorous phase that makes phases 4–6 possible. Interfaces first; the cl
 Measured, not estimated: `Homelab/` is 4,259 lines across 19 files and `Integrations/` is 2,290
 across 13 — **6,549 lines**, plus 1,441 in `Anthill.Api/Homelab/`. Split in two.
 
-#### Phase 4a — prerequisites — **DONE, pending local gate** (v3.8.7)
+#### Phase 4a — prerequisites — **DONE (v3.8.7)**
 
 - [x] `AnthillTime.cs` and `Json.cs` → `Anthill.SDK/Common/`. The survey's useful finding: Homelab
       and Integrations import `Anthill.Core.Common` twenty times but use only these two helpers
@@ -276,38 +312,39 @@ across 13 — **6,549 lines**, plus 1,441 in `Anthill.Api/Homelab/`. Split in tw
 
 **Gate:** `dotnet build Anthill.sln && dotnet test`, both suites.
 
-#### Phase 4b — the move itself — NEXT
+#### Phase 4b — the move itself — **DONE (v3.8.7)**
 
-Remaining coupling to resolve first, measured from the imports:
+*(This section carried the same checklist twice, written in two sittings and never reconciled. The
+duplicate is deleted; what follows is the single list, with what actually happened.)*
 
-| Needs | Where it goes |
-|---|---|
-| `Health/` (272 LOC) | follows homelab into the module — it *is* homelab health |
-| `SafeAction/` (333 LOC) | assess: approval is coordination, so it may be core |
-| `Security` (1 import) | credential handling — likely an SDK contract |
-| `AnthillRuntime` (3 imports) | pass values in, as `ReasoningProviderContext` does |
-| `SqliteMemory` (3 uses) | narrow interfaces, as phase 3 did |
+Coupling measured from the imports before starting, and how each was resolved:
 
-- [ ] SDK contracts first: `IHomelabRepository`, `IIntegrationDefinition`, `IInventoryProvider`,
-      `IHomelabActionRunner`, `IHomelabTargetGuard`
-- [ ] `IHomelabEventSink` deleted — 4a made it redundant as an announcement path; it is now only
-      persistence, and `IHomelabRepository` already carries that
-- [ ] Move `Homelab/**` and `Integrations/**` to `Anthill.Modules.Homelab`
-- [ ] Reconcile `Incidents/IncidentManager.cs`, `Shadow/LiveIncidentObserver.cs`, `ApiHost.cs`
-- [ ] `Anthill.Api/Homelab/*` endpoints register through the module
+| Needs | Planned | What happened |
+|---|---|---|
+| `Health/` (272 LOC) | follows homelab into the module | moved — it *is* homelab health |
+| `SafeAction/` (333 LOC) | assess: approval may be core | **SDK.** Four files with no core imports at all, and shared with shadow mode, so it belonged on neither bank |
+| `Security` (1 import) | likely an SDK contract | `IFieldCipher` in the SDK |
+| `AnthillRuntime` (3 imports) | pass values in | `HomelabOptions`, eleven settings, built at the composition root |
+| `SqliteMemory` (3 uses) | narrow interfaces, as phase 3 did | the module persists through its own repository; no core store needed |
 
-- [ ] SDK contracts first: `IHomelabRepository`, `IIntegrationDefinition`, `IInventoryProvider`,
-      `IHomelabActionRunner`, `IHomelabTargetGuard` (several already exist in Core — move the
-      declarations, keep the shapes)
-- [ ] `IHomelabEventSink` is deleted in favor of `IEventBus` — it was a single-purpose bus
-- [ ] Move `Homelab/**` and `Integrations/**` to `Anthill.Modules.Homelab`
-- [ ] Reconcile the five outside references: `Health/HealthCheckRunner.cs`, `Health/HealthModels.cs`,
+- [x] SDK contracts first: `IHomelabRepository`, `IIntegrationDefinition`, `IInventoryProvider`,
+      `IHomelabActionRunner`, `IHomelabTargetGuard` (several already existed in Core — the
+      declarations moved, the shapes were kept)
+- [x] `IHomelabEventSink` deleted in favour of `IEventBus` — it was a single-purpose bus, and 4a
+      made it redundant as an announcement path
+- [x] Move `Homelab/**` and `Integrations/**` to `Anthill.Modules.Homelab`
+- [x] Reconcile the five outside references: `Health/HealthCheckRunner.cs`, `Health/HealthModels.cs`,
       `Incidents/IncidentManager.cs`, `Shadow/LiveIncidentObserver.cs`, `Anthill.Api/ApiHost.cs`
-- [ ] Decide `Health/`, `Incidents/`, `Inventory/`, `Power/`, `Backups/`: if they only serve homelab,
-      they follow it into the module (default-to-module rule)
-- [ ] `Anthill.Api/Homelab/*` endpoints register through the module, not directly
+- [x] Decide `Health/`, `Incidents/`, `Inventory/`, `Power/`, `Backups/` — all followed the homelab
+      into the module under the default-to-module rule
+- [x] `Anthill.Api/Homelab/*` endpoints register through the module, not directly
 
-**Gate:** build + `Anthill.Tests.Homelab` in full; exercise the homelab dashboard manually.
+**Gate:** build + `Anthill.Tests.Homelab` in full; exercise the homelab dashboard manually. *Passed,
+v3.8.7.*
+
+**Result: 6,549 lines out of the core, the largest single extraction in the refactor.**
+`LiveIncidentObserver` was the one file that fit nowhere — it reads a module type and writes core
+types — so it moved to the composition root rather than to either side.
 
 ---
 
@@ -335,7 +372,7 @@ workspace records. Unlike homelab, this lands on the mission execution path.
 two take `Domain.Task` and reach `Agents.AntRegistry`; the third collides by name with
 `Domain.ToolResult`.
 
-#### Phase 5b — `ToolResult` + `ITool` to the SDK — SURVEYED, ready to execute
+#### Phase 5b — `ToolResult` + `ITool` to the SDK — **DONE (v3.8.10)**
 
 5a unblocked this: `Domain.ToolResult` depends on `FailureClass` and `FailureClassify` and nothing
 else, and both are now in the SDK. `ITool.Run` returns `ToolResult` and needs nothing further.
@@ -358,13 +395,20 @@ Every qualification form enumerated — the check whose absence cost four build 
 Qualify their bare `ToolResult` as `Anthill.SDK.Tools.ToolResult`, or alias — `ToolFailureClassTests.cs`
 already demonstrates the alias pattern for precisely this collision.
 
-- [ ] Extract `ToolResult` from `Domain/Models.cs` → `Anthill.SDK/Tools/ToolResult.cs`
-- [ ] `global using Anthill.SDK.Tools;` in Core, Api and both test projects
-- [ ] Disambiguate the two files above; rewrite the 8 `Domain.ToolResult`
-- [ ] Extract `ITool` from `Tools/Tools.cs` → `Anthill.SDK/Tools/ITool.cs`
-- [ ] Add `IModuleContext.RegisterTool(ITool)` — the phase-0 deferral, finally typed
-- [ ] `IToolKindExecutor` waits for 5c: it needs `ToolDefinition`, entangled with
-      `ToolAuthorization` and `ToolInventory`
+- [x] Extract `ToolResult` from `Domain/Models.cs` → `Anthill.SDK/Tools/ToolResult.cs`
+- [x] `global using Anthill.SDK.Tools;` in Core, Api and both test projects
+- [x] Disambiguate the two files above; rewrite the 8 `Domain.ToolResult`
+- [x] Extract `ITool` from `Tools/Tools.cs` → `Anthill.SDK/Tools/ITool.cs`
+- [x] Add `IModuleContext.RegisterTool(ITool)` — the phase-0 deferral, finally typed, held open
+      three phases rather than declared as `object`
+- [x] `IToolKindExecutor` waits for 5c: it needs `ToolDefinition`, entangled with
+      `ToolAuthorization` and `ToolInventory` — **done in 5c step 3, v3.8.15; the entanglement
+      turned out to be three lines**
+
+The forecast held exactly: of 151 `ToolResult` references, 138 resolved through the global using
+untouched, 8 were rewritten, 5 were deliberately left alone as a different type, and exactly two
+files needed disambiguation. This is the release that made the qualification-form survey a rule
+rather than a lesson.
 
 #### Phase 5c — SURVEYED: the "workspaces follow the tools" decision needs revisiting
 
@@ -518,26 +562,60 @@ the file-writing and patch-application gates — the ones that decide whether an
    **`IModuleContext` gained no `RegisterToolKind`** (operator decision). The contracts now permit
    one; the buffering and drain wait for something that actually ships a second kind.
 
-4. The seven implementations → `Anthill.Modules.Tools.*`, registered through
+4. The tool implementations → `Anthill.Modules.Tools`, registered through
    `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by
-   `ApiHost` into `Queen.Tools`)
-5. `ToolRegistry`, `ToolAuthorization`, `ToolInventory`, workspaces and sandbox all stay
+   `ApiHost` into `Queen.Tools`) — **SURVEYED, next**
+
+   `Tools.cs` splits cleanly: `ToolRegistry` is lines 18–178, the implementations are 180–536. Core
+   names none of the tool TYPES outside `Queen.BuildToolRegistry` — `Ants`, `SpecialistAnts` and
+   `Queen.Views` dispatch by NAME through the registry — so the move is type-clean and every
+   qualification form is bare.
+
+   **Six move, not seven. `SystemInfoTool` stays** (operator decision). It reports
+   `Native.NativeKernel.UsingNative`, `EnableParallelExecution`, `MaxParallelWorkers` and
+   `EnableFtsMemory` — core introspection, not a capability gate, and moving it would mean an SDK
+   contract whose only consumer is one tool's output dictionary. Keeping it also leaves the two
+   source-scanning guards below a real anchor in `Queen.cs`.
+
+   Four core dependencies to resolve, and they are not the ones the phase-5c survey listed:
+
+   | Dependency | Used by | Resolution |
+   |---|---|---|
+   | `WorkspacePathGuard` | 5 of the 6 | reaches `MissionWorkspaceScope`, which stays in the core. **DECIDED: `IWorkspacePathGuard` in the SDK, injected through the module constructor** as `HomelabModule` takes `HomelabOptions` — not added to `IModuleContext`, which only one module would need |
+   | `ToolRegistry.ClassifyThrown` | all 6, plus 3 tools that stay | `internal static`, already returns the SDK's `FailureClass`; needs an SDK home with the core delegating |
+   | `MaxFileReadChars`, `MaxDirectoryItems`, `MaxWebResults`, `WebSearchTimeoutSeconds`, `WebSearchProvider` | 3 tools | all `const` → SDK constants, as the id caps were in v3.8.12 |
+   | `ToolRuntime.Live` as the injected default | all 6 | **no new plumbing needed** — `SafetyPolicy.ToolOptions` is already installed with it by `SafetyPolicyBootstrap` |
+
+   **Two things that would regress silently.** `Anthill.Cli/Program.cs` is a composition root that
+   loads modules but NEVER drains `ContributedTools` — only `ApiHost.cs:138` does — so `anthill
+   --mission` would lose every moved tool. And `Queen.Views` calls `apply_patch` by name at lines 87
+   and 127: the operator approval pipeline would depend on a module-supplied tool being present.
+
+   **Three source guards break, and two need redesign rather than a path edit**, because both encode
+   "the composition root is `Queen.BuildToolRegistry`":
+   - `CallSiteAuditTests.EveryImplementedTool_IsRegisteredByTheCompositionRoot` — regexes
+     `new XxxTool(` out of `Queen.cs`
+   - `ToolInventoryTests.TheInventory_MatchesWhatTheCompositionRootRegisters` — parses the
+     `BuildToolRegistry` body AND scans `src/Anthill.Core/Tools/*.cs` for each `Name` literal
+   - `ToolFailureClassTests` — `[InlineData("src/Anthill.Core/Tools/Tools.cs")]`, a path edit only
+
+5. `ToolRegistry`, `ToolAuthorization`, `ToolInventory`, `UserToolGrants`, `UserToolRegistrar`,
+   `HttpToolKind`, workspaces and sandbox all stay
 
 **Original outline, superseded by the above:**
 
 - [ ] Split `Tools/Tools.cs` (498 LOC) the way `TaskContracts.cs` was split in 5a: `ToolRegistry`
       stays (registration and dispatch are coordination); the shell/git/filesystem tool
-      IMPLEMENTATIONS move to `Anthill.Modules.Tools.*`
-- [ ] Same for the process-spawning parts of `WorkspaceTools.cs` and `CheckRunner.cs`
-- [ ] `IToolKindExecutor` + `ToolDefinition` to the SDK, so a module can register a tool KIND and not
-      just an instance
-- [ ] **Workspaces and sandbox stay in the core.** A mission executes in a workspace; the Queen
+      IMPLEMENTATIONS move to `Anthill.Modules.Tools.*` — *superseded: one module, not one per kind;
+      see step 4 above*
+- [ ] Same for the process-spawning parts of `WorkspaceTools.cs` and `CheckRunner.cs` — *not doing.
+      `CheckRunner` is the tester ant's only execution surface and `WorkspaceTools` reads the
+      mission workspace; both are on the coordination side of the line workspaces settled on*
+- [x] `IToolKindExecutor` + `ToolDefinition` to the SDK, so a module can register a tool KIND and not
+      just an instance — **v3.8.15**
+- [x] **Workspaces and sandbox stay in the core.** A mission executes in a workspace; the Queen
       reconciles them at startup against what is on disk. That is coordination, and the survey says
       so — every one of its five imports is a core concern.
-
-The v3.8.10 plumbing already supports the good half: `IModuleContext.RegisterTool(ITool)` exists,
-`ModuleHost` buffers contributions, and `ApiHost` drains them into `Queen.Tools`. A shell-tool
-module needs no further wiring.
 
 #### The rename check, for every phase from here
 
@@ -552,15 +630,26 @@ Then decide per form. In 5a, matching the suffix `Contracts.FailureClass` silent
 `Anthill.Core.Contracts.FailureClass` into a namespace that never existed, and an earlier blanket
 strip ate `AntExecutionCatalog.Contracts.Keys` — a dictionary field that merely shares the name.
 
-### Phase 5 (original scope note) — Shell / Git / Filesystem / Vision tools → modules
+### Phase 5 (original scope note) — SUPERSEDED, kept for the two places it was wrong
 
-- [ ] `ITool` and `IToolKindExecutor` move to the SDK (already clean interfaces)
-- [ ] Split by kind into `Anthill.Modules.Tools.{Shell,Git,FileSystem,Http,Vision}`
+Written before the tool layer was measured. Both errors are worth keeping visible, because both are
+the kind a plan makes when it reasons from names instead of from imports.
+
+- [x] `ITool` and `IToolKindExecutor` move to the SDK (already clean interfaces) — *right, but "clean"
+      was an assumption: `ITool` was clean, `IToolKindExecutor` dragged `ToolDefinition` and three
+      lines of core tables with it (5b, 5c step 3)*
+- [ ] Split by kind into `Anthill.Modules.Tools.{Shell,Git,FileSystem,Http,Vision}` — **wrong.**
+      Five projects for six tools, and `Http` is not a tool at all but a user-tool KIND that stays in
+      the core because the SDK may not carry `System.Net.Http`. One `Anthill.Modules.Tools`.
 - [ ] Core keeps only `ToolRegistry`, `ToolAuthorization`, `ToolDefinition`, `ToolInventory` —
-      registration, authorization, and dispatch are coordination concerns
-- [ ] `UserToolRegistrar` and `WorkspaceTools` assessed individually against the default-to-module rule
+      **`ToolDefinition` is wrong**; it reached the SDK in v3.8.15, because a module cannot declare a
+      tool kind against a record it cannot see. The other three are right and unchanged.
+- [ ] `UserToolRegistrar` and `WorkspaceTools` assessed individually against the default-to-module
+      rule — done: both stay. The registrar decides what may register, and `WorkspaceTools` reads the
+      mission workspace.
 
-**Gate:** build + tests; run a mission that calls a shell tool and a git tool.
+**Gate:** build + tests; run a mission that calls a shell tool and a git tool. *There is no git tool
+and never was — the name came from the original outline rather than from `ToolInventory`.*
 
 ---
 
@@ -569,8 +658,10 @@ strip ate `AntExecutionCatalog.Contracts.Keys` — a dictionary field that merel
 - [ ] `src/Anthill.UI/` holds the assets; `Anthill.Api` serves them
 - [ ] UI reads **only** the SSE stream plus read-only REST queries — no endpoint that mutates
       colony state on the UI's behalf
-- [ ] Audit `ApiHost.cs` (3,227 lines) and split by resource; anything driving architecture from the
-      UI side is a bug to be fixed here
+- [ ] Audit `ApiHost.cs` (3,283 lines as of v3.8.15, up from 3,227 at baseline — it is the
+      composition root, so every extracted module adds to it) and split by resource; anything
+      driving architecture from the UI side is a bug to be fixed here
+- [ ] Nine pollers in `app.js` still to replace with the SSE stream — the phase-1 deferral
 - [ ] `ColonyDirector`, `AutoApplyRunner`, `PatchVerifyRunner` reviewed — if they hold orchestration
       logic, it belongs in Core, not the API host
 
@@ -584,8 +675,11 @@ it must still serve the API. This is success criterion "core runs without UI."
 - [ ] Delete `py.old/`, `test/` (superseded by `tests/`), root `test.txt`
 - [ ] Remove dead code and abstractions with a single implementation and no seam value
 - [ ] Collapse duplicate logic surfaced by the moves
-- [ ] Add an architecture test asserting `Anthill.Core` references no `Anthill.Modules.*` assembly —
-      this is what keeps the refactor from eroding
+- [x] Add an architecture test asserting `Anthill.Core` references no `Anthill.Modules.*` assembly —
+      this is what keeps the refactor from eroding. **Pulled forward to v3.8.8**, and it was right to
+      pull it forward: every phase up to then had verified the boundary by hand with a grep, which
+      would have passed right up until someone added a using statement. `ModuleBoundaryTests` reads
+      assembly metadata, so an unused project reference fails it too.
 - [ ] Write ADR-007 recording the module boundary
 
 **Gate:** build + tests; re-measure Core LOC against the 34,247 baseline.
@@ -594,24 +688,66 @@ it must still serve the API. This is success criterion "core runs without UI."
 
 ## 4. Success criteria, made checkable
 
-| Criterion | Test |
-|---|---|
-| Smaller core | Core LOC materially below 34,247; report the delta |
-| Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) |
-| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) |
-| Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) |
-| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement |
-| Easier feature development | A new integration is added as a module with zero Core edits |
+| Criterion | Test | Status at v3.8.15 |
+|---|---|---|
+| Smaller core | Core LOC materially below 34,247; report the delta | **MET** — 25,267, down 8,980 (26%), nothing deleted |
+| Core runs without AI provider | API boots and accepts a mission with all providers disabled (Phase 2 gate) | **MET** — v3.8.5, with a test class for the case |
+| Core runs without UI | API boots and serves requests with UI assets absent (Phase 6 gate) | not yet — phase 6 |
+| Cleaner dependency graph | Architecture test: Core references no module assembly (Phase 7) | **MET** — `ModuleBoundaryTests`, v3.8.8, pulled forward |
+| Functionality preserved | Full suite green at every gate; no test deleted without a named replacement | holding — no test has been deleted |
+| Easier feature development | A new integration is added as a module with zero Core edits | not yet demonstrated — no new integration has been added since the boundary existed |
 
 ## 5. Risks
 
 - **`SqliteMemory` sprawl (high).** 177 public methods is a wide blast radius. Phase 3 exists
-  specifically to contain it, and it is interface-only for that reason.
-- **`ApiHost.cs` at 3,227 lines (medium).** Touched in phases 1, 2, 4, and 6. Split it early in
-  Phase 6 rather than late.
+  specifically to contain it, and it is interface-only for that reason. *Contained rather than
+  resolved: modules see two narrow views, but the class is still 177 methods and every in-core
+  consumer still holds the concrete type.*
+- **`ApiHost.cs` at 3,283 lines (medium, and rising).** Touched in phases 1, 2, 4, 5 and 6, and it
+  grows with each extraction because it is where modules are composed. Split it early in Phase 6
+  rather than late.
 - **498 KB `app.js` (medium).** The SSE swap in Phase 1 lands in a very large unstructured file.
   Keep polling as a fallback until the stream is proven.
 - **No sandbox build (medium).** Every gate depends on the maintainer running it locally. A phase
   that has not been built locally is not done.
 - **Behavioral drift in `LogEvent` (low, but it is the keystone).** Persist-then-publish, never
   publish-then-persist, so a bus failure can never lose an event that used to be durable.
+
+---
+
+## 6. Rules the execution produced
+
+Each of these cost a build cycle or a wrong-green test before it was written down. They lived in
+`docs/HANDOFF.md`, which is explicitly disposable; they belong here, where the reasoning that
+produced them is.
+
+1. **Before moving type `T`, enumerate every FULL qualified string** — not the suffix:
+
+   ```
+   grep -rno "[A-Za-z.]*\bT\b" --include="*.cs" src tests | sed 's/.*://' | sort | uniq -c
+   ```
+
+   Then decide per form. In 5a, matching the suffix `Contracts.FailureClass` silently rewrote twelve
+   `Anthill.Core.Contracts.FailureClass` into a namespace that never existed, and an earlier blanket
+   strip ate `AntExecutionCatalog.Contracts.Keys` — a dictionary field that merely shares the name.
+   Where a name exists twice, determine which one each file means.
+
+2. **Before adding a MEMBER to a published interface, enumerate its implementers the same way**,
+   including test fakes. Adding `BlockedPathParts` to `IToolRuntimeOptions` broke the build on a
+   private `Gates` class inside `ToolRuntimeOptionsTests`.
+
+3. **A file is only as movable as its most qualified reference.** Checking `using` statements is not
+   a purity check — partial qualification resolves through the enclosing namespace and leaves no
+   import to find.
+
+4. **One release in the working tree at a time.** Do not start edits for N+1 until N is committed.
+
+5. **Measure the seam; do not estimate it.** Every phase that came in smaller than feared did so
+   because the coupling was counted rather than inferred from names: twenty `Common` imports in the
+   homelab were two helpers, 151 `ToolResult` references were 13 edits, and `ToolDefinition`'s
+   "entanglement with `ToolAuthorization` and `ToolInventory`" was three lines. Every phase that
+   surprised us did so because something was assumed — `ModelRouter` naming three provider types,
+   `SsrfBlockedHostSuffixes` being an array rather than a set.
+
+If a session proposes something that contradicts this document, this document is probably right —
+it is the record of what was measured rather than what was assumed.

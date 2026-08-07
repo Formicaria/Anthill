@@ -52,8 +52,19 @@ The active codebase is .NET-first. The optional native C++ kernel is used for so
 
 ## Current Version Notes
 
-The repo currently uses the v2.x line — the Homelab Command Center era. (NORTH_STAR planned
-phases were renumbered in v2.2.0: approval-gated actions are now V2.3.0.)
+The repo is on the **v3.x line**. V2 — the Homelab Command Center era — ended at v2.26.0 and its
+planning documents are archived under `docs/archive/v2/`; `docs/NORTH_STAR.md` and
+`docs/ROADMAP.md` are the canonical ones. (That earlier note about the renumbered NORTH_STAR phases
+described V2 and is kept only in the archive.)
+
+Since v3.8.3 the codebase has been under the Core/Modules refactor recorded in
+`docs/REFACTOR-PLAN.md`: `Anthill.Core` is down from 34,247 lines to 25,267 with nothing deleted,
+the reasoning providers and the whole homelab now live in `Anthill.Modules.*`, and the boundary is
+enforced by assembly-reference tests rather than by review.
+
+The table below stops at v3.0.1 and is not maintained release by release — **`CHANGELOG.md` is the
+complete record.** What is kept here is the handful of entries that explain how the project got its
+current shape.
 
 Recent important changes:
 
