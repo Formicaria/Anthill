@@ -403,7 +403,7 @@ public class RegressionGuardTests : IDisposable
     [Fact]
     public void Workspace_SanitizerIsWiredIntoTheUiStateEndpoints()
     {
-        var api = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+        var api = ApiHostSource.All();
 
         var getIdx = api.IndexOf("MapGet(\"/ui/state\"", StringComparison.Ordinal);
         var putIdx = api.IndexOf("MapPut(\"/ui/state\"", StringComparison.Ordinal);

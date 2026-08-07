@@ -256,7 +256,7 @@ public class V3ReadinessTests : IDisposable
     [Fact]
     public void TheReadinessAndJudgmentEndpointsExist()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+        var source = ApiHostSource.All();
         Assert.Contains("\"/readiness/json\"", source);
         Assert.Contains("\"/readiness/attest\"", source);
         Assert.Contains("\"/readiness/certification\"", source);

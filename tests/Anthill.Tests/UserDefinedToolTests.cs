@@ -412,7 +412,7 @@ public class UserDefinedToolTests : IDisposable
     [Fact]
     public void ADisabledDefinition_IsReportedAsDisabled_NotAsRejected()
     {
-        var projection = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs"));
+        var projection = ApiHostSource.All();
 
         Assert.Contains("[\"status\"] = !d.Enabled ? \"disabled\"", projection);
 

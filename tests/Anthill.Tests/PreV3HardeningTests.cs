@@ -140,7 +140,7 @@ public class PreV3HardeningTests : IDisposable
         startBody = startBody[..startBody.IndexOf("public void Stop(", StringComparison.Ordinal)];
         Assert.DoesNotContain("AutonomyControl.Resume", startBody);
 
-        var api = CodeOnly(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.cs")));
+        var api = CodeOnly(ApiHostSource.All());
         var startEndpoint = api[api.IndexOf("\"/autonomy/start\"", StringComparison.Ordinal)..];
         startEndpoint = startEndpoint[..startEndpoint.IndexOf("\"/autonomy/stop\"", StringComparison.Ordinal)];
         Assert.Contains("AutonomyControl.Resume()", startEndpoint);

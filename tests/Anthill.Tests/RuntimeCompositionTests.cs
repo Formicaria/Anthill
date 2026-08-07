@@ -271,10 +271,13 @@ public class RuntimeCompositionTests
                      Path.Combine("src", "Anthill.Core", "Planning", "Planner.cs"),
                      Path.Combine("src", "Anthill.Core", "Outcomes", "MissionEvaluation.cs"),
                      Path.Combine("src", "Anthill.Core", "Outcomes", "ObjectiveVerification.cs"),
-                     Path.Combine("src", "Anthill.Api", "ApiHost.cs"),
                  })
             Assert.Equal(0, Occurrences(CodeOnly(File.ReadAllText(Path.Combine(root, rel))),
                                         "MissionConstraints.Parse"));
+
+        // v3.8.17 — the API host is a partial class across seven files, so reading one of them
+        // would answer this question about the wrong place and pass for the wrong reason.
+        Assert.Equal(0, Occurrences(CodeOnly(ApiHostSource.All()), "MissionConstraints.Parse"));
     }
 
     /// <summary>
