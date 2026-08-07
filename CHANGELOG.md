@@ -1,5 +1,57 @@
 # ANTHILL Changelog
 
+## v3.8.16 - the tools leave the core, and phase 5 ends
+
+Phase 5c step 4 plus the start of phase 7 (`docs/REFACTOR-PLAN.md`). `Anthill.Core` is 24,973 lines,
+down from 34,247 at the refactor baseline — **27%, with nothing deleted**.
+
+- **Six tool implementations move to `Anthill.Modules.Tools`.** `list_directory`, `read_text_file`,
+  `write_text_file`, `shell_command`, `web_search` and `apply_patch` — the ones that touch the world.
+  `ToolRegistry`, `ToolAuthorization`, `ToolInventory`, `UserToolGrants`, `UserToolRegistrar` and
+  `HttpToolKind` stay, because deciding WHICH tool runs and whether the caller may run it is
+  coordination. Behaviour is unchanged; the existing tool tests exercise the module untouched apart
+  from one using statement.
+- **`SystemInfoTool` deliberately stayed.** It reports the native kernel, parallel execution and FTS
+  state — a window onto core internals rather than a capability, and extracting it would have meant
+  an SDK contract whose only consumer is one tool's output dictionary.
+- **Three new SDK contracts, each because a module needed one.** `IWorkspacePathGuard` (the
+  implementation reads the current mission's workspace through an ambient scope, and missions are
+  core), `ToolFailure.Classify` (out of `ToolRegistry.ClassifyThrown`, which stays as a delegating
+  alias so its eleven call sites are untouched), and `ToolLimits` for the five `const` settings, which
+  `AnthillRuntime` now re-exports.
+- **The SDK cannot name `HttpRequestException`.** Doing so emits a `System.Net.Http` assembly
+  reference, which `ModuleBoundaryTests` forbids because everything inherits what the SDK depends on.
+  `ToolFailure` matches it by type name instead. The alternative was relaxing a guard for a carve-out
+  it cannot express, and the guard is right.
+- **A wrong answer caught by reading rather than by running.** `Queen.Profile` is resolved from the
+  registry in the constructor, and module tools arrive after it — so registering them would have left
+  `Profile.ToolGrants` naming five tools for an eleven-tool colony, with `/status` and every mission
+  context describing a colony less capable than the one running, and nothing failing. Registration and
+  re-resolution are now one call, `Queen.AdoptModuleTools`, so a composition root cannot do the first
+  and forget the second.
+- **The CLI drains contributions for the first time.** It has loaded modules since v3.8.6 and never
+  read `ContributedTools` — harmless for ten releases, and the moment a module shipped a tool it would
+  have silently cost `anthill --mission` its file, shell, web and patch tools. A new call-site audit
+  asserts both composition roots load AND drain.
+- **Two source guards were redesigned, not repointed.** `CallSiteAuditTests` and `ToolInventoryTests`
+  both encoded "the composition root is `Queen.BuildToolRegistry`". They now read two named files
+  rather than globbing the tree — a glob would have let any `new ShellCommandTool(` in a test satisfy
+  them, which is how a guard becomes decoration.
+- **Registration gating moved with the tools, on purpose.** The colony gates tools twice — the
+  composition root decides whether one is registered, then the tool re-checks when it runs. If the
+  module had registered everything unconditionally, the two would have collapsed into one and every
+  existing test would still have passed. `ToolsModuleTests` pins each gate.
+- **ADR-001's exit gate needed re-composing, and the suite is what said so.** Queen gated
+  registration on each host's own `RuntimeOptions`; the module gates on the ambient runtime, which is
+  the same answer for one colony per process and a different one for the two hosts
+  `RuntimeIsolationTests` builds. Left alone those tests would have passed with both hosts having no
+  file tools at all. They now give each host a gates view of its own options, which is what a
+  multi-host composition root would have to do.
+- **Phase 7 begins.** The superseded `test/` project and the empty root `test.txt` are deleted, and
+  `docs/adr/ADR-007-module-boundary.md` records the boundary, what it costs on every extraction, and
+  what measuring rather than assuming was worth. `py.old/` is NOT deleted — CI carries a
+  `py.old is immutable` guard, so removing it is a deliberate decision rather than a cleanup.
+
 ## v3.8.15 - the tool-definition contract joins the SDK
 
 Phase 5c step 3 (`docs/REFACTOR-PLAN.md`). `IToolKindExecutor` names `ToolDefinition` in its

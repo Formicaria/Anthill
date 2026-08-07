@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.15";
+    public const string Version = "3.8.16";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -404,9 +404,12 @@ public static class AnthillRuntime
     public static bool EnableWebSearch = false;
 
     // ---- Web search -------------------------------------------------------
-    public const string WebSearchProvider = "duckduckgo_html";
-    public const int MaxWebResults = 5;
-    public const int WebSearchTimeoutSeconds = 12;
+    // v3.8.16 — declared in Anthill.SDK.Tools.ToolLimits, which is where the tool that applies them
+    // now lives. Re-exported here so the operator-facing surface is unchanged while there is still
+    // one declaration, exactly as MaxResultSummaryChars was in v3.8.14.
+    public const string WebSearchProvider = ToolLimits.WebSearchProvider;
+    public const int MaxWebResults = ToolLimits.MaxWebResults;
+    public const int WebSearchTimeoutSeconds = ToolLimits.WebSearchTimeoutSeconds;
     public const int MaxSourceSummaryChars = 900;
     public static int MaxWebSearchesPerMission = 3;
     public static int MaxSourcesPerMission = 15;
@@ -472,8 +475,9 @@ public static class AnthillRuntime
     };
 
     // ---- File limits ------------------------------------------------------
-    public const int MaxFileReadChars = 5000;
-    public const int MaxDirectoryItems = 100;
+    // v3.8.16 — declared in Anthill.SDK.Tools.ToolLimits; re-exported, see the web search block.
+    public const int MaxFileReadChars = ToolLimits.MaxFileReadChars;
+    public const int MaxDirectoryItems = ToolLimits.MaxDirectoryItems;
     public const int MaxPreviousContextChars = 4000;
     public const int MaxVerifierContextChars = 5000;
     public const int MaxCoderContextChars = 6000;

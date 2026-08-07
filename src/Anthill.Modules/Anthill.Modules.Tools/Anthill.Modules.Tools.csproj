@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Modules.Tools</RootNamespace>
+    <AssemblyName>Anthill.Modules.Tools</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    THE SDK, AND NOTHING ELSE. No Anthill.Core reference, and adding one undoes the phase.
+
+    This is where phase 5 lands: the six tools that DO something to the machine — list, read, write,
+    shell, search, patch. Everything that decides WHETHER one of them runs stayed in the core, which
+    is the whole distinction phase 5 opened with. A tool is capability; registration, authorization
+    and dispatch are coordination.
+
+    No package references. The homelab needed Sqlite; these need nothing but the BCL — which is
+    itself the evidence that the seam was in the right place.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
+</Project>

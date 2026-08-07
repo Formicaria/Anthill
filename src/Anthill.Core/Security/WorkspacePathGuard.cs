@@ -10,7 +10,7 @@ namespace Anthill.Core.Security;
 /// of the Python guard's <c>Path.resolve().relative_to(root)</c> check, which is what
 /// stops <c>../</c> traversal and absolute-path breakouts.
 /// </summary>
-public sealed class WorkspacePathGuard
+public sealed class WorkspacePathGuard : IWorkspacePathGuard
 {
     /// <summary>The root this guard was BUILT with. Not necessarily the one it enforces — see <see cref="EffectiveRoot"/>.</summary>
     public string Root { get; }

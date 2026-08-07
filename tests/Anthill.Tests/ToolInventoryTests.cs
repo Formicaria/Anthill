@@ -38,17 +38,33 @@ public class ToolInventoryTests
     [Fact]
     public void TheInventory_MatchesWhatTheCompositionRootRegisters()
     {
-        var source = File.ReadAllText(Path.Combine(Root(), "src", "Anthill.Core", "Orchestration", "Queen.cs"));
-        var body = Regex.Match(source, @"private ToolRegistry BuildToolRegistry\(.*?\n    \}", RegexOptions.Singleline);
-        Assert.True(body.Success, "BuildToolRegistry is no longer shaped the way this guard reads it.");
+        // v3.8.16 — the composition root became two, and this guard reads both.
+        //
+        // Queen.BuildToolRegistry composes the tools that stayed in the core; ToolsModule.Register
+        // composes the six that moved to Anthill.Modules.Tools. The registration CALL differs
+        // between them — `registry.Register(new X(` versus `Offer(new X(` — so both shapes are
+        // matched, and the count assertion below is what catches a rename that makes one of them
+        // silently match nothing.
+        var queenBody = Regex.Match(
+            File.ReadAllText(Path.Combine(Root(), "src", "Anthill.Core", "Orchestration", "Queen.cs")),
+            @"private ToolRegistry BuildToolRegistry\(.*?\n    \}", RegexOptions.Singleline);
+        Assert.True(queenBody.Success, "BuildToolRegistry is no longer shaped the way this guard reads it.");
 
-        // Each `registry.Register(new XyzTool(...))` maps back to the tool's own Name literal.
-        var registeredTypes = Regex.Matches(body.Value, @"registry\.Register\(new (\w+)\(")
+        var moduleBody = File.ReadAllText(Path.Combine(
+            Root(), "src", "Anthill.Modules", "Anthill.Modules.Tools", "ToolsModule.cs"));
+
+        var registeredTypes = Regex.Matches(queenBody.Value, @"registry\.Register\(new (\w+)\(")
+            .Concat(Regex.Matches(moduleBody, @"Offer\(new (\w+)\("))
             .Select(m => m.Groups[1].Value).ToList();
         Assert.True(registeredTypes.Count >= 5, $"Only found {registeredTypes.Count} registrations.");
 
+        // The tool TYPES are now split across two directories, so both are read to find each one's
+        // Name literal. A type in neither still fails the lookup below.
         var toolSources = string.Concat(
-            Directory.GetFiles(Path.Combine(Root(), "src", "Anthill.Core", "Tools"), "*.cs").Select(File.ReadAllText));
+            Directory.GetFiles(Path.Combine(Root(), "src", "Anthill.Core", "Tools"), "*.cs")
+                .Concat(Directory.GetFiles(
+                    Path.Combine(Root(), "src", "Anthill.Modules", "Anthill.Modules.Tools"), "*.cs"))
+                .Select(File.ReadAllText));
 
         var registeredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var type in registeredTypes)
