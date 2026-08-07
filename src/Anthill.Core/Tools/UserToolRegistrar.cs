@@ -71,8 +71,24 @@ public sealed class UserToolRegistrar
     public UserToolRegistrar(params IToolKindExecutor[] executors) =>
         _executors = executors.ToDictionary(e => e.Kind);
 
-    /// <summary>The kinds this build can construct. Matches <see cref="ToolKinds.Buildable"/>.</summary>
-    public static UserToolRegistrar Default() => new(new HttpToolKind());
+    /// <summary>
+    /// The executors this build ships. Declared once, here, because two things need to agree about
+    /// them and neither can derive the other: the registrar, which uses them, and
+    /// <see cref="ToolDefinitionPolicy.BuildableKinds"/>, which tells a definition which kinds it may
+    /// name.
+    /// </summary>
+    private static readonly IToolKindExecutor[] DefaultExecutors = { new HttpToolKind() };
+
+    /// <summary>
+    /// The kinds this build can actually construct, derived from <see cref="DefaultExecutors"/>.
+    /// v3.8.15 — previously a hand-maintained set beside the <see cref="ToolKind"/> enum, which a
+    /// second kind would have had to be added to separately.
+    /// </summary>
+    public static IReadOnlySet<ToolKind> BuildableKinds { get; } =
+        DefaultExecutors.Select(e => e.Kind).ToHashSet();
+
+    /// <summary>The registrar the composition root uses, carrying every executor this build ships.</summary>
+    public static UserToolRegistrar Default() => new(DefaultExecutors);
 
     /// <summary>
     /// Everything a definition must satisfy before it becomes callable: its own shape, and the
@@ -129,7 +145,7 @@ public sealed class UserToolRegistrar
                 continue;
             }
 
-            // Belt and braces: Validate() already rejects a kind outside ToolKinds.Buildable, but a
+            // Belt and braces: Validate() already rejects a kind outside BuildableKinds, but a
             // registrar constructed with a narrower executor set would otherwise throw here. A
             // missing executor is a rejection, never an exception thrown through startup.
             if (!_executors.TryGetValue(definition.Kind, out var executor))

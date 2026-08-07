@@ -1,13 +1,21 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Anthill.Core.Contracts;
-// v3.8.10 — this file imports Anthill.Core.Contracts, which declares its OWN ToolResult, and
-// also uses the dispatch one now living in Anthill.SDK.Tools. Aliasing keeps the file
-// unambiguous and names which of the two same-named types is meant, the same way
-// ToolFailureClassTests.cs does.
-using ToolResult = Anthill.SDK.Tools.ToolResult;
+using Anthill.SDK.Common;
+using Anthill.SDK.Contracts;
 
-namespace Anthill.Core.Tools;
+namespace Anthill.SDK.Tools;
+
+// v3.8.15 — phase 5c step 3. Moved out of Anthill.Core.Tools so a module can declare a tool KIND
+// and not merely an instance: IToolKindExecutor names ToolDefinition in its signature, so neither
+// could move without the other.
+//
+// The move cost exactly three lines of coupling, and all three were in Validate(): the built-in
+// name table, the structurally-forbidden name table, and the buildable kind set. All three describe
+// what the CORE registers, so none of them followed the record here. They arrive through
+// IToolDefinitionPolicy instead, resolved the same way UrlSafety and Validation resolve theirs.
+//
+// The file's original alias for Anthill.Core.Contracts.ToolResult is gone with it: inside the SDK
+// there is only one ToolResult, and the colliding contract-shaped one stays in the core.
 
 /// <summary>
 /// v3.4.1 (ADR-006) — a tool the OPERATOR defined, as data.
@@ -61,8 +69,8 @@ public sealed record ToolDefinition
     ///
     /// This is deliberately more permissive than the built-in allowlists, and the reason it is safe
     /// to be: the built-in lists exist to keep <c>apply_patch</c> and <c>shell_command</c> away from
-    /// mission agents, and <see cref="ToolAuthorization.MissionAgentForbidden"/> still applies by
-    /// name regardless of what any definition says.
+    /// mission agents, and the core's <c>ToolAuthorization.MissionAgentForbidden</c> still applies
+    /// by name regardless of what any definition says.
     /// </summary>
     public IReadOnlyList<string> AllowedRoles { get; init; } = Array.Empty<string>();
 
@@ -92,8 +100,20 @@ public sealed record ToolDefinition
     /// budget, with the real fault three layers away from the symptom. Refusing it at the door costs
     /// the operator one error message.
     /// </summary>
-    public IReadOnlyList<string> Validate()
+    /// <param name="policy">
+    /// What this build reserves, refuses and can construct. v3.8.15 — three of the checks below are
+    /// facts about the CORE, and the core is what answers them. <c>null</c> resolves through
+    /// <see cref="SafetyPolicy.ToolDefinitions"/>, which <c>Anthill.Core</c> installs from a module
+    /// initializer; the argument exists so a test can pin a policy without touching global state.
+    ///
+    /// Deliberately optional rather than required. Every caller in the tree passes nothing, and
+    /// making it required would have rewritten them all — including the security tests that assert
+    /// on this method directly — to thread through an object whose only correct value is the one
+    /// the core already installed.
+    /// </param>
+    public IReadOnlyList<string> Validate(IToolDefinitionPolicy? policy = null)
     {
+        var rules = policy ?? SafetyPolicy.ToolDefinitions;
         var problems = new List<string>();
 
         if (string.IsNullOrWhiteSpace(Name))
@@ -101,7 +121,7 @@ public sealed record ToolDefinition
         else if (!System.Text.RegularExpressions.Regex.IsMatch(Name, "^[a-z][a-z0-9_]{2,63}$"))
             problems.Add($"name '{Name}' must be 3-64 chars, lowercase, starting with a letter "
                        + "(providers reject tool names outside this shape)");
-        else if (ToolInventory.Implemented.Contains(Name))
+        else if (rules.ReservedToolNames.Contains(Name))
             problems.Add($"'{Name}' is a built-in tool — a definition may not shadow one, because a "
                        + "tool that could take over apply_patch would make registration an escalation");
 
@@ -110,9 +130,9 @@ public sealed record ToolDefinition
 
         if (Kind == ToolKind.Unknown)
             problems.Add("kind is required");
-        else if (!ToolKinds.Buildable.Contains(Kind))
+        else if (!rules.BuildableKinds.Contains(Kind))
             problems.Add($"kind '{Kind}' is declared but not built in this release; "
-                       + $"available now: {string.Join(", ", ToolKinds.Buildable)}");
+                       + $"available now: {string.Join(", ", rules.BuildableKinds)}");
 
         // The schema is PARSED, not merely stored. An unparseable schema reaches the provider as a
         // malformed tools array, which most backends answer by ignoring the tool silently — the
@@ -128,7 +148,7 @@ public sealed record ToolDefinition
             problems.Add($"parameters is not valid JSON: {error.Message}");
         }
 
-        if (ToolAuthorization.MissionAgentForbidden.Contains(Name))
+        if (rules.ForbiddenToolNames.Contains(Name))
             problems.Add($"'{Name}' is a structurally forbidden tool name");
 
         return problems;
@@ -159,13 +179,10 @@ public enum ToolKind
 public static class ToolKinds
 {
     /// <summary>
-    /// The kinds this build can actually construct. The enum is deliberately wider: the other three
-    /// are on the roadmap, and naming them here means a definition asking for one gets "not built
-    /// yet" at registration instead of a confusing generic rejection — the same distinction between
-    /// "does not exist" and "not switched on" that the /tools report already makes.
+    /// Parse a stored or wire-supplied kind name. Anything unrecognised becomes
+    /// <see cref="ToolKind.Unknown"/>, which <see cref="ToolDefinition.Validate"/> then reports as
+    /// "kind is required" — a definition with a typo'd kind must not silently acquire a default.
     /// </summary>
-    public static readonly IReadOnlySet<ToolKind> Buildable = new HashSet<ToolKind> { ToolKind.Http };
-
     public static ToolKind Parse(string? text) =>
         Enum.TryParse<ToolKind>(text, ignoreCase: true, out var kind) ? kind : ToolKind.Unknown;
 }
