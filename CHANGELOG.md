@@ -21,11 +21,13 @@ to the one being asked, and passes.**
   the SDK could replace or clear the SSRF blocklist, patch-path gates and reserved tool names for the
   whole process. Visible now only to `Anthill.Core` and the test projects. It remains process-global;
   what changed is who may write it, and the plan says so rather than claiming more.
-- **A real no-UI gate.** `-p:AnthillNoUi=true` drops every UI `EmbeddedResource`, and the new
-  `no-ui-boot` CI job publishes with it, asserts the assets are genuinely absent from the binary,
-  boots it, and requires `/health` and a degraded `/ui`. The previous gate — `UiAbsenceTests` asking
-  for a fabricated resource name — proved a null check, and had been used to mark the criterion met.
-  That test survives with an honest docstring and no claim on the criterion.
+- **The no-UI build flag ships; the gate does not, and the criterion goes back to NOT PROVEN.**
+  `-p:AnthillNoUi=true` drops every UI `EmbeddedResource` and is the mechanism that makes this
+  testable at all. The `no-ui-boot` CI job that would build and boot such a binary failed twice — the
+  API stayed up but never answered `/health` on its port — and was WITHDRAWN rather than marked
+  `continue-on-error`. Shipping a gate that cannot fail the build, in the release closing out a
+  review about wrong-greens, would have been the same defect a third time. `UiAbsenceTests` survives
+  with an honest docstring and no claim on the criterion; finishing the job needs its own log.
 - **The isolation test stops delegating.** `RuntimeIsolationTests.HostGates` sent shell, web, patch,
   suffix and blocklist policy straight back to `ToolRuntime.Live`, making it a test of profile
   isolation dressed as execution isolation. Per-host values now, and `ToolPolicyIsolationTests` makes
