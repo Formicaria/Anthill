@@ -55,12 +55,12 @@ public sealed class SearchWorkspaceTool : ITool
     {
         if (!AnthillRuntime.EnableFileTools)
             return new ToolResult(Name, false, "", "File tools are disabled by config.",
-                Contracts.FailureClass.AuthorizationFailure);
+                FailureClass.AuthorizationFailure);
 
         var query = args.GetValueOrDefault("query")?.ToString() ?? "";
         if (query.Trim().Length == 0)
             return new ToolResult(Name, false, "", "Missing required argument: query",
-                Contracts.FailureClass.ValidationFailure);
+                FailureClass.ValidationFailure);
 
         var glob = args.GetValueOrDefault("glob")?.ToString();
         if (string.IsNullOrWhiteSpace(glob)) glob = "*";
@@ -71,7 +71,7 @@ public sealed class SearchWorkspaceTool : ITool
 
         if (!Directory.Exists(root))
             return new ToolResult(Name, false, "", $"Directory does not exist: {root}",
-                Contracts.FailureClass.ValidationFailure);
+                FailureClass.ValidationFailure);
 
         Regex matcher;
         try
@@ -88,7 +88,7 @@ public sealed class SearchWorkspaceTool : ITool
         {
             // The model wrote the pattern and can fix it — which it can only do if it is told.
             return new ToolResult(Name, false, "", $"Invalid regular expression: {error.Message}",
-                Contracts.FailureClass.ValidationFailure);
+                FailureClass.ValidationFailure);
         }
 
         var output = new StringBuilder();
@@ -143,7 +143,7 @@ public sealed class SearchWorkspaceTool : ITool
     private ToolResult TimedOut(string query) =>
         new(Name, false, "", $"The pattern took too long to evaluate against this workspace: '{query}'. "
                            + "Simplify it — nested quantifiers over long lines are the usual cause.",
-            Contracts.FailureClass.Timeout);
+            FailureClass.Timeout);
 
     /// <summary>
     /// Files worth searching, in deterministic order, skipping the directories every ecosystem fills
@@ -224,7 +224,7 @@ public sealed class ChangedFilesSummaryTool : ITool
             // uncommitted work as "what this mission changed" would be a confident, plausible lie.
             return new ToolResult(Name, false, "",
                 "There is no mission workspace in scope, so there is no change set to summarise.",
-                Contracts.FailureClass.UnsafeState);
+                FailureClass.UnsafeState);
 
         // Against the RECORDED base. `git diff HEAD` inside a detached worktree would silently mean
         // something different once the agent commits, and `git diff` against the source's current
@@ -234,7 +234,7 @@ public sealed class ChangedFilesSummaryTool : ITool
         var (statOk, stat) = Git(workspace.Root, $"diff --stat {against} --");
         if (!statOk)
             return new ToolResult(Name, false, "", $"Could not read the change set: {stat.Trim()}",
-                Contracts.FailureClass.DependencyFailure);
+                FailureClass.DependencyFailure);
 
         var (_, untracked) = Git(workspace.Root, "ls-files --others --exclude-standard");
 

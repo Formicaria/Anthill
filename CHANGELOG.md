@@ -1,5 +1,81 @@
 # ANTHILL Changelog
 
+## v3.8.11 - The tool gates become a contract
+
+Phase 5c step 1 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisite for moving the
+tool implementations out, and the step where the plan turned out to be wrong.
+
+- **`IToolRuntimeOptions` is an interface with live-reading properties, NOT a snapshot record.** The
+  plan said to copy the `HomelabOptions` pattern. Measuring first showed why that would have been a
+  defect: these are capability gates, and the colony gates them TWICE on purpose — `RuntimeOptions`
+  decides at composition time whether a tool is registered, and the tool re-checks when it runs, so
+  one that somehow reached the registry still refuses to act. A captured value collapses the second
+  check into the first, and every existing test would still have passed.
+- **The fields behind them are mutable statics the test suite toggles.** A snapshot would make a test
+  that flips `EnableShellTool` pass while the production path read something else — the worst kind of
+  green.
+- **Only the mutable settings are in the interface.** `MaxFileReadChars`, `MaxDirectoryItems`,
+  `WebSearchProvider`, `MaxWebResults` and `WebSearchTimeoutSeconds` are `const`; putting them behind
+  an interface would advertise a flexibility that does not exist.
+- **Sixteen reads across seven tools now go through it**, injected with a live-reading default, so
+  every existing construction — all of them, since the Queen still builds every tool — behaves
+  exactly as before.
+- `ToolRuntimeOptionsTests` pins the property that matters: a gate flipped AFTER construction changes
+  the answer on the next call.
+
+The implementations have not moved yet. This is the seam they need, built and tested first.
+
+
+## v3.8.10 - The tool contract joins the SDK
+
+Phase 5b of the Core/Modules split (`docs/REFACTOR-PLAN.md`).
+
+- **`ToolResult` and `ITool` move to `Anthill.SDK.Tools`.** 5a is what made this possible:
+  `ToolResult`'s only dependencies are `FailureClass` and `FailureClassify`, and both joined the SDK
+  in v3.8.9. `ITool.Run` returns `ToolResult` and needs nothing further.
+- **Surveyed before moving, by full qualified string rather than suffix.** 138 bare `ToolResult`
+  references resolve through a global using and needed no edit; 8 `Domain.ToolResult` were rewritten;
+  5 `Contracts.ToolResult` were deliberately left, because that is a DIFFERENT type that stays in the
+  core. Exactly two files went ambiguous — `ToolDefinition.cs` and `TaskContractTests.cs`, each
+  importing `Anthill.Core.Contracts` *and* using the bare name — and both now alias explicitly.
+- **`IModuleContext.RegisterTool(ITool)` — the phase-0 deferral, closed.** It was omitted deliberately
+  when the interface was written: `ITool` was in the core, so the only options were
+  `RegisterTool(string, object)`, which abandons the type system at the seam whose job is enforcing
+  types, or a duplicate SDK interface. Waiting three phases was the right trade.
+- **Module tools are buffered, not registered directly.** Modules load before the Queen, and she
+  builds the tool registry — so a tool registered during `Register()` has nowhere to go. `ModuleHost`
+  collects them and the composition root drains them into `Queen.Tools` once she exists. Empty today;
+  the path is live so the first module tool needs no further wiring.
+- **A duplicate tool name throws.** `ToolRegistry.Register` is last-write-wins, which is right for the
+  core replacing its own built-ins — but two modules both claiming "shell" is a misconfiguration, and
+  silently running one of them is not a failure anyone notices until the wrong one executes.
+
+`IToolKindExecutor` stays in the core for 5c: it needs `ToolDefinition`, which is entangled with
+`ToolAuthorization` and `ToolInventory`.
+
+
+## v3.8.9 - Half the contract vocabulary joins the SDK
+
+Phase 5a of the Core/Modules split (`docs/REFACTOR-PLAN.md`), on the second attempt — and the
+correction is the interesting part.
+
+- **`Capability`, `FailureClass`, `FailureClassify`, `ToolDescriptor` and `ToolCatalog` move to
+  `Anthill.SDK.Contracts`.** Genuinely shared vocabulary: what a capability is, how a failure is
+  classified, what a tool declares about itself. Nothing in them knows what a mission or a task is.
+- **`TaskContract`, `ContractGate` and `Contracts.ToolResult` stayed in the core**, and the first
+  attempt moved them anyway. `TaskContract.FromTask` takes `Domain.Task` and reaches
+  `Agents.AntRegistry`; `ContractGate.Admit` takes `List<Domain.Task>`. All of it through PARTIAL
+  qualification — `Domain.Task`, not `Anthill.Core.Domain.Task` — which resolves through the
+  enclosing namespace and leaves no `using` statement to notice. A purity check that reads imports
+  sees a dependency-free file. It is not one.
+- **`ToolResult` stayed for a different reason.** `Anthill.Core.Domain` declares a DIFFERENT type of
+  the same name, and call sites disambiguate with `Contracts.ToolResult`. `ToolFailureClassTests`
+  has a comment explaining exactly this. Moving it turns every one of those call sites into an
+  ambiguity error that reads as unrelated.
+- The lesson, recorded in the file header so the next attempt does not repeat it: **a file is only
+  as movable as its most qualified reference**, and `grep` for `using` will not find them.
+
+
 ## v3.8.8 - The boundary stops depending on discipline
 
 The keystone of phase 7, brought forward: `ModuleBoundaryTests` asserts the Core/Modules split from

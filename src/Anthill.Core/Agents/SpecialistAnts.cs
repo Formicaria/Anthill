@@ -36,7 +36,7 @@ public sealed class UiCartographerAnt : BaseAnt
         // 1. Find UI files (read-only listing through the enforced dispatch path).
         var listing = _tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." });
         if (!listing.Success)
-            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+            return AntExecutionResult.Failed(FailureClass.DependencyFailure,
                 $"workspace listing unavailable: {listing.Error}");
         // Format-agnostic extraction: pull file-path tokens out of whatever shape the listing
         // tool prints (plain names, decorated rows, sizes appended — all fine).
@@ -65,7 +65,7 @@ public sealed class UiCartographerAnt : BaseAnt
         }
 
         if (examined.Count == 0)
-            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+            return AntExecutionResult.Failed(FailureClass.DependencyFailure,
                 "no UI files could be read from the workspace");
 
         // 3. Structured map + handoff to the UI coder (spec §6.5).
@@ -166,7 +166,7 @@ public sealed class TesterAnt : BaseAnt
                     ? new AntHandoff("tester", "verifier", "checks passed — verify results", "verification", new[] { "test_report" }, false, 1, $"tester-ok:{mission.Id}:{task.Id}")
                     : new AntHandoff("tester", "medic", "check failure needs diagnosis", "failure_diagnosis", new[] { "test_report" }, true, 1, $"tester-fail:{mission.Id}:{task.Id}"),
             },
-            Failure = allPassed ? null : new AntFailure(Contracts.FailureClass.VerificationFailure, "one or more checks failed", Retryable: true),
+            Failure = allPassed ? null : new AntFailure(FailureClass.VerificationFailure, "one or more checks failed", Retryable: true),
         };
         return result;
     }
@@ -284,7 +284,7 @@ public sealed class ScribeAnt : BaseAnt
                 .Select(m => m.Groups[1].Value.Replace('\\', '/')).ToList();
             if (targets.Count == 0)
                 return AntExecutionResult.Failed(
-                    Contracts.FailureClass.ValidationFailure, "docs_patch_proposal requires explicit 'target: <docs path>' entries");
+                    FailureClass.ValidationFailure, "docs_patch_proposal requires explicit 'target: <docs path>' entries");
             var illegal = targets.Where(t => !DocsPath.IsMatch(t)).ToList();
             if (illegal.Count > 0)
                 return AntExecutionResult.Blocked(
@@ -383,7 +383,7 @@ public sealed class MedicAnt : BaseAnt
         // Deterministic classification.
         var text = (failed.FailureReason ?? "") + " " + (failed.Result ?? "");
         var (cls, cause, confidence) = Classify(text);
-        var retryable = Contracts.FailureClassify.IsRetryable(cls);
+        var retryable = FailureClassify.IsRetryable(cls);
 
         // Loop control 2: identical diagnosis already issued → escalate, don't repeat the route.
         var dedupe = $"{failed.Id}:{cls}";
@@ -428,16 +428,16 @@ public sealed class MedicAnt : BaseAnt
     }
 
 
-    internal static (Contracts.FailureClass, string, string) Classify(string text)
+    internal static (FailureClass, string, string) Classify(string text)
     {
         var t = text.ToLowerInvariant();
-        if (t.Contains("timed out") || t.Contains("timeout")) return (Contracts.FailureClass.Timeout, "operation exceeded its time budget", "high");
-        if (t.Contains("rate limit") || t.Contains("429")) return (Contracts.FailureClass.RateLimit, "provider rate limiting", "high");
-        if (t.Contains("unreachable") || t.Contains("connection") || t.Contains("transient")) return (Contracts.FailureClass.TransientProviderFailure, "backing service unavailable", "medium");
-        if (t.Contains("authorization_denied") || t.Contains("permission")) return (Contracts.FailureClass.AuthorizationFailure, "capability/tool boundary denied the operation", "high");
-        if (t.Contains("exit_code=") || t.Contains(": fail") || t.Contains("build") || t.Contains("test")) return (Contracts.FailureClass.VerificationFailure, "deterministic check failed", "high");
-        if (t.Contains("invalid") || t.Contains("validation")) return (Contracts.FailureClass.ValidationFailure, "input failed validation", "medium");
-        return (Contracts.FailureClass.InternalDefect, "unclassified failure — treated as internal defect (not retryable)", "low");
+        if (t.Contains("timed out") || t.Contains("timeout")) return (FailureClass.Timeout, "operation exceeded its time budget", "high");
+        if (t.Contains("rate limit") || t.Contains("429")) return (FailureClass.RateLimit, "provider rate limiting", "high");
+        if (t.Contains("unreachable") || t.Contains("connection") || t.Contains("transient")) return (FailureClass.TransientProviderFailure, "backing service unavailable", "medium");
+        if (t.Contains("authorization_denied") || t.Contains("permission")) return (FailureClass.AuthorizationFailure, "capability/tool boundary denied the operation", "high");
+        if (t.Contains("exit_code=") || t.Contains(": fail") || t.Contains("build") || t.Contains("test")) return (FailureClass.VerificationFailure, "deterministic check failed", "high");
+        if (t.Contains("invalid") || t.Contains("validation")) return (FailureClass.ValidationFailure, "input failed validation", "medium");
+        return (FailureClass.InternalDefect, "unclassified failure — treated as internal defect (not retryable)", "low");
     }
 }
 

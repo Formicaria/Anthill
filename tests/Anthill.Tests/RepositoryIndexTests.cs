@@ -235,7 +235,7 @@ public class RepositoryIndexTests : IDisposable
         var result = Tool().Run(new Dictionary<string, object?>());
 
         Assert.False(result.Success);
-        Assert.Equal(Anthill.Core.Contracts.FailureClass.UnsafeState, result.Failure);
+        Assert.Equal(Anthill.SDK.Contracts.FailureClass.UnsafeState, result.Failure);
     }
 
     // ---- symbols: evidence, not authority -------------------------------------------------------

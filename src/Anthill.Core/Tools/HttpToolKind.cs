@@ -90,7 +90,7 @@ public sealed class HttpToolKind : IToolKindExecutor
 
         if (!AnthillRuntime.EnableUserTools)
             return new ToolResult(name, false, "", "User-defined tools are disabled by config.",
-                Contracts.FailureClass.AuthorizationFailure);
+                FailureClass.AuthorizationFailure);
 
         var template = definition.Config.GetValueOrDefault("url") ?? "";
         var method = new HttpMethod((definition.Config.GetValueOrDefault("method") ?? "GET").Trim().ToUpperInvariant());
@@ -102,18 +102,18 @@ public sealed class HttpToolKind : IToolKindExecutor
         }
         catch (ArgumentException error)
         {
-            return new ToolResult(name, false, "", error.Message, Contracts.FailureClass.ValidationFailure);
+            return new ToolResult(name, false, "", error.Message, FailureClass.ValidationFailure);
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return new ToolResult(name, false, "", $"resolved URL is not valid: {url}",
-                Contracts.FailureClass.ValidationFailure);
+                FailureClass.ValidationFailure);
 
         // AFTER substitution. Checking the template would prove a property of a string that is not
         // the one being requested.
         if (!HostIsAllowed(uri.Host))
             return new ToolResult(name, false, "", $"host '{uri.Host}' is not allowlisted for user tools",
-                Contracts.FailureClass.AuthorizationFailure);
+                FailureClass.AuthorizationFailure);
 
         try
         {
@@ -138,14 +138,14 @@ public sealed class HttpToolKind : IToolKindExecutor
                 return new ToolResult(name, false, "",
                     $"{(int)response.StatusCode} redirect to '{response.Headers.Location}' — user tools do "
                   + "not follow redirects, because a redirect off an allowlisted host would bypass the allowlist",
-                    Contracts.FailureClass.TargetRejection);
+                    FailureClass.TargetRejection);
 
             if (!response.IsSuccessStatusCode)
                 // 4xx is the caller's fault and fixable; 5xx is the far end's and worth retrying.
                 return new ToolResult(name, false, body, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}",
                     (int)response.StatusCode >= 500
-                        ? Contracts.FailureClass.TransientProviderFailure
-                        : Contracts.FailureClass.ValidationFailure);
+                        ? FailureClass.TransientProviderFailure
+                        : FailureClass.ValidationFailure);
 
             return new ToolResult(name, true, body);
         }

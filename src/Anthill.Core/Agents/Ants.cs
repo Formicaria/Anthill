@@ -141,7 +141,7 @@ Return format:
 ";
         var call = _router.GenerateTyped("researcher", prompt, mission.Id, task.Id, Name);
         if (call.Status == ModelCallOutcome.Empty)
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Researcher: routed model returned an empty response.");
         if (!call.Ok)
         {
@@ -272,7 +272,7 @@ public sealed class WebResearchAnt : BaseAnt
         var result = _tools.RunTool("web_search", mission.Id, task.Id, Name,
             new() { ["query"] = query, ["max_results"] = Math.Min(AnthillRuntime.MaxWebResults, AnthillRuntime.MaxSourcesPerSearch) });
         if (!result.Success)
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Web search provider failed for query '{TextUtil.Truncate(query, 120)}': {TextUtil.Truncate(result.Error ?? "unknown error", 300)}");
 
         JsonElement payload;
@@ -331,7 +331,7 @@ public sealed class WebResearchAnt : BaseAnt
             // The search RAN and produced nothing usable. That is a failed research task — the
             // deliverable (saved sources) does not exist — and retryable, because a different
             // provider window may answer. It must never read as ordinary success.
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Search ran but saved zero usable sources (query '{TextUtil.Truncate(query, 120)}', {skipped} skipped/filtered). "
                 + $"Preview: {TextUtil.Truncate(preview, 300)}");
         }
@@ -413,11 +413,11 @@ public sealed partial class FileAnt : BaseAnt
 
         // Every tool call failed — listing AND all attempted reads. Nothing was inspected.
         if (!directoryResult.Success && candidatePaths.Count > 0 && readsOk == 0)
-            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+            return AntExecutionResult.Failed(FailureClass.DependencyFailure,
                 $"Workspace inspection failed: the directory listing and all {readsFailed} file read(s) failed. "
                 + $"Listing error: {TextUtil.Truncate(directoryResult.Error ?? "unknown", 200)}");
         if (!directoryResult.Success && candidatePaths.Count == 0)
-            return AntExecutionResult.Failed(Contracts.FailureClass.DependencyFailure,
+            return AntExecutionResult.Failed(FailureClass.DependencyFailure,
                 $"Workspace inspection failed: the directory listing failed and no file paths were identified. "
                 + $"Listing error: {TextUtil.Truncate(directoryResult.Error ?? "unknown", 200)}");
 
@@ -483,7 +483,7 @@ public sealed class CoderAnt : BaseAnt
 
         var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars));
         if (!_useOllama || _router is null)
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
 
         // v2.11.1: when the sandbox gate is on, iterate inside a disposable sandbox (propose ->
@@ -498,7 +498,7 @@ public sealed class CoderAnt : BaseAnt
 
         var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name);
         if (!call.Ok)
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
         return ClassifyPatchJson(call.Content);
     }
@@ -509,7 +509,7 @@ public sealed class CoderAnt : BaseAnt
     internal static AntExecutionResult ClassifyPatchJson(string response)
     {
         if (string.IsNullOrWhiteSpace(response))
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Coder: routed model returned an empty response.");
         try
         {
@@ -522,13 +522,13 @@ public sealed class CoderAnt : BaseAnt
                     Metrics = new AntMetrics { OutputChars = response.Length },
                 };
             var summary = parsed["summary"]?.GetValue<string>() ?? "";
-            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
+            return AntExecutionResult.Failed(FailureClass.InternalDefect,
                 $"Coder returned zero patch proposals for a patch task. Coder's stated reason: "
                 + $"{TextUtil.Truncate(summary.Length > 0 ? summary : "(none given)", 300)}");
         }
         catch
         {
-            return AntExecutionResult.Failed(Contracts.FailureClass.InternalDefect,
+            return AntExecutionResult.Failed(FailureClass.InternalDefect,
                 $"Coder returned malformed patch output (not parseable JSON): {TextUtil.Truncate(response, 200)}");
         }
     }
@@ -703,7 +703,7 @@ Rules:
 ";
         var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name);
         if (call.Status == ModelCallOutcome.Empty)
-            return AntExecutionResult.Failed(Contracts.FailureClass.TransientProviderFailure,
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Builder: routed model returned an empty response.");
         if (!call.Ok)
             // v2.26.0: the fallback still answers, but degraded generation is DISCLOSED as a

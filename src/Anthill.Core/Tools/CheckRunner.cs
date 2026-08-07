@@ -65,10 +65,10 @@ public sealed class RunAllowlistedCheckTool : ITool
                 : string.Join(", ", manifest.Checks.Select(c => c.Id));
             return new ToolResult(Name, false, "",
                 $"check '{id}' is not in the allowlisted catalog — refused. Available here: {available}",
-                Contracts.FailureClass.AuthorizationFailure);
+                FailureClass.AuthorizationFailure);
         }
         if (!def.Enabled)
-            return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused", Contracts.FailureClass.AuthorizationFailure);
+            return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused", FailureClass.AuthorizationFailure);
 
         var started = DateTime.UtcNow;
         try
@@ -87,13 +87,13 @@ public sealed class RunAllowlistedCheckTool : ITool
             if (!proc.WaitForExit(TimeSpan.FromSeconds(def.TimeoutSeconds)))
             {
                 try { proc.Kill(entireProcessTree: true); } catch { }
-                return new ToolResult(Name, false, "", $"check '{id}' timed out after {def.TimeoutSeconds}s", Contracts.FailureClass.Timeout);
+                return new ToolResult(Name, false, "", $"check '{id}' timed out after {def.TimeoutSeconds}s", FailureClass.Timeout);
             }
             var output = $"check_id={id}\nexit_code={proc.ExitCode}\nduration_ms={(DateTime.UtcNow - started).TotalMilliseconds:F0}\n"
                 + $"--- output ---\n{Truncate(stdout.Result)}\n{Truncate(stderr.Result)}";
             return proc.ExitCode == 0
                 ? new ToolResult(Name, true, output, "")
-                : new ToolResult(Name, false, output, $"check '{id}' exited {proc.ExitCode}", Contracts.FailureClass.VerificationFailure);
+                : new ToolResult(Name, false, output, $"check '{id}' exited {proc.ExitCode}", FailureClass.VerificationFailure);
         }
         catch (Exception e)
         {

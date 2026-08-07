@@ -130,6 +130,12 @@ public static partial class ApiHost
 
         Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;
+
+        // v3.8.10 — hand module-contributed tools to the registry the Queen just built. Modules load
+        // before she exists, so a tool registered during Register() has nowhere to go until now;
+        // ModuleHost buffers them and this is the drain. Empty today — no module ships a tool yet —
+        // but the path is live, so the first one that does needs no further wiring.
+        foreach (var tool in Modules.ContributedTools) Queen.Tools.Register(tool);
         // Phase 3: the Director multiplexes its concurrent missions through this same worker
         // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
         // ensuring autonomous missions can actually run side by side without starving user jobs.
