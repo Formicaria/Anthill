@@ -1,5 +1,69 @@
 # ANTHILL Changelog
 
+## v3.8.23 - patches are verified in a tree that contains them
+
+Two things, and the first is a correction to the correction.
+
+**v3.8.22's build gate compiled the wrong tree.** It made `BuildVerifier` run on every patch and
+pointed it at `AnthillRuntime.AllowedWorkspaceRoot` — the primary workspace, which does not contain
+the patch. Every build verdict was a true statement about the repository as it already was. A
+proposal full of code that does not compile passed it, every time.
+
+The capability to do this properly already existed and had no mission-path caller. `SandboxWorkspace`
+has made isolated copies since v1.8.x, and `PatchVerifyRunner` has materialised a patch into one and
+built it since v1.8.24 — but it is operator-triggered through `POST /patches/{id}/verify`, handles a
+single patch rather than a set, and nothing in `ProcessPatchProposals` ever called it. That is the
+same shape as the `VerificationRunner` finding: a well-built subsystem nothing reaches.
+
+`PatchSetMaterializer` brings it into the core at patch-set granularity. The whole set is written
+into a disposable copy, the path guard refuses anything that climbs out, and materialisation fails as
+a unit — a set with one bad proposal is abandoned rather than verified on the strength of the rest.
+Verification then enters a `MissionWorkspaceScope` for that sandbox, which matters more than it
+looks: `RunAllowlistedCheckTool` resolves both its working directory and its check catalog from the
+scope, so without it an ambient workspace could silently redirect the build somewhere else again.
+A `workspace_snapshot` artifact records base revision, patch-set hash and applied-tree hash, and every
+evidence row now names the tree it was computed in.
+
+**All twelve roles have execution contracts.** Six did. The six that did not were the core ants that
+do nearly all the work — including the coder, the only role in the colony that produces source
+changes, which was therefore the most privileged and the least specified.
+
+The reason it survived is the interesting part: `AntExecutorCatalog.Initialize` checked for a missing
+contract only `if (isSpecialist)`, so for the six roles that had no contract the check that would
+have reported it did not apply. Fail-closed logic that cannot see the case it exists for. The
+qualifier is gone and the variable is renamed — it always meant "has a contract", which stopped being
+a synonym for "is a specialist" the moment this table grew.
+
+Contracts are written from what the handlers measurably do, verified by extracting each class body
+and reading out its `RunTool` calls. Where reality is thinner than the spec the contract says so —
+the verifier still asks a model for a verdict, and its contract records that as a real gap rather
+than describing the deterministic reader the spec wants. Authorization now short-circuits the legacy
+`RoleAllowedTools` table for these roles, so the two `system_info` grants that table carried are
+preserved verbatim: this release moves *where* authorization is declared, not *what* is granted.
+
+`SchedulingMode` lands on the contract. Tester and soldier are `PolicyInserted`, medic is
+`FailureTriggered`, archivist is `PostFinalization` — four roles that were never really
+planner-selectable now say so. `MedicAnt.Execute` has opened by returning Blocked when no task has
+failed since it was written, which is a handler defending itself against a scheduler that should
+never have called it. Declaring the mode is the prerequisite for the scheduler honouring it, which
+is v3.8.24.
+
+**The three phantom tools are gone from the contracts, not built.** `ToolInventory.Planned` is now
+empty, and how it emptied is the point:
+
+- `policy_scan` — the capability exists. `SoldierAnt` calls `PolicyScan` in process as a
+  deterministic service, which is the right shape for a verdict no model may influence. A tool
+  wrapper would have added a call path and no capability.
+- `read_failure_context` — genuinely absent, but what the medic lacks is durable attempt history,
+  which orchestration should assemble into a typed artifact rather than hand it a tool to go fetch.
+- `write_memory_candidate` — redundant. The archivist already writes candidates as artifacts and
+  `IngestMemoryCandidates` already consumes them. Building it would have created a second channel
+  writing the same fact.
+
+Implementing all three would have produced a green inventory with more attack surface and one
+duplicate write path. The list stays, empty, because it is load-bearing: a contract naming a tool in
+neither set fails the build.
+
 ## v3.8.22 - deterministic blocks actually block
 
 A correction release. v3.8.21 claimed patches were verified for the first time. They were not, and

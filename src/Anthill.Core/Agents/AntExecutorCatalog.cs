@@ -61,7 +61,12 @@ public static class AntExecutorCatalog
             var kind = AntExecutionCatalog.KindOf(id);
             var hasHandler = handlerRoleIds.Contains(id);
             var hasContract = AntExecutionCatalog.ContractFor(id) is not null;
-            var isSpecialist = AntExecutionCatalog.Contracts.ContainsKey(id);
+            // v3.8.23: renamed from `isSpecialist`. It has always meant "has a contract", and that
+            // was the same thing as "is a specialist" only for as long as the six core ants had
+            // none. Now every mission role does, so the old name would read as a claim about
+            // rollout tier while testing something else entirely — which is how the missing-contract
+            // check below came to be unreachable for exactly the roles that needed it.
+            var hasDeclaredContract = AntExecutionCatalog.Contracts.ContainsKey(id);
 
             bool implemented, available;
             string reason = "";
@@ -76,7 +81,7 @@ public static class AntExecutorCatalog
                 implemented = false; available = false;
                 reason = "not implemented (visual scaffold)";
             }
-            else if (isSpecialist && !AntRegistry.ExecutableRoleIds.Contains(id))
+            else if (hasDeclaredContract && !AntRegistry.ExecutableRoleIds.Contains(id))
             {
                 implemented = hasHandler;
                 available = false;
@@ -93,10 +98,18 @@ public static class AntExecutorCatalog
                     reason = "missing runtime handler";
                     problems.Add($"Executable role '{id}' has NO runtime handler — kept unavailable (fail closed).");
                 }
-                else if (isSpecialist && !hasContract)
+                // v3.8.23: a contract is required of EVERY mission agent, not just specialists.
+                //
+                // The `isSpecialist` qualifier used to make this check unreachable for the six core
+                // ants, which is how they came to run with no declared surface at all — no supported
+                // task types, no tool allowlist, no model requirement — while the runtime reported
+                // them fully available. The most privileged role in the colony, the coder, was the
+                // least specified, and nothing could see it because the check that would have said
+                // so did not apply to it.
+                else if (!hasContract)
                 {
                     available = false; reason = "missing execution contract";
-                    problems.Add($"Executable specialist '{id}' has no execution contract — kept unavailable.");
+                    problems.Add($"Executable role '{id}' has no execution contract — kept unavailable (fail closed).");
                 }
                 else if (!role.Enabled) reason = "disabled in registry";
             }

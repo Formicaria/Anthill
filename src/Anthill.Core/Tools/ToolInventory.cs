@@ -55,31 +55,34 @@ public static class ToolInventory
     };
 
     /// <summary>
-    /// Tool names the specialist contracts reference that NOTHING implements.
+    /// Tool names contracts reference that NOTHING implements. EMPTY as of v3.8.23.
     ///
-    /// Listed explicitly rather than tolerated silently, for two reasons. A contract naming a
-    /// phantom tool is not a harmless placeholder — it is a role that can dispatch nothing, which
-    /// presents at runtime as an ant that runs and produces no work rather than as an error. And
-    /// enumerating them here means a NEW phantom fails the build instead of joining the pile.
+    /// It held three names from v2.19.0 to v3.8.22 — policy_scan, read_failure_context and
+    /// write_memory_candidate — and all three are now gone from the contracts rather than built.
+    /// That was the finding, and it is worth keeping because the instinct was the opposite:
     ///
-    /// Each is a real intended capability, which is why the contracts were written against them:
-    ///   policy_scan               — soldier's security/policy review surface
-    ///   read_failure_context      — medic's read-only view of a failed task's evidence
-    ///   write_memory_candidate    — archivist's only write path, into the memory pipeline
+    ///   policy_scan            The capability EXISTS. SoldierAnt calls PolicyScan in process, as a
+    ///                          deterministic service. That is the right shape for a verdict no
+    ///                          model may influence, and wrapping it in a dispatchable tool would
+    ///                          have added a call path without adding a capability.
+    ///   read_failure_context   Genuinely absent — but the reach the medic lacks is durable attempt
+    ///                          history, which orchestration should ASSEMBLE into a typed artifact
+    ///                          rather than hand the medic a tool to go fetch.
+    ///   write_memory_candidate REDUNDANT. The archivist already writes candidates as artifacts and
+    ///                          IngestMemoryCandidates already consumes them. Building it would have
+    ///                          created a second channel writing the same fact.
     ///
-    /// v3.5.0 moved search_workspace and read_changed_files_summary OUT of this list — they are
-    /// built, and both roles that were blocked on them can now dispatch.
+    /// Implementing all three would have made this list empty and the inventory green while adding
+    /// attack surface and one duplicate write path. Emptying it by deleting the declarations is the
+    /// same green for the opposite reason, and the reason is the part that matters.
     ///
-    /// A name moving from here to <see cref="Implemented"/> is the whole point; a guard fails if one
-    /// appears in both, because a contract that keeps treating a built tool as planned would keep
-    /// its role idle for no visible reason.
+    /// The list STAYS, empty, because it is load-bearing: a guard fails when a contract names a tool
+    /// that is in neither set, so a new phantom fails the build instead of joining a pile. An empty
+    /// set is the strongest form of that guard.
+    ///
+    /// v3.5.0 moved search_workspace and read_changed_files_summary OUT of here — they were built.
     /// </summary>
-    public static readonly IReadOnlySet<string> Planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "policy_scan",
-        "read_failure_context",
-        "write_memory_candidate",
-    };
+    public static readonly IReadOnlySet<string> Planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>True when the name refers to a tool that exists in this build.</summary>
     public static bool Exists(string? toolName) => toolName is not null && Implemented.Contains(toolName);
