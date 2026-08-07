@@ -6,6 +6,9 @@ using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Security;
 using Anthill.Core.Tools;
+// v3.8.16 — the tool implementations moved to Anthill.Modules.Tools. Anthill.Core.Tools is
+// still imported above: the registry, authorization and inventory they run under stayed.
+using Anthill.Modules.Tools;
 using Xunit;
 using DomainTask = Anthill.Core.Domain.Task;
 

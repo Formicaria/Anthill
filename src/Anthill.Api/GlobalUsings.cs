@@ -43,3 +43,8 @@ global using Anthill.SDK.Contracts;
 // Anthill.Core.Contracts still declares its OWN ToolResult; the five `Contracts.ToolResult`
 // call sites are deliberately untouched.
 global using Anthill.SDK.Tools;
+
+// v3.8.16 — the six tools that act on the machine left the core, so the composition root names one
+// more module. No type in Anthill.Modules.Tools collides with one in Anthill.Core.Tools: the six
+// that moved are gone from the core, and everything that decides whether they RUN stayed.
+global using Anthill.Modules.Tools;

@@ -15,6 +15,7 @@
     <!-- Composition root: modules are wired in here, never referenced by the core. -->
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
   </ItemGroup>
 
   <!-- Let the test suite exercise internal helpers (e.g. the mission-report formatter). -->

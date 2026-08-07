@@ -66,8 +66,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     public ModelRouter? Router { get; }
     public ToolRegistry Tools { get; }
     /// <summary>The capability set this Queen was composed from. Missions resolve their context
-    /// against it, so a mission cannot be governed by configuration the Queen never saw.</summary>
-    public RuntimeProfile Profile { get; }
+    /// against it, so a mission cannot be governed by configuration the Queen never saw.
+    ///
+    /// v3.8.16: re-resolved by <see cref="AdoptModuleTools"/>, because six of the eleven tools now
+    /// arrive after construction.</summary>
+    public RuntimeProfile Profile { get; private set; }
     private readonly Planner _planner;
     /// <summary>v3.1.0 (ADR-001): planning behind an interface. The Queen decides WHEN a plan is
     /// made and owns the mission it belongs to; it no longer also implements how one is built.</summary>
@@ -269,6 +272,29 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
               + $"which is missing: {string.Join("; ", fitness.Unmet)}");
     }
 
+    /// <summary>
+    /// Take the tools a module contributed, and re-state what this colony can do. v3.8.16.
+    ///
+    /// WHY THIS IS A METHOD AND NOT A LOOP AT THE CALL SITE. Both composition roots used to write
+    /// <c>foreach (var tool in Modules.ContributedTools) Queen.Tools.Register(tool);</c>, which was
+    /// correct while modules contributed nothing. It stopped being sufficient the moment six of the
+    /// eleven tools started arriving this way, because <see cref="Profile"/> is resolved in the
+    /// constructor from the registry as it stood THEN — so registering afterwards left
+    /// <c>Profile.ToolGrants</c> naming five tools while eleven were dispatchable.
+    ///
+    /// That is a wrong answer, not a crash: <c>/status</c>, the runtime profile and every mission
+    /// context would have described a colony less capable than the one running, and nothing would
+    /// have failed. Making the registration and the re-resolve one call means a root cannot do the
+    /// first and forget the second — the defect this repository's call-site audit exists to catch,
+    /// closed structurally rather than by remembering.
+    /// </summary>
+    public void AdoptModuleTools(IEnumerable<ITool> tools)
+    {
+        ArgumentNullException.ThrowIfNull(tools);
+        foreach (var tool in tools) Tools.Register(tool);
+        Profile = RuntimeProfile.Resolve(Profile.Options, Tools.Names);
+    }
+
     private ToolRegistry BuildToolRegistry(RuntimeOptions options)
     {
         var registry = new ToolRegistry(Memory);
@@ -277,23 +303,24 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // Stage D-2: TesterAnt's ONLY execution surface — declared checks, never arbitrary commands.
         registry.Register(new RunAllowlistedCheckTool(options.AllowedWorkspaceRoot));
         if (options.FileTools)
-        {
-            registry.Register(new DirectoryListTool(guard));
-            registry.Register(new ReadTextFileTool(guard));
-            // v3.5.0: scoped workspace tools. The guard they share resolves to the MISSION workspace
-            // when one is in scope, so both read the tree the mission is actually changing.
+            // v3.5.0: scoped workspace tool. The guard resolves to the MISSION workspace when one is
+            // in scope, so it reads the tree the mission is actually changing.
             registry.Register(new SearchWorkspaceTool(guard));
-        }
         registry.Register(new ChangedFilesSummaryTool());
         // v3.6.0: repository questions answered from a revision-keyed index rather than by reading
         // the tree into a prompt. Cached per workspace — a tool that rebuilt on every call would
         // walk the repository once per question, which is the cost the index exists to avoid.
         registry.Register(new RepositoryIndexTool(IndexFor));
-        if (options.FileWriting)
-            registry.Register(new WriteTextFileTool(guard));
-        registry.Register(new WebSearchTool());
-        registry.Register(new ShellCommandTool());
-        registry.Register(new ApplyPatchTool(guard));
+
+        // v3.8.16 — list_directory, read_text_file, write_text_file, web_search, shell_command and
+        // apply_patch are NOT constructed here any more. They live in Anthill.Modules.Tools, and the
+        // composition root drains them into this registry once the Queen exists.
+        //
+        // Both roots must load that module: Anthill.Api and Anthill.Cli. A colony built without it
+        // plans and dispatches exactly as before, and every call to one of those six returns "Tool
+        // not found or not registered" — a typed ValidationFailure rather than a crash, which is the
+        // right shape for an absent capability and NOT what an operator expects from a default
+        // install. ToolInventoryTests checks both sides of that pairing.
 
         // v3.4.1: operator-defined tools join the SAME registry, last, and by the same Register call
         // every built-in uses. That ordering is deliberate — a definition is validated against

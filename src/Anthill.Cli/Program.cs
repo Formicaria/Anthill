@@ -141,8 +141,16 @@ static Queen NewQueen()
     var modules = new Anthill.Core.Modules.ModuleHost(memory, events);
     modules.Load(new Anthill.Modules.Reasoning.ReasoningModule(
         Anthill.Core.Configuration.AnthillRuntime.OllamaHost));
+    // v3.8.16: the CLI is a composition root, so it must load the tools module and drain it too.
+    // Before this it loaded modules and never read ContributedTools — which was harmless while no
+    // module shipped a tool, and would have silently cost `anthill --mission` its file, shell, web
+    // and patch tools the moment one did.
+    modules.Load(new Anthill.Modules.Tools.ToolsModule(
+        new Anthill.Core.Security.WorkspacePathGuard(
+            Anthill.Core.Configuration.AnthillRuntime.AllowedWorkspaceRoot)));
 
     var queen = new Queen(memory);
+    queen.AdoptModuleTools(modules.ContributedTools);
     try
     {
         Anthill.Modules.Reasoning.OllamaCapabilityCache.Warm(Anthill.Core.Configuration.AnthillRuntime.OllamaHost);
