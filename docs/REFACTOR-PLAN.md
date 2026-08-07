@@ -483,7 +483,41 @@ the file-writing and patch-application gates — the ones that decide whether an
    because `SelfTest`, `PheromoneEngine`, `Queen.Views` and most of the test suite reach these helpers
    without building a colony. `SafetyPolicyTests` pins it: a host blocked AFTER first use changes the
    answer on the next call.
-3. `IToolKindExecutor` + `ToolDefinition` → SDK
+3. `IToolKindExecutor` + `ToolDefinition` → SDK — **DONE (v3.8.15)**
+
+   The entanglement this plan flagged, measured: **three lines, all inside `Validate()`** —
+   `ToolInventory.Implemented`, `ToolAuthorization.MissionAgentForbidden`, and `ToolKinds.Buildable`.
+   The record's other 130 lines are pure. Every qualification form was already bare (60 references,
+   six files, zero qualified forms, zero collisions), so the move itself cost no call-site edits.
+
+   | Moved to `Anthill.SDK.Tools` | Stayed in `Anthill.Core.Tools` |
+   |---|---|
+   | `ToolDefinition`, `ToolKind`, `ToolKinds.Parse`, `IToolKindExecutor`, `UserDefinedTool` | `HttpToolKind`, `UserToolGrants`, `UserToolRegistrar`, `ToolRegistry`, `ToolAuthorization`, `ToolInventory` |
+
+   **DECIDED (operator, this session): the three core-owned checks arrive through
+   `IToolDefinitionPolicy`**, an optional argument on `Validate()` whose `null` resolves through
+   `SafetyPolicy` — the v3.8.12 mechanism, reused rather than re-invented, and installed by the
+   `[ModuleInitializer]` that was already there.
+
+   The alternative was to split `Validate()`: shape in the SDK, reserved names in `UserToolRegistrar`
+   (which is already "the single place that decides whether one is fit to register"). It needed no
+   mirrored list, which is a real advantage, and it was rejected anyway: `UserDefinedToolTests`
+   asserts `ADefinition_MayNotShadowABuiltIn` on the DEFINITION's own method, and retargeting a
+   security test to accommodate a refactor is how a guard starts checking something easier than what
+   it was written for.
+
+   The cost of the chosen design is a mirror of the core's tables in the SDK, for the unconfigured
+   case. Kept because the alternative default is an EMPTY reserved-name set — strictly more
+   permissive — and closed by `ToolDefinitionPolicyTests`, which asserts the mirror equals the live
+   tables and that the live policy reads them by reference rather than snapshotting.
+
+   `ToolKinds.Buildable` is gone as a declared constant: it is now derived from the executors
+   `UserToolRegistrar.Default()` constructs, so a kind cannot be declared buildable with no executor
+   or built while every definition naming it is refused.
+
+   **`IModuleContext` gained no `RegisterToolKind`** (operator decision). The contracts now permit
+   one; the buffering and drain wait for something that actually ships a second kind.
+
 4. The seven implementations → `Anthill.Modules.Tools.*`, registered through
    `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by
    `ApiHost` into `Queen.Tools`)

@@ -1,9 +1,10 @@
 using System.Text;
 using System.Text.Json;
 using Anthill.Core.Configuration;
-using Anthill.Core.Domain;   // ToolResult — the dispatch one. Anthill.Core.Contracts declares a
-                             // second type of that name, so it is qualified below rather than
-                             // imported; importing both would make every `new ToolResult` ambiguous.
+// v3.8.15 — the `using Anthill.Core.Domain;` that used to sit here was for ToolResult, which left
+// Domain for the SDK in v3.8.10 and now resolves through the global using. This file names no other
+// Domain type, and Anthill.Core.Contracts — which still declares a DIFFERENT ToolResult — is
+// deliberately not imported, so the bare name below is unambiguous.
 
 namespace Anthill.Core.Tools;
 
