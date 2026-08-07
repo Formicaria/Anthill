@@ -297,6 +297,29 @@ public sealed partial class SqliteMemory : IDisposable
         // release on an unrelated commit — CallSiteAuditTests caught them as written-by-nothing and
         // read-by-nothing, which is exactly its job. They are back now because the claim, the lease
         // reclaim and their tests arrive with them.
+        // v3.8.19 (ADR-004) — the artifact and evidence stores. Append-only: no UPDATE and no
+        // DELETE path exists, because a revision is a new row citing the old one. source_ids_json
+        // carries the provenance edges, which is what makes the dependency graph derivable rather
+        // than something maintained beside the data.
+        //
+        // NO FOREIGN KEY on mission_id, unlike every neighbouring table, and that is deliberate.
+        // These rows ARE the audit trail: a cascade would delete the evidence for a decision along
+        // with the mission that made it, and a restrict would make mission maintenance fail because
+        // something was once proven. An artifact outliving its mission is the point.
+        @"CREATE TABLE IF NOT EXISTS artifacts (
+            id TEXT PRIMARY KEY, schema TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1,
+            producer_role TEXT NOT NULL, mission_id TEXT NOT NULL, task_id TEXT, workspace_id TEXT,
+            source_ids_json TEXT NOT NULL DEFAULT '[]', content_hash TEXT NOT NULL,
+            visibility TEXT NOT NULL DEFAULT 'Colony', payload TEXT NOT NULL,
+            created_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_artifacts_mission ON artifacts(mission_id, schema, created_at)",
+        @"CREATE INDEX IF NOT EXISTS idx_artifacts_hash ON artifacts(content_hash)",
+        @"CREATE TABLE IF NOT EXISTS evidence (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, deterministic INTEGER NOT NULL DEFAULT 0,
+            passed INTEGER NOT NULL DEFAULT 0, artifact_ids_json TEXT NOT NULL DEFAULT '[]',
+            detail TEXT NOT NULL DEFAULT '', mission_id TEXT NOT NULL, task_id TEXT,
+            created_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_evidence_mission ON evidence(mission_id, deterministic, passed)",
         @"CREATE TABLE IF NOT EXISTS workers (
             id TEXT PRIMARY KEY, roles_json TEXT NOT NULL DEFAULT '[]',
             kind TEXT NOT NULL DEFAULT 'local', max_concurrent INTEGER NOT NULL DEFAULT 1,
@@ -580,6 +603,7 @@ public sealed partial class SqliteMemory : IDisposable
             (17, "repository_index", "Repository index (repository_index, repository_index_files) persisted per workspace+revision — a restart reuses everything unchanged instead of re-walking the tree."),
             (18, "conversations", "Conversations, turns and escalation decisions persisted — a conversation survives restart and an escalated run reads as one history."),
             (19, "durable_attempts", "Workers and task attempts persisted with leases — a claim is atomic, a retry is a distinct attempt, and expired work is reclaimable."),
+            (20, "artifact_evidence_store", "ADR-004 artifact and evidence stores (artifacts, evidence) — typed, hashed, append-only work products with provenance. Additive: nothing produces them yet."),
         };
         foreach (var (id, name, description) in migrations)
         {

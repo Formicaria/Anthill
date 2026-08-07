@@ -1,5 +1,52 @@
 # ANTHILL Changelog
 
+## v3.8.19 - the colony starts remembering
+
+First release after the refactor. Four post-refactor stages touched, and the sequencing is the point:
+`Task.Result` is a `string?`, so ants collaborate by passing prose. Reputation and typed pheromones
+learn from whatever that prose says, which is why ADR-004 and the peer review both put the artifact
+and evidence store first. This release lands the store and the things that do NOT depend on it.
+
+**Stage 5 — the artifact and evidence store (ADR-004), additive.** Schema, SDK contracts, write path,
+content hashing and provenance. `artifacts` and `evidence` tables, migration 20, schema version 23.
+Immutable and append-only by construction: there is no Update and no Delete, because a revision is a
+new artifact citing the old one, and an in-place edit destroys the one question the store exists to
+answer. The dependency graph is traversable both ways — `SourcesOf` and `ConsumersOf` — which is
+ADR-004's "who produced it and what consumed it".
+
+**Nothing produces artifacts yet, deliberately.** Ants still pass prose. That is the phase-0 shape the
+refactor used: land the contract, prove it persists, then move consumers in a release whose blast
+radius is one thing. ADR-004 calls replacing the output path the largest behavioural change in V3, and
+bundling it with four other stages is how that goes wrong.
+
+**Evidence knows what it can prove.** `Deterministic` is a first-class field and
+`EvidenceKinds.AgreesWithKind` checks it against the kind, so a `model_review` cannot be recorded as
+reproducible. `HasDeterministicPass` asks the promotion question in one place — v2.26.0's "one
+verification authority" applied to the new store.
+
+**Stage 4 — pheromone trails finally decay.** They have been reinforced since v1 and never faded, so a
+trail heavily reinforced in March was exactly as attractive in August, and `PrunePheromones` could
+only reach WEAK trails — a strong-but-stale one was unreachable by anything the colony had.
+Exponential half-life toward neutral, so age can never turn a success into evidence of failure the way
+a linear rule would. Decay does not touch `last_updated`: if it did, the next run would measure age
+from the decay and a nightly job would never meaningfully fade anything.
+
+**Stage 3 — memory gets retrieval.** 32 tables and exactly two methods answered "what happened
+before". `WhatHasWorked`, `WhatUsuallyFails`, `WhoSolvedThis` and `WhatKnowledgeExists` answer the four
+questions the plan names, from data already recorded. `WhatUsuallyFails` reads the retry column that
+has been written since v3.8.0 and never read — a class that fails once and passes on retry is a flake;
+one that fails every attempt is a wall.
+
+**A bug caught in this release's own code, worth recording.** The first draft of `WhatHasWorked`
+filtered on `signal_category = 'learning'` — a category that does not exist. It would have returned an
+empty list forever, with no error and no failing test. Every recall test now asserts a non-empty,
+correctly-ordered result, because empty is the failure mode these queries actually have.
+
+**Not in this release, and why:** worker reputation, confidence and efficiency (stage 2), and the typed
+pheromone vocabulary (stage 4's other half). Both learn from outcomes, and until ants emit artifacts
+the outcome they would learn from is prose. The `workers` table still has six columns and none of them
+is a score.
+
 ## v3.8.18 - refactor sign-off: the acceptance gap
 
 v3.8.17 declared the Core/Modules refactor complete. An external review disagreed with the framing —

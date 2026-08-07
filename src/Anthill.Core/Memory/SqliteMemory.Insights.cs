@@ -123,6 +123,54 @@ public sealed partial class SqliteMemory
     }
 
     /// <summary>
+    /// Apply time decay to every non-legacy trail. v3.8.19 — post-refactor stage 4.
+    ///
+    /// Strength moves toward neutral by <see cref="Pheromones.PheromoneDecay"/>'s half-life, and
+    /// <c>last_updated</c> is NOT touched: decay is not a reinforcement, and rewriting the timestamp
+    /// would make the next run measure age from the decay rather than from the last real outcome,
+    /// so a trail decayed daily would barely fade at all.
+    ///
+    /// Legacy trails are excluded, exactly as <see cref="PrunePheromones"/> excludes them. The
+    /// v2.20.0 reset contract retains them for reporting and bars them from planning; decaying a row
+    /// that already cannot influence anything would be churn.
+    ///
+    /// Returns how many rows moved by more than a rounding error, so a maintenance run can report
+    /// what it did rather than only that it ran.
+    /// </summary>
+    public int DecayPheromones(double halfLifeDays = Pheromones.PheromoneDecay.DefaultHalfLifeDays,
+                               DateTime? asOf = null)
+    {
+        var now = asOf ?? AnthillTime.NowUtc();
+        var rows = Query("SELECT trail_key, strength, last_updated FROM pheromone_trails WHERE legacy = 0");
+
+        var moved = 0;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            foreach (var row in rows)
+            {
+                var key = row.GetValueOrDefault("trail_key")?.ToString() ?? "";
+                if (key.Length == 0) continue;
+
+                var strength = AsDouble(row.GetValueOrDefault("strength"));
+                if (!DateTime.TryParse(row.GetValueOrDefault("last_updated")?.ToString(), null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal, out var touched))
+                    continue;
+
+                var decayed = Pheromones.PheromoneDecay.Decayed(strength, touched, now, halfLifeDays);
+                if (Math.Abs(decayed - strength) < 0.0001) continue;
+
+                NonQuery(conn, null,
+                    "UPDATE pheromone_trails SET strength = @s WHERE trail_key = @k",
+                    ("@s", decayed), ("@k", key));
+                moved++;
+            }
+        }
+        if (moved > 0) InvalidateCache();
+        return moved;
+    }
+
+    /// <summary>
     /// Throws out pheromone trails that have proven unusable: weak (strength below
     /// <paramref name="minStrength"/>) or failure-dominant (more failures than successes and not
     /// strongly reinforced). This is the "keep what's useful, drop what errored" cleanup the
