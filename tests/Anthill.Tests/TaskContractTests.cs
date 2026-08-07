@@ -1,6 +1,11 @@
 using Anthill.Core.Contracts;
 using Xunit;
 using DomainTask = Anthill.Core.Domain.Task;
+// v3.8.10 — two types are named ToolResult: the CONTRACT one in Anthill.Core.Contracts and the
+// DISPATCH one in Anthill.SDK.Tools. This file tests contracts and uses only the former — note
+// ToolResult.Failed(FailureClass, ...), which exists solely on the contract type. The alias names
+// which is meant, the same way ToolFailureClassTests.cs does for the other direction.
+using ToolResult = Anthill.Core.Contracts.ToolResult;
 
 namespace Anthill.Tests;
 

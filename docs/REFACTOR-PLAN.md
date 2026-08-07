@@ -311,7 +311,159 @@ Remaining coupling to resolve first, measured from the imports:
 
 ---
 
-### Phase 5 — Shell / Git / Filesystem / Vision tools → modules
+### Phase 5 — Tools → modules — SURVEYED; harder than phase 4, and split accordingly
+
+Measured before starting. Recorded here so it is not rediscovered.
+
+**The tool layer is coordination, not capability.** `Anthill.Core.Tools` (1,913 LOC) is consumed by
+`Agents/Ants`, `SpecialistAnts`, `ToolCallingLoop`, `Queen`, `ExecutionService`, `PlanningService`,
+`Verification` and `SqliteMemory.UserTools` — because `ITool`, `ToolRegistry` and `ToolResult` ARE
+the dispatch vocabulary. Only the tool IMPLEMENTATIONS are module material. Core keeps
+`ToolRegistry`, `ToolAuthorization`, `ToolDefinition`, `ToolInventory`.
+
+**Workspaces going out is a hot-path change** (decided: they follow the tools). `Sandbox/` (381 LOC)
+is used by `Ants` — a core agent running sandboxed code — and `SqliteMemory.Workspaces.cs` persists
+workspace records. Unlike homelab, this lands on the mission execution path.
+
+**Only one `ToolKind` (`Http`) is registered**, so shell/git/filesystem tools are NOT behind
+`IToolKindExecutor` yet. That indirection must be built before it can be used.
+
+#### Phase 5a — contract vocabulary split — DONE (v3.8.9)
+
+`Capability`, `FailureClass`, `FailureClassify`, `ToolDescriptor`, `ToolCatalog` →
+`Anthill.SDK.Contracts`. `TaskContract`, `ContractGate` and `Contracts.ToolResult` stayed: the first
+two take `Domain.Task` and reach `Agents.AntRegistry`; the third collides by name with
+`Domain.ToolResult`.
+
+#### Phase 5b — `ToolResult` + `ITool` to the SDK — SURVEYED, ready to execute
+
+5a unblocked this: `Domain.ToolResult` depends on `FailureClass` and `FailureClassify` and nothing
+else, and both are now in the SDK. `ITool.Run` returns `ToolResult` and needs nothing further.
+
+Every qualification form enumerated — the check whose absence cost four build cycles in 5a:
+
+| Form | Count | Action |
+|---|---:|---|
+| bare `ToolResult` | 138 | resolves via `global using Anthill.SDK.Tools` — no edit |
+| `Domain.ToolResult` | 8 | rewrite to bare `ToolResult` |
+| `Contracts.ToolResult` | 5 | **leave** — a different type, stays in the core |
+| `: ITool` / `interface ITool` | 13 | no edit; implementers are unaffected by the move |
+
+**Exactly two files go ambiguous**, and both must be handled BEFORE the move — they import
+`Anthill.Core.Contracts` (which still declares its own `ToolResult`) *and* use the bare name:
+
+- `src/Anthill.Core/Tools/ToolDefinition.cs`
+- `tests/Anthill.Tests/TaskContractTests.cs`
+
+Qualify their bare `ToolResult` as `Anthill.SDK.Tools.ToolResult`, or alias — `ToolFailureClassTests.cs`
+already demonstrates the alias pattern for precisely this collision.
+
+- [ ] Extract `ToolResult` from `Domain/Models.cs` → `Anthill.SDK/Tools/ToolResult.cs`
+- [ ] `global using Anthill.SDK.Tools;` in Core, Api and both test projects
+- [ ] Disambiguate the two files above; rewrite the 8 `Domain.ToolResult`
+- [ ] Extract `ITool` from `Tools/Tools.cs` → `Anthill.SDK/Tools/ITool.cs`
+- [ ] Add `IModuleContext.RegisterTool(ITool)` — the phase-0 deferral, finally typed
+- [ ] `IToolKindExecutor` waits for 5c: it needs `ToolDefinition`, entangled with
+      `ToolAuthorization` and `ToolInventory`
+
+#### Phase 5c — SURVEYED: the "workspaces follow the tools" decision needs revisiting
+
+The decision to move workspace lifecycle out with the tools was taken before this was measured.
+Measured now, it does not hold up, and the plan should say so rather than route around it.
+
+`Sandbox/` (381 LOC) and `Workspaces/` (1,556 LOC) import, between them:
+
+| Import | What it is |
+|---|---|
+| `Anthill.Core.Domain` | `Mission` and `Task` — the entities the scheduler IS |
+| `Anthill.Core.Memory` | `SqliteMemory` — workspace records are persisted colony state |
+| `Anthill.Core.Tools` | `ToolRegistry` — dispatch |
+| `Anthill.Core.Pheromones` | the learning signal |
+| `Anthill.Core.Security` | path guarding |
+
+Moving them to a module therefore requires `Mission` and `Task` in the SDK. That is not a
+prerequisite to work through; it is the proposal collapsing. Those two types are what "the core is
+scheduling, memory and coordination" MEANS — an SDK that declares them is the core, renamed.
+
+**DECIDED (operator, this session): workspaces and sandbox stay in the core.** Every one of their
+five imports is a core concern, and the alternative required `Mission` and `Task` in the SDK.
+
+**Scope, and what the survey says it costs.** Splitting `Tools/Tools.cs` is structurally clean —
+`ToolRegistry` is lines 18–179, and seven `ITool` implementations follow it (`SystemInfoTool`,
+`DirectoryListTool`, `ReadTextFileTool`, `WriteTextFileTool`, `ShellCommandTool`, `WebSearchTool`,
+`ApplyPatchTool`). But the implementations are NOT free-standing. They reference:
+
+- **17 `AnthillRuntime` settings** — `EnableShellTool`, `EnableFileWriting`, `EnablePatchApplication`,
+  `MaxFileReadChars`, `PatchAllowedSuffixes`, `WebSearchProvider`, `ScriptDir`, `BackupDir`, … Each
+  is a capability gate or a limit, so none can simply be dropped.
+- **`TextUtil`, `UrlSafety`, `Validation`** from `Anthill.Core.Common` — and all three read
+  `AnthillRuntime` themselves (SSRF blocklists, patch suffix allow-lists, summary caps). Moving them
+  is its own config-passing exercise, exactly like `HomelabOptions` was.
+- **`Native.NativeKernel`** and **`ToolRegistry.ClassifyThrown`** — core.
+
+So this is a `HomelabOptions`-shaped job, not a `ToolResult`-shaped one: a `ToolOptions` record, three
+more `Common` helpers rebased onto it, then the move. Comparable in size to phase 4b, and it touches
+the file-writing and patch-application gates — the ones that decide whether an agent may modify disk.
+
+**Recommended sequencing when resumed:**
+
+1. `ToolOptions` in the SDK carrying the 17 settings; `ToolRuntime.Configure` at the composition
+   root, mirroring `HomelabRuntime`
+2. `TextUtil`, `UrlSafety`, `Validation` → SDK — **SURVEYED, and it is not one job but two**
+
+   Their settings split cleanly, and the split decides the design:
+
+   | Setting | Form | Implication |
+   |---|---|---|
+   | `MaxResultSummaryChars`, `TokenEstimateCharsPerToken`, `ApprovalIdMaxChars`, `PatchIdMaxChars`, `SourceIdMaxChars` | `const` | immutable — pass as plain values or leave as SDK constants |
+   | `WebSearchKeywords`, `SsrfBlockedHostnames`, `BlockedPathParts` | `static readonly HashSet` | the REFERENCE is readonly, the CONTENTS are not — an operator or test can add an SSRF block at runtime, so these need live reads like the tool gates |
+
+   **Blast radius is very uneven.** `UrlSafety` and `Validation` have 4 consuming files each —
+   comparable to the v3.8.11 change. `TextUtil` has **18**, and it is used well outside the tool
+   layer, so it should move on its own, not bundled with the other two.
+
+   Suggested order: `UrlSafety` + `Validation` first (small, and they carry the SSRF and path
+   guards the tools actually need), then `TextUtil` separately.
+
+   Note the trap this survey already avoided once: `SsrfBlockedHostSuffixes` appears in the tool
+   layer's reads but does NOT exist under that name in `AnthillRuntime`. Resolve every setting name
+   against the declaration before designing the contract around it.
+3. `IToolKindExecutor` + `ToolDefinition` → SDK
+4. The seven implementations → `Anthill.Modules.Tools.*`, registered through
+   `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by
+   `ApiHost` into `Queen.Tools`)
+5. `ToolRegistry`, `ToolAuthorization`, `ToolInventory`, workspaces and sandbox all stay
+
+**Original outline, superseded by the above:**
+
+- [ ] Split `Tools/Tools.cs` (498 LOC) the way `TaskContracts.cs` was split in 5a: `ToolRegistry`
+      stays (registration and dispatch are coordination); the shell/git/filesystem tool
+      IMPLEMENTATIONS move to `Anthill.Modules.Tools.*`
+- [ ] Same for the process-spawning parts of `WorkspaceTools.cs` and `CheckRunner.cs`
+- [ ] `IToolKindExecutor` + `ToolDefinition` to the SDK, so a module can register a tool KIND and not
+      just an instance
+- [ ] **Workspaces and sandbox stay in the core.** A mission executes in a workspace; the Queen
+      reconciles them at startup against what is on disk. That is coordination, and the survey says
+      so — every one of its five imports is a core concern.
+
+The v3.8.10 plumbing already supports the good half: `IModuleContext.RegisterTool(ITool)` exists,
+`ModuleHost` buffers contributions, and `ApiHost` drains them into `Queen.Tools`. A shell-tool
+module needs no further wiring.
+
+#### The rename check, for every phase from here
+
+A file is only as movable as its most qualified reference, and `grep` for `using` will not find
+them. Before moving type `T`, enumerate the FULL qualified strings, not the suffix:
+
+```
+grep -rno "[A-Za-z.]*\bT\b" --include="*.cs" src tests | sed 's/.*://' | sort | uniq -c
+```
+
+Then decide per form. In 5a, matching the suffix `Contracts.FailureClass` silently rewrote twelve
+`Anthill.Core.Contracts.FailureClass` into a namespace that never existed, and an earlier blanket
+strip ate `AntExecutionCatalog.Contracts.Keys` — a dictionary field that merely shares the name.
+
+### Phase 5 (original scope note) — Shell / Git / Filesystem / Vision tools → modules
 
 - [ ] `ITool` and `IToolKindExecutor` move to the SDK (already clean interfaces)
 - [ ] Split by kind into `Anthill.Modules.Tools.{Shell,Git,FileSystem,Http,Vision}`

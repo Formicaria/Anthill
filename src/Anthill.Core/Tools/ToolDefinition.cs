@@ -1,6 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Anthill.Core.Contracts;
+// v3.8.10 — this file imports Anthill.Core.Contracts, which declares its OWN ToolResult, and
+// also uses the dispatch one now living in Anthill.SDK.Tools. Aliasing keeps the file
+// unambiguous and names which of the two same-named types is meant, the same way
+// ToolFailureClassTests.cs does.
+using ToolResult = Anthill.SDK.Tools.ToolResult;
 
 namespace Anthill.Core.Tools;
 
@@ -180,7 +185,7 @@ public interface IToolKindExecutor
     /// </summary>
     IReadOnlyList<string> ValidateConfig(ToolDefinition definition);
 
-    Domain.ToolResult Execute(ToolDefinition definition, IReadOnlyDictionary<string, object?> args);
+    ToolResult Execute(ToolDefinition definition, IReadOnlyDictionary<string, object?> args);
 }
 
 /// <summary>
@@ -203,13 +208,13 @@ public sealed class UserDefinedTool : ITool
     public string Description => Definition.Description;
     public string ParametersJson => Definition.ParametersJson;
 
-    public Domain.ToolResult Run(IReadOnlyDictionary<string, object?> args)
+    public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
         // A disabled definition that is still registered must refuse, not run. Registration and
         // enablement are separate lifetimes: an operator revoking a tool mid-mission expects the
         // next call to fail, and expects to be able to tell that it was revoked rather than broken.
         if (!Definition.Enabled)
-            return new Domain.ToolResult(Name, false, "",
+            return new ToolResult(Name, false, "",
                 $"user-defined tool '{Name}' is disabled", FailureClass.AuthorizationFailure);
 
         return _executor.Execute(Definition, args);

@@ -209,12 +209,12 @@ public static class ToolCallingLoop
     /// for itself what it implies, and "authorization_denied" reads to most models as something to
     /// apologise for and then attempt again.
     /// </summary>
-    internal static string Guidance(Domain.ToolResult result) => result.Failure switch
+    internal static string Guidance(ToolResult result) => result.Failure switch
     {
-        Contracts.FailureClass.AuthorizationFailure =>
+        FailureClass.AuthorizationFailure =>
             "You are not permitted to use this tool. Do not call it again — achieve the goal another "
           + "way, or say what you would need.",
-        Contracts.FailureClass.ValidationFailure =>
+        FailureClass.ValidationFailure =>
             "The call itself was wrong, not the tool. Correct the tool name or the arguments against "
           + "the schema and try once more.",
         _ when result.Retryable =>

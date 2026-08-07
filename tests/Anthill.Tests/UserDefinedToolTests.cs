@@ -4,7 +4,7 @@ using Anthill.Core.Memory;
 using Anthill.Core.Tools;
 using Xunit;
 
-using FailureClass = Anthill.Core.Contracts.FailureClass;
+using FailureClass = Anthill.SDK.Contracts.FailureClass;
 
 namespace Anthill.Tests;
 
