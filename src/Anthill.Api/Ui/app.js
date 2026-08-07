@@ -2860,7 +2860,7 @@ async function renderMissionReport(missionId, body){
       patches.map(p=>{
         const [pl,pc]=MR_PATCH_STATE[p.status]||[p.status,'var(--text)'];
         return `<div style="white-space:normal;margin-bottom:6px;line-height:1.5">`+
-          `<a href="#" data-onclick="openPatches({mission_id:'${rep.id}',file:'${escapeHtml(p.file_path||'')}'});return false;" style="font-family:var(--mono);color:var(--blue)">${escapeHtml(p.file_path||'?')}</a> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
+          `<a href="#" data-action="open-patches" data-mission-id="${escapeHtml(rep.id)}" data-file="${escapeHtml(p.file_path||'')}" style="font-family:var(--mono);color:var(--blue)">${escapeHtml(p.file_path||'?')}</a> <span style="color:var(--dim)">(${escapeHtml(p.change_type||'modify')})</span>`+
           ` — <span style="color:${pc}">${pl}</span>`+
           `<div style="color:var(--dim);font-size:11px">${escapeHtml(p.reason||'')}</div>`+
           (p.last_error?`<div style="color:var(--red);font-size:11px">Apply error: ${escapeHtml(p.last_error)}</div>`:'')+`</div>`;
@@ -4486,7 +4486,11 @@ PAGE_ENTER['events']=()=>{reloadLogModal();};
 
 document.getElementById('log-reload').addEventListener('click',reloadLogModal);
 
-function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+// v3.8.13: the apostrophe is encoded too. This is DEFENCE IN DEPTH, not the fix — an attribute
+// value is decoded by getAttribute() before any parser sees it, so encoding alone never protected
+// the pseudo-JavaScript in data-onclick. Untrusted values belong in plain data-* attributes read by
+// a fixed action map (see the data-action dispatcher), never in an executable attribute.
+function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /**
  * v2.14.13: sanitise a colour before it reaches a style="" attribute.
@@ -7892,6 +7896,42 @@ bootAuth();
       for(var i=0;i<muts.length;i++){ var a=muts[i].addedNodes; for(var j=0;j<a.length;j++) tagTree(a[j]); }
     }).observe(document.body, {childList:true, subtree:true});
   }catch(e){}
+})();
+
+// -- v3.8.13: fixed action map for untrusted values ----------------------------------------------
+//
+// The data-onclick dispatcher above is a micro-interpreter: it splits an attribute on ';' and
+// resolves whatever name it finds against `window`. That is safe for the fixed strings the console
+// writes itself, and NOT safe for anything a model or an external system supplies, because such a
+// value sits inside a quoted argument and an apostrophe ends that argument early.
+//
+// Patch file paths were reaching it. `ValidateSafePatchPath` rejects absolute paths, traversal,
+// blocked directories and disallowed suffixes — it has no reason to care about quotes, and did not.
+// So a path-valid filename could append a second statement, and the dispatcher would resolve and
+// call it as the operator, with the operator's session, skipping whatever confirmation the real
+// button would have shown.
+//
+// The fix is structural rather than more escaping: the untrusted value now travels in an ordinary
+// data-* attribute that is never parsed as code, and the action name is looked up in a map that
+// contains exactly the handlers listed here. hasOwnProperty keeps `constructor`, `toString` and the
+// rest of the prototype chain from resolving to a function.
+(function(){
+  var ACTIONS = {
+    'open-patches': function(el){
+      openPatches({
+        mission_id: el.getAttribute('data-mission-id') || '',
+        file:       el.getAttribute('data-file') || ''
+      });
+    }
+  };
+  document.addEventListener('click', function(ev){
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
+    if(!el) return;
+    var name = el.getAttribute('data-action');
+    if(!Object.prototype.hasOwnProperty.call(ACTIONS, name)) return;
+    ev.preventDefault();
+    try{ ACTIONS[name](el, ev); }catch(e){ console.error('action failed:', name, e); }
+  });
 })();
 
 
