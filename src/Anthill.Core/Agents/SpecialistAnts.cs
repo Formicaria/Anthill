@@ -185,6 +185,14 @@ public sealed class SoldierAnt : BaseAnt
     public SoldierAnt() : base("soldier") { }
 
     /// <summary>
+    /// The warning that means "a deterministic policy rule said no". v3.8.22. Named here and read by
+    /// <c>ExecutionService.PersistExecutionRecord</c> — the same structured-disclosure idiom
+    /// <c>provider_failure</c> uses, and for the same reason: a downstream gate must never infer a
+    /// block by parsing prose a model may have written.
+    /// </summary>
+    public const string SoldierBlockMarker = "deterministic_block";
+
+    /// <summary>
     /// v2.19.0: migrated to the structured contract. Note the deliberate distinction preserved
     /// here — the REVIEW succeeding is not the same as the review PASSING. A blocking finding
     /// leaves StatusCode succeeded_with_warnings (the soldier did its job) while the blocking
@@ -230,7 +238,16 @@ public sealed class SoldierAnt : BaseAnt
                     ? new AntHandoff("soldier", "builder", "blocking findings need operator explanation", "build", new[] { "security_review" }, true, 1, $"soldier-block:{mission.Id}:{task.Id}")
                     : new AntHandoff("soldier", "verifier", "review passed — verify", "verification", new[] { "security_review" }, false, 1, $"soldier-ok:{mission.Id}:{task.Id}"),
             },
-            Warnings = blocked.Select(b => b.RuleId).ToList(),
+            // v3.8.22: the marker leads, then the rule ids. Until this release the soldier's block
+            // was a list of rule-id strings that nothing downstream recognised as a block — the
+            // mission gate ignored them entirely, so "deterministic block, not overridable" in the
+            // Summary above was a claim the code did not implement and a blocked patch could reach
+            // completed_verified. PersistExecutionRecord reads this marker onto Task.DeterministicBlock,
+            // exactly as it reads provider_failure onto GenerationDegraded. A named marker rather than
+            // "warnings is non-empty", so a future advisory warning here cannot silently become a block.
+            Warnings = blocked.Count > 0
+                ? new List<string> { SoldierBlockMarker }.Concat(blocked.Select(b => b.RuleId)).ToList()
+                : new List<string>(),
             // The review text is the record: operators need the findings, not a one-line verdict.
             Narrative = review,
         };

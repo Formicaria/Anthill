@@ -51,6 +51,23 @@ public sealed class Task
     /// be scored as a verified success. Transient/in-memory: consumed by the single live evaluation.</summary>
     public bool GenerationDegraded { get; set; }
 
+    /// <summary>
+    /// v3.8.22: a DETERMINISTIC check said no. Null means nothing blocked; a non-null value is the
+    /// reason, recorded for the operator.
+    ///
+    /// Set from two places, both reproducible and neither a model's opinion: a patch set whose
+    /// <c>VerificationBundle</c> came back non-promotable, and a soldier finding marked Blocking.
+    /// Before this existed both were LOGGED and neither was consequential — a patch that failed the
+    /// build verifier and a patch the policy engine blocked could each still reach
+    /// <c>completed_verified</c>, because the only thing reading either was an event row.
+    ///
+    /// A field rather than a prose scan, for the same reason <see cref="GenerationDegraded"/> is:
+    /// the evaluator must stay a pure function of the mission, and a block inferred by parsing a
+    /// result string is exactly the prose-derived control flow v3.2.0 removed. Transient/in-memory,
+    /// consumed by the single live evaluation — identical lifetime to GenerationDegraded.
+    /// </summary>
+    public string? DeterministicBlock { get; set; }
+
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
