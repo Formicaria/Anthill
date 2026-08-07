@@ -10,7 +10,8 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const MT = require('../../src/Anthill.Api/Ui/mission-thread.js');
+// v3.8.17 (refactor phase 6): the console assets moved from src/Anthill.Api/Ui/ to src/Anthill.UI/.
+const MT = require('../../src/Anthill.UI/mission-thread.js');
 
 // Shaped like a real /missions/json row: that endpoint returns `answer`, NOT final_result.
 const mission = (id, over = {}) => Object.assign({
