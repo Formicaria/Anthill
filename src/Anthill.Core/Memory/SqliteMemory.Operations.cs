@@ -910,6 +910,37 @@ public sealed partial class SqliteMemory
     /// </summary>
     public const int MinObservationsToSteerPlanning = 3;
 
+    /// <summary>
+    /// A role's or worker's standing, DERIVED from its trail. Stage E, v3.8.29.
+    ///
+    /// Not a stored column. The plan has asked for a worker score since it was written, and adding
+    /// one to the `workers` table would create a second source of truth that drifts from the trails
+    /// it was computed from — the trails are already durable, already decayed toward neutral, and
+    /// already attributed correctly. Computed on read, so there is exactly one place the answer
+    /// lives.
+    ///
+    /// An absent trail is NEUTRAL and not established. "We have never seen this role work" and "this
+    /// role works badly" are different facts, and conflating them is precisely how a specialist
+    /// enabled for the first time would be routed away from before it ran once.
+    /// </summary>
+    public Pheromones.Reputation ReputationOf(string kind, string subject)
+    {
+        if (!Pheromones.TrailKind.IsReputation(kind)) return Pheromones.Reputation.Unknown(subject);
+
+        var row = Query(@"SELECT strength, success_count, failure_count FROM pheromone_trails
+                          WHERE trail_key = @key AND trail_type = @type LIMIT 1",
+                ("@key", $"{kind}:{subject}"), ("@type", kind)).FirstOrDefault();
+
+        if (row is null) return Pheromones.Reputation.Unknown(subject);
+
+        return Pheromones.Reputation.From(
+            subject,
+            Convert.ToDouble(row.GetValueOrDefault("strength") ?? 0.5),
+            Convert.ToInt32(row.GetValueOrDefault("success_count") ?? 0),
+            Convert.ToInt32(row.GetValueOrDefault("failure_count") ?? 0),
+            MinObservationsToSteerPlanning);
+    }
+
     public List<Dictionary<string, object?>> GetTopPheromoneTrails(int limit = 10) =>
         CacheRead($"top_pheromones::{limit}", () =>
             Query(@"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated
