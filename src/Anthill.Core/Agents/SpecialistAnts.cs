@@ -20,6 +20,18 @@ public sealed class UiCartographerAnt : BaseAnt
     private readonly ToolRegistry _tools;
     private static readonly string[] UiFileHints = { ".html", ".js", ".css", ".jsx", ".ts", ".tsx" };
     private const int MaxFilesToRead = 6;
+
+    /// <summary>
+    /// How many conventional layout locations to probe beyond what the listing discovered. v3.8.28.
+    ///
+    /// Matches the length of the probe list below — THIRTEEN, and a test pins the two together, because
+    /// the first draft said twelve against a list of thirteen and would have silently dropped the last
+    /// probe. Declared as a constant rather than left implicit
+    /// in the read cap, because the previous cap was `MaxFilesToRead + 2` — sized for exactly the
+    /// two ANTHILL paths that used to be hard-coded — and widening the list without widening the cap
+    /// silently discards the extra probes.
+    /// </summary>
+    private const int MaxLayoutProbes = 13;
     private const int MaxCharsPerFile = 200_000;
 
     public UiCartographerAnt(ToolRegistry tools) : base("ui_cartographer") => _tools = tools;
@@ -44,12 +56,36 @@ public sealed class UiCartographerAnt : BaseAnt
             .Select(m => m.Value.Replace('\\', '/'))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaxFilesToRead).ToList();
-        // The embedded console UI lives under src/Anthill.UI — try the known locations too.
-        foreach (var known in new[] { "src/Anthill.UI/index.html", "src/Anthill.UI/app.js" })
-            if (!candidates.Contains(known)) candidates.Add(known);
+        // v3.8.28 — GENERIC layout probing, not two hard-coded ANTHILL paths.
+        //
+        // `src/Anthill.UI/index.html` and `src/Anthill.UI/app.js` were appended unconditionally: the
+        // cartographer was a role that could only map THIS repository. Pointed at any other project
+        // it added two paths that do not exist, logged them as unreadable, and produced a map of
+        // whatever the top-level listing happened to catch.
+        //
+        // These are the conventional locations across the ecosystems the workspace adapters already
+        // detect. Every one is a CANDIDATE — unreadable paths are skipped exactly as before — so
+        // this widens what can be found without asserting that any of it is there.
+        foreach (var known in new[]
+                 {
+                     "index.html", "src/index.html", "public/index.html", "app/index.html",
+                     "src/App.jsx", "src/App.tsx", "src/main.js", "src/main.ts",
+                     "src/app.js", "app.js", "static/app.js",
+                     "src/Anthill.UI/index.html", "src/Anthill.UI/app.js",   // this repo, now one case among many
+                 })
+            if (!candidates.Contains(known, StringComparer.OrdinalIgnoreCase)) candidates.Add(known);
 
         // 2. Read each (bounded) and extract structure deterministically.
-        foreach (var path in candidates.Take(MaxFilesToRead + 2))
+        // v3.8.28: the bound was `MaxFilesToRead + 2`, sized for exactly the two hard-coded ANTHILL
+        // paths that used to be appended. Widening the probe list to twelve conventional locations
+        // without widening this would have silently truncated ten of them — the discovered files
+        // come first, so only the first two probes would ever have been tried and the change would
+        // have looked like it worked on this repository alone.
+        //
+        // A probe that misses is a failed read, which the loop already skips and which costs one
+        // tool dispatch. The cap exists to bound work, and this is the honest number for the work
+        // now being attempted.
+        foreach (var path in candidates.Take(MaxFilesToRead + MaxLayoutProbes))
         {
             var read = _tools.RunTool("read_text_file", mission.Id, task.Id, Name, new() { ["path"] = path });
             if (!read.Success) { warnings.Add($"unreadable: {path}"); continue; }
@@ -131,13 +167,42 @@ public sealed class TesterAnt : BaseAnt
             return AntExecutionResult.Blocked(
                 $"task type '{task.TaskType}' is outside the tester execution contract");
 
-        // Deterministic check selection: catalog ids literally named in the task text; a plain
-        // build/test/validation task defaults to the SDK-probe + build profile. Never free text.
-        var requested = CheckCatalog.Ids
+        // v3.8.28 — checks come from the WORKSPACE, not from a hard-coded .NET default.
+        //
+        // The tester selected from `CheckCatalog.Ids` — the global compiled catalog — and when the
+        // task named none, fell back to `{ dotnet_version, dotnet_build }`. On a Node or Python
+        // project that is a tester which runs the wrong toolchain and reports a failure that says
+        // more about the colony than about the code. `WorkspaceAdapters` has detected Node, Python
+        // and .NET since v3.5.0, and `WorkspaceCapabilityManifest` has assembled their checks — the
+        // tester simply never asked.
+        //
+        // The manifest is consulted FIRST and the catalog remains the fallback, which is the same
+        // precedence `RunAllowlistedCheckTool` already applies when it actually runs the check. Two
+        // components disagreeing about which catalog is authoritative is how a tester selects an id
+        // the runner then refuses.
+        var manifest = Workspaces.WorkspaceCapabilityManifest.ForCurrentMission();
+        var available = manifest.IsEmpty
+            ? CheckCatalog.Ids.ToList()
+            : manifest.Checks.Select(c => c.Id).ToList();
+
+        var requested = available
             .Where(id => task.Description.Contains(id, StringComparison.OrdinalIgnoreCase)
                       || task.Title.Contains(id, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        if (requested.Count == 0) requested = new List<string> { "dotnet_version", "dotnet_build" };
+
+        if (requested.Count == 0)
+            requested = manifest.IsEmpty
+                // No workspace in scope: the historical .NET default, unchanged, because this is
+                // the configuration every existing caller and test runs in.
+                ? new List<string> { "dotnet_version", "dotnet_build" }
+                // A detected workspace runs EVERYTHING its adapters declare. A tester that picked a
+                // subset would be choosing which failures the colony is allowed to notice.
+                : available;
+
+        if (requested.Count == 0)
+            return AntExecutionResult.Blocked(
+                "no checks are available for this workspace — the adapters detected no project type, "
+                + "so there is nothing deterministic to run and a PASS would mean nothing");
 
         var evidence = new List<AntEvidence>();
         var lines = new List<string>();
@@ -326,10 +391,57 @@ public sealed class SoldierAnt : BaseAnt
 /// </summary>
 public sealed class ScribeAnt : BaseAnt
 {
-    public ScribeAnt() : base("scribe") { }
+    private readonly ToolRegistry? _tools;
+
+    /// <summary>
+    /// v3.8.28: the registry, so the scribe can finally DISPATCH the one tool its contract grants it.
+    ///
+    /// `read_changed_files_summary` was built for this role in v3.5.0 and the scribe has never called
+    /// it — it inferred changed files by running a regex over prior tasks' PROSE. Optional for the
+    /// same reason the soldier's and verifier's dependencies are: existing call sites keep the
+    /// previous behaviour rather than being rewritten to gain a capability they do not exercise.
+    /// </summary>
+    public ScribeAnt(ToolRegistry? tools = null) : base("scribe") => _tools = tools;
 
     private static readonly System.Text.RegularExpressions.Regex DocsPath =
         new(@"^(?:docs/[\w./\-]+\.md|README\.md|CHANGELOG\.md)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// What this mission actually changed, and where that answer came from.
+    ///
+    /// Returns the tool's answer when the tool can give one, and the prose-derived guess otherwise.
+    /// The SOURCE is returned alongside because release notes built from a regex over other ants'
+    /// summaries are a different artifact from release notes built from a diff, and an operator
+    /// reading them must be able to tell which they have.
+    /// </summary>
+    private (List<string> Files, string Source) ReadChangedFiles(
+        Mission mission, Task task, List<string> priorResults)
+    {
+        if (_tools is not null)
+        {
+            try
+            {
+                var run = _tools.RunTool("read_changed_files_summary", mission.Id, task.Id, Name, new());
+                if (run.Success && !string.IsNullOrWhiteSpace(run.Output))
+                {
+                    var fromTool = System.Text.RegularExpressions.Regex
+                        .Matches(run.Output, @"\b(?:src|docs|tests|scripts|deploy)/[\w./\-]+|README\.md|CHANGELOG\.md")
+                        .Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                    if (fromTool.Count > 0) return (fromTool, "workspace_diff");
+                }
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine($"[scribe] changed-file summary unavailable for {mission.Id}: {error.Message}");
+            }
+        }
+
+        var guessed = System.Text.RegularExpressions.Regex
+            .Matches(string.Join("\n", priorResults) + "\n" + task.Description,
+                     @"\b(?:src|docs|tests)/[\w./\-]+|README\.md|CHANGELOG\.md")
+            .Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return (guessed, "mentioned_in_prose");
+    }
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -340,12 +452,22 @@ public sealed class ScribeAnt : BaseAnt
 
         var priorResults = mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null)
             .Select(t => $"[{t.AssignedAnt}] {t.Title}: {t.ResultSummary ?? Truncate(t.Result!)}").ToList();
-        var changedFiles = System.Text.RegularExpressions.Regex
-            .Matches(string.Join("\n", priorResults) + "\n" + task.Description, @"\b(?:src|docs|tests)/[\w./\-]+|README\.md|CHANGELOG\.md")
-            .Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // v3.8.28 — ASK THE WORKSPACE what changed, rather than pattern-matching prose about it.
+        //
+        // `read_changed_files_summary` was built for this role in v3.5.0 and the scribe never called
+        // it. It ran the regex below over prior tasks' RESULT TEXT, so its "changed files" were
+        // whatever paths an ant happened to mention — a file discussed but untouched was reported as
+        // changed, and a file changed but not mentioned was invisible. Release notes assembled from
+        // that describe a release that did not happen.
+        //
+        // The tool is authoritative when it answers. The regex stays as the fallback for the case it
+        // explicitly refuses: no mission workspace in scope, where summarising the operator's own
+        // uncommitted work as "what this mission changed" would be a confident, plausible lie.
+        var (changedFiles, changedFilesSource) = ReadChangedFiles(mission, task, priorResults);
 
         var releaseNotes =
             $"Mission: {mission.Goal}\nCompleted stages: {priorResults.Count}\n" +
+            $"changed_files_source: {changedFilesSource}\n" +
             (changedFiles.Count > 0 ? $"Referenced files: {string.Join(", ", changedFiles.Take(10))}\n" : "") +
             string.Join("\n", priorResults.Take(10));
         var artifacts = new List<AntArtifact> { new("release_notes", "Operator summary", releaseNotes) };
