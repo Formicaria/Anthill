@@ -1,7 +1,7 @@
 # ANTHILL Homelab — Canonical Design Doc
 
 Status: Active subsystem design doc (NORTH_STAR D10). The master build order lives in
-`docs/NORTH_STAR.md`; this file tracks homelab phase status and the design decisions that hold
+`docs/PLAN.md`; this file tracks homelab phase status and the design decisions that hold
 across phases.
 
 ## Phase status

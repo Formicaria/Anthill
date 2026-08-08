@@ -1,3 +1,11 @@
+> **ARCHIVED — not current.** Superseded by `docs/PLAN.md` at v3.8.24. Merged with NORTH_STAR and the post-refactor staging because three documents describing one plan is how three documents come to disagree about one release.
+>
+> The current plan is [`docs/PLAN.md`](../../PLAN.md). This file is kept as the historical
+> record and is no longer maintained; nothing here should be treated as describing the
+> shipping colony.
+
+---
+
 # ANTHILL V3 ROADMAP
 
 ## Colony Execution Infrastructure

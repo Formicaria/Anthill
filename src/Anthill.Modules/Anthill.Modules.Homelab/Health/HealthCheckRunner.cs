@@ -80,7 +80,7 @@ public sealed class HealthCheckRunner
         {
             if (schedule.CheckKind is "disk" or "uptime")
             {
-                result.Detail = $"{schedule.CheckKind} checks are placeholders until agent support lands (see docs/NORTH_STAR.md)";
+                result.Detail = $"{schedule.CheckKind} checks are placeholders until agent support lands (see docs/PLAN.md)";
             }
             else if (host.Length == 0)
             {

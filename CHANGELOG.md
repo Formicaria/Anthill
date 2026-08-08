@@ -1,5 +1,58 @@
 # ANTHILL Changelog
 
+## v3.8.24 - one plan, and a guard that the documents are real
+
+A documentation release. No runtime behaviour changes; three test guards do.
+
+**Four planning documents became one.** `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and
+`POST_REFACTOR-PLAN.md` were 2,746 lines with heavy overlap. Two were closed or superseded —
+REFACTOR-PLAN at v3.8.18, POST_REFACTOR-PLAN by the twelve-role program — and every release had to
+edit three of them to stay consistent, which is how three documents come to disagree about one
+release. `docs/PLAN.md` replaces them: where the colony measurably is, what is left in dependency
+order, the acceptance gates, and a record of the mistakes worth recognising again. All four are
+archived under `docs/archive/v3/` with a header saying what superseded them and why.
+
+`DASHBOARD_WORKSPACE.md` is archived too. Its own header has said since v3.2.0 that it "describes a
+workspace that no longer exists", and a guard test nevertheless required it to name the shipping
+version — so every release edited a document about deleted code in order to stay green.
+
+**Five dead links, and the guard that missed them.** README, CHANGELOG and DASHBOARD_WORKSPACE all
+pointed into `docs/` at `ADAPTIVE_RUNTIME_STATUS.md`, `CONSOLE_REDESIGN.md`, `CONSOLE_REFIT.md`,
+`PRE_V3_RUNTIME_HARDENING.md` and `UI_ROADMAP.md`. None existed. All five had been MOVED to
+`docs/archive/v2/` with the references left behind — not lost documents, moved documents with stale
+pointers, which is worse because the reader is sent somewhere that looks deliberate.
+
+A guard for exactly this already existed. `CanonicalDocuments_AllExist` was written in v2.15.0
+because five of the nine documents NORTH_STAR's canonical block named did not exist, and it checked
+that block. It worked, for that block, while five more dead links accumulated outside its scope. It
+is replaced by `EveryDocumentationLink_PointsAtAFileThatExists`, which checks every markdown
+reference into the docs tree from every live markdown file — the only version of the guard that cannot be outgrown by the
+thing it guards.
+
+The archive is deliberately EXCLUDED from it. An archived file is a snapshot; twenty-eight of its
+internal links point at documents that existed when it was frozen, and every one is accurate about
+its own moment. Rewriting them to keep a test green would edit the historical record to satisfy a
+guard.
+
+**The same refusal, twice more.** Repointing the release-heading guard from ROADMAP to CHANGELOG
+immediately surfaced fifteen duplicate version headings across v1.x and v2.x. Those lines are frozen
+history — v2 closed at v2.26.0 — so the guard is scoped to the live major line rather than rewriting
+173 headings. And a blanket link update corrupted two historical README entries into claiming that
+v1.8.27 and v3.0.0 referenced `docs/PLAN.md`, a document that did not exist for either; both were
+restored to point at the archived originals.
+
+Also: `SANDBOX_TEST.md` (one line reading "Sandbox loop verification.") and
+`researcher_file_builder_verifier.md` (74 bytes) deleted. ADRs deliberately left alone — they are
+decision records, not plans, and folding them in would lose the reasoning they exist to hold.
+
+Two limitations worth stating. The guard checks that linked FILES exist, not that linked SECTIONS
+do — three references to "NORTH_STAR §6 rule 1" and "section 7" were caught and repointed by hand
+here, and a fourth would not be caught automatically. And it cannot tell a LINK from prose that
+merely names a file: its first run failed on this very changelog entry, for naming the five dead
+documents while describing them. That is the correct trade — the stale pointers this release fixed
+were mostly bare paths in prose rather than markdown links, so a guard that only understood
+`[text](path)` would have missed every one of them.
+
 ## v3.8.23 - patches are verified in a tree that contains them
 
 Two things, and the first is a correction to the correction.
@@ -227,7 +280,7 @@ is a score.
 
 v3.8.17 declared the Core/Modules refactor complete. An external review disagreed with the framing —
 "implementation complete, acceptance incomplete" — and was right on all six findings. This release
-closes them. `docs/REFACTOR-PLAN.md` §7 records the review in full.
+closes them. `docs/archive/v3/REFACTOR-PLAN.md` §7 records the review in full.
 
 Five of the six were the same defect in different clothes: **a check that answers a question adjacent
 to the one being asked, and passes.**
@@ -270,7 +323,7 @@ had been orphaned onto the wrong class in `SafetyPolicy` since v3.8.16 is back w
 
 ## v3.8.17 - the refactor ends
 
-Phases 6 and 7 (`docs/REFACTOR-PLAN.md`). Fifteen releases from v3.8.3, no capability removed, no
+Phases 6 and 7 (`docs/archive/v3/REFACTOR-PLAN.md`). Fifteen releases from v3.8.3, no capability removed, no
 test deleted.
 
 - **`ApiHost.cs`: 3,294 lines → 535.** Split by resource into `ApiHost.Routes`, `.Auth`,
@@ -313,7 +366,7 @@ so far was an extraction rather than an addition.
 
 ## v3.8.16 - the tools leave the core, and phase 5 ends
 
-Phase 5c step 4 plus the start of phase 7 (`docs/REFACTOR-PLAN.md`). `Anthill.Core` is 24,973 lines,
+Phase 5c step 4 plus the start of phase 7 (`docs/archive/v3/REFACTOR-PLAN.md`). `Anthill.Core` is 24,973 lines,
 down from 34,247 at the refactor baseline — **27%, with nothing deleted**.
 
 - **Six tool implementations move to `Anthill.Modules.Tools`.** `list_directory`, `read_text_file`,
@@ -365,7 +418,7 @@ down from 34,247 at the refactor baseline — **27%, with nothing deleted**.
 
 ## v3.8.15 - the tool-definition contract joins the SDK
 
-Phase 5c step 3 (`docs/REFACTOR-PLAN.md`). `IToolKindExecutor` names `ToolDefinition` in its
+Phase 5c step 3 (`docs/archive/v3/REFACTOR-PLAN.md`). `IToolKindExecutor` names `ToolDefinition` in its
 signature, so neither could move without the other — and the plan recorded the record as "entangled
 with `ToolAuthorization` and `ToolInventory`" without saying how much. Measured: three lines, all
 inside `Validate()`.
@@ -407,7 +460,7 @@ plumbing before anything ships a second kind would be building a seam against no
 
 ## v3.8.14 - TextUtil joins the SDK
 
-Phase 5c step 2, second half (`docs/REFACTOR-PLAN.md`). The widest of the three helper moves by
+Phase 5c step 2, second half (`docs/archive/v3/REFACTOR-PLAN.md`). The widest of the three helper moves by
 consumer count and the narrowest by configuration.
 
 - **`TextUtil` moves to `Anthill.SDK.Common`.** 18 consuming files in `src` plus `JsonSafetyTests`,
@@ -463,7 +516,7 @@ operator's session.
 
 ## v3.8.12 - The SSRF and patch-path guards join the SDK
 
-Phase 5c step 2 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the first half, `UrlSafety` and
+Phase 5c step 2 of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`) — the first half, `UrlSafety` and
 `Validation`. `TextUtil` has 18 consumers and reaches well beyond the tool layer, so it moves on its
 own and has not moved yet.
 
@@ -506,7 +559,7 @@ own and has not moved yet.
 
 ## v3.8.11 - The tool gates become a contract
 
-Phase 5c step 1 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisite for moving the
+Phase 5c step 1 of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`) — the prerequisite for moving the
 tool implementations out, and the step where the plan turned out to be wrong.
 
 - **`IToolRuntimeOptions` is an interface with live-reading properties, NOT a snapshot record.** The
@@ -532,7 +585,7 @@ The implementations have not moved yet. This is the seam they need, built and te
 
 ## v3.8.10 - The tool contract joins the SDK
 
-Phase 5b of the Core/Modules split (`docs/REFACTOR-PLAN.md`).
+Phase 5b of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`).
 
 - **`ToolResult` and `ITool` move to `Anthill.SDK.Tools`.** 5a is what made this possible:
   `ToolResult`'s only dependencies are `FailureClass` and `FailureClassify`, and both joined the SDK
@@ -560,7 +613,7 @@ Phase 5b of the Core/Modules split (`docs/REFACTOR-PLAN.md`).
 
 ## v3.8.9 - Half the contract vocabulary joins the SDK
 
-Phase 5a of the Core/Modules split (`docs/REFACTOR-PLAN.md`), on the second attempt — and the
+Phase 5a of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`), on the second attempt — and the
 correction is the interesting part.
 
 - **`Capability`, `FailureClass`, `FailureClassify`, `ToolDescriptor` and `ToolCatalog` move to
@@ -601,7 +654,7 @@ No source moved in this release. One new test file and the version markers, noth
 
 ## v3.8.7 - The homelab leaves the core
 
-Phase 4a of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisites for moving
+Phase 4a of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`) — the prerequisites for moving
 Homelab and Integrations out, plus a gap the survey exposed.
 
 - **The homelab coupling was two files, not twenty.** Homelab and Integrations are 6,549 lines and
@@ -652,7 +705,7 @@ Homelab and Integrations out, plus a gap the survey exposed.
 
 ## v3.8.6 - The module contract acquires a caller
 
-Phase 3 of the Core/Modules split (`docs/REFACTOR-PLAN.md`), triggered by a defect the refactor
+Phase 3 of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`), triggered by a defect the refactor
 introduced.
 
 - **v3.8.5 shipped `IAnthillModule` and `IModuleContext` that nothing ever invoked.** The API
@@ -687,7 +740,7 @@ introduced.
 
 ## v3.8.5 - The colony runs without AI
 
-Phase 2b of the Core/Modules split (`docs/REFACTOR-PLAN.md`), and the first module.
+Phase 2b of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`), and the first module.
 
 - **"The core can run without any AI provider" was not merely untested — it was impossible.**
   `ModelRouter` held two switch statements naming `OllamaClient`, `OpenAiCompatibleClient` and
@@ -721,7 +774,7 @@ Phase 2b of the Core/Modules split (`docs/REFACTOR-PLAN.md`), and the first modu
 
 ## v3.8.4 - Reasoning becomes a contract, not a core service
 
-Phase 2a of the Core/Modules split (`docs/REFACTOR-PLAN.md`). Types moved between assemblies; no
+Phase 2a of the Core/Modules split (`docs/archive/v3/REFACTOR-PLAN.md`). Types moved between assemblies; no
 member changed, no behaviour changed, no call site changed meaning.
 
 - **The reasoning protocol moved to `Anthill.SDK.Reasoning`**: `ModelProtocol` (request, response,
@@ -750,7 +803,7 @@ is still called from Core, Api and Cli. Inverting that construction is phase 2b.
 
 ## v3.8.3 - The colony gets a nervous system
 
-Refactor phases 0 and 1 of the Core/Modules split (see `docs/REFACTOR-PLAN.md`). No capability was
+Refactor phases 0 and 1 of the Core/Modules split (see `docs/archive/v3/REFACTOR-PLAN.md`). No capability was
 removed and no public behaviour changed; what arrived is the seam everything after this depends on.
 
 - **`Anthill.SDK`, a contracts-only project.** `IEventBus`, `ColonyEvent`, `EventTypes`,
@@ -1370,7 +1423,7 @@ principle that you cannot safely decompose a system you cannot inventory.
 
 ### The V3 document set is canonical
 
-`docs/NORTH_STAR.md` and `docs/ROADMAP.md` are now the V3 documents — Colony Execution
+`docs/archive/v3/NORTH_STAR.md` and `docs/archive/v3/ROADMAP.md` are now the V3 documents — Colony Execution
 Infrastructure, v3.0.0 through v3.8.3. The nine completed V2 planning documents moved to
 `docs/archive/v2/` with a README mapping each to the release that closed it. History, not
 authority.
@@ -1439,7 +1492,7 @@ and the audit verdict.
 ## v2.26.0 — Pre-V3 runtime hardening
 
 An external engineering deep-dive audited the repo before V3. Every claim was verified against the
-code first (docs/PRE_V3_RUNTIME_HARDENING.md records confirmed / already-fixed / invalid, item by
+code first (docs/archive/v2/PRE_V3_RUNTIME_HARDENING.md records confirmed / already-fixed / invalid, item by
 item); every confirmed defect is fixed here, under one governing principle: **one outcome, one
 verification authority, one durable stop, one task lifecycle, one learning boundary, one action
 lifecycle.** This is a hardening release — nothing here makes ANTHILL more autonomous; all of it
@@ -2146,7 +2199,7 @@ structural completion alone now grade `completed_unverified` or `partial`. The p
 Stage 7 — the migration that resets derived learning state accumulated under the old rule — ships in
 **v2.20.0**. Until then, pre-v2.19.0 EMA, pheromone strengths and confidence counters remain active
 and were computed under the defective rule. Scope, constraints and the full remaining-work list are
-in `docs/ADAPTIVE_RUNTIME_STATUS.md`.
+in `docs/archive/v2/ADAPTIVE_RUNTIME_STATUS.md`.
 
 Researcher, Web, File, Coder and Builder were deliberately **not** migrated: the default
 `BaseAnt.Execute` wrapper already declares their outcomes correctly, and Verifier was the only core
@@ -2948,7 +3001,7 @@ removed selectors against live element ids before deleting.
 
 Deferred with a written spec rather than rushed: the **editable Ant Inspector side panel** (click an
 ant → permissions, contract, workers, activity, with inline name/colour/model editing). It is
-specified in `docs/DASHBOARD_WORKSPACE.md` under "Queued: editable Ant Inspector side panel",
+specified in `docs/archive/v3/DASHBOARD_WORKSPACE.md` under "Queued: editable Ant Inspector side panel",
 including which persistence path each editable field must use — notably that per-role **model**
 selection belongs to model-routing config and must go through the existing settings endpoint with
 its normal auth, not a new write path. Building it half-way would have meant either a control that
@@ -3201,7 +3254,7 @@ so the console is unchanged until an operator opts in.
 ## v2.14.2 — Topology-first Dashboard, Stage 1: workspace state model + kill switch
 
 Start of the console track that makes the live colony map the Dashboard's persistent canvas, with
-customizable floating panels above it. Canonical plan: **docs/DASHBOARD_WORKSPACE.md**. This
+customizable floating panels above it. Canonical plan: **docs/archive/v3/DASHBOARD_WORKSPACE.md**. This
 release is foundations only — no visible UI change yet, and the classic Overview + Colony pages
 are untouched.
 
@@ -3240,7 +3293,7 @@ Shipped here:
 - 20 xUnit tests covering the spec's persistence matrix (missing state, legacy v1 state, invalid
   positions/sizes/enums, unknown/missing panels, broken tab references, invalid anchors, corrupt
   workspace, profile isolation, future-key survival, idempotence).
-- Docs: new `docs/DASHBOARD_WORKSPACE.md` (design, decisions, pointer arbitration, persistence,
+- Docs: new `docs/archive/v3/DASHBOARD_WORKSPACE.md` (design, decisions, pointer arbitration, persistence,
   staged build order with status, performance budget, a11y, security); NORTH_STAR console track
   entry; supersession notes in UI_ROADMAP, CONSOLE_REDESIGN, CONSOLE_REFIT; README pointer.
 
@@ -3683,12 +3736,12 @@ Two refinements on the v2.6.0 IA (front-end only; `src/Anthill.Api/Ui/index.html
   visibility via the sidebar routes and `1`–`-` keyboard shortcuts; only the duplicate row is gone.
 - No backend/API changes; `node --check` clean; UI-integrity guards pass.
 
-## v2.6.0 — Console Redesign: enterprise information architecture (docs/CONSOLE_REDESIGN.md)
+## v2.6.0 — Console Redesign: enterprise information architecture (docs/archive/v2/CONSOLE_REDESIGN.md)
 
 The single-page console with ~16 flat, inconsistently-grouped tabs becomes a routable, seven-domain
 enterprise operations platform. Front-end only (`src/Anthill.Api/Ui/index.html`); internal page ids
 are unchanged, so every existing `showPage(id)` caller keeps working. Full rationale, sitemap,
-consolidation table, and journeys live in `docs/CONSOLE_REDESIGN.md`.
+consolidation table, and journeys live in `docs/archive/v2/CONSOLE_REDESIGN.md`.
 
 - **Information architecture.** Sixteen equal-weight tabs collapse into a config-driven, role-aware
   grouped sidebar: **Dashboard** + **Monitoring / Operations / Infrastructure / Colony / Security /
@@ -3713,7 +3766,7 @@ consolidation table, and journeys live in `docs/CONSOLE_REDESIGN.md`.
 - Verified live in-browser (routing, breadcrumbs, sub-nav sync, unified Activity, Agents tabs). No
   backend/API changes; `node --check` clean; UI-integrity guards (duplicate ids, glyphs) pass.
 
-## v2.5.5 — Console Refit R5 Wave 1: download-client integrations (docs/CONSOLE_REFIT.md)
+## v2.5.5 — Console Refit R5 Wave 1: download-client integrations (docs/archive/v2/CONSOLE_REFIT.md)
 
 The first integration wave on the R1 platform. Five download clients join the catalog with
 **zero new tables, endpoints, or UI pages** — proof the generic contract holds: a new integration
@@ -3747,7 +3800,7 @@ is one `IIntegrationDefinition` plus one registry entry, and the R2 widget runti
   pure-GET apikey, NZBGet GET + HTTP Basic with the default `nzbget` user), the end-to-end
   `SyncAsync` widget payloads, and rate formatting.
 
-## v2.5.4 — Console Refit R4: allow/blocklist management + collections framework (docs/CONSOLE_REFIT.md)
+## v2.5.4 — Console Refit R4: allow/blocklist management + collections framework (docs/archive/v2/CONSOLE_REFIT.md)
 
 The D1 target list grows a first-class blocklist and its first real management surface.
 
@@ -3776,7 +3829,7 @@ The D1 target list grows a first-class blocklist and its first real management s
   bulk ops with single audit records, and the legacy-database column migration (idempotent
   across reopens, legacy rows default to allow).
 
-## v2.5.3 — Console Refit R3: navigation + information architecture (docs/CONSOLE_REFIT.md)
+## v2.5.3 — Console Refit R3: navigation + information architecture (docs/archive/v2/CONSOLE_REFIT.md)
 
 The single-page console gains intentional structure: the Homelab page becomes eleven category
 sub-pages, and every datum on it gets exactly ONE home.
@@ -3799,7 +3852,7 @@ sub-pages, and every datum on it gets exactly ONE home.
   sub-pages. The `?` shortcuts help documents both. The operator's last sub-page is restored
   per browser (localStorage), matching the existing last-page behavior.
 
-## v2.5.2 — Console Refit R2: widget framework (docs/CONSOLE_REFIT.md)
+## v2.5.2 — Console Refit R2: widget framework (docs/archive/v2/CONSOLE_REFIT.md)
 
 One JS widget runtime for every dashboard tile — widgets are modular and page-agnostic
 (they know their integration and kind, never where they render).
@@ -3822,7 +3875,7 @@ One JS widget runtime for every dashboard tile — widgets are modular and page-
   widget kinds each connected integration declares in the catalog; responsive `.wgt-grid`
   auto-fill sizing with wide (2-column) list widgets.
 
-## v2.5.1 — Console Refit R1: generic integration framework (docs/CONSOLE_REFIT.md)
+## v2.5.1 — Console Refit R1: generic integration framework (docs/archive/v2/CONSOLE_REFIT.md)
 
 The *arr pattern becomes the platform core: every connected app is now an `IIntegrationDefinition`
 (kind, category, auth mode, widget kinds, GET-only sync) registered in `IntegrationCatalog` —
@@ -4836,10 +4889,10 @@ behavior change.
 
 Phase 1 of the master roadmap: stop roadmap drift by making one canonical direction document.
 
-- New **`docs/NORTH_STAR.md`** — the single, ordered build order from the current baseline (v1.8.26)
+- New **`docs/archive/v3/NORTH_STAR.md`** — the single, ordered build order from the current baseline (v1.8.26)
   through the V2 Homelab Command Center and V3 bounded autonomous operator, plus the non-negotiable
   safety/architecture rules, the global bug-prevention gates, and the version-completion template.
-- `docs/ROADMAP.md`, `docs/UI_ROADMAP.md`, and `docs/AUTONOMY.md` now carry a status block marking them
+- `docs/archive/v3/ROADMAP.md`, `docs/archive/v2/UI_ROADMAP.md`, and `docs/AUTONOMY.md` now carry a status block marking them
   as retained subsystem history and pointing to `NORTH_STAR.md`.
 - README links `NORTH_STAR.md` from the version notes and adds a v1.8.27 changelog row.
 - Docs only; no runtime behavior change.
@@ -5269,7 +5322,7 @@ Stabilization pass on the v1.8.16 Patch Center after live testing surfaced an op
 ## v1.8.16 — Objective Lifecycle Hardening + Visual Patch Review Center
 
 Two focused improvements to how the colony ends autonomous work and how the operator reviews the
-changes it proposes. See `docs/ROADMAP.md` for the 10-phase direction; Phases 1–2 ship here.
+changes it proposes. See `docs/archive/v3/ROADMAP.md` for the 10-phase direction; Phases 1–2 ship here.
 
 **Objective lifecycle (Phase 1).** One-shot and verification-only objectives now end cleanly instead
 of regenerating near-identical missions until loop detection retires them:
