@@ -157,8 +157,27 @@ public class PatchSetMaterializerTests : IDisposable
         return set;
     }
 
-    private static PatchProposal Modify(string path, string content) =>
-        new() { FilePath = path, ChangeType = PatchChangeType.Modify, NewContent = content };
+    /// <summary>The contents the fixture writes into every existing source file.</summary>
+    private const string Original = "original contents";
+
+    /// <summary>
+    /// A modify proposal in the shape a real coder emits.
+    ///
+    /// v3.8.32 — this helper used to omit <c>OldContent</c> entirely, and the materializer accepted
+    /// it because the materializer ignored <c>OldContent</c> too. Both halves were wrong together, so
+    /// every test here passed while describing a patch the operator's applier would have refused:
+    /// <c>ApplyPatchTool</c> has always required exact <c>old_content</c> for a modify, and
+    /// <c>CoderAnt</c>'s own prompt instructs the model to supply it.
+    ///
+    /// A fixture that constructs input in a shape the producer never emits is the same defect the
+    /// whole v3.8.32 release is about — it just happened to be in a test rather than in the code.
+    /// </summary>
+    private static PatchProposal Modify(string path, string content, string oldContent = Original) =>
+        new()
+        {
+            FilePath = path, ChangeType = PatchChangeType.Modify,
+            OldContent = oldContent, NewContent = content,
+        };
 
     /// <summary>The patch is in the sandbox, and the primary tree is untouched. Both halves matter:
     /// the first is why verification means anything, the second is why it is safe to run.</summary>

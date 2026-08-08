@@ -117,16 +117,27 @@ public static class LearningAttribution
     /// <see cref="FailureClass"/> — never the failure PROSE. Parsing a message to decide whose fault
     /// something was is the same defect as parsing a verdict to decide whether it passed.
     /// </summary>
+    /// <remarks>
+    /// v3.8.32 — this method was BROKEN from the day it was written, and the test over it passed.
+    ///
+    /// It compared <c>task.FailureType</c>, which <c>TaskOutcomeMapper</c> fills with
+    /// <c>transient_provider_failure</c>, against <c>cls.ToString()</c>, which is
+    /// <c>TransientProviderFailure</c>, using <c>OrdinalIgnoreCase</c> — which normalises the casing
+    /// and NOT the underscores. Nothing in the set ever matched. For six releases every provider
+    /// outage, rate limit and dependency failure was charged as a negative trail against the ant that
+    /// happened to be holding the task: the exact defect this class exists to prevent.
+    ///
+    /// The test fed <c>nameof(FailureClass.TransientProviderFailure)</c> — a value production never
+    /// writes into this field — so it exercised a code path no mission could reach. The replacement
+    /// test drives real <c>AntExecutionResult</c>s through the real mapper, so the two halves can
+    /// never again be verified in isolation from each other.
+    /// </remarks>
     public static bool IsEnvironmental(Task task)
     {
-        var recorded = task.FailureType ?? "";
-        if (recorded.Length == 0) return false;
-
-        foreach (var cls in NotTheWorkersFault)
-            if (string.Equals(recorded, cls.ToString(), StringComparison.OrdinalIgnoreCase))
-                return true;
-
-        return false;
+        // One parser, shared with the producer, normalising both historical string forms. A local
+        // comparison here is what caused the original defect and must not come back.
+        return FailureClassNames.TryParse(task.FailureType, out var cls)
+               && NotTheWorkersFault.Contains(cls);
     }
 
     /// <summary>

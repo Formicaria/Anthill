@@ -126,44 +126,31 @@ public sealed class SandboxedCoderRunner
 
             try
             {
-                switch (p.ChangeType)
-                {
-                    case PatchChangeType.Add:
-                        if (string.IsNullOrEmpty(p.NewContent)) return (false, $"add '{p.FilePath}' has empty new_content");
-                        Directory.CreateDirectory(Path.GetDirectoryName(safe)!);
-                        File.WriteAllText(safe, p.NewContent);
-                        break;
+                // v3.8.32 — shared semantics. This block used to replace the FIRST occurrence with
+                // no uniqueness check, and to treat a modify with no old_content as a whole-file
+                // overwrite. ApplyPatchTool refuses both. A sandbox that accepts a patch the real
+                // applier would reject reports a green run for a change that can never land.
+                var current = File.Exists(safe) ? File.ReadAllText(safe) : null;
+                var outcome = PatchApply.Compute(ChangeTypeName(p.ChangeType), p.OldContent, p.NewContent, current);
+                if (!outcome.Ok) return (false, $"{p.FilePath}: {outcome.Reason}");
 
-                    case PatchChangeType.Modify:
-                        if (string.IsNullOrEmpty(p.NewContent)) return (false, $"modify '{p.FilePath}' has empty new_content");
-                        if (!File.Exists(safe)) return (false, $"modify target does not exist: '{p.FilePath}'");
-                        if (!string.IsNullOrEmpty(p.OldContent))
-                        {
-                            var current = File.ReadAllText(safe);
-                            if (!current.Contains(p.OldContent, StringComparison.Ordinal))
-                                return (false, $"old_content not found in '{p.FilePath}'");
-                            File.WriteAllText(safe, ReplaceFirst(current, p.OldContent, p.NewContent));
-                        }
-                        else
-                        {
-                            File.WriteAllText(safe, p.NewContent);
-                        }
-                        break;
-
-                    default:
-                        return (false, $"sandbox applier supports only add/modify; refusing '{p.ChangeType}' for '{p.FilePath}'");
-                }
+                if (outcome.Status == PatchApplyStatus.Created)
+                    Directory.CreateDirectory(Path.GetDirectoryName(safe)!);
+                File.WriteAllText(safe, outcome.Content!);
             }
             catch (Exception e) { return (false, $"apply error on '{p.FilePath}': {e.Message}"); }
         }
         return (true, "");
     }
 
-    private static string ReplaceFirst(string s, string search, string replace)
+    /// <summary>The wire spelling <see cref="PatchApply"/> expects. Anything else is refused there
+    /// rather than silently treated as a modify.</summary>
+    private static string ChangeTypeName(PatchChangeType kind) => kind switch
     {
-        var i = s.IndexOf(search, StringComparison.Ordinal);
-        return i < 0 ? s : string.Concat(s.AsSpan(0, i), replace, s.AsSpan(i + search.Length));
-    }
+        PatchChangeType.Add => PatchApply.Add,
+        PatchChangeType.Modify => PatchApply.Modify,
+        _ => kind.ToString().ToLowerInvariant(),
+    };
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "\n…(truncated)";
 }

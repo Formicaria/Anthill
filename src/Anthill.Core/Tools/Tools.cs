@@ -287,7 +287,8 @@ public sealed class ToolRegistry
                 ["output_preview"] = TextUtil.Truncate(result.Output, 500),
                 // The class is on the EVENT too, so "which tools fail, and how" is a query rather
                 // than an exercise in grepping error prose out of a metadata blob.
-                ["failure_class"] = result.Failure.ToString(), ["retryable"] = result.Retryable,
+                // v3.8.32: wire form via the shared converter — see FailureClassNames.
+                ["failure_class"] = FailureClassNames.Wire(result.Failure), ["retryable"] = result.Retryable,
             });
 
     private static Dictionary<string, object?> SafeMetadata(IReadOnlyDictionary<string, object?> metadata)

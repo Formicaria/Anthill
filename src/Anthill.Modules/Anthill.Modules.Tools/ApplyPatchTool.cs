@@ -54,19 +54,13 @@ public sealed class ApplyPatchTool : ITool
         try { Validation.ValidateSafePatchPath(filePath, _options); safePath = _guard.ResolveSafePath(filePath); }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch path: {e.Message}", ToolFailure.Classify(e)); }
         if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to patch blocked internal/system path.", FailureClass.AuthorizationFailure);
-        if (changeType is not ("add" or "modify"))
-            return new ToolResult(Name, false, "", $"ANTHILL currently supports only add and modify patches. Refusing change_type: {changeType}", FailureClass.ValidationFailure);
-        if (string.IsNullOrEmpty(newContent)) return new ToolResult(Name, false, "", "Patch new_content is required and must be non-empty.", FailureClass.ValidationFailure);
 
         try
         {
-            return changeType switch
-            {
-                "add" => ApplyAdd(safePath, newContent),
-                "modify" when string.IsNullOrEmpty(oldContent) => new ToolResult(Name, false, "", "MODIFY patches require old_content for exact replacement.", FailureClass.ValidationFailure),
-                "modify" => ApplyModify(safePath, oldContent!, newContent),
-                _ => new ToolResult(Name, false, "", $"Unsupported change_type: {changeType}", FailureClass.ValidationFailure),
-            };
+            // NULL means "does not exist" and is distinct from an existing empty file — PatchApply
+            // refuses those two cases differently, so the distinction must survive the read.
+            var current = File.Exists(safePath) ? File.ReadAllText(safePath) : null;
+            return ApplyComputed(safePath, PatchApply.Compute(changeType, oldContent, newContent, current));
         }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}", ToolFailure.Classify(e)); }
     }
@@ -84,44 +78,54 @@ public sealed class ApplyPatchTool : ITool
         return backupPath;
     }
 
-    private ToolResult ApplyAdd(string safePath, string newContent)
+    /// <summary>
+    /// Do the IO for a computed result. v3.8.32 — the DECISION of what the file should contain now
+    /// comes from <see cref="PatchApply.Compute"/>, shared with the sandbox runner and the
+    /// verifier's materializer, which each had their own divergent copy of these rules.
+    ///
+    /// What stays here is what only this tool does: back the file up before overwriting it, create
+    /// parent directories, and write UTF-8 without a BOM.
+    /// </summary>
+    private ToolResult ApplyComputed(string safePath, PatchApplyResult outcome)
     {
-        // A coder that proposes ADD for a file that already exists (a common LLM slip) previously
-        // hard-failed here, stalling auto-apply. Instead treat it as a full-file overwrite: back up
-        // the current file first so it is fully reversible, then write the proposed content. This stays
-        // inside the safety model — the pre-apply backup, auto-apply verify+rollback, and the
-        // standalone-branch-never-main review gate all still apply, and the Patch Center shows the diff
-        // before any manual apply. New files still take the plain add path below.
-        if (File.Exists(safePath))
+        // The class is named AT the construction, as two literals rather than through a mapping
+        // helper. `EveryToolFailureInTheSource_NamesItsFailureClass` scans the statement text and a
+        // helper call defeats it — and the guard is right to insist: a reader looking at a failure
+        // site should see how it classifies without navigating somewhere else. The first draft here
+        // used a `RefusalClass(status)` helper and the guard caught it.
+        //
+        // TargetRejection vs ValidationFailure is the distinction that matters to the model:
+        // "your old_content does not match this file" is a fixable argument problem, whereas a
+        // malformed proposal is the caller's own construction being wrong.
+        if (outcome.Status is PatchApplyStatus.RefusedOldContentNotFound or PatchApplyStatus.RefusedAmbiguous)
+            return new ToolResult(Name, false, "", outcome.Reason, FailureClass.TargetRejection);
+        if (!outcome.Ok)
+            return new ToolResult(Name, false, "", outcome.Reason, FailureClass.ValidationFailure);
+
+        switch (outcome.Status)
         {
-            var existingBackup = BackupFile(safePath);
-            File.WriteAllText(safePath, newContent, new UTF8Encoding(false));
-            return new ToolResult(Name, true, Json.Dumps(new { action = "add_overwrite", file_path = safePath, backup_path = existingBackup }, indented: true));
+            case PatchApplyStatus.Created:
+                Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
+                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
+                return new ToolResult(Name, true, Json.Dumps(
+                    new { action = "add", file_path = safePath, backup_path = (string?)null }, indented: true));
+
+            case PatchApplyStatus.Overwrote:
+            {
+                // An `add` onto an existing file. Reversible because the backup is taken FIRST.
+                var existingBackup = BackupFile(safePath);
+                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
+                return new ToolResult(Name, true, Json.Dumps(
+                    new { action = "add_overwrite", file_path = safePath, backup_path = existingBackup }, indented: true));
+            }
+
+            default:
+            {
+                var backupPath = BackupFile(safePath);
+                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
+                return new ToolResult(Name, true, Json.Dumps(
+                    new { action = "modify", file_path = safePath, backup_path = backupPath }, indented: true));
+            }
         }
-        Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
-        File.WriteAllText(safePath, newContent, new UTF8Encoding(false));
-        return new ToolResult(Name, true, Json.Dumps(new { action = "add", file_path = safePath, backup_path = (string?)null }, indented: true));
-    }
-
-    private ToolResult ApplyModify(string safePath, string oldContent, string newContent)
-    {
-        if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"MODIFY refused because file does not exist: {safePath}", FailureClass.ValidationFailure);
-        var current = File.ReadAllText(safePath);
-        var occurrences = CountOccurrences(current, oldContent);
-        if (occurrences == 0) return new ToolResult(Name, false, "", "MODIFY refused because old_content was not found exactly in the target file.", FailureClass.TargetRejection);
-        if (occurrences > 1) return new ToolResult(Name, false, "", $"MODIFY refused because old_content appears {occurrences} times. Patch must be unambiguous.", FailureClass.TargetRejection);
-        var backupPath = BackupFile(safePath);
-        var index = current.IndexOf(oldContent, StringComparison.Ordinal);
-        var updated = current[..index] + newContent + current[(index + oldContent.Length)..];
-        File.WriteAllText(safePath, updated, new UTF8Encoding(false));
-        return new ToolResult(Name, true, Json.Dumps(new { action = "modify", file_path = safePath, backup_path = backupPath }, indented: true));
-    }
-
-    private static int CountOccurrences(string haystack, string needle)
-    {
-        if (string.IsNullOrEmpty(needle)) return 0;
-        int count = 0, index = 0;
-        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) != -1) { count++; index += needle.Length; }
-        return count;
     }
 }

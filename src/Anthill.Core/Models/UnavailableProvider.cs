@@ -36,6 +36,17 @@ public sealed class UnavailableProvider : IModelClient
     public static UnavailableProvider NotServed(string provider) =>
         new(provider, "no registered reasoning module serves this provider");
 
+    /// <summary>
+    /// The provider is available but no MODEL could be chosen. v3.8.33.
+    ///
+    /// Carries the resolver's own sentence, because "which model" is a question only the operator can
+    /// settle and a generic refusal would send them looking in the wrong place. The alternative — a
+    /// built-in default model name — is what this release removed: it turned "you have not chosen a
+    /// model" into `model 'llama3.1:8b' not found` on every machine that had pulled something else.
+    /// </summary>
+    public static UnavailableProvider NoModelChosen(string provider, string reason) =>
+        new(provider, reason);
+
     // Error, deliberately, not ConfigError: this classified as the generic Error before the typed
     // boundary, and Error maps to CircuitSignal.Neutral. Promoting it to ConfigError would make it
     // Healthy and start CLEARING a provider's breaker — a behaviour change smuggled in under a

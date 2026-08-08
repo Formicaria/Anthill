@@ -110,18 +110,14 @@ public static class TaskOutcomeMapper
     public static bool IsCompleting(AntExecutionResult? result) =>
         result is not null && Completing.Contains(result.StatusCode);
 
-    /// <summary>Typed failure classification for the task record, from the ant's own report.</summary>
+    /// <summary>
+    /// Typed failure classification for the task record, from the ant's own report.
+    ///
+    /// v3.8.32: goes through <see cref="FailureClassNames.Wire"/> rather than a private ToSnake that
+    /// lived here. The private copy is what made this the PRODUCER half of a disagreement no test
+    /// could see: the consumer, <c>LearningAttribution</c>, compared against the enum name instead,
+    /// and neither side ever received a value from the other.
+    /// </summary>
     private static string FailureType(AntExecutionResult result) =>
-        result.Failure is { } f ? ToSnake(f.Class.ToString()) : "execution_error";
-
-    private static string ToSnake(string pascal)
-    {
-        var sb = new System.Text.StringBuilder(pascal.Length + 6);
-        for (var i = 0; i < pascal.Length; i++)
-        {
-            if (char.IsUpper(pascal[i]) && i > 0) sb.Append('_');
-            sb.Append(char.ToLowerInvariant(pascal[i]));
-        }
-        return sb.ToString();
-    }
+        result.Failure is { } f ? FailureClassNames.Wire(f.Class) : "execution_error";
 }
