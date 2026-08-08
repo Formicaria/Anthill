@@ -769,7 +769,37 @@ public sealed class VerifierAnt : BaseAnt
 {
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
-    public VerifierAnt(bool useOllama, ModelRouter? router) : base("verifier") { _useOllama = useOllama; _router = router; }
+    private readonly Anthill.SDK.Artifacts.IEvidenceStore? _evidence;
+
+    /// <summary>
+    /// v3.8.27: the evidence store, so the verdict can be READ rather than asked for.
+    ///
+    /// Optional for the same reason the soldier's is — dozens of tests and the CLI construct a
+    /// verifier without one, and in that configuration it behaves exactly as it always has. A
+    /// required dependency would have rewritten every call site to gain a capability none of them
+    /// exercise.
+    /// </summary>
+    public VerifierAnt(bool useOllama, ModelRouter? router,
+        Anthill.SDK.Artifacts.IEvidenceStore? evidence = null) : base("verifier")
+    {
+        _useOllama = useOllama; _router = router; _evidence = evidence;
+    }
+
+    /// <summary>
+    /// The verdict this mission's stored evidence supports, or null when there is no store to ask.
+    /// A read failure is null too: a verifier that refused to run because the store hiccuped would
+    /// be worse than one falling back to the static check it has always had.
+    /// </summary>
+    private Outcomes.EvidenceVerdict.Result? ReadEvidenceVerdict(Mission mission)
+    {
+        if (_evidence is null) return null;
+        try { return Outcomes.EvidenceVerdict.For(_evidence.ForMission(mission.Id)); }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[verifier] could not read evidence for {mission.Id}: {error.Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// v2.19.0: the verdict is now declared, not left for a reader to infer. Run() still returns
@@ -785,10 +815,37 @@ public sealed class VerifierAnt : BaseAnt
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var text = Compose(task, mission);
-        var verdict = Outcomes.VerificationVerdict.Parse(text);
+
+        // v3.8.27 — THE EVIDENCE DECIDES; the model describes.
+        //
+        // Until this release the verdict was `VerificationVerdict.Parse(text)` — a search for the
+        // phrase "verification passed" in whatever the model wrote. That was the LAST place model
+        // output reached a verification decision, and it stood while everything underneath it was
+        // built to make it unnecessary: the store (v3.8.19), the producers (v3.8.20), and
+        // deterministic verifiers running against a workspace that actually contains the patch
+        // (v3.8.23).
+        //
+        // Stored evidence is consulted first and a deterministic failure cannot be talked out of.
+        // The prose stays as the narrative an operator reads and stops being the thing anything
+        // branches on.
+        //
+        // Falls back to the prose verdict ONLY when there is no store — the CLI and the older tests.
+        // Returning `unknown` for every mission in those configurations would be a regression
+        // wearing the costume of rigour.
+        var fromEvidence = ReadEvidenceVerdict(mission);
+
+        var verdict = fromEvidence?.Verdict ?? Outcomes.VerificationVerdict.Parse(text);
         var passed = Outcomes.VerificationVerdict.IsPass(verdict);
 
-        var result = TextResult(Name, text) with
+        var narrative = fromEvidence is null ? text
+            : text
+              + $"\n\nevidence_verdict: {fromEvidence.Verdict}"
+              + $"\nevidence_basis: {fromEvidence.Explanation}"
+              + $"\ndeterministic_passed: {fromEvidence.DeterministicPassed}"
+              + $"\ndeterministic_failed: {fromEvidence.DeterministicFailed}"
+              + $"\nnon_deterministic_recorded: {fromEvidence.NonDeterministicRecorded}";
+
+        var result = TextResult(Name, narrative) with
         {
             StatusCode = passed ? "succeeded" : "succeeded_with_warnings",
             Summary = passed
@@ -798,8 +855,37 @@ public sealed class VerifierAnt : BaseAnt
         };
         return result with
         {
-            Evidence = new List<AntEvidence> { new("verification_verdict", verdict, Outcomes.VerificationVerdict.Explain(verdict)) },
+            Evidence = BuildVerdictEvidence(verdict, text, fromEvidence),
         };
+    }
+
+    /// <summary>
+    /// The verdict, WHERE IT CAME FROM, and what the model thought if it disagreed. v3.8.27.
+    ///
+    /// Recording the source is the point. Without it an operator cannot tell a verdict computed from
+    /// a compiler's exit code apart from one parsed out of prose — and those two look identical in
+    /// every report the colony produces, which is precisely the confusion this release removes.
+    /// </summary>
+    private static List<AntEvidence> BuildVerdictEvidence(
+        string verdict, string modelText, Outcomes.EvidenceVerdict.Result? fromEvidence)
+    {
+        var rows = new List<AntEvidence>
+        {
+            new("verification_verdict", verdict, Outcomes.VerificationVerdict.Explain(verdict)),
+        };
+        if (fromEvidence is null) return rows;
+
+        rows.Add(new("verdict_source", "evidence_store", fromEvidence.Explanation));
+
+        // The model's own reading, kept and explicitly subordinate. Discarding it would lose the one
+        // thing a model is genuinely good at here — explaining WHY something looks wrong — and
+        // recording it as an override makes the disagreement auditable rather than invisible.
+        var modelRead = Outcomes.VerificationVerdict.Parse(modelText);
+        if (modelRead != verdict)
+            rows.Add(new("model_verdict_overridden", modelRead,
+                $"the model read '{modelRead}'; the evidence supports '{verdict}', and the evidence decides"));
+
+        return rows;
     }
 
 

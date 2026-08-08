@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.26**.
+**The single forward-looking document.** Shipping release: **v3.8.28**.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
@@ -38,7 +38,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.26)
+## 2. Where the colony actually is (measured at v3.8.28)
 
 ### Working end to end
 
@@ -50,6 +50,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 | Artifact + evidence stores | Stores, producers, provenance, hashing (ADR-004, v3.8.19–v3.8.21) |
 | Patch verification | Per-proposal, in a materialised sandbox containing the patch (v3.8.22–v3.8.23) |
 | Deterministic blocks | A failed bundle or a soldier policy block demotes the mission outcome (v3.8.22) |
+| Verification from evidence | The verifier reads stored evidence; model prose is recorded, never decisive (v3.8.27) |
 | Pheromone decay | Trails fade toward neutral (v3.8.19) — they never had before |
 | Colony recall | What has worked / usually fails / who solved this / what knowledge exists (v3.8.19) |
 | Mission workspaces | Detached git worktrees, attributable to a base revision (v3.5.0) |
@@ -60,7 +61,6 @@ It is not close, and the gap is not model quality — it is that roles still han
 |---|---|
 | **Roles pass PROSE, not artifacts** | `Task.Result` is `string?`. The artifact store has producers but is not the interchange. Everything downstream that "learns" learns from prose |
 | **The verifier is still planner-selectable** | Tester and soldier are inserted by policy as of v3.8.26; the verifier is not, because it is how verification currently happens at all |
-| **The verifier asks a model** | It emits a verdict string that `MissionVerification` parses. The one place model output still reaches a verification decision. Bounded by the deterministic-evidence rule, not closed |
 | **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe. All six now have a real trigger; `/colony` reports per-role readiness and the first binding blocked reason |
 | **No worker reputation** | The `workers` table has six columns and none is a score. Trails are attributed correctly as of v3.8.26, but they are trails, not a score |
 | **Pheromone vocabulary is a free string** | `trail_type` is untyped; no SUCCESS/FAST_PATH/UNSTABLE vocabulary |
@@ -117,19 +117,19 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.26 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.28 |
 |---|---|---|---|---|
 | **Researcher** | Planner, near intake | `system_info`, `list_directory` | `context_brief` | Emits prose (`text`). Target adds `repository_index`, `search_workspace` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
 | **File** | Planner | `list_directory`, `read_text_file` | `file_set` | Done. Target adds `repository_index`, `search_workspace` |
-| **UI Cartographer** | Policy, before Coder on UI work | 4 read tools | `ui_map` | Uses hard-coded Anthill paths; must generalise. Not yet mandatory before Coder |
+| **UI Cartographer** | Planner | 4 read tools | `ui_map` | Generalised at v3.8.28 — thirteen conventional layouts. Still not MANDATORY before Coder |
 | **Coder** | Planner | **none, deliberately** | `patch_set` | Consumes prose, not typed context. PatchSet carries content but no workspace revision link |
-| **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Inserted by policy as of v3.8.26. Still defaults to `dotnet_build`; needs manifest-driven check selection, Node/Python adapters, cancellation |
+| **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Done as of v3.8.28 — manifest-driven, multi-runtime. Cancellation and per-check timeouts still open |
 | **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Done as of v3.8.26 — reads the real PatchSet, inserted by policy |
-| **Verifier** | Policy, after evidence exists | none | `verification_bundle` | **Asks a model.** Target is a deterministic reader of the evidence store |
+| **Verifier** | Planner, after evidence exists | none | `verification_bundle` | Done as of v3.8.27 — reads the evidence store; a deterministic failure cannot be overridden by prose. Still planner-scheduled rather than policy-inserted |
 | **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | `failure_context` artifact does not exist; reads in-memory mission state |
 | **Builder** | Planner, after verification | none | `operator_summary` | Emits prose |
-| **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_draft` | Does not actually call its tool |
+| **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_draft` | Done as of v3.8.28 — dispatches its tool; records whether the file list came from a diff or from prose |
 | **Archivist** | After canonical evaluation persists | none | `memory_candidate` | Reachable as of v3.8.26 — runs post-finalization, outside the task graph. Had NEVER run before |
 
 **A role with no tool calls is not inactive.** Coder, Soldier, Verifier, Medic, Builder and Archivist

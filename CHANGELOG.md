@@ -1,5 +1,76 @@
 # ANTHILL Changelog
 
+## v3.8.28 - three roles stop being repository-specific
+
+Stage D graduation for the tester, the cartographer and the scribe. Each was declared complete and
+each was quietly hard-wired to this repository or to prose.
+
+**The tester only knew .NET.** It selected checks from `CheckCatalog.Ids` — the global compiled
+catalog — and when the task named none, defaulted to `{ dotnet_version, dotnet_build }`. On a Node or
+Python project that runs the wrong toolchain and reports a failure that says more about the colony
+than about the code. `WorkspaceAdapters` has detected Node, Python and .NET since v3.5.0 and
+`WorkspaceCapabilityManifest` has assembled their checks; the tester simply never asked. The manifest
+is now consulted first with the catalog as fallback — the same precedence `RunAllowlistedCheckTool`
+already applies when it actually runs the check, because two components disagreeing about which
+catalog is authoritative is how a tester selects an id the runner then refuses. A detected workspace
+with no checks is BLOCKED rather than passed: nothing deterministic ran, so a PASS would mean nothing.
+
+**The cartographer could only map ANTHILL.** It appended `src/Anthill.UI/index.html` and
+`src/Anthill.UI/app.js` unconditionally, so pointed at any other project it added two paths that do
+not exist and mapped whatever the top-level listing happened to catch. Now thirteen conventional
+layout locations across the ecosystems the adapters already detect, with this repository as one case
+among them.
+
+Widening the list exposed a second bug in the same change: the read budget was `MaxFilesToRead + 2`,
+sized for exactly the two hard-coded paths, so eleven of the thirteen probes would have been silently
+truncated and the change would have appeared to work on this repository alone. The budget is now a
+named constant and a test pins it to the list length — the first draft said twelve against a list of
+thirteen, which drops the last probe on every project, forever, while failing nothing.
+
+**The scribe never called its own tool.** `read_changed_files_summary` was built for this role in
+v3.5.0 and the scribe inferred changed files by running a regex over prior tasks' RESULT PROSE — so a
+file merely discussed was reported as changed, and a file changed but not mentioned was invisible.
+Release notes assembled from that describe a release that did not happen. The tool is authoritative
+when it answers; the regex remains the fallback for the case the tool explicitly refuses, which is
+when no mission workspace is in scope and summarising the operator's own uncommitted work as "what
+this mission changed" would be a confident, plausible lie. The notes record
+`changed_files_source: workspace_diff | mentioned_in_prose`, because those are different artifacts and
+a reader must be able to tell which one they have.
+
+## v3.8.27 - the evidence decides
+
+Stage C and the verifier half of Stage D. The last place model output reached a verification
+decision is closed.
+
+**The verifier asked a model, and the model's words were the verdict.** `VerificationVerdict.Parse`
+searched the model's prose for the phrase "verification passed" and branched on whether it found it.
+That stood while everything underneath it was built to make it unnecessary: the artifact and evidence
+stores (v3.8.19), their producers (v3.8.20), and deterministic verifiers running against a workspace
+that actually contains the patch (v3.8.23). The colony had real reproducible evidence and was still
+asking a model how it went.
+
+`EvidenceVerdict` computes the verdict from stored evidence, in order: any deterministic failure is
+`failed` and cannot be talked out of; deterministic passes with no failures are `passed`; evidence
+that is all non-deterministic is `unknown`; no evidence is `unknown`. Not "passed" — the absence of
+proof is not proof, and a mission with only model reviews behind it has been verified by nothing.
+
+The model's reading is kept and made explicitly subordinate. Where the two disagree the evidence wins
+and a `model_verdict_overridden` row records what the model thought, so the disagreement is auditable
+rather than invisible. A `verdict_source` row records WHERE the verdict came from — without it an
+operator cannot tell a verdict computed from a compiler's exit code apart from one parsed out of
+prose, and those look identical in every report the colony produces.
+
+The store is optional on the constructor: with no store the verifier behaves exactly as it always
+has. Returning `unknown` for every mission in the CLI and the older tests would be a regression
+wearing the costume of rigour.
+
+**The verification bundle is persisted.** v3.8.22 wrote each verifier's verdict as its own evidence
+row and kept the bundle in memory. That answers "did the build pass" and cannot answer "what was the
+full set of checks this patch was REQUIRED to pass, and did it pass all of them" — and only the
+second is a verification. A bundle with no required list cannot be distinguished from one that
+required nothing. Bound to `patch_set_hash` and `applied_tree_hash` rather than the patch-set id,
+because an id can be reused by a later edit and a hash cannot.
+
 ## v3.8.26 - policy inserts the safety roles
 
 The last Stage B item, and the pair to v3.8.25's deliberate omission.
