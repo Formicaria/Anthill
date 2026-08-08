@@ -1,3 +1,11 @@
+> **ARCHIVED — not current.** Superseded by `docs/PLAN.md` at v3.8.24. Its EXECUTION STATUS measurements, the v3.8.21 verification-defect post-mortem and the roster survey were folded into PLAN.md sections 2, 4 and 6.
+>
+> The current plan is [`docs/PLAN.md`](../../PLAN.md). This file is kept as the historical
+> record and is no longer maintained; nothing here should be treated as describing the
+> shipping colony.
+
+---
+
 ===========================================================
 OPERATION ANTHILL
 POST REFACTOR STAGING

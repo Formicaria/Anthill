@@ -2,7 +2,7 @@
 
 **Status:** Accepted — phases 0 through 5 shipped against it (v3.8.3 … v3.8.16)
 **Supersedes:** nothing. **Related:** ADR-001 (runtime composition), ADR-006 (agent harness)
-**Record of execution:** `docs/REFACTOR-PLAN.md`
+**Record of execution:** `docs/archive/v3/REFACTOR-PLAN.md`
 
 ## Context
 
@@ -90,7 +90,7 @@ consumer.
 
 ## What was measured, and what it cost to assume
 
-Recorded at length in `docs/REFACTOR-PLAN.md` §6. In short: every phase that came in smaller than
+Recorded at length in `docs/archive/v3/REFACTOR-PLAN.md` §6. In short: every phase that came in smaller than
 feared did so because the coupling was counted rather than inferred from names — twenty
 `Anthill.Core.Common` imports in the homelab were two helpers; 151 `ToolResult` references were 13
 edits; `ToolDefinition`'s "entanglement with `ToolAuthorization` and `ToolInventory`" was three lines.

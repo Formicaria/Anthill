@@ -1,3 +1,11 @@
+> **ARCHIVED — not current.** CLOSED at v3.8.18 and archived at v3.8.24. The Core/Modules refactor is complete: Anthill.Core went 34,247 -> 24,973 lines with nothing deleted, three modules, and the boundary enforced by assembly-reference tests. Its six rules and its sign-off review table are the parts still worth reading; ADR-007 carries the boundary rule itself.
+>
+> The current plan is [`docs/PLAN.md`](../../PLAN.md). This file is kept as the historical
+> record and is no longer maintained; nothing here should be treated as describing the
+> shipping colony.
+
+---
+
 # ANTHILL Core Refactor — Migration Plan
 
 **Status:** **CLOSED at v3.8.18.** Phases 0–7 shipped by v3.8.17; v3.8.18 closed the acceptance gap

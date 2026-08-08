@@ -9,7 +9,7 @@ namespace Anthill.Tests;
 /// v1.8.28 validation/regression harness (NORTH_STAR Phase 2). Repo-level guards for bug classes
 /// that have already shipped once: version-marker drift, non-idempotent schema migration, UI glyph
 /// corruption, and stray active Python. These run in plain `dotnet test`, so they gate local work
-/// and CI identically. See docs/NORTH_STAR.md §4.
+/// and CI identically. See docs/PLAN.md (the rules that were NORTH_STAR §4).
 /// </summary>
 public class RegressionGuardTests : IDisposable
 {
@@ -577,7 +577,7 @@ public class RegressionGuardTests : IDisposable
             .Where(p => !p.Contains("/bin/") && !p.Contains("/obj/") && !p.StartsWith(".git/"))
             .ToList();
         Assert.True(offenders.Count == 0,
-            "Active Python files found (forbidden by NORTH_STAR \u00a73.1 rule 13): "
+            "Active Python files found (forbidden by the no-Python rule, was NORTH_STAR \u00a73.1 rule 13): "
             + string.Join(", ", offenders));
     }
 }
