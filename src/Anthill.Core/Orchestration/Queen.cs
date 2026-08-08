@@ -164,7 +164,8 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             // registry gate agree by construction.
             ["ui_cartographer"] = new UiCartographerAnt(Tools),
             ["tester"] = new TesterAnt(Tools),
-            ["soldier"] = new SoldierAnt(),
+            // v3.8.25: the store, so the review reads the PATCH rather than prose about it.
+            ["soldier"] = new SoldierAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["scribe"] = new ScribeAnt(),
             ["medic"] = new MedicAnt(),
             ["archivist"] = new ArchivistAnt(),
@@ -293,6 +294,19 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         ArgumentNullException.ThrowIfNull(tools);
         foreach (var tool in tools) Tools.Register(tool);
         Profile = RuntimeProfile.Resolve(Profile.Options, Tools.Names);
+
+        // v3.8.25: the capability grant is re-resolved here for exactly the reason the profile is.
+        //
+        // v3.8.16 found that `Queen.Profile` was resolved at construction while module tools arrive
+        // afterwards, so `/status` reported five tool grants for an eleven-tool colony — a wrong
+        // answer that failed nothing. The capability grant has the same shape and a worse failure:
+        // resolved before the module lands, `read_text_file` is absent, `repo.read` is not granted,
+        // and every role requiring it is DENIED at dispatch. Registration and re-resolution stay one
+        // call so the two cannot drift apart again.
+        Tools.GrantCapabilities(CapabilityGrant.Resolve(
+            Tools.Names.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            modelAvailable: Profile.Options.ModelRouting,
+            webSearchEnabled: Profile.Options.WebSearch));
     }
 
     private ToolRegistry BuildToolRegistry(RuntimeOptions options)
@@ -333,6 +347,21 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         foreach (var rejected in UserTools.Where(r => !r.Registered))
             Console.Error.WriteLine(
                 $"[user-tools] '{rejected.Name}' not registered: {string.Join("; ", rejected.Problems)}");
+
+        // v3.8.25: resolve what this run can PROVIDE, last, from what actually got registered.
+        //
+        // This is what makes ToolExecutionContext constructible, and it has to happen here for the
+        // same reason RuntimeProfile.Resolve does: module tools arrive after the built-ins, so a
+        // grant computed any earlier would describe a colony with fewer capabilities than the one
+        // about to run — and a capability check against an understated grant denies real work.
+        //
+        // Note the module dependency this makes visible. A colony built without Anthill.Modules.Tools
+        // has no read_text_file, so it is not granted repo.read, so a role requiring it is refused
+        // with that reason rather than discovering "Tool not found" one layer down.
+        registry.GrantCapabilities(CapabilityGrant.Resolve(
+            registry.Names.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            modelAvailable: options.ModelRouting,
+            webSearchEnabled: options.WebSearch));
 
         return registry;
     }

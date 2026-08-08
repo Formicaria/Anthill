@@ -1,5 +1,76 @@
 # ANTHILL Changelog
 
+## v3.8.25 - the roster becomes consequential
+
+Stage B of the twelve-role program. Three things that were declared start being enforced.
+
+**The repair path could not fire, ever.** `IngestHandoffs` was called only after
+`decision.Action == Complete`, and the non-completing path returns fifteen lines earlier. So a FAILED
+task's handoffs were recorded as proposals and acted on by nothing — which made the tester's
+failure-to-medic handoff unreachable in principle. The medic is triggered by failure and its only
+route in was gated on success.
+
+Handoffs are now ingested on terminal failure. Not on Skip, which means the task never ran and its
+proposals are about work that did not happen; and not on a retryable failure, because the scheduler
+owns retries and dispatching a medic to diagnose a task the colony has not finished attempting
+produces a repair loop bounded by nothing.
+
+**`AntHandoff.Required` meant nothing.** It has existed since v2.21.0 and a refused required handoff
+reached an event row and no gate, so a mission whose tester demanded a medic and did not get one
+completed exactly as if the repair had happened. A refusal now sets `Task.DeterministicBlock`, which
+the canonical evaluator already honours — reusing the v3.8.22 mechanism rather than inventing a
+second demotion path beside it. It demotes rather than fails: the work that ran still ran, but the
+mission cannot claim to be verified when a step its own roles called necessary did not occur. An
+OPTIONAL refusal stays a log line.
+
+**`ToolExecutionContext` gets its first production call site.** It has been in the tree,
+capability-aware and tested, since the execution framework was written, and the reason nothing called
+it was mundane: `GrantedCapabilities` had no source. `CapabilityGrant` is that source, and its shape
+is the decision worth recording — the grant is derived from what the composition root ACTUALLY BUILT
+(which tools reached the registry, whether a provider was composed in, what the run's switches
+permit), never from the contracts. Granting each role exactly what it declares would produce a check
+that can never fail, which is a call site in the shape of a gate and the defect this project has now
+found seven times.
+
+Two things that shape it. The check is LAYERED on the existing authorization rather than replacing
+it: the first draft substituted the context call and would have broken operator-defined tools, whose
+whole design is to widen a role's reach beyond the compiled allowlist — every user tool would have
+been denied as "not allowlisted for role". And the grant is re-resolved in `AdoptModuleTools`, for
+exactly the reason `RuntimeProfile` is: module tools arrive after construction, so a grant computed
+in the constructor would omit `read_text_file`, withhold `repo.read`, and deny every role that needs
+it. v3.8.16 found the same ordering bug in the profile, where it merely produced a wrong number.
+
+**`SchedulingMode` becomes binding — for two of the three modes.** v3.8.23 declared it on all twelve
+contracts and nothing read it. The discriminator is `ParentTaskIds`: a planned task has no parent, a
+task from a handoff or the adaptive repair path carries what caused it, so "scheduled speculatively
+or in response to something that happened" is answerable from the task itself.
+
+FailureTriggered and PostFinalization are enforced, because planned scheduling of those roles is
+already broken — `MedicAnt.Execute` opens by returning Blocked when nothing has failed, a handler
+defending itself against its own scheduler, and the archivist summarises a terminal mission the
+planner schedules mid-run. Blocking those removes nothing that worked.
+
+PolicyInserted — tester and soldier — is deliberately NOT enforced. Nothing inserts them yet, so the
+rule would remove the only path those roles have while its replacement does not exist. The first
+draft of this release did exactly that: a correct rule landing as a regression. A test pins the gap
+so it reads as a decision rather than an oversight, and inverts when policy insertion ships.
+
+**The soldier reviews the PATCH.** Its entire input was the task description plus prior tasks'
+result prose, so it was scanning descriptions of a change. The `secret_material` rule looks for
+`-----BEGIN PRIVATE KEY-----` and `api_key = "…"` in SOURCE, and source was the one thing the review
+never saw — every content rule was matching a summary. A key pasted into a proposed file passed.
+
+The patch-set artifact now carries `new_content`, at Colony visibility rather than in the event log
+beside it, and the soldier reads the mission's patch artifacts through `IArtifactStore`. Prose is
+KEPT and the patch is ADDED rather than swapped: the description carries the `approved_scope`
+declaration `ScopeMismatch` parses, and prior results carry context a patch body does not — replacing
+one input with the other trades a blind spot for a different one.
+
+The store is optional on the constructor, so the CLI and every existing test get the previous
+behaviour unchanged. What the review will not do is claim to have read a patch it did not: the review
+text records `patch_artifacts_reviewed`, so a clean scan of a real patch is distinguishable from a
+scan of nothing, and a store that faults degrades to prose review rather than refusing to run.
+
 ## v3.8.24 - one plan, and a guard that the documents are real
 
 A documentation release. No runtime behaviour changes; three test guards do.
