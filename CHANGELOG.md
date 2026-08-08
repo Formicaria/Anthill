@@ -1,5 +1,197 @@
 # ANTHILL Changelog
 
+## v3.8.33 - any model, and the console finally says which
+
+`llama3.1:8b` was the built-in default local model in three places. On a host that had pulled
+anything else — which is most hosts, since Ollama has no default and you run what you chose — every
+ant call failed with `model 'llama3.1:8b' not found` while the console reported Ollama as reachable.
+
+A default model name is a guess about someone else's machine. It is gone.
+
+**Which model, resolved instead of assumed.** `LocalModelResolver` answers it once: configured wins;
+with nothing configured, exactly one model installed is used because there was no choice to make;
+zero or several is REFUSED with a reason that names the remedy. Refusing on ambiguity is the same
+rule `PatchApply` follows when `old_content` matches twice — when the system cannot know which one
+you meant, saying so beats picking. It matters more here than it looks: an auto-pick would happily
+select an embedding or draft model, and the colony would not fail. It would run, reason badly, and
+record that as evidence.
+
+An unresolved model reaches the caller as `UnavailableProvider.NoModelChosen` carrying the resolver's
+own sentence, never as an empty model string on the wire. Discovery is registered by the composition
+root rather than implemented in the core, so `Anthill.Core` still makes no HTTP calls to providers
+(ADR-007), and "the host could not be asked" stays distinct from "the host has no models" — those
+need different fixes and collapsing them prints the wrong instruction.
+
+**The console was computing the answer and throwing it away.** `/status` has returned
+`ollama_model_present` since v2.4.3, added for exactly this symptom, with the comment
+*"Ollama can be up while the configured model is absent, and every ant call then fails although the
+chip showed green."* `app.js` had **zero** references to it. The status chip, the attention banner
+and the status popover all keyed on reachability alone.
+
+That is the ninth instance of implemented-tested-and-unreachable in this codebase, and the first
+found in the UI. The chip now goes amber rather than green when the host is up but no model is
+usable, the banner states the resolver's reason, and the popover reports reachability and model
+separately because they are different questions.
+
+**Picking a model is now a click.** The model browser listed what Ollama holds and copied the name to
+your clipboard for you to paste into Settings. With a hardcoded default that was merely inconvenient;
+with no built-in model, choosing one is the step that makes the colony work. Clicking a model sets
+it.
+
+**Guards.** `LocalModelResolverTests` pins the resolution rules — including that arbitrary names
+(`deepseek-r1:70b`, a private registry tag) are accepted, since "any model" is the requirement — and
+a source guard fails the build if a concrete model tag reappears in `src/`. The capability HINT table
+is exempt by design: it maps model FAMILIES to what they support, is consulted only after asking the
+host, and selects nothing.
+
+The guard's first run reported two offenders, both doc comments, one of them the paragraph explaining
+why the hardcoded tag was removed. The comment stripper written for v3.8.32's detectors moved to
+`SourceText` rather than being copied a third time — three near-copies of one rule is the shape this
+release line keeps collapsing.
+
+**Also:** `docs/AUTONOMY-10.md` adopted as the forward program — ten phases, each with an exit gate
+that must pass through the real composed runtime. `PLAN.md` now answers only "where is the colony
+measurably now"; the split is deliberate, and is the lesson of the four documents PLAN.md replaced.
+Phase 1 is recorded as partly delivered by v3.8.32 rather than re-planned, with base hashes named as
+its largest remaining gap.
+
+## v3.8.32 - five defects an external review found, and the guards that would have caught them
+
+v3.8.31 closed the 3.8 line and called the repository clean. An external source review of v3.8.29
+then found five defects, all of which were still present. Every one had passing tests over it. This
+release fixes them, and — more importantly — builds the guards whose absence let them through.
+
+### The defects
+
+**Environmental failures were charged to the ant.** `TaskOutcomeMapper` wrote
+`transient_provider_failure` into `Task.FailureType`. `LearningAttribution` compared that field
+against `TransientProviderFailure` using `OrdinalIgnoreCase`, which normalises the casing and NOT the
+underscores. The environmental set matched nothing. For six releases every provider outage, rate
+limit, timeout, dependency failure and authorization refusal was recorded as a negative pheromone
+trail against whichever ant was holding the task — the exact defect v3.8.26 was written to prevent,
+which therefore never worked once.
+
+The test passed because it fed `nameof(FailureClass.TransientProviderFailure)`, a value production
+never writes into that field. `FailureClassNames` is now the only conversion in either direction, it
+accepts both historical spellings so existing rows keep their classification, and a sweep found two
+more victims: `LoadTaskResult`'s `Enum.TryParse` had the mirror-image blind spot, and
+`WhatUsuallyFails` was grouping one failure class into two buckets.
+
+**The verifier compiled a tree that could not exist.** `PatchSetMaterializer` wrote `new_content`
+over the whole file for every change type, ignoring `old_content`. `ApplyPatchTool` — the applier
+that touches the operator's tree — replaces one exact occurrence and refuses if it is absent or
+ambiguous. So any modify that was not a whole-file rewrite was materialised as a file containing
+only the patch fragment, and v3.8.23's "patches are verified in a sandbox that contains them" was
+verifying something else. There were THREE apply implementations and no two agreed; there is now one
+(`PatchApply`), and the other two call it.
+
+**The repair loop still could not fire.** v3.8.25 moved handoff ingestion onto the failure path and
+its comment said the tester→medic route now worked. The gate read `!decision.Retryable`, which is
+derived from the ant's status code rather than from anything the scheduler decided. The tester emits
+`failed_retryable` on every failed check, so that flag was true on every attempt including the one
+that exhausted the budget, and the `required: true` medic handoff was dropped every single time.
+`MarkFailed` already returned "true when terminally failed" and the code discarded it. It is the gate
+now.
+
+**Readiness lied about the six core ants.** The `/colony/registry` ladder ran over all twelve
+contract keys and asked two questions that only mean something about a gated specialist. Core ants
+reported `ready: false` — "activation tier 'core' does not admit this role" — on the surface an
+operator reads to decide what to switch on. `RoleGateStatus` now has a `NotGated` member, so the
+state that had no representation stops collapsing into "closed", and the ladder moved out of the
+route lambda into `RoleReadiness` where it can be tested at all. That placement was the real cause:
+nothing could call it without an HTTP host, so nothing ever did.
+
+**"Works without an LLM" had no test.** `CoreWithoutProviderTests` proves a model call returns a
+typed refusal rather than throwing. That is one method at one boundary, and it had been standing in
+for the claim that a whole mission survives. `OfflineMissionTests` now runs real missions with no
+provider and asserts what actually matters: termination, one canonical evaluation, no task left
+mid-flight, typed failures, and no reputation damage.
+
+### The guards, which matter more
+
+Every one of these had the same shape: **a test that built its own input in the form its own side
+expected**, so the two halves of a boundary were each verified against an assumption rather than
+against each other. The rule is now written down and enforced.
+
+`CrossBoundaryAgreementTests` drives real producers into real consumers — a real `AntExecutionResult`
+through the real mapper into the real attribution rule, for every failure class — and adds three
+source-level detectors: no file may stringify a `FailureClass` outside the shared converter, no file
+may implement its own patch application, and no enum with a custom wire form may be read back with
+`Enum.TryParse`. All three were verified to FAIL against v3.8.31 and pass here; a guard nobody has
+seen fail is a guard nobody has tested.
+
+That last detector is the generalised form. The codebase has two legitimate conventions for storing
+an enum, and mixing them is invisible for any member without underscores — `Enum.TryParse("complete")`
+happily yields `MissionStatus.Complete`. It only bites on multi-word members, which is why it
+survived. A sweep of every enum that round-trips through the database confirmed `FailureClass` was
+the only mismatched pair; the guard keeps it that way.
+
+Two tests were also caught lying about their own subject. `EveryRole_HasARealTrigger` checked
+`ContractFor(r)?.Scheduling is null` — on a non-nullable enum that can only be null when the contract
+is missing, so it was a duplicate contract-existence check wearing a trigger test's name, and would
+have passed with every role in the colony unreachable. The full-roster fixture hardcoded
+`modelAvailable: true`, asserting the roster qualifies in a world it declared to exist.
+
+### Honest status
+
+Fixed and guarded. Still not done: no mission has run with `roster_profile: "full"` against a live
+model. Nothing here changes that, and after this release it should be read as the only remaining
+claim in the 3.8 line resting on tests rather than on a run.
+
+## v3.8.31 - the 3.8 line closes
+
+A cleanup release. No new capability; everything here is something the previous thirty releases left
+behind, found by sweeping the repository rather than by working from memory.
+
+**The trail vocabulary was wrong in both directions.** `TrailKind` was written in v3.8.29 from a prose
+description of the kinds in use rather than from the call sites, and it showed: it declared
+`procedural_route` and `skill`, which NOTHING writes, and omitted `model_route`, which `ModelRouter`
+writes on every routed call.
+
+Declaring a category the system does not produce is the phantom-tool defect wearing different clothes
+— three of those were deleted in v3.8.23 for exactly this reason, and I reintroduced the pattern in
+the release that was supposed to end it. The eleven kinds now in `TrailKind` were extracted from
+every `UpdatePheromoneTrail` call site in the tree.
+
+The vocabulary is also ENFORCED now rather than declared: an undeclared kind warns at the write site,
+and `PheromoneVocabularyTests` reads the source and fails in both directions — a written kind that is
+not declared, and a declared kind nothing writes. It warns rather than throws, because a new kind is
+a decision someone is midway through making and losing the observation would be worse than the
+inconsistency; the build-time guard is where it becomes binding.
+
+**`AntMetrics.ModelCalls` was the last zero counter.** `ModelRouter.CallCount` is per-SESSION and
+answers a different question, so it could never fill a per-task metric. Counted now at the same
+chokepoint the tool count uses, and counted whether or not the call succeeded — a role that burned
+three failed model calls made three model calls, and a qualification review needs to see that rather
+than a zero. `InputChars` remains zero and is documented as such: no chokepoint sees an ant's prompt.
+
+**CA2255 suppressed with its reasoning attached.** The `ModuleInitializer` on `SafetyPolicyBootstrap`
+is deliberate — most callers never construct a colony, and an uninstalled policy would silently check
+tool definitions against the SDK's mirrored copy of the core's tables instead of the tables
+themselves. The suppression carries that justification, because a warning on every build teaches
+people to ignore warnings.
+
+**Documentation reconciled with the code.** `HANDOFF.md` had been stale since v3.8.17 and still
+described the refactor as the current work. It now states what a fresh session actually needs: both
+programs closed, the two recurring defect patterns, the release recipe, and the one thing that is
+honestly NOT done — no mission has ever run with `roster_profile: "full"` against a live model.
+
+`PLAN.md` and `README.md` close the line rather than describing it as in progress. The three
+remaining entries in the gaps table are stated as what they are: `InputChars` has no chokepoint, the
+console's polling is a documented fallback that works, and the runtime statics are ergonomics rather
+than correctness since ADR-001 already forbids the mission path from reading them.
+
+### What 3.8 leaves for 3.9.0
+
+Twelve roles with real triggers, enforced contracts, and their tools. Patches verified where they
+live. Verification from reproducible evidence. Learning that records only verified outcomes. One
+plan document, no broken links, no TODOs in the source, and 1,750+ tests.
+
+What it does not leave: a single mission run with all twelve roles enabled against a live model.
+Everything above is verified by tests, and tests check what their author told them to check — the
+twelve-role suite caught its own author's mistake on its first run. That mission is the first thing
+3.9.0 should do.
+
 ## v3.8.30 - search tools reach the roles that need them, and all twelve run together
 
 **Two registered tools were reachable by one role.** `search_workspace` (v3.5.0) and

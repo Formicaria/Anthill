@@ -23,11 +23,18 @@ public sealed record ProviderInfo(
 /// </summary>
 public static class ProviderCatalog
 {
+    /// <summary>
+    /// Ollama has NO default model, and v3.8.33 stopped pretending otherwise.
+    ///
+    /// `DefaultModel: "llama3.1:8b"` was a guess about the operator's machine. A hosted provider can
+    /// have a default because the provider owns the model list; Ollama serves whatever you pulled, so
+    /// the only honest catalog answer is "ask the host". <c>LocalModelResolver</c> does that.
+    /// </summary>
     public static readonly ProviderInfo Ollama = new(
         Id: "ollama", Name: "Ollama (local)", Kind: "free-local",
         Description: "Runs models on your own machine via Ollama. No API key and no per-token cost.",
         RequiresKey: false, DefaultEndpoint: null, KeyHelpUrl: "https://ollama.com",
-        DefaultModel: "llama3.1:8b", Models: Array.Empty<string>());
+        DefaultModel: "", Models: Array.Empty<string>());
 
     public static readonly ProviderInfo OpenAi = new(
         Id: "openai", Name: "OpenAI (ChatGPT)", Kind: "paid",

@@ -1980,6 +1980,11 @@ async function pollHud(){
   const failedObjectives=objectives.filter(o=>o.end_reason==='failed').length;
   const activeObjectives=objectives.filter(o=>['active','pending'].includes((o.status||'').toLowerCase()) && o.retired_code!=='looping_goals' && (o.status||'')!=='done').length;
   const providerDown = sum.use_ollama && sum.ollama_reachable===false;
+  // v3.8.33 — Ollama up, but no usable model. The server has computed this since v2.4.3 and NOTHING
+  // read it, so the chip stayed green while every ant call failed with `model not found`. That is
+  // the "implemented, tested, unreachable" pattern, in the console.
+  const modelUnusable = sum.use_ollama && sum.ollama_reachable===true &&
+    (sum.model_resolved===false || sum.ollama_model_present===false);
   // Circuit-breaker health: routes that have tripped (open) or are probing back (half_open).
   const providers=Array.isArray(ph&&ph.data&&ph.data.providers)?ph.data.providers:[];
   const degradedProviders=providers.filter(p=>['open','half_open'].includes(String(p.state||'').toLowerCase()));
@@ -2017,6 +2022,9 @@ async function pollHud(){
   if(pendingApprovals>0) attn.push({sev:'warning',title:`${pendingApprovals} pending patch approval${pendingApprovals===1?'':'s'}`,reason:'Review and approve or reject in Changes.',go:"showPage('patches')"});
   if(highRiskPatches>0) attn.push({sev:'error',title:`${highRiskPatches} high-risk patch waiting`,reason:'High-risk change needs careful review before apply.',go:"openPatches({risk:'high'})"});
   if(providerDown) attn.push({sev:'error',title:'Model backend unreachable',reason:`Ollama at ${escapeHtml(sum.ollama_host||'?')} did not respond.`,go:"showPage('settings')"});
+  if(modelUnusable) attn.push({sev:'error',title:'No usable model',
+    reason: escapeHtml(sum.model_choice_reason || `Ollama is running at ${sum.ollama_host||'?'} but the configured model is not installed.`),
+    go:"showPage('settings')"});
   if(degradedProviders.length){
     const d=degradedProviders[0], more=degradedProviders.length>1?` +${degradedProviders.length-1} more`:'';
     const detail=String(d.state||'').toLowerCase()==='open'
@@ -2472,9 +2480,15 @@ function renderStatusChip(){
   setEl('sc-model',s.default_model||'—');
   // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
   const dot=document.getElementById('sc-dot');
-  const ok = connected && (s.ollama_reachable!==false);
+  // v3.8.33: a reachable host with no usable model is NOT ok. The chip used to go green on
+  // reachability alone, which is exactly the state where every mission fails.
+  const modelBad = s.use_ollama && (s.model_resolved===false || s.ollama_model_present===false);
+  const ok = connected && (s.ollama_reachable!==false) && !modelBad;
   dot.className='sc-dot '+(ok?'ok':'err');
-  document.getElementById('status-chip').title = ok?'Online — click for details':(s.ollama_reachable===false?'Ollama unreachable — click for details':'Click for details');
+  document.getElementById('status-chip').title = ok?'Online — click for details'
+    :(s.ollama_reachable===false?'Ollama unreachable — click for details'
+    :modelBad?(s.model_choice_reason||'No usable model — click for details')
+    :'Click for details');
 }
 
 function renderStatusPop(){
@@ -2483,9 +2497,15 @@ function renderStatusPop(){
   setEl('sp-api', connected?'? Online':'? Offline');
   document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
   const or=s.ollama_reachable;
-  const oTxt = !s.use_ollama?'not in use':(or===true?'? Reachable':or===false?'? Unreachable':'—');
+  // v3.8.33: reachability and MODEL are reported separately, because a reachable host with no
+  // usable model was the state that read as healthy while nothing worked.
+  const modelOk = s.model_resolved!==false && s.ollama_model_present!==false;
+  const oTxt = !s.use_ollama?'not in use'
+    :(or===true?(modelOk?'Reachable':'Reachable — no usable model')
+    :or===false?'Unreachable':'—');
   setEl('sp-ollama',oTxt);
-  document.getElementById('sp-ollama').style.color = or===true?'var(--green)':or===false?'var(--red)':'var(--dim)';
+  document.getElementById('sp-ollama').style.color =
+    or===true?(modelOk?'var(--green)':'var(--amber,#f59e0b)'):or===false?'var(--red)':'var(--dim)';
   setEl('sp-ollama-host',s.ollama_host||'—');
   setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
   setEl('sp-default',s.default_model||'—');
@@ -4427,6 +4447,34 @@ async function loadRoutes(){
   }
 }
 
+/**
+ * Make an installed model the colony's model. v3.8.33.
+ *
+ * Posts only `ollama_model`, deliberately — /settings is a partial update, and sending the whole
+ * Colony tab from here would write back whatever happened to be in those inputs at the time,
+ * including edits the operator had not saved. One field, one intent.
+ */
+async function selectOllamaModel(name){
+  const grid=document.getElementById('model-grid');
+  try{
+    const r=await api('/settings','POST',{ollama_model:name});
+    if(r.success){
+      colonySettings=r.data?.settings||colonySettings;
+      const box=document.getElementById('set-ollama-model'); if(box) box.value=name;
+      await loadOllamaModels();
+      pollModelInfo();
+      if(grid) grid.insertAdjacentHTML('afterbegin',
+        `<div style="font-size:10px;color:var(--green)">Model set to ${name}</div>`);
+    } else if(grid){
+      grid.insertAdjacentHTML('afterbegin',
+        `<div style="font-size:10px;color:var(--red)">${r.message||'Could not set the model'}</div>`);
+    }
+  }catch(e){
+    if(grid) grid.insertAdjacentHTML('afterbegin',
+      `<div style="font-size:10px;color:var(--red)">Could not set the model: ${e.message}</div>`);
+  }
+}
+
 async function loadOllamaModels(){
   const grid=document.getElementById('model-grid');
   grid.innerHTML='<div style="font-size:10px;color:var(--dim)">Loading from Ollama...</div>';
@@ -4438,17 +4486,24 @@ async function loadOllamaModels(){
       return;
     }
     const models=(data.models||[]).sort((a,b)=>b.size-a.size);
+    // v3.8.33 — clicking a model SELECTS it as the colony's model.
+    //
+    // It used to copy the name to the clipboard and leave you to paste it into Settings. With
+    // `llama3.1:8b` hardcoded as the default that was merely inconvenient; now that there is no
+    // built-in model, choosing one is the step that makes the colony work, and it should not require
+    // retyping a tag by hand.
     grid.innerHTML=models.map(m=>{
       const name=m.name||m.model||'unknown';
       const sizeGb=m.size?(m.size/1e9).toFixed(1)+'GB':'?';
       const isActive=activeRouteModels.has(name)||[...activeRouteModels].some(r=>name.startsWith(r.split(':')[0]));
-      return `<div class="model-item${isActive?' active-route':''}" data-onclick="navigator.clipboard.writeText('${name}').then(()=>{this.style.borderColor='var(--green)';setTimeout(()=>this.style.borderColor='',1500)})">
+      return `<div class="model-item${isActive?' active-route':''}" title="Click to use this model"
+        data-onclick="selectOllamaModel('${name.replace(/'/g,"\\'")}')">
         <span class="model-name">${name}</span>
         <span class="model-size">${sizeGb}</span>
         ${isActive?'<span class="model-badge-active">ACTIVE</span>':''}
       </div>`;
     }).join('');
-    if(!models.length) grid.innerHTML='<div style="font-size:10px;color:var(--dim)">No models found. Pull a model first: <code>ollama pull llama3.3:70b</code></div>';
+    if(!models.length) grid.innerHTML='<div style="font-size:10px;color:var(--dim)">No models found. Pull one with <code>ollama pull &lt;model&gt;</code> — any model Ollama can run will work.</div>';
   }catch(e){
     grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${e.message}</div>`;
   }

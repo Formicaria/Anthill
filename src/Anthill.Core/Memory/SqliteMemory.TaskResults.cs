@@ -63,7 +63,10 @@ public sealed partial class SqliteMemory
                 ("@status", result.StatusCode), ("@ok", result.Success ? 1 : 0),
                 ("@cv", (object?)contractVersion ?? DBNull.Value),
                 ("@summary", result.Summary ?? ""),
-                ("@fclass", (object?)result.Failure?.Class.ToString() ?? DBNull.Value),
+                // v3.8.32: canonical wire form. This column used to hold the PascalCase enum name
+                // while task_attempts.failure_class held snake_case for the same failure — one fact
+                // in two spellings, which is why WhatUsuallyFails reported it as two failure classes.
+                ("@fclass", result.Failure is { } rf ? FailureClassNames.Wire(rf.Class) : (object)DBNull.Value),
                 ("@freason", (object?)result.Failure?.Reason ?? DBNull.Value),
                 ("@fretry", result.Failure?.Retryable == true ? 1 : 0),
                 ("@artifacts", Json.SafeDumps(result.Artifacts)),
@@ -153,8 +156,11 @@ public sealed partial class SqliteMemory
         if (row is null) return null;
 
         AntFailure? failure = null;
+        // v3.8.32: FailureClassNames.TryParse, not Enum.TryParse. Rows written before this release
+        // hold the enum name and rows written after hold the wire form; the shared parser normalises
+        // both, so upgrading does not silently drop the classification off historical results.
         var failureClass = row.GetValueOrDefault("failure_class")?.ToString();
-        if (!string.IsNullOrWhiteSpace(failureClass) && Enum.TryParse<FailureClass>(failureClass, out var cls))
+        if (FailureClassNames.TryParse(failureClass, out var cls))
             failure = new AntFailure(cls, row.GetValueOrDefault("failure_reason")?.ToString() ?? "",
                 Convert.ToInt64(row.GetValueOrDefault("failure_retryable") ?? 0L) != 0);
 

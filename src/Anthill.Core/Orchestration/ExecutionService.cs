@@ -117,14 +117,19 @@ public sealed class ExecutionService : IExecutionService
     /// do not read.
     /// </summary>
     public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants,
-        Tools.ToolRegistry? tools = null)
+        Tools.ToolRegistry? tools = null, Models.ModelRouter? router = null)
     {
         _memory = memory;
         _ants = ants;
         _tools = tools;
+        _router = router;
     }
 
     private readonly Tools.ToolRegistry? _tools;
+
+    /// <summary>v3.8.31: the router, solely to read its per-task model-call count. Optional for the
+    /// same reason the registry is — a colony with no provider has none to read.</summary>
+    private readonly Models.ModelRouter? _router;
 
     /// <summary>
     /// Fill in the metrics the RUNTIME can measure, over whatever the ant reported.
@@ -147,6 +152,7 @@ public sealed class ExecutionService : IExecutionService
         string environmentFingerprint)
     {
         var dispatches = _tools?.TakeDispatchCount(task.Id) ?? 0;
+        var modelCalls = _router?.TakeModelCallCount(task.Id) ?? 0;
         var reported = execution.Metrics;
 
         return execution with
@@ -154,6 +160,7 @@ public sealed class ExecutionService : IExecutionService
             Metrics = reported with
             {
                 ToolCalls = reported.ToolCalls > 0 ? reported.ToolCalls : dispatches,
+                ModelCalls = reported.ModelCalls > 0 ? reported.ModelCalls : modelCalls,
                 ElapsedSeconds = reported.ElapsedSeconds > 0 ? reported.ElapsedSeconds : elapsed,
                 RetryCount = reported.RetryCount > 0 ? reported.RetryCount : Math.Max(0, task.AttemptCount - 1),
                 EnvironmentFingerprint = reported.EnvironmentFingerprint ?? environmentFingerprint,
@@ -1163,7 +1170,10 @@ public sealed class ExecutionService : IExecutionService
                     ["kind"] = e.Kind, ["value"] = e.Value, ["detail"] = e.Detail,
                 }).ToList(),
                 ["warnings"] = execution.Warnings,
-                ["failure_class"] = execution.Failure?.Class.ToString(),
+                // v3.8.32: wire form, matching every other failure_class in the tree. An event
+                // stream that spells a class differently from the tables is a query that silently
+                // returns nothing.
+                ["failure_class"] = execution.Failure is { } ef ? FailureClassNames.Wire(ef.Class) : null,
                 ["failure_reason"] = execution.Failure?.Reason,
                 ["failure_retryable"] = execution.Failure?.Retryable,
                 ["handoffs_proposed"] = execution.Handoffs.Select(h => new Dictionary<string, object?>
@@ -1185,27 +1195,45 @@ public sealed class ExecutionService : IExecutionService
     /// v2.19.0: apply a non-completing decision. Before this release there was no such path for a
     /// normally-returned result — everything that did not throw was marked complete.
     /// </summary>
-    private void ApplyNonCompletingOutcome(Mission mission, MissionContext context, Task task,
+    /// <remarks>
+    /// v3.8.32: INTERNAL rather than private, so the handoff gate below can be exercised directly.
+    /// It was private, and the consequence was that the tester→medic route — the colony's entire
+    /// repair path — had no test that ran this method at all. Anthill.Core already grants
+    /// InternalsVisibleTo("Anthill.Tests"); this widens nothing for anyone else.
+    /// </remarks>
+    internal void ApplyNonCompletingOutcome(Mission mission, MissionContext context, Task task,
         AntRuntimeSelection runtimeSelection,
         AntExecutionResult execution, TaskOutcomeDecision decision, DateTime finishedAt, double elapsed,
         TaskScheduler? scheduler)
     {
         task.Result = decision.Reason;
+
+        // Whether the task is REALLY finished failing, as opposed to eligible for another attempt.
+        // Only the scheduler can answer this: it holds the attempt budget. See the handoff gate below.
+        bool terminallyFailed;
+
         if (decision.Action == TaskOutcomeAction.Skip)
         {
             if (scheduler is not null) scheduler.MarkSkipped(task.Id, decision.Reason, decision.FailureType);
             else { task.Status = TaskStatus.Skipped; task.SkippedAt = finishedAt; task.SkippedReason = decision.Reason; }
+            terminallyFailed = false;
         }
         else
         {
             // The scheduler owns the retry decision: it knows the attempt budget. Retryable here
-            // means "eligible", not "guaranteed".
+            // means "eligible", not "guaranteed" — which is exactly why its RETURN VALUE, and not
+            // `decision.Retryable`, decides whether this failure was the last one.
             if (scheduler is not null)
-                scheduler.MarkFailed(task.Id, decision.Reason, decision.FailureType, decision.Retryable, finishedAt, elapsed);
+                terminallyFailed = scheduler.MarkFailed(
+                    task.Id, decision.Reason, decision.FailureType, decision.Retryable, finishedAt, elapsed);
             else
             {
                 task.Status = TaskStatus.Failed; task.FailedAt = finishedAt;
                 task.FailureReason = decision.Reason; task.FailureType = decision.FailureType;
+                // With no scheduler there is no retry machinery, so this failure is final by
+                // construction. Treating it as non-terminal would drop handoffs on every path that
+                // runs without one, which is most of the test suite and the single-task API route.
+                terminallyFailed = true;
             }
         }
 
@@ -1227,7 +1255,17 @@ public sealed class ExecutionService : IExecutionService
         //     again on the next attempt — a repair loop bounded by nothing.
         //
         // Terminal failure is the one state where a diagnosis is both warranted and final.
-        if (decision.Action == TaskOutcomeAction.Fail && !decision.Retryable)
+        //
+        // v3.8.32 — the reasoning above was right and the CONDITION was wrong. It read
+        // `!decision.Retryable`, which is derived from the ant's status code, not from anything the
+        // scheduler decided. The tester emits `failed_retryable` on every failed check, so
+        // `decision.Retryable` was true on every attempt including the one that exhausted the budget
+        // — and the tester→medic handoff, declared `required: true`, was dropped every single time.
+        // The repair loop the previous comment claimed to have fixed still could not fire.
+        //
+        // `MarkFailed` already returned the right answer ("true when terminally failed; false when a
+        // bounded retry was scheduled") and this line threw it away. It is now the gate.
+        if (decision.Action == TaskOutcomeAction.Fail && terminallyFailed)
             IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
 
         _memory.LogEvent(mission.Id, "task_outcome_applied",

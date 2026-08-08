@@ -687,6 +687,35 @@ public static partial class ApiHost
     /// back to declared values and says so. An empty result therefore means "could not ask", never
     /// "supports nothing" — the caller distinguishes them, and the response reports which it used.
     /// </summary>
+    /// <summary>
+    /// The names a local Ollama host currently holds, synchronously. v3.8.33.
+    ///
+    /// Registered into <c>ReasoningProviders</c> so the core can resolve "which model" without owning
+    /// HTTP. THROWS on failure rather than returning empty, deliberately: "the host could not be
+    /// asked" and "the host has no models" need different fixes — start Ollama versus pull a model —
+    /// and collapsing them into an empty list would print the wrong instruction.
+    /// </summary>
+    internal static IReadOnlyList<string> InstalledOllamaModels(string host)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var baseHost = (host ?? "").Trim().TrimEnd('/');
+        using var resp = InternalHttp.GetAsync($"{baseHost}/api/tags", cts.Token).GetAwaiter().GetResult();
+        resp.EnsureSuccessStatusCode();
+
+        var body = resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+
+        var names = new List<string>();
+        if (doc.RootElement.TryGetProperty("models", out var models)
+            && models.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var m in models.EnumerateArray())
+                if (m.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } name)
+                    names.Add(name);
+        }
+        return names;
+    }
+
     private static async Task<Dictionary<string, List<string>>> DiscoverOllamaModelsAsync()
     {
         var found = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);

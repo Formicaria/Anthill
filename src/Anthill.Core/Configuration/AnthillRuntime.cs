@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.30";
+    public const string Version = "3.8.33";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -110,7 +110,14 @@ public static class AnthillRuntime
     public static bool EnableModelCircuitBreaker = true;
     public const string DefaultModelProvider = "ollama";
     public static bool UseOllama = true;
-    public static string OllamaModel = "llama3.1:8b";
+    /// <summary>
+    /// The configured local model, or EMPTY when the operator has not chosen one. v3.8.33.
+    ///
+    /// Empty is a real state, not a missing value: see <see cref="Models.LocalModelResolver"/>. Do
+    /// not reintroduce a default here — a built-in model name is a claim about a machine this code
+    /// has never seen, and `ModelDefaultsTests` fails the build if one comes back.
+    /// </summary>
+    public static string OllamaModel = "";
     public static string OllamaHost = "http://localhost:11434";
 
     public static Dictionary<string, Dictionary<string, string>> ModelRouting { get; private set; } = new();

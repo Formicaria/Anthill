@@ -36,11 +36,46 @@ public sealed class ModelRouter
     private readonly ModelCircuitBreaker? _breaker;
     public int CallCount { get; private set; }
 
+    /// <summary>
+    /// Model calls per task, read and cleared when the execution record is persisted. v3.8.31.
+    ///
+    /// Bounded the same way the tool counter is: entries are removed on read, so a task that never
+    /// reaches persistence leaks one small counter rather than growing a dictionary keyed by every
+    /// task the process has ever seen.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _taskModelCalls = new();
+
+    /// <summary>Read and CLEAR the model-call count for a task. Called once, at persistence.</summary>
+    public int TakeModelCallCount(string? taskId) =>
+        taskId is not null && _taskModelCalls.TryRemove(taskId, out var n) ? n : 0;
+
+    /// <summary>
+    /// How the router discovers what a local host has installed, when no model is configured.
+    ///
+    /// Injected rather than performed here, because <c>Anthill.Core</c> does not make HTTP calls to
+    /// providers — that is what the module boundary is for (ADR-007). The composition root supplies
+    /// one that asks Ollama; the default answers "cannot ask", which resolves to a refusal that says
+    /// so rather than to a guessed model.
+    /// </summary>
+    private readonly LocalModelResolver.ModelLister _modelLister;
+
+    /// <summary>
+    /// Default lister: whatever the composition root registered, or a throw meaning "cannot ask".
+    /// <see cref="LocalModelResolver"/> turns the throw into a refusal that names the host, which is
+    /// a different fix from "the host has no models" and must stay distinguishable from it.
+    /// </summary>
+    private static IReadOnlyList<string> DiscoverViaRegisteredLister(string host) =>
+        ReasoningProviders.ListLocalModels(host);
+
     /// <param name="breaker">Test seam. When null a default breaker is built from
     /// <see cref="AnthillRuntime"/> (or none, if the feature is disabled).</param>
-    public ModelRouter(SqliteMemory? memory = null, ModelCircuitBreaker? breaker = null)
+    /// <param name="modelLister">Lists installed models for a local host. Test seam and composition
+    /// point; see <see cref="_modelLister"/>.</param>
+    public ModelRouter(SqliteMemory? memory = null, ModelCircuitBreaker? breaker = null,
+        LocalModelResolver.ModelLister? modelLister = null)
     {
         _memory = memory;
+        _modelLister = modelLister ?? DiscoverViaRegisteredLister;
         _breaker = breaker ?? (AnthillRuntime.EnableModelCircuitBreaker
             ? new ModelCircuitBreaker(AnthillRuntime.ModelCircuitFailureThreshold, AnthillRuntime.ModelCircuitCooldownSeconds)
             : null);
@@ -107,6 +142,23 @@ public sealed class ModelRouter
         var effectiveModel = string.IsNullOrWhiteSpace(model)
             ? info?.DefaultModel ?? AnthillRuntime.OllamaModel
             : model;
+
+        // v3.8.33 — a LOCAL provider with no model chosen refuses, naming what to do about it.
+        //
+        // This used to be impossible to reach because `AnthillRuntime.OllamaModel` defaulted to
+        // `llama3.1:8b`, so an operator who had never chosen a model still got one — and on a host
+        // without that exact tag every call failed with `model not found`, which reads as a broken
+        // colony rather than as an unmade decision. Empty is now an honest state and this is where it
+        // is answered, once, for every role that routes here.
+        //
+        // Keyed providers are exempt: they DO have meaningful defaults, because the provider owns the
+        // model list. Ollama serves whatever you pulled.
+        if (!keyed && string.IsNullOrWhiteSpace(effectiveModel))
+        {
+            var choice = LocalModelResolver.Resolve(AnthillRuntime.OllamaModel, endpoint, _modelLister);
+            if (!choice.Resolved) return UnavailableProvider.NoModelChosen(provider, choice.Reason);
+            effectiveModel = choice.Model;
+        }
 
         if (keyed) return ReasoningProviders.Resolve(provider, effectiveModel, apiKey, endpoint);
 
@@ -330,6 +382,17 @@ public sealed class ModelRouter
             : outcome is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError ? -0.02 : -0.01;
 
         lock (_lock) CallCount++;
+
+        // v3.8.31 — per-TASK model calls, counted here for the same reason tool dispatches are
+        // counted in ToolRegistry: this is the chokepoint every call already passes through, and
+        // `AntMetrics.ModelCalls` has been zero for every role since it was declared because it was
+        // something each ant was expected to self-report and none does.
+        //
+        // `CallCount` above is per-SESSION and answers a different question — how busy the process
+        // has been — so it could never fill a per-task metric. Counted whether or not the call
+        // succeeded: a role that burned three failed model calls did three model calls, and a
+        // qualification review needs to see that rather than a zero.
+        if (taskId is not null) _taskModelCalls.AddOrUpdate(taskId, 1, (_, n) => n + 1);
 
         if (_memory is not null && missionId is not null)
         {

@@ -4,11 +4,44 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-The ANTHILL Core/Modules refactor is COMPLETE as of v3.8.17 — phases 0 through 7, fifteen releases
-from v3.8.3. `docs/archive/v3/REFACTOR-PLAN.md` is now a finished record rather than a plan: every phase names
-the release it shipped in, two items are marked superseded with the measurement that superseded
-them, and §6 carries the five rules the execution produced. Read it before proposing anything that
-touches the module boundary.
+The 3.8 line is CLOSED at v3.8.33. Two programs ran and both finished:
+
+The Core/Modules refactor (v3.8.3–v3.8.18) took `Anthill.Core` from 34,247 lines to 24,973 with
+nothing deleted, moved the reasoning providers, the homelab and the machine-touching tools into
+`Anthill.Modules.*`, and made the boundary an assembly-reference test rather than a review habit.
+`docs/adr/ADR-007-module-boundary.md` carries the rule.
+
+The twelve-role activation program (v3.8.19–v3.8.33) took the roster from "twelve registered roles,
+six of which had never run" to twelve with real triggers, enforced contracts, and learning that only
+records verified outcomes. `docs/PLAN.md` is the single forward-looking document; the four planning
+documents it replaced are in `docs/archive/v3/`.
+
+THE FINDING WORTH CARRYING FORWARD. Eight subsystems were implemented, tested, and unreachable —
+`VerificationRunner` had no production call site since v2.12; the archivist had never executed once;
+handoffs were gated on success so the repair path could not fire; `ToolExecutionContext` had no
+constructible input. Every one had passing tests, because the tests called the code directly and
+nothing asked whether production could get there. When reviewing anything here, the question that
+finds real defects is "does this have a call site on the path that matters", not "is it tested".
+
+The second recurring shape: a check that answers a question ADJACENT to the one asked, and passes.
+Found ELEVEN times. `docs/PLAN.md` §6 records both patterns with every instance.
+
+READ THIS BEFORE YOU CALL ANYTHING CLEAN. v3.8.31 declared this repository production-ready. An
+external source review of v3.8.29 then found five defects that were all still present, all with
+passing tests over them: environmental failures charged to the ant for six releases; the verifier
+compiling a tree the operator's applier could never produce; the tester→medic repair handoff dropped
+on every attempt; readiness reporting the six core ants as blocked by flags that do not exist; and
+"runs without an LLM" resting on a test of one method at one boundary.
+
+They shared one shape — a test that BUILDS ITS OWN INPUT in the form its own side expects, so the two
+halves of a boundary are each checked against an assumption instead of against each other. And the
+v3.8.31 cleanup could not have found any of them: it swept for ABSENCE (TODOs, dead links, undeclared
+vocabulary), and all five were things PRESENT and wired wrong.
+
+So: a test for a cross-boundary value must obtain that value FROM THE PRODUCER. Never construct it.
+`tests/Anthill.Tests/CrossBoundaryAgreementTests.cs` enforces this and carries three source-level
+detectors; each was verified to FAIL against v3.8.31 before being kept, because a guard nobody has
+watched fail is a guard nobody has tested.
 
 Repo: C:\Users\jconn\OneDrive\Documents\vscode\anthill\operation-anthill. Origin is
 `thexonexone/operation-anthill` and is the ONLY remote — there is no `upstream`. Build with
@@ -16,7 +49,21 @@ Repo: C:\Users\jconn\OneDrive\Documents\vscode\anthill\operation-anthill. Origin
 build and test as separate statements. I run the builds; you don't have a .NET SDK, and you have no
 GitHub credentials either — you can read from origin but not push.
 
-State: main is at v3.8.17, tagged and green.
+Do NOT use `scripts/release.sh` — its opening `git fetch` hangs on this machine. Use the manual
+recipe below, INCLUDING the `git log` check before tagging.
+
+State: main is at v3.8.33, tagged and green. 1,850+ tests.
+
+NOT YET DONE, and honestly: no mission has ever run with `roster_profile: "full"` against a live
+model. Everything above is verified by tests, and tests check what their author told them to check —
+the twelve-role suite caught its own author's mistake on its first run. A real twelve-role mission is
+the next thing worth doing and it belongs to the operator.
+
+The FORWARD PROGRAM is now docs/AUTONOMY-10.md — ten phases, each with an exit gate that must pass
+through the real composed runtime. PLAN.md answers only "where is the colony measurably now".
+v3.9.0 is Phase 1's remainder: base hashes on patch proposals (nothing carries one today, so a patch
+built against a stale read applies silently), delete/rename semantics, atomic staging over the live
+tree, and an empty auto-apply allowlist proven to fail closed.
 
     Anthill.Core   34,247 -> 24,973   (-27%, nothing deleted)
     Anthill.SDK         0 ->  3,152
@@ -54,13 +101,20 @@ Two open items from that review remain, neither known exploitable:
 - CI writes both test projects' `test-results.trx` into one flat directory, so one overwrites the
   other. Assorted xUnit1031/xUnit2031 warnings; all warnings, none blocking.
 
-Version bumps touch SEVEN markers and two test classes enforce them. `RegressionGuardTests` checks
-`Directory.Build.props`, `AnthillRuntime.Version`, the `**Current version:** vX.Y.Z` line in
-README.md, and a matching CHANGELOG top entry. `DocsConsistencyTests` additionally requires the
-literal `vX.Y.Z` in NORTH_STAR.md, ROADMAP.md and DASHBOARD_WORKSPACE.md, and requires ROADMAP's
-`## vX.Y.Z` headings to stay unique and ascending. Those three docs use a prepend-and-demote
-convention: the new release becomes `**Latest:**` / `**Shipping release:**`, the previous is demoted
-to `Preceded by`.
+Version bumps touch FIVE markers, and two test classes enforce them.
+
+CORRECTED v3.8.33 — this paragraph named NORTH_STAR.md, ROADMAP.md and DASHBOARD_WORKSPACE.md, all
+three of which were archived at v3.8.24 when PLAN.md replaced them. It had been telling every fresh
+session to edit documents that no longer exist. The markers actually enforced are:
+
+1. `<AnthillVersion>` in `Directory.Build.props`      (RegressionGuardTests)
+2. `AnthillRuntime.Version`                            (RegressionGuardTests)
+3. `**Current version:** vX.Y.Z` in README.md          (RegressionGuardTests)
+4. A `## vX.Y.Z` entry in CHANGELOG.md, which must be the TOP entry  (RegressionGuardTests)
+5. The literal `vX.Y.Z` somewhere in docs/PLAN.md      (DocsConsistencyTests)
+
+DocsConsistencyTests also requires CHANGELOG's `## vX.Y.Z` headings to stay unique and DESCENDING,
+and every `docs/*.md` link in a live document to resolve.
 
 Release recipe — do NOT use scripts/release.sh, its opening `git fetch` hangs on this machine and
 every failure has been there:

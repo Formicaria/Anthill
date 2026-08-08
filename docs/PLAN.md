@@ -1,14 +1,34 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.30**.
+**Where the colony measurably IS.** Shipping release: **v3.8.33** — the 3.8 line is CLOSED.
+The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
+twelve-role activation program (v3.8.19–v3.8.33). What follows is the state they left, measured.
+
+> **v3.8.31 closed this line and was wrong to.** An external review of v3.8.29 found five defects
+> that were still present, all with passing tests over them. v3.8.32 fixed them and built the guards
+> that would have caught them; §6 records what the pattern was. The lesson is in the cleanup that
+> missed them: it swept for ABSENCE — TODOs, broken links, unused declarations — and every one of
+> those defects was a thing PRESENT and wired wrong. An absence-sweep cannot find them.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
 heavily, two of them were closed or superseded, and every release had to edit three of them to stay
 consistent — which is how three documents come to disagree about the same release.
 
-`CHANGELOG.md` remains the complete record of what shipped. This document answers only two
-questions: **where the colony actually is**, and **what is left**.
+`CHANGELOG.md` remains the complete record of what shipped. This document answers ONE question:
+**where the colony actually is**, measured.
+
+**What is LEFT now lives in [`AUTONOMY-10.md`](AUTONOMY-10.md)** — the ten-phase program from here to
+a production-qualified autonomous assistant, each phase with an exit gate that must pass through the
+real composed runtime. Adopted v3.8.32.
+
+The split is deliberate and is the lesson of the four documents this file replaced: a document that
+describes both the present and the future ends up disagreeing with itself about the release in
+between. PLAN.md is measured against the tree; AUTONOMY-10.md is ordered by dependency. Where a phase
+there is already partly delivered, its status table says so rather than re-planning work that
+shipped.
 
 Rules for this file:
 
@@ -38,7 +58,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.30)
+## 2. Where the colony actually is (measured at v3.8.33)
 
 ### Working end to end
 
@@ -63,11 +83,19 @@ It is not close, and the gap is not model quality — it is that roles still han
 | **Prose is still the PRIMARY channel** | v3.8.29 makes typed artifacts travel alongside it (coder, builder, verifier) with IDs for replay. `Task.Result` is still a string and the prose is still what the model reads first |
 | **The verifier is still planner-selectable** | Tester and soldier are inserted by policy as of v3.8.26; the verifier is not, because it is how verification currently happens at all |
 | **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe. All six now have a real trigger; `/colony` reports per-role readiness and the first binding blocked reason |
+| ~~Environmental failures charged to the ant~~ | CLOSED v3.8.32 — `FailureClassNames` is the one conversion; a test drives real results through the real mapper into the real attribution rule |
+| ~~The verifier's sandbox held different bytes~~ | CLOSED v3.8.32 — `PatchApply` is the one applier; the materializer, the sandbox runner and `ApplyPatchTool` all call it |
+| ~~The tester→medic handoff never fired~~ | CLOSED v3.8.32 — the gate reads the scheduler's terminal-failure return value instead of the ant's status code |
+| ~~Readiness lied about the six core ants~~ | CLOSED v3.8.32 — `RoleGateStatus.NotGated` exists, and the ladder moved out of the route lambda into `RoleReadiness` where it is testable |
+| ~~"Runs without an LLM" was untested~~ | CLOSED v3.8.32 — `OfflineMissionTests` runs whole missions with no provider |
+| ~~The local model was hardcoded~~ | CLOSED v3.8.33 — `LocalModelResolver`; any model works, an unchosen one refuses with a remedy, and a source guard blocks a new default |
+| ~~The console hid an unusable model~~ | CLOSED v3.8.33 — `/status` computed `ollama_model_present` from v2.4.3 and `app.js` never read it. Ninth instance of implemented-tested-unreachable, first in the UI |
 | **Reputation is derived, not consumed** | `ReputationOf` computes standing from trails as of v3.8.29. Nothing ROUTES on it yet — the router still picks by configuration |
-| **Trail kinds named, not yet enforced** | `TrailKind` declares the twelve and partitions reputation from environmental (v3.8.29). Writers do not yet validate against it |
-| **`AntMetrics` partly fed** | ToolCalls, ElapsedSeconds, RetryCount and the environment fingerprint are measured at the chokepoints as of v3.8.26. ModelCalls and InputChars still zero |
-| **9 `/events/json` pollers remain in `app.js`** | The event stream exists; the console has not fully moved onto it |
-| **166 public statics on `AnthillRuntime`** | Configuration is not standardised |
+| ~~Trail kinds unenforced~~ | CLOSED v3.8.31 — eleven kinds extracted from the call sites, validated on write, and a test pins the vocabulary against the code in both directions |
+| **`AntMetrics`: InputChars still zero** | ToolCalls, ModelCalls, ElapsedSeconds, RetryCount and the environment fingerprint are all measured at chokepoints (v3.8.26, v3.8.31). InputChars would need each ant to report its own prompt size and no chokepoint sees it |
+| **9 `/events/json` pollers remain in `app.js`** | The event stream exists and the console still polls. NOT a defect — polling is the documented fallback and works; moving to push is an optimisation for 3.9.0 |
+| **166 public statics on `AnthillRuntime`** | Configuration is not standardised. The mission path is already forbidden from reading them (ADR-001, guarded); this is ergonomics rather than correctness |
+| **No live twelve-role mission has ever run** | THE remaining gap. Everything above is verified by tests, and tests check what their author told them to check. A mission with `roster_profile: "full"` against a live model is the first thing 3.9.0 should do |
 
 ---
 
@@ -118,7 +146,7 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.30 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.31 |
 |---|---|---|---|---|
 | **Researcher** | Planner, near intake | `system_info`, `list_directory`, `search_workspace`, `repository_index` | `context_brief` | Search granted AND dispatched at v3.8.30. Still emits prose (`text`) rather than a typed `context_brief` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
@@ -286,17 +314,39 @@ Kept because the *shape* of these mistakes recurs, and recognising the shape is 
 individual fix.
 
 **The recurring defect: a check that answers a question ADJACENT to the one asked, and passes.**
-Found six times.
+Found eleven times.
 
 | # | Release | The adjacent answer |
 |---|---|---|
 | 1–5 | v3.8.18 | `ApplyPatchTool` validated patch paths without its injected options; `WebSearchTool` the same on SSRF; `WorkspacePathGuard` read ambient state; `SafetyPolicy.Configure`/`Reset` were public so any SDK consumer could clear the blocklist; the no-UI gate asked for a fabricated resource name and watched a null check |
 | 6 | v3.8.21 → fixed v3.8.22 | The planner emits `patch_proposal`; `VerificationPolicy` is keyed `code_patch`; nothing mapped them, so `diff` and `build` never ran on a single patch while the event row said verification had happened |
 | 6b | v3.8.22 → fixed v3.8.23 | The build verifier then ran against the PRIMARY workspace, which does not contain the patch. True statements about the wrong tree |
+| 7 | v3.8.26 → fixed v3.8.32 | `LearningAttribution` compared `task.FailureType` (`transient_provider_failure`) against the enum NAME (`TransientProviderFailure`) with `OrdinalIgnoreCase` — which bridges casing and not underscores. The test fed the enum name, a value production never writes there. Every environmental failure was charged to the ant for six releases |
+| 8 | v3.8.23 → fixed v3.8.32 | `PatchSetMaterializer` overwrote whole files, ignoring `old_content`. Its tests checked that materialisation SUCCEEDED and hashed, never that the bytes matched what `ApplyPatchTool` would produce. Three appliers, no two alike |
+| 9 | v3.8.25 → fixed v3.8.32 | The handoff gate read `!decision.Retryable` — the ant's status code — where it meant "the scheduler scheduled no retry". Tests covered "handoffs ingest on terminal failure" and "the tester emits a medic handoff" separately, never together |
+| 10 | v3.8.26 → fixed v3.8.32 | The readiness ladder asked specialist-only questions of all twelve roles. Untestable inside a route lambda, so untested |
+| 11 | v3.8.5 → fixed v3.8.32 | `CoreWithoutProviderTests` proved a typed refusal at one boundary and was allowed to stand for "a mission runs with no LLM" |
 
 **The rule that came out of it:** a test for a production wiring must be keyed to a value the
 PRODUCER actually emits. The v3.8.21 tests passed the literal string `"code_patch"` — a task type
 production never produces — so they could only ever prove the callee was self-consistent.
+
+**The rule was written after #6 and applied only FORWARD.** That is the v3.8.32 lesson and it is the
+expensive one. Defects 7–11 were all already in the tree when the rule was written down; it was
+applied to new code as it was authored and never run backward over the suite that existed. Recording
+a lesson as history is not the same as building a detector for it.
+
+`CrossBoundaryAgreementTests` is that detector, and it exists in three forms — no `FailureClass`
+stringified outside the shared converter, no second patch applier, no enum with a custom wire form
+read by `Enum.TryParse`. All three were verified to FAIL against v3.8.31 before being kept. **A guard
+nobody has watched fail is a guard nobody has tested**, and the vocabulary guard added in v3.8.31 is
+the proof: the first thing it did on its first run was catch its own author.
+
+**Why the v3.8.31 "full cleanup" missed all five.** It swept for ABSENCE — TODO comments, broken
+links, untracked files, undeclared trail kinds, unsuppressed warnings. Every question it asked was
+"is something missing". All five defects were things PRESENT and wired wrong, where nothing is
+missing and everything compiles. An absence-sweep is structurally incapable of finding them, and
+1,750 passing tests measured how much had been asserted rather than how much was true.
 
 **The second recurring defect: a well-built subsystem with no production call site.** Found three
 times, all in the same area. `VerificationRunner` (four verifiers, a policy table, tested since

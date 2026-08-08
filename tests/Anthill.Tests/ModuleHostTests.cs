@@ -1,6 +1,7 @@
 using Anthill.Core.Events;
 using Anthill.Core.Memory;
 using Anthill.Core.Modules;
+using Anthill.Core.Pheromones;
 using Anthill.SDK.Events;
 using Anthill.SDK.Memory;
 using Anthill.SDK.Modules;
@@ -128,7 +129,11 @@ public class ModuleHostTests
         using var __ = bus;
         IPheromoneMemory trails = memory;
 
-        trails.Reinforce("route::researcher::ollama", "model_provider", success: true, strengthDelta: 0.2);
+        // v3.8.32: `model_route`, the kind ModelRouter actually writes. This said "model_provider",
+        // which no production code emits and TrailKind does not declare — so every run of this test
+        // printed an undeclared-kind warning from the v3.8.31 write-side validation. A fixture using
+        // a vocabulary the producer does not have is the defect class this release is about.
+        trails.Reinforce("route::researcher::ollama", TrailKind.ModelRoute, success: true, strengthDelta: 0.2);
 
         var trail = Assert.Single(trails.ListAll(50), t => t.TrailKey == "route::researcher::ollama");
         Assert.Equal(1, trail.SuccessCount);
@@ -151,7 +156,13 @@ public class ModuleHostTests
         using var __ = bus;
         IPheromoneMemory trails = memory;
 
-        trails.Reinforce("telemetry::disk", "operational_telemetry", success: true, strengthDelta: 0.9);
+        // v3.8.32: `tool` — a DECLARED kind that classifies as `reliability_signal`, which `Top`
+        // excludes. This used to pass "operational_telemetry", which is a signal CATEGORY rather
+        // than a trail kind: it reached the classifier's fallback and happened to produce the right
+        // exclusion, while warning on every run that the kind was undeclared. The test now
+        // demonstrates the real rule — a tool answering is reliability, not strategy — instead of
+        // relying on an unclassifiable input to land in the same bucket by accident.
+        trails.Reinforce("telemetry::disk", TrailKind.Tool, success: true, strengthDelta: 0.9);
 
         Assert.Contains(trails.ListAll(50), t => t.TrailKey == "telemetry::disk");
         Assert.DoesNotContain(trails.Top(50), t => t.TrailKey == "telemetry::disk");

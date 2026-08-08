@@ -62,6 +62,18 @@ public static partial class ApiHost
         // fails although the chip showed green. Now also checks /api/tags for the model.
         bool? ollamaReachable = null;
         bool? ollamaModelPresent = null;
+
+        // v3.8.33 — WHICH model, and why. Resolved before the probe, because "is the model present"
+        // is unanswerable until we know which model we mean, and after the hardcoded default was
+        // removed the answer can legitimately be "none chosen yet".
+        var modelChoice = AnthillRuntime.UseOllama
+            ? Anthill.Core.Models.LocalModelResolver.Resolve(
+                AnthillRuntime.OllamaModel, AnthillRuntime.OllamaHost, InstalledOllamaModels)
+            : new Anthill.Core.Models.ModelChoice(
+                Anthill.Core.Models.ModelChoiceKind.Configured, AnthillRuntime.OllamaModel,
+                "the local provider is not in use", Array.Empty<string>());
+        var effectiveModel = modelChoice.Model;
+
         if (AnthillRuntime.UseOllama)
         {
             try
@@ -79,7 +91,7 @@ public static partial class ApiHost
                         {
                             var tagsBody = tags.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
                             using var doc = System.Text.Json.JsonDocument.Parse(tagsBody);
-                            var want = AnthillRuntime.OllamaModel;
+                            var want = effectiveModel;
                             ollamaModelPresent = doc.RootElement.TryGetProperty("models", out var models)
                                 && models.ValueKind == System.Text.Json.JsonValueKind.Array
                                 && models.EnumerateArray().Any(m =>
@@ -108,7 +120,15 @@ public static partial class ApiHost
             ["ollama_host"] = AnthillRuntime.OllamaHost,
             ["ollama_reachable"] = ollamaReachable,
             ["ollama_model_present"] = ollamaModelPresent, // v2.4.3: null = unknown/not checked
-            ["default_model"] = AnthillRuntime.OllamaModel,
+            // v3.8.33 — the RESOLVED model, which is empty when the operator has not chosen one and
+            // the host could not decide for them. `configured_model` is what they actually set, kept
+            // separate so the console can tell "you picked this" from "this was the only one there".
+            ["default_model"] = effectiveModel,
+            ["configured_model"] = AnthillRuntime.OllamaModel,
+            ["model_choice"] = modelChoice.Kind.ToString(),
+            ["model_choice_reason"] = modelChoice.Reason,
+            ["model_resolved"] = modelChoice.Resolved,
+            ["installed_models"] = modelChoice.Available,
             ["routing_mode"] = providerRoles.Count == 0 ? "local" : (localRoles.Count == 0 ? "providers" : "mixed"),
             ["local_role_count"] = localRoles.Count,
             ["provider_role_count"] = providerRoles.Count,

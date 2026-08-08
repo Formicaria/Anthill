@@ -191,7 +191,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // v3.8.26: Tools is passed so the execution path can read the per-task dispatch count and
         // fill in AntMetrics.ToolCalls — a counter that has been zero for every role since it was
         // declared, because it was self-reported and two of twelve ants report anything at all.
-        Execution = new ExecutionService(Memory, _ants, Tools);
+        Execution = new ExecutionService(Memory, _ants, Tools, Router);
 
         // v3.8.0: this process registers as a worker, and startup reconciles what the last one left
         // behind. Both halves are needed for the phase's first gate — "no accepted task is silently

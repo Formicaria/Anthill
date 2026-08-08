@@ -250,50 +250,33 @@ public static partial class ApiHost
                     //
                     // `blocked_reason` is the field that matters. Every other field can be read as
                     // "something is off somewhere"; this one names it.
-                    ["roles"] = AntExecutionCatalog.Contracts.Keys.OrderBy(r => r, StringComparer.Ordinal)
-                        .Select(role =>
+                    //
+                    // v3.8.32 — the ladder MOVED to Anthill.Core.Agents.RoleReadiness. It lived here
+                    // as a lambda, which is why it was wrong for the six core ants for six releases:
+                    // nothing could call it without an HTTP host, so nothing ever tested it over the
+                    // whole roster. The defect and its reasoning are recorded on RoleReadiness.
+                    ["roles"] = RoleReadiness
+                        .ForAllRoles(Queen.Tools.Names, Queen.Tools.GrantedCapabilities)
+                        .Select(r => new Dictionary<string, object?>
                         {
-                            var contract = AntExecutionCatalog.ContractFor(role)!;
-                            var availability = AntExecutorCatalog.Snapshot.GetValueOrDefault(role);
-                            var missingTools = contract.AllowedTools
-                                .Where(t => !Queen.Tools.Names.Contains(t, StringComparer.OrdinalIgnoreCase))
-                                .OrderBy(t => t, StringComparer.Ordinal).ToList();
-                            var ungranted = Queen.Tools.GrantedCapabilities is { } granted
-                                ? contract.RequiredCapabilities.Where(c => !granted.Contains(c))
-                                    .OrderBy(c => c, StringComparer.Ordinal).ToList()
-                                : new List<string>();
-
-                            // Fail closed and report the FIRST binding reason, in the order the
-                            // runtime would hit them. A list of every problem reads as a crisis; the
-                            // one that is actually stopping it reads as a next step.
-                            var blocked =
-                                availability is null ? "role is not in the runtime snapshot"
-                                : !availability.Implemented ? "no runtime handler"
-                                : !ActivationTiers.Admits(AnthillRuntime.ActivationTier, role)
-                                    ? $"activation tier '{ActivationTiers.Name(AnthillRuntime.ActivationTier)}' does not admit this role"
-                                : !AnthillRuntime.EnableSpecialistAntExecution ? "specialist execution is disabled colony-wide"
-                                : !AntExecutorCatalog.SpecialistGateOpen(role) ? "this role's own rollout flag is off"
-                                : missingTools.Count > 0 ? $"declared tools are not registered: {string.Join(", ", missingTools)}"
-                                : ungranted.Count > 0 ? $"this run cannot grant: {string.Join(", ", ungranted)}"
-                                : availability.RuntimeAvailable ? "" : availability.UnavailabilityReason;
-
-                            return new Dictionary<string, object?>
-                            {
-                                ["role_id"] = role,
-                                ["ready"] = blocked.Length == 0,
-                                ["blocked_reason"] = blocked,
-                                ["scheduling_mode"] = contract.Scheduling.ToString(),
-                                ["handler_present"] = availability?.Implemented ?? false,
-                                ["contract_present"] = true,   // it is a key of this dictionary
-                                ["contract_version"] = contract.Version,
-                                ["declared_tools"] = contract.AllowedTools.OrderBy(t => t, StringComparer.Ordinal).ToList(),
-                                ["unregistered_tools"] = missingTools,
-                                ["required_capabilities"] = contract.RequiredCapabilities.OrderBy(c => c, StringComparer.Ordinal).ToList(),
-                                ["ungranted_capabilities"] = ungranted,
-                                ["admitted_by_tier"] = ActivationTiers.Admits(AnthillRuntime.ActivationTier, role),
-                                ["gate_open"] = AntExecutorCatalog.SpecialistGateOpen(role),
-                                ["runtime_available"] = availability?.RuntimeAvailable ?? false,
-                            };
+                            ["role_id"] = r.RoleId,
+                            ["ready"] = r.Ready,
+                            ["blocked_reason"] = r.BlockedReason,
+                            ["scheduling_mode"] = r.SchedulingMode,
+                            ["handler_present"] = r.HandlerPresent,
+                            ["contract_present"] = true,   // every row here is a contract key
+                            ["contract_version"] = r.ContractVersion,
+                            ["declared_tools"] = r.DeclaredTools,
+                            ["unregistered_tools"] = r.UnregisteredTools,
+                            ["required_capabilities"] = r.RequiredCapabilities,
+                            ["ungranted_capabilities"] = r.UngrantedCapabilities,
+                            // `gated` says whether the two fields after it mean anything for this
+                            // role at all. Both used to report false for core ants.
+                            ["gated"] = r.Gated,
+                            ["gate_status"] = r.GateStatus.ToString(),
+                            ["admitted_by_tier"] = r.AdmittedByTier,
+                            ["gate_open"] = r.GateOpen,
+                            ["runtime_available"] = r.RuntimeAvailable,
                         }).ToList(),
                 },
                 ["worker_telemetry"] = Queen.Memory.SummarizeWorkerTelemetry(),

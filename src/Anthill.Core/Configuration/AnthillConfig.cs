@@ -33,7 +33,19 @@ public sealed class AnthillConfig
     [JsonPropertyName("api_job_workers")] public int ApiJobWorkers { get; set; } = 1;
 
     [JsonPropertyName("use_ollama")] public bool UseOllama { get; set; } = true;
-    [JsonPropertyName("ollama_model")] public string OllamaModel { get; set; } = "llama3.1:8b";
+    /// <summary>
+    /// The local model to run on. EMPTY BY DEFAULT, and deliberately so. v3.8.33.
+    ///
+    /// This used to default to `llama3.1:8b`, which is a guess about someone else's machine: Ollama
+    /// has no default model, and what you can run is whatever you chose to pull. On a host without
+    /// that exact tag every ant call failed with `model not found` while the console still reported
+    /// Ollama reachable.
+    ///
+    /// Empty means "not chosen", which <see cref="Anthill.Core.Models.LocalModelResolver"/> resolves
+    /// against what the host actually holds — and which it refuses rather than guesses when the host
+    /// holds several.
+    /// </summary>
+    [JsonPropertyName("ollama_model")] public string OllamaModel { get; set; } = "";
     [JsonPropertyName("ollama_host")] public string OllamaHost { get; set; } = "http://localhost:11434";
     [JsonPropertyName("model_routes")] public Dictionary<string, Dictionary<string, string>> ModelRoutes { get; set; } = new();
 

@@ -3,12 +3,18 @@ namespace Anthill.Core.Pheromones;
 /// <summary>
 /// What a trail IS, as a closed vocabulary rather than a free string. Stage E, v3.8.29.
 ///
-/// <c>trail_type</c> has been an arbitrary string since the pheromone layer was written. Twelve
-/// distinct values are in use — `ant`, `worker`, `task_type`, `planner_pattern`, `worker_pattern`,
-/// `task_pattern`, `capability`, `tool`, `source_domain`, `external_research_tool`,
-/// `procedural_route`, `skill` — and nothing declares them, so nothing can check them. A typo
-/// creates a new trail category silently, and a reader has no way to know whether `tool` and
-/// `external_research_tool` are the same kind of claim.
+/// <c>trail_type</c> has been an arbitrary string since the pheromone layer was written, and nothing
+/// declared the values in use — so a typo created a new trail category silently, and a reader had no
+/// way to know whether `tool` and `external_research_tool` were the same kind of claim.
+///
+/// v3.8.31 corrects the list itself. The v3.8.29 version was assembled from a prose description and
+/// was wrong in both directions: it declared `procedural_route` and `skill`, which NOTHING writes,
+/// and omitted `model_route`, which `ModelRouter` writes on every routed call. Declaring a kind
+/// nothing produces is the phantom-tool defect wearing different clothes, and omitting a real one
+/// defeats the guard's whole purpose.
+///
+/// The eleven below were extracted from every `UpdatePheromoneTrail` call site in the tree, not from
+/// a description of them.
 ///
 /// Naming them is the prerequisite for the thing the plan actually wants: trails keyed by what they
 /// are ABOUT, so a worker's reputation can be distinguished from a tool's reliability and from a
@@ -27,8 +33,11 @@ public static class TrailKind
     public const string PlannerPattern = "planner_pattern";
     public const string WorkerPattern = "worker_pattern";
     public const string TaskPattern = "task_pattern";
-    public const string ProceduralRoute = "procedural_route";
-    public const string Skill = "skill";
+    // ProceduralRoute and Skill were declared here in v3.8.29 and are REMOVED: nothing writes
+    // either. Skill outcomes go through SkillRegistry.RecordOutcome, which is a different store
+    // with a different lifecycle, and procedural routes are recorded as events rather than trails.
+    // A vocabulary that names categories the system does not produce cannot be used to validate
+    // anything — it just makes the guard agree with a document instead of with the code.
 
     // ---- what the ENVIRONMENT provides -------------------------------------------------------
     /// <summary>A capability the colony has, not a judgment about anyone using it.</summary>
@@ -37,12 +46,20 @@ public static class TrailKind
     public const string ExternalResearchTool = "external_research_tool";
     public const string SourceDomain = "source_domain";
 
+    /// <summary>
+    /// Provider and model-route reliability, written by <c>ModelRouter</c> on every routed call.
+    /// v3.8.31 — it was written from the day the router had a circuit breaker and was missing from
+    /// the v3.8.29 vocabulary, which is exactly the kind of omission a declared list exists to stop.
+    /// Environmental: a provider that timed out says nothing about the worker whose task it was.
+    /// </summary>
+    public const string ModelRoute = "model_route";
+
     /// <summary>Every kind this build recognises.</summary>
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             Ant, Worker, TaskType, PlannerPattern, WorkerPattern, TaskPattern,
-            ProceduralRoute, Skill, Capability, Tool, ExternalResearchTool, SourceDomain,
+            Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute,
         };
 
     /// <summary>
@@ -62,7 +79,7 @@ public static class TrailKind
     /// </summary>
     public static readonly IReadOnlySet<string> Environmental =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { Capability, Tool, ExternalResearchTool, SourceDomain };
+            { Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute };
 
     public static bool IsKnown(string? kind) => kind is not null && All.Contains(kind);
 

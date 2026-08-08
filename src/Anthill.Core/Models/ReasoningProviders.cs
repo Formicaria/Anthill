@@ -62,6 +62,41 @@ public static class ReasoningProviders
         lock (Gate) _probe = probe;
     }
 
+    private static LocalModelResolver.ModelLister? _localModels;
+
+    /// <summary>
+    /// Lists the models a LOCAL host currently holds, when a composition root supplies a way to ask.
+    /// v3.8.33.
+    ///
+    /// Registered rather than implemented here for the same reason provider construction is:
+    /// <c>Anthill.Core</c> does not make HTTP calls to providers (ADR-007). The core needs the
+    /// ANSWER — to resolve "which model" when the operator has not chosen one — not the transport.
+    ///
+    /// Unregistered is a real state and resolves to "cannot ask", which becomes a refusal that names
+    /// the host. It must never resolve to a built-in model name; that is precisely the hardcoding
+    /// v3.8.33 removed.
+    /// </summary>
+    public static void RegisterLocalModelLister(LocalModelResolver.ModelLister lister)
+    {
+        ArgumentNullException.ThrowIfNull(lister);
+        lock (Gate) _localModels = lister;
+    }
+
+    /// <summary>
+    /// Ask the registered lister what <paramref name="host"/> holds. Throws when none is registered,
+    /// which <see cref="LocalModelResolver"/> reports as "the host could not be asked" — distinct
+    /// from "the host has no models", because they need different fixes.
+    /// </summary>
+    public static IReadOnlyList<string> ListLocalModels(string host)
+    {
+        LocalModelResolver.ModelLister? lister;
+        lock (Gate) lister = _localModels;
+
+        return lister is null
+            ? throw new InvalidOperationException("no model discovery is registered in this runtime")
+            : lister(host);
+    }
+
     /// <summary>
     /// Build a provider, or an <see cref="UnavailableProvider"/> that explains why not.
     ///

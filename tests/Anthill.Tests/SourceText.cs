@@ -1,0 +1,94 @@
+namespace Anthill.Tests;
+
+/// <summary>
+/// Reading source as CODE rather than as text. v3.8.33.
+///
+/// Several guards in this suite search the tree for constructs that must not exist — a
+/// <c>FailureClass</c> stringified outside the shared converter, a second patch applier, a hardcoded
+/// model tag. Every one of them has the same failure mode on its first run, and it caught me three
+/// times: this codebase documents its defects IN COMMENTS, at length, by quoting the offending
+/// expression. A guard that greps raw text reports the paragraph explaining why
+/// <c>"llama3.1:8b"</c> was wrong as an instance of <c>"llama3.1:8b"</c>.
+///
+/// The tempting fix is to reword the comment. That is backwards — it deletes the reasoning to keep a
+/// test green, and the reasoning is usually worth more than the fix. The correct one is to make the
+/// guard read what it claims to read.
+///
+/// Extracted so there is ONE implementation. Three near-copies of a comment stripper is the same
+/// shape as the three patch appliers v3.8.32 collapsed.
+/// </summary>
+public static class SourceText
+{
+    /// <summary>
+    /// C# source with comments blanked, newlines preserved so reported line numbers stay true.
+    ///
+    /// String and char literals are kept — a guard looking for a literal needs to see it — while
+    /// their contents are skipped for delimiter purposes, so a <c>"//"</c> inside a URL does not
+    /// start a comment and a quote inside a verbatim string does not end one.
+    /// </summary>
+    public static string CodeOnly(string source)
+    {
+        var sb = new System.Text.StringBuilder(source.Length);
+        bool inLine = false, inBlock = false, inString = false, inChar = false, verbatim = false;
+
+        for (var i = 0; i < source.Length; i++)
+        {
+            var c = source[i];
+            var next = i + 1 < source.Length ? source[i + 1] : '\0';
+
+            if (inLine)
+            {
+                if (c == '\n') { inLine = false; sb.Append(c); }
+                else sb.Append(' ');
+                continue;
+            }
+            if (inBlock)
+            {
+                if (c == '*' && next == '/') { inBlock = false; sb.Append("  "); i++; }
+                else sb.Append(c == '\n' ? '\n' : ' ');
+                continue;
+            }
+            if (inString)
+            {
+                sb.Append(c);
+                // A doubled quote inside a verbatim string is an escaped quote, not the end of it.
+                if (verbatim && c == '"' && next == '"') { sb.Append(next); i++; }
+                else if (!verbatim && c == '\\' && next != '\0') { sb.Append(next); i++; }
+                else if (c == '"') { inString = false; verbatim = false; }
+                continue;
+            }
+            if (inChar)
+            {
+                sb.Append(c);
+                if (c == '\\' && next != '\0') { sb.Append(next); i++; }
+                else if (c == '\'') inChar = false;
+                continue;
+            }
+
+            if (c == '/' && next == '/') { inLine = true; sb.Append("  "); i++; continue; }
+            if (c == '/' && next == '*') { inBlock = true; sb.Append("  "); i++; continue; }
+            if (c == '$' && next == '@' && i + 2 < source.Length && source[i + 2] == '"')
+            { verbatim = true; inString = true; sb.Append(c).Append(next).Append('"'); i += 2; continue; }
+            if (c == '@' && next == '"') { verbatim = true; inString = true; sb.Append(c).Append(next); i++; continue; }
+            if (c == '"') { inString = true; sb.Append(c); continue; }
+            if (c == '\'') { inChar = true; sb.Append(c); continue; }
+
+            sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Every production .cs file, excluding build output.</summary>
+    public static IEnumerable<string> ProductionFiles(string repoRoot) =>
+        Directory.GetFiles(Path.Combine(repoRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                     && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+
+    /// <summary>Walk up to the repository root, so guards do not depend on the runner's cwd.</summary>
+    public static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Anthill.sln"))) dir = dir.Parent;
+        return dir!.FullName;
+    }
+}
