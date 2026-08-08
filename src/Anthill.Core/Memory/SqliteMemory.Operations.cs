@@ -796,15 +796,38 @@ public sealed partial class SqliteMemory
 
         foreach (var task in mission.Tasks)
         {
-            var taskSuccess = task.Status == TaskStatus.Complete;
-            var taskDelta = task.Status == TaskStatus.Skipped ? -0.01 : taskSuccess && success ? 0.03 : -0.04;
+            // v3.8.26 Stage E — ATTRIBUTION. Who is this outcome actually evidence about?
+            //
+            // The line this replaces was:
+            //     task.Status == Skipped ? -0.01 : taskSuccess && success ? 0.03 : -0.04
+            //
+            // which pushed a role's trail DOWN for being SKIPPED — punished for not running — and
+            // swept Blocked, Cancelled and Pending into the same -0.04 as a genuine failure. It also
+            // charged provider outages and dependency failures to the worker, while ModelRouter and
+            // ToolRegistry were already recording those against the provider and the tool: the same
+            // fact counted twice, once against the wrong subject.
+            //
+            // Survivable while six of twelve roles never ran. Not survivable in the release that
+            // gives all twelve a trigger — a specialist enabled for the first time would arrive
+            // carrying negative reputation from missions it was gated out of, and the colony would
+            // learn to route away from roles it had never tried.
+            var attribution = Pheromones.LearningAttribution.For(task, missionVerified: success);
+            var taskDelta = Pheromones.LearningAttribution.DeltaFor(attribution);
+            var taskSuccess = attribution == Pheromones.LearningAttribution.Attribution.Positive;
+
+            // NEUTRAL writes nothing at all. A zero-delta write would still stamp last_seen and
+            // count as an observation, which is how "this role was in nine missions" becomes true
+            // for a role that ran in none of them.
+            if (attribution == Pheromones.LearningAttribution.Attribution.Neutral) continue;
+
+            var attributionName = attribution.ToString().ToLowerInvariant();
             UpdatePheromoneTrail($"ant:{task.AssignedAnt}", "ant", taskSuccess, taskDelta,
-                new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value() });
+                new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value(), ["attribution"] = attributionName });
             if (!string.IsNullOrWhiteSpace(task.AssignedWorker))
                 UpdatePheromoneTrail($"worker:{task.AssignedWorker}", "worker", taskSuccess, taskDelta,
-                    new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value() });
+                    new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_type"] = task.TaskType, ["task_status"] = task.Status.Value(), ["attribution"] = attributionName });
             UpdatePheromoneTrail($"task_type:{task.TaskType}", "task_type", taskSuccess, taskDelta,
-                new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_status"] = task.Status.Value() });
+                new() { ["last_mission_id"] = mission.Id, ["last_task_id"] = task.Id, ["assigned_ant"] = task.AssignedAnt, ["task_status"] = task.Status.Value(), ["attribution"] = attributionName });
         }
     }
 
@@ -872,6 +895,21 @@ public sealed partial class SqliteMemory
     // heuristic source quality never steer strategy. Uncategorized rows predate the column and
     // re-enter only through the existing requalification rule (post-reset success), after which
     // any further touch stamps their real category.
+    /// <summary>
+    /// v3.8.26 Stage E: a trail must be OBSERVED ENOUGH before it is allowed to steer planning.
+    ///
+    /// Three observations, not one. A single mission is an anecdote, and a trail written once sits
+    /// at whatever that one run produced — so before this, the first mission a newly-enabled role
+    /// appeared in decided how the colony felt about it. That matters most in exactly the release
+    /// that gives all twelve roles a trigger: six specialists are about to run for the first time,
+    /// and their first outcome must not become their reputation.
+    ///
+    /// Deliberately LOW. This is a floor against anecdote, not a statistical confidence threshold —
+    /// setting it high would mean the colony learns nothing from its first dozen missions, which is
+    /// its own failure. It can rise once there is enough history to say what "enough" is.
+    /// </summary>
+    public const int MinObservationsToSteerPlanning = 3;
+
     public List<Dictionary<string, object?>> GetTopPheromoneTrails(int limit = 10) =>
         CacheRead($"top_pheromones::{limit}", () =>
             Query(@"SELECT trail_key, trail_type, strength, success_count, failure_count, last_updated
@@ -879,7 +917,9 @@ public sealed partial class SqliteMemory
                     WHERE (legacy = 0 OR success_count > 0)
                       AND (signal_category IN ('procedural_learning', 'routing_preference')
                            OR (signal_category = '' AND success_count > 0))
-                    ORDER BY strength DESC, success_count DESC LIMIT @lim", ("@lim", limit)));
+                      AND (success_count + failure_count) >= @minobs
+                    ORDER BY strength DESC, success_count DESC LIMIT @lim",
+                ("@lim", limit), ("@minobs", MinObservationsToSteerPlanning)));
 
     public string FormatRecentMemory(int limit = 3, int maxResultChars = 300)
     {
