@@ -715,6 +715,23 @@ public sealed partial class SqliteMemory
         Dictionary<string, object?>? metadata = null)
     {
         metadata ??= new();
+
+        // v3.8.31 — the trail vocabulary becomes ENFORCED rather than declared.
+        //
+        // `TrailKind` named the kinds in v3.8.29 and nothing checked against it, so the list could
+        // drift from the call sites in both directions — and it had: two kinds declared that nothing
+        // writes, one written that nothing declared. A vocabulary no writer is checked against is a
+        // document, not a guard.
+        //
+        // WARNS RATHER THAN THROWS. A new trail kind is a design decision someone is midway through
+        // making, and refusing the write would lose the observation while they finish; the point is
+        // that it cannot happen SILENTLY. The build-time guard in PheromoneVocabularyTests is where
+        // this becomes binding.
+        if (!Pheromones.TrailKind.IsKnown(trailType))
+            Console.Error.WriteLine(
+                $"[pheromone] trail kind '{trailType}' is not in TrailKind — the trail is still "
+                + "recorded, but nothing can reason about its subject. Declare it or use an existing kind.");
+
         var category = SignalCategoryFor(trailType);
         lock (_writeLock)
         {

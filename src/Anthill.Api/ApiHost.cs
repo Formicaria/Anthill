@@ -107,6 +107,14 @@ public static partial class ApiHost
         var events = new InProcessEventBus();
         memory.EventBus = events;
 
+        // v3.8.33 — the composition root teaches the core how to ASK a local host what it holds.
+        //
+        // The core needs the answer (to resolve "which model" when the operator has not chosen one)
+        // and must not own the transport, so this is registered here rather than implemented in
+        // Anthill.Core. Unregistered stays a real state: it resolves to a refusal naming the host,
+        // never to a built-in model name.
+        ReasoningProviders.RegisterLocalModelLister(InstalledOllamaModels);
+
         Modules = new ModuleHost(memory, events);
         Modules.LoadAll(
             new ReasoningModule(AnthillRuntime.OllamaHost),

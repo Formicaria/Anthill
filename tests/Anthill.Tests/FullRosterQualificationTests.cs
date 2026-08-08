@@ -89,22 +89,115 @@ public class FullRosterQualificationTests
     }
 
     /// <summary>
-    /// Every role has a SCHEDULING TRIGGER. A qualified role nothing can reach is the defect this
-    /// whole program was built to find — the archivist had a handler, a contract and a gate for
-    /// releases and had never once run.
+    /// A colony with NO model. Qualification must not silently depend on a provider being up.
+    ///
+    /// v3.8.32 — the test above hardcoded <c>modelAvailable: true</c>, which an external review
+    /// correctly flagged: the fixture asserted the roster qualifies in a world it simply declared to
+    /// exist. This runs the same resolution honestly and states what changes.
+    ///
+    /// The point is NOT that everything still qualifies — it does not, and should not. The point is
+    /// that the difference is exactly the model capability, so an operator reading a qualification
+    /// failure offline sees "no model" rather than a structural problem that is not there.
+    /// </summary>
+    [Fact]
+    public void WithNoModelAvailable_OnlyTheModelCapabilityIsMissing()
+    {
+        var registered = FullyEquipped();
+        var withModel = CapabilityGrant.Resolve(registered, modelAvailable: true, webSearchEnabled: true);
+        var without = CapabilityGrant.Resolve(registered, modelAvailable: false, webSearchEnabled: true);
+
+        var lost = withModel.Except(without).ToList();
+
+        Assert.Equal(new[] { Capability.ModelInvoke }, lost);
+
+        // And every role whose contract does NOT require a model still qualifies offline, which is
+        // the claim "the colony functions without an LLM" reduces to at the contract layer.
+        foreach (var role in TwelveRoles)
+        {
+            var contract = AntExecutionCatalog.ContractFor(role)!;
+            if (contract.RequiredCapabilities.Contains(Capability.ModelInvoke)) continue;
+
+            var ungranted = contract.RequiredCapabilities.Where(c => !without.Contains(c)).ToList();
+            Assert.True(ungranted.Count == 0,
+                $"{role} needs no model but still cannot be granted: {string.Join(", ", ungranted)}");
+        }
+    }
+
+    /// <summary>
+    /// Every role has a SCHEDULING TRIGGER, and the trigger is a REAL one.
+    ///
+    /// v3.8.32 — the previous version of this test checked
+    /// <c>ContractFor(r)?.Scheduling is null</c>. <c>Scheduling</c> is a non-nullable enum, so that
+    /// expression can only be null when the CONTRACT is missing: it was a duplicate
+    /// contract-existence check wearing a trigger test's name, and it would have passed just as
+    /// happily if every role in the colony were unreachable.
+    ///
+    /// A trigger is only real if something can pull it. So this asserts the mode is one the runtime
+    /// actually implements, and that every non-planner mode has at least one role — a mode nothing
+    /// uses is a mechanism nobody has tested.
     /// </summary>
     [Fact]
     public void EveryRole_HasARealTrigger()
     {
-        var untriggered = TwelveRoles
-            .Select(r => (Role: r, Mode: AntExecutionCatalog.ContractFor(r)?.Scheduling))
-            .Where(x => x.Mode is null)
-            .Select(x => x.Role)
+        var modes = TwelveRoles.ToDictionary(r => r, r => AntExecutionCatalog.ContractFor(r)!.Scheduling);
+
+        // Every declared mode is one the runtime knows how to pull.
+        Assert.All(modes, kv => Assert.True(Enum.IsDefined(kv.Value), $"{kv.Key}: unknown mode {kv.Value}"));
+
+        // The three non-planner modes exist BECAUSE some role depends on them. An empty one means
+        // either a role lost its trigger or a mechanism is dead code.
+        foreach (var mode in new[]
+                 {
+                     SchedulingMode.PolicyInserted,
+                     SchedulingMode.FailureTriggered,
+                     SchedulingMode.PostFinalization,
+                 })
+            Assert.True(modes.Any(kv => kv.Value == mode),
+                $"no role is scheduled by {mode} — the mechanism has no user, so nothing exercises it");
+
+        // And the roles whose triggers this program was built to install are on the modes that
+        // actually reach them. Pinned by name: these four are the ones that had never run.
+        Assert.Equal(SchedulingMode.FailureTriggered, modes["medic"]);
+        Assert.Equal(SchedulingMode.PostFinalization, modes["archivist"]);
+        Assert.Equal(SchedulingMode.PolicyInserted, modes["tester"]);
+        Assert.Equal(SchedulingMode.PolicyInserted, modes["soldier"]);
+    }
+
+    /// <summary>
+    /// The roster this fixture qualifies is the WHOLE contracted roster, not a list that happens to
+    /// have twelve entries in it.
+    ///
+    /// Without this, a role added to the catalog and forgotten here would be qualified by nothing
+    /// while every test in the file still passed — the same shape as the archivist defect.
+    /// </summary>
+    [Fact]
+    public void TheTwelveNamedRoles_AreExactlyTheContractedRoles()
+    {
+        Assert.Equal(
+            AntExecutionCatalog.Contracts.Keys.OrderBy(r => r, StringComparer.Ordinal).ToArray(),
+            TwelveRoles.OrderBy(r => r, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// The tool list this fixture calls "fully equipped" must be a real superset of what the colony
+    /// registers. A hand-written list that drifts below the contracts would make
+    /// <see cref="AllTwelveRoles_QualifyUnderTheFullProfile"/> fail for the wrong reason, and one
+    /// that drifts ABOVE them would qualify tools nothing provides.
+    /// </summary>
+    [Fact]
+    public void TheFullyEquippedToolSet_CoversEveryDeclaredTool()
+    {
+        var declared = AntExecutionCatalog.Contracts.Values
+            .SelectMany(c => c.AllowedTools)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(untriggered.Count == 0,
-            "These roles declare no scheduling mode, so nothing states how they are reached: "
-            + string.Join(", ", untriggered));
+        var missing = declared.Where(t => !FullyEquipped().Contains(t)).ToList();
+
+        Assert.True(missing.Count == 0,
+            "the fixture claims a fully-equipped colony but omits tools roles declare: "
+            + string.Join(", ", missing));
     }
 
     /// <summary>

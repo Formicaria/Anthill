@@ -137,12 +137,27 @@ public static class PatchSetMaterializer
                     continue;
                 }
 
-                if (proposal.NewContent is null)
-                    throw new InvalidOperationException(
-                        $"proposal {proposal.Id} is a {proposal.ChangeType} with no new content");
+                // v3.8.32 — THE defect this file shipped with.
+                //
+                // This wrote `proposal.NewContent` over the whole file for every change type,
+                // ignoring `OldContent` entirely. ApplyPatchTool — the applier that will actually
+                // touch the operator's tree — replaces one exact occurrence of `old_content` and
+                // refuses if it is absent or ambiguous. So for any modify that was not a whole-file
+                // rewrite, this materialised a file consisting only of the patch fragment, and the
+                // verifier then compiled and attested to a tree the colony could never produce.
+                //
+                // v3.8.23's claim was "patches are verified in a sandbox that contains them". The
+                // sandbox contained something else. Shared semantics now; a divergence requires
+                // editing PatchApply, where the reason is written down.
+                var current = File.Exists(target) ? File.ReadAllText(target) : null;
+                var outcome = PatchApply.Compute(
+                    ChangeTypeName(proposal.ChangeType), proposal.OldContent, proposal.NewContent, current);
+                if (!outcome.Ok)
+                    throw new InvalidOperationException($"proposal {proposal.Id} ({proposal.FilePath}): {outcome.Reason}");
 
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.WriteAllText(target, proposal.NewContent);
+                if (outcome.Status == PatchApplyStatus.Created)
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllText(target, outcome.Content!);
                 applied.Add(proposal.FilePath);
             }
 
@@ -161,10 +176,25 @@ public static class PatchSetMaterializer
         }
     }
 
+    /// <summary>The wire spelling <see cref="PatchApply"/> expects. Delete is handled before this is
+    /// reached; anything else is refused there rather than defaulting to a modify.</summary>
+    private static string ChangeTypeName(PatchChangeType kind) => kind switch
+    {
+        PatchChangeType.Add => PatchApply.Add,
+        PatchChangeType.Modify => PatchApply.Modify,
+        _ => kind.ToString().ToLowerInvariant(),
+    };
+
     /// <summary>
-    /// Content hash of the set: every proposal's path, change type and new content, ORDERED by path
-    /// so two sets with the same changes in a different order hash the same. The order proposals
-    /// arrive in is an artifact of how a model emitted them, not a property of the change.
+    /// Content hash of the set: every proposal's path, change type, OLD content and new content,
+    /// ORDERED by path so two sets with the same changes in a different order hash the same. The
+    /// order proposals arrive in is an artifact of how a model emitted them, not a property of the
+    /// change.
+    ///
+    /// v3.8.32 added <c>OldContent</c>. It was excluded while materialization ignored it, which was
+    /// self-consistent and wrong in the same direction: two patch sets that replace DIFFERENT text
+    /// with the same new text are different changes and produce different trees, and hashing them
+    /// identically would let a cached or compared verification stand in for one it never ran.
     /// </summary>
     public static string HashPatchSet(PatchSet patchSet)
     {
@@ -174,6 +204,7 @@ public static class PatchSetMaterializer
                      .ThenBy(p => p.Id, StringComparer.Ordinal))
             sb.Append(p.FilePath).Append('\n')
               .Append(p.ChangeType).Append('\n')
+              .Append(p.OldContent ?? "").Append('\n')
               .Append(p.NewContent ?? "").Append('\n');
         return Sha(sb.ToString());
     }

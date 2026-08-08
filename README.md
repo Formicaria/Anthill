@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v3.8.30
+**Current version:** v3.8.33
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -53,18 +53,35 @@ reachable in git history if it is ever needed; nothing in the build refers to it
 
 ## Current Version Notes
 
-The repo is on the **v3.x line**. Planning lives in ONE document: **[docs/PLAN.md](docs/PLAN.md)**
-— where the colony measurably is, and what is left. It replaced `NORTH_STAR.md`, `ROADMAP.md`,
-`REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md` at v3.8.24, all four of which are archived under
-`docs/archive/v3/`. There were 2,746 lines across them with heavy overlap, and every release had to
-edit three to keep them consistent. V2 — the Homelab Command Center era — closed at v2.26.0 and is
-archived under `docs/archive/v2/`.
+The repo is on the **v3.x line**, and the **3.8 line is CLOSED at v3.8.32**. Planning lives in ONE
+document: **[docs/PLAN.md](docs/PLAN.md)** — where the colony measurably is, and what is left.
 
-The Core/Modules refactor recorded in `docs/archive/v3/REFACTOR-PLAN.md` ran from v3.8.3 and closed
-at v3.8.18: `Anthill.Core` is down from 34,247 lines to 24,973 with nothing deleted, the reasoning
-providers, the whole homelab and the tools that act on the machine now live in `Anthill.Modules.*`,
-and the boundary is enforced by assembly-reference tests rather than by review.
-`docs/adr/ADR-007-module-boundary.md` records the rule and what it costs.
+Two programs ran in 3.8 and both finished.
+
+**The Core/Modules refactor (v3.8.3–v3.8.18).** `Anthill.Core` went from 34,247 lines to 24,973 with
+nothing deleted; the reasoning providers, the whole homelab and the tools that act on the machine
+moved to `Anthill.Modules.*`; and the boundary is enforced by assembly-reference tests rather than by
+review. `docs/adr/ADR-007-module-boundary.md` records the rule and what it costs.
+
+**The twelve-role activation program (v3.8.19–v3.8.32).** The colony had twelve registered roles, six
+of which had never run — one of them, the archivist, had never executed once in the project's
+history. All twelve now have a real production trigger, an enforced execution contract, and the tools
+their work requires. Patches are verified by compiling them in a sandbox that contains them; the
+verifier reads stored evidence rather than parsing a model's prose; and learning records only
+outcomes the colony actually verified.
+
+The recurring finding across those releases is worth knowing before reading the code: **eight
+subsystems were implemented, tested, and unreachable.** Every one had passing tests, because the tests
+called the code directly and nothing asked whether production could get there.
+
+Its sibling cost five more defects. v3.8.31 declared the line closed; an external review then found
+five that were still present, each with passing tests, each the same shape — **a test that builds its
+own input in the form its own side expects**, so the two halves of a boundary are verified against an
+assumption rather than against each other. v3.8.32 fixed them and added the detectors.
+`docs/PLAN.md` §6 records every instance of both patterns.
+
+`docs/archive/v3/` holds the four planning documents PLAN.md replaced. V2 — the Homelab Command
+Center era — closed at v2.26.0 and is archived under `docs/archive/v2/`.
 
 The table below stops at v3.0.1 and is not maintained release by release — **`CHANGELOG.md` is the
 complete record.** What is kept here is the handful of entries that explain how the project got its

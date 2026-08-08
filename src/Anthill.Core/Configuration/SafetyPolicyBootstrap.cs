@@ -31,6 +31,18 @@ internal static class SafetyPolicyBootstrap
     /// uninstalled policy would silently check them against the SDK's mirrored copy of the core's
     /// tables rather than the tables themselves.
     /// </summary>
+    // CA2255 says ModuleInitializer is "only intended for application code or advanced source
+    // generator scenarios". This is the advanced case and the suppression is deliberate rather than
+    // noise-silencing: the alternative is a composition root calling Install(), and MOST CALLERS
+    // NEVER BUILD ONE. UserDefinedToolTests validates definitions with no colony present, and an
+    // uninstalled policy would silently check them against the SDK's mirrored copy of the core's
+    // tables instead of the tables themselves — a check that passes while measuring the wrong thing,
+    // which is the exact defect class this repository has spent a release cycle removing.
+    //
+    // Suppressed at the declaration with the reason attached, so the build is clean and the decision
+    // is readable. A warning every build teaches people to ignore warnings.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2255",
+        Justification = "Deliberate: the safety policy must be installed for callers that never construct a colony.")]
     [ModuleInitializer]
     internal static void Install() =>
         SafetyPolicy.Configure(SsrfRuntime.Live, ToolRuntime.Live, ToolDefinitionPolicy.Live);
