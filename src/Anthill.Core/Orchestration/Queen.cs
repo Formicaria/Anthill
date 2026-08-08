@@ -188,7 +188,10 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
         foreach (var note in Workspaces.Recover())
             Console.Error.WriteLine($"[workspace-recovery] {note}");
-        Execution = new ExecutionService(Memory, _ants);
+        // v3.8.26: Tools is passed so the execution path can read the per-task dispatch count and
+        // fill in AntMetrics.ToolCalls — a counter that has been zero for every role since it was
+        // declared, because it was self-reported and two of twelve ants report anything at all.
+        Execution = new ExecutionService(Memory, _ants, Tools);
 
         // v3.8.0: this process registers as a worker, and startup reconciles what the last one left
         // behind. Both halves are needed for the phase's first gate — "no accepted task is silently
@@ -665,6 +668,22 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         Memory.SaveMissionEvaluation(evaluation);
         Console.WriteLine("Mission saved to ANTHILL memory.");
 
+        // v3.8.26 — the archivist finally has a trigger.
+        //
+        // It has NEVER RUN. Not once, in the project's history. The planner contains zero references
+        // to it, no handoff targets it, and no policy created one — so the twelfth role has been
+        // registered, contracted, handler-complete and gated for releases without a single path that
+        // could reach it. v3.8.25 declaring it PostFinalization and enforcing the rule made that
+        // visible rather than causing it; the enforcement removed a path that did not exist.
+        //
+        // This is the only place it can correctly run. The archivist reads a TERMINAL mission to
+        // extract lessons, and every line above is what makes the mission terminal: execution has
+        // stopped, the status is final, the canonical evaluation is computed AND PERSISTED. Running
+        // it a line earlier would hand it a mission whose outcome is not yet decided — which is
+        // exactly what a planner-scheduled archivist would have done, and why the contract forbids
+        // that.
+        RunArchivistAfterFinalization(mission, evaluation);
+
         // v2.7.0 (canonical since v2.26.0): the operator-facing "why it ended" derives from the
         // ONE persisted evaluation — the reason text is presentation; the code is authority.
         var outcome = ComputeOutcome(mission, stopReason) with { OutcomeCode = evaluation.OutcomeCode };
@@ -726,6 +745,78 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // reconstruct either. An operator approving a preview is approving the plan that will run.
         var context = MissionContext.Create(new Mission { Goal = goal }, Profile, AnthillTime.NowUtc());
         return new MissionPlan(_planning.CreatePlan(context), context.Constraints, Planner.IsLongInput(goal));
+    }
+
+    /// <summary>
+    /// Run the archivist as a LIFECYCLE step, after the canonical evaluation is persisted. v3.8.26.
+    ///
+    /// Not a task, deliberately. A planner task would have to be scheduled before the mission ends
+    /// and would therefore read a mission that has not ended; a dynamically inserted task would have
+    /// to be admitted into a scheduler that has already stopped. The archivist is the one role whose
+    /// input is the FINISHED mission, so it runs outside the task graph entirely — which is what
+    /// `SchedulingMode.PostFinalization` has meant since it was declared.
+    ///
+    /// A synthetic task carries the invocation because the handler's signature takes one and its
+    /// contract check reads its TaskType. It is never persisted and never enters `mission.Tasks`:
+    /// adding it would change the task graph the evaluation was just computed from, retroactively
+    /// altering the record it is summarising.
+    ///
+    /// Failure here is CONTAINED. The mission has already succeeded or failed on its own terms and
+    /// its outcome is already durable; an archivist that throws must not change either. The lesson
+    /// is lost and said so, which is the correct trade — memory extraction is valuable and never
+    /// authoritative.
+    /// </summary>
+    private void RunArchivistAfterFinalization(Mission mission, Outcomes.MissionEvaluation evaluation)
+    {
+        if (!AntExecutorCatalog.RuntimeAvailable("archivist"))
+        {
+            // Said out loud, like the policy-inserted reviews. "No lessons were extracted" and "the
+            // archivist is switched off" are different facts and must not look the same.
+            Memory.LogEvent(mission.Id, "archivist_skipped",
+                "Archivist did not run: "
+                + (AntExecutorCatalog.Snapshot.GetValueOrDefault("archivist")?.UnavailabilityReason ?? "unavailable"),
+                metadata: new() { ["role"] = "archivist", ["outcome_code"] = evaluation.OutcomeCode });
+            return;
+        }
+
+        if (!_ants.TryGetValue("archivist", out var archivist)) return;
+
+        try
+        {
+            var synthetic = new Domain.Task
+            {
+                Title = "Archive mission lessons",
+                // The CANONICAL outcome is handed over rather than re-derived. ArchivistAnt parses
+                // an explicit `outcome: x` from its description, and the whole point of a persisted
+                // evaluation is that nothing downstream computes its own answer.
+                Description = $"Extract durable lessons from the finished mission. outcome: {evaluation.OutcomeCode}",
+                AssignedAnt = "archivist",
+                TaskType = "mission_summary",
+                ParentTaskIds = mission.Tasks.Select(t => t.Id).ToList(),
+            };
+
+            var execution = archivist.Execute(synthetic, mission);
+
+            Memory.LogEvent(mission.Id, "archivist_ran",
+                $"Archivist ran after finalization: {execution.StatusCode} — {TextUtil.Truncate(execution.Summary, 300)}",
+                metadata: new()
+                {
+                    ["role"] = "archivist", ["status_code"] = execution.StatusCode,
+                    ["outcome_code"] = evaluation.OutcomeCode,
+                    ["artifact_count"] = execution.Artifacts.Count,
+                });
+
+            // The same ingest the task path used, now reachable for the first time: candidates
+            // become durable events, never auto-promoted.
+            Execution.IngestMemoryCandidatesFor(mission, synthetic, execution);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[archivist] post-finalization run failed for {mission.Id}: {error.Message}");
+            Memory.LogEvent(mission.Id, "archivist_failed",
+                $"Archivist could not run after finalization: {error.Message}",
+                metadata: new() { ["role"] = "archivist", ["outcome_code"] = evaluation.OutcomeCode });
+        }
     }
 
     private Outcomes.MissionEvaluation FinalizeMission(Mission mission, MissionContext context, string? stopReason)

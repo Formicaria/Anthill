@@ -1,5 +1,147 @@
 # ANTHILL Changelog
 
+## v3.8.26 - policy inserts the safety roles
+
+The last Stage B item, and the pair to v3.8.25's deliberate omission.
+
+**Tester and soldier are now INSERTED, not planned.** When a coder task produces a patch set,
+`InsertPolicyReviewTasks` creates a test-execution task and a security-review task attached to it.
+The trigger is not a model, a heuristic or a plan — it is the observation that a patch set exists,
+which is exactly the condition under which running checks and reviewing for secrets have something
+to say.
+
+Ordering matters and is load-bearing: insertion happens AFTER `RecordPatchArtifact`, because the
+soldier reads the patch-set artifact (v3.8.25). Inserting first would schedule a review of something
+not yet written.
+
+Both inserted tasks are CRITICAL, so a failed safety review disqualifies the mission from a verified
+outcome through the existing evaluator rule rather than a new one. Both carry the coder task as
+parent, which is the same discriminator handoffs use and what lets them past the scheduling rule.
+They dedupe per patch set, or an autonomous objective re-proposing the same change would stack a
+review on every run.
+
+A role whose gate is closed is skipped **and says so** — a `policy_review_skipped` event with the
+reason. Silent non-insertion would make "the review did not run" indistinguishable from "the review
+found nothing", which is the confusion this entire program exists to remove.
+
+**`PolicyInserted` is now enforced.** v3.8.25 left it deliberately unenforced and pinned the gap with
+a test, because nothing inserted these roles and the rule would have removed their only path. The
+insertion is real now, so the rule binds and the test inverts — with its reasoning moved across
+rather than deleted. The order was the point: the new path had to exist before the old one closed.
+
+**The archivist runs for the first time — ever.** Not "for the first time this release": the
+twelfth role has never executed in the project's history. The planner contains zero references to it,
+no handoff targets it, no policy created one. It has been registered, contracted, handler-complete
+and gated for releases with no path that could reach it, and nothing reported that because every
+check asked whether it was *enabled* rather than whether anything could *call* it.
+
+v3.8.25 declaring it `PostFinalization` and enforcing the rule made the gap visible rather than
+causing it — the enforcement removed a path that did not exist.
+
+`RunArchivistAfterFinalization` is the trigger, and there is exactly one correct place for it: after
+`SaveMissionEvaluation`. The archivist reads a TERMINAL mission, and those lines are what make the
+mission terminal — execution stopped, status final, canonical evaluation computed and persisted. It
+runs OUTSIDE the task graph, because a planner task would have to be scheduled before the mission
+ends and a dynamically inserted one would need a scheduler that has already stopped. The synthetic
+task carrying the invocation is never persisted and never joins `mission.Tasks`: adding it would
+change the graph the evaluation was just computed from, retroactively altering the record it is
+summarising.
+
+The canonical outcome is handed to it rather than re-derived — the point of a persisted evaluation is
+that nothing downstream computes its own answer. Failure is contained: the mission's outcome is
+already durable and an archivist that throws must not change it. A closed gate logs
+`archivist_skipped` with the reason, because "no lessons were extracted" and "the archivist is off"
+are different facts.
+
+`IngestMemoryCandidatesFor` joins `IExecutionService` so both paths share one implementation. A
+second copy beside the first is how two write paths for one fact begin.
+
+**Stage E — a role is never punished for not running.** The per-task learning line read:
+
+```
+task.Status == Skipped ? -0.01 : taskSuccess && success ? 0.03 : -0.04
+```
+
+A SKIPPED task pushed its role's trail down. A role was penalised for being gated off, for depending
+on something that failed, for arriving after a deadline. And every non-Complete status fell into the
+same -0.04 as a genuine failure: Blocked (its own contract refused the task), Cancelled (the operator
+stopped the mission), Pending (it never got a turn).
+
+That was survivable while six of twelve roles never ran. It stops being survivable in the release
+that gives all twelve a trigger — a specialist enabled for the first time would arrive carrying
+negative reputation from missions it was gated out of, and the colony would learn to route away from
+roles it had never tried.
+
+`LearningAttribution` answers one question: is this outcome evidence about the thing the trail names?
+Skipped, Blocked, Cancelled and Pending are NEUTRAL — no write at all, because a zero-delta write
+still stamps an observation, which is how "this role was in nine missions" becomes true for a role
+that ran in none. Completed work is positive only when the canonical evaluation verified the mission;
+completed work in an unverified mission is neutral, because whether it was the RIGHT work is exactly
+what verification failed to establish.
+
+Failures are attributed. A provider outage, rate limit, timeout, dependency failure or authorization
+denial is not the worker's doing — `ModelRouter` and `ToolRegistry` already record those against the
+provider and the tool, so charging them to the worker counted one fact twice against the wrong
+subject. Authorization denial is in that set for a subtler reason: a role refused a tool it may not
+call has been correctly constrained, and penalising it would teach the colony to avoid roles whose
+contracts are working. An UNCLASSIFIED failure stays attributable — absence of a class is not
+evidence of an environmental cause.
+
+**A trail must be observed three times before it steers planning.** One mission is an anecdote, and a
+trail written once sits at whatever that run produced — so the first mission a newly-enabled role
+appeared in decided how the colony felt about it. Deliberately a low floor against anecdote rather
+than a confidence threshold: set it high and the colony learns nothing from its first dozen missions,
+which is its own failure.
+
+**Deferred items closed, because they were prerequisites and not preferences.**
+
+`secret_material` was CASE-SENSITIVE while three sibling rules were not, so the most severe rule in
+the policy table was the fussiest about spelling: it matched `api_key = "…"` and missed `apiKey`,
+`apiToken`, `authToken`, `clientSecret` — the casings real C#, JS and TypeScript actually contain. A
+secret in a proposed patch passed the security review because of a capital K. Found when a v3.8.25
+test fixture failed to trip it and chasing why exposed the rule rather than the plumbing.
+
+The first fix also accepted UNQUOTED values, to catch `.env` assignments. Measured against this
+repository it produced fifteen false positives — `token = AuthSessions.Issue(...)`,
+`AuthToken = Environment.GetEnvironmentVariable(...)` — every one an assignment from a function
+rather than a literal. A soldier blocking those blocks ordinary patches constantly, and a rule that
+cries wolf gets switched off, which is worse than the narrow rule it replaced. Shipped quoted-only
+and case-insensitive: one hit across all of `src/`, and it is the archivist's own redaction pattern.
+
+`AntMetrics` counters were ZERO for every role since the framework was written, because they were
+self-reported and two of twelve ants report anything at all — both only `OutputChars`. Stage F cannot
+qualify a role on evidence that does not exist. `ToolCalls` is now counted at the dispatch chokepoint
+every call already passes through, `ElapsedSeconds` from what the executor already timed, `RetryCount`
+from the attempt count, and the environment fingerprint stamped. Counted BEFORE authorization,
+deliberately: a denied dispatch is still one the role attempted, and counting only successes would
+make the metric agree with the role about how well it is doing.
+
+**The roster profile: one switch instead of nine.** Turning the colony on meant setting
+`specialist_ant_execution_enabled`, an activation tier and six `*_ant_enabled` flags — nine unrelated
+keys where getting one wrong produces a silently absent role. `roster_profile: "full"` enables all six
+plus handoff ingestion and adaptive control, because a tester that cannot hand off to a medic, in a
+mission that cannot grow the repair task, is six roles that run and never collaborate.
+`disabled_roles` is the rollback path and is applied last and absolutely — a kill switch the profile
+could override would not be one. A misspelled entry is reported, since silently dropping it leaves an
+operator believing a role is off while it runs. **The default does not change.**
+
+`RosterProfiles.Resolve` is a pure function TAKING the resolved flags, and that signature is load
+bearing. The first version was inline in `ProjectConfig`, thirty lines above where
+`ui_cartographer`, `scribe`, `handoff_ingestion` and `adaptive_mission_control` are read — so it set
+them true and the config assignments set them straight back to false. That is the **third** time this
+release cycle a derived value was computed before its inputs arrived: `RuntimeProfile` in v3.8.16,
+`CapabilityGrant` in v3.8.25, this. Passing the inputs in makes the mistake unrepresentable.
+
+**Per-role readiness, in one row.** `/colony` now reports, for each role: ready, blocked_reason,
+scheduling_mode, handler_present, contract_version, declared tools and which of them are
+unregistered, required capabilities and which this run cannot grant, tier admission, gate state, and
+runtime availability.
+
+Every one of those facts already existed and was answerable only by reading source or correlating
+three endpoints. `blocked_reason` is the field that matters: it reports the FIRST binding reason in
+the order the runtime hits them, because a list of every problem reads as a crisis while the one
+actually stopping it reads as a next step.
+
 ## v3.8.25 - the roster becomes consequential
 
 Stage B of the twelve-role program. Three things that were declared start being enforced.

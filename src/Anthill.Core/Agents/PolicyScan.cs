@@ -20,7 +20,36 @@ public static class PolicyScan
         new("blocked_path_deploy", "high", true, Rx(@"\bdeploy[/\\]lxc[/\\]"), "deployment scripts are protected"),
         new("blocked_path_security", "critical", true, Rx(@"Anthill\.Core[/\\]Security[/\\]"), "security primitives are protected"),
         new("python_outside_archive", "high", true, Rx(@"[\w\-]+\.py\b"), "Python is forbidden in this repository (NORTH_STAR rule 13)"),
-        new("secret_material", "critical", true, Rx(@"-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:password|passwd|api[_-]?key|token|secret)\s*[:=]\s*['""][^'""\s]{6,}"), "secret-like content detected"),
+        // v3.8.26 — CASE-INSENSITIVE, and widened to the shapes real source actually uses.
+        //
+        // This rule was case-SENSITIVE while `destructive_operation`, `auth_change` and
+        // `db_migration` beside it were not, so the most severe rule in the table was the fussiest
+        // about spelling. It matched `api_key = "…"` and missed `apiKey`, `apiToken`, `authToken`,
+        // `accessToken`, `clientSecret` — the casings a C#, JS or TypeScript file is most likely to
+        // contain. A secret in a proposed patch passed the security review because of a capital K.
+        //
+        // Found by a test fixture: v3.8.25 taught the soldier to read the real patch, and the first
+        // fixture written for it used `var apiKey = "sk-…"` and did not trip. Chasing why exposed
+        // the rule rather than the plumbing.
+        //
+        // The VALUE must still be QUOTED, and that restraint was measured rather than assumed.
+        //
+        // The first draft of this fix also accepted unquoted values of 12+ characters, to catch
+        // `.env`-style assignments. Run against this repository it produced FIFTEEN false positives
+        // — `token = AuthSessions.Issue(...)`, `token = _tokenProvider`,
+        // `AuthToken = Environment.GetEnvironmentVariable(...)` — every one an assignment from a
+        // function or field rather than a literal. A soldier that blocks those blocks ordinary
+        // patches constantly, and a security rule that cries wolf is a security rule somebody
+        // switches off. That is strictly worse than the narrow rule it replaced.
+        //
+        // Quoted-only, case-insensitive, with the noun list widened: one hit across all of `src/`,
+        // and it is the archivist's own redaction pattern — a true positive by construction. The
+        // actual defect was CASING, and casing is what this fixes.
+        new("secret_material", "critical", true, Rx(
+            @"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            + @"|(?:password|passwd|api[_-]?key|api[_-]?token|auth[_-]?token|access[_-]?token|client[_-]?secret|bearer|credential|secret|token)"
+            + @"\s*[:=]\s*['""][^'""\s]{6,}",
+            RegexOptions.IgnoreCase), "secret-like content detected"),
         new("permission_expansion", "critical", true, Rx(@"ApplyPatches\s*=\s*true|apply_patch.*(?:allow|grant|enable)|(?:allow|grant|enable).*apply_patch"), "attempt to grant patch application"),
         new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|homelab_target_allowlist|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),
         new("destructive_operation", "critical", true, Rx(@"rm\s+-rf\s+/|DROP\s+TABLE|mkfs\.|wipe\s+disk|factory\s+reset", RegexOptions.IgnoreCase), "destructive operation"),

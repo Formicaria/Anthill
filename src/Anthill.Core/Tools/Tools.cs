@@ -47,6 +47,30 @@ public sealed class ToolRegistry
     /// </summary>
     public void GrantCapabilities(IReadOnlySet<string> granted) => GrantedCapabilities = granted;
 
+    /// <summary>
+    /// Tool dispatches per task, counted where they actually happen. v3.8.26.
+    ///
+    /// <c>AntMetrics.ToolCalls</c> has existed since the execution framework and has been ZERO for
+    /// every role in every mission, because the metric was something each ant was expected to
+    /// self-report and two of twelve do — both of them only setting <c>OutputChars</c>. A counter
+    /// nobody increments is not a measurement, and Stage F cannot qualify a role on evidence that
+    /// does not exist.
+    ///
+    /// Counted HERE because this is the chokepoint every dispatch already passes through, which is
+    /// the same reason authorization and evidence recording live here. Asking twelve handlers to
+    /// remember is what produced the zeros.
+    ///
+    /// Bounded: entries are removed when read. A task that is never persisted leaks one small
+    /// counter, and the alternative — an unbounded dictionary keyed by every task the process has
+    /// ever seen — is worse.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _dispatchCounts = new();
+
+    /// <summary>Read and CLEAR the dispatch count for a task. Called once, when the execution
+    /// record is persisted.</summary>
+    public int TakeDispatchCount(string? taskId) =>
+        taskId is not null && _dispatchCounts.TryRemove(taskId, out var n) ? n : 0;
+
     public void Register(ITool tool) => _tools[tool.Name] = tool;
 
     /// <summary>
@@ -83,6 +107,14 @@ public sealed class ToolRegistry
         Dictionary<string, object?>? args = null)
     {
         args ??= new();
+
+        // v3.8.26: counted BEFORE authorization, deliberately. A denied dispatch is still a
+        // dispatch the role attempted, and a role that repeatedly tries tools it may not call is
+        // exactly the behaviour a qualification review needs to see. Counting only successes would
+        // make the metric agree with the role about how well it is doing.
+        if (taskId is not null)
+            _dispatchCounts.AddOrUpdate(taskId, 1, (_, n) => n + 1);
+
         if (missionId is not null)
             _memory.LogEvent(missionId, "tool_called", $"Tool called: {name}", taskId, antName,
                 new() { ["tool_name"] = name, ["arguments"] = SafeMetadata(args) });

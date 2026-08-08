@@ -2,6 +2,7 @@ using Anthill.Core.Agents;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Pheromones;
 using Anthill.Core.Tools;
 using Anthill.SDK.Contracts;
 using Xunit;
@@ -135,12 +136,16 @@ public class SchedulingModeEnforcementTests : IDisposable
     private readonly bool _specialistsWas = AnthillRuntime.EnableSpecialistAntExecution;
     private readonly bool _medicWas = AnthillRuntime.EnableMedicAnt;
     private readonly bool _archivistWas = AnthillRuntime.EnableArchivistAnt;
+    private readonly bool _testerWas = AnthillRuntime.EnableTesterAnt;
+    private readonly bool _soldierWas = AnthillRuntime.EnableSoldierAnt;
 
     public SchedulingModeEnforcementTests()
     {
         AnthillRuntime.EnableSpecialistAntExecution = true;
         AnthillRuntime.EnableMedicAnt = true;
         AnthillRuntime.EnableArchivistAnt = true;
+        AnthillRuntime.EnableTesterAnt = true;
+        AnthillRuntime.EnableSoldierAnt = true;
     }
 
     public void Dispose()
@@ -148,6 +153,8 @@ public class SchedulingModeEnforcementTests : IDisposable
         AnthillRuntime.EnableSpecialistAntExecution = _specialistsWas;
         AnthillRuntime.EnableMedicAnt = _medicWas;
         AnthillRuntime.EnableArchivistAnt = _archivistWas;
+        AnthillRuntime.EnableTesterAnt = _testerWas;
+        AnthillRuntime.EnableSoldierAnt = _soldierWas;
     }
 
     private static DomainTask Planned(string role, string taskType) => new()
@@ -181,25 +188,38 @@ public class SchedulingModeEnforcementTests : IDisposable
     }
 
     /// <summary>
-    /// PolicyInserted is DECLARED and deliberately NOT enforced yet, and this test pins that gap so
-    /// it is a decision rather than an oversight.
+    /// PolicyInserted IS enforced as of v3.8.26, and the two-step is the whole lesson.
     ///
-    /// Enforcing it now would remove the planner path for tester and soldier while nothing inserts
-    /// them — a correct rule landing as a regression, because the replacement does not exist. The
-    /// first draft of this release did exactly that. When policy insertion ships, this test inverts
-    /// and the reasoning moves with it.
+    /// v3.8.25 deliberately left this unenforced and a test pinned the gap: nothing inserted tester
+    /// or soldier, so the rule would have removed their only path — a correct rule landing as a
+    /// regression. v3.8.26 built `InsertPolicyReviewTasks`, so the replacement exists and the rule
+    /// can bind. This assertion is the inversion that release predicted, with the reasoning moved
+    /// across rather than deleted.
     /// </summary>
     [Theory]
     [InlineData("tester", "test_execution")]
     [InlineData("soldier", "security_review")]
-    public void PolicyInsertedRoles_AreDeclaredButNotYetEnforced(string role, string taskType)
+    public void PolicyInsertedRoles_CannotBeScheduledByThePlanner(string role, string taskType)
     {
         Assert.Equal(SchedulingMode.PolicyInserted, AntExecutionCatalog.ContractFor(role)!.Scheduling);
 
         var result = AntRegistry.ValidateTask(Planned(role, taskType), NoConstraints());
 
-        // May be refused by its own rollout gate — that is not what this test is about. What must
-        // never appear is the SCHEDULING refusal, because nothing inserts these roles yet.
+        Assert.False(result.Allowed);
+    }
+
+    /// <summary>
+    /// ...and arriving with a parent — which is how policy inserts them — is not refused for the
+    /// scheduling reason. Without this the rule above would pass on a build where the roles were
+    /// simply unreachable.
+    /// </summary>
+    [Theory]
+    [InlineData("tester", "test_execution")]
+    [InlineData("soldier", "security_review")]
+    public void PolicyInsertedRoles_AreAdmittedWhenInserted(string role, string taskType)
+    {
+        var result = AntRegistry.ValidateTask(FromHandoff(role, taskType), NoConstraints());
+
         Assert.DoesNotContain("cannot be scheduled by the planner", result.Reason);
     }
 
@@ -408,3 +428,276 @@ public class SoldierReviewsThePatchTests
             throw new InvalidOperationException("nope");
     }
 }
+
+/// <summary>
+/// The archivist has a trigger. v3.8.26.
+///
+/// It had NEVER RUN — not once, in the project's history. Zero planner references, no handoff
+/// targeting it, no policy creating one. Registered, contracted, handler-complete, gated, and
+/// unreachable, with nothing reporting that because every check asked whether it was ENABLED rather
+/// than whether anything could CALL it.
+/// </summary>
+public class ArchivistTriggerTests
+{
+    /// <summary>
+    /// The structural fact that made it unreachable, pinned so it cannot silently return: no
+    /// planner-produced plan may contain an archivist, because the contract forbids it. Its only
+    /// path is the post-finalization lifecycle step.
+    /// </summary>
+    [Fact]
+    public void TheArchivist_IsNotSomethingAPlanCanContain() =>
+        Assert.Equal(SchedulingMode.PostFinalization,
+            AntExecutionCatalog.ContractFor("archivist")!.Scheduling);
+
+    /// <summary>
+    /// It refuses a mission that is still running, which is exactly why a planner-scheduled archivist
+    /// could never have worked: the planner schedules while the mission runs.
+    /// </summary>
+    [Fact]
+    public void ARunningMission_IsRefused()
+    {
+        var mission = new Mission { Goal = "do a thing", Status = MissionStatus.Running };
+        var task = new DomainTask
+        {
+            Title = "Archive", AssignedAnt = "archivist", TaskType = "mission_summary",
+            Description = "Extract durable lessons from the finished mission.",
+        };
+
+        var result = new ArchivistAnt().Execute(task, mission);
+
+        Assert.False(result.Success);
+        Assert.Contains("not terminal", result.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A TERMINAL mission with the canonical outcome handed over runs. This is the shape the Queen
+    /// builds after SaveMissionEvaluation, and the reason the outcome is passed rather than
+    /// re-derived: the point of a persisted evaluation is that nothing downstream computes its own.
+    /// </summary>
+    [Fact]
+    public void ATerminalMission_WithTheCanonicalOutcome_IsArchived()
+    {
+        var mission = new Mission { Goal = "do a thing", Status = MissionStatus.Complete };
+        mission.Tasks.Add(new DomainTask
+        {
+            Title = "Work", AssignedAnt = "researcher", TaskType = "research",
+            Status = TaskStatus.Complete, Result = "did the thing",
+        });
+
+        var task = new DomainTask
+        {
+            Title = "Archive mission lessons", AssignedAnt = "archivist", TaskType = "mission_summary",
+            Description = "Extract durable lessons from the finished mission. outcome: completed_verified",
+        };
+
+        var result = new ArchivistAnt().Execute(task, mission);
+
+        Assert.True(result.Success, result.Summary);
+    }
+
+    /// <summary>
+    /// The task type the Queen's synthetic task uses must be one the contract supports, or the
+    /// handler refuses before doing anything. Keyed to the string the PRODUCER emits — the rule this
+    /// suite adopted after the v3.8.21 verification defect.
+    /// </summary>
+    [Fact]
+    public void TheSyntheticTaskType_IsSupportedByTheContract() =>
+        Assert.True(AntExecutionCatalog.ContractFor("archivist")!.SupportsTaskType("mission_summary"));
+}
+
+/// <summary>
+/// A role is never punished for not running. Stage E, v3.8.26.
+///
+/// The line this replaces pushed a SKIPPED task's role trail down by -0.01 and swept Blocked,
+/// Cancelled and Pending into the same -0.04 as a real failure. Survivable while six of twelve roles
+/// never ran; not survivable in the release that gives all twelve a trigger, because a specialist
+/// enabled for the first time would arrive carrying negative reputation from missions it was gated
+/// out of.
+/// </summary>
+public class LearningAttributionTests
+{
+    private static DomainTask TaskWith(TaskStatus status, string? failureType = null) => new()
+    {
+        Title = "t", AssignedAnt = "tester", TaskType = "test_execution",
+        Status = status, FailureType = failureType,
+    };
+
+    /// <summary>THE headline: not running is not a failure.</summary>
+    [Theory]
+    [InlineData(TaskStatus.Skipped)]
+    [InlineData(TaskStatus.Pending)]
+    [InlineData(TaskStatus.Blocked)]
+    [InlineData(TaskStatus.Cancelled)]
+    public void ARoleThatDidNotRun_IsNeitherCreditedNorBlamed(TaskStatus status)
+    {
+        var attribution = LearningAttribution.For(TaskWith(status), missionVerified: false);
+
+        Assert.Equal(LearningAttribution.Attribution.Neutral, attribution);
+        Assert.Equal(0.0, LearningAttribution.DeltaFor(attribution));
+    }
+
+    /// <summary>Neutral is EXACTLY zero. The old -0.01 for a skipped task looked like rounding and
+    /// was a judgment.</summary>
+    [Fact]
+    public void NeutralIsExactlyZero_NotASmallNegative() =>
+        Assert.Equal(0.0, LearningAttribution.DeltaFor(LearningAttribution.Attribution.Neutral));
+
+    /// <summary>
+    /// Completed work is positive only when the mission's own verification stood behind it. A
+    /// completed task in an unverified mission is NEUTRAL: the work happened, and whether it was the
+    /// right work is exactly what verification failed to establish.
+    /// </summary>
+    [Fact]
+    public void CompletedWork_IsPositiveOnlyInAVerifiedMission()
+    {
+        Assert.Equal(LearningAttribution.Attribution.Positive,
+            LearningAttribution.For(TaskWith(TaskStatus.Complete), missionVerified: true));
+        Assert.Equal(LearningAttribution.Attribution.Neutral,
+            LearningAttribution.For(TaskWith(TaskStatus.Complete), missionVerified: false));
+    }
+
+    /// <summary>
+    /// A provider outage, a rate limit or a dependency failure is not the worker's doing. ModelRouter
+    /// and ToolRegistry already record those against the provider and the tool — charging them to the
+    /// worker too counts one fact twice, against the wrong subject.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(FailureClass.TransientProviderFailure))]
+    [InlineData(nameof(FailureClass.RateLimit))]
+    [InlineData(nameof(FailureClass.Timeout))]
+    [InlineData(nameof(FailureClass.DependencyFailure))]
+    [InlineData(nameof(FailureClass.AuthorizationFailure))]
+    public void AnEnvironmentalFailure_IsNotChargedToTheWorker(string failureType) =>
+        Assert.Equal(LearningAttribution.Attribution.Neutral,
+            LearningAttribution.For(TaskWith(TaskStatus.Failed, failureType), missionVerified: false));
+
+    /// <summary>
+    /// ...but a failure that IS the doer's remains negative. Without this the rule above would pass
+    /// on an implementation that never blamed anyone for anything.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(FailureClass.ValidationFailure))]
+    [InlineData(nameof(FailureClass.InternalDefect))]
+    [InlineData(nameof(FailureClass.VerificationFailure))]
+    public void AFailureAttributableToTheDoer_IsStillNegative(string failureType)
+    {
+        var attribution = LearningAttribution.For(TaskWith(TaskStatus.Failed, failureType), missionVerified: false);
+
+        Assert.Equal(LearningAttribution.Attribution.Negative, attribution);
+        Assert.True(LearningAttribution.DeltaFor(attribution) < 0);
+    }
+
+    /// <summary>An unclassified failure is still the doer's. Absence of a class is not evidence of
+    /// an environmental cause, and failing toward "blameless" would make every unclassified failure
+    /// invisible to learning.</summary>
+    [Fact]
+    public void AnUnclassifiedFailure_RemainsAttributable() =>
+        Assert.Equal(LearningAttribution.Attribution.Negative,
+            LearningAttribution.For(TaskWith(TaskStatus.Failed), missionVerified: false));
+
+    /// <summary>A status this function has not been taught fails toward NEUTRAL — a new status
+    /// silently defaulting to "penalise" is how a role acquires a reputation nobody decided on.</summary>
+    [Fact]
+    public void AnUnknownStatus_FailsTowardNeutral() =>
+        Assert.Equal(LearningAttribution.Attribution.Neutral,
+            LearningAttribution.For(TaskWith(TaskStatus.Running), missionVerified: true));
+
+    /// <summary>
+    /// A trail must be observed more than once before it steers planning. The first mission a
+    /// newly-enabled role appears in must not decide how the colony feels about it — which is the
+    /// specific risk of the release that gives all twelve roles a trigger.
+    /// </summary>
+    [Fact]
+    public void ATrailMustBeObservedSeveralTimes_BeforeItSteersPlanning() =>
+        Assert.True(Anthill.Core.Memory.SqliteMemory.MinObservationsToSteerPlanning >= 2,
+            "one observation is an anecdote; a trail written once sits at whatever that run produced");
+}
+
+/// <summary>
+/// One switch instead of nine. v3.8.26.
+///
+/// Turning the colony on required `specialist_ant_execution_enabled`, an activation tier and six
+/// separate `*_ant_enabled` flags. Nine unrelated keys, and getting one wrong produces a role that is
+/// silently absent — with nothing correlating them into "is the roster on".
+///
+/// Tested against the PURE resolver rather than the static projection, because the resolver is where
+/// the rule lives and the statics are just where it lands.
+/// </summary>
+public class RosterProfileTests
+{
+    private static RosterActivation NothingOn() => new(
+        SpecialistExecution: false, Tier: ActivationTier.Core,
+        Tester: false, Soldier: false, Medic: false, Archivist: false,
+        UiCartographer: false, Scribe: false,
+        HandoffIngestion: false, AdaptiveMissionControl: false);
+
+    /// <summary>
+    /// The default changes NOTHING. A profile that silently switched six roles on for every existing
+    /// installation on upgrade would be the opposite of the rollout discipline this program is built
+    /// on, and this is the assertion that keeps it opt-in.
+    /// </summary>
+    [Fact]
+    public void TheDefaultProfile_TurnsNothingOn()
+    {
+        var resolved = RosterProfiles.Resolve(RosterProfiles.Core, null, NothingOn());
+
+        Assert.Equal(NothingOn(), resolved);
+    }
+
+    /// <summary>`full` enables the whole roster AND the two things that make it collaborate.</summary>
+    [Fact]
+    public void TheFullProfile_EnablesTheWholeRoster()
+    {
+        var r = RosterProfiles.Resolve(RosterProfiles.Full, null, NothingOn());
+
+        Assert.True(r.SpecialistExecution);
+        Assert.Equal(ActivationTier.Full, r.Tier);
+        Assert.True(r.Tester && r.Soldier && r.Medic && r.Archivist && r.UiCartographer && r.Scribe);
+
+        // A tester that cannot hand off to a medic, in a mission that cannot grow the repair task
+        // the handoff asks for, is six roles that run and never collaborate.
+        Assert.True(r.HandoffIngestion);
+        Assert.True(r.AdaptiveMissionControl);
+    }
+
+    /// <summary>
+    /// The kill switch survives the profile — the rollback path. A kill switch the profile could
+    /// override would not be a kill switch.
+    /// </summary>
+    [Fact]
+    public void ADisabledRole_StaysOffUnderTheFullProfile()
+    {
+        var r = RosterProfiles.Resolve(RosterProfiles.Full, new[] { "scribe" }, NothingOn());
+
+        Assert.False(r.Scribe);
+        Assert.True(r.Tester);   // the rest are unaffected
+    }
+
+    /// <summary>
+    /// A profile only ever WIDENS. An operator who hand-enabled a role and then adopts `core` keeps
+    /// it — the profile is a floor, not a replacement, so adopting one never silently switches
+    /// something off.
+    /// </summary>
+    [Fact]
+    public void AProfileNeverNarrowsWhatTheFlagsAlreadySet()
+    {
+        var handEnabled = NothingOn() with { Tester = true, SpecialistExecution = true };
+
+        var r = RosterProfiles.Resolve(RosterProfiles.Core, null, handEnabled);
+
+        Assert.True(r.Tester);
+        Assert.True(r.SpecialistExecution);
+    }
+
+    /// <summary>
+    /// A misspelled kill switch is REPORTED, not ignored. Silently dropping it leaves an operator
+    /// believing a role is off while it runs — which is worse than the typo.
+    /// </summary>
+    [Fact]
+    public void AMisspelledDisabledRole_IsReported()
+    {
+        Assert.Contains("scribbe", RosterProfiles.UnknownDisabledRoles(new[] { "scribbe", "tester" }));
+        Assert.DoesNotContain("tester", RosterProfiles.UnknownDisabledRoles(new[] { "scribbe", "tester" }));
+    }
+}
+

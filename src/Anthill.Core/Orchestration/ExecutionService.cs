@@ -59,6 +59,14 @@ public interface IExecutionService
     /// interface because it is a genuine operation of the execution surface with its own
     /// admission rules — not merely an internal step of <see cref="Execute"/>.
     /// </summary>
+    /// <summary>
+    /// Turn an ant's declared memory candidates into durable events. v3.8.26 — on the interface
+    /// because the ARCHIVIST is no longer only reachable as a task: it runs post-finalization, from
+    /// the Queen, outside the task graph. The ingest is the same either way, and a second copy of it
+    /// beside the first is how two write paths for one fact begin.
+    /// </summary>
+    void IngestMemoryCandidatesFor(Mission mission, Task task, AntExecutionResult execution);
+
     void IngestHandoffs(Mission mission, MissionContext context, Task sourceTask,
         AntExecutionResult execution, AntRuntimeSelection runtimeSelection, TaskScheduler? scheduler);
 }
@@ -101,10 +109,56 @@ public sealed class ExecutionService : IExecutionService
     /// </summary>
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(30);
 
-    public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants)
+    /// <summary>
+    /// v3.8.26: the tool registry is optional and exists here for ONE reason — reading the per-task
+    /// dispatch count it maintains, so <c>AntMetrics.ToolCalls</c> stops being zero. Optional
+    /// because a dozen tests construct this service with no registry and none of them care about
+    /// metrics; a required dependency would have rewritten those call sites to gain a number they
+    /// do not read.
+    /// </summary>
+    public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants,
+        Tools.ToolRegistry? tools = null)
     {
         _memory = memory;
         _ants = ants;
+        _tools = tools;
+    }
+
+    private readonly Tools.ToolRegistry? _tools;
+
+    /// <summary>
+    /// Fill in the metrics the RUNTIME can measure, over whatever the ant reported.
+    ///
+    /// `AntMetrics` has existed since the execution framework with every counter at zero except
+    /// `OutputChars`, which two of twelve ants set. The metric was self-reported, and self-reporting
+    /// is why Stage F has no evidence to qualify a role on.
+    ///
+    /// These two are measured rather than asked for: elapsed time is what the executor already timed,
+    /// and the tool count is what the dispatch chokepoint already saw. The ant's own values are kept
+    /// wherever it actually supplied one — this fills gaps, it does not overwrite work.
+    /// </summary>
+    /// <param name="environmentFingerprint">Taken from the MISSION CONTEXT, not from
+    /// <c>AnthillRuntime</c>. The first draft read the static and
+    /// <c>RuntimeCompositionTests.TheMissionExecutionPath_ReadsNoMutableFeatureGate</c> rejected it —
+    /// correctly. ADR-001 requires this path to read what was resolved at intake, so a mission cannot
+    /// be described by configuration that changed while it was running. `RuntimeOptions` has carried
+    /// the fingerprint since v3.1.0; it just had to be asked.</param>
+    private AntExecutionResult WithMeasuredMetrics(AntExecutionResult execution, Task task, double elapsed,
+        string environmentFingerprint)
+    {
+        var dispatches = _tools?.TakeDispatchCount(task.Id) ?? 0;
+        var reported = execution.Metrics;
+
+        return execution with
+        {
+            Metrics = reported with
+            {
+                ToolCalls = reported.ToolCalls > 0 ? reported.ToolCalls : dispatches,
+                ElapsedSeconds = reported.ElapsedSeconds > 0 ? reported.ElapsedSeconds : elapsed,
+                RetryCount = reported.RetryCount > 0 ? reported.RetryCount : Math.Max(0, task.AttemptCount - 1),
+                EnvironmentFingerprint = reported.EnvironmentFingerprint ?? environmentFingerprint,
+            },
+        };
     }
 
     public string? Execute(Mission mission, MissionContext context, CancellationToken missionToken) =>
@@ -469,10 +523,18 @@ public sealed class ExecutionService : IExecutionService
             // legitimately discard this result (a late one, for a task no longer running) or
             // replace its text (a timeout overwrites it with a one-line reason) — and those are
             // precisely the executions whose evidence is worth having afterwards.
-            _memory.SaveTaskResult(mission.Id, task.Id, ant.Name, execution);
-
+            // v3.8.26: the timing moved ABOVE the save, so the persisted record carries the metrics
+            // the runtime measured rather than the zeros the ant did not fill in. Both lines are pure
+            // computations over taskStartedAt, so the reorder changes nothing but what is knowable at
+            // the point of writing.
             var finishedAt = AnthillTime.NowUtc();
             var elapsed = Math.Round((finishedAt - taskStartedAt).TotalSeconds, 3);
+
+            // Called EXACTLY ONCE per task: TakeDispatchCount removes the counter as it reads it, so
+            // a second call would report zero tool calls for work that made several.
+            execution = WithMeasuredMetrics(execution, task, elapsed, context.Options.EnvironmentFingerprint);
+
+            _memory.SaveTaskResult(mission.Id, task.Id, ant.Name, execution);
             lock (_executionLock)
             {
                 if (task.Status != TaskStatus.Running)
@@ -518,7 +580,7 @@ public sealed class ExecutionService : IExecutionService
                 FinalizeTaskResult(mission, task);
                 _memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
-                if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, task);
+                if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, context, task, scheduler);
                 if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
                 IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
@@ -917,7 +979,7 @@ public sealed class ExecutionService : IExecutionService
         }
     }
 
-    private void ProcessPatchProposals(Mission mission, Task task)
+    private void ProcessPatchProposals(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
     {
         if (string.IsNullOrEmpty(task.Result)) return;
         try
@@ -926,6 +988,17 @@ public sealed class ExecutionService : IExecutionService
             _memory.SavePatchSet(patchSet);
             RecordPatchArtifact(mission, task, patchSet);
             VerifyPatchSet(mission, task, patchSet);
+
+            // v3.8.26: the review roles are INSERTED here, not planned.
+            //
+            // This is the input the policy waits for. A patch set existing is the condition that
+            // makes a test run and a security review meaningful, and it is knowable from the
+            // colony's own state rather than from whether a model remembered to include the step.
+            //
+            // AFTER RecordPatchArtifact deliberately: the soldier reads the patch-set artifact
+            // (v3.8.25), so inserting its task before the artifact exists would schedule a review of
+            // something not yet written. The ordering here IS the contract between the two.
+            InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler);
             _memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
                 new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
             if (patchSet.Proposals.Count == 0)
@@ -1111,6 +1184,11 @@ public sealed class ExecutionService : IExecutionService
     /// never fed to planning, never certified here (auto_promote is recorded, not acted on).
     /// Runs only on the completion path: a blocked or failed archival produced no candidates.
     /// </summary>
+    /// <summary>The interface surface for the post-finalization archivist; the task path keeps
+    /// calling the private one, so there is exactly one implementation.</summary>
+    public void IngestMemoryCandidatesFor(Mission mission, Task task, AntExecutionResult execution) =>
+        IngestMemoryCandidates(mission, task, execution);
+
     private void IngestMemoryCandidates(Mission mission, Task task, AntExecutionResult execution)
     {
         var candidates = Outcomes.MemoryCandidateIngest.Extract(execution);
@@ -1251,6 +1329,82 @@ public sealed class ExecutionService : IExecutionService
     ///
     /// Returns null when admitted, or the refusal reason.
     /// </summary>
+    /// <summary>
+    /// Insert the review roles whenever their input exists. v3.8.26 — the last Stage B item.
+    ///
+    /// `SchedulingMode.PolicyInserted` was declared in v3.8.23 and left UNENFORCED in v3.8.25,
+    /// deliberately: nothing inserted these roles, so blocking the planner from scheduling them
+    /// would have removed their only path. This is the replacement, and enforcing the rule now
+    /// removes nothing.
+    ///
+    /// What "policy" means here is deliberately small. It is not a model, not a heuristic, and not a
+    /// plan — it is the observation that a patch set now exists, which is exactly the condition under
+    /// which a test run and a security review have something to say. A plan that omits the tester is
+    /// not a plan that skipped a step; it is a plan whose patches are unverified, produced by the
+    /// component least able to be relied on for that.
+    ///
+    /// Each inserted task carries the coder task as its PARENT, which is what lets it past the
+    /// scheduling rule in `AntRegistry.ValidateTask` — the same discriminator handoffs use, for the
+    /// same reason: this task was caused by something that happened, not scheduled speculatively.
+    /// </summary>
+    private void InsertPolicyReviewTasks(Mission mission, MissionContext context, Task coderTask,
+        PatchSet patchSet, TaskScheduler? scheduler)
+    {
+        if (patchSet.Proposals.Count == 0) return;
+
+        foreach (var role in new[] { "tester", "soldier" })
+        {
+            // A role whose gate is closed is SKIPPED and SAID SO. Silently not inserting it would
+            // make "the review did not run" indistinguishable from "the review found nothing",
+            // which is the confusion this whole program exists to remove.
+            if (!AntExecutorCatalog.RuntimeAvailable(role))
+            {
+                _memory.LogEvent(mission.Id, "policy_review_skipped",
+                    $"{role} review not inserted for patch set {patchSet.Id}: "
+                    + AntExecutorCatalog.Snapshot.GetValueOrDefault(role)?.UnavailabilityReason,
+                    coderTask.Id, "queen",
+                    new() { ["role"] = role, ["patch_set_id"] = patchSet.Id, ["inserted"] = false });
+                continue;
+            }
+
+            // One review per role per patch set. Without this an autonomous objective re-proposing
+            // the same change stacks a review task on every run — the same failure the approval
+            // pipeline already dedupes against.
+            var marker = $"policy-review:{role}:{patchSet.Id}";
+            if (mission.Tasks.Any(t => t.Description.Contains(marker, StringComparison.Ordinal))) continue;
+
+            var created = new Task
+            {
+                Title = role == "tester" ? "Run checks on the proposed change" : "Security review of the proposed change",
+                Description = role == "tester"
+                    ? $"Run the workspace's declared checks against patch set {patchSet.Id}. [{marker}]"
+                    : $"Review patch set {patchSet.Id} for secrets, forbidden paths, permission expansion and scope. [{marker}]",
+                AssignedAnt = role,
+                TaskType = role == "tester" ? "test_execution" : "security_review",
+                ParentTaskIds = new List<string> { coderTask.Id },
+                DependsOn = new List<string> { coderTask.Id },
+                // CRITICAL. A failed safety review must be able to stop the mission reaching a
+                // verified outcome — MissionEvaluator disqualifies on a failed critical task.
+                Critical = true,
+            };
+
+            if (TryAdmitDynamicTask(mission, scheduler, created, context.Constraints) is { Length: > 0 } refusal)
+            {
+                _memory.LogEvent(mission.Id, "policy_review_refused",
+                    $"{role} review could not be inserted for patch set {patchSet.Id}: {refusal}",
+                    coderTask.Id, "queen",
+                    new() { ["role"] = role, ["patch_set_id"] = patchSet.Id, ["reason"] = refusal });
+                continue;
+            }
+
+            _memory.LogEvent(mission.Id, "policy_review_inserted",
+                $"{role} review inserted for patch set {patchSet.Id} — by policy, not by the plan.",
+                created.Id, role,
+                new() { ["role"] = role, ["patch_set_id"] = patchSet.Id, ["source_task_id"] = coderTask.Id });
+            Console.WriteLine($"Policy inserted {role} review for patch set {patchSet.Id}.");
+        }
+    }
+
     private string? TryAdmitDynamicTask(Mission mission, TaskScheduler? scheduler, Task created,
         MissionConstraints constraints)
     {

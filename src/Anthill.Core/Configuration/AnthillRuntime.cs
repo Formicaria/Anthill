@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "3.8.25";
+    public const string Version = "3.8.26";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -257,6 +257,13 @@ public static class AnthillRuntime
     public static int ReadinessMinShadowSample = 10;
     public static double ReadinessMinDiagnosisPrecision = 0.8;
     public static double ReadinessMinActionAccuracy = 0.8;
+    /// <summary>The resolved roster profile name — `core` (default) or `full`. v3.8.26.</summary>
+    public static string RosterProfile = "core";
+
+    /// <summary>Roles switched off explicitly, whatever the profile says. The rollback path.</summary>
+    public static IReadOnlySet<string> DisabledRoles =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
     public static bool EnableMedicAnt = false;
@@ -679,10 +686,51 @@ public static class AnthillRuntime
         EnableSoldierAnt = config.SoldierAntEnabled;
         EnableMedicAnt = config.MedicAntEnabled;
         EnableArchivistAnt = config.ArchivistAntEnabled;
+
         EnableHandoffIngestion = config.HandoffIngestionEnabled;
         EnableAdaptiveMissionControl = config.AdaptiveMissionControlEnabled;
         EnableUiCartographerAnt = config.UiCartographerAntEnabled;
         EnableScribeAnt = config.ScribeAntEnabled;
+
+        // v3.8.26 — the roster profile, resolved by a PURE FUNCTION over the flags just read.
+        //
+        // Its signature is what keeps it correct. The first version of this was inline here and sat
+        // thirty lines higher, before ui_cartographer, scribe, handoff ingestion and adaptive control
+        // were assigned — so it set them true and the config assignments set them straight back to
+        // false. Third occurrence this release cycle of a derived value computed before its inputs
+        // arrived (RuntimeProfile v3.8.16, CapabilityGrant v3.8.25, this). RosterProfiles.Resolve
+        // TAKES the flags, so it cannot be called before they exist.
+        RosterProfile = (config.RosterProfile ?? RosterProfiles.Core).Trim().ToLowerInvariant();
+        DisabledRoles = new HashSet<string>(
+            config.DisabledRoles ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var unknown in RosterProfiles.UnknownDisabledRoles(config.DisabledRoles))
+            Console.Error.WriteLine(
+                $"[roster] disabled_roles names '{unknown}', which is not a switchable role — "
+                + "check the spelling; a role you believe is off is running.");
+
+        var roster = RosterProfiles.Resolve(RosterProfile, config.DisabledRoles, new RosterActivation(
+            SpecialistExecution: EnableSpecialistAntExecution,
+            Tier: ActivationTier,
+            Tester: EnableTesterAnt,
+            Soldier: EnableSoldierAnt,
+            Medic: EnableMedicAnt,
+            Archivist: EnableArchivistAnt,
+            UiCartographer: EnableUiCartographerAnt,
+            Scribe: EnableScribeAnt,
+            HandoffIngestion: EnableHandoffIngestion,
+            AdaptiveMissionControl: EnableAdaptiveMissionControl));
+
+        EnableSpecialistAntExecution = roster.SpecialistExecution;
+        ActivationTier = roster.Tier;
+        EnableTesterAnt = roster.Tester;
+        EnableSoldierAnt = roster.Soldier;
+        EnableMedicAnt = roster.Medic;
+        EnableArchivistAnt = roster.Archivist;
+        EnableUiCartographerAnt = roster.UiCartographer;
+        EnableScribeAnt = roster.Scribe;
+        EnableHandoffIngestion = roster.HandoffIngestion;
+        EnableAdaptiveMissionControl = roster.AdaptiveMissionControl;
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
         HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
         HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();

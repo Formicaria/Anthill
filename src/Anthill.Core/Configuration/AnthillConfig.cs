@@ -94,6 +94,35 @@ public sealed class AnthillConfig
     /// </summary>
     [JsonPropertyName("answer_synthesis_enabled")] public bool AnswerSynthesisEnabled { get; set; } = true;
     [JsonPropertyName("sandbox_execution_enabled")] public bool SandboxExecutionEnabled { get; set; } = false;
+    /// <summary>
+    /// The roster profile: one switch instead of nine. v3.8.26.
+    ///
+    /// Turning the colony on required setting `specialist_ant_execution_enabled`, an activation
+    /// tier, and six separate `*_ant_enabled` flags — nine unrelated keys an operator had to know
+    /// about and get consistent. Getting one wrong produces a role that is silently absent, and
+    /// nothing correlated the nine into "is the roster on".
+    ///
+    /// <c>"core"</c> (default) is exactly today's behaviour: no specialist runs unless its own flag
+    /// says so. <c>"full"</c> enables all six and raises the tier, and is the intended way to run a
+    /// qualified colony.
+    ///
+    /// The default does NOT change. A profile that silently switched six roles on for every existing
+    /// installation on upgrade would be the opposite of the rollout discipline this whole program is
+    /// built on.
+    /// </summary>
+    [JsonPropertyName("roster_profile")] public string RosterProfile { get; set; } = "core";
+
+    /// <summary>
+    /// Per-role kill switches that survive the profile. v3.8.26.
+    ///
+    /// `roster_profile: "full"` with `disabled_roles: ["scribe"]` means "everything except the
+    /// scribe" — the rollback path when one role misbehaves, without abandoning the profile and
+    /// hand-setting the other five. Named explicitly rather than inferred from an unset boolean,
+    /// because JSON cannot distinguish "false" from "absent" and a rollback that depends on that
+    /// distinction is a rollback that fails when someone tidies the config.
+    /// </summary>
+    [JsonPropertyName("disabled_roles")] public string[] DisabledRoles { get; set; } = Array.Empty<string>();
+
     [JsonPropertyName("specialist_ant_execution_enabled")] public bool SpecialistAntExecutionEnabled { get; set; } = false;
     [JsonPropertyName("tester_ant_enabled")] public bool TesterAntEnabled { get; set; } = false;
     [JsonPropertyName("soldier_ant_enabled")] public bool SoldierAntEnabled { get; set; } = false;

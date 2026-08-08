@@ -116,19 +116,19 @@ public static class AntRegistry
         // ever refuse, consuming a dispatch and a model call to say so. The archivist is the mirror:
         // it summarises a TERMINAL mission and the planner schedules it while tasks are still
         // running, so a planned archivist reads a mission that has not happened yet.
-        // ENFORCED FOR TWO MODES, NOT ALL THREE, and the omission is deliberate.
+        // ENFORCED FOR ALL THREE NON-PLANNER MODES as of v3.8.26, and the two-step is the point.
         //
-        // FailureTriggered and PostFinalization are enforced because planned scheduling of those
-        // roles is actively BROKEN today: both handlers refuse a planned invocation, so the planner
-        // can only ever produce a task that declines. Blocking it removes nothing that worked.
+        // v3.8.25 enforced FailureTriggered and PostFinalization only, because planned scheduling of
+        // those roles was already broken — both handlers refuse a planned invocation, so blocking it
+        // removed nothing that worked. PolicyInserted was deliberately left alone: nothing inserted
+        // tester or soldier, so the rule would have removed their only path. A correct rule landing
+        // as a regression.
         //
-        // PolicyInserted — tester and soldier — is NOT enforced yet, because nothing inserts them.
-        // The policy insertion is the next release; enforcing the rule first would remove the only
-        // path those roles have while their replacement does not exist, which is how a correct rule
-        // lands as a regression. They are declared PolicyInserted and remain plannable until the
-        // thing that inserts them is real.
+        // v3.8.26 built the insertion (`ExecutionService.InsertPolicyReviewTasks`, triggered by a
+        // patch set existing), so the replacement is real and the rule can bind. The order matters
+        // more than the rule: the path had to exist before the old one could be closed.
         if (AntExecutionCatalog.ContractFor(role.RoleId) is { } contract
-            && contract.Scheduling is SchedulingMode.FailureTriggered or SchedulingMode.PostFinalization
+            && contract.Scheduling != SchedulingMode.PlannerSelectable
             && (task.ParentTaskIds is null || task.ParentTaskIds.Count == 0))
             return new(false,
                 $"Ant role '{task.AssignedAnt}' is {contract.Scheduling} and cannot be scheduled by the " +

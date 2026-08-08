@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.25**.
+**The single forward-looking document.** Shipping release: **v3.8.26**.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
@@ -38,7 +38,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.25)
+## 2. Where the colony actually is (measured at v3.8.26)
 
 ### Working end to end
 
@@ -59,13 +59,12 @@ It is not close, and the gap is not model quality — it is that roles still han
 | Gap | Why it matters |
 |---|---|
 | **Roles pass PROSE, not artifacts** | `Task.Result` is `string?`. The artifact store has producers but is not the interchange. Everything downstream that "learns" learns from prose |
-| **`SchedulingMode` is honoured for two modes of three** | v3.8.25 enforces FailureTriggered and PostFinalization. `PolicyInserted` waits on the insertion itself |
-| **Nothing INSERTS tester/soldier/verifier** | They are declared `PolicyInserted` and the rule is deliberately unenforced until something inserts them — otherwise a correct rule removes the only path they have |
+| **The verifier is still planner-selectable** | Tester and soldier are inserted by policy as of v3.8.26; the verifier is not, because it is how verification currently happens at all |
 | **The verifier asks a model** | It emits a verdict string that `MissionVerification` parses. The one place model output still reaches a verification decision. Bounded by the deterministic-evidence rule, not closed |
-| **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe |
-| **No worker reputation** | The `workers` table has six columns and none is a score |
+| **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe. All six now have a real trigger; `/colony` reports per-role readiness and the first binding blocked reason |
+| **No worker reputation** | The `workers` table has six columns and none is a score. Trails are attributed correctly as of v3.8.26, but they are trails, not a score |
 | **Pheromone vocabulary is a free string** | `trail_type` is untyped; no SUCCESS/FAST_PATH/UNSTABLE vocabulary |
-| **Most `AntMetrics` counters are zero** | Nothing feeds them, so "the role is working" is unmeasurable |
+| **`AntMetrics` partly fed** | ToolCalls, ElapsedSeconds, RetryCount and the environment fingerprint are measured at the chokepoints as of v3.8.26. ModelCalls and InputChars still zero |
 | **9 `/events/json` pollers remain in `app.js`** | The event stream exists; the console has not fully moved onto it |
 | **166 public statics on `AnthillRuntime`** | Configuration is not standardised |
 
@@ -101,12 +100,12 @@ Canonical MissionEvaluation ──► Archivist ──► MemoryCandidate + pher
 
 ### 3.1 Scheduling modes
 
-Declared on the contract as of v3.8.23. **Not yet honoured by the scheduler** — that is stage B.
+Declared on the contract (v3.8.23) and ENFORCED for all three non-planner modes (v3.8.25–v3.8.26).
 
 | Mode | Roles |
 |---|---|
 | Planner-selectable | researcher, web, file, ui_cartographer, coder, builder, scribe |
-| Inserted by policy | tester, soldier, verifier |
+| Inserted by policy | tester, soldier — inserted when a patch set exists (v3.8.26). The verifier is still planner-selectable |
 | Triggered by retryable failure | medic |
 | Triggered after finalization | archivist |
 
@@ -118,20 +117,20 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.25 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.26 |
 |---|---|---|---|---|
 | **Researcher** | Planner, near intake | `system_info`, `list_directory` | `context_brief` | Emits prose (`text`). Target adds `repository_index`, `search_workspace` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
 | **File** | Planner | `list_directory`, `read_text_file` | `file_set` | Done. Target adds `repository_index`, `search_workspace` |
 | **UI Cartographer** | Policy, before Coder on UI work | 4 read tools | `ui_map` | Uses hard-coded Anthill paths; must generalise. Not yet mandatory before Coder |
 | **Coder** | Planner | **none, deliberately** | `patch_set` | Consumes prose, not typed context. PatchSet carries content but no workspace revision link |
-| **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Defaults to `dotnet_build`; needs manifest-driven check selection, Node/Python adapters, cancellation |
-| **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Reads the real PatchSet as of v3.8.25. Still needs policy INSERTION rather than planner scheduling |
+| **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Inserted by policy as of v3.8.26. Still defaults to `dotnet_build`; needs manifest-driven check selection, Node/Python adapters, cancellation |
+| **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Done as of v3.8.26 — reads the real PatchSet, inserted by policy |
 | **Verifier** | Policy, after evidence exists | none | `verification_bundle` | **Asks a model.** Target is a deterministic reader of the evidence store |
 | **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | `failure_context` artifact does not exist; reads in-memory mission state |
 | **Builder** | Planner, after verification | none | `operator_summary` | Emits prose |
 | **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_draft` | Does not actually call its tool |
-| **Archivist** | After canonical evaluation persists | none | `memory_candidate` | Currently planner-scheduled, so it runs while the mission is still running |
+| **Archivist** | After canonical evaluation persists | none | `memory_candidate` | Reachable as of v3.8.26 — runs post-finalization, outside the task graph. Had NEVER run before |
 
 **A role with no tool calls is not inactive.** Coder, Soldier, Verifier, Medic, Builder and Archivist
 can be fully functional through typed inputs, deterministic services, structured outputs and
@@ -150,7 +149,7 @@ Each stage is a release. The order is a dependency order, not a preference.
 All twelve contracted; `SchedulingMode` declared; phantom tools removed; patches verified in a tree
 that contains them.
 
-### Stage B — the roster becomes consequential ◐ PARTLY DONE (v3.8.25)
+### Stage B — the roster becomes consequential ✅ DONE (v3.8.25–v3.8.26)
 
 Done: handoffs ingested on terminal failure; a refused REQUIRED handoff sets `DeterministicBlock`;
 `ToolExecutionContext` has a production call site fed by `CapabilityGrant`; `SchedulingMode` enforced
@@ -160,7 +159,12 @@ Also done: the soldier reviews the actual PatchSet — the patch-set artifact ca
 Colony visibility and the review reads it, so a secret in proposed source is found rather than
 scanned for in prose about it.
 
-Left: policy INSERTION of tester/soldier/verifier, and then enforcing `PolicyInserted`.
+v3.8.26 closed it: `InsertPolicyReviewTasks` inserts tester and soldier whenever a patch set exists,
+`PolicyInserted` is enforced now that the replacement path is real, and `/colony` reports per-role
+readiness with the first binding blocked reason.
+
+The verifier stays planner-selectable, deliberately — it is how verification happens at all today,
+and moving it to policy insertion belongs with making it a deterministic evidence reader (Stage D).
 
 1. **Honour `SchedulingMode`.** Policy inserts tester/soldier/verifier whenever their inputs exist.
    Medic fires from a typed retryable failure with a strict repair budget. Archivist runs after the
@@ -193,7 +197,7 @@ Tester manifest-driven with multi-runtime adapters and cancellation; Medic consu
 `failure_context` with one bounded repair then mandatory retest; Scribe actually calling its tool and
 drafting only from verified artifacts; Archivist running post-finalization.
 
-### Stage E — outcome-gated learning ◻
+### Stage E — outcome-gated learning ◐ PARTLY DONE (v3.8.26)
 
 Pheromones recorded **only after** the canonical outcome persists.
 
@@ -205,7 +209,7 @@ Pheromones recorded **only after** the canonical outcome persists.
 | Soldier correctly blocks a dangerous patch | Positive Soldier; negative patch/route |
 | Medic's repair passes mandatory retest | Positive Medic recovery trail |
 | `completed_unverified` | Store the episode; no positive reinforcement |
-| Disabled / skipped / cancelled / missing dependency | **Neutral.** A role is never punished for not running |
+| Disabled / skipped / cancelled / missing dependency | **Neutral.** A role is never punished for not running — `LearningAttribution`, v3.8.26 |
 | Provider failure | Update provider reliability, not worker skill |
 | Tool failure from the environment | Update tool/environment reliability, not worker skill |
 
@@ -225,6 +229,8 @@ present, tools implemented and registered, capabilities granted, model fitness, 
 and the exact blocked reason. `RoleAvailability` already carries part of this.
 
 Then a coherent profile rather than several unrelated flags:
+
+Shipped in v3.8.26 as `roster_profile` + `disabled_roles`; the shape below was the target:
 
 ```json
 {
@@ -266,7 +272,7 @@ Non-negotiable. The colony is not a twelve-role colony until all of these pass.
 9. ◻ Archivist runs only after the persisted canonical evaluation exists
 10. ◻ Replaying artifact IDs reconstructs every role's inputs and evidence
 11. ✅ No mission ant can dispatch shell, direct file-write, or primary-workspace patch tools *(pinned by `RosterContractTests`)*
-12. ◻ Disabled or unavailable roles never receive negative reputation for not running
+12. ✅ Disabled or unavailable roles never receive negative reputation for not running *(v3.8.26)*
 
 ---
 
