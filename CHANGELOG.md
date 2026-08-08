@@ -1,5 +1,60 @@
 # ANTHILL Changelog
 
+## v3.8.29 - artifacts reach the roles, and the roster qualifies
+
+Stages C, E and F. The plan's oldest gap closes.
+
+**Roles received PROSE.** `Task.Result` is a `string?`, so the context packet handed to a worker was
+built from other workers' narrative summaries — and the coder, the one role that produces source
+changes, worked from a description of what the file and cartographer ants found rather than from what
+they found. The artifact store has held the typed record since v3.8.20: `file_set` with the paths
+actually read, `source_set` with the sources actually consulted, `ui_map`, `patch_set` with real
+content, `workspace_snapshot`, `verification_bundle`. All queryable, none of it reaching the roles
+that would use it.
+
+`ArtifactContext` compiles it into the packet, and the coder, builder and verifier now receive it.
+Artifact IDs travel with the excerpts, which is what makes "a replay can reconstruct every worker's
+inputs from artifact IDs" answerable rather than aspirational.
+
+ADDITIVE, deliberately. The prose stays — it is what a model reads best, and replacing a working
+channel with an unproven one in a single step is how a migration becomes an outage. The typed record
+travels ALONGSIDE it. Two things the block does that the prose never did: it is budgeted separately,
+because sharing one cap would let a long mission's narrative crowd out the structured record — the
+exact arrangement this stage exists to end, reproduced one level down. And it SAYS when it truncated,
+because a worker cannot otherwise distinguish "there was no patch set" from "the patch set did not
+fit", and those lead to different work.
+
+**`trail_type` was a free string.** Twelve distinct values in use and nothing declaring them, so a
+typo created a new trail category silently and no reader could tell whether `tool` and
+`external_research_tool` were the same kind of claim. `TrailKind` names them and, more usefully,
+partitions them: `Reputation` (role, worker) versus `Environmental` (tool, capability, source domain).
+A failing tool and a failing worker are different facts with different remedies, and they had been
+sharing a column — the same boundary `LearningAttribution` enforces on the write side, now expressed
+as data.
+
+**Worker reputation is DERIVED, not stored.** The plan has asked for a score since it was written, and
+the obvious move is a seventh column on `workers`. That would be a second source of truth drifting
+from the trails it was computed from. The trails are already durable, already decayed toward neutral,
+already attributed correctly — so `ReputationOf` computes on read and there is exactly one place the
+answer lives. An unseen subject is NEUTRAL and explicitly not established: "we have never seen this
+role work" and "this role works badly" are different facts, and conflating them is how a specialist
+enabled for the first time would be routed away from before it ran once.
+
+**Stage F: the full-roster qualification fixture.** The plan's requirement is precise — CI must
+require all twelve to report Ready under the fixture. Not that the default flips. `roster_profile`
+stays `core`, and a test asserts it: qualification proves the roster CAN run, it does not decide that
+it should, and switching six roles on for every existing installation on upgrade would invert the
+rollout discipline the whole program rests on.
+
+The fixture resolves the roster as `ProjectConfig` does, then asks each role what `/colony` reports —
+handler, contract, tools registered, capabilities grantable, and that `full` never grants
+`apply_patch`, `write_text_file` or `shell_command` to a mission agent. All twelve pass.
+
+It is deliberately NOT a live mission. A test running twelve roles against a real model would be
+slow, non-deterministic, dependent on a provider being up, and disabled within a month. What it
+proves is that nothing STRUCTURAL stops the roster — the half a test can honestly own. The other half
+is a real run with `roster_profile: "full"`, and that belongs to the operator.
+
 ## v3.8.28 - three roles stop being repository-specific
 
 Stage D graduation for the tester, the cartographer and the scribe. Each was declared complete and
