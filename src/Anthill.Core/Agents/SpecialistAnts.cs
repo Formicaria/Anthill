@@ -182,7 +182,18 @@ public sealed class TesterAnt : BaseAnt
 /// </summary>
 public sealed class SoldierAnt : BaseAnt
 {
-    public SoldierAnt() : base("soldier") { }
+    private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+
+    /// <summary>
+    /// v3.8.25: the artifact store, so the review can read the PATCH rather than prose about it.
+    ///
+    /// Optional, and that is not laziness. Dozens of tests and the CLI construct a soldier with no
+    /// store, and in that configuration it behaves exactly as it did before — prose review, same
+    /// deterministic rules. A required dependency would have made this release a rewrite of every
+    /// call site to gain a capability none of them use.
+    /// </summary>
+    public SoldierAnt(Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("soldier") =>
+        _artifacts = artifacts;
 
     /// <summary>
     /// The warning that means "a deterministic policy rule said no". v3.8.22. Named here and read by
@@ -191,6 +202,36 @@ public sealed class SoldierAnt : BaseAnt
     /// block by parsing prose a model may have written.
     /// </summary>
     public const string SoldierBlockMarker = "deterministic_block";
+
+    /// <summary>
+    /// The mission's patch-set artifacts, as review material. v3.8.25.
+    ///
+    /// Returns EMPTY when there is no store, no patch set, or the read faults — and empty means the
+    /// review proceeds on prose alone, exactly as it did before. Deliberately not a block: a security
+    /// review that refuses to run because it could not load an artifact is a review that stops
+    /// happening the first time the store hiccups, and the deterministic rules it does apply to the
+    /// description are worth more than nothing.
+    ///
+    /// What it does NOT do is claim to have reviewed the patch when it did not. The review text
+    /// records how many patch artifacts were read, so "0 patch artifacts" is visible to an operator
+    /// rather than being indistinguishable from a clean scan of a real one.
+    /// </summary>
+    private (string Material, int Count) ReadPatchSetArtifacts(Mission mission)
+    {
+        if (_artifacts is null) return ("", 0);
+        try
+        {
+            var patches = _artifacts.ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet);
+            return patches.Count == 0
+                ? ("", 0)
+                : (string.Join("\n", patches.Select(p => p.Payload)), patches.Count);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[soldier] could not read patch artifacts for {mission.Id}: {error.Message}");
+            return ("", 0);
+        }
+    }
 
     /// <summary>
     /// v2.19.0: migrated to the structured contract. Note the deliberate distinction preserved
@@ -207,8 +248,23 @@ public sealed class SoldierAnt : BaseAnt
             return AntExecutionResult.Blocked(
                 $"task type '{task.TaskType}' is outside the soldier execution contract");
 
+        // v3.8.25 — THE REVIEW READS THE PATCH.
+        //
+        // Until this release the soldier's entire input was the task description plus every prior
+        // task's RESULT PROSE. It was reviewing descriptions of a change, and a policy engine that
+        // scans a description cannot find a secret in the change: the `secret_material` rule looks
+        // for `-----BEGIN PRIVATE KEY-----` and `api_key = "…"` in source, and source was the one
+        // thing it never saw. Every rule about paths and content was matching a summary.
+        //
+        // The prose is KEPT and the patch is ADDED, rather than swapped. The description carries the
+        // approved_scope declaration that ScopeMismatch parses, and prior results carry context a
+        // patch body does not. Replacing one input with the other would have traded one blind spot
+        // for a different one.
+        var (patchMaterial, patchArtifactCount) = ReadPatchSetArtifacts(mission);
+
         var input = task.Description + "\n" + string.Join("\n",
-            mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null).Select(t => t.Result));
+            mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null).Select(t => t.Result))
+            + (patchMaterial.Length > 0 ? "\n" + patchMaterial : "");
 
         var findings = PolicyScan.Scan(input);
         var scope = PolicyScan.ScopeMismatch(input);
@@ -219,6 +275,9 @@ public sealed class SoldierAnt : BaseAnt
         var review =
             $"risk_level: {risk}\n" +
             $"blocked: {blocked.Count > 0}\n" +
+            // v3.8.25: what was ACTUALLY reviewed. Zero means the scan saw prose only, which must
+            // never be mistaken for a clean scan of a real patch.
+            $"patch_artifacts_reviewed: {patchArtifactCount}\n" +
             "matched_rules:\n" + (findings.Count == 0 ? "  (none)\n" : string.Join("\n", findings.Select(f => $"  - [{f.Risk}]{(f.Blocking ? " BLOCKING" : "")} {f.RuleId}: {f.Detail}")) + "\n") +
             $"required_approvals: {(blocked.Count > 0 ? "operator review required before any apply" : "standard patch approval")}\n" +
             $"recommended_next: {(blocked.Count > 0 ? "route to operator via builder; do NOT proceed" : "proceed to verifier")}";

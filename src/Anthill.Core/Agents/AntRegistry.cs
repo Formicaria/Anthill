@@ -100,6 +100,39 @@ public static class AntRegistry
             return new(false, $"Ant role is disabled: {task.AssignedAnt}");
         if (!role.Executable && !AntExecutorCatalog.SpecialistGateOpen(role.RoleId))
             return new(false, $"Ant role is visible-only in this revision: {task.AssignedAnt}");
+
+        // v3.8.25 — SchedulingMode becomes binding. v3.8.23 declared it on every contract and
+        // nothing read it, so the declaration was documentation with a type.
+        //
+        // The discriminator is ParentTaskIds. A task the PLANNER produced has no parent; a task that
+        // arrived through a handoff or the adaptive repair path carries the task that caused it. So
+        // "was this scheduled speculatively, or in response to something that actually happened" is
+        // answerable from the task itself, without the planner and the gate having to agree about a
+        // flag neither owns.
+        //
+        // The medic is why this matters. MedicAnt.Execute opens by returning Blocked when no task
+        // has failed — a handler defending itself against a scheduler that should never have called
+        // it. A planner that includes a diagnosis step "just in case" produces a task that can only
+        // ever refuse, consuming a dispatch and a model call to say so. The archivist is the mirror:
+        // it summarises a TERMINAL mission and the planner schedules it while tasks are still
+        // running, so a planned archivist reads a mission that has not happened yet.
+        // ENFORCED FOR TWO MODES, NOT ALL THREE, and the omission is deliberate.
+        //
+        // FailureTriggered and PostFinalization are enforced because planned scheduling of those
+        // roles is actively BROKEN today: both handlers refuse a planned invocation, so the planner
+        // can only ever produce a task that declines. Blocking it removes nothing that worked.
+        //
+        // PolicyInserted — tester and soldier — is NOT enforced yet, because nothing inserts them.
+        // The policy insertion is the next release; enforcing the rule first would remove the only
+        // path those roles have while their replacement does not exist, which is how a correct rule
+        // lands as a regression. They are declared PolicyInserted and remain plannable until the
+        // thing that inserts them is real.
+        if (AntExecutionCatalog.ContractFor(role.RoleId) is { } contract
+            && contract.Scheduling is SchedulingMode.FailureTriggered or SchedulingMode.PostFinalization
+            && (task.ParentTaskIds is null || task.ParentTaskIds.Count == 0))
+            return new(false,
+                $"Ant role '{task.AssignedAnt}' is {contract.Scheduling} and cannot be scheduled by the " +
+                "planner — it runs in response to a trigger, not as a planned step.");
         if (string.IsNullOrWhiteSpace(task.AssignedWorker))
             task.AssignedWorker = DefaultWorkerFor(task.AssignedAnt, task.TaskType, task.Description)?.WorkerId;
         if (!string.IsNullOrWhiteSpace(task.AssignedWorker))

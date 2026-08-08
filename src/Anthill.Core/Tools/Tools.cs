@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Anthill.Core.Agents;   // v3.8.25: AntExecutionCatalog, for the capability-aware dispatch check
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
@@ -26,6 +27,25 @@ public sealed class ToolRegistry
     private readonly SqliteMemory _memory;
 
     public ToolRegistry(SqliteMemory memory) => _memory = memory;
+
+    /// <summary>
+    /// What this run can provide, resolved once by the composition root after every tool is
+    /// registered. v3.8.25.
+    ///
+    /// Null until set, and that is deliberate rather than an oversight: a registry nobody has told
+    /// what the run provides falls back to the ant-name path, which is exactly what every caller
+    /// outside <c>Queen</c> — the CLI's direct registries, the API's projections, a hundred tests —
+    /// has always used. Making the capability check conditional on being told is what lets this land
+    /// without every one of those call sites having to answer a question they have no way to answer.
+    /// </summary>
+    public IReadOnlySet<string>? GrantedCapabilities { get; private set; }
+
+    /// <summary>
+    /// Called by the composition root once the registry is complete. AFTER registration, never
+    /// during: the grant is derived from which tools actually arrived, and resolving it early would
+    /// describe a colony with fewer capabilities than the one that runs.
+    /// </summary>
+    public void GrantCapabilities(IReadOnlySet<string> granted) => GrantedCapabilities = granted;
 
     public void Register(ITool tool) => _tools[tool.Name] = tool;
 
@@ -80,7 +100,56 @@ public sealed class ToolRegistry
         // Execution framework Stage B: enforce the caller's declared boundary BEFORE the tool runs.
         // A denial is a structured failure with an audit event and zero side effects; spoofing an
         // unknown ant name is refused outright.
+        // v3.8.25 — ToolExecutionContext gets its first production call site.
+        //
+        // It has been in the tree since the execution framework was written, capability-aware and
+        // tested, and NOTHING built one: GrantedCapabilities had no source, so there was no way to
+        // construct a context truthfully. CapabilityGrant is that source, resolved by the Queen from
+        // what it actually composed.
+        //
+        // The full context is used whenever the run has told this registry what it provides, and the
+        // ant-name path remains for every registry that has not been told — the CLI, the API's
+        // projections, tests. Both paths re-check the same structural prohibitions; the context path
+        // additionally verifies that the role's REQUIRED capabilities are ones this colony can
+        // actually supply, which is the half that has never run.
+        // LAYERED, not substituted. The first draft of this replaced the name-based call with the
+        // context one and would have broken operator-defined tools: Evaluate(antName, …) consults
+        // UserToolGrants BEFORE the built-in tables, because a tool that did not exist at compile
+        // time is absent from every closed list — and the context overload has no such step, so
+        // every user-defined tool would have been denied as "not allowlisted for role". Running the
+        // established check first and the capability check second adds the missing gate without
+        // moving any existing one.
         var decision = ToolAuthorization.Evaluate(antName, name);
+
+        // Operator-defined tools are excluded from the context layer, and this is the second half of
+        // the same lesson. Their whole design is that a definition WIDENS what a role may call
+        // beyond the compiled allowlist — so evaluating one against `contract.AllowedTools` would
+        // deny every user tool that the name path had just correctly permitted. The structural
+        // prohibitions still applied to them above: a definition can never name apply_patch, and can
+        // never claim a tool its role's contract forbids.
+        var isUserDefined = UserToolGrants.TryGet(name, out _);
+
+        if (decision.Allowed
+            && !isUserDefined
+            && GrantedCapabilities is { } granted
+            && !string.IsNullOrWhiteSpace(antName)
+            && AntExecutionCatalog.ContractFor(antName.Trim()) is { } contract)
+        {
+            decision = ToolAuthorization.Evaluate(
+                new ToolExecutionContext(
+                    MissionId: missionId ?? "",
+                    TaskId: taskId ?? "",
+                    RoleId: antName.Trim(),
+                    // The worker that actually ran it. Today a role dispatches under its own name;
+                    // when workers become distinct identities this is the field that carries them,
+                    // and recording the role twice is more honest than inventing an id.
+                    WorkerId: antName.Trim(),
+                    GrantedCapabilities: granted,
+                    AllowedTools: contract.AllowedTools,
+                    ForbiddenTools: contract.ForbiddenTools),
+                name);
+        }
+
         if (!decision.Allowed)
         {
             // The class carries the denial now; the `authorization_denied:` prefix stays only as

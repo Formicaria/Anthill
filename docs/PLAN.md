@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.24**.
+**The single forward-looking document.** Shipping release: **v3.8.25**.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
@@ -38,7 +38,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.24)
+## 2. Where the colony actually is (measured at v3.8.25)
 
 ### Working end to end
 
@@ -59,10 +59,8 @@ It is not close, and the gap is not model quality — it is that roles still han
 | Gap | Why it matters |
 |---|---|
 | **Roles pass PROSE, not artifacts** | `Task.Result` is `string?`. The artifact store has producers but is not the interchange. Everything downstream that "learns" learns from prose |
-| **`SchedulingMode` is declared, not honoured** | v3.8.23 put it on the contract. The scheduler does not read it yet, so the planner can still schedule a medic before anything failed |
-| **Handoffs are ingested only on the completing path** | `IngestHandoffs` is called after `decision.Action == Complete`; the non-completing path returns ~15 lines earlier. Tester's failure→Medic handoff can therefore never fire |
-| **A rejected REQUIRED handoff is only logged** | It does not block or fail the mission |
-| **`ToolExecutionContext` has no production call site** | Three references in its own file, one in a test. Production still authorizes by ant NAME |
+| **`SchedulingMode` is honoured for two modes of three** | v3.8.25 enforces FailureTriggered and PostFinalization. `PolicyInserted` waits on the insertion itself |
+| **Nothing INSERTS tester/soldier/verifier** | They are declared `PolicyInserted` and the rule is deliberately unenforced until something inserts them — otherwise a correct rule removes the only path they have |
 | **The verifier asks a model** | It emits a verdict string that `MissionVerification` parses. The one place model output still reaches a verification decision. Bounded by the deterministic-evidence rule, not closed |
 | **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe |
 | **No worker reputation** | The `workers` table has six columns and none is a score |
@@ -120,7 +118,7 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.24 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.25 |
 |---|---|---|---|---|
 | **Researcher** | Planner, near intake | `system_info`, `list_directory` | `context_brief` | Emits prose (`text`). Target adds `repository_index`, `search_workspace` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
@@ -128,7 +126,7 @@ Where the current state differs from the target, both are stated. The gap is the
 | **UI Cartographer** | Policy, before Coder on UI work | 4 read tools | `ui_map` | Uses hard-coded Anthill paths; must generalise. Not yet mandatory before Coder |
 | **Coder** | Planner | **none, deliberately** | `patch_set` | Consumes prose, not typed context. PatchSet carries content but no workspace revision link |
 | **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Defaults to `dotnet_build`; needs manifest-driven check selection, Node/Python adapters, cancellation |
-| **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Reviews prior-task PROSE, not the actual PatchSet |
+| **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Reads the real PatchSet as of v3.8.25. Still needs policy INSERTION rather than planner scheduling |
 | **Verifier** | Policy, after evidence exists | none | `verification_bundle` | **Asks a model.** Target is a deterministic reader of the evidence store |
 | **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | `failure_context` artifact does not exist; reads in-memory mission state |
 | **Builder** | Planner, after verification | none | `operator_summary` | Emits prose |
@@ -152,7 +150,17 @@ Each stage is a release. The order is a dependency order, not a preference.
 All twelve contracted; `SchedulingMode` declared; phantom tools removed; patches verified in a tree
 that contains them.
 
-### Stage B — the roster becomes consequential ◻ NEXT
+### Stage B — the roster becomes consequential ◐ PARTLY DONE (v3.8.25)
+
+Done: handoffs ingested on terminal failure; a refused REQUIRED handoff sets `DeterministicBlock`;
+`ToolExecutionContext` has a production call site fed by `CapabilityGrant`; `SchedulingMode` enforced
+for FailureTriggered and PostFinalization.
+
+Also done: the soldier reviews the actual PatchSet — the patch-set artifact carries `new_content` at
+Colony visibility and the review reads it, so a secret in proposed source is found rather than
+scanned for in prose about it.
+
+Left: policy INSERTION of tester/soldier/verifier, and then enforcing `PolicyInserted`.
 
 1. **Honour `SchedulingMode`.** Policy inserts tester/soldier/verifier whenever their inputs exist.
    Medic fires from a typed retryable failure with a strict repair budget. Archivist runs after the

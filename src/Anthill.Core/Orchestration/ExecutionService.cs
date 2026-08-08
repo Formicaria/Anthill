@@ -504,7 +504,7 @@ public sealed class ExecutionService : IExecutionService
                 var decision = TaskOutcomeMapper.Map(execution);
                 if (decision.Action != TaskOutcomeAction.Complete)
                 {
-                    ApplyNonCompletingOutcome(mission, task, runtimeSelection, execution, decision, finishedAt, elapsed, scheduler);
+                    ApplyNonCompletingOutcome(mission, context, task, runtimeSelection, execution, decision, finishedAt, elapsed, scheduler);
                     return;
                 }
 
@@ -702,9 +702,22 @@ public sealed class ExecutionService : IExecutionService
                     proposals = patchSet.Proposals.Select(pr => new
                     {
                         pr.FilePath, change_type = pr.ChangeType.Value(), pr.Risk, pr.RequiresApproval,
+                        // v3.8.25: the CONTENT joins the artifact.
+                        //
+                        // Without it the soldier had nothing to review but prior tasks' prose about
+                        // the patch, and a policy engine that scans a description of a change cannot
+                        // find a secret in the change. The external review's phrasing is the right
+                        // one: raw patch contents belong in the access-controlled artifact store,
+                        // not in event-log metadata — so they go here, at Colony visibility, rather
+                        // than into the log line beside it.
+                        new_content = pr.NewContent,
                     }),
                 }, indented: true),
-                taskId: task.Id));
+                taskId: task.Id,
+                // Explicit rather than defaulted. This artifact now carries proposed source, which
+                // is exactly the material the visibility classes exist to distinguish: readable by
+                // the colony's own roles, not published outward with the operator summary.
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Colony));
         }
         catch (Exception error)
         {
@@ -1036,7 +1049,8 @@ public sealed class ExecutionService : IExecutionService
     /// v2.19.0: apply a non-completing decision. Before this release there was no such path for a
     /// normally-returned result — everything that did not throw was marked complete.
     /// </summary>
-    private void ApplyNonCompletingOutcome(Mission mission, Task task, AntRuntimeSelection runtimeSelection,
+    private void ApplyNonCompletingOutcome(Mission mission, MissionContext context, Task task,
+        AntRuntimeSelection runtimeSelection,
         AntExecutionResult execution, TaskOutcomeDecision decision, DateTime finishedAt, double elapsed,
         TaskScheduler? scheduler)
     {
@@ -1060,6 +1074,26 @@ public sealed class ExecutionService : IExecutionService
         }
 
         FinalizeTaskResult(mission, task);
+
+        // v3.8.25 — HANDOFFS ARE INGESTED ON THE FAILURE PATH.
+        //
+        // Until this line, `IngestHandoffs` was called only after `decision.Action == Complete`, and
+        // this method returns before reaching it. So a FAILED task's handoffs were recorded as
+        // proposals and acted on by nothing — which made the tester's failure→medic handoff
+        // unreachable in principle. The medic is triggered by failure and the only route to it was
+        // gated on success. The colony's repair path could not fire, ever.
+        //
+        // FAIL ONLY, not Skip and not a retry-bound failure:
+        //   - Skip means the task did not run. It has no findings, and its declared handoffs are
+        //     proposals about work that never happened.
+        //   - The scheduler owns retries. Ingesting on a failure that is about to be retried would
+        //     dispatch a medic to diagnose a task the colony has not finished attempting, and then
+        //     again on the next attempt — a repair loop bounded by nothing.
+        //
+        // Terminal failure is the one state where a diagnosis is both warranted and final.
+        if (decision.Action == TaskOutcomeAction.Fail && !decision.Retryable)
+            IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
+
         _memory.LogEvent(mission.Id, "task_outcome_applied",
             $"Task did not complete ({execution.StatusCode}): {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
             MergeMetadata(AntRuntime.Metadata(runtimeSelection), new()
@@ -1128,6 +1162,7 @@ public sealed class ExecutionService : IExecutionService
             if (!admission.Accepted || admission.CreatedTask is null)
             {
                 LogHandoffRejected(mission, sourceTask, handoff, admission.Reason, runtimeSelection);
+                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, admission.Reason);
                 continue;
             }
 
@@ -1137,6 +1172,7 @@ public sealed class ExecutionService : IExecutionService
             if (TryAdmitDynamicTask(mission, scheduler, created, constraints) is { Length: > 0 } refusal)
             {
                 LogHandoffRejected(mission, sourceTask, handoff, refusal, runtimeSelection);
+                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, refusal);
                 continue;
             }
 
@@ -1152,6 +1188,48 @@ public sealed class ExecutionService : IExecutionService
                 }));
             Console.WriteLine($"Handoff admitted: {handoff.SourceRole} -> {handoff.DestinationRole} (depth {depth})");
         }
+    }
+
+    /// <summary>
+    /// A refused REQUIRED handoff is a deterministic block. v3.8.25.
+    ///
+    /// <c>AntHandoff.Required</c> has existed since v2.21.0 and meant nothing. A refusal was written
+    /// to an event row and read by no gate, so a mission whose tester demanded a medic — and did not
+    /// get one — completed exactly as if the repair had happened. "Required" that nothing enforces is
+    /// a comment with a bool's type.
+    ///
+    /// It demotes rather than fails the mission, and the distinction is deliberate. The work that ran
+    /// still ran and its results are still worth keeping; what cannot be claimed is that the mission
+    /// is VERIFIED, because a step its own roles declared necessary did not happen. That is precisely
+    /// what <c>Task.DeterministicBlock</c> means — a reproducible "no" the canonical evaluator honours
+    /// — so this reuses it rather than inventing a second demotion path beside it.
+    ///
+    /// An OPTIONAL handoff refusal stays a log line. Optional means the colony proposed something it
+    /// can do without, and treating a declined suggestion as a block would make every capped or
+    /// deduplicated handoff a mission failure.
+    /// </summary>
+    private void RecordRequiredHandoffRefusal(Mission mission, Task sourceTask, AntHandoff handoff, string reason)
+    {
+        if (!handoff.Required) return;
+
+        var block = $"required handoff refused: {handoff.SourceRole} -> {handoff.DestinationRole} " +
+                    $"({handoff.RequiredTaskType}) — {TextUtil.Truncate(reason, 200)}";
+
+        // First reason wins, as everywhere else DeterministicBlock is set: a task can be blocked by
+        // more than one deterministic check and the earliest is as valid as the latest.
+        sourceTask.DeterministicBlock ??= block;
+
+        _memory.LogEvent(mission.Id, "required_handoff_refused",
+            $"REQUIRED handoff refused, mission cannot be verified: {handoff.SourceRole} -> {handoff.DestinationRole} — {reason}",
+            sourceTask.Id, handoff.SourceRole,
+            new()
+            {
+                ["destination_role"] = handoff.DestinationRole,
+                ["required_task_type"] = handoff.RequiredTaskType,
+                ["dedupe_key"] = handoff.DedupeKey,
+                ["rejection_reason"] = reason,
+                ["blocks_verification"] = true,
+            });
     }
 
     private void LogHandoffRejected(Mission mission, Task sourceTask, AntHandoff handoff, string reason,
