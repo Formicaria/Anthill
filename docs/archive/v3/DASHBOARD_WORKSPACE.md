@@ -1,3 +1,11 @@
+> **ARCHIVED — not current.** Archived at v3.8.24. Its own header has said since v3.2.0 that it 'describes a workspace that no longer exists' — the floating-panel model was deleted and replaced by a CSS grid. A guard test nevertheless required it to name the shipping version, so every release edited a document about deleted code. See `docs/DASHBOARD_GRID_MIGRATION.md` for what replaced it.
+>
+> The current plan is [`docs/PLAN.md`](../../PLAN.md). This file is kept as the historical
+> record and is no longer maintained; nothing here should be treated as describing the
+> shipping colony.
+
+---
+
 # Topology-First Dashboard Workspace
 
 Canonical design + build order for merging the Colony topology and the Dashboard into one
@@ -75,7 +83,7 @@ gate passes.
 > way), and mission results are unchanged on this surface — the adaptive-runtime work in v2.19.0
 > deliberately preserved every operator-facing narrative. v2.20.0 adds the learning-reset boundary
 > to memory surfaces: `/memory/explorer` carries `learning_reset`, and pre-reset pheromone trails
-> appear with a `legacy` flag. See `docs/ADAPTIVE_RUNTIME_STATUS.md`.
+> appear with a `legacy` flag. See `docs/archive/v2/ADAPTIVE_RUNTIME_STATUS.md`.
 
 Inspired by the *interaction patterns* of Homarr and professional trading/monitoring terminals.
 No proprietary code, design, or branding is copied.

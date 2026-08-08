@@ -6,7 +6,8 @@ Status: Canonical design for the unified approval system. Reviewed and shipped a
 shipped in v2.3.0
 (`Homelab/Actions/`) against this contract without changing it — the v1.14 fields gained only
 additive execution metadata (payload, blast-radius score, decided/executed stamps). See
-`docs/NORTH_STAR.md` §6 rule 1: **one approval system**.
+`docs/archive/v3/NORTH_STAR.md` §6 rule 1: **one approval system**. The rule still holds; the
+document stating it was archived at v3.8.24.
 
 ## Why one abstraction
 

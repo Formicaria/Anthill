@@ -1,3 +1,11 @@
+> **ARCHIVED — not current.** Superseded by `docs/PLAN.md` at v3.8.24. Its forward-looking content — the commitments, the V4 target and the release narrative — was folded in. Kept for the per-release narrative it accumulated, which CHANGELOG.md also carries.
+>
+> The current plan is [`docs/PLAN.md`](../../PLAN.md). This file is kept as the historical
+> record and is no longer maintained; nothing here should be treated as describing the
+> shipping colony.
+
+---
+
 # ANTHILL V3 NORTH STAR
 
 ## Colony Execution Infrastructure

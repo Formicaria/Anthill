@@ -25,11 +25,18 @@ public class ExecutionDocsConsistencyTests
         Assert.Contains("docs/ANT_EXECUTION.md", Doc("README.md"));
     }
 
+    /// <summary>
+    /// The plan and the autonomy doc both reach the execution framework. v3.8.24 — this checked
+    /// NORTH_STAR and ROADMAP, which are archived; PLAN.md is the one forward-looking document now.
+    ///
+    /// The point is unchanged: the execution framework must be findable from whatever document a
+    /// reader starts at, or the role matrix becomes a file only the people who already know about it
+    /// can locate.
+    /// </summary>
     [Fact]
-    public void NorthStarAndRoadmap_ContainTheExecutionFrameworkTrack()
+    public void ThePlanAndAutonomyDoc_ReachTheExecutionFramework()
     {
-        Assert.Contains("ANT_EXECUTION.md", Doc("docs/NORTH_STAR.md"));
-        Assert.Contains("Ant Execution Framework", Doc("docs/ROADMAP.md"));
+        Assert.Contains("ANT_EXECUTION.md", Doc("docs/PLAN.md"));
         Assert.Contains("ANT_EXECUTION.md", Doc("docs/AUTONOMY.md"));
     }
 

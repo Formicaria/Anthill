@@ -1,6 +1,7 @@
 # ANTHILL Training Missions — Fresh-Install Bootstrap (v1.8.29)
 
-Status: Active operator guide. Part of the master roadmap — see `docs/NORTH_STAR.md` (Phase 3, V1.8.29).
+Status: Active operator guide. Part of the master roadmap — the current plan is `docs/PLAN.md`; the Phase 3 / V1.8.29 staging
+this guide was written against is in `docs/archive/v3/NORTH_STAR.md`.
 
 A fresh ANTHILL install starts with an empty memory and no pheromone trails. This pack is a
 repeatable, **read-only** curriculum the colony runs against its own repo and runtime so that later
@@ -70,7 +71,7 @@ scripts/validate.ps1 entry points, the test projects and the regression guard te
 consistency, migration idempotence, UI glyph integrity, no-Python guard), what CI runs on every
 pull request (build matrix, publish + selftest, Docker smoke test, ui-integrity, repo-guards), the
 release flow (tag push triggers the Release workflow, tag must match AnthillRuntime.Version), and
-the version-completion checklist in docs/NORTH_STAR.md section 7.
+the version-completion checklist in docs/archive/v3/NORTH_STAR.md section 7.
 ```
 
 ### 4. UI Structure Training
@@ -125,7 +126,7 @@ is closed. Do not take action - this is a tabletop exercise producing a written 
 
 ```text
 One-shot, read-only training mission, do not modify files: internalize the master roadmap in
-docs/NORTH_STAR.md. Summarize: the north-star goal and the permanent
+docs/PLAN.md. Summarize: the goal and the permanent
 OBSERVE-DIAGNOSE-PROPOSE-RISK-APPROVAL-EXECUTE-VERIFY-LOG-LEARN rule, the non-negotiable safety
 rules (no destructive infrastructure actions, no secrets in logs, kill-switch files, no Python),
 the architecture rules (local-first, deterministic C# for polling, LLM ants only for judgment,

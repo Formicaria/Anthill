@@ -28,87 +28,135 @@ public class DocsConsistencyTests
     private static string Read(string rel) =>
         File.ReadAllText(Path.Combine(Root(), rel.Replace('/', Path.DirectorySeparatorChar)));
 
-    /// <summary>Every `docs/*.md` path listed in NORTH_STAR's canonical block must be a real file.</summary>
+    /// <summary>
+    /// EVERY `docs/...md` link anywhere in the repository's markdown must point at a real file.
+    /// v3.8.24.
+    ///
+    /// This test replaces one that checked a single code block in a single document, and the
+    /// difference is the whole lesson. The old version parsed NORTH_STAR's "Canonical documents"
+    /// block and verified those paths existed — written in v2.15.0 because five of the nine
+    /// documents that block named did not exist at all.
+    ///
+    /// It worked, for that block. Meanwhile FIVE MORE dead links accumulated outside its scope:
+    /// README, CHANGELOG and DASHBOARD_WORKSPACE all pointed at `docs/ADAPTIVE_RUNTIME_STATUS.md`,
+    /// `docs/CONSOLE_REDESIGN.md`, `docs/CONSOLE_REFIT.md`, `docs/PRE_V3_RUNTIME_HARDENING.md` and
+    /// `docs/UI_ROADMAP.md`, every one of which had been MOVED to `docs/archive/v2/` with the
+    /// references left behind. Not lost documents — moved documents with stale pointers, which is
+    /// worse, because the reader is sent somewhere that looks deliberate.
+    ///
+    /// A guard scoped to one list checks one list. This one checks every link, which is the only
+    /// version of it that cannot be outgrown by the thing it guards.
+    /// </summary>
     [Fact]
-    public void CanonicalDocuments_AllExist()
+    public void EveryDocumentationLink_PointsAtAFileThatExists()
     {
-        var northStar = Read("docs/NORTH_STAR.md");
+        var root = Root();
+        var markdown = new List<string> { "README.md", "CHANGELOG.md", "CONTRIBUTING.md" };
+        markdown.AddRange(Directory.GetFiles(Path.Combine(root, "docs"), "*.md", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(root, f).Replace(Path.DirectorySeparatorChar, '/'))
+            // LIVE documents only. An archived file is a SNAPSHOT: its links describe the world as it
+            // was on the day it was frozen, and `docs/archive/v2/ROADMAP.md` pointing at
+            // `docs/NORTH_STAR.md` is an accurate record of a document that existed then. Rewriting
+            // those to keep a guard green would edit the historical record to satisfy a test, which
+            // is the same trade this suite refuses over duplicate changelog headings. Twenty-eight
+            // such links exist and every one of them is correct about its own moment.
+            .Where(f => !f.StartsWith("docs/archive/", StringComparison.OrdinalIgnoreCase)));
 
-        var block = Regex.Match(northStar, @"##\s*Canonical documents\s*```text(.*?)```", RegexOptions.Singleline);
-        Assert.True(block.Success, "NORTH_STAR.md no longer has a '## Canonical documents' code block.");
+        var broken = new List<string>();
+        foreach (var file in markdown.Where(f => File.Exists(Path.Combine(root, f.Replace('/', Path.DirectorySeparatorChar)))))
+        {
+            var text = File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)));
+            foreach (Match m in Regex.Matches(text, @"docs/[A-Za-z0-9_./-]+\.md"))
+            {
+                var target = m.Value;
+                // `docs/x.md`, `docs/a.md` and friends appear inside worked EXAMPLES of the patch and
+                // indexing formats. Single-letter and single-character stems are never real documents
+                // in this repository, and excluding them here beats renaming every example.
+                var stem = Path.GetFileNameWithoutExtension(target);
+                if (stem.Length <= 1) continue;
+                if (!File.Exists(Path.Combine(root, target.Replace('/', Path.DirectorySeparatorChar))))
+                    broken.Add($"{file} -> {target}");
+            }
+        }
 
-        var listed = Regex.Matches(block.Groups[1].Value, @"^\s*(docs/[A-Za-z0-9_]+\.md)", RegexOptions.Multiline)
-            .Select(m => m.Groups[1].Value).Distinct().ToList();
-
-        Assert.True(listed.Count >= 5,
-            $"Expected the canonical list to name several documents, found {listed.Count}.");
-
-        var missing = listed
-            .Where(rel => !File.Exists(Path.Combine(Root(), rel.Replace('/', Path.DirectorySeparatorChar))))
-            .OrderBy(x => x, StringComparer.Ordinal).ToList();
-
-        Assert.True(missing.Count == 0,
-            "NORTH_STAR.md lists canonical documents that do not exist: " + string.Join(", ", missing));
+        Assert.True(broken.Count == 0,
+            "These documentation links point at files that do not exist. If the document MOVED, "
+          + "update the link; a stale pointer reads as deliberate and sends the reader nowhere:\n  "
+          + string.Join("\n  ", broken.Distinct().OrderBy(x => x, StringComparer.Ordinal)));
     }
 
     /// <summary>
-    /// The roadmap documents must mention the version that is actually shipping.
+    /// The plan must name the version that is actually shipping.
     ///
-    /// Deliberately an "is it mentioned at all" check rather than "is the newest mention current":
-    /// these documents legitimately reference FUTURE releases in their next-steps sections, so a
-    /// newest-version rule would fail on every forward-looking line. Mentioning the current version
-    /// is the weakest condition that still catches the real drift — NORTH_STAR and ROADMAP sat at
-    /// v2.14.13 while v2.14.15 shipped, which is what prompted this test.
+    /// v3.8.24: ONE document, not three. This used to check NORTH_STAR, ROADMAP and
+    /// DASHBOARD_WORKSPACE — the last of which had said since v3.2.0 that it "describes a workspace
+    /// that no longer exists", so every release was obliged to edit a document about deleted code in
+    /// order to stay green. Three documents to keep current is how they come to disagree.
+    ///
+    /// Still deliberately an "is it mentioned at all" check rather than "is the newest mention
+    /// current": PLAN.md legitimately names FUTURE work, so a newest-version rule would fail on
+    /// every forward-looking line. Mentioning the current version is the weakest condition that
+    /// still catches real drift — NORTH_STAR and ROADMAP once sat at v2.14.13 while v2.14.15
+    /// shipped, which is what prompted this test.
     /// </summary>
     [Fact]
-    public void RoadmapDocuments_MentionTheShippingVersion()
+    public void ThePlan_MentionsTheShippingVersion()
     {
         var current = "v" + AnthillRuntime.Version;
-        var stale = new List<string>();
 
-        foreach (var rel in new[] { "docs/NORTH_STAR.md", "docs/ROADMAP.md", "docs/DASHBOARD_WORKSPACE.md" })
-            if (!Read(rel).Contains(current, StringComparison.Ordinal)) stale.Add(rel);
-
-        Assert.True(stale.Count == 0,
-            $"These documents never mention the shipping version {current}, so they have fallen behind "
-            + "the release they are supposed to describe: " + string.Join(", ", stale));
+        Assert.True(Read("docs/PLAN.md").Contains(current, StringComparison.Ordinal),
+            $"docs/PLAN.md never mentions the shipping version {current}, so it has fallen behind "
+          + "the release it is supposed to describe.");
     }
 
     /// <summary>
-    /// Every phase heading in the roadmap names a distinct version, and they ascend.
+    /// Release headings are unique and ascend.
     ///
-    /// Written because the roadmap had drifted into naming the same release twice: after the agent
-    /// harness direction change there were TWO `## v3.5.0` sections, a `## v3.4.0` section that
-    /// appeared after a v3.5.0 one, and no section at all for the two phases that had actually
-    /// shipped. A roadmap that names a release twice cannot answer "what is in this release", which
-    /// is the only question it exists to answer — and nothing was checking.
+    /// v3.8.24: reads CHANGELOG.md rather than the archived ROADMAP. The invariant is unchanged and
+    /// the subject is better — the changelog is now the only document with per-release headings, and
+    /// it is the one an operator actually reads to answer "what is in this release".
     ///
-    /// Ordering is asserted as well as uniqueness, because renumbering a phase and leaving it in
-    /// place produces a document that is unique, wrong, and reads plausibly.
+    /// SCOPED TO THE LIVE MAJOR LINE, and that is a finding rather than a convenience. Repointing
+    /// this guard at the changelog immediately surfaced FIFTEEN duplicate version headings and
+    /// several out-of-order entries across v1.x and v2.x — drift the roadmap-scoped version could
+    /// never have seen. Those lines are frozen history: v2 closed at v2.26.0 and rewriting 173
+    /// headings to satisfy a guard would edit the record of what shipped in order to make a test
+    /// green, which is the wrong direction. The invariant that matters is that the line being
+    /// ACTIVELY WRITTEN cannot name a release twice, so that is what is asserted.
+    ///
+    /// Written because the roadmap had once drifted into naming the same release twice: two `## v3.5.0`
+    /// sections, a `## v3.4.0` appearing after a v3.5.0 one, and no section for two phases that had
+    /// actually shipped. Ordering is asserted as well as uniqueness, because renumbering an entry and
+    /// leaving it in place produces a document that is unique, wrong, and reads plausibly.
     /// </summary>
     [Fact]
-    public void RoadmapPhases_AreUniqueAndAscend()
+    public void ReleaseHeadings_AreUniqueAndDescend()
     {
-        var phases = Regex.Matches(Read("docs/ROADMAP.md"), @"^##\s+v(\d+)\.(\d+)\.(\d+)\b",
+        var currentMajor = int.Parse(AnthillRuntime.Version.Split('.')[0]);
+
+        var entries = Regex.Matches(Read("CHANGELOG.md"), @"^##\s+v(\d+)\.(\d+)\.(\d+)\b",
                 RegexOptions.Multiline)
             .Select(m => (
                 text: m.Value.Trim(),
                 key: (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value))))
+            .Where(e => e.key.Item1 == currentMajor)
             .ToList();
 
-        Assert.True(phases.Count >= 5, $"Expected the roadmap to have several phase headings, found {phases.Count}.");
+        Assert.True(entries.Count >= 5,
+            $"Expected the changelog to have several release headings, found {entries.Count}.");
 
-        var duplicates = phases.GroupBy(p => p.key).Where(g => g.Count() > 1)
+        var duplicates = entries.GroupBy(p => p.key).Where(g => g.Count() > 1)
             .Select(g => string.Join(" AND ", g.Select(x => x.text))).ToList();
         Assert.True(duplicates.Count == 0,
-            "The roadmap names the same version more than once, so it cannot say what is in that "
+            "The changelog names the same version more than once, so it cannot say what is in that "
           + "release:\n  " + string.Join("\n  ", duplicates));
 
-        var outOfOrder = phases.Zip(phases.Skip(1))
-            .Where(pair => pair.Second.key.CompareTo(pair.First.key) <= 0)
-            .Select(pair => $"{pair.Second.text} comes after {pair.First.text}").ToList();
+        // Newest first, so each entry must be STRICTLY LOWER than the one above it.
+        var outOfOrder = entries.Zip(entries.Skip(1))
+            .Where(pair => pair.Second.key.CompareTo(pair.First.key) >= 0)
+            .Select(pair => $"{pair.Second.text} is listed below {pair.First.text}").ToList();
         Assert.True(outOfOrder.Count == 0,
-            "Roadmap phases must read in release order:\n  " + string.Join("\n  ", outOfOrder));
+            "Changelog entries must read newest first:\n  " + string.Join("\n  ", outOfOrder));
     }
 
     /// <summary>

@@ -208,7 +208,7 @@ jobs:
       - name: UI logic tests (node --test)
         run: node --test tests/ui/mission-thread.test.js
 
-      # Roadmap/version consistency (v1.8.27, extended v1.8.28): the canonical roadmap must exist,
+      # Plan/version consistency (v1.8.27, extended v1.8.28, repointed v3.8.24): the canonical plan must exist,
       # and every version marker must agree — runtime const, Directory.Build.props assembly version,
       # README, and CHANGELOG — so docs and binaries never drift from the code.
       - name: Docs + version consistency
@@ -216,8 +216,12 @@ jobs:
           python3 - <<'PY'
           import re, sys, os
           problems = []
-          if not os.path.exists("docs/NORTH_STAR.md"):
-              problems.append("docs/NORTH_STAR.md (canonical roadmap) is missing")
+          # v3.8.24: the canonical plan is docs/PLAN.md. NORTH_STAR, ROADMAP, REFACTOR-PLAN and
+          # POST_REFACTOR-PLAN folded into it and are archived under docs/archive/v3/. This check is
+          # why the consolidation had to touch CI: a green local test run would still have failed
+          # here, on a file the suite no longer knows about.
+          if not os.path.exists("docs/PLAN.md"):
+              problems.append("docs/PLAN.md (the canonical plan) is missing")
           code = open("src/Anthill.Core/Configuration/AnthillRuntime.cs", encoding="utf-8").read()
           m = re.search(r'Version\s*=\s*"([^"]+)"', code)
           ver = m.group(1) if m else None
@@ -262,7 +266,7 @@ jobs:
         run: |
           stray=$(find . -name '*.py' -not -path './.git/*' -not -path '*/bin/*' -not -path '*/obj/*' || true)
           if [ -n "$stray" ]; then
-            echo "::error::Active Python files found (forbidden by docs/NORTH_STAR.md):"
+            echo "::error::Active Python files found (forbidden by docs/PLAN.md):"
             echo "$stray"
             exit 1
           fi

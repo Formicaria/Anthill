@@ -5,7 +5,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 ---
 
 The ANTHILL Core/Modules refactor is COMPLETE as of v3.8.17 — phases 0 through 7, fifteen releases
-from v3.8.3. `docs/REFACTOR-PLAN.md` is now a finished record rather than a plan: every phase names
+from v3.8.3. `docs/archive/v3/REFACTOR-PLAN.md` is now a finished record rather than a plan: every phase names
 the release it shipped in, two items are marked superseded with the measurement that superseded
 them, and §6 carries the five rules the execution produced. Read it before proposing anything that
 touches the module boundary.
@@ -83,5 +83,5 @@ once put a v3.8.13 tag on a v3.8.12 commit. Commit with explicit paths — `data
 one commit on a branch `--fill` titles the PR after the BRANCH, which is how v3.8.15 landed on main
 as "release/v3.8.15 (#193)".
 
-If a session proposes something that contradicts docs/REFACTOR-PLAN.md, the plan is probably right —
+If a session proposes something that contradicts docs/archive/v3/REFACTOR-PLAN.md, the plan is probably right —
 it's the record of what was measured rather than assumed.
