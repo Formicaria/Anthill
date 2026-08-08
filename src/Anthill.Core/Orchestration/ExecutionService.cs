@@ -801,6 +801,61 @@ public sealed class ExecutionService : IExecutionService
     /// reproduced the verification; one that reproduces only the first two has reproduced the
     /// intent.
     /// </summary>
+    /// <summary>
+    /// The complete verification bundle, bound to the patch and the tree it ran in. v3.8.27.
+    ///
+    /// v3.8.22 recorded each verifier's verdict as its own evidence row and kept the bundle only in
+    /// memory. That answers "did the build pass" and cannot answer "what was the full set of checks
+    /// this patch was REQUIRED to pass, and did it pass all of them" — which is the only one of the
+    /// two that constitutes a verification. A bundle whose required list is absent cannot be
+    /// distinguished from one that required nothing.
+    ///
+    /// Bound to `patch_set_hash` and `applied_tree_hash` rather than to the patch-set ID, because an
+    /// id can be reused by a later edit and a hash cannot. A replay that reproduces both hashes has
+    /// reproduced the thing that was verified.
+    /// </summary>
+    private void RecordVerificationBundle(Mission mission, Task task, PatchSet patchSet,
+        Verification.MaterializedPatchSet materialized,
+        IReadOnlyList<Verification.VerificationBundle> bundles)
+    {
+        try
+        {
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.VerificationBundle,
+                producerRole: "queen",   // the runner is orchestration; no ant owns this verdict
+                missionId: mission.Id,
+                payload: Json.Dumps(new
+                {
+                    patch_set_id = patchSet.Id,
+                    patch_set_hash = materialized.PatchSetHash,
+                    applied_tree_hash = materialized.AppliedTreeHash,
+                    base_revision = materialized.BaseRevision,
+                    resolved_task_type = Verification.VerificationPolicy.Canonical(task.TaskType),
+                    // Promotable ONLY if every proposal is. A patch is applied as a unit.
+                    promotable = bundles.All(b => b.Promotable),
+                    proposals = bundles.Select((b, i) => new
+                    {
+                        file_path = i < patchSet.Proposals.Count ? patchSet.Proposals[i].FilePath : "",
+                        required = b.Required,
+                        promotable = b.Promotable,
+                        has_deterministic_evidence = b.HasDeterministicEvidence,
+                        blocked_reasons = b.BlockedReasons,
+                        results = b.Results.Select(r => new
+                        {
+                            verifier = r.Verifier, passed = r.Passed,
+                            deterministic = r.Deterministic, summary = r.Summary,
+                        }),
+                    }),
+                }, indented: true),
+                taskId: task.Id,
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Colony));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Could not record the verification bundle for task {task.Id}: {error.Message}");
+        }
+    }
+
     private void RecordWorkspaceSnapshot(Mission mission, Task task, PatchSet patchSet,
         Verification.MaterializedPatchSet materialized)
     {
@@ -916,6 +971,14 @@ public sealed class ExecutionService : IExecutionService
             // The snapshot the verdicts are bound to. Recorded BEFORE the results, so evidence that
             // references it can never point at a snapshot row that does not exist.
             RecordWorkspaceSnapshot(mission, task, patchSet, materialized);
+
+            // v3.8.27 (Stage C): the BUNDLE, as a durable artifact bound to the patch and the tree.
+            //
+            // v3.8.22 wrote individual evidence rows and left the bundle in memory — so the colony
+            // could answer "did the build pass" but not "what was the complete set of checks this
+            // patch was required to pass, and did it pass all of them". Those are different
+            // questions, and only the second one is a verification.
+            RecordVerificationBundle(mission, task, patchSet, materialized, bundles);
 
             var store = (Anthill.SDK.Artifacts.IEvidenceStore)_memory;
             for (var i = 0; i < bundles.Count; i++)
