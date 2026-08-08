@@ -156,9 +156,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
             ["web"] = new WebResearchAnt(Memory, Tools, Router),
             ["file"] = new FileAnt(Tools),
-            ["coder"] = new CoderAnt(options.UseOllama, Router),
-            ["builder"] = new BuilderAnt(options.UseOllama, Router),
-            ["verifier"] = new VerifierAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IEvidenceStore)Memory),
+            ["coder"] = new CoderAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
+            ["builder"] = new BuilderAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
+            ["verifier"] = new VerifierAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IEvidenceStore)Memory, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
             // Stage D canary 1: handler registered unconditionally (implemented), but the role only
             // becomes executable/plannable when its rollout gates are open — the catalog and the
             // registry gate agree by construction.

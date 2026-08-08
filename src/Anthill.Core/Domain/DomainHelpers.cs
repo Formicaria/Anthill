@@ -74,7 +74,12 @@ public static class DomainHelpers
     /// Builds the compact context packet a downstream ant consumes: mission framing plus
     /// summary-first task blocks, with selective raw extracts only for whitelisted roles.
     /// </summary>
-    public static string BuildContextPacketText(Mission mission, string consumerRole, int maxTotalChars, int maxItemChars = -1)
+    /// <param name="artifacts">v3.8.29 (Stage C): the mission's artifact store, so the packet can
+    /// carry the TYPED record alongside the prose. Optional — a null store produces exactly the
+    /// packet this method has always produced, which is what lets the interchange land without
+    /// touching the CLI, the older ants, or a hundred tests.</param>
+    public static string BuildContextPacketText(Mission mission, string consumerRole, int maxTotalChars,
+        int maxItemChars = -1, Anthill.SDK.Artifacts.IArtifactStore? artifacts = null)
     {
         if (maxItemChars < 0) maxItemChars = AnthillRuntime.MaxContextItemChars;
 
@@ -82,7 +87,8 @@ public static class DomainHelpers
         {
             var rawBlocks = mission.Tasks.Where(t => !string.IsNullOrEmpty(t.Result)).Select(t =>
                 $"Task: {t.Title}\nAnt: {t.AssignedAnt}\nTask Type: {t.TaskType}\nStatus: {t.Status.Value()}\nResult:\n{t.Result}");
-            return TextUtil.Truncate(string.Join("\n\n---\n\n", rawBlocks), maxTotalChars, "...[context truncated]");
+            return TextUtil.Truncate(string.Join("\n\n---\n\n", rawBlocks), maxTotalChars, "...[context truncated]")
+                 + ArtifactBlock(artifacts, mission.Id, maxTotalChars);
         }
 
         var allowedRawRoles = AnthillRuntime.RawContextRoles.GetValueOrDefault(consumerRole, new HashSet<string>());
@@ -117,6 +123,24 @@ public static class DomainHelpers
             included++;
         }
 
-        return TextUtil.Truncate(string.Join("\n\n---\n\n", blocks), maxTotalChars, "...[context packet truncated]");
+        return TextUtil.Truncate(string.Join("\n\n---\n\n", blocks), maxTotalChars, "...[context packet truncated]")
+             + ArtifactBlock(artifacts, mission.Id, maxTotalChars);
+    }
+
+    /// <summary>
+    /// The typed-artifact half of a context packet. v3.8.29 (Stage C).
+    ///
+    /// Budgeted SEPARATELY from the prose rather than sharing its cap, and that is a deliberate
+    /// trade. Sharing one budget would mean a long mission's narrative crowds out the structured
+    /// record — which is the arrangement this stage exists to end, reproduced one level down. A
+    /// quarter of the prose budget, floored so a small packet still gets a usable block.
+    /// </summary>
+    private static string ArtifactBlock(Anthill.SDK.Artifacts.IArtifactStore? artifacts,
+        string missionId, int proseBudget)
+    {
+        if (artifacts is null) return "";
+        var budget = Math.Max(1_500, proseBudget / 4);
+        var block = ArtifactContext.Compile(artifacts, missionId, budget);
+        return block.Length == 0 ? "" : "\n\n---\n\n" + block;
     }
 }

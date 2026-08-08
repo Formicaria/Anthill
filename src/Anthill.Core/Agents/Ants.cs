@@ -508,7 +508,17 @@ public sealed class CoderAnt : BaseAnt
 {
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
-    public CoderAnt(bool useOllama, ModelRouter? router) : base("coder") { _useOllama = useOllama; _router = router; }
+    private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+
+    /// <summary>
+    /// v3.8.29 (Stage C): the artifact store, so the coder receives TYPED context rather than other
+    /// ants' prose about it. This is the role the interchange matters most for — it is the one that
+    /// produces source changes, and it has been working from narrative summaries of what the file
+    /// and cartographer ants found.
+    /// </summary>
+    public CoderAnt(bool useOllama, ModelRouter? router,
+        Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("coder")
+    { _useOllama = useOllama; _router = router; _artifacts = artifacts; }
 
 
     // v2.26.0: a file-change task that returns zero proposals is NOT a success — the coder exists
@@ -522,7 +532,7 @@ public sealed class CoderAnt : BaseAnt
                 "Coder admitted to a read-only / no-patch mission — the planner must not assign coder tasks here, "
                 + "and the coder refuses rather than proposing changes the operator forbade.");
 
-        var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars));
+        var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts);
         if (!_useOllama || _router is null)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
@@ -705,12 +715,18 @@ public sealed class BuilderAnt : BaseAnt
 {
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
-    public BuilderAnt(bool useOllama, ModelRouter? router) : base("builder") { _useOllama = useOllama; _router = router; }
+    private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+
+    /// <summary>v3.8.29 (Stage C): the artifact store, so the operator-facing answer is assembled
+    /// from the typed record as well as the narrative.</summary>
+    public BuilderAnt(bool useOllama, ModelRouter? router,
+        Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("builder")
+    { _useOllama = useOllama; _router = router; _artifacts = artifacts; }
 
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
-        var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars));
+        var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts);
         // Configured-offline: the static response IS the configured behaviour — plain success.
         if (!_useOllama || _router is null) return TextResult(Name, FallbackResponse(task, mission, previousContext));
 
@@ -779,10 +795,13 @@ public sealed class VerifierAnt : BaseAnt
     /// required dependency would have rewritten every call site to gain a capability none of them
     /// exercise.
     /// </summary>
+    private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifactStore;
+
     public VerifierAnt(bool useOllama, ModelRouter? router,
-        Anthill.SDK.Artifacts.IEvidenceStore? evidence = null) : base("verifier")
+        Anthill.SDK.Artifacts.IEvidenceStore? evidence = null,
+        Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("verifier")
     {
-        _useOllama = useOllama; _router = router; _evidence = evidence;
+        _useOllama = useOllama; _router = router; _evidence = evidence; _artifactStore = artifacts;
     }
 
     /// <summary>
@@ -902,7 +921,7 @@ public sealed class VerifierAnt : BaseAnt
             staticCheck += $"\nDegraded Sections: {degraded.Count} non-critical task(s) failed or were skipped; synthesis proceeded with partial input.";
         if (!_useOllama || _router is null) return staticCheck;
 
-        var context = DomainHelpers.BuildContextPacketText(mission, "verifier", Math.Min(AnthillRuntime.MaxVerifierContextChars, AnthillRuntime.MaxContextPacketChars));
+        var context = DomainHelpers.BuildContextPacketText(mission, "verifier", Math.Min(AnthillRuntime.MaxVerifierContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifactStore);
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: verifier | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
 You are concise. Do not explain your reasoning unless asked.

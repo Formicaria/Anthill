@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.28**.
+**The single forward-looking document.** Shipping release: **v3.8.29**.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
@@ -38,7 +38,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.28)
+## 2. Where the colony actually is (measured at v3.8.29)
 
 ### Working end to end
 
@@ -59,11 +59,11 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 | Gap | Why it matters |
 |---|---|
-| **Roles pass PROSE, not artifacts** | `Task.Result` is `string?`. The artifact store has producers but is not the interchange. Everything downstream that "learns" learns from prose |
+| **Prose is still the PRIMARY channel** | v3.8.29 makes typed artifacts travel alongside it (coder, builder, verifier) with IDs for replay. `Task.Result` is still a string and the prose is still what the model reads first |
 | **The verifier is still planner-selectable** | Tester and soldier are inserted by policy as of v3.8.26; the verifier is not, because it is how verification currently happens at all |
 | **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe. All six now have a real trigger; `/colony` reports per-role readiness and the first binding blocked reason |
-| **No worker reputation** | The `workers` table has six columns and none is a score. Trails are attributed correctly as of v3.8.26, but they are trails, not a score |
-| **Pheromone vocabulary is a free string** | `trail_type` is untyped; no SUCCESS/FAST_PATH/UNSTABLE vocabulary |
+| **Reputation is derived, not consumed** | `ReputationOf` computes standing from trails as of v3.8.29. Nothing ROUTES on it yet — the router still picks by configuration |
+| **Trail kinds named, not yet enforced** | `TrailKind` declares the twelve and partitions reputation from environmental (v3.8.29). Writers do not yet validate against it |
 | **`AntMetrics` partly fed** | ToolCalls, ElapsedSeconds, RetryCount and the environment fingerprint are measured at the chokepoints as of v3.8.26. ModelCalls and InputChars still zero |
 | **9 `/events/json` pollers remain in `app.js`** | The event stream exists; the console has not fully moved onto it |
 | **166 public statics on `AnthillRuntime`** | Configuration is not standardised |
@@ -117,7 +117,7 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.28 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.29 |
 |---|---|---|---|---|
 | **Researcher** | Planner, near intake | `system_info`, `list_directory` | `context_brief` | Emits prose (`text`). Target adds `repository_index`, `search_workspace` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
@@ -177,7 +177,7 @@ and moving it to policy insertion belongs with making it a deterministic evidenc
    budget and a cancellation token.
 5. **Soldier reviews the actual PatchSet**, not prior-task prose.
 
-### Stage C — typed collaboration ◻
+### Stage C — typed collaboration ◐ INTERCHANGE DONE (v3.8.29)
 
 The one that unblocks everything downstream, and the largest.
 
@@ -197,7 +197,7 @@ Tester manifest-driven with multi-runtime adapters and cancellation; Medic consu
 `failure_context` with one bounded repair then mandatory retest; Scribe actually calling its tool and
 drafting only from verified artifacts; Archivist running post-finalization.
 
-### Stage E — outcome-gated learning ◐ PARTLY DONE (v3.8.26)
+### Stage E — outcome-gated learning ✅ DONE (v3.8.26, v3.8.29)
 
 Pheromones recorded **only after** the canonical outcome persists.
 
@@ -218,7 +218,10 @@ fingerprint, tool/source domain, and contract version. A trail influences routin
 configurable minimum number of observations. **Learning starts at full-roster activation** — legacy
 unverified completions are never backfilled as positive.
 
-### Stage F — qualification and activation ◻
+### Stage F — qualification and activation ◐ FIXTURE DONE (v3.8.29)
+
+CI requires all twelve to qualify. The default deliberately stays `core`; flipping it is the
+operator's act, after a real run.
 
 Per role: unit, integration, production-call-site, fault and end-to-end tests; cancellation, timeout,
 retry and loop-bound tests; real model/tool-call metrics; shadow then supervised operation; an
