@@ -1,5 +1,47 @@
 # ANTHILL Changelog
 
+## v3.8.30 - search tools reach the roles that need them, and all twelve run together
+
+**Two registered tools were reachable by one role.** `search_workspace` (v3.5.0) and
+`repository_index` (v3.6.0) were granted only to the cartographer. Meanwhile the researcher could
+`list_directory` and nothing else, and the file ant could READ files it already knew about but had no
+way to FIND one — `ExtractCandidatePaths` pulls path-shaped tokens out of the task text, so
+"collect the relevant files" was a guess dressed as a query.
+
+Both roles exist to answer "what is in this codebase" and both were doing it by reading folder names.
+
+Granted in the contract AND dispatched by the handler, in this release, because doing only the first
+is the defect this project has now found eight times: a declared surface that does not match the real
+one. The researcher's own contract comment used to explain why the tools were deliberately withheld
+for exactly that reason — the reasoning was right and the resolution was to do both, not to keep
+withholding.
+
+Term selection is BOUNDED AND DETERMINISTIC: at most three terms, drawn from the goal and task text,
+no model involved, common words dropped. An unbounded term list turns one research task into dozens
+of dispatches, and letting a model choose would make the researcher's context depend on the thing the
+research is supposed to inform. Searching a codebase for "the" returns everything, which is the same
+as nothing at a much higher price.
+
+Discovery is ADDITIVE for the file ant: explicitly named paths still win, because a task that names a
+file means that file. A failed search is kept in the researcher's report rather than dropped — "I
+searched and found nothing" and "I did not search" are different facts.
+
+**All twelve roles now run together in one test.** Every test written across the activation program
+checked one role or one rule. `TwelveRoleEndToEndTests` stands all twelve up against a real database
+and a real tool registry, hands each the shape of task the runtime would really give it, and asserts
+that every one returns a structured outcome — no throw, no null, a status code from the declared
+vocabulary, and a summary an operator can read.
+
+It also pins the two model-absent behaviours that matter: the CODER refuses rather than inventing a
+patch, and the researcher and builder degrade to local answers rather than failing. And it checks
+that no role dispatches a tool its own authorization would deny — a failure a stub registry cannot
+surface, because a stub allows everything.
+
+**What this test is not**, stated in the file so nobody mistakes it for more: no model runs, and it
+is not a planned mission driven end to end by the Queen. Those two together are the live run that
+belongs to the operator. What it proves is that no role is unreachable and none crashes — which is
+the exact class of defect that shipped eight times here.
+
 ## v3.8.29 - artifacts reach the roles, and the roster qualifies
 
 Stages C, E and F. The plan's oldest gap closes.

@@ -120,6 +120,34 @@ public sealed class ResearcherAnt : BaseAnt
     }
 
 
+    /// <summary>
+    /// The few distinctive words worth searching the workspace for. v3.8.30.
+    ///
+    /// BOUNDED AND DETERMINISTIC — at most three terms, drawn from the goal and task text, no model
+    /// involved. An unbounded search per goal word would turn one research task into dozens of
+    /// dispatches, and a model choosing the terms would make the researcher's context depend on the
+    /// thing the research is supposed to inform.
+    ///
+    /// Short and common words are dropped: searching a codebase for "the" or "code" returns
+    /// everything, which is the same as returning nothing while costing a great deal more.
+    /// </summary>
+    private static IReadOnlyList<string> SearchTerms(string goal, string description)
+    {
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the","and","for","with","this","that","from","into","code","file","files","about",
+            "what","which","where","when","find","show","list","summarize","summarise","explain",
+            "please","using","make","create","update","change","using","should","would","there",
+        };
+
+        return Regex.Matches(goal + " " + description, @"[A-Za-z][A-Za-z0-9_.]{3,}")
+            .Select(m => m.Value)
+            .Where(w => !stop.Contains(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+    }
+
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var recentMemory = _memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars);
@@ -127,7 +155,31 @@ public sealed class ResearcherAnt : BaseAnt
         var pheromoneContext = _memory.FormatPheromoneContext(8);
         var toolResults = new List<ToolResult> { _tools.RunTool("system_info", mission.Id, task.Id, Name) };
         if (ShouldInspectWorkspace(task, mission))
+        {
             toolResults.Add(_tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." }));
+
+            // v3.8.30 — SEARCH, not just list.
+            //
+            // The researcher answered "what is in this codebase" by reading folder names. Both tools
+            // below have been registered since v3.5.0/v3.6.0 and reachable by exactly one role.
+            //
+            // Granting them in the contract without dispatching them here would have been the
+            // defect this project has found eight times: a declared surface that does not match the
+            // real one. Contract and handler in the same release, or neither.
+            //
+            // A failed search is KEPT in the report rather than dropped. "I searched and found
+            // nothing" and "I did not search" are different facts, and FormatToolReport renders
+            // both — the researcher's own context should not be able to hide which one happened.
+            foreach (var term in SearchTerms(mission.Goal, task.Description))
+                toolResults.Add(_tools.RunTool("search_workspace", mission.Id, task.Id, Name,
+                    new() { ["query"] = term }));
+
+            // The index answers a different question from the search: what KINDS of code exist and
+            // where symbols are declared, rather than where a string appears. Summary mode, because
+            // a researcher wants the shape of the repository, not every match in it.
+            toolResults.Add(_tools.RunTool("repository_index", mission.Id, task.Id, Name,
+                new() { ["summary"] = true }));
+        }
 
         var rawContext = $"Mission: {mission.Goal}\n\nTask: {task.Description}\n\nRecent Memory:\n{recentMemory}\n\n" +
                          $"Relevant Memory:\n{relevantMemory}\n\nPheromone Trails:\n{pheromoneContext}\n\n" +
@@ -422,10 +474,89 @@ public sealed partial class FileAnt : BaseAnt
 
     // v2.26.0: an inspection whose every tool call failed is a FAILED inspection, not a successful
     // narrative about failure. Partial read failures and paths-not-found are disclosed as warnings.
+    /// <summary>
+    /// Paths the workspace itself suggests, via the repository index and a bounded content search.
+    /// v3.8.30.
+    ///
+    /// Returns EMPTY on any refusal — no mission workspace in scope, tools not registered, a search
+    /// that matched nothing. An empty result means the ant proceeds exactly as it did before this
+    /// existed, which is the property that lets discovery be added without changing what a task
+    /// that already names its files does.
+    ///
+    /// Bounded at both ends: at most three search terms, at most eight discovered paths. The read
+    /// loop below applies its own cap as well, so this widens what CAN be found without widening
+    /// how much is read.
+    /// </summary>
+    private List<string> DiscoverPaths(Task task, Mission mission)
+    {
+        var found = new List<string>();
+        var text = task.Description + " " + task.Title + " " + mission.Goal;
+
+        void Harvest(ToolResult result)
+        {
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return;
+            foreach (Match m in Regex.Matches(result.Output,
+                         @"\b(?:src|tests|docs|scripts|deploy)/[\w./\-]+\.\w{1,6}\b"))
+                if (!found.Contains(m.Value, StringComparer.OrdinalIgnoreCase)) found.Add(m.Value);
+        }
+
+        try
+        {
+            foreach (var term in FileSearchTerms(text))
+            {
+                Harvest(_tools.RunTool("repository_index", mission.Id, task.Id, Name, new() { ["name"] = term }));
+                Harvest(_tools.RunTool("search_workspace", mission.Id, task.Id, Name, new() { ["query"] = term }));
+                if (found.Count >= 8) break;
+            }
+        }
+        catch (Exception error)
+        {
+            // Discovery is an ENHANCEMENT. A file ant that failed because the index was unavailable
+            // would be worse than one that reads the files the task named.
+            Console.Error.WriteLine($"[file] path discovery unavailable for {mission.Id}: {error.Message}");
+        }
+
+        return found.Take(8).ToList();
+    }
+
+    /// <summary>At most three distinctive terms, deterministic, no model. Same reasoning as the
+    /// researcher's: an unbounded term list turns one task into dozens of dispatches.</summary>
+    private static IReadOnlyList<string> FileSearchTerms(string text)
+    {
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the","and","for","with","this","that","from","into","code","file","files","about",
+            "what","which","where","when","find","show","list","read","inspect","collect","relevant",
+        };
+        return Regex.Matches(text, @"[A-Za-z][A-Za-z0-9_.]{3,}")
+            .Select(m => m.Value)
+            .Where(w => !stop.Contains(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+    }
+
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var directoryResult = _tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." });
-        var candidatePaths = ShouldAttemptFileReads(task, mission) ? ExtractCandidatePaths(task, mission) : new List<string>();
+
+        // v3.8.30 — FIND files, do not only read ones already named.
+        //
+        // `ExtractCandidatePaths` pulls path-shaped tokens out of the task text, so the file ant
+        // could read a file somebody had already named and had no way to discover one. That makes
+        // "collect the relevant files" a guess dressed as a query.
+        //
+        // The index is asked FIRST (it answers "which files are of this kind and where are symbols
+        // declared"), then a content search for the task's own distinctive terms. Both are additive:
+        // explicitly named paths still win, because a task that names a file means that file.
+        var discovered = DiscoverPaths(task, mission);
+
+        var candidatePaths = ShouldAttemptFileReads(task, mission)
+            ? ExtractCandidatePaths(task, mission)
+                .Concat(discovered)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : new List<string>();
         var fileReports = new List<string>();
         int readsOk = 0, readsFailed = 0;
         foreach (var path in candidatePaths.Take(AnthillRuntime.MaxFileAntFilesToRead))

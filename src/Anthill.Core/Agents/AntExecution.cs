@@ -274,12 +274,16 @@ public static class AntExecutionCatalog
 
         ["researcher"] = new("researcher", V,
             SupportedTaskTypes: S("research", "section_analysis", "synthesis"),
-            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead),
-            // What ResearcherAnt actually dispatches today. repository_index and search_workspace
-            // are what the spec wants it to use and are deliberately NOT listed: adding a tool to an
-            // allowlist does not make a handler call it, and an allowlist that grants unused reach
-            // is how a role's real surface stops matching its declared one.
-            AllowedTools: S("system_info", "list_directory"),
+            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead, Capability.RepoSearch),
+            // v3.8.30: search joins the list, and the HANDLER dispatches it in the same release.
+            //
+            // The comment here used to explain why `search_workspace` and `repository_index` were
+            // deliberately absent — adding a tool to an allowlist does not make a handler call it,
+            // and a grant of unused reach is how a role's declared surface stops matching its real
+            // one. That reasoning was right and the fix was to do BOTH, not to keep withholding: a
+            // researcher that can list a directory but cannot search it is answering "what is in
+            // this codebase" by reading folder names.
+            AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index"),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("text"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),
@@ -314,9 +318,13 @@ public static class AntExecutionCatalog
 
         ["file"] = new("file", V,
             SupportedTaskTypes: S("file_inspection"),
-            RequiredCapabilities: S(Capability.RepoRead),
+            RequiredCapabilities: S(Capability.RepoRead, Capability.RepoSearch),
             // system_info: legacy-parity, as for web above.
-            AllowedTools: S("list_directory", "read_text_file", "system_info"),
+            // v3.8.30: the file ant could READ files it already knew about and could not FIND one.
+            // Search and the repository index are what turn "collect the relevant files" from a
+            // guess into a query. Dispatched by the handler in this same release.
+            AllowedTools: S("list_directory", "read_text_file", "system_info",
+                            "search_workspace", "repository_index"),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("file_set", "text"),
             AllowedHandoffRoles: S("researcher", "ui_cartographer", "coder", "tester"),

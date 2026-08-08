@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**The single forward-looking document.** Shipping release: **v3.8.29**.
+**The single forward-looking document.** Shipping release: **v3.8.30**.
 
 This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
 are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
@@ -38,7 +38,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.29)
+## 2. Where the colony actually is (measured at v3.8.30)
 
 ### Working end to end
 
@@ -54,6 +54,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 | Pheromone decay | Trails fade toward neutral (v3.8.19) — they never had before |
 | Colony recall | What has worked / usually fails / who solved this / what knowledge exists (v3.8.19) |
 | Mission workspaces | Detached git worktrees, attributable to a base revision (v3.5.0) |
+| Twelve roles run together | All twelve execute against a real database and registry, returning structured outcomes (v3.8.30) |
 
 ### Known gaps, stated plainly
 
@@ -117,11 +118,11 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.29 |
+| Role | Trigger | Tools | Typed output | Gap at v3.8.30 |
 |---|---|---|---|---|
-| **Researcher** | Planner, near intake | `system_info`, `list_directory` | `context_brief` | Emits prose (`text`). Target adds `repository_index`, `search_workspace` |
+| **Researcher** | Planner, near intake | `system_info`, `list_directory`, `search_workspace`, `repository_index` | `context_brief` | Search granted AND dispatched at v3.8.30. Still emits prose (`text`) rather than a typed `context_brief` |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
-| **File** | Planner | `list_directory`, `read_text_file` | `file_set` | Done. Target adds `repository_index`, `search_workspace` |
+| **File** | Planner | `list_directory`, `read_text_file`, `search_workspace`, `repository_index` | `file_set` | Done as of v3.8.30 — discovers paths rather than only reading ones the task named |
 | **UI Cartographer** | Planner | 4 read tools | `ui_map` | Generalised at v3.8.28 — thirteen conventional layouts. Still not MANDATORY before Coder |
 | **Coder** | Planner | **none, deliberately** | `patch_set` | Consumes prose, not typed context. PatchSet carries content but no workspace revision link |
 | **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Done as of v3.8.28 — manifest-driven, multi-runtime. Cancellation and per-check timeouts still open |
