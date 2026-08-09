@@ -469,6 +469,47 @@ public class UiShellTests
         Assert.Contains("prefers-reduced-motion", css);
     }
 
+    /// <summary>
+    /// Every control `buildNav` gives an ARIA role must also be given a name.
+    ///
+    /// v3.8.34. The six domain heads (Monitoring, Operations, Infrastructure, Colony, Security,
+    /// Administration) carried `role="button"`, `tabIndex` and `aria-expanded` but no `aria-label`,
+    /// while `nav-item` and `nav-child` — built in the same loop, three lines away — both set one.
+    /// The browser's interactive accessibility tree showed six buttons with no name at the top of
+    /// primary navigation, against named links for every one of their children.
+    ///
+    /// Name-from-content does not save this. The label span sits between an icon and a `&#9656;`
+    /// chevron, so a computed name is either absent or carries the arrow. That is why the rule is
+    /// "a role implies a name" rather than "a role implies text somewhere inside".
+    ///
+    /// Asserted over the source rather than a rendered page because `buildNav` needs a DOM and a
+    /// session to run, and a guard that requires a browser is a guard that runs once.
+    /// </summary>
+    [Fact]
+    public void EveryNavControlGivenARole_IsAlsoGivenAName()
+    {
+        var body = BodyOf(Ui("app.js"), "function buildNav()");
+        Assert.NotEqual("", body);
+
+        // Elements handed an explicit role, by the variable they are built into.
+        var roled = Regex.Matches(body, @"(\w+)\.setAttribute\('role'")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
+
+        // Guard the reader: if the regex stops matching, the test must fail loudly rather than
+        // pass over an empty set.
+        Assert.True(roled.Count >= 3,
+            $"expected at least three roled nav controls in buildNav, found {roled.Count} — has the "
+            + "construction changed shape?");
+
+        var unnamed = roled
+            .Where(v => !Regex.IsMatch(body, Regex.Escape(v) + @"\.setAttribute\('aria-label'"))
+            .ToList();
+
+        Assert.True(unnamed.Count == 0,
+            "buildNav gives these elements an ARIA role but no accessible name: "
+            + string.Join(", ", unnamed));
+    }
+
     // ---- ported from DashboardWorkspaceShellTests when the workspace was retired --------------
     // These four defended properties that outlived the layout engine. Each is restated in grid
     // terms rather than deleted, because the lesson each encodes is still live.

@@ -539,7 +539,13 @@ function buildNav(){
     if(!sections.length) continue;
     const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
     const head=document.createElement('div'); head.className='nav-dom-head';
+    // v3.8.34: the domain heads were the only nav controls in this function without an explicit
+    // name — `nav-item` and `nav-child` both set one three lines away. Name-from-content cannot be
+    // relied on here: the label sits between an icon span and a `&#9656;` chevron, so a computed
+    // name either fails or picks up the arrow. Six unnamed buttons in primary navigation, verified
+    // in the browser's interactive accessibility tree before the fix.
     head.setAttribute('role','button'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
+    head.setAttribute('aria-label',d.label);
     head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
     const toggle=()=>{ const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
     head.addEventListener('click',toggle); navKeyActivate(head,toggle);
