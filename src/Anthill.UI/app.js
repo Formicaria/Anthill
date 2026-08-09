@@ -2057,7 +2057,7 @@ async function pollHud(){
     hudBadge(hudStatusClass(m.status),m.status)+
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
     `<span style="color:var(--dim);font-size:9px;white-space:nowrap">${fmtTime(m.saved_at||m.created_at)||''}</span></div>`).join('')
-    : '<div class="hud-state">No missions yet.</div>';
+    : '<div class="hud-state">No missions yet — describe what you want done in Mission Command.</div>';
 
   const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
   const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
@@ -2066,7 +2066,7 @@ async function pollHud(){
       chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
       chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
       (highRiskPatches?`<span class="hud-risk high" style="justify-content:center">${highRiskPatches} high-risk</span>`:'')+`</div>`
-    : '<div class="hud-state">No patch proposals yet.</div>';
+    : '<div class="hud-state">No change proposals yet — missions run in Patch Proposal or Full Build/Test mode create them.</div>';
 
   const oc={active:0,paused:0,done:0,looping:0,failed:0};
   objectives.forEach(o=>{ const st=(o.status||'').toLowerCase();
@@ -2078,7 +2078,7 @@ async function pollHud(){
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
       (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
-    : '<div class="hud-state">No objectives yet.</div>';
+    : '<div class="hud-state">No objectives yet — add one under Operations → Automation to give the colony standing work.</div>';
 }
 
 function renderJobList(jobs, listId, badgeId, limit){
@@ -2086,7 +2086,10 @@ function renderJobList(jobs, listId, badgeId, limit){
   if(badge) badge.textContent=jobs.length;
   const list=document.getElementById(listId);
   if(!list) return;
-  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>'; return; }
+  // v3.8.34: "job" is not a second concept — ApiJobRegistry calls this an ApiMissionJob, POST
+  // /missions answers "Mission queued.", and every row carries a mission_id. Naming the queue
+  // after the thing in it costs the operator nothing and removes an invented distinction.
+  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No mission runs yet — dispatching from Mission Command queues one here.</div>'; return; }
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
     const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
