@@ -3611,12 +3611,20 @@ async function loadAntObs(){
 async function loadAntObsDirectory(grid){
   try{
     // Stage F: truthful runtime state per role — never a bare 'inactive'.
-    const [r,g]=await Promise.all([api('/colony/registry'),api('/colony/graph')]);
+    //
+    // v3.8.34: this fetched `/colony/graph`, a route that does not exist in the API. The request
+    // 404'd on every load, so `rt` stayed empty, `s` was always undefined, and the `${s?…:''}`
+    // guard below omitted the runtime state line from every card — the comment above described
+    // behaviour this function never had. `runtime_status` is returned by `/colony/registry`
+    // (ApiHost.Routes.cs), which this function already fetches, so the second request was wrong
+    // AND redundant. Line ~986 reads the same field off the same response correctly; of the two
+    // call sites for one contract, this was the one that disagreed.
+    const r=await api('/colony/registry');
     if(!(r&&r.success&&r.data))return;
     const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
     if(!roles.length)return;
     const rt={};
-    ((g&&g.success&&g.data&&g.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
+    ((r.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
     const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
     const html=roles.map(role=>{
       const rid=antRoleId(role), rname=antRoleName(role);
