@@ -48,18 +48,6 @@ public sealed partial class SqliteMemory
         public string? MissionId; public string? Result; public string? Error;
         public string? Outcome; public string? Reason;
         public string CreatedAt = ""; public string? StartedAt; public string? FinishedAt;
-        /// <summary>
-        /// v3.8.34: the canonical outcome code, read from the mission this job ran.
-        ///
-        /// `mission_jobs` has no column for it — `UpdateJobState` never persisted one — so a
-        /// durable row could say THAT it ended but not why, and the stored `status` could
-        /// therefore disagree with its own `outcome` with nothing available to re-derive it from.
-        /// Joined rather than added as a column: the mission already owns the canonical
-        /// evaluation, and a second copy is a second thing that has to stay true.
-        ///
-        /// Empty for queued and running jobs, which is the signal not to re-derive their status.
-        /// </summary>
-        public string? OutcomeCode;
     }
 
     /// <summary>Insert-or-replay: if the idempotency key already exists, the EXISTING job is
@@ -90,16 +78,13 @@ public sealed partial class SqliteMemory
     public MissionJobRow? FindJobByIdempotencyKey(string key)
     {
         EnsureJobTables();
-        // v3.8.34: qualified — QueryJobs now joins `missions`, and `id`/`status`/`goal`/`created_at`
-        // exist in both tables. An unqualified name here is an ambiguous-column error at runtime,
-        // not a compile error.
-        return QueryJobs("j.idempotency_key = $p", key).FirstOrDefault();
+        return QueryJobs("idempotency_key = $p", key).FirstOrDefault();
     }
 
     public MissionJobRow? GetMissionJob(string id)
     {
         EnsureJobTables();
-        return QueryJobs("j.id = $p", id).FirstOrDefault();
+        return QueryJobs("id = $p", id).FirstOrDefault();
     }
 
     public List<MissionJobRow> ListMissionJobs(int limit = 50)
@@ -215,7 +200,7 @@ public sealed partial class SqliteMemory
         int resumable = 0, retried = 0, orphaned = 0, cancelled = 0;
         lock (_writeLock)
         {
-            var incomplete = QueryJobs("j.status IN ('queued','running')", null, 1000);
+            var incomplete = QueryJobs("status IN ('queued','running')", null, 1000);
             foreach (var job in incomplete)
             {
                 if (job.CancelRequested)
@@ -265,15 +250,10 @@ public sealed partial class SqliteMemory
         var list = new List<MissionJobRow>();
         using var conn = Connect();
         using var cmd = conn.CreateCommand();
-        // v3.8.34: LEFT JOIN so a job can report the canonical outcome code of the mission it ran.
-        // Aliased because mission_jobs and missions share id/goal/status/created_at, and an
-        // unqualified column here would silently bind to the wrong table.
-        cmd.CommandText = "SELECT j.id, j.goal, j.status, j.attempt, j.idempotency_key, j.assigned_worker, "
-            + "j.lease_expires_at, j.cancel_requested, j.mission_id, j.result, j.error, j.outcome, j.reason, "
-            + "j.created_at, j.started_at, j.finished_at, m.outcome_code "
-            + "FROM mission_jobs j LEFT JOIN missions m ON m.id = j.mission_id"
-            + (where is null ? "" : " WHERE " + where)
-            + " ORDER BY j.created_at DESC, j.id DESC LIMIT $limit";
+        cmd.CommandText = "SELECT id, goal, status, attempt, idempotency_key, assigned_worker, lease_expires_at, "
+            + "cancel_requested, mission_id, result, error, outcome, reason, created_at, started_at, finished_at "
+            + "FROM mission_jobs" + (where is null ? "" : " WHERE " + where)
+            + " ORDER BY created_at DESC, id DESC LIMIT $limit";
         if (param is not null) cmd.Parameters.AddWithValue("$p", param);
         cmd.Parameters.AddWithValue("$limit", limit);
         using var r = cmd.ExecuteReader();
@@ -290,7 +270,6 @@ public sealed partial class SqliteMemory
                 Error = r.IsDBNull(10) ? null : r.GetString(10), Outcome = r.IsDBNull(11) ? null : r.GetString(11),
                 Reason = r.IsDBNull(12) ? null : r.GetString(12), CreatedAt = r.GetString(13),
                 StartedAt = r.IsDBNull(14) ? null : r.GetString(14), FinishedAt = r.IsDBNull(15) ? null : r.GetString(15),
-                OutcomeCode = r.IsDBNull(16) ? null : r.GetString(16),
             });
         }
         return list;
