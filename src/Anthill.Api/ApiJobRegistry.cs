@@ -208,25 +208,10 @@ public sealed class ApiJobRegistry : IDisposable
         _mem.ListMissionJobs(limit).Select(row =>
         {
             if (_jobs.TryGetValue(row.Id, out var live)) return live.ToDict();
-            // v3.8.34: the stored status is a DERIVED value, and rows written before the escalation
-            // fix hold a status their own outcome contradicts — status "failed" beside outcome
-            // "completed" and the reason "Completed — 5/5 tasks succeeded.", three such rows in the
-            // reference database. Re-deriving from the mission's canonical outcome code means the
-            // correction reaches history rather than only new runs, and follows v2.26.0's rule that
-            // the persisted evaluation is the answer rather than anything re-derived beside it.
-            //
-            // Only when a code exists. Queued and running jobs have none, and StatusFromOutcome
-            // would read that emptiness as "failed" — which is right for an ended job with no
-            // explanation and badly wrong for one still waiting to start.
-            var status = string.IsNullOrWhiteSpace(row.OutcomeCode)
-                ? row.Status
-                : StatusFromOutcome(row.Outcome, row.OutcomeCode);
-
             return new Dictionary<string, object?>
             {
-                ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = status, ["mission_id"] = row.MissionId,
+                ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = row.Status, ["mission_id"] = row.MissionId,
                 ["result"] = row.Result, ["error"] = row.Error, ["outcome"] = row.Outcome, ["reason"] = row.Reason,
-                ["outcome_code"] = row.OutcomeCode,
                 ["created_at"] = row.CreatedAt, ["started_at"] = row.StartedAt, ["finished_at"] = row.FinishedAt,
                 ["attempt"] = row.Attempt,
             };
@@ -237,20 +222,6 @@ public sealed class ApiJobRegistry : IDisposable
     /// <summary>Requests cancellation of one job. Queued work is dropped before it runs; a running
     /// mission is signalled to stop mid-flight (its next model call / task boundary aborts). Returns
     /// true if the job exists and wasn't already terminal.</summary>
-    /// <summary>
-    /// A job that has already ended. One definition, because there were two ad-hoc lists and both
-    /// were wrong the same way.
-    ///
-    /// v3.8.34: the lists read "complete" or "failed" or "cancelled" and omitted <c>timed_out</c>,
-    /// which <see cref="StatusFromOutcome"/> has returned since v2.26.0 — so cancelling a job that
-    /// had already timed out reported success and signalled a token nobody was holding, and
-    /// CancelAll counted it. Adding "escalated" to two separate lists would have repeated the
-    /// mistake a third time; the set is the thing that was missing, so it is now named once and
-    /// derived from the statuses this class actually assigns.
-    /// </summary>
-    internal static bool IsTerminalStatus(string? status) =>
-        status is "complete" or "failed" or "cancelled" or "timed_out" or "escalated";
-
     public bool Cancel(string id)
     {
         if (!_jobs.TryGetValue(id, out var job)) return false;
@@ -265,6 +236,20 @@ public sealed class ApiJobRegistry : IDisposable
         }
         return true;
     }
+
+    /// <summary>
+    /// A job that has already ended. One definition, because there were two ad-hoc lists and both
+    /// were wrong the same way.
+    ///
+    /// v3.8.34: the lists read "complete" or "failed" or "cancelled" and omitted <c>timed_out</c>,
+    /// which <see cref="StatusFromOutcome"/> has returned since v2.26.0 — so cancelling a job that
+    /// had already timed out reported success and signalled a token nobody was holding, and
+    /// CancelAll counted it. Adding "escalated" to two separate lists would have repeated the
+    /// mistake a third time; the set is the thing that was missing, so it is now named once and
+    /// derived from the statuses this class actually assigns.
+    /// </summary>
+    internal static bool IsTerminalStatus(string? status) =>
+        status is "complete" or "failed" or "cancelled" or "timed_out" or "escalated";
 
     /// <summary>Cancels every non-terminal job. Returns how many were affected.</summary>
     public int CancelAll()
