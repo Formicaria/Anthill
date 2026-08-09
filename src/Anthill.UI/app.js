@@ -1928,6 +1928,17 @@ function hudBadge(status,label){ const s=(status||'unknown').toString().toLowerC
 function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
   return `<span class="hud-risk ${l}">${escapeHtml(l)}</span>`; }
 // Map a mission/objective/job status onto a canonical HUD badge state.
+// v3.8.34: presentation layer over the job status vocabulary, in the shape ATTEMPT_STATE_LABEL
+// already established — worded as the fact rather than the verdict. Only statuses whose raw name
+// misleads are translated; the rest pass through, because renaming a clear state to a friendlier
+// one costs the operator the word they will find in the logs.
+const JOB_STATUS_LABEL = {
+  // Not a failure and not a success: the colony stopped on purpose and wants a person to decide.
+  escalated: 'needs you',
+};
+const JOB_STATUS_TITLE = {
+  escalated: 'The colony stopped and handed this to you — nothing broke, it declined to continue without your judgment. Internal state: escalated.',
+};
 function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
   if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
   if(st==='reverted') return 'rejected'; // v2.7.0: undone patch — neutral/terminal styling
@@ -2092,14 +2103,16 @@ function renderJobList(jobs, listId, badgeId, limit){
   if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No mission runs yet — dispatching from Mission Command queues one here.</div>'; return; }
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
-    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    // v3.8.34: 'escalated' is terminal. Omitting it here would leave an adaptively-stopped run
+    // with no View Result and no Re-run — finished work the operator could not open.
+    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
     const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
     let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
-        <span class="job-status ${j.status}">${j.status}</span>
+        <span class="job-status ${j.status}"${JOB_STATUS_TITLE[j.status]?` title="${escapeHtml(JOB_STATUS_TITLE[j.status])}"`:''}>${escapeHtml(JOB_STATUS_LABEL[j.status]||j.status)}</span>
         <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
       </div>
       <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}${dur}</div>
@@ -3714,7 +3727,9 @@ async function pollActiveJob(){
   try{
     const r=await api(`/jobs/${activeJobId}`); if(!r.success) return;
     const j=r.data;
-    if(j.status==='complete'||j.status==='failed'||j.status==='partial'){
+    // v3.8.34: 'escalated' is terminal — without it this poller never stops, the directive box
+    // stays disabled, and the operator is locked out waiting for a run that already ended.
+    if(j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated'){
       clearInterval(jobPollTimer);jobPollTimer=null;
       showJobResult(activeJobId);
       enableInput(true);
