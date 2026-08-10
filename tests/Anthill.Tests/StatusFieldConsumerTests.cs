@@ -38,6 +38,19 @@ public class StatusFieldConsumerTests
     private static string Read(string relative) =>
         File.ReadAllText(Path.Combine(Root(), relative.Replace('/', Path.DirectorySeparatorChar)));
 
+    private static string Console() =>
+        Read("src/Anthill.UI/app.js") + Read("src/Anthill.UI/index.html")
+        + Read("src/Anthill.UI/dashboard-grid.js") + Read("src/Anthill.UI/mission-thread.js");
+
+    /// <summary>
+    /// WHOLE-WORD match. A substring test is wrong in both directions and this guard was written
+    /// with one: `routes` appeared to be read because `model_routes` exists, and `model_choice`
+    /// appeared to be read because `model_choice_reason` does. One produced a false exemption, the
+    /// other a false pass — the same mistake facing opposite ways.
+    /// </summary>
+    private static bool ReadBy(string console, string field) =>
+        Regex.IsMatch(console, $@"\b{Regex.Escape(field)}\b");
+
     /// <summary>
     /// Fields the console legitimately does not read, each with the reason it is exempt.
     ///
@@ -46,13 +59,19 @@ public class StatusFieldConsumerTests
     /// </summary>
     private static readonly Dictionary<string, string> NotConsumedByTheConsole = new()
     {
-        ["routes"] = "rendered by the model-routing tab from /settings, not from /status",
         ["local_role_count"] = "diagnostic; superseded by routing_mode in the console",
         ["provider_role_count"] = "diagnostic; superseded by routing_mode in the console",
         ["configured_model"] = "v3.8.33: reported so an operator can tell a chosen model from a "
                              + "resolved one; the console shows the resolved value and the reason",
         ["installed_models"] = "v3.8.33: the picker reads the richer /ollama/models instead",
-        ["model_resolved"] = "v3.8.33: read by the console — pinned here only if that changes",
+        ["model_choice"] = "v0.3.8.34: the resolver's enum name (Configured/SoleInstalled/...) is "
+                         + "Layer-3 diagnostic; the console shows model_choice_reason and "
+                         + "model_resolved, which are the operator-facing halves of the same answer",
+        // `model_resolved` was listed here in the first draft with the reason "read by the console" —
+        // which is self-contradictory: an exemption says NOBODY reads it. The console reads it three
+        // times. Removed, and TheExemptionList_ContainsNothingThatIsActuallyRead now fails on that
+        // shape, because an unnecessary exemption is a false statement about the code that would
+        // also mask the field later going unread.
     };
 
     /// <summary>The keys `/status` actually emits, read from the source that emits them.</summary>
@@ -77,12 +96,11 @@ public class StatusFieldConsumerTests
     [Fact]
     public void EveryStatusField_IsEitherReadByTheConsoleOrExplicitlyExempt()
     {
-        var console = Read("src/Anthill.UI/app.js") + Read("src/Anthill.UI/index.html")
-                    + Read("src/Anthill.UI/dashboard-grid.js") + Read("src/Anthill.UI/mission-thread.js");
+        var console = Console();
 
         var orphans = StatusFields()
             .Where(f => !NotConsumedByTheConsole.ContainsKey(f))
-            .Where(f => !console.Contains(f, StringComparison.Ordinal))
+            .Where(f => !ReadBy(console, f))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
 
@@ -109,6 +127,30 @@ public class StatusFieldConsumerTests
         Assert.True(stale.Count == 0,
             "These fields are exempted from the consumer guard but /status no longer emits them: "
             + string.Join(", ", stale));
+    }
+
+    /// <summary>
+    /// An exemption must be NECESSARY. A field listed here that the console does read is a false
+    /// statement about the code — and a dangerous one, because it survives the field later going
+    /// unread and silently re-opens exactly the hole this guard closes.
+    ///
+    /// The first draft of this file exempted `model_resolved` with the reason "read by the console",
+    /// which is a contradiction in terms. This is the check that would have caught it.
+    /// </summary>
+    [Fact]
+    public void TheExemptionList_ContainsNothingThatIsActuallyRead()
+    {
+        var console = Console();
+
+        var unnecessary = NotConsumedByTheConsole.Keys
+            .Where(k => ReadBy(console, k))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(unnecessary.Count == 0,
+            "These fields are exempted as unread, but the console reads them. Remove the exemption — "
+            + "an allow-list entry that does not describe the code cannot be trusted to describe it "
+            + "later either: " + string.Join(", ", unnecessary));
     }
 
     /// <summary>

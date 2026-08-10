@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.34** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.35** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
@@ -58,7 +58,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v0.3.8.34)
+## 2. Where the colony actually is (measured at v0.3.8.35)
 
 ### Working end to end
 
@@ -88,10 +88,10 @@ It is not close, and the gap is not model quality — it is that roles still han
 | ~~The tester→medic handoff never fired~~ | CLOSED v3.8.32 — the gate reads the scheduler's terminal-failure return value instead of the ant's status code |
 | ~~Readiness lied about the six core ants~~ | CLOSED v3.8.32 — `RoleGateStatus.NotGated` exists, and the ladder moved out of the route lambda into `RoleReadiness` where it is testable |
 | ~~"Runs without an LLM" was untested~~ | CLOSED v3.8.32 — `OfflineMissionTests` runs whole missions with no provider |
-| ~~The local model was hardcoded~~ | CLOSED v3.8.33 in source, v3.8.34 on disk — the retired default is recognised in an upgraded config.json rather than obeyed. `LocalModelResolver`; any model works, an unchosen one refuses with a remedy, and a source guard blocks a new default |
+| ~~The local model was hardcoded~~ | CLOSED v3.8.33 in source, v0.3.8.34 on disk — the retired default is recognised in an upgraded config.json rather than obeyed. `LocalModelResolver`; any model works, an unchosen one refuses with a remedy, and a source guard blocks a new default |
 | ~~The console hid an unusable model~~ | CLOSED v3.8.33 — `/status` computed `ollama_model_present` from v2.4.3 and `app.js` never read it. Ninth instance of implemented-tested-unreachable, first in the UI |
-| ~~Console executable attributes trusted escapeHtml~~ | CLOSED v3.8.34 — `jsArg` escapes for the interpreter before the attribute; 105 sites, verified against the real parser. v3.8.13 fixed one value and its own test documented why that was not enough |
-| ~~A computed status field could have no reader~~ | CLOSED v3.8.34 — `StatusFieldConsumerTests`; `ollama_model_present` was probed on every request since v2.4.3 and read by nothing |
+| ~~Console executable attributes trusted escapeHtml~~ | CLOSED v0.3.8.34 — `jsArg` escapes for the interpreter before the attribute; 105 sites, verified against the real parser. v3.8.13 fixed one value and its own test documented why that was not enough |
+| ~~A computed status field could have no reader~~ | CLOSED v0.3.8.34 — `StatusFieldConsumerTests`; `ollama_model_present` was probed on every request since v2.4.3 and read by nothing |
 | **Reputation is derived, not consumed** | `ReputationOf` computes standing from trails as of v3.8.29. Nothing ROUTES on it yet — the router still picks by configuration |
 | ~~Trail kinds unenforced~~ | CLOSED v3.8.31 — eleven kinds extracted from the call sites, validated on write, and a test pins the vocabulary against the code in both directions |
 | **`AntMetrics`: InputChars still zero** | ToolCalls, ModelCalls, ElapsedSeconds, RetryCount and the environment fingerprint are all measured at chokepoints (v3.8.26, v3.8.31). InputChars would need each ant to report its own prompt size and no chokepoint sees it |

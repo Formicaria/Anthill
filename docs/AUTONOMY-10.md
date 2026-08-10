@@ -1,6 +1,7 @@
 # ANTHILL — THE 10/10 AUTONOMY PROGRAM
 
 **The forward program, in phases with exit gates.** Baseline reviewed: v3.8.30. Adopted: v3.8.32.
+Status refreshed at **v0.3.8.34**.
 
 This is the long arc from "structurally complete and test-backed" to "production-qualified autonomous
 assistant". It answers **what is left and in what order**.
@@ -62,12 +63,14 @@ implemented, tested and unreachable.
 
 ---
 
-## Phase status at v3.8.32
+## Phase status at v0.3.8.34
 
 Phase 1 was partially delivered by v3.8.32, which was written against an external review rather than
-against this plan — the overlap is real and is recorded honestly rather than re-litigated.
+against this plan — the overlap is real and is recorded honestly rather than re-litigated. v3.8.33
+and v0.3.8.34 added no Phase-1 items; they fixed the local-model hardcoding, the console's executable
+attributes and two guard gaps.
 
-| Phase | State at v3.8.32 |
+| Phase | State at v0.3.8.34 |
 |---|---|
 | 1. Correctness and safety invariants | **PARTIAL** — see the table below |
 | 2. Real full-roster runtime profile | PARTIAL — profiles and readiness exist; the composed-runtime fixture does not |
