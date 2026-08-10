@@ -354,7 +354,19 @@ public sealed class AttestBody
     [System.Text.Json.Serialization.JsonPropertyName("note")] public string? Note { get; set; }
 }
 
-public sealed class MissionRequest { public string Goal { get; set; } = ""; }
+/// <summary>
+/// v0.3.8.38: `IdempotencyKey` is accepted here AND as the `Idempotency-Key` header.
+///
+/// `ApiJobRegistry.Submit(goal, idempotencyKey)` and the durable store's insert-or-replay have
+/// supported this since v2.8.0, and `POST /missions` never passed one — so the protection existed,
+/// was tested, and could not be reached. A client whose request timed out and retried submitted the
+/// mission twice.
+/// </summary>
+public sealed class MissionRequest
+{
+    public string Goal { get; set; } = "";
+    public string? IdempotencyKey { get; set; }
+}
 
 /// <summary>
 /// v3.4.0: one tool-calling agent run. Budgets are optional and clamped server-side — a client

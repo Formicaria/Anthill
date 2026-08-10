@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.37** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.38** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
@@ -58,7 +58,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v0.3.8.37)
+## 2. Where the colony actually is (measured at v0.3.8.38)
 
 ### Working end to end
 
@@ -95,6 +95,10 @@ It is not close, and the gap is not model quality — it is that roles still han
 | ~~Backend capability with no console surface was invisible~~ | CLOSED v0.3.8.36 — `ConsoleRouteCoverageTests` audits the other direction. 25 of 176 routes had no surface; `/config/health` had computed configuration findings with no reader since v2.x. Six remain recorded as UI GAP |
 | ~~A patch built on a stale read applied silently~~ | CLOSED v0.3.8.37 — `PatchProposal.BaseHash`; refused by all three appliers, checked before the fragment search, classified as TargetRejection |
 | ~~A shipped changelog entry could be rewritten~~ | CLOSED v0.3.8.37 — `ShippedChangelogTests` compares each entry to its own tag. The mistake was made three times |
+| ~~Mission submission could duplicate on retry~~ | CLOSED v0.3.8.38 — `POST /missions` passes an `Idempotency-Key` at last; the store has supported replay since v2.8.0 and nothing reached it |
+| ~~A listed job could not be opened after restart~~ | CLOSED v0.3.8.38 — one projection for list and detail, live and durable; `outcome_code` joined from the canonical evaluation |
+| ~~Cancel-all was not durable~~ | CLOSED v0.3.8.38 — delegates to the single durable cancel, so a crash cannot requeue cancelled work |
+| ~~Clearing history could delete a running mission~~ | CLOSED v0.3.8.38 — refused server-side while work is active, and the durable job tables are no longer left dangling |
 | **Reputation is derived, not consumed** | `ReputationOf` computes standing from trails as of v3.8.29. Nothing ROUTES on it yet — the router still picks by configuration |
 | ~~Trail kinds unenforced~~ | CLOSED v3.8.31 — eleven kinds extracted from the call sites, validated on write, and a test pins the vocabulary against the code in both directions |
 | **`AntMetrics`: InputChars still zero** | ToolCalls, ModelCalls, ElapsedSeconds, RetryCount and the environment fingerprint are all measured at chokepoints (v3.8.26, v3.8.31). InputChars would need each ant to report its own prompt size and no chokepoint sees it |
