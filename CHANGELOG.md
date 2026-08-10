@@ -1,5 +1,73 @@
 # ANTHILL Changelog
 
+## v0.3.8.37 - stale patches are refused, and the changelog can no longer be rewritten under a tag
+
+### The release process failure, fixed executably
+
+Three times — v3.8.33, v0.3.8.34, v0.3.8.35 — new work was written into the changelog's TOP entry
+while a release was in flight, and then that entry shipped. The tagged release described code it did
+not contain. Twice it was caught only because someone went looking.
+
+Process notes did not fix it; three rounds of "be careful" produced three failures. `ShippedChangelogTests`
+compares every entry against its own tag and fails on drift.
+
+Writing it surfaced how much legitimate editing the file has had. The first run reported twelve
+drifted entries. Nine were archive-link maintenance — when a document moves to `docs/archive/v3/`,
+every reference must follow or the link guard fails — so those are normalised rather than
+allow-listed, since they are not content changes. Three are real prose corrections, and all three
+are the RIGHT kind: a claim that became false being fixed, most clearly v3.8.18 withdrawing a no-UI
+gate that did not hold. Freezing a false statement is not integrity, it is only immutability.
+
+The guard was also checked for inertness — an injected edit to a shipped entry is detected, and 37
+tagged entries are actually compared rather than skipped.
+
+### Stale patches are refused — AUTONOMY-10 Phase 1's largest gap
+
+`old_content` matching looks like it covers this and does not. It proves the FRAGMENT is still
+present; it says nothing about whether the rest of the file moved on underneath it. A coder reads a
+file, reasons about the whole of it, and by the time the patch applies the surrounding lines can be
+gone while the fragment survives. The edit lands cleanly into a file nobody looked at.
+
+`PatchProposal.BaseHash` records what the target hashed to when the patch was built, and
+`PatchApply` refuses a modify whose base no longer matches. Content hash rather than a git revision,
+because the coder reads a working tree that may hold uncommitted changes no revision names.
+
+Wired end to end, because a check that reaches only one applier is the v3.8.23 defect again:
+`WorkspaceChangeSet` (the producer that actually reads files) records it, the column is additive and
+nullable, and all three appliers verify it — the operator's tool, the verifier's materializer and the
+sandbox runner. A missing hash still applies: every proposal written before this release carries
+none, and refusing them all would turn a safety improvement into an outage.
+
+Staleness is checked BEFORE the fragment search and classifies as `TargetRejection`. Both matter.
+"The file moved on, rebuild the patch" and "your old_content is wrong" have different remedies, and
+reporting the second when the first is true sends the coder to fix something that was never wrong.
+
+### The failure taxonomy, reconciled honestly
+
+Phase 1 item 5 asks for one canonical taxonomy and lists thirteen classes. The code's `FailureClass`
+is already canonical and already enforced through one converter; it is simply not identical to that
+list. Renaming twelve members to match a document would churn every switch, every persisted row and
+every wire value in exchange for vocabulary — and this line has spent four releases learning what a
+changed stored string costs.
+
+So the mapping is written down and the gaps are named. **Four**, not the three the first draft had:
+`permanent_provider` (a revoked key looks retryable and burns the whole attempt budget),
+`tool_failure`, `cancellation` (a status rather than a class, so reporting cannot count them), and
+`test_failure` — found by counting the map against the document, twelve against thirteen. It cannot
+map, because `TesterAnt` and the verifier both emit `VerificationFailure`, so nothing downstream can
+distinguish "the tests went red" from "the evidence did not support the claim". Those want different
+responses: the first is what the medic exists for.
+
+### Two documentation claims corrected
+
+`AUTONOMY-10.md` said the empty auto-apply allowlist was "not yet proven to fail closed". It is —
+`AutoApplyPolicy` returns ineligible on an empty allowlist and `DeniedWhenAllowlistEmpty` has proven
+it. The plan overstated the gap.
+
+`rename` is recorded as **not implementable as specified**: `PatchProposal` carries one `FilePath`
+and rename needs a destination, so it requires a field and a schema column, not just applier logic.
+Saying so beats leaving it on a list as though it were a day's work.
+
 ## v0.3.8.36 - the console/backend contract, audited both ways
 
 `ConsoleRouteAgreementTests` (v0.3.8.34) checks one direction: the console must never call a route
