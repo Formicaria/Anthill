@@ -49,6 +49,13 @@ Repo: C:\Users\jconn\OneDrive\Documents\vscode\anthill\operation-anthill. Origin
 build and test as separate statements. I run the builds; you don't have a .NET SDK, and you have no
 GitHub credentials either — you can read from origin but not push.
 
+BEFORE HANDING OVER A RELEASE, resolve every type you referenced in EVERY changed .cs file — not
+just the new test files. v0.3.8.38 broke the build on `ApiJobRegistry.cs` because that file has no
+`using Anthill.Core.Memory;` (it fully-qualifies its one field), and a new method signature was
+written as `SqliteMemory.MissionJobRow`. The pre-handover check covered the tests and skipped the
+source files, which is exactly where the new type reference was. CI caught it in 62 seconds; the
+check should have caught it before the push.
+
 Do NOT use `scripts/release.sh` — its opening `git fetch` hangs on this machine. Use the manual
 recipe below, INCLUDING the `git log` check before tagging.
 
