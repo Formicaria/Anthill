@@ -570,7 +570,10 @@ public sealed partial class SqliteMemory : IDisposable
             // v2.22.0: provenance for skill credit — which proven procedure this task followed.
             ["skill_id"] = "TEXT",
         });
-        AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT" });
+        // v0.3.8.37: base_hash — what the target hashed to when the patch was built. Additive and
+        // nullable, so proposals written before this release keep applying; PatchApply only enforces
+        // the check when the column holds a value.
+        AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT", ["base_hash"] = "TEXT" });
         // Phase 4 learning loop: per-objective success EMA (nullable — null until the first recorded run).
         AddMissing("objectives", new() { ["success_ema"] = "REAL" });
         AddMissing("source_records", new()

@@ -151,7 +151,10 @@ public static class PatchSetMaterializer
                 // editing PatchApply, where the reason is written down.
                 var current = File.Exists(target) ? File.ReadAllText(target) : null;
                 var outcome = PatchApply.Compute(
-                    ChangeTypeName(proposal.ChangeType), proposal.OldContent, proposal.NewContent, current);
+                    ChangeTypeName(proposal.ChangeType), proposal.OldContent, proposal.NewContent, current,
+                    // v0.3.8.37: verify against the base the patch was BUILT on. A sandbox that
+                    // accepts a stale patch attests to a tree the operator's applier would refuse.
+                    proposal.BaseHash);
                 if (!outcome.Ok)
                     throw new InvalidOperationException($"proposal {proposal.Id} ({proposal.FilePath}): {outcome.Reason}");
 

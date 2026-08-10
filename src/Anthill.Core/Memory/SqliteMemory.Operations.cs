@@ -170,12 +170,15 @@ public sealed partial class SqliteMemory
             foreach (var p in patchSet.Proposals)
                 NonQuery(conn, tx,
                     @"INSERT OR REPLACE INTO patch_proposals (id, patch_set_id, mission_id, task_id, file_path,
-                        change_type, reason, risk, old_content, new_content, requires_approval, status, created_at)
-                      VALUES (@id, @pid, @mid, @tid, @fp, @ct, @reason, @risk, @old, @new, @ra, @status, @created)",
+                        change_type, reason, risk, old_content, new_content, base_hash, requires_approval, status, created_at)
+                      VALUES (@id, @pid, @mid, @tid, @fp, @ct, @reason, @risk, @old, @new, @bh, @ra, @status, @created)",
                     ("@id", p.Id), ("@pid", patchSet.Id), ("@mid", patchSet.MissionId), ("@tid", patchSet.TaskId),
                     ("@fp", p.FilePath), ("@ct", p.ChangeType.Value()), ("@reason", p.Reason), ("@risk", p.Risk),
                     // Patch bodies may contain proprietary source — sealed at rest with AES-GCM.
                     ("@old", _cipher.Protect(p.OldContent)), ("@new", _cipher.Protect(p.NewContent)),
+                    // v0.3.8.37: NOT encrypted. A hash of content is not content, and the apply path
+                    // needs to compare it without holding the decryption key.
+                    ("@bh", (object?)p.BaseHash ?? DBNull.Value),
                     ("@ra", p.RequiresApproval ? 1 : 0), ("@status", p.Status.Value()), ("@created", p.CreatedAt.ToIso()));
             tx.Commit();
         }
