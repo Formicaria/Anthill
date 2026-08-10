@@ -187,6 +187,33 @@ public class DocsConsistencyTests
             .Select(pair => $"{pair.Second.text} is listed below {pair.First.text}").ToList();
         Assert.True(outOfOrder.Count == 0,
             "Changelog entries must read newest first:\n  " + string.Join("\n  ", outOfOrder));
+
+        // v0.3.8.34 — ordering across the WHOLE file, with exactly one permitted discontinuity.
+        //
+        // The per-line check above cannot see across a renumbering: `0.3.8.34` sorts below `3.8.33`
+        // by every numeric rule, so a global "strictly descending" assertion would fail on a
+        // deliberate scheme change, and dropping the global check entirely would stop noticing an
+        // entry inserted in the wrong place anywhere in 184 headings.
+        //
+        // So inversions are counted rather than forbidden. One is the renumbering. Two means
+        // something was filed in the wrong place, and the message names it.
+        // Scoped to the era still being maintained. v1 and v2 are FROZEN — the note above records
+        // that this guard's first run found fifteen duplicate headings and several out-of-order
+        // entries across them, and that rewriting 173 lines to satisfy a test would edit the record
+        // of what shipped. Three of those inversions survive today and are deliberately left.
+        //
+        // The v3 lineage includes the v0.3.x renumbering: same line, one `0.` in front.
+        var maintained = all.Where(e => e.key[0] >= 3 || e.key[0] == 0).ToList();
+
+        var inversions = maintained.Zip(maintained.Skip(1))
+            .Where(pair => Compare(pair.Second.key, pair.First.key) >= 0)
+            .Select(pair => $"{pair.Second.text} is listed below {pair.First.text}")
+            .ToList();
+
+        Assert.True(inversions.Count <= 1,
+            "The maintained changelog era reads newest-first apart from at most ONE deliberate "
+            + $"renumbering boundary; found {inversions.Count} places where an entry is listed below "
+            + "a lower version:\n  " + string.Join("\n  ", inversions));
     }
 
     /// <summary>

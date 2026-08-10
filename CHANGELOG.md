@@ -1,5 +1,52 @@
 # ANTHILL Changelog
 
+## v0.3.8.35 - the guards find their own defects
+
+v0.3.8.34 shipped with three new guards. Running them found three defects — all of them in the
+guards, all of them mine, and all found by the checks failing on first run rather than by reading
+them back.
+
+### Three guard defects found by running the guards
+
+Every one of these was mine, found by the checks failing on first run rather than by inspection.
+
+**A substring match is wrong in both directions.** `StatusFieldConsumerTests` asked whether the
+console contained a field's name. `routes` looked read because `model_routes` exists, so it was
+exempted with a reason that was simply false; `model_choice` looked read because
+`model_choice_reason` exists, so a genuine orphan passed. One produced a false exemption and the
+other a false pass — the same mistake facing opposite ways. Whole-word matching now, and
+`model_choice` carries a real exemption: the resolver's enum name is Layer-3 diagnostic, and the
+console shows the two operator-facing halves instead.
+
+**An exemption that says "read by the console" is a contradiction.** The first draft exempted
+`model_resolved` with exactly that reason. An allow-list entry that does not describe the code cannot
+be trusted to describe it later either, so `TheExemptionList_ContainsNothingThatIsActuallyRead` now
+fails on the shape.
+
+**A global ordering rule the file was never going to satisfy.** The new cross-scheme changelog check
+allowed one inversion for the renumbering and found four: three are frozen v1/v2 history that this
+suite has explicitly refused to rewrite since v3.8.24. Scoped to the maintained era (v3.x and its
+v0.3.x renumbering), which is what the guard always meant.
+
+### The release process gained the check that would have caught PR #215
+
+Nothing asserted a version had MOVED. Every guard verifies the markers agree with each other, so a
+branch with no version bump passes them all and the tag lands on a commit still calling itself the
+previous version — the v3.8.13-on-a-v3.8.12-commit failure, reached from the other direction.
+`HANDOFF.md`'s recipe now checks the markers before tagging.
+
+### The release process gained the check that would have caught a bump-less tag
+
+Nothing asserted that a version had MOVED. Every guard verifies the markers agree with EACH OTHER, so
+a branch with no version bump passes all of them, and the tag then lands on a commit still calling
+itself the previous version. PR #215 was exactly that shape — titled `v3.8.34`, CI green, six files,
+no `Directory.Build.props` and no `CHANGELOG`. It was folded into v0.3.8.34 rather than tagged, and
+`HANDOFF.md`'s recipe now checks the markers before the tag goes on.
+
+This is the same failure as the v3.8.13 tag landing on a v3.8.12 commit, reached from the opposite
+direction: that one skipped the `git log` check, this one would have passed every automated check
+there was.
+
 ## v0.3.8.34 - version renumbered to v0, the console's routes and attributes, and the other half of the model fix
 
 ### The version line moves to v0

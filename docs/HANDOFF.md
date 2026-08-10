@@ -137,6 +137,18 @@ every failure has been there:
     git tag v<version>
     git push origin v<version>
 
+BEFORE TAGGING, CHECK THE TAG MATCHES THE CODE (added v0.3.8.34):
+
+    # every marker must already read <version>; a branch with no version bump will look green
+    git show HEAD:Directory.Build.props | Select-String AnthillVersion
+    git show HEAD:src/Anthill.Core/Configuration/AnthillRuntime.cs | Select-String 'Version ='
+
+PR #215 is why. It was titled "v3.8.34", CI was green, and it changed six files with NO version bump
+— no Directory.Build.props, no CHANGELOG. The guards check that the markers AGREE with each other,
+not that they MOVED, so a bump-less branch passes everything and the tag lands on a commit that still
+calls itself the previous version. That is the same failure as the v3.8.13 tag on a v3.8.12 commit,
+reached from the other direction.
+
 That `git log` check is the only thing release.sh provided that the manual tag doesn't. Skipping it
 once put a v3.8.13 tag on a v3.8.12 commit. Commit with explicit paths — `data/` and
 `scripts/qualify.ps1` are untracked and not gitignored. Pass `--title` explicitly: with more than
