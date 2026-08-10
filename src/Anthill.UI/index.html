@@ -612,6 +612,9 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .job-status.failed{color:var(--red);background:rgba(239,68,68,.12);}
 .job-status.queued{color:var(--blue);background:rgba(59,130,246,.12);}
 .job-status.partial{color:var(--orange);background:rgba(251,146,60,.12);}
+/* v3.8.34: an adaptive stop handed to a human. Amber, not red — nothing broke, and the operator's
+   next move is a decision rather than a repair. Without this rule the new status rendered unstyled. */
+.job-status.escalated{color:var(--amber,#f59e0b);background:rgba(245,158,11,.12);}
 .job-goal{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
 .job-actions{display:flex;gap:4px;margin-top:4px;}
 .job-btn{font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid;cursor:pointer;transition:opacity var(--t);}

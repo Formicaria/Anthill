@@ -181,6 +181,88 @@ public class LocalModelResolverTests
     }
 
     // ---------------------------------------------------------------------------------------
+    // The retired default, left behind in every existing config.json.
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE upgrade case, and the half of this change that nearly shipped missing.
+    ///
+    /// Removing the default from the source does nothing for anyone who already ran Anthill:
+    /// `SaveConfig()` wrote `"ollama_model": "llama3.1:8b"` to disk, so on an upgraded install the
+    /// colony keeps asking for a model the host may not have while the release notes claim the
+    /// hardcoding is gone. True of the code, false of the machine.
+    /// </summary>
+    [Fact]
+    public void TheRetiredDefault_IsIgnoredWhenItIsNotInstalled()
+    {
+        var choice = LocalModelResolver.Resolve(
+            LocalModelResolver.RetiredDefaultModel, Host, Holding("qwen2.5-coder:14b"));
+
+        Assert.True(choice.Resolved);
+        Assert.Equal("qwen2.5-coder:14b", choice.Model);
+        Assert.Equal(ModelChoiceKind.SoleInstalled, choice.Kind);
+    }
+
+    /// <summary>
+    /// ...but it is HONOURED when the host really has it. Plenty of people run it deliberately, and
+    /// a migration that overrode a working setup would be its own defect.
+    /// </summary>
+    [Fact]
+    public void TheRetiredDefault_IsHonouredWhenItIsActuallyInstalled()
+    {
+        var choice = LocalModelResolver.Resolve(
+            LocalModelResolver.RetiredDefaultModel, Host,
+            Holding("llama3.1:8b", "qwen2.5:7b"));
+
+        Assert.True(choice.Resolved);
+        Assert.Equal(LocalModelResolver.RetiredDefaultModel, choice.Model);
+        Assert.Equal(ModelChoiceKind.Configured, choice.Kind);
+    }
+
+    /// <summary>
+    /// The special case is scoped to that ONE string. Any other configured model stays configured
+    /// even when absent — an explicit choice deserves an explicit "not installed", never a silent
+    /// substitution with something the operator did not ask for.
+    /// </summary>
+    [Fact]
+    public void AnyOtherMissingModel_StaysConfiguredRatherThanBeingSubstituted()
+    {
+        var choice = LocalModelResolver.Resolve("mixtral:8x7b", Host, Holding("qwen2.5:7b"));
+
+        Assert.True(choice.Resolved);
+        Assert.Equal("mixtral:8x7b", choice.Model);
+        Assert.Equal(ModelChoiceKind.Configured, choice.Kind);
+    }
+
+    /// <summary>
+    /// A transient outage must not discard the setting. "Cannot ask" is not evidence the model is
+    /// absent, and downgrading a possibly-real choice because Ollama was briefly down would lose
+    /// configuration for a reason that has nothing to do with configuration.
+    /// </summary>
+    [Fact]
+    public void TheRetiredDefault_SurvivesAnUnreachableHost()
+    {
+        var choice = LocalModelResolver.Resolve(LocalModelResolver.RetiredDefaultModel, Host, Unreachable);
+
+        Assert.True(choice.Resolved);
+        Assert.Equal(LocalModelResolver.RetiredDefaultModel, choice.Model);
+    }
+
+    /// <summary>When it is ignored AND the choice is ambiguous, the reason must explain both halves —
+    /// otherwise "no model is configured" contradicts the config file the operator is looking at.</summary>
+    [Fact]
+    public void WhenTheRetiredDefaultIsIgnored_TheReasonSaysSo()
+    {
+        var choice = LocalModelResolver.Resolve(
+            LocalModelResolver.RetiredDefaultModel, Host, Holding("a:1", "b:2"));
+
+        Assert.False(choice.Resolved);
+        Assert.Contains(LocalModelResolver.RetiredDefaultModel, choice.Reason);
+        Assert.Contains("not installed", choice.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("default", choice.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // The hardcoding must not come back.
     // ---------------------------------------------------------------------------------------
 
@@ -217,6 +299,15 @@ public class LocalModelResolverTests
             foreach (Match m in tagged.Matches(text))
             {
                 var line = text[..m.Index].Count(c => c == '\n') + 1;
+
+                // ONE exemption, and it is the opposite of a default: `RetiredDefaultModel` names the
+                // string that USED to be one, so the resolver can recognise it sitting in an upgraded
+                // install's config.json and decline to treat it as a choice. Exempted by its exact
+                // declaration rather than by file, so the file cannot quietly acquire a second tag.
+                var declaration = text[..m.Index];
+                if (declaration.EndsWith("public const string RetiredDefaultModel = ", StringComparison.Ordinal))
+                    continue;
+
                 offenders.Add($"{Path.GetRelativePath(Root(), file)}:{line} {m.Value}");
             }
         }
