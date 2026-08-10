@@ -1972,13 +1972,19 @@ let CORE_STATE=null; // {state,text,sub,at}
 let GOV=null;        // {load,memFree,lat,backendOk,concEff,concCfg,at}
 async function pollHud(){
   if(!document.getElementById('page-overview')?.classList.contains('active')) return;
-  let st,au,jb,pt,ob,mn,ph;
+  let st,au,jb,pt,ob,mn,ph,cfg;
   try{
-    [st,au,jb,pt,ob,mn,ph]=await Promise.all([
+    [st,au,jb,pt,ob,mn,ph,cfg]=await Promise.all([
       api('/status'), api('/autonomy/status'), api('/jobs'),
       api('/patches?limit=200'), api('/objectives'), api('/missions/json?limit=8'),
       // Provider circuit-breaker health. Isolated so a hiccup here can never blank the whole HUD.
       api('/providers/health').catch(()=>({success:false})),
+      // v0.3.8.35 — configuration findings. RuntimeConfigValidator has produced severity-tagged
+      // findings for combinations that cannot work (an enabled feature whose dependency is off, a
+      // gate that contradicts another) since v2.x, exposed at /config/health, and the console had
+      // never asked. A validator whose output nobody reads is the same defect as a status field
+      // nobody consumes — see StatusFieldConsumerTests.
+      api('/config/health').catch(()=>({success:false})),
     ]);
   }catch{ return; } // transient; existing panels keep their last values
   const s=(st&&st.data)||{}, a=(au&&au.data)||{};
@@ -2039,6 +2045,16 @@ async function pollHud(){
   if(pendingApprovals>0) attn.push({sev:'warning',title:`${pendingApprovals} pending patch approval${pendingApprovals===1?'':'s'}`,reason:'Review and approve or reject in Changes.',go:"showPage('patches')"});
   if(highRiskPatches>0) attn.push({sev:'error',title:`${highRiskPatches} high-risk patch waiting`,reason:'High-risk change needs careful review before apply.',go:"openPatches({risk:'high'})"});
   if(providerDown) attn.push({sev:'error',title:'Model backend unreachable',reason:`Ollama at ${escapeHtml(sum.ollama_host||'?')} did not respond.`,go:"showPage('settings')"});
+  // v0.3.8.35 — configuration findings, highest severity first. These name a COMBINATION that
+  // cannot work, which is exactly the class of problem an operator cannot deduce from any single
+  // settings page.
+  const cfgFindings=(cfg&&cfg.success&&Array.isArray(cfg.data&&cfg.data.findings))?cfg.data.findings:[];
+  for(const f of cfgFindings.slice(0,3)){
+    const sev=String(f.severity||'').toLowerCase()==='error'?'error':'warning';
+    attn.push({sev,title:'Configuration: '+escapeHtml(f.combination||'invalid combination'),
+      reason:escapeHtml(f.detail||'This combination of settings cannot work as configured.'),
+      go:"showPage('settings')"});
+  }
   if(modelUnusable) attn.push({sev:'error',title:'No usable model',
     reason: escapeHtml(sum.model_choice_reason || `Ollama is running at ${sum.ollama_host||'?'} but the configured model is not installed.`),
     go:"showPage('settings')"});
