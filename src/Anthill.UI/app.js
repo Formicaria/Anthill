@@ -539,7 +539,13 @@ function buildNav(){
     if(!sections.length) continue;
     const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
     const head=document.createElement('div'); head.className='nav-dom-head';
+    // v3.8.34: the domain heads were the only nav controls in this function without an explicit
+    // name — `nav-item` and `nav-child` both set one three lines away. Name-from-content cannot be
+    // relied on here: the label sits between an icon span and a `&#9656;` chevron, so a computed
+    // name either fails or picks up the arrow. Six unnamed buttons in primary navigation, verified
+    // in the browser's interactive accessibility tree before the fix.
     head.setAttribute('role','button'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
+    head.setAttribute('aria-label',d.label);
     head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
     const toggle=()=>{ const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
     head.addEventListener('click',toggle); navKeyActivate(head,toggle);
@@ -1922,6 +1928,17 @@ function hudBadge(status,label){ const s=(status||'unknown').toString().toLowerC
 function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
   return `<span class="hud-risk ${l}">${escapeHtml(l)}</span>`; }
 // Map a mission/objective/job status onto a canonical HUD badge state.
+// v3.8.34: presentation layer over the job status vocabulary, in the shape ATTEMPT_STATE_LABEL
+// already established — worded as the fact rather than the verdict. Only statuses whose raw name
+// misleads are translated; the rest pass through, because renaming a clear state to a friendlier
+// one costs the operator the word they will find in the logs.
+const JOB_STATUS_LABEL = {
+  // Not a failure and not a success: the colony stopped on purpose and wants a person to decide.
+  escalated: 'needs you',
+};
+const JOB_STATUS_TITLE = {
+  escalated: 'The colony stopped and handed this to you — nothing broke, it declined to continue without your judgment. Internal state: escalated.',
+};
 function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
   if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
   if(st==='reverted') return 'rejected'; // v2.7.0: undone patch — neutral/terminal styling
@@ -2051,7 +2068,7 @@ async function pollHud(){
     hudBadge(hudStatusClass(m.status),m.status)+
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
     `<span style="color:var(--dim);font-size:9px;white-space:nowrap">${fmtTime(m.saved_at||m.created_at)||''}</span></div>`).join('')
-    : '<div class="hud-state">No missions yet.</div>';
+    : '<div class="hud-state">No missions yet — describe what you want done in Mission Command.</div>';
 
   const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
   const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
@@ -2060,7 +2077,7 @@ async function pollHud(){
       chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
       chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
       (highRiskPatches?`<span class="hud-risk high" style="justify-content:center">${highRiskPatches} high-risk</span>`:'')+`</div>`
-    : '<div class="hud-state">No patch proposals yet.</div>';
+    : '<div class="hud-state">No change proposals yet — missions run in Patch Proposal or Full Build/Test mode create them.</div>';
 
   const oc={active:0,paused:0,done:0,looping:0,failed:0};
   objectives.forEach(o=>{ const st=(o.status||'').toLowerCase();
@@ -2072,7 +2089,7 @@ async function pollHud(){
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
       (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
-    : '<div class="hud-state">No objectives yet.</div>';
+    : '<div class="hud-state">No objectives yet — add one under Operations → Automation to give the colony standing work.</div>';
 }
 
 function renderJobList(jobs, listId, badgeId, limit){
@@ -2080,17 +2097,22 @@ function renderJobList(jobs, listId, badgeId, limit){
   if(badge) badge.textContent=jobs.length;
   const list=document.getElementById(listId);
   if(!list) return;
-  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>'; return; }
+  // v3.8.34: "job" is not a second concept — ApiJobRegistry calls this an ApiMissionJob, POST
+  // /missions answers "Mission queued.", and every row carries a mission_id. Naming the queue
+  // after the thing in it costs the operator nothing and removes an invented distinction.
+  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No mission runs yet — dispatching from Mission Command queues one here.</div>'; return; }
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
-    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    // v3.8.34: 'escalated' is terminal. Omitting it here would leave an adaptively-stopped run
+    // with no View Result and no Re-run — finished work the operator could not open.
+    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
     const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
     let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
-        <span class="job-status ${j.status}">${j.status}</span>
+        <span class="job-status ${j.status}"${JOB_STATUS_TITLE[j.status]?` title="${escapeHtml(JOB_STATUS_TITLE[j.status])}"`:''}>${escapeHtml(JOB_STATUS_LABEL[j.status]||j.status)}</span>
         <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
       </div>
       <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}${dur}</div>
@@ -3611,12 +3633,20 @@ async function loadAntObs(){
 async function loadAntObsDirectory(grid){
   try{
     // Stage F: truthful runtime state per role — never a bare 'inactive'.
-    const [r,g]=await Promise.all([api('/colony/registry'),api('/colony/graph')]);
+    //
+    // v3.8.34: this fetched `/colony/graph`, a route that does not exist in the API. The request
+    // 404'd on every load, so `rt` stayed empty, `s` was always undefined, and the `${s?…:''}`
+    // guard below omitted the runtime state line from every card — the comment above described
+    // behaviour this function never had. `runtime_status` is returned by `/colony/registry`
+    // (ApiHost.Routes.cs), which this function already fetches, so the second request was wrong
+    // AND redundant. Line ~986 reads the same field off the same response correctly; of the two
+    // call sites for one contract, this was the one that disagreed.
+    const r=await api('/colony/registry');
     if(!(r&&r.success&&r.data))return;
     const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
     if(!roles.length)return;
     const rt={};
-    ((g&&g.success&&g.data&&g.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
+    ((r.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
     const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
     const html=roles.map(role=>{
       const rid=antRoleId(role), rname=antRoleName(role);
@@ -3697,7 +3727,9 @@ async function pollActiveJob(){
   try{
     const r=await api(`/jobs/${activeJobId}`); if(!r.success) return;
     const j=r.data;
-    if(j.status==='complete'||j.status==='failed'||j.status==='partial'){
+    // v3.8.34: 'escalated' is terminal — without it this poller never stops, the directive box
+    // stays disabled, and the operator is locked out waiting for a run that already ended.
+    if(j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated'){
       clearInterval(jobPollTimer);jobPollTimer=null;
       showJobResult(activeJobId);
       enableInput(true);
