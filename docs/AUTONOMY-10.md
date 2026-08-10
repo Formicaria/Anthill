@@ -406,6 +406,7 @@ actually is. Nothing else changed.
 | ~~v3.8.31~~ | Shipped: trail vocabulary correction, per-task model metrics, documentation reconciliation |
 | ~~v3.8.32~~ | Shipped: five externally-reported defects and their guards. Delivered Phase 1 items 1, 4, 5 (string form) and 7 |
 | ~~v3.8.33~~ | Shipped: the hardcoded local model removed and resolved instead; the console's unusable-model state surfaced |
+| ~~v3.8.34~~ | Shipped: the retired default recognised in already-written config files — v3.8.33 fixed the code and not the machine |
 | **v3.9.0** | **Finish Phase 1.** Base hashes on proposals; delete/rename semantics; `add` refuses an existing target; atomic staging over the live tree; empty auto-apply allowlist fails closed; the thirteen-class taxonomy |
 | v3.9.1 | **Phase 2.** Roster profiles, startup capability report, production-composed runtime fixture, scripted reasoning provider, observed Queen dispatch, full-roster mission suite |
 | v3.10.0 | **Phase 3.** Versioned artifacts, provenance, consumption graph, validation boundaries, evidence linkage |

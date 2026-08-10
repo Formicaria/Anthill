@@ -4548,6 +4548,29 @@ document.getElementById('log-reload').addEventListener('click',reloadLogModal);
 function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /**
+ * v3.8.34: the correct escape for a value that lands INSIDE a quoted argument of a `data-onclick`
+ * attribute — a nested context where `escapeHtml` alone is not enough.
+ *
+ * `data-onclick` is read back with getAttribute() and parsed by the micro-interpreter at the bottom
+ * of this file. The HTML parser DECODES entities before that happens, so `escapeHtml`'s `&#39;`
+ * becomes a real apostrophe by the time splitTop/coerce see it — closing the argument early and
+ * letting a second statement be appended and called with the operator's session. Escaping for HTML
+ * is correct for the outer layer and invisible to the inner one.
+ *
+ * v3.8.13 fixed the patch-path instance of this structurally, with the `data-action` map, and its
+ * comment is still the right long-term answer for untrusted values. This closes the remaining sites
+ * that still interpolate, without corrupting the values: the interpreter's own parser is
+ * backslash-aware (`splitTop` honours `\'`, `coerce` unescapes `\(['"\])`), so a backslash escape
+ * survives the round trip exactly, where stripping the character would silently change an id.
+ *
+ * Order matters. Escape for the JS layer FIRST, then for the HTML layer: the emitted `\&#39;`
+ * decodes to `\'`, which the interpreter unescapes back to a literal apostrophe.
+ */
+function jsArg(s){
+  return escapeHtml(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+}
+
+/**
  * v2.14.13: sanitise a colour before it reaches a style="" attribute.
  *
  * Ant accent colours come from uiState.castes[caste].color, which the operator sets and which
@@ -5717,10 +5740,10 @@ async function reloadUsers(){
         <td>${status}</td>
         <td>${last}</td>
         <td style="white-space:nowrap">
-          <button class="job-btn view" data-onclick="userResetPw('${escapeHtml(u.username)}')">Reset PW</button>
-          <button class="job-btn view" data-onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
-          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${escapeHtml(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
-          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${escapeHtml(u.username)}')">Delete</button>`}
+          <button class="job-btn view" data-onclick="userResetPw('${jsArg(u.username)}')">Reset PW</button>
+          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
+          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${jsArg(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
+          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${jsArg(u.username)}')">Delete</button>`}
         </td></tr>`;
     }).join('')||'<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
   }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`;}
@@ -5945,7 +5968,7 @@ function renderHlDeps(){
   if(!HL_DEPS.length){ tb.innerHTML='<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No dependencies mapped yet.</td></tr>'; return; }
   tb.innerHTML=HL_DEPS.map(d=>'<tr><td>'+escapeHtml(d.from_kind)+': '+escapeHtml(hlRefName(d.from_kind,d.from_id))+'</td><td>'+escapeHtml(d.dependency_kind)+
     '</td><td>'+escapeHtml(d.to_kind)+': '+escapeHtml(hlRefName(d.to_kind,d.to_id))+'</td><td>'+escapeHtml(d.notes||'—')+
-    '</td><td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDep(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+    '</td><td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDep(\''+jsArg(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
 }
 
 function renderHlChanges(list){
@@ -6220,7 +6243,7 @@ function renderHlGraph(d){
       ? '<rect x="'+(p.x-17)+'" y="'+(p.y-13)+'" width="34" height="26" rx="4" fill="'+kindFill+'" fill-opacity="0.18" stroke="'+sc+'" stroke-width="2"'+pulse+'/>'
       : '<rect x="'+(p.x-16)+'" y="'+(p.y-9)+'" width="32" height="18" rx="9" fill="'+kindFill+'" fill-opacity="0.22" stroke="'+sc+'" stroke-width="2"'+pulse+'/>';
     const glyph='<text x="'+p.x+'" y="'+(p.y+4)+'" font-size="11" fill="'+kindFill+'" text-anchor="middle" style="font-weight:700;">'+(isHost?'▣':'●')+'</text>';
-    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" data-onclick="hlGraphSelect(\''+escapeHtml(n.id)+'\')">'+
+    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" data-onclick="hlGraphSelect(\''+jsArg(n.id)+'\')">'+
       shape+glyph+
       (n.internet_exposed?'<text x="'+(p.x+19)+'" y="'+(p.y-14)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
       (n.open_incident?'<text x="'+(p.x-17)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
@@ -6373,7 +6396,7 @@ function renderHlIncidents(list){
     const stCol=i.status==='resolved'?'var(--green)':(i.status==='investigating'?'var(--yellow, orange)':'var(--red)');
     return '<tr><td style="color:'+col+'">'+escapeHtml(i.severity)+'</td><td>'+escapeHtml(i.title)+'</td><td>'+escapeHtml(i.subject_id||'—')+
       '</td><td style="color:'+stCol+'">'+escapeHtml(i.status)+'</td><td>'+hlDate(i.opened_at)+'</td><td>'+escapeHtml(i.root_cause||'—')+
-      '</td><td><button class="btn btn-ghost" data-onclick="hlIncDetail(\''+escapeHtml(i.id)+'\',\''+escapeHtml((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
+      '</td><td><button class="btn btn-ghost" data-onclick="hlIncDetail(\''+jsArg(i.id)+'\',\''+jsArg((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
   }).join('');
 }
 
@@ -6451,12 +6474,12 @@ function renderHlActions(items){
     const sc=a.state==='executed'?'ok':(a.state==='rejected'||a.state==='superseded'?'danger':(a.state==='approved'?'warn':'info'));
     let ops='';
     if(a.state==='pending')
-      ops='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
-          '<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
+      ops='<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
+          '<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
     if(a.state==='pending'||a.state==='approved')
-      ops+='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
+      ops+='<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
     if(a.state==='approved')
-      ops+='<button class="btn btn-primary" data-onclick="hlActExecute(\''+escapeHtml(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
+      ops+='<button class="btn btn-primary" data-onclick="hlActExecute(\''+jsArg(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
     return '<tr><td>'+athPill(rc,(a.risk_level||'?')+' · '+(a.blast_radius_score??'?'))+'</td>'+
       '<td><b>'+escapeHtml(a.action_type||'')+'</b></td>'+
       '<td title="'+escapeHtml(a.target_kind||'')+'">'+escapeHtml((a.target_id||'').substring(0,24))+'</td>'+
@@ -6584,23 +6607,23 @@ async function renderHlDeck(){
     const total=g.vms.length+g.cts.length+g.svcs.length;
     const met=HL3.metrics[gid];
     const hostDot=hl3Dot(healthFor(g.host.address)||((g.vms.some(v=>String(v.status).toLowerCase()==='running')||g.cts.some(c=>String(c.status).toLowerCase()==='running'))?'running':''));
-    html+='<div class="hl3-host"><div class="hl3-host-hd" data-onclick="'+(g.host.id?('hl3HostPage(\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
+    html+='<div class="hl3-host"><div class="hl3-host-hd" data-onclick="'+(g.host.id?('hl3HostPage(\''+jsArg(g.host.id)+'\')'):'void(0)')+'">'
       +hostDot+escapeHtml(g.host.name||'?')
       +' <span style="font-weight:400;color:var(--dim);font-size:9px;">'+escapeHtml(g.host.kind||'')+(g.host.address?' · '+escapeHtml(g.host.address):'')+'</span>'
       +'<span class="sub">'+total+' item(s)'
-      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" data-onclick="event.stopPropagation();hl3Hide(\'host:'+escapeHtml(gid)+'\')">✕</span>'):'')
+      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" data-onclick="event.stopPropagation();hl3Hide(\'host:'+jsArg(gid)+'\')">✕</span>'):'')
       +'</span></div>';
     if(met) html+=hl3Bars(met);
     html+='<div class="hl3-tiles">';
     for(const vm of g.vms){
       const key='vm:'+vm.id; if(hidden.has(key)){ hiddenCount++; continue; }
-      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(vm.id)+'\')">'+hl3Dot(vm.status)
+      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'vm\',\''+jsArg(vm.id)+'\')">'+hl3Dot(vm.status)
         +'<span class="k">vm</span>'+escapeHtml(vm.name||vm.vm_id||'?')
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     for(const ct of g.cts){
       const key='ct:'+ct.id; if(hidden.has(key)){ hiddenCount++; continue; }
-      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(ct.id)+'\')">'+hl3Dot(ct.status)
+      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'ct\',\''+jsArg(ct.id)+'\')">'+hl3Dot(ct.status)
         +'<span class="k">'+escapeHtml(ct.kind||'ct')+'</span>'+escapeHtml(ct.name||ct.container_id||'?')
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
@@ -6612,7 +6635,7 @@ async function renderHlDeck(){
         +hl3Dot(st||(svc.criticality==='critical'?'warning':''))
         +'<span class="k">svc</span>'+escapeHtml(svc.name||'?')
         +(svc.internet_exposed?'<span title="internet exposed" style="color:var(--status-warning)">🌐</span>':'')
-        +'<span class="zap" title="Propose service restart (approval-gated)" data-onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span>'
+        +'<span class="zap" title="Propose service restart (approval-gated)" data-onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+jsArg(svc.id)+'\')">⚡</span>'
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     if(!total) html+='<span class="hl3-empty" style="padding:4px;">no services or guests yet</span>';
@@ -6654,7 +6677,7 @@ function hl3RenderHiddenTray(count){
     if(kind==='ct'){ const x=(HL3.cts||[]).find(o=>o.id===id); return 'ct '+(x?x.name||x.container_id:id.slice(0,14)); }
     const x=(HL_SVCS||[]).find(o=>o.id===id); return 'svc '+(x?x.name:id.slice(0,14));
   };
-  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" data-onclick="hl3Unhide(\''+escapeHtml(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
+  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" data-onclick="hl3Unhide(\''+jsArg(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
     +' <span style="cursor:pointer;text-decoration:underline;" data-onclick="hl3SaveHidden(new Set());renderHlDeck()">restore all</span>';
 }
 // ---- v2.3.3 sub-pages: nothing nested — nested content opens a full page with ✕ Close on top --
@@ -6684,8 +6707,8 @@ function hl3HostPage(hostId){
     +(m?' · Uptime: <b>'+up(m.uptime_seconds)+'</b> · Metrics via <b>'+escapeHtml(m.source)+'</b> at '+escapeHtml((m.updated_at||'').slice(0,19).replace('T',' ')):'')+'</div>'
     +(m?hl3Bars(m):'<div style="font-size:10px;color:var(--dim);margin-top:6px;">No resource metrics for this node yet — they arrive with the next provider sync.</div>')+'</div>';
   html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Guests ('+(vms.length+cts.length)+')</div><div class="hl3-tiles">'
-    +vms.map(v=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
-    +cts.map(c=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
+    +vms.map(v=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'vm\',\''+jsArg(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
+    +cts.map(c=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'ct\',\''+jsArg(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
     +((vms.length+cts.length)?'':'<span class="hl3-empty">no guests</span>')+'</div></div>';
   hl3PageOpen('Node — '+(h.name||'?'),html);
 }
@@ -6700,7 +6723,7 @@ async function hl3GuestPage(kind,id){
   const host=(HL_HOSTS||[]).find(h=>h.id===g.node_id);
   const tgt=hl3GuestTarget(g,kind);
   const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
-  const act=(type,label)=>'<button class="btn btn-ghost" data-onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+escapeHtml(tgt)+'\')">'+label+'</button>';
+  const act=(type,label)=>'<button class="btn btn-ghost" data-onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+jsArg(tgt)+'\')">'+label+'</button>';
   let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Status</div>'
     +'<div style="font-size:12px;">'+hl3Dot(g.status)+' <b>'+escapeHtml((g.status||'unknown').toUpperCase())+'</b>'
     +' <span style="color:var(--dim);font-size:10px;">on '+escapeHtml(host?host.name:String(g.node_id||'').split(':').pop())+' · id '+escapeHtml(kind==='vm'?g.vm_id:g.container_id)+'</span></div>'
@@ -6733,7 +6756,7 @@ async function renderHl3Apps(){
   if(!items.length){ el.innerHTML='<div class="hl3-empty">No *arr apps connected yet. <b>+ App</b> supports sonarr, radarr, lidarr, readarr, whisparr, prowlarr, and bazarr — status, health, and queue at a glance, Homarr-style.</div>'; return; }
   el.innerHTML=items.map(a=>{
     const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
-    return '<div class="hl3-app" data-onclick="hl3ArrPage(\''+escapeHtml(a.id)+'\')">'
+    return '<div class="hl3-app" data-onclick="hl3ArrPage(\''+jsArg(a.id)+'\')">'
       +'<span class="av" style="background:'+col+'">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
       +'<span style="min-width:0;"><div class="nm">'+hl3Dot(a.status==='ok'?'ok':(a.status==='error'?'failed':''))+' '+escapeHtml(a.name)+'</div>'
       +'<div class="mt">'+escapeHtml(a.kind)+(a.version?' '+escapeHtml(a.version):'')
@@ -6767,9 +6790,9 @@ function hl3ArrPage(id){
     +' · Checked '+escapeHtml((a.last_checked||'never').slice(0,19).replace('T',' '))+'</div>'
     +(a.last_message?'<div style="font-size:10px;color:var(--status-danger);margin-top:6px;">'+escapeHtml(a.last_message)+'</div>':'')
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
-    +'<button class="btn btn-primary" data-onclick="window.open(\''+escapeHtml(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
+    +'<button class="btn btn-primary" data-onclick="window.open(\''+jsArg(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
     +'<button class="btn btn-ghost" data-onclick="hl3ArrSync();hl3PageClose()">⟳ Sync now</button>'
-    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+escapeHtml(a.id)+'\')">🗑 Remove</button></div>'
+    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+jsArg(a.id)+'\')">🗑 Remove</button></div>'
     +'<div style="font-size:9px;color:var(--dim);margin-top:8px;">API key is stored write-only in the credential store (id '+escapeHtml(a.credential_id)+') and is never displayed. All requests are GET-only and allowlist-gated.</div></div>';
   hl3PageOpen('App — '+a.name,html);
 }
@@ -7195,7 +7218,7 @@ function renderHlDevices(devs){
   tb.innerHTML=devs.map(d=>'<tr><td>'+escapeHtml(d.name||'—')+'</td><td>'+escapeHtml(d.kind||'unknown')+'</td><td>'+escapeHtml(d.mac||'—')+
     '</td><td>'+escapeHtml(d.ip||'—')+'</td><td>'+escapeHtml(d.vlan||'—')+
     '</td><td>'+(d.known?'yes':'<span style="color:var(--red)">NO</span>')+'</td><td>'+hlDate(d.last_seen)+'</td>'+
-    '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDevice(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+    '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDevice(\''+jsArg(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
 }
 
 function renderHlRisks(risks){
@@ -7210,7 +7233,7 @@ function renderHlRisks(risks){
     const col=r.severity==='error'?'var(--red)':(r.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
     return '<tr><td style="color:'+col+'">'+escapeHtml(r.severity)+'</td><td>'+escapeHtml(r.finding_kind)+'</td><td>'+escapeHtml(r.summary||'')+
       '</td><td>'+escapeHtml(r.status)+'</td><td>'+hlDate(r.updated_at)+'</td>'+
-      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" data-onclick="hlAckRisk(\''+escapeHtml(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
+      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" data-onclick="hlAckRisk(\''+jsArg(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
   }).join('');
 }
 
@@ -7267,7 +7290,7 @@ function renderHlChecks(schedules,results){
       '<td style="color:'+col+'">'+escapeHtml(st)+(sc.enabled?'':' (disabled)')+'</td>'+
       '<td>'+(last?last.latency_ms+'ms':'—')+'</td><td>'+escapeHtml(last?(last.detail||''):'not run yet')+'</td>'+
       '<td>'+(last?hlDate(last.checked_at):'—')+'</td>'+
-      '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelCheck(\''+escapeHtml(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
+      '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelCheck(\''+jsArg(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
   }).join('');
 }
 
@@ -7747,8 +7770,8 @@ function renderOv2Approvals(items){
     const kindTag=a.kind==='homelab_action'?' '+athPill('warn','action'):'';
     return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+kindTag+
       '<div style="margin-top:4px;display:flex;gap:6px;">'+
-      '<button class="ov2-approve" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\',\''+escapeHtml(a.kind||'patch')+'\')">✓ Approve</button>'+
-      '<button class="ov2-reject" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\',\''+escapeHtml(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
+      '<button class="ov2-approve" data-onclick="doApproval(\''+jsArg(a.source_id)+'\',\'approve\',\''+jsArg(a.kind||'patch')+'\')">✓ Approve</button>'+
+      '<button class="ov2-reject" data-onclick="doApproval(\''+jsArg(a.source_id)+'\',\'reject\',\''+jsArg(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
   }).join('');
 }
 
@@ -8193,8 +8216,8 @@ function renderConversations(list){
       ? `<div class="conv-attn">
            <span class="conv-attn-label">Waiting for you:</span>
            <span class="conv-attn-what">${escapeHtml(waiting.join(', '))}</span>
-           ${waiting.map(a=>`<button class="conv-btn approve" data-onclick="convApprove('${escapeHtml(c.id)}','${escapeHtml(a)}')">Approve ${escapeHtml(a)}</button>`).join('')}
-           <button class="conv-btn" data-onclick="convCancel('${escapeHtml(c.id)}')">Cancel</button>
+           ${waiting.map(a=>`<button class="conv-btn approve" data-onclick="convApprove('${jsArg(c.id)}','${jsArg(a)}')">Approve ${escapeHtml(a)}</button>`).join('')}
+           <button class="conv-btn" data-onclick="convCancel('${jsArg(c.id)}')">Cancel</button>
          </div>`
       : '';
 
@@ -8208,8 +8231,8 @@ function renderConversations(list){
       ${attention}
       ${c.cancelled?'':`<div class="conv-say">
         <input class="conv-input" id="conv-msg-${escapeHtml(c.id)}" placeholder="Say something…" />
-        <button class="conv-btn" data-onclick="convSend('${escapeHtml(c.id)}','chat')">Send</button>
-        <button class="conv-btn work" data-onclick="convSend('${escapeHtml(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
+        <button class="conv-btn" data-onclick="convSend('${jsArg(c.id)}','chat')">Send</button>
+        <button class="conv-btn work" data-onclick="convSend('${jsArg(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
       </div>`}
     </div>`;
   }).join('');
@@ -8369,14 +8392,14 @@ function renderToolsPanel(d){
             // a row behind that looked broken — the label promised one thing and the API did
             // another, which is the worst possible pairing on a destructive control.
             const actions = u.status==='disabled'
-              ? `<button class="conv-btn" data-onclick="toolEnable('${escapeHtml(u.name)}')">Enable</button>`
-              : `<button class="conv-btn" data-onclick="toolDisable('${escapeHtml(u.name)}')">Disable</button>`;
+              ? `<button class="conv-btn" data-onclick="toolEnable('${jsArg(u.name)}')">Enable</button>`
+              : `<button class="conv-btn" data-onclick="toolDisable('${jsArg(u.name)}')">Disable</button>`;
             return `<div class="tp-item ${u.status==='registered'?'':'off'}">
              <span class="tp-name">${escapeHtml(u.name)}</span>
              <span class="tp-status">${escapeHtml(u.kind)} · ${escapeHtml(TOOL_STATUS_LABEL[u.status]||u.status)}</span>
              <span class="tp-why">${escapeHtml((u.problems||[]).join('; ')||u.description||'')}</span>
              ${actions}
-             <button class="conv-btn" data-onclick="toolDelete('${escapeHtml(u.name)}')">Delete</button>
+             <button class="conv-btn" data-onclick="toolDelete('${jsArg(u.name)}')">Delete</button>
            </div>`;
           }).join('')
         : `<div class="tp-quiet">No operator-defined tools yet.</div>`);
