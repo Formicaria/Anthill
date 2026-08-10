@@ -1,10 +1,10 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v3.8.34** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.34** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
-twelve-role activation program (v3.8.19–v3.8.34). What follows is the state they left, measured.
+twelve-role activation program (v3.8.19–v0.3.8.34). What follows is the state they left, measured.
 
 > **v3.8.31 closed this line and was wrong to.** An external review of v3.8.29 found five defects
 > that were still present, all with passing tests over them. v3.8.32 fixed them and built the guards
@@ -58,7 +58,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 
 ---
 
-## 2. Where the colony actually is (measured at v3.8.34)
+## 2. Where the colony actually is (measured at v0.3.8.34)
 
 ### Working end to end
 

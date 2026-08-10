@@ -1,6 +1,37 @@
 # ANTHILL Changelog
 
-## v3.8.34 - the other half of removing the hardcoded model, and two guards the console needed
+## v0.3.8.34 - version renumbered to v0, the console's routes and attributes, and the other half of the model fix
+
+### The version line moves to v0
+
+Everything before this shipped as `v3.x`, which claims a maturity Anthill has not earned. There is
+still no live twelve-role mission, Phase 1 of `AUTONOMY-10.md` is unfinished, and the production
+qualification in Phase 10 has not started. A 3.x number tells an operator this is a mature product;
+the repository's own PLAN.md says otherwise on the same page.
+
+So the line becomes **`v0.3.8.34`** — the existing numbering with a `0.` in front. It reads as what
+it is: pre-1.0 software on its third architecture. v1.0.0 is earned by Phase 10's exit gate, not by
+counting releases.
+
+Historical entries below keep their original `v3.x` headings. Rewriting 170-plus headings would
+edit the record of what actually shipped in order to make a document look tidy, which this changelog
+has refused before and refuses here. `ReleaseHeadings_AreUniqueAndDescend` was taught the scheme
+instead: it scopes uniqueness and ordering to the release line being actively written, and proves it
+is not vacuous against the whole file rather than against one major.
+
+### The console asks routes that exist (from `fix/console-contract-and-escalation`, PR #215)
+
+Merged into this release rather than tagged separately, because that branch carried no version bump
+of its own — tagging it `v3.8.34` would have put the tag on a commit whose markers all still read
+`3.8.33`, which is the exact mistake `HANDOFF.md` warns about after a v3.8.13 tag landed on a
+v3.8.12 commit. CI was green because the guards check that the markers AGREE, not that they moved.
+
+That work: the Agent Inspector asks a route that exists, the six navigation domain toggles are
+named, dashboard empty states say what to do next, and escalation stops being recorded as failure.
+`ConsoleRouteAgreementTests` is the durable half — it pins console-to-route agreement the same way
+`CrossBoundaryAgreementTests` pins producer-to-consumer agreement.
+
+### The other half of removing the hardcoded model
 
 v3.8.33 removed `llama3.1:8b` from the source and shipped. It did nothing for anyone who had already
 run Anthill, and the operator caught it within minutes of the release: *"wait so the hardcode of

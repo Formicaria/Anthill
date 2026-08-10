@@ -132,18 +132,48 @@ public class DocsConsistencyTests
     [Fact]
     public void ReleaseHeadings_AreUniqueAndDescend()
     {
-        var currentMajor = int.Parse(AnthillRuntime.Version.Split('.')[0]);
+        // v0.3.8.34 — versions are parsed as a VARIABLE-length list of components rather than as
+        // exactly three, because the line was renumbered from `3.8.x` to `0.3.8.x`. The old form
+        // derived a "current major" and kept only entries sharing it; under the new scheme that
+        // major is 0, which excluded every historical heading and left the guard asserting over a
+        // single entry.
+        //
+        // The ACTIVE LINE is what this guard has always really been about — see the note above about
+        // v2's frozen headings. It is now expressed directly: entries sharing the current version's
+        // leading components, differing only in the last. That is `0.3.8.*` today and was `3.8.*`
+        // before, with no reinterpretation of either.
+        static int[] Parse(string v) => v.Split('.').Select(int.Parse).ToArray();
+        static int Compare(int[] a, int[] b)
+        {
+            for (var i = 0; i < Math.Max(a.Length, b.Length); i++)
+            {
+                var (x, y) = (i < a.Length ? a[i] : 0, i < b.Length ? b[i] : 0);
+                if (x != y) return x.CompareTo(y);
+            }
+            return 0;
+        }
 
-        var entries = Regex.Matches(Read("CHANGELOG.md"), @"^##\s+v(\d+)\.(\d+)\.(\d+)\b",
+        var current = Parse(AnthillRuntime.Version);
+        var line = current[..^1];   // everything but the patch component
+
+        var all = Regex.Matches(Read("CHANGELOG.md"), @"^##\s+v(\d+(?:\.\d+)+)",
                 RegexOptions.Multiline)
-            .Select(m => (
-                text: m.Value.Trim(),
-                key: (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value))))
-            .Where(e => e.key.Item1 == currentMajor)
+            .Select(m => (text: m.Value.Trim(), key: Parse(m.Groups[1].Value)))
             .ToList();
 
-        Assert.True(entries.Count >= 5,
-            $"Expected the changelog to have several release headings, found {entries.Count}.");
+        // Non-vacuity is asserted against the WHOLE file. Scoping it to the active line would make
+        // the guard weakest exactly when a renumbering has just happened and only one entry exists —
+        // the moment it is most needed.
+        Assert.True(all.Count >= 5,
+            $"Expected the changelog to have several release headings, found {all.Count}.");
+
+        var entries = all
+            .Where(e => e.key.Length == current.Length && e.key[..^1].SequenceEqual(line))
+            .ToList();
+
+        Assert.True(entries.Count >= 1,
+            "No changelog heading belongs to the release line being written ("
+            + string.Join(".", line) + ".x).");
 
         var duplicates = entries.GroupBy(p => p.key).Where(g => g.Count() > 1)
             .Select(g => string.Join(" AND ", g.Select(x => x.text))).ToList();
@@ -153,7 +183,7 @@ public class DocsConsistencyTests
 
         // Newest first, so each entry must be STRICTLY LOWER than the one above it.
         var outOfOrder = entries.Zip(entries.Skip(1))
-            .Where(pair => pair.Second.key.CompareTo(pair.First.key) >= 0)
+            .Where(pair => Compare(pair.Second.key, pair.First.key) >= 0)
             .Select(pair => $"{pair.Second.text} is listed below {pair.First.text}").ToList();
         Assert.True(outOfOrder.Count == 0,
             "Changelog entries must read newest first:\n  " + string.Join("\n  ", outOfOrder));
