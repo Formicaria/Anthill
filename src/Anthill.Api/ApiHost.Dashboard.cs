@@ -94,6 +94,20 @@ public static partial class ApiHost
         app.MapPost("/maintenance/clear-missions", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+
+            // v0.3.8.38 — REFUSE while work is in flight.
+            //
+            // ClearMissionHistory drops tasks, events, patches and approvals with foreign_keys OFF.
+            // Run mid-mission it deletes rows a worker is still writing, and the audit trail that
+            // would explain what the mission did goes with them. The console disabled its button;
+            // the endpoint accepted the call from anywhere, and a disabled button is not a gate.
+            var active = Jobs.ActiveJobIds();
+            if (active.Count > 0)
+                return ApiJson.Error(
+                    $"{active.Count} mission(s) are still queued or running. Cancel or wait for them "
+                    + "before clearing history — deleting now would destroy the record of work that "
+                    + "is still happening.", "conflict");
+
             var (freed, missions) = Queen.Memory.ClearMissionHistory();
             Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_clear_missions",
                 $"Cleared mission history: {missions} mission(s), freed {freed} bytes.", antName: "operator");

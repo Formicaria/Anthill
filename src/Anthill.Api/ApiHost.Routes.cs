@@ -350,8 +350,10 @@ public static partial class ApiHost
         app.MapGet("/jobs/{id}", (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
-            var job = Jobs.GetJob(id);
-            return job is null ? ApiJson.Error($"No job found with id: {id}", "not_found") : ApiJson.Ok(job.ToDict());
+            // v0.3.8.38: durable-aware. This read live memory only, so a job listed by /jobs
+            // returned not-found here after a restart or once trimming evicted it.
+            var job = Jobs.GetJobProjection(id);
+            return job is null ? ApiJson.Error($"No job found with id: {id}", "not_found") : ApiJson.Ok(job);
         });
         app.MapPost("/jobs/{id}/cancel", (HttpContext ctx, string id) =>
         {
@@ -380,7 +382,26 @@ public static partial class ApiHost
             var goal = (body?.Goal ?? "").Trim();
             if (goal.Length == 0) return ApiJson.Error("Mission goal is required.", "bad_request");
             if (AnthillRuntime.MaxGoalLength > 0 && goal.Length > AnthillRuntime.MaxGoalLength) return ApiJson.Error("Mission goal is too long.", "bad_request");
-            return ApiJson.Ok(Jobs.Submit(goal).ToDict(), "Mission queued.");
+
+            // v0.3.8.38 — idempotency reaches the store at last. Header first (the conventional
+            // place, and what a proxy or retrying client sets), body second.
+            //
+            // BOUNDED and validated: an unbounded key becomes an unbounded index entry, and a key
+            // with control characters becomes a logging problem. Too long or malformed is rejected
+            // rather than silently truncated — a truncated key collides with other truncated keys,
+            // which would suppress DIFFERENT missions as duplicates. That is worse than no key.
+            var key = (ctx.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? body?.IdempotencyKey ?? "").Trim();
+            if (key.Length > 200)
+                return ApiJson.Error("Idempotency-Key must be 200 characters or fewer.", "bad_request");
+            if (key.Length > 0 && !key.All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ':' or '.'))
+                return ApiJson.Error("Idempotency-Key may contain only letters, digits, '-', '_', ':' and '.'.", "bad_request");
+
+            var submitted = Jobs.Submit(goal, key.Length == 0 ? null : key);
+            var dict = submitted.ToDict();
+            // Replay is reported rather than hidden: a client that retried deserves to know it got
+            // the original mission back instead of a second one.
+            dict["idempotency_key"] = key.Length == 0 ? null : key;
+            return ApiJson.Ok(dict, "Mission queued.");
         });
 
         /*

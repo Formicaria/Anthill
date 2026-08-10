@@ -204,3 +204,24 @@ Not "the build succeeds". Completion is:
 
 If you find a defect in this brief, fix the brief. The last three releases were spent discovering
 that a confident document is the most expensive kind of wrong.
+
+---
+
+## 10. Backend defects already fixed — do not re-implement
+
+The external console brief (audited at v0.3.8.36) listed these as open. Re-proved and closed since;
+verify with the named test before assuming any of it is still broken.
+
+| Finding | State |
+|---|---|
+| Patch proposals carry no expected base hash | CLOSED v0.3.8.37 — `PatchBaseHashTests` |
+| Empty auto-apply allowlist unproven | Was never open — `DeniedWhenAllowlistEmpty` |
+| Mission submission idempotency unreachable | CLOSED v0.3.8.38 — `DurableMissionContractTests` |
+| Durable job listed but not openable | CLOSED v0.3.8.38 — one projection, list and detail |
+| Live/durable projections disagree on `outcome_code` | CLOSED v0.3.8.38 — joined from the canonical evaluation |
+| Cancel-all not durable | CLOSED v0.3.8.38 — delegates to the single durable cancel |
+| Clear-history unguarded during active work | CLOSED v0.3.8.38 — refused server-side |
+
+Still open and owned by the console work: the auto-opening technical report on mission completion,
+scattered terminal-state lists, canonical outcome versus answer framing, and settings that report
+"saved" for a frozen runtime field.
