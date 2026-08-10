@@ -186,6 +186,20 @@ public sealed class PatchProposal
     public string Risk { get; set; } = "";
     public string? OldContent { get; set; }
     public string? NewContent { get; set; }
+
+    /// <summary>
+    /// What the target file hashed to when this patch was built. v0.3.8.37.
+    ///
+    /// AUTONOMY-10 Phase 1's largest gap: `old_content` matching proves the FRAGMENT is still there
+    /// and says nothing about whether the rest of the file moved on underneath it. A patch produced
+    /// from a stale read then applies silently into a file the coder never saw.
+    ///
+    /// Null means "the producer recorded no base", which is how every proposal written before this
+    /// release looks. Those still apply — see `PatchApply.Compute` — because refusing them all would
+    /// turn a safety improvement into an outage.
+    /// </summary>
+    public string? BaseHash { get; set; }
+
     public bool RequiresApproval { get; set; } = true;
     public PatchStatus Status { get; set; } = PatchStatus.Proposed;
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();

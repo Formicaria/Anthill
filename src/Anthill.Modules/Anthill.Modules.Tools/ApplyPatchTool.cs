@@ -45,6 +45,8 @@ public sealed class ApplyPatchTool : ITool
         var filePath = (patch.GetValueOrDefault("file_path")?.ToString() ?? "").Trim();
         var oldContent = patch.GetValueOrDefault("old_content") as string;
         var newContent = patch.GetValueOrDefault("new_content") as string;
+        // v0.3.8.37: null when the producer recorded no base (every proposal before this release).
+        var baseHash = patch.GetValueOrDefault("base_hash") as string;
 
         string safePath;
         // v3.8.18 — _options is PASSED. It was held and not passed, so the suffix allow-list and
@@ -60,7 +62,7 @@ public sealed class ApplyPatchTool : ITool
             // NULL means "does not exist" and is distinct from an existing empty file — PatchApply
             // refuses those two cases differently, so the distinction must survive the read.
             var current = File.Exists(safePath) ? File.ReadAllText(safePath) : null;
-            return ApplyComputed(safePath, PatchApply.Compute(changeType, oldContent, newContent, current));
+            return ApplyComputed(safePath, PatchApply.Compute(changeType, oldContent, newContent, current, baseHash));
         }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}", ToolFailure.Classify(e)); }
     }
@@ -97,7 +99,13 @@ public sealed class ApplyPatchTool : ITool
         // TargetRejection vs ValidationFailure is the distinction that matters to the model:
         // "your old_content does not match this file" is a fixable argument problem, whereas a
         // malformed proposal is the caller's own construction being wrong.
-        if (outcome.Status is PatchApplyStatus.RefusedOldContentNotFound or PatchApplyStatus.RefusedAmbiguous)
+        // v0.3.8.37 adds RefusedStaleBase to this arm. It belongs with the target problems: the
+        // proposal was well-formed and the file moved on underneath it, so the remedy is to re-read
+        // and propose again. Classifying it as ValidationFailure would tell the coder its arguments
+        // were malformed and send it to fix a fragment that was never wrong.
+        if (outcome.Status is PatchApplyStatus.RefusedOldContentNotFound
+                           or PatchApplyStatus.RefusedAmbiguous
+                           or PatchApplyStatus.RefusedStaleBase)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.TargetRejection);
         if (!outcome.Ok)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.ValidationFailure);

@@ -110,6 +110,10 @@ public static class WorkspaceChangeSet
             ChangeType = added || oldContent is null ? PatchChangeType.Add : PatchChangeType.Modify,
             NewContent = newContent,
             OldContent = oldContent,
+            // v0.3.8.37: the base this proposal was built against. This producer READS the file, so
+            // it is the one place that can state the base honestly — a model-emitted proposal cannot,
+            // and carries null.
+            BaseHash = PatchApply.HashOf(oldContent),
             Reason = $"Produced in mission workspace {workspace.Id}, based on {Short(against)}",
             Risk = added ? "low" : "medium",
             // Always. A workspace exists so an agent's work is REVIEWED before it reaches the live

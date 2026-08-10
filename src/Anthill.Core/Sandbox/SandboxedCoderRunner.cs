@@ -131,7 +131,8 @@ public sealed class SandboxedCoderRunner
                 // overwrite. ApplyPatchTool refuses both. A sandbox that accepts a patch the real
                 // applier would reject reports a green run for a change that can never land.
                 var current = File.Exists(safe) ? File.ReadAllText(safe) : null;
-                var outcome = PatchApply.Compute(ChangeTypeName(p.ChangeType), p.OldContent, p.NewContent, current);
+                var outcome = PatchApply.Compute(ChangeTypeName(p.ChangeType), p.OldContent, p.NewContent,
+                    current, p.BaseHash);
                 if (!outcome.Ok) return (false, $"{p.FilePath}: {outcome.Reason}");
 
                 if (outcome.Status == PatchApplyStatus.Created)

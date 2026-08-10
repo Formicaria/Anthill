@@ -84,6 +84,7 @@ public static class AutoApplyRunner
                 FilePath = full.GetValueOrDefault("file_path")?.ToString() ?? "",
                 ChangeType = EnumExtensions.ParsePatchChangeType(full.GetValueOrDefault("change_type")?.ToString() ?? "modify"),
                 OldContent = full.GetValueOrDefault("old_content") as string,
+                BaseHash = full.GetValueOrDefault("base_hash") as string,
                 NewContent = full.GetValueOrDefault("new_content") as string,
             };
             var decision = AutoApplyPolicy.Evaluate(proposal);

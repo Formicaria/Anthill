@@ -47,6 +47,16 @@ public enum PatchApplyStatus
     RefusedOldContentNotFound,
     /// <summary><c>old_content</c> occurs more than once, so the edit is ambiguous.</summary>
     RefusedAmbiguous,
+
+    /// <summary>
+    /// The target's current contents do not hash to the base the patch was built against. v0.3.8.37.
+    ///
+    /// The largest gap in AUTONOMY-10 Phase 1: without this, a patch produced from a stale read
+    /// applies silently. `old_content` matching is necessary but not sufficient — the same fragment
+    /// can occur in a file that has otherwise moved on, and the surrounding lines the coder reasoned
+    /// about are gone.
+    /// </summary>
+    RefusedStaleBase,
 }
 
 /// <summary>The computed result. <see cref="Content"/> is non-null exactly when <see cref="Ok"/>.</summary>
@@ -71,8 +81,33 @@ public static class PatchApply
     /// Null and empty-string are different states and the caller must not conflate them: an empty
     /// existing file is a legitimate modify target that no <c>old_content</c> can match, while a
     /// missing file is a different refusal.</param>
+    /// <summary>
+    /// The base a patch was built against, as a hex SHA-256 of the file's contents.
+    ///
+    /// Content rather than a git revision on purpose: the coder reads a FILE, and the working tree
+    /// it read may hold uncommitted changes that no revision names. Hashing what was actually read
+    /// is the only thing that answers "is this still the text the patch was reasoned about".
+    /// </summary>
+    public static string HashOf(string? content)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(content ?? ""));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Compute the post-apply contents of one file.
+    /// </summary>
+    /// <param name="expectedBaseHash">What the target hashed to when the patch was built, or null
+    /// when the producer recorded none. Checked for MODIFY, where a base exists; an `add` that
+    /// creates a file has no base to be stale against.
+    ///
+    /// Null is accepted rather than required, and that is a deliberate staging decision: proposals
+    /// written before v0.3.8.37 carry no hash, and refusing them all would turn a safety improvement
+    /// into an outage. `PatchProposal.BaseHash` is populated going forward, and
+    /// `AStalePatchIsRefused` proves the check bites when the hash is present.</param>
     public static PatchApplyResult Compute(string? changeType, string? oldContent, string? newContent,
-        string? currentContent)
+        string? currentContent, string? expectedBaseHash = null)
     {
         var kind = (changeType ?? "").Trim().ToLowerInvariant();
         if (kind is not (Add or Modify))
@@ -100,6 +135,20 @@ public static class PatchApply
             return new(PatchApplyStatus.RefusedMissingOldContent, null,
                 "MODIFY patches require old_content for exact replacement.");
 
+        // Checked BEFORE the occurrence search, deliberately. A stale base and a missing fragment
+        // are different problems with different remedies — "the file moved on, rebuild the patch"
+        // versus "your old_content is wrong" — and reporting the second when the first is true sends
+        // the coder to fix a fragment that was never the issue.
+        if (!string.IsNullOrWhiteSpace(expectedBaseHash))
+        {
+            var actual = HashOf(currentContent);
+            if (!string.Equals(actual, expectedBaseHash.Trim(), StringComparison.OrdinalIgnoreCase))
+                return new(PatchApplyStatus.RefusedStaleBase, null,
+                    "MODIFY refused because the file has changed since this patch was built "
+                    + $"(expected base {Short(expectedBaseHash)}, found {Short(actual)}). "
+                    + "Re-read the file and propose again.");
+        }
+
         var occurrences = CountOccurrences(currentContent, oldContent);
         if (occurrences == 0)
             return new(PatchApplyStatus.RefusedOldContentNotFound, null,
@@ -112,6 +161,10 @@ public static class PatchApply
         var updated = currentContent[..index] + newContent + currentContent[(index + oldContent.Length)..];
         return new(PatchApplyStatus.Modified, updated, "");
     }
+
+    /// <summary>First twelve hex characters — enough to compare by eye in an error an operator reads.</summary>
+    private static string Short(string? hash) =>
+        (hash ?? "").Trim() is { Length: > 12 } h ? h[..12] : (hash ?? "").Trim();
 
     /// <summary>Non-overlapping occurrence count, ordinal. The uniqueness rule depends on it.</summary>
     public static int CountOccurrences(string haystack, string needle)

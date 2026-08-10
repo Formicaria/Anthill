@@ -1,7 +1,7 @@
 # ANTHILL — THE 10/10 AUTONOMY PROGRAM
 
 **The forward program, in phases with exit gates.** Baseline reviewed: v3.8.30. Adopted: v3.8.32.
-Status refreshed at **v0.3.8.34**.
+Status refreshed at **v0.3.8.37**.
 
 This is the long arc from "structurally complete and test-backed" to "production-qualified autonomous
 assistant". It answers **what is left and in what order**.
@@ -89,15 +89,16 @@ attributes and two guard gaps.
 |---|---|
 | 1. One shared patch application engine | **DONE v3.8.32** — `PatchApply`; three divergent implementations collapsed into one |
 | 2. Atomic patch sets | PARTIAL — `PatchSetMaterializer` fails as a unit into a sandbox; there is no staged transaction over the LIVE tree |
-| 3. Exact operation semantics | PARTIAL — add/modify exact and guarded; **delete and rename are not implemented**, and `add` onto an existing file overwrites (backed up) rather than failing |
+| 3. Exact operation semantics | PARTIAL — add/modify exact and guarded, and **base hashes land v0.3.8.37**. `delete` is unimplemented; `rename` is NOT implementable as specified — `PatchProposal` carries one `FilePath` and rename needs a destination field and a schema column. `add` onto an existing file overwrites (backed up) rather than failing |
 | 4. Terminal retry behaviour | **DONE v3.8.32** — the handoff gate reads the scheduler's terminal-failure signal |
 | 5. Canonical failure classification | **DONE v3.8.32** for the string form (`FailureClassNames`, one converter, guarded). The taxonomy itself is not yet the plan's thirteen classes |
-| 6. Fail closed on configuration | PARTIAL — readiness corrected v3.8.32; **empty auto-apply allowlist is not yet proven to fail closed** |
+| 6. Fail closed on configuration | **DONE** — readiness corrected v3.8.32; the empty auto-apply allowlist DOES fail closed and `DeniedWhenAllowlistEmpty` proves it. This row overstated the gap until v0.3.8.37 checked it |
 | 7. Correct readiness checks | **DONE v3.8.32** — `RoleReadiness`, `RoleGateStatus.NotGated`, core ants no longer blocked by gates they do not have |
 
-**Base hashes are the largest single gap in Phase 1.** The plan requires `modify`/`delete` to fail
-when the target's expected base hash differs. Nothing in the tree carries a base hash per proposal
-today, so a patch built against a stale read applies silently. That is the next correctness item.
+~~**Base hashes are the largest single gap in Phase 1.**~~ CLOSED v0.3.8.37. `PatchProposal.BaseHash`
+is recorded by the producer that reads files and verified by all three appliers. What remains in item
+3 is `delete`, and `rename` — which needs a destination field and a schema column before any applier
+logic is worth writing.
 
 ---
 

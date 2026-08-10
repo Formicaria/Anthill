@@ -314,6 +314,7 @@ public sealed partial class Queen
                 : $"{reason.Trim()} (operator alternative to patch {originalPatchId})",
             Risk = Str(orig, "risk", "unknown"),
             OldContent = orig.GetValueOrDefault("old_content") as string,
+            BaseHash = orig.GetValueOrDefault("base_hash") as string,
             NewContent = newContent,
             RequiresApproval = true,
             Status = PatchStatus.Proposed,
