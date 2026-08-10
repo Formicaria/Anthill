@@ -95,4 +95,54 @@ public class UiActionDispatchTests
         Assert.True(m.Success, "escapeHtml no longer has a recognisable character class.");
         Assert.Contains("'", m.Groups[1].Value);
     }
+
+    /// <summary>
+    /// v3.8.34 — the GENERAL form of the v3.8.13 defect, which was only ever fixed for one value.
+    ///
+    /// The comment on <see cref="EscapeHtmlEncodesTheApostrophe"/> has said since v3.8.13 that
+    /// "getAttribute decodes entities before the dispatcher's parser runs, so encoding alone never
+    /// protected the executable attributes". That was true of EVERY interpolated value, not just a
+    /// patch path — and 105 `data-onclick` attributes were still relying on `escapeHtml`, including
+    /// Proxmox container ids and conversation ids that arrive from outside the colony.
+    ///
+    /// `jsArg` escapes for the INNER layer (backslash, then apostrophe) before escaping for the
+    /// outer HTML one, so the emitted `\&#39;` decodes to `\'` and the interpreter unescapes it back
+    /// to a literal apostrophe. Lossless, unlike stripping, which would silently alter an id.
+    /// </summary>
+    [Fact]
+    public void NoExecutableAttributeRelaysAValueThroughEscapeHtmlAlone()
+    {
+        var offenders = Regex.Matches(AppJs(), @"data-on[a-z]+=""(?:[^""\\]|\\.)*""")
+            .Select(m => m.Value)
+            .Where(a => a.Contains("escapeHtml(", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "These executable attributes interpolate through escapeHtml, which the HTML parser "
+            + "decodes before the data-onclick interpreter ever sees it — so an apostrophe still "
+            + "ends the argument and ';' still starts a second statement. Use jsArg (or data-action "
+            + "with a plain data-* attribute): "
+            + string.Join(" | ", offenders.Select(o => o.Length > 120 ? o[..120] + "…" : o)));
+    }
+
+    /// <summary>
+    /// ...and `jsArg` must escape in the ORDER that survives both layers. Escaping the apostrophe
+    /// before the backslash would let `\` + `'` collapse into an escaped quote the interpreter then
+    /// unescapes into a real one — the same hole, reached the long way round.
+    /// </summary>
+    [Fact]
+    public void JsArgEscapesTheBackslashBeforeTheApostrophe()
+    {
+        var m = Regex.Match(AppJs(), @"function jsArg\(s\)\{(?<body>[\s\S]{0,400}?)\n\}");
+        Assert.True(m.Success, "jsArg is missing — the executable-attribute escape has no implementation.");
+
+        var body = m.Groups["body"].Value;
+        var backslashAt = body.IndexOf(@"replace(/\\/g", StringComparison.Ordinal);
+        var quoteAt = body.IndexOf(@"replace(/'/g", StringComparison.Ordinal);
+
+        Assert.True(backslashAt >= 0, "jsArg does not escape the backslash.");
+        Assert.True(quoteAt >= 0, "jsArg does not escape the apostrophe.");
+        Assert.True(backslashAt < quoteAt, "jsArg must escape the backslash BEFORE the apostrophe.");
+        Assert.Contains("escapeHtml(", body);   // and still escape for the attribute it sits in
+    }
 }

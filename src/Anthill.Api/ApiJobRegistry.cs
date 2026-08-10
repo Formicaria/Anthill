@@ -183,7 +183,21 @@ public sealed class ApiJobRegistry : IDisposable
             "partial" => "complete",   // structurally finished; the outcome field carries the nuance
             "timed_out" => "timed_out",
             "cancelled" => "cancelled",
-            "escalated" or "failed" or "failed_permanent" or "failed_retryable" => "failed",
+            // v3.8.34: escalation is NOT failure, and collapsing it here contradicted the closed
+            // vocabulary that defines it: "Distinct from failed — nothing broke; the runtime
+            // declined to continue without judgment" (MissionOutcome.Escalated).
+            //
+            // The cost was visible on the dashboard. An adaptive stop produces
+            // outcome="completed" + code="escalated", so the operator saw a FAILED badge directly
+            // above this job's own sentence, "Completed — 5/5 tasks succeeded." Three of twenty
+            // persisted rows in the live database are in exactly that state.
+            //
+            // The theory over this method asserted ("escalated", null) => "failed" — an input
+            // production never produces, since the code always arrives alongside outcome
+            // "completed". The real pairing was untested, which is why an explicit mapping could
+            // disagree with the vocabulary for two releases.
+            "escalated" => "escalated",
+            "failed" or "failed_permanent" or "failed_retryable" => "failed",
             _ => "failed",
         };
     }
@@ -211,7 +225,7 @@ public sealed class ApiJobRegistry : IDisposable
     public bool Cancel(string id)
     {
         if (!_jobs.TryGetValue(id, out var job)) return false;
-        if (job.Status is "complete" or "failed" or "cancelled") return false;
+        if (IsTerminalStatus(job.Status)) return false;
         job.Cancelled = true;
         _mem.UpdateJobState(id, job.Status, cancelRequested: true); // durable: survives restart mid-cancel
         SignalCancel(job);
@@ -223,13 +237,27 @@ public sealed class ApiJobRegistry : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// A job that has already ended. One definition, because there were two ad-hoc lists and both
+    /// were wrong the same way.
+    ///
+    /// v3.8.34: the lists read "complete" or "failed" or "cancelled" and omitted <c>timed_out</c>,
+    /// which <see cref="StatusFromOutcome"/> has returned since v2.26.0 — so cancelling a job that
+    /// had already timed out reported success and signalled a token nobody was holding, and
+    /// CancelAll counted it. Adding "escalated" to two separate lists would have repeated the
+    /// mistake a third time; the set is the thing that was missing, so it is now named once and
+    /// derived from the statuses this class actually assigns.
+    /// </summary>
+    internal static bool IsTerminalStatus(string? status) =>
+        status is "complete" or "failed" or "cancelled" or "timed_out" or "escalated";
+
     /// <summary>Cancels every non-terminal job. Returns how many were affected.</summary>
     public int CancelAll()
     {
         var n = 0;
         foreach (var job in _jobs.Values)
         {
-            if (job.Status is "complete" or "failed" or "cancelled") continue;
+            if (IsTerminalStatus(job.Status)) continue;
             job.Cancelled = true;
             SignalCancel(job);
             if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
