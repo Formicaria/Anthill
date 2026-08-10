@@ -53,7 +53,7 @@ public class DurableMissionContractTests : IDisposable
         Assert.False(firstReplayed);
         Assert.True(secondReplayed, "the second submission with the same key must be a replay");
         Assert.Equal(first.Id, second.Id);
-        Assert.Single(memory.ListMissionJobs(50).Where(j => j.Goal == "do the thing"));
+        Assert.Single(memory.ListMissionJobs(50), j => j.Goal == "do the thing");
     }
 
     /// <summary>Different keys are different missions — or the guard would suppress real work.</summary>

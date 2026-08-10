@@ -219,7 +219,7 @@ public sealed class ApiJobRegistry : IDisposable
     /// the job row, so it stays truthful for a job whose mission never got that far — the join
     /// simply yields null, which is honest, where a stale copied column would not be.
     /// </summary>
-    private Dictionary<string, object?> Project(SqliteMemory.MissionJobRow row)
+    private Dictionary<string, object?> Project(Anthill.Core.Memory.SqliteMemory.MissionJobRow row)
     {
         if (_jobs.TryGetValue(row.Id, out var live)) return live.ToDict();
 
