@@ -38,7 +38,7 @@ public class StatusFieldConsumerTests
     private static string Read(string relative) =>
         File.ReadAllText(Path.Combine(Root(), relative.Replace('/', Path.DirectorySeparatorChar)));
 
-    private static string Console() =>
+    private static string ConsoleSource() =>
         Read("src/Anthill.UI/app.js") + Read("src/Anthill.UI/index.html")
         + Read("src/Anthill.UI/dashboard-grid.js") + Read("src/Anthill.UI/mission-thread.js");
 
@@ -96,7 +96,7 @@ public class StatusFieldConsumerTests
     [Fact]
     public void EveryStatusField_IsEitherReadByTheConsoleOrExplicitlyExempt()
     {
-        var console = Console();
+        var console = ConsoleSource();
 
         var orphans = StatusFields()
             .Where(f => !NotConsumedByTheConsole.ContainsKey(f))
@@ -140,7 +140,7 @@ public class StatusFieldConsumerTests
     [Fact]
     public void TheExemptionList_ContainsNothingThatIsActuallyRead()
     {
-        var console = Console();
+        var console = ConsoleSource();
 
         var unnecessary = NotConsumedByTheConsole.Keys
             .Where(k => ReadBy(console, k))

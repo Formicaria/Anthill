@@ -1,5 +1,56 @@
 # ANTHILL Changelog
 
+## v0.3.8.36 - the console/backend contract, audited both ways
+
+`ConsoleRouteAgreementTests` (v0.3.8.34) checks one direction: the console must never call a route
+that does not exist. That catches a broken button. It cannot catch the opposite and more common
+failure — a backend capability the console never surfaces — which is invisible precisely because
+nothing appears broken.
+
+**The audit: 176 mapped routes, 119 console call sites, 25 routes with no console reference at all.**
+Zero dead calls in the other direction, so the existing guard was doing its job.
+
+### /config/health had no reader
+
+`RuntimeConfigValidator` has produced severity-tagged findings since v2.x about setting combinations
+that cannot work — a feature enabled while its dependency is off, one gate contradicting another —
+exposed on `/config/health`. The console had never asked.
+
+Identical shape to `ollama_model_present`: computed, exposed, read by nobody, so an operator with a
+genuinely broken configuration sees a healthy dashboard. That was the ninth
+implemented-tested-and-unreachable; this is the tenth, and the second in the console. The overview
+now reads it and raises findings as attention items, highest severity first.
+
+### The other 24 are a ledger, not a silence
+
+`ConsoleRouteCoverageTests` requires every mapped route to be either reachable from the console or
+recorded with a reason. Nineteen are legitimately non-UI — programmatic entry points, CI diagnostics,
+routes superseded by richer ones the console already uses.
+
+**Six are recorded honestly as `UI GAP`**: the readiness/qualification snapshot, colony
+introspection, source quality, shadow judgments. Those are real deficiencies. The readiness one is
+the most awkward — `AUTONOMY-10.md` makes qualification the exit gate for every phase, and an
+operator cannot currently see it. Writing them down beats leaving them undiscovered, and a test
+asserts they stay declared so nobody deletes the entries instead of fixing the gaps.
+
+The ledger carries both rules `StatusFieldConsumerTests` learned the hard way one release ago: an
+entry may not name a route that no longer exists, and may not name one the console actually reaches.
+
+### The console alignment brief
+
+`docs/UI-ALIGNMENT-BRIEF.md` — an external UI/UX brief, amended against this repository. The
+corrections matter more than the endorsement.
+
+It named the wrong repository, and it assumed a frontend stack that does not exist: it asks for
+design primitives, component layers, strong typing, linting and frontend tests, while
+`src/Anthill.UI` is 8,600 lines of vanilla `app.js` with no `package.json`, no type system, no
+bundler, and no entry in the solution. Followed literally it forces either an unrequested framework
+migration — which would break the CSP-safe `data-onclick` delegation — or invented test results,
+which its own "do not fake completion" section forbids while its success criteria make unavoidable.
+
+It also asked for one enormous change. The work is split into four independently shippable pieces
+with exit gates; the contract audit above is the first, and it is done.
+
 ## v0.3.8.35 - the guards find their own defects
 
 v0.3.8.34 shipped with three new guards. Running them found three defects — all of them in the
