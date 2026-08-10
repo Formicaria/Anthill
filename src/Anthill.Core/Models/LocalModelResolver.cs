@@ -69,6 +69,21 @@ public static class LocalModelResolver
     public delegate IReadOnlyList<string> ModelLister(string host);
 
     /// <summary>
+    /// The model name that used to be a built-in default, and is therefore not evidence of a choice.
+    ///
+    /// Removing the hardcoded default from the SOURCE was only half the job, and the half that does
+    /// not help anyone who already ran Anthill. `SaveConfig()` serialises settings to
+    /// `.anthill/config.json`, so every existing installation has `"ollama_model": "llama3.1:8b"`
+    /// written to disk — put there by the default, not by the operator — and a config value looks
+    /// exactly like a decision no matter where it came from.
+    ///
+    /// So on an upgraded install the colony would keep asking for a model the host may not have,
+    /// with the same `model not found` on every call, and the release notes would say the hardcoding
+    /// was removed. True of the code, false of the machine.
+    /// </summary>
+    public const string RetiredDefaultModel = "llama3.1:8b";
+
+    /// <summary>
     /// Resolve without touching the network when a model is already configured — the common case,
     /// and the one that must never depend on Ollama being up to answer.
     /// </summary>
@@ -79,9 +94,38 @@ public static class LocalModelResolver
     public static ModelChoice Resolve(string? configuredModel, string host, ModelLister lister)
     {
         var configured = (configuredModel ?? "").Trim();
-        if (configured.Length > 0)
+        var isRetiredDefault = string.Equals(configured, RetiredDefaultModel, StringComparison.OrdinalIgnoreCase);
+
+        // A real choice is honoured without asking the host anything — the common case must not
+        // depend on Ollama being up to answer.
+        if (configured.Length > 0 && !isRetiredDefault)
             return new ModelChoice(ModelChoiceKind.Configured, configured,
                 $"configured as '{configured}'", Array.Empty<string>());
+
+        // The retired default is the ONE value that cannot be taken at face value, because it was
+        // written by a default rather than chosen. It is honoured when the host actually has it —
+        // plenty of people do run it deliberately — and treated as unchosen only when it is absent,
+        // which is precisely the case where keeping it produces `model not found` forever.
+        //
+        // Scoped to this single string on purpose. Any OTHER configured model that is missing stays
+        // configured and surfaces as "not installed": an explicit choice deserves an explicit error,
+        // never a silent substitution.
+        if (isRetiredDefault)
+        {
+            IReadOnlyList<string> present;
+            try { present = lister(host) ?? Array.Empty<string>(); }
+            catch
+            {
+                // Could not ask. Keep the operator's value rather than downgrading a possibly-real
+                // choice on a transient outage; the reachability banner already covers this state.
+                return new ModelChoice(ModelChoiceKind.Configured, configured,
+                    $"configured as '{configured}'", Array.Empty<string>());
+            }
+
+            if (present.Any(m => string.Equals(m?.Trim(), configured, StringComparison.OrdinalIgnoreCase)))
+                return new ModelChoice(ModelChoiceKind.Configured, configured,
+                    $"configured as '{configured}'", Array.Empty<string>());
+        }
 
         IReadOnlyList<string> installed;
         try { installed = lister(host) ?? Array.Empty<string>(); }
@@ -100,18 +144,25 @@ public static class LocalModelResolver
             .OrderBy(m => m, StringComparer.Ordinal)
             .ToList();
 
+        // Says WHY there is no chosen model, because "you never picked one" and "the one in your
+        // config is a leftover default that is not installed" lead to different reactions.
+        var lead = isRetiredDefault
+            ? $"'{RetiredDefaultModel}' is in your configuration but is not installed at {host}, and it "
+              + "was Anthill's own removed default rather than a choice you made, so it is being ignored"
+            : "no model is configured";
+
         return models.Count switch
         {
             0 => new ModelChoice(ModelChoiceKind.NoneInstalled, "",
-                $"no model is configured and {host} has none installed. Pull one (for example "
-                + "`ollama pull <model>`), then set it in Settings.", models),
+                $"{lead}, and {host} has no models installed. Pull one (`ollama pull <model>` — any "
+                + "model Ollama can run will work), then pick it in Settings.", models),
 
             1 => new ModelChoice(ModelChoiceKind.SoleInstalled, models[0],
-                $"no model is configured; '{models[0]}' is the only one installed at {host}", models),
+                $"{lead}; '{models[0]}' is the only model installed at {host}, so it is being used", models),
 
             _ => new ModelChoice(ModelChoiceKind.AmbiguousInstalled, "",
-                $"no model is configured and {host} has {models.Count} installed, so Anthill will not "
-                + $"guess which one should run the colony. Set ollama_model in Settings to one of: "
+                $"{lead}, and {host} has {models.Count} models installed, so Anthill will not guess "
+                + "which one should run the colony. Set ollama_model in Settings to one of: "
                 + string.Join(", ", models), models),
         };
     }
