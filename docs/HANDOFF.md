@@ -4,14 +4,14 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-The 3.8 line is CLOSED at v3.8.33. Two programs ran and both finished:
+The 3.8 line is CLOSED at v0.3.8.34 — the line was renumbered to v0 at this release. Two programs ran and both finished:
 
 The Core/Modules refactor (v3.8.3–v3.8.18) took `Anthill.Core` from 34,247 lines to 24,973 with
 nothing deleted, moved the reasoning providers, the homelab and the machine-touching tools into
 `Anthill.Modules.*`, and made the boundary an assembly-reference test rather than a review habit.
 `docs/adr/ADR-007-module-boundary.md` carries the rule.
 
-The twelve-role activation program (v3.8.19–v3.8.33) took the roster from "twelve registered roles,
+The twelve-role activation program (v3.8.19–v0.3.8.34) took the roster from "twelve registered roles,
 six of which had never run" to twelve with real triggers, enforced contracts, and learning that only
 records verified outcomes. `docs/PLAN.md` is the single forward-looking document; the four planning
 documents it replaced are in `docs/archive/v3/`.
@@ -52,7 +52,13 @@ GitHub credentials either — you can read from origin but not push.
 Do NOT use `scripts/release.sh` — its opening `git fetch` hangs on this machine. Use the manual
 recipe below, INCLUDING the `git log` check before tagging.
 
-State: main is at v3.8.33, tagged and green. 1,850+ tests.
+State: main is at v0.3.8.34, tagged and green. 1,880+ tests.
+
+VERSIONING CHANGED at this release. Everything before shipped as `v3.x`, which claims a maturity
+Anthill has not earned — no live twelve-role mission, Phase 1 of AUTONOMY-10 unfinished, Phase 10 not
+started. The line is now `v0.3.8.x`: the existing numbering with a `0.` in front. v1.0.0 is earned by
+Phase 10's exit gate. Historical changelog headings keep their original `v3.x` form; the ordering
+guard was taught the scheme rather than the record being rewritten.
 
 NOT YET DONE, and honestly: no mission has ever run with `roster_profile: "full"` against a live
 model. Everything above is verified by tests, and tests check what their author told them to check —

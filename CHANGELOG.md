@@ -1,5 +1,107 @@
 # ANTHILL Changelog
 
+## v0.3.8.34 - version renumbered to v0, the console's routes and attributes, and the other half of the model fix
+
+### The version line moves to v0
+
+Everything before this shipped as `v3.x`, which claims a maturity Anthill has not earned. There is
+still no live twelve-role mission, Phase 1 of `AUTONOMY-10.md` is unfinished, and the production
+qualification in Phase 10 has not started. A 3.x number tells an operator this is a mature product;
+the repository's own PLAN.md says otherwise on the same page.
+
+So the line becomes **`v0.3.8.34`** — the existing numbering with a `0.` in front. It reads as what
+it is: pre-1.0 software on its third architecture. v1.0.0 is earned by Phase 10's exit gate, not by
+counting releases.
+
+Historical entries below keep their original `v3.x` headings. Rewriting 170-plus headings would
+edit the record of what actually shipped in order to make a document look tidy, which this changelog
+has refused before and refuses here. `ReleaseHeadings_AreUniqueAndDescend` was taught the scheme
+instead: it scopes uniqueness and ordering to the release line being actively written, and proves it
+is not vacuous against the whole file rather than against one major.
+
+### The console asks routes that exist (from `fix/console-contract-and-escalation`, PR #215)
+
+Merged into this release rather than tagged separately, because that branch carried no version bump
+of its own — tagging it `v3.8.34` would have put the tag on a commit whose markers all still read
+`3.8.33`, which is the exact mistake `HANDOFF.md` warns about after a v3.8.13 tag landed on a
+v3.8.12 commit. CI was green because the guards check that the markers AGREE, not that they moved.
+
+That work: the Agent Inspector asks a route that exists, the six navigation domain toggles are
+named, dashboard empty states say what to do next, and escalation stops being recorded as failure.
+`ConsoleRouteAgreementTests` is the durable half — it pins console-to-route agreement the same way
+`CrossBoundaryAgreementTests` pins producer-to-consumer agreement.
+
+### The other half of removing the hardcoded model
+
+v3.8.33 removed `llama3.1:8b` from the source and shipped. It did nothing for anyone who had already
+run Anthill, and the operator caught it within minutes of the release: *"wait so the hardcode of
+needing llama3.1 didn't get taken out?"*
+
+It had — from the CODE. `SaveConfig()` serialises settings to `.anthill/config.json`, so every
+existing installation carries `"ollama_model": "llama3.1:8b"` on disk, written there by the default
+rather than chosen by the operator. A config value looks exactly like a decision regardless of where
+it came from, so nothing reconsidered it: an upgraded install kept asking for a model the host may
+not have, produced `model not found` on every call, and read release notes saying the hardcoding was
+gone. True of the code, false of the machine.
+
+The v3.8.33 notes even carried the symptom as a footnote — "your config still holds `llama3.1:8b`, so
+you'll keep getting model not found" — treating the unfinished half as something the operator should
+work around. That is the same shape as the defects this line has spent four releases on: technically
+accurate, practically wrong.
+
+**`LocalModelResolver.RetiredDefaultModel`** names that one string so it can be recognised where it
+sits:
+
+- **Honoured** when the host actually has it. Plenty of people run it deliberately, and a migration
+  that overrode a working setup would be its own defect.
+- **Treated as unchosen** only when it is absent — precisely the case where keeping it fails forever.
+- **Never discarded on a transient outage.** "Cannot ask" is not evidence of absence, and losing
+  configuration because Ollama was briefly down would be a fault with nothing to do with
+  configuration.
+- **Scoped to that single string.** Any other configured model that is missing stays configured and
+  surfaces as "not installed", because an explicit choice deserves an explicit error rather than a
+  silent substitution.
+
+The refusal messages distinguish the two states, since "you never picked a model" and "the one in
+your config is a leftover default that is not installed" lead the operator to different places.
+
+### The console's executable attributes, closed for every value
+
+v3.8.13 fixed one instance of a real injection: a patch file path interpolated into a
+`data-onclick` attribute, where an apostrophe ends the argument early and `;` starts a second
+statement the micro-interpreter then resolves and calls with the operator's session. Its test file
+even states the mechanism — *"getAttribute decodes entities before the dispatcher's parser runs, so
+encoding alone never protected the executable attributes"* — and then fixed it for `file_path` only.
+
+That sentence was true of EVERY interpolated value. **105 `data-onclick` attributes were still
+relying on `escapeHtml`**, among them Proxmox container ids and conversation ids, which arrive from
+outside the colony and are validated by things that have no reason to care about quotes.
+
+`jsArg` is the correct escape for that nested position: escape for the INNER layer (backslash, then
+apostrophe), then for the outer HTML one, so the emitted `\&#39;` decodes to `\'` and the
+interpreter unescapes it back to a literal apostrophe. Lossless — the interpreter's own `splitTop`
+and `coerce` are backslash-aware — where stripping the character would silently alter an id.
+
+Verified behaviourally against the real parser rather than by inspection: `ct-1'); wipeEverything('`
+now arrives as ONE argument holding exactly that text, with no second statement produced.
+
+### Every /status field has a consumer
+
+`ollama_model_present` was computed, serialised and sent on every status request since v2.4.3, and
+`app.js` referenced it zero times. The server knew the model was missing; the console showed green;
+every mission failed. Ninth instance of implemented-tested-and-unreachable, first in the UI, and the
+call-site audit that catches the backend ones does not read JavaScript.
+
+`StatusFieldConsumerTests` reads the payload keys out of `ApiHost.Reports.cs` and requires each to
+be either read by the console or exempted WITH a reason. Exemptions must name fields that still
+exist, so a stale one cannot quietly re-open the hole it was written for.
+
+**The guard needed the same care.** `RetiredDefaultModel` is itself a hardcoded model tag, so
+v3.8.33's no-hardcoded-tags guard fires on it. It is exempted by its exact DECLARATION rather than by
+file — and verified by simulating a reintroduced default inside that same file and confirming the
+guard still fires. A whitelisted file would have been a hole; an exemption nobody has watched fail is
+not a tested exemption.
+
 ## v3.8.33 - any model, and the console finally says which
 
 `llama3.1:8b` was the built-in default local model in three places. On a host that had pulled

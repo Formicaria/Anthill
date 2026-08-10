@@ -539,7 +539,13 @@ function buildNav(){
     if(!sections.length) continue;
     const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
     const head=document.createElement('div'); head.className='nav-dom-head';
+    // v3.8.34: the domain heads were the only nav controls in this function without an explicit
+    // name — `nav-item` and `nav-child` both set one three lines away. Name-from-content cannot be
+    // relied on here: the label sits between an icon span and a `&#9656;` chevron, so a computed
+    // name either fails or picks up the arrow. Six unnamed buttons in primary navigation, verified
+    // in the browser's interactive accessibility tree before the fix.
     head.setAttribute('role','button'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
+    head.setAttribute('aria-label',d.label);
     head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
     const toggle=()=>{ const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
     head.addEventListener('click',toggle); navKeyActivate(head,toggle);
@@ -1922,6 +1928,17 @@ function hudBadge(status,label){ const s=(status||'unknown').toString().toLowerC
 function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
   return `<span class="hud-risk ${l}">${escapeHtml(l)}</span>`; }
 // Map a mission/objective/job status onto a canonical HUD badge state.
+// v3.8.34: presentation layer over the job status vocabulary, in the shape ATTEMPT_STATE_LABEL
+// already established — worded as the fact rather than the verdict. Only statuses whose raw name
+// misleads are translated; the rest pass through, because renaming a clear state to a friendlier
+// one costs the operator the word they will find in the logs.
+const JOB_STATUS_LABEL = {
+  // Not a failure and not a success: the colony stopped on purpose and wants a person to decide.
+  escalated: 'needs you',
+};
+const JOB_STATUS_TITLE = {
+  escalated: 'The colony stopped and handed this to you — nothing broke, it declined to continue without your judgment. Internal state: escalated.',
+};
 function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
   if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
   if(st==='reverted') return 'rejected'; // v2.7.0: undone patch — neutral/terminal styling
@@ -2051,7 +2068,7 @@ async function pollHud(){
     hudBadge(hudStatusClass(m.status),m.status)+
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
     `<span style="color:var(--dim);font-size:9px;white-space:nowrap">${fmtTime(m.saved_at||m.created_at)||''}</span></div>`).join('')
-    : '<div class="hud-state">No missions yet.</div>';
+    : '<div class="hud-state">No missions yet — describe what you want done in Mission Command.</div>';
 
   const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
   const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
@@ -2060,7 +2077,7 @@ async function pollHud(){
       chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
       chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
       (highRiskPatches?`<span class="hud-risk high" style="justify-content:center">${highRiskPatches} high-risk</span>`:'')+`</div>`
-    : '<div class="hud-state">No patch proposals yet.</div>';
+    : '<div class="hud-state">No change proposals yet — missions run in Patch Proposal or Full Build/Test mode create them.</div>';
 
   const oc={active:0,paused:0,done:0,looping:0,failed:0};
   objectives.forEach(o=>{ const st=(o.status||'').toLowerCase();
@@ -2072,7 +2089,7 @@ async function pollHud(){
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
       (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
-    : '<div class="hud-state">No objectives yet.</div>';
+    : '<div class="hud-state">No objectives yet — add one under Operations → Automation to give the colony standing work.</div>';
 }
 
 function renderJobList(jobs, listId, badgeId, limit){
@@ -2080,17 +2097,22 @@ function renderJobList(jobs, listId, badgeId, limit){
   if(badge) badge.textContent=jobs.length;
   const list=document.getElementById(listId);
   if(!list) return;
-  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No jobs yet</div>'; return; }
+  // v3.8.34: "job" is not a second concept — ApiJobRegistry calls this an ApiMissionJob, POST
+  // /missions answers "Mission queued.", and every row carries a mission_id. Naming the queue
+  // after the thing in it costs the operator nothing and removes an invented distinction.
+  if(!jobs.length){ list.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:12px 0;">No mission runs yet — dispatching from Mission Command queues one here.</div>'; return; }
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
-    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    // v3.8.34: 'escalated' is terminal. Omitting it here would leave an adaptively-stopped run
+    // with no View Result and no Re-run — finished work the operator could not open.
+    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
     const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
     let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
-        <span class="job-status ${j.status}">${j.status}</span>
+        <span class="job-status ${j.status}"${JOB_STATUS_TITLE[j.status]?` title="${escapeHtml(JOB_STATUS_TITLE[j.status])}"`:''}>${escapeHtml(JOB_STATUS_LABEL[j.status]||j.status)}</span>
         <span class="job-goal">${(j.goal||'').substring(0,42)}${(j.goal||'').length>42?'…':''}</span>
       </div>
       <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:3px">${fmtTime(j.created_at)}${dur}</div>
@@ -3611,12 +3633,20 @@ async function loadAntObs(){
 async function loadAntObsDirectory(grid){
   try{
     // Stage F: truthful runtime state per role — never a bare 'inactive'.
-    const [r,g]=await Promise.all([api('/colony/registry'),api('/colony/graph')]);
+    //
+    // v3.8.34: this fetched `/colony/graph`, a route that does not exist in the API. The request
+    // 404'd on every load, so `rt` stayed empty, `s` was always undefined, and the `${s?…:''}`
+    // guard below omitted the runtime state line from every card — the comment above described
+    // behaviour this function never had. `runtime_status` is returned by `/colony/registry`
+    // (ApiHost.Routes.cs), which this function already fetches, so the second request was wrong
+    // AND redundant. Line ~986 reads the same field off the same response correctly; of the two
+    // call sites for one contract, this was the one that disagreed.
+    const r=await api('/colony/registry');
     if(!(r&&r.success&&r.data))return;
     const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
     if(!roles.length)return;
     const rt={};
-    ((g&&g.success&&g.data&&g.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
+    ((r.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
     const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
     const html=roles.map(role=>{
       const rid=antRoleId(role), rname=antRoleName(role);
@@ -3697,7 +3727,9 @@ async function pollActiveJob(){
   try{
     const r=await api(`/jobs/${activeJobId}`); if(!r.success) return;
     const j=r.data;
-    if(j.status==='complete'||j.status==='failed'||j.status==='partial'){
+    // v3.8.34: 'escalated' is terminal — without it this poller never stops, the directive box
+    // stays disabled, and the operator is locked out waiting for a run that already ended.
+    if(j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated'){
       clearInterval(jobPollTimer);jobPollTimer=null;
       showJobResult(activeJobId);
       enableInput(true);
@@ -4546,6 +4578,29 @@ document.getElementById('log-reload').addEventListener('click',reloadLogModal);
 // the pseudo-JavaScript in data-onclick. Untrusted values belong in plain data-* attributes read by
 // a fixed action map (see the data-action dispatcher), never in an executable attribute.
 function escapeHtml(s){return(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/**
+ * v3.8.34: the correct escape for a value that lands INSIDE a quoted argument of a `data-onclick`
+ * attribute — a nested context where `escapeHtml` alone is not enough.
+ *
+ * `data-onclick` is read back with getAttribute() and parsed by the micro-interpreter at the bottom
+ * of this file. The HTML parser DECODES entities before that happens, so `escapeHtml`'s `&#39;`
+ * becomes a real apostrophe by the time splitTop/coerce see it — closing the argument early and
+ * letting a second statement be appended and called with the operator's session. Escaping for HTML
+ * is correct for the outer layer and invisible to the inner one.
+ *
+ * v3.8.13 fixed the patch-path instance of this structurally, with the `data-action` map, and its
+ * comment is still the right long-term answer for untrusted values. This closes the remaining sites
+ * that still interpolate, without corrupting the values: the interpreter's own parser is
+ * backslash-aware (`splitTop` honours `\'`, `coerce` unescapes `\(['"\])`), so a backslash escape
+ * survives the round trip exactly, where stripping the character would silently change an id.
+ *
+ * Order matters. Escape for the JS layer FIRST, then for the HTML layer: the emitted `\&#39;`
+ * decodes to `\'`, which the interpreter unescapes back to a literal apostrophe.
+ */
+function jsArg(s){
+  return escapeHtml(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+}
 
 /**
  * v2.14.13: sanitise a colour before it reaches a style="" attribute.
@@ -5717,10 +5772,10 @@ async function reloadUsers(){
         <td>${status}</td>
         <td>${last}</td>
         <td style="white-space:nowrap">
-          <button class="job-btn view" data-onclick="userResetPw('${escapeHtml(u.username)}')">Reset PW</button>
-          <button class="job-btn view" data-onclick="userToggleRole('${escapeHtml(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
-          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${escapeHtml(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
-          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${escapeHtml(u.username)}')">Delete</button>`}
+          <button class="job-btn view" data-onclick="userResetPw('${jsArg(u.username)}')">Reset PW</button>
+          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
+          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${jsArg(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
+          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${jsArg(u.username)}')">Delete</button>`}
         </td></tr>`;
     }).join('')||'<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
   }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`;}
@@ -5945,7 +6000,7 @@ function renderHlDeps(){
   if(!HL_DEPS.length){ tb.innerHTML='<tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">No dependencies mapped yet.</td></tr>'; return; }
   tb.innerHTML=HL_DEPS.map(d=>'<tr><td>'+escapeHtml(d.from_kind)+': '+escapeHtml(hlRefName(d.from_kind,d.from_id))+'</td><td>'+escapeHtml(d.dependency_kind)+
     '</td><td>'+escapeHtml(d.to_kind)+': '+escapeHtml(hlRefName(d.to_kind,d.to_id))+'</td><td>'+escapeHtml(d.notes||'—')+
-    '</td><td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDep(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+    '</td><td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDep(\''+jsArg(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
 }
 
 function renderHlChanges(list){
@@ -6220,7 +6275,7 @@ function renderHlGraph(d){
       ? '<rect x="'+(p.x-17)+'" y="'+(p.y-13)+'" width="34" height="26" rx="4" fill="'+kindFill+'" fill-opacity="0.18" stroke="'+sc+'" stroke-width="2"'+pulse+'/>'
       : '<rect x="'+(p.x-16)+'" y="'+(p.y-9)+'" width="32" height="18" rx="9" fill="'+kindFill+'" fill-opacity="0.22" stroke="'+sc+'" stroke-width="2"'+pulse+'/>';
     const glyph='<text x="'+p.x+'" y="'+(p.y+4)+'" font-size="11" fill="'+kindFill+'" text-anchor="middle" style="font-weight:700;">'+(isHost?'▣':'●')+'</text>';
-    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" data-onclick="hlGraphSelect(\''+escapeHtml(n.id)+'\')">'+
+    out+='<g class="hl-node" style="cursor:pointer;'+(dim?'opacity:.3;':'')+'" data-onclick="hlGraphSelect(\''+jsArg(n.id)+'\')">'+
       shape+glyph+
       (n.internet_exposed?'<text x="'+(p.x+19)+'" y="'+(p.y-14)+'" font-size="9" fill="var(--red)">◉ exposed</text>':'')+
       (n.open_incident?'<text x="'+(p.x-17)+'" y="'+(p.y-18)+'" font-size="9" fill="var(--red)">! incident</text>':'')+
@@ -6373,7 +6428,7 @@ function renderHlIncidents(list){
     const stCol=i.status==='resolved'?'var(--green)':(i.status==='investigating'?'var(--yellow, orange)':'var(--red)');
     return '<tr><td style="color:'+col+'">'+escapeHtml(i.severity)+'</td><td>'+escapeHtml(i.title)+'</td><td>'+escapeHtml(i.subject_id||'—')+
       '</td><td style="color:'+stCol+'">'+escapeHtml(i.status)+'</td><td>'+hlDate(i.opened_at)+'</td><td>'+escapeHtml(i.root_cause||'—')+
-      '</td><td><button class="btn btn-ghost" data-onclick="hlIncDetail(\''+escapeHtml(i.id)+'\',\''+escapeHtml((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
+      '</td><td><button class="btn btn-ghost" data-onclick="hlIncDetail(\''+jsArg(i.id)+'\',\''+jsArg((i.title||'').replace(/'/g,''))+'\')">🔎 Detail</button></td></tr>';
   }).join('');
 }
 
@@ -6451,12 +6506,12 @@ function renderHlActions(items){
     const sc=a.state==='executed'?'ok':(a.state==='rejected'||a.state==='superseded'?'danger':(a.state==='approved'?'warn':'info'));
     let ops='';
     if(a.state==='pending')
-      ops='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
-          '<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
+      ops='<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'approve\')">✓ Approve</button>'+
+          '<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'reject\')">✕ Reject</button>';
     if(a.state==='pending'||a.state==='approved')
-      ops+='<button class="btn btn-ghost" data-onclick="hlActOp(\''+escapeHtml(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
+      ops+='<button class="btn btn-ghost" data-onclick="hlActOp(\''+jsArg(a.approvable_id)+'\',\'dryrun\')" title="describe what would happen — never executes">Dry run</button>';
     if(a.state==='approved')
-      ops+='<button class="btn btn-primary" data-onclick="hlActExecute(\''+escapeHtml(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
+      ops+='<button class="btn btn-primary" data-onclick="hlActExecute(\''+jsArg(a.approvable_id)+'\')"'+(HL_ACT_STOPPED?' disabled title="HOMELAB_STOP is engaged"':'')+'>▶ Execute</button>';
     return '<tr><td>'+athPill(rc,(a.risk_level||'?')+' · '+(a.blast_radius_score??'?'))+'</td>'+
       '<td><b>'+escapeHtml(a.action_type||'')+'</b></td>'+
       '<td title="'+escapeHtml(a.target_kind||'')+'">'+escapeHtml((a.target_id||'').substring(0,24))+'</td>'+
@@ -6584,23 +6639,23 @@ async function renderHlDeck(){
     const total=g.vms.length+g.cts.length+g.svcs.length;
     const met=HL3.metrics[gid];
     const hostDot=hl3Dot(healthFor(g.host.address)||((g.vms.some(v=>String(v.status).toLowerCase()==='running')||g.cts.some(c=>String(c.status).toLowerCase()==='running'))?'running':''));
-    html+='<div class="hl3-host"><div class="hl3-host-hd" data-onclick="'+(g.host.id?('hl3HostPage(\''+escapeHtml(g.host.id)+'\')'):'void(0)')+'">'
+    html+='<div class="hl3-host"><div class="hl3-host-hd" data-onclick="'+(g.host.id?('hl3HostPage(\''+jsArg(g.host.id)+'\')'):'void(0)')+'">'
       +hostDot+escapeHtml(g.host.name||'?')
       +' <span style="font-weight:400;color:var(--dim);font-size:9px;">'+escapeHtml(g.host.kind||'')+(g.host.address?' · '+escapeHtml(g.host.address):'')+'</span>'
       +'<span class="sub">'+total+' item(s)'
-      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" data-onclick="event.stopPropagation();hl3Hide(\'host:'+escapeHtml(gid)+'\')">✕</span>'):'')
+      +(g.host.id?('<span class="hl3-x" title="Hide this node from the deck (re-add from the hidden tray)" data-onclick="event.stopPropagation();hl3Hide(\'host:'+jsArg(gid)+'\')">✕</span>'):'')
       +'</span></div>';
     if(met) html+=hl3Bars(met);
     html+='<div class="hl3-tiles">';
     for(const vm of g.vms){
       const key='vm:'+vm.id; if(hidden.has(key)){ hiddenCount++; continue; }
-      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(vm.id)+'\')">'+hl3Dot(vm.status)
+      html+='<span class="hl3-tile" title="VM '+escapeHtml(vm.vm_id||'')+' — '+escapeHtml(vm.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'vm\',\''+jsArg(vm.id)+'\')">'+hl3Dot(vm.status)
         +'<span class="k">vm</span>'+escapeHtml(vm.name||vm.vm_id||'?')
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     for(const ct of g.cts){
       const key='ct:'+ct.id; if(hidden.has(key)){ hiddenCount++; continue; }
-      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(ct.id)+'\')">'+hl3Dot(ct.status)
+      html+='<span class="hl3-tile" title="'+escapeHtml(ct.kind||'ct')+' '+escapeHtml(ct.container_id||'')+' — '+escapeHtml(ct.status||'?')+' (click for detail page)" data-onclick="hl3GuestPage(\'ct\',\''+jsArg(ct.id)+'\')">'+hl3Dot(ct.status)
         +'<span class="k">'+escapeHtml(ct.kind||'ct')+'</span>'+escapeHtml(ct.name||ct.container_id||'?')
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
@@ -6612,7 +6667,7 @@ async function renderHlDeck(){
         +hl3Dot(st||(svc.criticality==='critical'?'warning':''))
         +'<span class="k">svc</span>'+escapeHtml(svc.name||'?')
         +(svc.internet_exposed?'<span title="internet exposed" style="color:var(--status-warning)">🌐</span>':'')
-        +'<span class="zap" title="Propose service restart (approval-gated)" data-onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+escapeHtml(svc.id)+'\')">⚡</span>'
+        +'<span class="zap" title="Propose service restart (approval-gated)" data-onclick="event.stopPropagation();hl3DeckPropose(\'restart_service\',\'service\',\''+jsArg(svc.id)+'\')">⚡</span>'
         +'<span class="hl3-x" title="Hide" data-onclick="event.stopPropagation();hl3Hide(\''+key+'\')">✕</span></span>';
     }
     if(!total) html+='<span class="hl3-empty" style="padding:4px;">no services or guests yet</span>';
@@ -6654,7 +6709,7 @@ function hl3RenderHiddenTray(count){
     if(kind==='ct'){ const x=(HL3.cts||[]).find(o=>o.id===id); return 'ct '+(x?x.name||x.container_id:id.slice(0,14)); }
     const x=(HL_SVCS||[]).find(o=>o.id===id); return 'svc '+(x?x.name:id.slice(0,14));
   };
-  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" data-onclick="hl3Unhide(\''+escapeHtml(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
+  tray.innerHTML='Hidden ('+h.length+'): '+h.map(k=>'<span class="hl3-tile" style="display:inline-flex;" title="Click to restore" data-onclick="hl3Unhide(\''+jsArg(k)+'\')">'+escapeHtml(label(k))+' ↩</span>').join(' ')
     +' <span style="cursor:pointer;text-decoration:underline;" data-onclick="hl3SaveHidden(new Set());renderHlDeck()">restore all</span>';
 }
 // ---- v2.3.3 sub-pages: nothing nested — nested content opens a full page with ✕ Close on top --
@@ -6684,8 +6739,8 @@ function hl3HostPage(hostId){
     +(m?' · Uptime: <b>'+up(m.uptime_seconds)+'</b> · Metrics via <b>'+escapeHtml(m.source)+'</b> at '+escapeHtml((m.updated_at||'').slice(0,19).replace('T',' ')):'')+'</div>'
     +(m?hl3Bars(m):'<div style="font-size:10px;color:var(--dim);margin-top:6px;">No resource metrics for this node yet — they arrive with the next provider sync.</div>')+'</div>';
   html+='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Guests ('+(vms.length+cts.length)+')</div><div class="hl3-tiles">'
-    +vms.map(v=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'vm\',\''+escapeHtml(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
-    +cts.map(c=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'ct\',\''+escapeHtml(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
+    +vms.map(v=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'vm\',\''+jsArg(v.id)+'\')">'+hl3Dot(v.status)+'<span class="k">vm</span>'+escapeHtml(v.name||v.vm_id)+'</span>').join('')
+    +cts.map(c=>'<span class="hl3-tile" data-onclick="hl3GuestPage(\'ct\',\''+jsArg(c.id)+'\')">'+hl3Dot(c.status)+'<span class="k">'+escapeHtml(c.kind||'ct')+'</span>'+escapeHtml(c.name||c.container_id)+'</span>').join('')
     +((vms.length+cts.length)?'':'<span class="hl3-empty">no guests</span>')+'</div></div>';
   hl3PageOpen('Node — '+(h.name||'?'),html);
 }
@@ -6700,7 +6755,7 @@ async function hl3GuestPage(kind,id){
   const host=(HL_HOSTS||[]).find(h=>h.id===g.node_id);
   const tgt=hl3GuestTarget(g,kind);
   const up=(s)=>s>0?(s>=86400?Math.floor(s/86400)+'d ':'')+Math.floor(s%86400/3600)+'h '+Math.floor(s%3600/60)+'m':'—';
-  const act=(type,label)=>'<button class="btn btn-ghost" data-onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+escapeHtml(tgt)+'\')">'+label+'</button>';
+  const act=(type,label)=>'<button class="btn btn-ghost" data-onclick="hl3PageClose();hl3DeckPropose(\''+type+'\',\''+(kind==='vm'?'vm':'container')+'\',\''+jsArg(tgt)+'\')">'+label+'</button>';
   let html='<div class="card" style="padding:14px 16px;"><div class="section-head" style="margin-top:0;">Status</div>'
     +'<div style="font-size:12px;">'+hl3Dot(g.status)+' <b>'+escapeHtml((g.status||'unknown').toUpperCase())+'</b>'
     +' <span style="color:var(--dim);font-size:10px;">on '+escapeHtml(host?host.name:String(g.node_id||'').split(':').pop())+' · id '+escapeHtml(kind==='vm'?g.vm_id:g.container_id)+'</span></div>'
@@ -6733,7 +6788,7 @@ async function renderHl3Apps(){
   if(!items.length){ el.innerHTML='<div class="hl3-empty">No *arr apps connected yet. <b>+ App</b> supports sonarr, radarr, lidarr, readarr, whisparr, prowlarr, and bazarr — status, health, and queue at a glance, Homarr-style.</div>'; return; }
   el.innerHTML=items.map(a=>{
     const col=HL3_ARR_COLORS[a.kind]||'#4aa3ff';
-    return '<div class="hl3-app" data-onclick="hl3ArrPage(\''+escapeHtml(a.id)+'\')">'
+    return '<div class="hl3-app" data-onclick="hl3ArrPage(\''+jsArg(a.id)+'\')">'
       +'<span class="av" style="background:'+col+'">'+escapeHtml((a.kind||'?')[0].toUpperCase())+'</span>'
       +'<span style="min-width:0;"><div class="nm">'+hl3Dot(a.status==='ok'?'ok':(a.status==='error'?'failed':''))+' '+escapeHtml(a.name)+'</div>'
       +'<div class="mt">'+escapeHtml(a.kind)+(a.version?' '+escapeHtml(a.version):'')
@@ -6767,9 +6822,9 @@ function hl3ArrPage(id){
     +' · Checked '+escapeHtml((a.last_checked||'never').slice(0,19).replace('T',' '))+'</div>'
     +(a.last_message?'<div style="font-size:10px;color:var(--status-danger);margin-top:6px;">'+escapeHtml(a.last_message)+'</div>':'')
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
-    +'<button class="btn btn-primary" data-onclick="window.open(\''+escapeHtml(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
+    +'<button class="btn btn-primary" data-onclick="window.open(\''+jsArg(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
     +'<button class="btn btn-ghost" data-onclick="hl3ArrSync();hl3PageClose()">⟳ Sync now</button>'
-    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+escapeHtml(a.id)+'\')">🗑 Remove</button></div>'
+    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+jsArg(a.id)+'\')">🗑 Remove</button></div>'
     +'<div style="font-size:9px;color:var(--dim);margin-top:8px;">API key is stored write-only in the credential store (id '+escapeHtml(a.credential_id)+') and is never displayed. All requests are GET-only and allowlist-gated.</div></div>';
   hl3PageOpen('App — '+a.name,html);
 }
@@ -7195,7 +7250,7 @@ function renderHlDevices(devs){
   tb.innerHTML=devs.map(d=>'<tr><td>'+escapeHtml(d.name||'—')+'</td><td>'+escapeHtml(d.kind||'unknown')+'</td><td>'+escapeHtml(d.mac||'—')+
     '</td><td>'+escapeHtml(d.ip||'—')+'</td><td>'+escapeHtml(d.vlan||'—')+
     '</td><td>'+(d.known?'yes':'<span style="color:var(--red)">NO</span>')+'</td><td>'+hlDate(d.last_seen)+'</td>'+
-    '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDevice(\''+escapeHtml(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
+    '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelDevice(\''+jsArg(d.id)+'\')">✕</button>'):'—')+'</td></tr>').join('');
 }
 
 function renderHlRisks(risks){
@@ -7210,7 +7265,7 @@ function renderHlRisks(risks){
     const col=r.severity==='error'?'var(--red)':(r.severity==='warning'?'var(--yellow, orange)':'var(--dim)');
     return '<tr><td style="color:'+col+'">'+escapeHtml(r.severity)+'</td><td>'+escapeHtml(r.finding_kind)+'</td><td>'+escapeHtml(r.summary||'')+
       '</td><td>'+escapeHtml(r.status)+'</td><td>'+hlDate(r.updated_at)+'</td>'+
-      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" data-onclick="hlAckRisk(\''+escapeHtml(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
+      '<td>'+((admin&&r.status==='open')?('<button class="btn btn-ghost" data-onclick="hlAckRisk(\''+jsArg(r.id)+'\')" title="Acknowledge: keep visible, stop counting as open">✓ Ack</button>'):'—')+'</td></tr>';
   }).join('');
 }
 
@@ -7267,7 +7322,7 @@ function renderHlChecks(schedules,results){
       '<td style="color:'+col+'">'+escapeHtml(st)+(sc.enabled?'':' (disabled)')+'</td>'+
       '<td>'+(last?last.latency_ms+'ms':'—')+'</td><td>'+escapeHtml(last?(last.detail||''):'not run yet')+'</td>'+
       '<td>'+(last?hlDate(last.checked_at):'—')+'</td>'+
-      '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelCheck(\''+escapeHtml(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
+      '<td>'+(admin?('<button class="btn btn-ghost" data-onclick="hlDelCheck(\''+jsArg(sc.id)+'\')">✕</button>'):'—')+'</td></tr>';
   }).join('');
 }
 
@@ -7747,8 +7802,8 @@ function renderOv2Approvals(items){
     const kindTag=a.kind==='homelab_action'?' '+athPill('warn','action'):'';
     return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+kindTag+
       '<div style="margin-top:4px;display:flex;gap:6px;">'+
-      '<button class="ov2-approve" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'approve\',\''+escapeHtml(a.kind||'patch')+'\')">✓ Approve</button>'+
-      '<button class="ov2-reject" data-onclick="doApproval(\''+escapeHtml(a.source_id)+'\',\'reject\',\''+escapeHtml(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
+      '<button class="ov2-approve" data-onclick="doApproval(\''+jsArg(a.source_id)+'\',\'approve\',\''+jsArg(a.kind||'patch')+'\')">✓ Approve</button>'+
+      '<button class="ov2-reject" data-onclick="doApproval(\''+jsArg(a.source_id)+'\',\'reject\',\''+jsArg(a.kind||'patch')+'\')">✕ Reject</button></div></div>';
   }).join('');
 }
 
@@ -8193,8 +8248,8 @@ function renderConversations(list){
       ? `<div class="conv-attn">
            <span class="conv-attn-label">Waiting for you:</span>
            <span class="conv-attn-what">${escapeHtml(waiting.join(', '))}</span>
-           ${waiting.map(a=>`<button class="conv-btn approve" data-onclick="convApprove('${escapeHtml(c.id)}','${escapeHtml(a)}')">Approve ${escapeHtml(a)}</button>`).join('')}
-           <button class="conv-btn" data-onclick="convCancel('${escapeHtml(c.id)}')">Cancel</button>
+           ${waiting.map(a=>`<button class="conv-btn approve" data-onclick="convApprove('${jsArg(c.id)}','${jsArg(a)}')">Approve ${escapeHtml(a)}</button>`).join('')}
+           <button class="conv-btn" data-onclick="convCancel('${jsArg(c.id)}')">Cancel</button>
          </div>`
       : '';
 
@@ -8208,8 +8263,8 @@ function renderConversations(list){
       ${attention}
       ${c.cancelled?'':`<div class="conv-say">
         <input class="conv-input" id="conv-msg-${escapeHtml(c.id)}" placeholder="Say something…" />
-        <button class="conv-btn" data-onclick="convSend('${escapeHtml(c.id)}','chat')">Send</button>
-        <button class="conv-btn work" data-onclick="convSend('${escapeHtml(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
+        <button class="conv-btn" data-onclick="convSend('${jsArg(c.id)}','chat')">Send</button>
+        <button class="conv-btn work" data-onclick="convSend('${jsArg(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
       </div>`}
     </div>`;
   }).join('');
@@ -8369,14 +8424,14 @@ function renderToolsPanel(d){
             // a row behind that looked broken — the label promised one thing and the API did
             // another, which is the worst possible pairing on a destructive control.
             const actions = u.status==='disabled'
-              ? `<button class="conv-btn" data-onclick="toolEnable('${escapeHtml(u.name)}')">Enable</button>`
-              : `<button class="conv-btn" data-onclick="toolDisable('${escapeHtml(u.name)}')">Disable</button>`;
+              ? `<button class="conv-btn" data-onclick="toolEnable('${jsArg(u.name)}')">Enable</button>`
+              : `<button class="conv-btn" data-onclick="toolDisable('${jsArg(u.name)}')">Disable</button>`;
             return `<div class="tp-item ${u.status==='registered'?'':'off'}">
              <span class="tp-name">${escapeHtml(u.name)}</span>
              <span class="tp-status">${escapeHtml(u.kind)} · ${escapeHtml(TOOL_STATUS_LABEL[u.status]||u.status)}</span>
              <span class="tp-why">${escapeHtml((u.problems||[]).join('; ')||u.description||'')}</span>
              ${actions}
-             <button class="conv-btn" data-onclick="toolDelete('${escapeHtml(u.name)}')">Delete</button>
+             <button class="conv-btn" data-onclick="toolDelete('${jsArg(u.name)}')">Delete</button>
            </div>`;
           }).join('')
         : `<div class="tp-quiet">No operator-defined tools yet.</div>`);
