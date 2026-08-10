@@ -280,9 +280,61 @@ public class PreV3HardeningTests : IDisposable
     [InlineData("completed", "completed_verified", "complete")]
     [InlineData("completed", "completed_unverified", "complete")]
     [InlineData(null, null, "failed")]                    // an unexplained end is not a success
-    [InlineData("escalated", null, "failed")]
+    // v3.8.34: escalation earns its own status. MissionOutcome.Escalated is defined as "distinct
+    // from failed — nothing broke; the runtime declined to continue without judgment", and mapping
+    // it onto "failed" made the console print FAILED above the job's own "Completed — 5/5 tasks
+    // succeeded."
+    [InlineData("escalated", null, "escalated")]
+    // The PRODUCTION pairing, which had no case here. An adaptive stop reaches this method as
+    // outcome "completed" with code "escalated" — the code wins, so the row that previously read
+    // failed/completed now reads escalated/completed and the two fields agree. The old theory fed
+    // ("escalated", null), a shape nothing produces: the input was built in the form this side
+    // expected rather than the form the caller sends, which is the defect class
+    // CrossBoundaryAgreementTests exists to catch.
+    [InlineData("completed", "escalated", "escalated")]
+    [InlineData("completed", "rollback_failed", "failed")]  // unknown-to-this-switch stays a failure
     public void JobStatus_MapsFromTheCanonicalOutcome(string? outcome, string? code, string expected) =>
         Assert.Equal(expected, ApiJobRegistry.StatusFromOutcome(outcome, code));
+
+    /// <summary>
+    /// Every status this class can END a job on must be recognised as terminal.
+    ///
+    /// v3.8.34. `Cancel` and `CancelAll` each carried their own list — "complete" or "failed" or
+    /// "cancelled" — and both omitted `timed_out`, which `StatusFromOutcome` has produced since
+    /// v2.26.0. Cancelling an already-timed-out job therefore returned true, signalled a token
+    /// nobody held, and CancelAll counted it as affected. Two copies of one rule, wrong in the same
+    /// place, which is why the rule now has a single home.
+    ///
+    /// Derived from `StatusFromOutcome` rather than restated, so a new outcome that maps to a new
+    /// job status fails HERE instead of silently becoming cancellable-after-death.
+    /// </summary>
+    [Fact]
+    public void EveryEndingStatus_IsRecognisedAsTerminal()
+    {
+        // Every member of the closed mission vocabulary, plus the bare outcome strings the
+        // pre-code path still produces.
+        var vocabulary = new string?[]
+        {
+            "completed", "completed_verified", "completed_unverified", "partial", "failed",
+            "failed_retryable", "failed_permanent", "timed_out", "cancelled", "escalated",
+            "compensating", "compensated", "rollback_failed", "waiting_for_approval",
+            "waiting_for_verification", null, "",
+        };
+
+        var ending = vocabulary
+            .Select(v => ApiJobRegistry.StatusFromOutcome(v, null))
+            .Concat(vocabulary.Select(v => ApiJobRegistry.StatusFromOutcome("completed", v)))
+            .Distinct()
+            .ToList();
+
+        Assert.True(ending.Count >= 4, $"status mapping looks broken — only {ending.Count} distinct end states");
+
+        var notTerminal = ending.Where(s => !ApiJobRegistry.IsTerminalStatus(s)).ToList();
+
+        Assert.True(notTerminal.Count == 0,
+            "these statuses end a job but IsTerminalStatus does not recognise them, so the job stays "
+            + "cancellable after it has finished: " + string.Join(", ", notTerminal));
+    }
 
     /// <summary>The coder's classification parses its own JSON artifact — zero proposals on a
     /// patch task is a failure, malformed output is a failure, proposals are a success.</summary>
