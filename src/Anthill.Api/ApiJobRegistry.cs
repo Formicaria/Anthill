@@ -205,19 +205,72 @@ public sealed class ApiJobRegistry : IDisposable
     // v2.8.0: reads come from the durable table (survives restart); live in-memory jobs overlay
     // their current status so nothing appears stale mid-run.
     public List<Dictionary<string, object?>> ListJobs(int limit = 50) =>
-        _mem.ListMissionJobs(limit).Select(row =>
-        {
-            if (_jobs.TryGetValue(row.Id, out var live)) return live.ToDict();
-            return new Dictionary<string, object?>
-            {
-                ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = row.Status, ["mission_id"] = row.MissionId,
-                ["result"] = row.Result, ["error"] = row.Error, ["outcome"] = row.Outcome, ["reason"] = row.Reason,
-                ["created_at"] = row.CreatedAt, ["started_at"] = row.StartedAt, ["finished_at"] = row.FinishedAt,
-                ["attempt"] = row.Attempt,
-            };
-        }).ToList();
+        _mem.ListMissionJobs(limit).Select(Project).ToList();
 
+    /// <summary>
+    /// ONE projection for a durable row, used by list AND detail. v0.3.8.38.
+    ///
+    /// The list had its own inline dictionary and the detail path had `ApiMissionJob.ToDict`, and
+    /// they disagreed: the live shape carried `outcome_code` and the durable one did not, so a job
+    /// LOST its canonical outcome across a restart while every field name still looked familiar.
+    /// Two projections of one thing is the same defect as two patch appliers.
+    ///
+    /// `outcome_code` is joined from the canonical mission evaluation rather than duplicated into
+    /// the job row, so it stays truthful for a job whose mission never got that far — the join
+    /// simply yields null, which is honest, where a stale copied column would not be.
+    /// </summary>
+    private Dictionary<string, object?> Project(SqliteMemory.MissionJobRow row)
+    {
+        if (_jobs.TryGetValue(row.Id, out var live)) return live.ToDict();
+
+        return new Dictionary<string, object?>
+        {
+            ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = row.Status, ["mission_id"] = row.MissionId,
+            ["result"] = row.Result, ["error"] = row.Error, ["outcome"] = row.Outcome, ["reason"] = row.Reason,
+            ["outcome_code"] = string.IsNullOrWhiteSpace(row.MissionId)
+                ? null
+                : _mem.LoadMissionEvaluation(row.MissionId!)?.OutcomeCode,
+            ["created_at"] = row.CreatedAt, ["started_at"] = row.StartedAt, ["finished_at"] = row.FinishedAt,
+            ["attempt"] = row.Attempt,
+        };
+    }
+
+    /// <summary>
+    /// A job by id, live or durable. v0.3.8.38.
+    ///
+    /// This read `_jobs` alone, so `/jobs` could list a row that `/jobs/{id}` then reported as
+    /// not-found — after a restart, or once history trimming evicted it from memory. The durable
+    /// store already had `GetMissionJob`; nothing called it.
+    /// </summary>
+    public Dictionary<string, object?>? GetJobProjection(string id)
+    {
+        if (_jobs.TryGetValue(id, out var live)) return live.ToDict();
+        var row = _mem.GetMissionJob(id);
+        return row is null ? null : Project(row);
+    }
+
+    /// <summary>The live job, or null. Callers that need to ACT on a job (cancel, re-run) use this;
+    /// callers that only need to display one use <see cref="GetJobProjection"/>, which also sees
+    /// durable history. Kept separate on purpose: a terminal row must never be handed back as a
+    /// runnable in-memory job.</summary>
     public ApiMissionJob? GetJob(string id) => _jobs.TryGetValue(id, out var job) ? job : null;
+
+    /// <summary>
+    /// Ids of every job that has not reached a terminal state. v0.3.8.38.
+    ///
+    /// Exists so destructive maintenance can REFUSE while work is in flight, on the server, rather
+    /// than relying on a disabled browser button. Reads the durable table as well as memory: a job
+    /// running under a previous process is still active work, and after a restart memory alone would
+    /// report the machine idle while a lease is still held.
+    /// </summary>
+    public List<string> ActiveJobIds()
+    {
+        var active = _jobs.Values.Where(j => !IsTerminalStatus(j.Status)).Select(j => j.Id).ToList();
+        active.AddRange(_mem.ListMissionJobs(200)
+            .Where(r => !IsTerminalStatus(r.Status))
+            .Select(r => r.Id));
+        return active.Distinct(StringComparer.Ordinal).ToList();
+    }
 
     /// <summary>Requests cancellation of one job. Queued work is dropped before it runs; a running
     /// mission is signalled to stop mid-flight (its next model call / task boundary aborts). Returns
@@ -252,17 +305,24 @@ public sealed class ApiJobRegistry : IDisposable
         status is "complete" or "failed" or "cancelled" or "timed_out" or "escalated";
 
     /// <summary>Cancels every non-terminal job. Returns how many were affected.</summary>
+    /// <summary>
+    /// Cancel every non-terminal job, DURABLY. v0.3.8.38.
+    ///
+    /// This marked jobs in memory and signalled their tokens without persisting anything, while
+    /// `Cancel(id)` two methods up did persist. So a crash immediately after "Cancel all" lost every
+    /// cancellation and the reclaim sweep requeued work the operator had explicitly stopped —
+    /// the one operation whose whole purpose is to make work stop doing the opposite.
+    ///
+    /// It now routes through the SAME transition as the single cancel rather than repeating it,
+    /// because two implementations of one rule is how they came to differ in the first place.
+    /// </summary>
     public int CancelAll()
     {
         var n = 0;
-        foreach (var job in _jobs.Values)
-        {
-            if (IsTerminalStatus(job.Status)) continue;
-            job.Cancelled = true;
-            SignalCancel(job);
-            if (job.Status == "queued") { job.Status = "cancelled"; job.FinishedAt = AnthillTime.NowUtc(); }
-            n++;
-        }
+        // Snapshot the ids: Cancel mutates job state, and enumerating _jobs.Values while doing so
+        // is a race this method does not need to take.
+        foreach (var id in _jobs.Keys.ToList())
+            if (Cancel(id)) n++;
         return n;
     }
 

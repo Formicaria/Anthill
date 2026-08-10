@@ -1,5 +1,74 @@
 # ANTHILL Changelog
 
+## v0.3.8.38 - the durable mission contract
+
+An external audit of v0.3.8.36 named five backend defects behind the console work. Each was
+re-proved against the tree before being touched — two were already stale after v0.3.8.37, and the
+rest were real.
+
+**Three are the same shape this repository knows too well: the capability existed, was tested, and
+nothing reached it.** That count is now twelve.
+
+### Mission submission had no idempotency — the eleventh unreachable capability
+
+`ApiJobRegistry.Submit(goal, idempotencyKey)` and the store's insert-or-replay have worked since
+v2.8.0. `POST /missions` called `Submit(goal)` and passed nothing, and the console sent nothing. A
+client whose request timed out and retried submitted the mission twice, ran it twice, and paid for it
+twice — while the protection sat one argument away, fully tested.
+
+The route now accepts an `Idempotency-Key` header or a body field. Bounded at 200 characters and
+validated: an unbounded key is an unbounded index entry, and a key is REJECTED rather than truncated
+when it is too long, because truncated keys collide with other truncated keys and would suppress
+different missions as duplicates — worse than having no key at all.
+
+### A listed job could not be opened — the twelfth
+
+`ListJobs` read the durable table; `GetJob` read only `_jobs`. So `/jobs` listed a row that
+`/jobs/{id}` then reported as not-found, after a restart or once history trimming evicted it from
+memory. `GetMissionJob(id)` already existed in the store. Nothing called it.
+
+The two projections also disagreed. The live shape carried `outcome_code` and the durable one did
+not, so a job LOST its canonical outcome across a restart while every other field still looked
+familiar. There is now ONE projection used by list and detail, live and durable — two projections of
+one thing being the same defect as two patch appliers. `outcome_code` is JOINED from the canonical
+mission evaluation rather than copied into the job row, so it stays truthful for a job whose mission
+never got that far: the join yields null, which is honest, where a stale copied column would not be.
+
+### "Cancel all" was not durable
+
+`Cancel(id)` persisted the transition. `CancelAll()` marked jobs in memory, signalled their tokens,
+and wrote nothing. A crash immediately after "cancel all" lost every cancellation and the reclaim
+sweep requeued work the operator had explicitly stopped — the one operation whose entire purpose is
+making work stop, doing the opposite.
+
+It now delegates to the single cancel rather than repeating it. Two implementations of one rule is
+how they came to differ.
+
+### Clearing history could destroy a running mission's audit trail
+
+`/maintenance/clear-missions` accepted the call at any time. `ClearMissionHistory` drops tasks,
+events, patches and approvals with foreign keys OFF, so run mid-mission it deleted rows a worker was
+still writing and took the record that would explain the mission with them. The console disabled its
+button; the endpoint accepted the call from anywhere, and a disabled button is not a gate.
+
+The endpoint now refuses while any job is queued or running, counted from the DURABLE table as well
+as memory — after a restart a lease can still be held while the in-process registry is empty, and an
+idle-looking machine is exactly when someone clears history.
+
+The delete also omitted `mission_jobs`, `mission_attempts` and `task_attempts`, leaving job rows
+pointing at missions that no longer existed. Those are dangling references that `/jobs` still listed
+and — as of this release — `/jobs/{id}` would happily project, describing work whose record had been
+erased. Two of those tables are created lazily on first use, so the delete checks the table exists
+first; naming them without that check would turn "clear history on a fresh install" into an error.
+
+### Two audit findings were already stale
+
+The brief listed "patch proposals carry no expected base hash" and "empty auto-apply allowlists are
+not yet proven to fail closed" as open. Both closed in v0.3.8.37 — the first by
+`PatchProposal.BaseHash`, the second by checking rather than assuming, since
+`DeniedWhenAllowlistEmpty` had proven it all along. Re-proving before fixing is what kept this
+release from re-implementing work that already existed.
+
 ## v0.3.8.37 - stale patches are refused, and the changelog can no longer be rewritten under a tag
 
 ### The release process failure, fixed executably
