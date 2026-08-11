@@ -213,12 +213,25 @@ public static class ReasoningProviders
         }
     }
 
-    /// <summary>Presents an <see cref="IReasoningProvider"/> under the core's older alias.</summary>
-    private sealed class ReasoningProviderAdapter : IModelClient
+    /// <summary>
+    /// Presents an <see cref="IReasoningProvider"/> under the core's older alias.
+    ///
+    /// v0.3.8.47, found live: this adapter is what the router actually hands out, and it did not
+    /// carry <see cref="IStreamingReasoningProvider"/> — so the Queen's "can this client stream?"
+    /// type test was false for EVERY provider, and not one delta had ever flowed in production.
+    /// Streaming-capable Ollama, streaming-capable Claude Code, and a wrapper that hid both. The
+    /// adapter now forwards the capability; an inner provider without it answers whole through
+    /// Send, which is the same honest done-frame the caller always handled.
+    /// </summary>
+    private sealed class ReasoningProviderAdapter : IModelClient, IStreamingReasoningProvider
     {
         private readonly IReasoningProvider _inner;
         public ReasoningProviderAdapter(IReasoningProvider inner) => _inner = inner;
         public ModelResponse Send(ModelRequest request, int retries = 2) => _inner.Send(request, retries);
         public ModelCallResult Generate(string prompt, int retries = 2) => _inner.Generate(prompt, retries);
+        public ModelResponse SendStreaming(ModelRequest request, Action<string> onDelta, int retries = 2) =>
+            _inner is IStreamingReasoningProvider streaming
+                ? streaming.SendStreaming(request, onDelta, retries)
+                : _inner.Send(request, retries);
     }
 }

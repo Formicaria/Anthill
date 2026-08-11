@@ -116,6 +116,28 @@ public class DesktopShellTests
         Assert.DoesNotContain("Anthill.Desktop", Read("Anthill.sln"));
     }
 
+    /// <summary>
+    /// v0.3.8.47 — the tray, and the update check that only ever TELLS. Two rules pinned:
+    /// minimize goes to the tray but the X still quits (hijacking close into "secretly keep
+    /// running" is the desktop behaviour people rightly hate), and the update path opens a
+    /// release page — never downloads, never installs, and fails into silence offline.
+    /// </summary>
+    [Fact]
+    public void TheTray_IsPolite_AndTheUpdateCheckOnlyTells()
+    {
+        var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
+
+        Assert.Contains("NotifyIcon", shell);
+        Assert.Contains("FormWindowState.Minimized", shell);
+        Assert.Contains("FormClosed", shell);
+        Assert.DoesNotContain("e.Cancel = true", shell);
+        Assert.Contains("releases/latest", shell);
+        Assert.Contains("UseShellExecute = true", shell);
+        Assert.Contains("Nothing installs itself", shell);
+        Assert.DoesNotContain("DownloadFile", shell);
+        Assert.Contains("them <= us", shell);
+    }
+
     /// <summary>The window claims a writable WebView2 profile — the install dir may be
     /// Program Files, and "beside the exe" is how packaged WebView2 apps break for non-admins.</summary>
     [Fact]

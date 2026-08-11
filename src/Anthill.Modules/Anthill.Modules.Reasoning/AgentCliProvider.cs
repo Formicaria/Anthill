@@ -19,7 +19,7 @@ namespace Anthill.Modules.Reasoning;
 /// refused login is AuthError. An ant seeing NotAvailable can route elsewhere; an ant seeing a
 /// string beginning "ERROR:" could only guess.
 /// </summary>
-public sealed class AgentCliProvider : IReasoningProvider
+public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningProvider
 {
     private readonly AgentCli _agent;
     private readonly TimeSpan _timeout;
@@ -87,6 +87,110 @@ public sealed class AgentCliProvider : IReasoningProvider
             Model = _agent.DisplayName,
             FinishReason = "exit_0",
         };
+    }
+
+    /// <summary>
+    /// v0.3.8.47 — the same run, streamed: stdout lines reach the operator as the agent writes
+    /// them. Everything else is Send's behaviour verbatim — same confinement check, same
+    /// no-retry rule (an agent turn is not idempotent), same classification of a bad exit. The
+    /// ambient ModelCallScope token kills the process on cancel, so the ■ reaches the agent.
+    /// </summary>
+    public ModelResponse SendStreaming(ModelRequest request, Action<string> onDelta, int retries = 2)
+    {
+        var prompt = Flatten(request);
+        if (string.IsNullOrWhiteSpace(prompt))
+            return Fail(ModelCallOutcome.ConfigError, "No prompt to send.");
+        var confinement = Confinement();
+        if (confinement is not null) return confinement;
+        _ = retries;   // deliberately ignored — see Send.
+
+        // v0.3.8.47: agents WITH a streaming mode (Claude Code's stream-json) get real deltas —
+        // each stdout line is an NDJSON event, and only its TEXT reaches the operator. Agents
+        // without one keep honest line streaming. The final content comes from the result event
+        // when there is one, because raw NDJSON is transport, not answer.
+        var hasStreamMode = _agent.StreamArgs is not null;
+        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt);
+        var streamedText = new System.Text.StringBuilder();
+        string? resultText = null;
+        var sawTokenDelta = false;
+        Action<string> sink = !hasStreamMode ? onDelta : line =>
+        {
+            var isTokenDelta = line.Contains("\"stream_event\"", StringComparison.Ordinal);
+            var (text, result) = ParseStreamEvent(line);
+            if (text is not null)
+            {
+                // Once token deltas flow, the whole-message assistant event that follows them is
+                // a repeat of text the operator already watched arrive — emitting it would double
+                // the answer on screen.
+                if (isTokenDelta) sawTokenDelta = true;
+                if (isTokenDelta || !sawTokenDelta) { streamedText.Append(text); onDelta(text); }
+            }
+            if (result is not null) resultText = result;
+        };
+        var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
+            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, _workingDirectory);
+        if (hasStreamMode && exit == 0)
+            stdout = !string.IsNullOrWhiteSpace(resultText) ? resultText
+                   : streamedText.Length > 0 ? streamedText.ToString() : stdout;
+
+        if (!started)
+            return Fail(ModelCallOutcome.NotAvailable,
+                $"{_agent.DisplayName} is not installed. Install it from the Agents page, or with: "
+                + AgentCliCatalog.InstallHint(_agent));
+        if (exit != 0)
+        {
+            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            return Fail(Classify(detail, stderr), Describe(detail));
+        }
+        if (string.IsNullOrWhiteSpace(stdout))
+            return Fail(ModelCallOutcome.Empty, $"{_agent.DisplayName} exited cleanly but said nothing.");
+
+        return new ModelResponse
+        {
+            Status = ModelCallOutcome.Ok,
+            Content = stdout.Trim(),
+            Provider = _agent.Id,
+            Model = _agent.DisplayName,
+            FinishReason = "exit_0",
+        };
+    }
+
+    /// <summary>
+    /// One NDJSON stream event → (delta text, final result). Unparseable or uninteresting lines
+    /// are (null, null): verbose noise stays out of the transcript. Never throws.
+    /// </summary>
+    internal static (string? Text, string? Result) ParseStreamEvent(string line)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+            if (type == "result" && root.TryGetProperty("result", out var r))
+                return (null, r.GetString());
+            // Token-level deltas (--include-partial-messages): the event wraps the API's own
+            // content_block_delta. When these arrive, whole-message assistant events are SKIPPED
+            // by the caller's dedupe below being unnecessary — deltas and the result are enough.
+            if (type == "stream_event" && root.TryGetProperty("event", out var ev)
+                && ev.TryGetProperty("type", out var et) && et.GetString() == "content_block_delta"
+                && ev.TryGetProperty("delta", out var d)
+                && d.TryGetProperty("type", out var dt) && dt.GetString() == "text_delta"
+                && d.TryGetProperty("text", out var dx))
+                return (dx.GetString(), null);
+            if (type == "assistant" && root.TryGetProperty("message", out var m)
+                && m.TryGetProperty("content", out var c)
+                && c.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var block in c.EnumerateArray())
+                    if (block.TryGetProperty("type", out var bt) && bt.GetString() == "text"
+                        && block.TryGetProperty("text", out var tx))
+                        sb.Append(tx.GetString());
+                return (sb.Length > 0 ? sb.ToString() : null, null);
+            }
+            return (null, null);
+        }
+        catch { return (null, null); }
     }
 
     /// <summary>

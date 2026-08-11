@@ -156,7 +156,8 @@ public sealed class ConversationRunner
         ConversationMode requested = ConversationMode.Chat,
         IReadOnlyDictionary<string, string>? answers = null,
         CancellationToken cancel = default,
-        Action<string>? onDelta = null)
+        Action<string>? onDelta = null,
+        IReadOnlyList<(string Filename, string Content)>? attachments = null)
     {
         if (conversation is null)
             return new ConversationOutcome(requested, false, null, "no conversation");
@@ -175,7 +176,7 @@ public sealed class ConversationRunner
             // Chat is not gated HERE. The tools it may call are gated at dispatch, by the same gate,
             // which is the correct place: a conversation that only reads needs no permission, and
             // one that tries to write is stopped at the write rather than at the sentence before it.
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, attachments);
 
             // v0.3.8.42: the turn is ANSWERED. Before this the message was recorded and nothing
             // was ever asked — see the _ask field for what that cost.
@@ -383,12 +384,23 @@ public sealed class ConversationRunner
         return signalled;
     }
 
-    private void RecordTurn(Conversation conversation, int ordinal, string message, string? missionId) =>
+    private string RecordTurn(Conversation conversation, int ordinal, string message, string? missionId,
+        IReadOnlyList<(string Filename, string Content)>? attachments = null)
+    {
+        var id = Guid.NewGuid().ToString("N")[..12];
         _memory.SaveConversationTurn(new ConversationTurn(
-            Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal, "user", message ?? "")
+            id, conversation.Id, ordinal, "user", message ?? "")
         {
             MissionId = missionId,
         });
+        // v0.3.8.47: attachments belong to the turn that brought them — recorded with it, shown
+        // with it, and fed to the model with it through ChatPrompt.
+        foreach (var (filename, content) in attachments ?? Array.Empty<(string, string)>())
+            _memory.SaveAttachment(new ConversationAttachment(
+                Guid.NewGuid().ToString("N")[..12], conversation.Id, id,
+                filename, System.Text.Encoding.UTF8.GetByteCount(content ?? ""), content ?? ""));
+        return id;
+    }
 
     /// <summary>
     /// The bounded prompt: a short instruction and the last <see cref="ChatContextTurns"/> turns,
@@ -406,8 +418,28 @@ public sealed class ConversationRunner
             + "operator is asking for real multi-step work, say that missions are started by asking "
             + "for the work explicitly — never claim work you did not do.");
         sb.AppendLine();
+        // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
+        // shape as Claude's project instructions: it travels with every turn, clearly labelled as
+        // the operator's own framing, not the colony's conclusion.
+        if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+            && _memory.LoadProject(conversation.ProjectId!) is { } project
+            && (!string.IsNullOrWhiteSpace(project.DescriptionMd) || !string.IsNullOrWhiteSpace(project.Path)))
+        {
+            sb.AppendLine($"This conversation belongs to the project \"{project.Name}\". "
+                + "The operator describes its purpose as:");
+            if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
+            if (!string.IsNullOrWhiteSpace(project.Path))
+                sb.AppendLine($"The project's working directory is: {project.Path}");
+            sb.AppendLine();
+        }
         foreach (var t in recent)
+        {
             sb.AppendLine((string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator: " : "Colony: ") + t.Content);
+            // v0.3.8.47: a turn's attachments travel with it, clearly framed as operator-provided
+            // files — the model sees the text the operator handed over, nothing more.
+            foreach (var a in _memory.LoadTurnAttachments(t.Id))
+                sb.AppendLine($"[Operator attached \"{a.Filename}\"]\n{a.Content}\n[end of \"{a.Filename}\"]");
+        }
         sb.AppendLine("Colony:");
         return sb.ToString();
     }

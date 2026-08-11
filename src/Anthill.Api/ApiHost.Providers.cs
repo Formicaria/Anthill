@@ -339,12 +339,30 @@ public static partial class ApiHost
                 ? p : EscalationPolicy.Ask;
             var who = CurrentUsername(ctx) ?? "operator";
 
+            // v0.3.8.47: one project per CONVERSATION — created here, at conversation start, never
+            // per message. The operator may instead pass an existing project_id (the Projects tab
+            // or a project's own "new conversation"); it must exist, or the link would dangle.
+            var projectId = (body?.ProjectId ?? "").Trim();
+            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
+                return ApiJson.Error($"No project '{projectId}'.", "not_found");
+            if (projectId.Length == 0)
+            {
+                var project = new Anthill.Core.Projects.Project
+                {
+                    Id = Guid.NewGuid().ToString("N")[..12],
+                    Name = string.IsNullOrWhiteSpace(body?.Title) ? "New conversation" : body!.Title!.Trim(),
+                };
+                Queen.Memory.SaveProject(project);
+                projectId = project.Id;
+            }
+
             var conversation = new Conversation
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
                 Title = (body?.Title ?? "").Trim(),
                 Role = string.IsNullOrWhiteSpace(body?.Role) ? "researcher" : body!.Role!.Trim(),
                 Policy = policy,
+                ProjectId = projectId,
                 // Attribution is written for ANY standing permission. Ask needs none — nobody has to
                 // sign for the safe default.
                 PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
@@ -400,6 +418,22 @@ public static partial class ApiHost
                 },
             };
 
+            // v0.3.8.47: attachments — text only, capped, and the caps are SPOKEN. A file the
+            // prompt transport could never carry is refused here, not stored as a lie.
+            var files = new List<(string Filename, string Content)>();
+            foreach (var a in body?.Attachments ?? new List<AttachmentBody>())
+            {
+                var name = (a.Filename ?? "file.txt").Trim();
+                var content = a.Content ?? "";
+                if (files.Count >= 8) return ApiJson.Error("At most 8 attachments per message.", "bad_request");
+                if (content.Length > 262_144)
+                    return ApiJson.Error($"\"{name}\" is too large — attachments are capped at 256 KB of text.", "bad_request");
+                if (content.Contains('\0'))
+                    return ApiJson.Error($"\"{name}\" looks binary. The conversation carries text; attach text files.", "bad_request");
+                files.Add((name, content));
+            }
+            var attachments = files.Count == 0 ? null : files;
+
             /*
              * v0.3.8.44 — the streamed turn. Same runner, same recording, same outcome; the only
              * difference is that content deltas travel to the client AS the provider produces
@@ -424,6 +458,7 @@ public static partial class ApiHost
                 using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
                 {
                     var outcome = Queen.Conversations.Run(conversation, message, mode, answers,
+                        attachments: attachments,
                         onDelta: delta =>
                         {
                             try { Frame("delta", System.Text.Json.JsonSerializer.Serialize(delta)); }
@@ -439,7 +474,7 @@ public static partial class ApiHost
             // decision log the transcript endpoint reads back.
             using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
             {
-                var outcome = Queen.Conversations.Run(conversation, message, mode, answers);
+                var outcome = Queen.Conversations.Run(conversation, message, mode, answers, attachments: attachments);
                 return ApiJson.Ok(OutcomePayload(outcome), outcome.Summary);
             }
         });
@@ -504,6 +539,130 @@ public static partial class ApiHost
                     };
                 }).ToList(),
             });
+        });
+
+        /*
+         * v0.3.8.47 — projects. One per conversation (created at conversation start), or made by
+         * hand here with a name, a markdown purpose, and an optional working-directory path. The
+         * purpose travels into the project's conversations as standing context; the path is
+         * recorded and given to the model as context — no surface claims deeper wiring than that.
+         */
+        app.MapGet("/projects", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["projects"] = Queen.Memory.LoadProjects().Select(p =>
+                {
+                    var convs = Queen.Memory.LoadProjectConversations(p.Id);
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = p.Id, ["name"] = p.Name, ["description_md"] = p.DescriptionMd,
+                        ["path"] = p.Path, ["archived"] = p.Archived,
+                        ["conversations"] = convs.Count,
+                        ["missions"] = convs.Sum(c => c.MissionIds.Count),
+                        ["updated_at"] = p.UpdatedAt.ToIso(),
+                    };
+                }).ToList(),
+            });
+        });
+
+        app.MapPost("/projects", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            ProjectRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var name = (body?.Name ?? "").Trim();
+            if (name.Length == 0) return ApiJson.Error("A project needs a name.", "bad_request");
+
+            var project = new Anthill.Core.Projects.Project
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Name = name,
+                DescriptionMd = (body?.DescriptionMd ?? "").Trim(),
+                Path = string.IsNullOrWhiteSpace(body?.Path) ? null : body!.Path!.Trim(),
+            };
+            Queen.Memory.SaveProject(project);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = project.Id },
+                $"Project \"{project.Name}\" created.");
+        });
+
+        app.MapPatch("/projects/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            ProjectRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            Queen.Memory.SaveProject(project with
+            {
+                Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
+                DescriptionMd = body?.DescriptionMd ?? project.DescriptionMd,
+                Path = body?.Path is null ? project.Path
+                     : (string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim()),
+                Archived = body?.Archived ?? project.Archived,
+                UpdatedAt = AnthillTime.NowUtc(),
+            });
+            return ApiJson.Ok(null, "Project updated.");
+        });
+
+        // The conversations inside one project — what the Projects page opens.
+        app.MapGet("/projects/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = project.Id, ["name"] = project.Name,
+                ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
+                ["archived"] = project.Archived,
+                ["conversations"] = Queen.Memory.LoadProjectConversations(id).Select(c => new Dictionary<string, object?>
+                {
+                    ["id"] = c.Id, ["title"] = c.Title, ["pinned"] = c.Pinned,
+                    ["cancelled"] = c.Cancelled, ["mission_ids"] = c.MissionIds,
+                    ["updated_at"] = c.UpdatedAt.ToIso(),
+                }).ToList(),
+            });
+        });
+
+        // v0.3.8.47: import — the inverse of export, for bringing a transcript in from another
+        // ANTHILL (or anywhere that can produce the JSON shape). The imported turns are recorded
+        // as HISTORY: no provider or model is invented for them, and the conversation gets its
+        // own project like any other. Nothing about an import pretends this colony did the work.
+        app.MapPost("/conversations/import", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            ImportRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ImportRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var turns = body?.Turns ?? new List<ImportTurn>();
+            if (turns.Count == 0) return ApiJson.Error("Nothing to import — no turns.", "bad_request");
+            if (turns.Count > 2000) return ApiJson.Error("Too many turns to import (max 2000).", "bad_request");
+
+            var title = string.IsNullOrWhiteSpace(body?.Title) ? "Imported conversation" : body!.Title!.Trim();
+            var project = new Anthill.Core.Projects.Project
+                { Id = Guid.NewGuid().ToString("N")[..12], Name = title };
+            Queen.Memory.SaveProject(project);
+            var conversation = new Conversation
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Title = title, ProjectId = project.Id,
+            };
+            Queen.Memory.SaveConversation(conversation);
+            var ordinal = 0;
+            foreach (var t in turns)
+            {
+                var role = string.Equals(t.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "assistant" : "user";
+                Queen.Memory.SaveConversationTurn(new ConversationTurn(
+                    Guid.NewGuid().ToString("N")[..12], conversation.Id, ++ordinal, role, t.Content ?? ""));
+            }
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["id"] = conversation.Id, ["turns"] = ordinal },
+                $"Imported {ordinal} turn(s) into \"{title}\".");
         });
 
         // v0.3.8.46: pin / unpin. Two explicit endpoints rather than a toggle, so a stale rail
@@ -602,6 +761,11 @@ public static partial class ApiHost
                     // v0.3.8.46: null when the provider did not report — the UI shows nothing
                     // rather than a fabricated zero.
                     ["prompt_tokens"] = t.PromptTokens, ["completion_tokens"] = t.CompletionTokens,
+                    // v0.3.8.47: names and sizes only — the content is in the record for export
+                    // and prompting; the transcript shows what was attached, not a wall of text.
+                    ["attachments"] = Queen.Memory.LoadTurnAttachments(t.Id)
+                        .Select(a => new Dictionary<string, object?> { ["filename"] = a.Filename, ["bytes"] = a.Bytes })
+                        .ToList(),
                 }).ToList(),
                 // Refusals included. An audit asking "did it try to do X" needs those most, because
                 // they are the attempts nobody saw happen.
