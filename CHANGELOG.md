@@ -49,6 +49,13 @@ that started it showed nothing — the pipeline's result is now recorded as the 
 next turn (a cancelled conversation still gets no late answer), which also makes schedule runs
 readable end to end: the prompt asked, the answer beneath it.
 
+**And one from Windows CI.** Invariant globalization had the whole build running without ICU,
+which on Windows is the only road from an IANA timezone id to a real zone — so
+FindSystemTimeZoneById threw, the scheduler's unknown-zone fallback quietly degraded every
+schedule to UTC, and a Windows desktop's "daily 07:00 America/Chicago" would have fired at
+07:00 UTC. Linux never noticed because its zone data needs no ICU. Globalization is on now;
+the DST test that caught it stands guard on both platforms.
+
 ## v0.3.8.47 - projects, attachments, and a chat that finally looks the part
 
 **Projects are real.** One per CONVERSATION — created at conversation start, never per message —
