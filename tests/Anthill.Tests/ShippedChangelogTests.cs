@@ -93,6 +93,10 @@ public class ShippedChangelogTests
     /// </summary>
     private static readonly Dictionary<string, string> CorrectedAfterShipping = new(StringComparer.Ordinal)
     {
+        ["0.3.8.45"] = "the entry as tagged had accidentally swallowed the '## v0.3.8.44' heading, so "
+                     + "it appeared to contain the .44 release notes as its own. Restoring the heading "
+                     + "(PR #232) shrank the .45 entry back to only what .45 shipped — the entry's own "
+                     + "words are untouched",
         ["3.8.18"] = "the no-UI gate claim was WITHDRAWN — the original entry said a gate shipped, the "
                    + "gate did not hold, and the criterion went back to NOT PROVEN. Correcting a false "
                    + "claim is the one edit a shipped entry should get",
