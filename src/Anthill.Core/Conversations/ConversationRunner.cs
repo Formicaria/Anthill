@@ -32,7 +32,8 @@ public sealed record ConversationOutcome(
 /// The attribution is not decoration: capability-aware routing can substitute providers, and a
 /// transcript that cannot say who answered cannot be audited.
 /// </summary>
-public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error);
+public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error,
+    int? PromptTokens = null, int? CompletionTokens = null);
 
 /// <summary>
 /// v3.7.0 — the escalation boundary: what turns a conversation into a mission.
@@ -203,6 +204,9 @@ public sealed class ConversationRunner
             {
                 Provider = reply.Provider,
                 Model = reply.Model,
+                // v0.3.8.46: what the answer cost, when the provider says. Null is "not reported".
+                PromptTokens = reply.PromptTokens,
+                CompletionTokens = reply.CompletionTokens,
             });
             return new ConversationOutcome(ConversationMode.Chat, true, null,
                 $"answered by {reply.Provider}/{reply.Model}");
@@ -222,6 +226,19 @@ public sealed class ConversationRunner
         var decision = EscalationGate.Evaluate(conversation, StartMissionAction,
             answers?.GetValueOrDefault(StartMissionAction));
         try { _memory.SaveEscalationDecision(decision); } catch { }
+
+        // v0.3.8.46, found live: every OTHER answer the operator gave is recorded NOW, not only
+        // if some tool happens to consult it. The old shape left a trap — an operator approved a
+        // refused action, the re-run mission planned differently and never asked again, the
+        // approval evaporated unrecorded, and the stale refusal kept the conversation in
+        // "waiting on you" forever. An answer given IS an operator decision; the record must say
+        // so whether or not the work ends up needing it.
+        foreach (var (action, answer) in answers ?? new Dictionary<string, string>())
+        {
+            if (action == StartMissionAction || string.IsNullOrWhiteSpace(action)) continue;
+            try { _memory.SaveEscalationDecision(EscalationGate.Evaluate(conversation, action, answer)); }
+            catch { }
+        }
 
         if (!decision.Allowed)
         {

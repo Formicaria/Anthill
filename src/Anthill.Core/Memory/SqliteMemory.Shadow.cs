@@ -171,6 +171,21 @@ public sealed partial class SqliteMemory
                              WHERE o.incident_id IS NULL"));
 
     /// <summary>
+    /// v0.3.8.46: the backlog ITSELF, not just its size. The judge endpoint existed for a release
+    /// with a count as its only surface — an operator was asked to clear a queue they could not
+    /// see. Each row is what the panel needs to put the judgment form next to the recommendation.
+    /// </summary>
+    public List<Dictionary<string, object?>> LoadUnresolvedShadowRecommendations(int limit = 50) =>
+        Query(@"SELECT r.incident_id, r.diagnosis, r.proposed_action, r.predicted_outcome,
+                       r.risk_level, r.risk_requires_approval, r.rollback_plan,
+                       r.would_recommend_execution, r.created_at
+                FROM shadow_recommendations r
+                LEFT JOIN shadow_outcomes o ON o.incident_id = r.incident_id
+                WHERE o.incident_id IS NULL
+                ORDER BY r.created_at DESC LIMIT @limit",
+            ("@limit", Math.Clamp(limit, 1, 500))).ToList();
+
+    /// <summary>
     /// Elapsed seconds between observing an incident and the operator resolving it, per pair.
     /// The raw material for the phase's timing metrics — stored as timestamps rather than computed
     /// durations so a late correction to either end recomputes correctly.

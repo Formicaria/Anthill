@@ -339,6 +339,9 @@ public static partial class ApiHost
                 // most dangerous possible failure for this subsystem.
                 ["qualified_sample"] = pairs.Count,
                 ["awaiting_operator_judgment"] = pending,
+                // v0.3.8.46: the backlog itself. The judge endpoint spent a release with a COUNT
+                // as its only surface — a queue the operator was asked to clear but could not see.
+                ["pending"] = Queen.Memory.LoadUnresolvedShadowRecommendations(50),
                 ["status"] = pairs.Count == 0
                     ? "no scored incidents yet — shadow mode has not qualified anything"
                     : $"{pairs.Count} scored incident(s); {pending} awaiting operator judgment",
