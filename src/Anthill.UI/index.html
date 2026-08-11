@@ -1169,6 +1169,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* The mission request is visually its own act — amber like every "this asks for authority" cue. */
 .chat-work{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.45);color:var(--amber,#f59e0b);}
 .chat-work:hover{background:rgba(245,158,11,.2);}
+/* v0.3.8.44: while a streamed answer is in flight the send button is ■ — red, because pressing
+   it aborts the model call, and that is the one thing it can truthfully do right then. */
+.mn-send.chat-streaming{background:rgba(229,72,77,.14);border-color:rgba(229,72,77,.5);color:var(--status-danger,#e5484d);}
 /* v0.3.8.42 (§9/§14): the topology legend's registry-problem notice — amber for stale, and the
    retry sits beside the failure it retries. */
 .chud-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;margin-bottom:6px;

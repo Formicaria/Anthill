@@ -385,26 +385,62 @@ public static partial class ApiHost
                 ? ConversationMode.Mission : ConversationMode.Chat;
             var answers = body?.Answers ?? new Dictionary<string, string>();
 
+            static Dictionary<string, object?> OutcomePayload(Anthill.Core.Conversations.ConversationOutcome outcome) => new()
+            {
+                ["mode"] = outcome.Mode.ToString().ToLowerInvariant(),
+                ["started"] = outcome.Started,
+                ["mission_id"] = outcome.MissionId,
+                ["summary"] = outcome.Summary,
+                ["decision"] = outcome.Decision is null ? null : new Dictionary<string, object?>
+                {
+                    ["action"] = outcome.Decision.Action,
+                    ["allowed"] = outcome.Decision.Allowed,
+                    ["decided_by"] = outcome.Decision.DecidedBy,
+                    ["reason"] = outcome.Decision.Reason,
+                },
+            };
+
+            /*
+             * v0.3.8.44 — the streamed turn. Same runner, same recording, same outcome; the only
+             * difference is that content deltas travel to the client AS the provider produces
+             * them, as SSE frames, with the final outcome as the terminal `done` event. The
+             * client's disconnect token is bound into ModelCallScope, so closing the tab or
+             * aborting the fetch aborts the model call itself — cancellation reaches the
+             * provider, not merely the animation.
+             */
+            if (body?.Stream == true)
+            {
+                ctx.Response.Headers.ContentType = "text/event-stream";
+                ctx.Response.Headers.CacheControl = "no-cache";
+
+                void Frame(string @event, string json)
+                {
+                    ctx.Response.WriteAsync($"event: {@event}\ndata: {json}\n\n", ctx.RequestAborted)
+                        .GetAwaiter().GetResult();
+                    ctx.Response.Body.FlushAsync(ctx.RequestAborted).GetAwaiter().GetResult();
+                }
+
+                using (Anthill.SDK.Reasoning.ModelCallScope.Enter(ctx.RequestAborted))
+                using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
+                {
+                    var outcome = Queen.Conversations.Run(conversation, message, mode, answers,
+                        onDelta: delta =>
+                        {
+                            try { Frame("delta", System.Text.Json.JsonSerializer.Serialize(delta)); }
+                            catch { /* client gone — the aborted token stops the provider */ }
+                        });
+                    try { Frame("done", System.Text.Json.JsonSerializer.Serialize(OutcomePayload(outcome))); }
+                    catch { /* client gone before the end — the turn is recorded regardless */ }
+                }
+                return Microsoft.AspNetCore.Http.Results.Empty;
+            }
+
             // Every tool call this turn makes is now gated, and every decision recorded — the same
             // decision log the transcript endpoint reads back.
             using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
             {
                 var outcome = Queen.Conversations.Run(conversation, message, mode, answers);
-
-                return ApiJson.Ok(new Dictionary<string, object?>
-                {
-                    ["mode"] = outcome.Mode.ToString().ToLowerInvariant(),
-                    ["started"] = outcome.Started,
-                    ["mission_id"] = outcome.MissionId,
-                    ["summary"] = outcome.Summary,
-                    ["decision"] = outcome.Decision is null ? null : new Dictionary<string, object?>
-                    {
-                        ["action"] = outcome.Decision.Action,
-                        ["allowed"] = outcome.Decision.Allowed,
-                        ["decided_by"] = outcome.Decision.DecidedBy,
-                        ["reason"] = outcome.Decision.Reason,
-                    },
-                }, outcome.Summary);
+                return ApiJson.Ok(OutcomePayload(outcome), outcome.Summary);
             }
         });
 

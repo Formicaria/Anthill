@@ -4136,6 +4136,53 @@ async function chatOpen(id){
 }
 
 let chatLastSent='';   // v0.3.8.42 (§13): Up-arrow in an empty composer recalls this
+let chatStreamAbort=null;   // v0.3.8.44: the in-flight streamed turn, abortable from the composer
+
+/* v0.3.8.44 — the streamed turn, consumed. The server answers text/event-stream: delta frames as
+ * the provider produces them, the outcome as the terminal done event. Deltas render into a
+ * provisional bubble through the SAME escape-first chatRenderContent every recorded turn uses —
+ * streaming changes when text appears, never what is allowed to appear. On done, the provisional
+ * bubble yields to the recorded turn (fingerprint reset + chatOpen), so what remains on screen is
+ * exactly what the database holds. A provider that cannot stream simply produces no deltas and
+ * the done frame carries the whole reply — one code path, no fake trickle. */
+let chatStreamLiveEl=null;   // the provisional bubble, held as a REFERENCE — not an id lookup
+async function chatConsumeStream(response){
+  const thread=document.getElementById('chat-thread');
+  let raw='';
+  const ensureBubble=()=>{
+    if(chatStreamLiveEl) return;
+    chatStreamLiveEl=document.createElement('div');
+    chatStreamLiveEl.className='chat-turn colony';
+    chatStreamLiveEl.innerHTML='<span class="who">Colony</span><span class="chat-stream-text"></span>';
+    thread?.appendChild(chatStreamLiveEl);
+  };
+  const reader=response.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer='', outcome=null;
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buffer+=decoder.decode(value,{stream:true});
+    let sep;
+    while((sep=buffer.indexOf('\n\n'))>=0){
+      const frame=buffer.slice(0,sep); buffer=buffer.slice(sep+2);
+      const ev=/^event: (.+)$/m.exec(frame)?.[1];
+      const data=/^data: (.+)$/m.exec(frame)?.[1];
+      if(!ev||data===undefined) continue;
+      if(ev==='delta'){
+        raw+=JSON.parse(data);
+        ensureBubble();
+        const nearBottom=thread.scrollTop+thread.clientHeight>=thread.scrollHeight-48;
+        chatStreamLiveEl.querySelector('.chat-stream-text').innerHTML=chatRenderContent(raw);
+        if(nearBottom) thread.scrollTop=thread.scrollHeight;
+      }else if(ev==='done'){
+        outcome=JSON.parse(data);
+      }
+    }
+  }
+  return outcome;
+}
+
 /** @param mode 'chat' (default) or 'mission' — the same two modes the runtime has. A mission
  *  request goes through the escalation gate; under Ask the approval renders IN the thread. */
 async function chatSend(mode){
@@ -4143,6 +4190,7 @@ async function chatSend(mode){
   const el=document.getElementById('chat-input');
   const msg=(el&&el.value||'').trim();
   if(!msg) return;
+  if(chatStreamAbort) return;   // one turn at a time; the composer shows ■ while one is in flight
   chatLastSent=msg;
   if(el){ el.value=''; el.style.height=''; }
   chatSetState(mode==='mission'?'Asking to start work…':'Sending…');
@@ -4159,14 +4207,48 @@ async function chatSend(mode){
       chatActiveId=c.data.id;
       chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
-    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
-    if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
-  }catch(e){ note='Could not send: '+(e.message||''); }
+    if(mode==='chat'){
+      // Streamed. Aborting the fetch aborts the model call server-side (RequestAborted is bound
+      // into ModelCallScope) — cancellation reaches the provider, not merely the animation.
+      chatStreamAbort=new AbortController();
+      chatSetComposerStreaming(true);
+      chatSetState('Answering…');
+      const response=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/turns'),{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
+        body:JSON.stringify({message:msg, mode:mode, stream:true}),
+        signal:chatStreamAbort.signal,
+      });
+      if((response.headers.get('content-type')||'').includes('text/event-stream')){
+        const outcome=await chatConsumeStream(response);
+        if(outcome&&outcome.started===false) note=outcome.summary||'Refused';
+      }else{
+        const r=await response.json().catch(()=>null);
+        if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+      }
+    }else{
+      const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
+      if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+    }
+  }catch(e){
+    note = (e&&e.name==='AbortError') ? 'Stopped.' : 'Could not send: '+(e.message||'');
+  }
   finally{
+    chatStreamAbort=null; chatSetComposerStreaming(false);
+    chatStreamLiveEl?.remove(); chatStreamLiveEl=null;
+    chatFingerprint='';   // the provisional bubble yields to the recorded turn
     apiCacheBust('/conversations'); loadChat();
     await chatOpen(chatActiveId);
     if(note) chatSetState(note);
   }
+}
+
+/* While a streamed turn is in flight the send button is ■: pressing it aborts the fetch, which
+ * aborts the model call. The same control, the two things it can truthfully do. */
+function chatSetComposerStreaming(streaming){
+  const b=document.getElementById('chat-send'); if(!b) return;
+  if(streaming){ b.textContent='■'; b.title='Stop this answer'; b.classList.add('chat-streaming'); }
+  else{ b.textContent='▶'; b.title='Send (Enter)'; b.classList.remove('chat-streaming'); }
 }
 
 /* v0.3.8.43 — Chat + Colony mode: the canonical topology as a full-page layer BEHIND the
@@ -4227,7 +4309,10 @@ async function chatColonyMissionNote(){
   }catch{ el.textContent=''; }
 }
 
-document.getElementById('chat-send')?.addEventListener('click', ()=>chatSend());
+document.getElementById('chat-send')?.addEventListener('click', ()=>{
+  if(chatStreamAbort){ chatStreamAbort.abort(); return; }   // ■ while streaming: abort is the action
+  chatSend();
+});
 document.getElementById('chat-work')?.addEventListener('click', ()=>chatSend('mission'));
 let chatStopInFlight=false;
 document.getElementById('chat-stop')?.addEventListener('click', async ()=>{

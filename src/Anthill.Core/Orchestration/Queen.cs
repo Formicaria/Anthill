@@ -189,10 +189,16 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // A runtime composed without routing says so instead of spinning.
         Conversations = new Anthill.Core.Conversations.ConversationRunner(
             Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token),
-            ask: Router is null ? null : prompt =>
+            ask: Router is null ? null : (prompt, onDelta) =>
             {
                 var (provider, model) = Router.GetRoute("conversation");
-                var result = Router.GetClientForProvider(provider, model).Generate(prompt);
+                var client = Router.GetClientForProvider(provider, model);
+                // v0.3.8.44: streaming is a capability the client either HAS or does not. A
+                // streaming-capable provider delivers deltas; any other answers whole through the
+                // same call it always made — the caller sees one honest reply, never a fake trickle.
+                var result = onDelta is not null && client is Anthill.SDK.Reasoning.IStreamingReasoningProvider streaming
+                    ? streaming.SendStreaming(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt), onDelta).ToCallResult()
+                    : client.Generate(prompt);
                 return new Anthill.Core.Conversations.ConversationReply(
                     result.Ok && !string.IsNullOrWhiteSpace(result.Content),
                     result.Content, provider, model,
