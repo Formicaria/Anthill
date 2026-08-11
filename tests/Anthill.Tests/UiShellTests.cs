@@ -542,7 +542,9 @@ public class UiShellTests
 
         // Guard the reader: if `api` stops taking the method positionally this test is describing
         // a function that no longer exists, and must fail rather than pass vacuously.
-        Assert.Contains("async function api(path, method='GET', body=null)", js, StringComparison.Ordinal);
+        // (v0.3.8.46: the signature grew a timeout — the method is still positional, which is
+        // what this test actually cares about.)
+        Assert.Contains("async function api(path, method='GET', body=null, timeoutMs=10000)", js, StringComparison.Ordinal);
 
         // Matched on the object's `method:` key rather than on argument POSITION. Finding the
         // second argument means balancing parentheses — the offending path was
@@ -1130,6 +1132,85 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.46: search, pins and export are honest features, not decoration. The search box
+    /// queries the SERVER (titles and transcript content — GET /conversations?q=), the pin is a
+    /// stored fact that survives restart (POST pin/unpin against the record), and export downloads
+    /// what the store holds via the authenticated endpoint. Each pin here is a claim the backend
+    /// can prove.
+    /// </summary>
+    [Fact]
+    public void ChatRail_SearchPinsAndExport_AreBackedByTheStore()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // The three surfaces exist.
+        Assert.Contains("id=\"chat-search\"", html);
+        Assert.Contains("id=\"chat-export\"", html);
+        Assert.Contains("conv-pin", js);
+
+        // Search goes to the server, not a client-side filter over whatever happens to be loaded —
+        // transcript content lives in the store and only the store can search it.
+        var load = BodyOf(js, "async function loadChat()");
+        Assert.Contains("'?q='+encodeURIComponent(chatSearchQuery)", load);
+        // A search result is a candidate, not a selection: no auto-open while searching.
+        Assert.Contains("!chatSearchQuery) chatOpen(", load);
+
+        // Pinning hits the two explicit endpoints and cannot ALSO open the row it sits on.
+        Assert.Contains("(was?'/unpin':'/pin')", load);
+        Assert.Contains("e.stopPropagation();", load);
+
+        // The debounce means typing is not a request storm; Escape clears back to the full rail.
+        Assert.Contains("chatSearchTimer=setTimeout", js);
+
+        // Export authenticates (fetch with the bearer header, not a bare link) and downloads the
+        // server's file rather than serialising whatever the DOM currently shows.
+        var export = js[js.IndexOf("chat-export", StringComparison.Ordinal)..][..900];
+        Assert.Contains("/export", export);
+        Assert.Contains("'Authorization':'Bearer '+TOKEN", export);
+        Assert.Contains("a.download", export);
+    }
+
+    /// <summary>
+    /// v0.3.8.46: syntax highlighting is home-grown (no framework, no CDN — the brief's rule) and
+    /// STRUCTURALLY escape-first: the tokenizer's one output function passes every character
+    /// through escapeHtml before wrapping, so highlighting can change how code looks and never
+    /// what is allowed to render. A tokenizer failure falls back to the plain escaped text.
+    /// </summary>
+    [Fact]
+    public void SyntaxHighlighting_IsEscapeFirst_AndSelfContained()
+    {
+        var js = Ui("app.js");
+
+        // The fenced-code path renders through the highlighter, which receives the language tag.
+        Assert.Contains("chatHighlight(code,lang)", js);
+        var hl = BodyOf(js, "function chatHighlight(code, lang)");
+        // The single output seam: markup is only ever wrapped AROUND escaped text.
+        Assert.Contains("out+=cls?'<span class=\"'+cls+'\">'+escapeHtml(text)+'</span>':escapeHtml(text);", hl);
+        // Failure is the old behaviour, not a broken bubble.
+        Assert.Contains("catch(e){ return escapeHtml(code); }", hl);
+        // No third-party highlighter smuggled in later.
+        Assert.DoesNotContain("highlight.js", js);
+        Assert.DoesNotContain("hljs", js);
+        Assert.DoesNotContain("prismjs", js, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// v0.3.8.46, found live: approving a MID-MISSION gate re-sends the message, and the re-send
+    /// meets the start_mission gate first — which ate the answer. The click approved nothing;
+    /// both actions sat waiting. The re-send restates the start_mission decision that is already
+    /// on record (a secondary gate can only exist inside an approved mission), so the approval
+    /// the operator clicked actually reaches its gate.
+    /// </summary>
+    [Fact]
+    public void ApprovingASecondaryGate_CarriesTheRecordedMissionApproval()
+    {
+        var approve = BodyOf(Ui("app.js"), "async function convApprove(id, action)");
+
+        Assert.Contains("if(action!=='start_mission') answers['start_mission']='approve';", approve);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces — per-mission
     /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.
@@ -1209,10 +1290,11 @@ public class UiShellTests
         // The poll runs only while the Chat page is on screen.
         Assert.Contains("page-chat')?.classList.contains('active')", js);
 
-        // Escape-first code rendering: the only unescaped structure is the pre/code wrapper.
+        // Escape-first code rendering: prose escapes directly; fenced code goes through the
+        // highlighter, whose escape-first structure SyntaxHighlighting_IsEscapeFirst pins.
         var render = BodyOf(js, "function chatRenderContent(text)");
         Assert.Contains("escapeHtml(parts[i])", render);
-        Assert.Contains("'<pre class=\"chat-code\"><code>'+escapeHtml(code)", render);
+        Assert.Contains("'<pre class=\"chat-code\"><code>'+chatHighlight(code,lang)", render);
 
         // Up-arrow recall only into an EMPTY composer.
         Assert.Contains("e.key==='ArrowUp' && chatLastSent && !e.target.value", js);

@@ -469,9 +469,16 @@ public static partial class ApiHost
         {
             var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
 
+            // v0.3.8.46: ?q= filters server-side over titles and turn content — the same store
+            // the transcripts live in, so the search box finds exactly what is recorded.
+            var q = ctx.Request.Query["q"].ToString();
+            var list = string.IsNullOrWhiteSpace(q)
+                ? Queen.Memory.LoadConversations()
+                : Queen.Memory.SearchConversations(q);
+
             return ApiJson.Ok(new Dictionary<string, object?>
             {
-                ["conversations"] = Queen.Memory.LoadConversations().Select(c =>
+                ["conversations"] = list.Select(c =>
                 {
                     var state = ConversationStateReader.Read(Queen.Memory, c.Id);
                     return new Dictionary<string, object?>
@@ -486,6 +493,7 @@ public static partial class ApiHost
                         ["policy_set_by"] = c.PolicySetBy,
                         ["policy_attributed"] = c.PolicyIsAttributed,
                         ["cancelled"] = c.Cancelled,
+                        ["pinned"] = c.Pinned,
                         ["mission_ids"] = c.MissionIds,
                         ["doing"] = state.Doing,
                         ["waiting_on"] = state.WaitingOn,
@@ -496,6 +504,68 @@ public static partial class ApiHost
                     };
                 }).ToList(),
             });
+        });
+
+        // v0.3.8.46: pin / unpin. Two explicit endpoints rather than a toggle, so a stale rail
+        // can never invert the operator's intent by firing the toggle against old state.
+        app.MapPost("/conversations/{id}/pin", (HttpContext ctx, string id) => SetPinned(ctx, id, true));
+        app.MapPost("/conversations/{id}/unpin", (HttpContext ctx, string id) => SetPinned(ctx, id, false));
+
+        IResult SetPinned(HttpContext ctx, string id, bool pinned)
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+
+            // UpdatedAt is deliberately untouched: pinning is shelving, not activity.
+            Queen.Memory.SaveConversation(conversation with { Pinned = pinned });
+            return ApiJson.Ok(new Dictionary<string, object?> { ["pinned"] = pinned },
+                pinned ? "Pinned." : "Unpinned.");
+        }
+
+        // v0.3.8.46: the transcript as a file the operator can keep or hand to someone — markdown,
+        // rendered from the same rows the detail endpoint serves. Decisions included: an exported
+        // audit missing its permissions record is half an audit.
+        app.MapGet("/conversations/{id}/export", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+
+            var turns = Queen.Memory.LoadConversationTurns(id);
+            var decisions = Queen.Memory.LoadEscalationDecisions(id);
+
+            var md = new System.Text.StringBuilder();
+            md.AppendLine($"# {(string.IsNullOrWhiteSpace(conversation.Title) ? "Conversation " + conversation.Id : conversation.Title)}");
+            md.AppendLine();
+            md.AppendLine($"- Exported: {AnthillTime.NowUtc().ToIso()}");
+            md.AppendLine($"- Conversation: `{conversation.Id}` (role: {conversation.Role})");
+            if (conversation.MissionIds.Count > 0)
+                md.AppendLine($"- Missions: {string.Join(", ", conversation.MissionIds.Select(m => $"`{m}`"))}");
+            md.AppendLine();
+            foreach (var t in turns)
+            {
+                var who = t.Role == "user" ? "Operator"
+                    : string.IsNullOrWhiteSpace(t.Provider) ? "Colony" : $"Colony ({t.Provider}{(string.IsNullOrWhiteSpace(t.Model) ? "" : " · " + t.Model)})";
+                md.AppendLine($"## {who} — {t.CreatedAt.ToIso()}");
+                md.AppendLine();
+                md.AppendLine(t.Content);
+                if (!string.IsNullOrWhiteSpace(t.MissionId))
+                    md.AppendLine($"\n> Escalated to mission `{t.MissionId}`.");
+                md.AppendLine();
+            }
+            if (decisions.Count > 0)
+            {
+                md.AppendLine("## Escalation decisions");
+                md.AppendLine();
+                foreach (var d in decisions)
+                    md.AppendLine($"- {d.DecidedAt.ToIso()} — {(d.Allowed ? "ALLOWED" : "REFUSED")}: {d.Action} " +
+                                  $"(policy {d.Policy}, by {d.DecidedBy}{(string.IsNullOrWhiteSpace(d.Reason) ? "" : ", " + d.Reason)})");
+            }
+
+            var fname = "conversation-" + conversation.Id + ".md";
+            ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{fname}\"";
+            return Results.Text(md.ToString(), "text/markdown", System.Text.Encoding.UTF8);
         });
 
         // One conversation, with its transcript and its decision log. The two together are the
@@ -529,6 +599,9 @@ public static partial class ApiHost
                     ["provider"] = t.Provider, ["model"] = t.Model,
                     ["tools_offered"] = t.ToolsOffered, ["tools_called"] = t.ToolsCalled,
                     ["mission_id"] = t.MissionId, ["created_at"] = t.CreatedAt.ToIso(),
+                    // v0.3.8.46: null when the provider did not report — the UI shows nothing
+                    // rather than a fabricated zero.
+                    ["prompt_tokens"] = t.PromptTokens, ["completion_tokens"] = t.CompletionTokens,
                 }).ToList(),
                 // Refusals included. An audit asking "did it try to do X" needs those most, because
                 // they are the attempts nobody saw happen.

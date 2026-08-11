@@ -542,6 +542,11 @@ public sealed partial class SqliteMemory : IDisposable
         // v2.26.0: optimistic-concurrency revision for row-level skill updates (whole-registry
         // saves were last-writer-wins across concurrent missions).
         AddMissing("skills", new() { ["revision"] = "INTEGER NOT NULL DEFAULT 0" });
+        // v0.3.8.46: an operator's pin on a conversation. Legacy rows read 0 = unpinned.
+        AddMissing("conversations", new() { ["pinned"] = "INTEGER NOT NULL DEFAULT 0" });
+        // v0.3.8.46: per-turn token accounting. NULLABLE, no default — a provider that does not
+        // report usage is unknown, and unknown recorded as 0 would understate every total.
+        AddMissing("conversation_turns", new() { ["prompt_tokens"] = "INTEGER", ["completion_tokens"] = "INTEGER" });
         // v2.26.0: what KIND of signal a trail carries. Planning may only read procedural /
         // routing categories; operational telemetry must not steer strategy.
         AddMissing("pheromone_trails", new() { ["signal_category"] = "TEXT NOT NULL DEFAULT ''" });

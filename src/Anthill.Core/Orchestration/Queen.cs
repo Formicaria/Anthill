@@ -196,14 +196,20 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 // v0.3.8.44: streaming is a capability the client either HAS or does not. A
                 // streaming-capable provider delivers deltas; any other answers whole through the
                 // same call it always made — the caller sees one honest reply, never a fake trickle.
-                var result = onDelta is not null && client is Anthill.SDK.Reasoning.IStreamingReasoningProvider streaming
-                    ? streaming.SendStreaming(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt), onDelta).ToCallResult()
-                    : client.Generate(prompt);
+                // v0.3.8.46: Send(ModelRequest), not Generate(string) — the string boundary was
+                // discarding the provider's token accounting on every turn. Usage travels with
+                // the reply so the transcript can say what each answer cost; null means the
+                // provider did not report, which is a different fact from zero.
+                var response = onDelta is not null && client is Anthill.SDK.Reasoning.IStreamingReasoningProvider streaming
+                    ? streaming.SendStreaming(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt), onDelta)
+                    : client.Send(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt));
+                var result = response.ToCallResult();
                 return new Anthill.Core.Conversations.ConversationReply(
                     result.Ok && !string.IsNullOrWhiteSpace(result.Content),
                     result.Content, provider, model,
                     result.Ok ? (string.IsNullOrWhiteSpace(result.Content) ? "the provider answered with empty content" : null)
-                              : $"{result.Status}: {TextUtil.Truncate(result.Content, 300, "…")}");
+                              : $"{result.Status}: {TextUtil.Truncate(result.Content, 300, "…")}",
+                    response.Usage.PromptTokens, response.Usage.CompletionTokens);
             });
 
         Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
