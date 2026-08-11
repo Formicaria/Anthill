@@ -1,5 +1,67 @@
 # ANTHILL Changelog
 
+## v0.3.8.46 - find it, keep it, take it with you
+
+Three chat quality-of-life features from the maturation directive, each backed by the store
+rather than the DOM.
+
+**Search.** The rail gets a search box that queries the server (`GET /conversations?q=`) over
+titles AND transcript content — because "which conversation was that in" is usually a question
+about something said, not something named. Plain case-insensitive substring match with escaped
+SQL wildcards: exactly what the box claims, nothing more. Results are candidates, not a
+selection — searching never auto-opens a thread. Debounced, and Escape clears it.
+
+**Pins.** A conversation can be pinned to the top of the rail (star on hover). Stored in the
+database like everything else, so it survives restart; pinned sorts ahead of recency, which is
+the whole point of a pin. Two explicit endpoints (`POST /conversations/{id}/pin` and `/unpin`)
+rather than a toggle, so a stale rail can never invert the operator's intent. Pinning does not
+touch `updated_at` — shelving is not activity.
+
+**Export.** `GET /conversations/{id}/export` renders the transcript as markdown from the same
+rows the detail endpoint serves — turns with provider and model, escalation markers, and the
+decision log, refusals included, because an exported audit missing its permissions record is
+half an audit. The console's ⇩ Export button downloads it through the authenticated endpoint.
+
+**The UI gap ledger, emptied.** Since v0.3.8.35 the route-coverage guard has kept a written list
+of endpoints that compute results nobody can see. All five entries close in this release. The
+`/missions/plan` dry run renders inside chat's escalation gate — the task list, which ant takes
+each step, and which steps dispatch would refuse, shown at the moment of the yes/no it informs.
+The shadow judgment queue is now visible with its form attached: `/shadow/json` carries the
+pending recommendations themselves (an operator was being asked to clear a queue they could only
+count), and four checkboxes plus a note feed `/shadow/judge` to turn a recommendation into a
+scoreable pair. A new Administration → Readiness page renders the qualification snapshot with
+failures first, takes attestations, downloads the certification (truthful even when unready),
+and writes the qualification report; the colony's introspection — tiers, switches, stops,
+config findings — shares the page. And research source-quality trails, recorded since v2.x,
+finally show on Memory & Signals. The gaps-stay-visible guard retired exactly as its own failure
+message instructed, replaced by its inverse: the surfaces must stay reachable, or the ledger
+reopens loudly.
+
+**Turns carry their time and their cost.** Each turn shows when it happened (stored `created_at`,
+rendered local, full ISO in the hover) and what it cost, when the provider says: the conversation
+path now calls `Send(ModelRequest)` instead of the string-shaped `Generate`, so token usage
+survives into nullable `prompt_tokens`/`completion_tokens` columns — unreported is null, never
+zero, because absence and zero are different facts. Ollama's blocking path reports; streams and
+agent CLIs honestly do not yet.
+
+**Code blocks get colors.** A home-grown single-pass tokenizer — comments, strings, numbers,
+per-language keywords for the js/py/c-family/shell/sql families, generic fallback — with the
+safety property built into its structure: every character is escaped before any span wraps it, so
+highlighting can change how code looks and never what is allowed to render. No third-party
+highlighter; tokenizer failure falls back to the plain escaped text it always was.
+
+**Three escalation bugs, found by driving the pipeline live, fixed with regression tests.** One:
+the waiting list excluded any refusal whose action had EVER been approved, so a conversation's
+first approved mission made every later mission request invisible — "later approved" now compares
+timestamps. Two: approving a mid-mission tool gate re-sent the message into the start_mission
+gate, which ate the answer; the re-send now restates the mission approval already on record. And
+three: an answer the operator gives is recorded the moment it is given, not only if the re-run
+mission happens to consult that tool — the old shape let approvals evaporate unrecorded and kept
+"waiting on you" lit forever. The full loop was then driven end to end on the live colony: chat →
+gate → plan preview (which got a 120s budget — 10s guaranteed a timeout for any real planner) →
+approve → mission with tool gates, tester and soldier review, evidence-bound verification → a
+proposed patch waiting in Changes & Approvals.
+
 ## v0.3.8.45 - chat and colony split the page, because the field said so twice
 
 **The layered Chat + Colony view is retired by its own users.** The desktop tester's report —

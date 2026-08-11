@@ -50,15 +50,20 @@ public static class ConversationStateReader
         var decisions = memory.LoadEscalationDecisions(conversationId);
 
         // What it is WAITING ON: actions that were refused for want of a decision, and have not
-        // since been allowed. A refusal that was later approved is not still waiting — showing it
+        // SINCE been allowed. A refusal that was later approved is not still waiting — showing it
         // would train an operator to ignore the list, which is the only way this fails.
-        var allowedActions = decisions.Where(d => d.Allowed)
-            .Select(d => d.Action).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
+        //
+        // v0.3.8.46, found live: "since" must mean AFTER THE REFUSAL, compared by timestamp. This
+        // used to exclude any refusal whose action had EVER been approved — so the first approval
+        // in a conversation's life silently swallowed every later request for the same action,
+        // and the colony waited on an operator who was never told. The second mission a
+        // conversation asked for could not be seen, let alone approved.
         var waiting = decisions
             .Where(d => !d.Allowed && d.DecidedBy == "nobody")
+            .Where(d => !decisions.Any(a => a.Allowed
+                && string.Equals(a.Action, d.Action, StringComparison.OrdinalIgnoreCase)
+                && a.DecidedAt >= d.DecidedAt))
             .Select(d => d.Action)
-            .Where(a => !allowedActions.Contains(a))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(a => a, StringComparer.Ordinal)
             .ToList();

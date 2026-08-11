@@ -280,4 +280,59 @@ public class ConversationTests : IDisposable
 
         Assert.Equal("Bypass", cmd.ExecuteScalar()?.ToString());
     }
+
+    // ---- v0.3.8.46: pins and search -------------------------------------------------------------
+
+    /// <summary>A pin survives restart like everything else in the record, and sorts first.</summary>
+    [Fact]
+    public void APinnedConversation_SortsFirst_AndSurvivesReload()
+    {
+        using var memory = Memory();
+        memory.SaveConversation(new Conversation { Id = "old-pinned", Title = "keep me handy",
+            Pinned = true, UpdatedAt = DateTime.UtcNow.AddDays(-30) });
+        memory.SaveConversation(new Conversation { Id = "fresh", Title = "just now",
+            UpdatedAt = DateTime.UtcNow });
+
+        var list = memory.LoadConversations();
+
+        // Pinned beats recency: the whole point of the pin is escaping the recency sort.
+        Assert.Equal("old-pinned", list[0].Id);
+        Assert.True(list[0].Pinned);
+        Assert.False(list[1].Pinned);
+    }
+
+    /// <summary>
+    /// Search reaches TRANSCRIPT content, not just titles — "which conversation was that in" is
+    /// almost always a question about something said, not something named.
+    /// </summary>
+    [Fact]
+    public void Search_FindsByTurnContent_CaseInsensitive_AndEscapesWildcards()
+    {
+        using var memory = Memory();
+        memory.SaveConversation(new Conversation { Id = "a", Title = "deploy notes" });
+        memory.SaveConversation(new Conversation { Id = "b", Title = "misc" });
+        memory.SaveConversationTurn(new ConversationTurn("t1", "b", 1, "user", "the Kestrel port CHANGED"));
+
+        // Title match and content match, each found; case folded by SQLite LIKE.
+        Assert.Equal("a", Assert.Single(memory.SearchConversations("DEPLOY")).Id);
+        Assert.Equal("b", Assert.Single(memory.SearchConversations("kestrel")).Id);
+
+        // A literal % is a character to find, not "match everything": zero hits, not two.
+        Assert.Empty(memory.SearchConversations("100%"));
+
+        // Blank query is the plain list, not an error and not an empty result.
+        Assert.Equal(2, memory.SearchConversations("  ").Count);
+    }
+
+    /// <summary>One conversation with five matching turns is one result, not five.</summary>
+    [Fact]
+    public void Search_ReturnsEachConversationOnce()
+    {
+        using var memory = Memory();
+        memory.SaveConversation(new Conversation { Id = "a", Title = "misc" });
+        for (var i = 1; i <= 5; i++)
+            memory.SaveConversationTurn(new ConversationTurn($"t{i}", "a", i, "user", "ants everywhere"));
+
+        Assert.Single(memory.SearchConversations("ants"));
+    }
 }

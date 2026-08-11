@@ -91,7 +91,10 @@ async function startEventStream(){
 
 function stopEventStream(){ if(_evtCtl){ const c=_evtCtl; _evtCtl=null; c.abort(); } }
 
-async function api(path, method='GET', body=null) {
+// v0.3.8.46: timeoutMs is a parameter because one number cannot serve every endpoint — the plan
+// preview runs a real planner through a routed model and 10s guaranteed a timeout for any agent
+// CLI provider. Callers that expect slow, honest work say so; everyone else keeps the default.
+async function api(path, method='GET', body=null, timeoutMs=10000) {
   const isGet=method==='GET'&&!body;
   // Auth gate: while logged out, only auth endpoints may touch the network.
   if(typeof authLost!=='undefined'&&authLost&&!path.startsWith('/auth'))
@@ -105,7 +108,7 @@ async function api(path, method='GET', body=null) {
     if(now<_api429Until) return { success:false, message:'Rate limited — backing off.', status:429 };
   }
   const run=(async()=>{
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),10000);
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),timeoutMs);
     try{
       const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
       if (body) opts.body = JSON.stringify(body);
@@ -125,15 +128,15 @@ async function api(path, method='GET', body=null) {
       if(e&&e.message==='unauthorized') throw e;
       const stale=isGet?_apiCache.get(path):null;
       if(stale) return stale.data; // stale-while-error: keep the UI alive, refresh next poll
-      return { success:false, message:(e&&e.name==='AbortError')?'Request timed out (10s).':('Request failed: '+((e&&e.message)||'network error')), status:0 };
+      return { success:false, message:(e&&e.name==='AbortError')?('Request timed out ('+Math.round(timeoutMs/1000)+'s).'):('Request failed: '+((e&&e.message)||'network error')), status:0 };
     }finally{ clearTimeout(timer); if(isGet)_apiInflight.delete(path); }
   })();
   if(isGet)_apiInflight.set(path,run);
   return run;
 }
 // Mutations must show fresh data next read: bust the GET cache after any successful POST/PUT/DELETE.
-(function(){ const _m=api; window.api=async function(p,method='GET',body=null){
-  const out=await _m(p,method,body);
+(function(){ const _m=api; window.api=async function(p,method='GET',body=null,timeoutMs=10000){
+  const out=await _m(p,method,body,timeoutMs);
   if(method!=='GET'&&out&&out.success!==false) apiCacheBust('');
   return out; };})();
 // Same auth gate for text endpoints (approvals/events text views) — no network while logged out.
@@ -399,7 +402,8 @@ const PAGE_TITLES = {
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Coding Agents', chat:'Chat', projects:'Mission Workspaces', toolsview:'Tools'
+  agentcli:'Coding Agents', chat:'Chat', projects:'Mission Workspaces', toolsview:'Tools',
+  readiness:'Readiness'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -533,6 +537,9 @@ const IA = [
     ]},
     { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
     { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
+    // v0.3.8.46: the qualification snapshot and the colony's introspection, surfaced. Both
+    // endpoints spent releases computing results with no reader.
+    { label:'Readiness', route:'/administration/readiness', page:'readiness', vis:'admin' },
     { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
   ]},
 ];
@@ -3997,28 +4004,47 @@ const chatTitles = {};
 
 function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
 
+// v0.3.8.46: the rail search — server-side over titles AND transcript content (GET
+// /conversations?q=), so the box finds what the store actually holds, not what happens to be
+// rendered. Kept as module state so the poll's refresh respects an in-progress search.
+let chatSearchQuery='';
+
 async function loadChat(){
   const list=document.getElementById('chat-conv-list'); if(!list) return;
   try{
-    const r=await api('/conversations');
+    const r=await api('/conversations'+(chatSearchQuery?'?q='+encodeURIComponent(chatSearchQuery):''));
     if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load conversations.')}</div>`; return; }
     const convs=(r.data&&r.data.conversations)||[];
     if(!convs.length){
-      list.innerHTML='<div class="hud-state">Nothing yet — your first message starts one.</div>';
+      list.innerHTML=chatSearchQuery
+        ? `<div class="hud-state">No conversations match “${escapeHtml(chatSearchQuery)}”.</div>`
+        : '<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
+        <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
+          title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
+          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?'★':'☆'}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
           :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
       </div>`).join('');
       list.querySelectorAll('.chat-conv').forEach(el=>
         el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
+      // The pin is inside the clickable row; stop propagation so pinning never ALSO opens.
+      list.querySelectorAll('.conv-pin').forEach(el=>
+        el.addEventListener('click', async e=>{
+          e.stopPropagation();
+          const id=el.dataset.pin, was=el.dataset.pinned==='1';
+          const r2=await api('/conversations/'+encodeURIComponent(id)+(was?'/unpin':'/pin'),'POST');
+          if(r2&&r2.success) loadChat();
+        }));
       // v0.3.8.42 (§13): found live — "New conversation" cleared chatActiveId, then THIS auto-open
       // immediately re-selected the old thread, so the next message went to a conversation the
       // operator had deliberately left (in the found case, a cancelled one, which refused it).
       // The auto-open is for page ENTRY only; an explicit New wins until the first send.
-      if(!chatActiveId && !chatComposingNew) chatOpen(convs[0].id);
+      // A search never auto-opens either — results are candidates, not a selection.
+      if(!chatActiveId && !chatComposingNew && !chatSearchQuery) chatOpen(convs[0].id);
     }
   }catch(e){ pollWarnOnce('loadChat', e); }
 }
@@ -4033,12 +4059,73 @@ function chatRenderContent(text){
   let html='';
   for(let i=0;i<parts.length;i++){
     if(i%2===0){ html+=escapeHtml(parts[i]); continue; }
-    // Odd segments are fenced. The first line may be a language tag; it is dropped from display.
+    // Odd segments are fenced. The first line may be a language tag; it names the highlighter.
     const nl=parts[i].indexOf('\n');
+    const lang=nl>=0?parts[i].slice(0,nl).trim().toLowerCase():'';
     const code=nl>=0?parts[i].slice(nl+1):parts[i];
-    html+='<pre class="chat-code"><code>'+escapeHtml(code)+'</code></pre>';
+    html+='<pre class="chat-code"><code>'+chatHighlight(code,lang)+'</code></pre>';
   }
   return html;
+}
+
+/* v0.3.8.46 — syntax highlighting with no third-party code (UI-ALIGNMENT-BRIEF §0: no framework,
+ * no bundler; CSP script-src 'self'). A single-pass tokenizer: comments, strings, numbers and a
+ * per-language keyword set. THE SAFETY PROPERTY IS STRUCTURAL — every character of output passes
+ * through escapeHtml before any markup is added around it, so highlighting can only ever change
+ * how text looks, never what is allowed to render. An unknown language falls back to a generic
+ * set; a failure to tokenize falls back to the plain escaped text it always was. */
+const HL_KEYWORDS={
+  js:'const let var function return if else for while do switch case default break continue new class extends import export from async await try catch finally throw typeof instanceof this null undefined true false yield of in delete void static get set',
+  py:'def return if elif else for while import from as class try except finally with lambda pass break continue global nonlocal yield raise assert del not and or is in None True False async await self print',
+  cs:'using namespace class struct record interface enum public private protected internal static readonly const void int long double string bool char var new return if else for foreach while do switch case default break continue try catch finally throw null true false async await this base override virtual abstract sealed partial get set is as out ref where',
+  sh:'if then else elif fi for while until do done case esac function echo exit return local export set unset cd source sudo',
+  sql:'select from where insert into values update delete create drop alter table index view join left right inner outer full on group by order having limit offset as distinct and or not null is primary key foreign references union all exists between like',
+};
+const HL_ALIAS={ javascript:'js', ts:'js', typescript:'js', jsx:'js', tsx:'js', json:'js', node:'js',
+  python:'py', python3:'py', csharp:'cs', 'c#':'cs', java:'cs', cpp:'cs', c:'cs', go:'cs', rust:'cs',
+  bash:'sh', shell:'sh', zsh:'sh', console:'sh', powershell:'sh', ps1:'sh', yaml:'sh', yml:'sh' };
+function chatHighlight(code, lang){
+  try{
+    const fam=HL_KEYWORDS[lang]?lang:(HL_ALIAS[lang]||null);
+    const kw=new Set(((fam&&HL_KEYWORDS[fam])||'').split(' ').filter(Boolean));
+    const hashComments=fam==='py'||fam==='sh'||fam===null;
+    const slashComments=fam==='js'||fam==='cs'||fam===null;
+    // One scanner, char by char: no regex backtracking surprises on model-generated code.
+    let out='', i=0; const s=String(code);
+    const push=(cls,text)=>{ out+=cls?'<span class="'+cls+'">'+escapeHtml(text)+'</span>':escapeHtml(text); };
+    while(i<s.length){
+      const c=s[i];
+      if(slashComments&&c==='/'&&s[i+1]==='/'){ let j=s.indexOf('\n',i); if(j<0)j=s.length; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(slashComments&&c==='/'&&s[i+1]==='*'){ let j=s.indexOf('*/',i+2); j=j<0?s.length:j+2; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(hashComments&&c==='#'){ let j=s.indexOf('\n',i); if(j<0)j=s.length; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(c==='"'||c==="'"||c==='`'){
+        let j=i+1; while(j<s.length&&(s[j]!==c||s[j-1]==='\\')){ j++; }
+        push('hl-s',s.slice(i,Math.min(j+1,s.length))); i=j+1; continue;
+      }
+      if(/[0-9]/.test(c)&&!/[A-Za-z0-9_]/.test(s[i-1]||'')){
+        let j=i; while(j<s.length&&/[0-9._xA-Fa-f]/.test(s[j])) j++;
+        push('hl-n',s.slice(i,j)); i=j; continue;
+      }
+      if(/[A-Za-z_]/.test(c)){
+        let j=i; while(j<s.length&&/[A-Za-z0-9_]/.test(s[j])) j++;
+        const word=s.slice(i,j);
+        push(kw.has(fam==='sql'?word.toLowerCase():word)?'hl-k':null, word); i=j; continue;
+      }
+      push(null,c); i++;
+    }
+    return out;
+  }catch(e){ return escapeHtml(code); }
+}
+
+/* v0.3.8.46: a turn's recorded time, briefly. Today shows the clock; older shows the date too.
+ * Returns '' for anything unparseable — a wrong time is worse than no time. */
+function chatTurnTime(iso){
+  if(!iso) return '';
+  const d=new Date(iso); if(isNaN(d.getTime())) return '';
+  const now=new Date();
+  const sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
+  const hm=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return sameDay?hm:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+hm;
 }
 
 let chatFingerprint='';        // what is currently on screen, so a poll that changes nothing costs nothing
@@ -4071,8 +4158,17 @@ async function chatOpen(id){
       thread.innerHTML = turns.length
         ? turns.map((t,i)=>{
             const mine=String(t.role||'').toLowerCase()==='user';
+            // v0.3.8.46: each turn carries its recorded time — the stored created_at, rendered
+            // local. Shown inline, small; the full ISO instant is in the title for auditing.
+            const when=chatTurnTime(t.created_at);
+            // v0.3.8.46: token usage, only when the provider reported it. No number is shown for
+            // an unreported count — absence and zero are different facts.
+            const tok=(t.completion_tokens!=null||t.prompt_tokens!=null)
+              ? `<span class="chat-tok" title="prompt ${t.prompt_tokens??'?'} · completion ${t.completion_tokens??'?'} tokens">${(t.prompt_tokens??0)+(t.completion_tokens??0)} tok</span>`
+              : '';
             return `<div class="chat-turn ${mine?'user':'colony'}">
               <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
+                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}${tok}
                 <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
             </div>`;
           }).join('')
@@ -4101,12 +4197,19 @@ async function chatOpen(id){
       const waiting = d.waiting_on || [];
       const box = document.createElement('div');
       box.className = 'chat-approve';
+      // v0.3.8.46: when the colony is asking to start a mission, the operator can see the task
+      // plan BEFORE saying yes. POST /missions/plan is a dry run — same planner, no mission
+      // created — and it lost its only surface when the old Mission Composer retired. This is
+      // where it belongs now: at the moment of the decision it informs.
+      const canPreview = waiting.includes('start_mission');
       box.innerHTML =
         `<div class="chat-approve-hd">The colony is waiting for you</div>`
         + `<div class="chat-approve-what">It wants to ${escapeHtml(waiting.join(', ') || 'do real work')}. `
         + `Nothing happens until you say so.</div>`
+        + `<div class="chat-plan-preview" hidden></div>`
         + `<div class="chat-approve-actions">`
         + waiting.map(a=>`<button class="btn btn-primary chat-approve-yes" data-act="${escapeHtml(a)}">Allow ${escapeHtml(a)}</button>`).join('')
+        + (canPreview?`<button class="btn btn-ghost chat-plan-btn">☰ Preview the plan</button>`:'')
         + `<button class="btn chat-approve-no">Stop this</button></div>`;
       thread.appendChild(box);
       // Bound after render, never as an inline handler: the console's CSP is script-src 'self'
@@ -4115,10 +4218,47 @@ async function chatOpen(id){
         b.addEventListener('click', async ()=>{ await convApprove(id, b.dataset.act); chatOpen(id); }));
       box.querySelector('.chat-approve-no')
         ?.addEventListener('click', async ()=>{ await convCancel(id); chatOpen(id); });
+      box.querySelector('.chat-plan-btn')
+        ?.addEventListener('click', ()=>chatPlanPreview(box, turns));
       thread.scrollTop = thread.scrollHeight;
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    chatOpenAfterRender(d);
+  }catch(e){ pollWarnOnce('chatOpen', e); }
+}
+
+/* v0.3.8.46 — the dry-run plan, shown where the yes/no is made.
+ *
+ * The goal previewed is the LAST OPERATOR MESSAGE, which is what the runner escalates with; the
+ * card says so rather than implying the plan is a promise. Steps come back with the ant that
+ * would take each one and — because the preview runs real admission — which steps dispatch would
+ * refuse, so a plan that cannot run looks broken here instead of after approval. */
+async function chatPlanPreview(box, turns){
+  const host=box.querySelector('.chat-plan-preview'); if(!host) return;
+  if(!host.hidden){ host.hidden=true; return; }   // second press folds it away
+  const lastUser=[...(turns||[])].reverse().find(t=>t.role==='user');
+  if(!lastUser){ host.hidden=false; host.innerHTML='<div class="hud-state">Nothing to plan — no operator message found.</div>'; return; }
+  host.hidden=false;
+  host.innerHTML='<div class="hud-state">Asking the planner… (a routed model does real planning here; this can take a minute)</div>';
+  const r=await api('/missions/plan','POST',{goal:lastUser.content},120000);
+  if(!r||!r.success){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'The planner did not answer.')}</div>`; return; }
+  const p=r.data||{}, tasks=p.tasks||[];
+  const warns=(p.constraint_warnings||[]).map(w=>`<div class="chat-plan-warn">⚠ ${escapeHtml(w)}</div>`).join('');
+  host.innerHTML =
+    `<div class="chat-plan-hd">What would run — a dry run for your last message, not a promise</div>`
+    + warns
+    + tasks.map(t=>`<div class="chat-plan-task${t.blocked?' blocked':''}">`
+        + `<span class="chat-plan-n">${t.index}</span> ${escapeHtml(t.title||'')}`
+        + ` <span class="chat-plan-ant">${escapeHtml(t.display||t.ant||'')}</span>`
+        + (t.depends_on&&t.depends_on.length?` <span class="chat-plan-dep">after ${t.depends_on.join(', ')}</span>`:'')
+        + (t.blocked?`<div class="chat-plan-blocked">would be refused: ${escapeHtml(t.blocked_reason||'admission refused')}</div>`:'')
+        + `</div>`).join('')
+    + (tasks.length?'':'<div class="hud-state">The planner produced no steps for this goal.</div>');
+}
+
+function chatOpenAfterRender(d){
+  const id=chatActiveId;
     // v0.3.8.42: `cancelled` is a field, and `doing` is now a truthful present-tense vocabulary
     // ("running mission …", "unanswered — …", "" for idle) rather than a permanent "conversational
     // work" — so the state line SHOWS it instead of translating everything into "Working…".
@@ -4132,7 +4272,6 @@ async function chatOpen(id){
     if(chatColonyOpen) chatColonyMissionNote();   // keep the layer's mission line current
     document.querySelectorAll('.chat-conv').forEach(el=>
       el.classList.toggle('active', el.dataset.id===id));
-  }catch(e){ pollWarnOnce('chatOpen', e); }
 }
 
 let chatLastSent='';   // v0.3.8.42 (§13): Up-arrow in an empty composer recalls this
@@ -4338,6 +4477,33 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   document.getElementById('chat-input')?.focus();
   loadChat();
 });
+// v0.3.8.46: the rail search box — debounced, and Escape clears it.
+let chatSearchTimer=null;
+document.getElementById('chat-search')?.addEventListener('input', e=>{
+  clearTimeout(chatSearchTimer);
+  chatSearchTimer=setTimeout(()=>{ chatSearchQuery=e.target.value.trim(); loadChat(); }, 250);
+});
+document.getElementById('chat-search')?.addEventListener('keydown', e=>{
+  if(e.key==='Escape'&&e.target.value){ e.stopPropagation(); e.target.value=''; chatSearchQuery=''; loadChat(); }
+});
+
+// v0.3.8.46: export — GET /conversations/{id}/export needs the auth header, so the download goes
+// through fetch + blob rather than a bare link. The filename comes from the server's own header.
+document.getElementById('chat-export')?.addEventListener('click', async ()=>{
+  if(!chatActiveId){ chatSetState('Open a conversation first.'); return; }
+  try{
+    const resp=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/export'),
+      {headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!resp.ok){ chatSetState('Export failed ('+resp.status+').'); return; }
+    const blob=await resp.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='conversation-'+chatActiveId+'.md';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ chatSetState('Export failed: '+(e&&e.message||e)); }
+});
+
 document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
 // Secondary action for operators who want the dedicated page. Close first so the canvas is home
@@ -6218,7 +6384,97 @@ async function openPheromones(){
   await reloadPheromones();
 }
 
-PAGE_ENTER['pheromones']=()=>reloadPheromones();
+PAGE_ENTER['pheromones']=()=>{ reloadPheromones(); loadSourceQuality(); };
+
+/* v0.3.8.46 — research source-quality trails, shown at last. The endpoint has served this text
+ * since v2.x with no reader; it lives on the signals page because that is what it is. */
+async function loadSourceQuality(){
+  const el=document.getElementById('source-quality-body'); if(!el) return;
+  try{ el.textContent=(await apiText('/source-quality'))||'No source-quality trails recorded yet.'; }
+  catch(e){ el.textContent='Source-quality report unavailable: '+((e&&e.message)||e); }
+}
+
+/* v0.3.8.46 — the Readiness page: the qualification snapshot with attestation, the certification
+ * download, the qualification-report action, and the colony's introspection. The one rule carried
+ * over from the backend: unmeasured reads as NOT ready, and nothing here can be satisfied by
+ * silence — the page renders failures first and never summarises them away. */
+async function loadReadiness(){
+  const stmt=document.getElementById('rd-statement'), checks=document.getElementById('rd-checks');
+  const intro=document.getElementById('rd-introspection');
+  if(!checks) return;
+  try{
+    const r=await api('/readiness/json');
+    if(!(r&&r.success&&r.data)){ checks.innerHTML='<div class="hud-state err">Readiness snapshot unavailable.</div>'; }
+    else{
+      const d=r.data;
+      if(stmt) stmt.textContent=(d.ready?'READY — ':'NOT READY — ')+(d.statement||'')+` (${d.satisfied}/${d.total})`;
+      const attestable=new Set(d.attestable_ids||[]);
+      const rows=[...(d.checks||[])].sort((a,b)=>(a.satisfied?1:0)-(b.satisfied?1:0));
+      checks.innerHTML=rows.map(c=>`<div class="rd-check${c.satisfied?'':' fail'}" data-check="${escapeHtml(c.id)}">`
+        + `<span class="rd-flag">${c.satisfied?'PASS':'FAIL'}</span> <b>${escapeHtml(c.title)}</b>`
+        + ` <span class="rd-kind">${escapeHtml(c.kind||'')}</span>`
+        + `<div class="rd-detail">${escapeHtml(c.detail||'')}</div>`
+        + (attestable.has(c.id)?`<div class="rd-attest">`
+            + `<input type="text" class="rd-note" placeholder="Attestation note (why you are satisfied it holds)">`
+            + `<button class="btn btn-ghost rd-attest-yes">Attest: holds</button>`
+            + `<button class="btn btn-ghost rd-attest-no">Attest: does not hold</button></div>`:'')
+        + `</div>`).join('') || '<div class="hud-state">No thresholds defined.</div>';
+      checks.querySelectorAll('.rd-check').forEach(card=>{
+        const send=async satisfied=>{
+          const note=card.querySelector('.rd-note')?.value.trim()||'';
+          const r2=await api('/readiness/attest','POST',{threshold_id:card.dataset.check, satisfied, note});
+          setEl('rd-msg', r2&&r2.success?'Attestation recorded.':(r2&&r2.message)||'Attestation failed.');
+          if(r2&&r2.success) loadReadiness();
+        };
+        card.querySelector('.rd-attest-yes')?.addEventListener('click',()=>send(true));
+        card.querySelector('.rd-attest-no')?.addEventListener('click',()=>send(false));
+      });
+    }
+  }catch(e){ checks.innerHTML=`<div class="hud-state err">${escapeHtml(String(e&&e.message||e))}</div>`; }
+  try{
+    const r=await api('/colony/introspection');
+    if(!(r&&r.success&&r.data)){ if(intro) intro.innerHTML='<div class="hud-state err">Introspection unavailable.</div>'; return; }
+    const d=r.data;
+    const chip=(label,val,tone)=>`<span class="rd-chip"><span>${escapeHtml(label)}</span> <b${tone?` style="color:${tone}"`:''}>${escapeHtml(String(val))}</b></span>`;
+    const on=v=>v?'on':'off';
+    const findings=(d.config_health||[]);
+    if(intro) intro.innerHTML =
+      `<div class="rd-chips">`
+      + chip('Version', d.version)
+      + chip('Activation tier', d.activation_tier)
+      + chip('Autonomy', on(d.autonomy_enabled))
+      + chip('Stop engaged', d.stop_engaged?'YES':'no', d.stop_engaged?'var(--red,#f87171)':'')
+      + chip('Director', d.director_running?'running':'idle')
+      + chip('File writing', on(d.can_write_files))
+      + chip('Patch application', on(d.can_apply_patches))
+      + chip('Auto-apply', on(d.auto_apply_enabled))
+      + chip('Running jobs', d.running_jobs)
+      + chip('V3 qualified', d.v3_qualified?'yes':'no', d.v3_qualified?'var(--green,#34d399)':'var(--dim)')
+      + `</div>`
+      + `<div class="rd-detail" style="margin-top:8px">Executable roles: ${escapeHtml((d.executable_roles||[]).join(', '))}</div>`
+      + (findings.length
+          ? findings.map(f=>`<div class="rd-check fail" style="margin-top:6px"><span class="rd-flag">${escapeHtml((f.severity||'').toUpperCase())}</span> `
+              + `<b>${escapeHtml(f.combination||'')}</b><div class="rd-detail">${escapeHtml(f.detail||'')}</div></div>`).join('')
+          : `<div class="rd-detail" style="margin-top:8px;color:var(--green,#34d399)">Configuration is healthy — no incompatible combinations.</div>`);
+  }catch(e){ if(intro) intro.innerHTML=`<div class="hud-state err">${escapeHtml(String(e&&e.message||e))}</div>`; }
+}
+PAGE_ENTER['readiness']=()=>{ if(ROLE==='admin') loadReadiness(); };
+document.getElementById('rd-reload')?.addEventListener('click', ()=>loadReadiness());
+document.getElementById('rd-report')?.addEventListener('click', async ()=>{
+  const r=await api('/readiness/qualification-report','POST',{});
+  setEl('rd-msg', r&&r.success?('Written: '+((r.data&&r.data.markdown_path)||'report')):(r&&r.message)||'Report failed.');
+});
+document.getElementById('rd-cert')?.addEventListener('click', async ()=>{
+  try{
+    const resp=await fetch(url('/readiness/certification'),{headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!resp.ok){ setEl('rd-msg','Certification failed ('+resp.status+').'); return; }
+    const blob=await resp.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='anthill-readiness-certification.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ setEl('rd-msg','Certification failed: '+((e&&e.message)||e)); }
+});
 
 // -- Security page -------------------------------------------------------------
 const SEC_GATES=[
@@ -8872,6 +9128,48 @@ async function hlLoadShadow(){
               d.invariants_hold?'var(--green)':'var(--red)'),
         ].join('');
 
+    // v0.3.8.46: the judgment queue, with the form beside each item. POST /shadow/judge existed
+    // for a release while the console showed only a COUNT of what was waiting — an operator asked
+    // to clear a queue they could not see. Four yes/no answers and an optional note per item; a
+    // recorded judgment turns the recommendation into a scoreable pair above.
+    const pendList=d.pending||[];
+    const pendHost=document.getElementById('hl-shadow-pending');
+    if(pendHost){
+      if(!pendList.length){ pendHost.innerHTML=''; }
+      else{
+        pendHost.innerHTML='<div class="chat-plan-hd" style="margin-top:10px">Awaiting your judgment</div>'+
+          pendList.map((p,i)=>`<div class="shadow-judge" data-incident="${escapeHtml(p.incident_id||'')}">`
+            + `<div style="font-size:11px;color:var(--text)"><b>${escapeHtml(p.incident_id||'')}</b> — ${escapeHtml(p.diagnosis||'no diagnosis')}</div>`
+            + `<div style="font-size:10px;color:var(--muted)">Proposed: ${escapeHtml(p.proposed_action||'—')} · predicted: ${escapeHtml(p.predicted_outcome||'—')} · risk: ${escapeHtml(p.risk_level||'—')}</div>`
+            + ['diagnosis_correct|Diagnosis was right','action_was_needed|An action was needed',
+               'action_matched|Its action matched what you did','would_have_succeeded|It would have worked']
+              .map(f=>{const [k,label]=f.split('|');
+                return `<label style="font-size:10px;color:var(--muted);margin-right:10px">`
+                  + `<input type="checkbox" data-field="${k}"> ${label}</label>`;}).join('')
+            + `<input type="text" data-field="note" placeholder="What actually happened (optional)" `
+            + `style="width:100%;margin-top:5px;font-size:10px;padding:4px 7px;background:var(--bg);`
+            + `border:1px solid var(--border);border-radius:4px;color:var(--text)">`
+            + `<button class="btn btn-ghost shadow-judge-save" style="margin-top:5px">Record judgment</button>`
+            + `</div>`).join('');
+        pendHost.querySelectorAll('.shadow-judge-save').forEach(btn=>
+          btn.addEventListener('click', async ()=>{
+            const card=btn.closest('.shadow-judge');
+            const get=k=>card.querySelector(`[data-field="${k}"]`);
+            btn.disabled=true; btn.textContent='Recording…';
+            const r2=await api('/shadow/judge','POST',{
+              incident_id:card.dataset.incident,
+              diagnosis_correct:get('diagnosis_correct').checked,
+              action_was_needed:get('action_was_needed').checked,
+              action_matched:get('action_matched').checked,
+              would_have_succeeded:get('would_have_succeeded').checked,
+              note:get('note').value.trim(),
+            });
+            if(r2&&r2.success) hlLoadShadow();
+            else{ btn.disabled=false; btn.textContent='Record judgment'; }
+          }));
+      }
+    }
+
     if(sample===0){
       body.innerHTML='<span style="color:var(--dim)">No scored incidents yet — shadow mode has not '+
         'qualified anything. It records a recommendation when an incident opens and stays unscored '+
@@ -9058,6 +9356,12 @@ async function convApprove(id, action){
   const turns=(detail&&detail.data&&detail.data.turns)||[];
   const last=turns.length?turns[turns.length-1].content:'';
   const answers={}; answers[action]='approve';
+  // v0.3.8.46, found live: a MID-MISSION action (a tool gate the running mission raised) is
+  // approved by re-sending the message — and the re-send meets the start_mission gate FIRST,
+  // which ate the answer: the click approved nothing and both actions sat waiting. A secondary
+  // gate can only exist because start_mission was already approved (or covered by a standing
+  // policy) for this very message, so restating that recorded decision is not a new grant.
+  if(action!=='start_mission') answers['start_mission']='approve';
   const r=await api('/conversations/'+id+'/turns','POST',{ message:last||'proceed', mode:'mission', answers:answers });
   if(r&&r.data) convSay(r.data.summary||'Approved', r.data.started!==false);
   apiCacheBust('/conversations'); pollConversations();

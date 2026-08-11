@@ -116,6 +116,13 @@ public sealed record ConversationTurn(
     /// <summary>Set when this turn escalated the conversation into mission work.</summary>
     public string? MissionId { get; init; }
 
+    /// <summary>
+    /// v0.3.8.46: what this turn cost, when the provider reported it. Nullable on purpose —
+    /// absence and zero are different facts, and a null must never total as 0 tokens.
+    /// </summary>
+    public int? PromptTokens { get; init; }
+    public int? CompletionTokens { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
 }
 
@@ -164,6 +171,13 @@ public sealed record Conversation
     public ConversationBudget Budget { get; init; } = ConversationBudget.Default;
 
     public bool Cancelled { get; init; }
+
+    /// <summary>
+    /// v0.3.8.46: pinned conversations sort ahead of everything else in the rail. An operator's
+    /// choice, stored — so it survives restart like the rest of the record.
+    /// </summary>
+    public bool Pinned { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 
