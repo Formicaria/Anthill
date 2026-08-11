@@ -578,4 +578,98 @@ public class ConversationRunnerTests : IDisposable
     public void LooksLikeMissionId_RejectsSomethingFarTooLongToBeAnId() =>
         Assert.False(ConversationRunner.LooksLikeMissionId(
             new string('a', ConversationRunner.MaxMissionIdLength + 1)));
+
+    /// <summary>
+    /// v0.3.8.48, found live: approving a refused start_mission re-sends the SAME message —
+    /// convApprove restates it to meet the gate — and the transcript said the operator spoke twice.
+    /// The refused attempt IS the turn; approval links the mission to it rather than inventing a
+    /// duplicate.
+    /// </summary>
+    [Fact]
+    public void ApprovingARefusedEscalation_DoesNotDuplicateTheOperatorsTurn()
+    {
+        var conversation = Chat();   // Ask: the first attempt is refused and recorded
+        var runner = Runner();
+
+        Assert.False(runner.Run(conversation, "do the thing", ConversationMode.Mission).Started);
+        Assert.Single(_memory.LoadConversationTurns("c1"));
+
+        var outcome = runner.Run(conversation, "do the thing", ConversationMode.Mission, Approve());
+        _release.Set();
+
+        Assert.True(outcome.Started);
+        var userTurns = _memory.LoadConversationTurns("c1")
+            .Where(t => t.Role == "user" && t.Content == "do the thing").ToList();
+        var only = Assert.Single(userTurns);
+        Assert.Equal(outcome.MissionId, only.MissionId);   // the attempt gained its mission link
+    }
+
+    /// <summary>
+    /// v0.3.8.48, found live: the mission settled, its answer sat in mission history, and the chat
+    /// that started it showed nothing. When the pipeline finishes, the mission's result becomes the
+    /// conversation's next turn — asked in chat, answered in chat.
+    /// </summary>
+    [Fact]
+    public void ASettledMissionsAnswer_LandsInTheConversation()
+    {
+        var conversation = Chat(EscalationPolicy.Bypass);
+        var id = Guid.NewGuid().ToString();
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        {
+            onCreated(id);
+            // The pipeline saves the settled mission BEFORE returning, as the Queen does.
+            _memory.SaveMission(new Anthill.Core.Domain.Mission
+            {
+                Id = id, Goal = "say OK", Status = Anthill.Core.Domain.MissionStatus.Complete,
+                UserResult = "OK", SuccessScore = 1,
+            });
+            return id;
+        });
+
+        Assert.True(runner.Run(conversation, "say OK", ConversationMode.Mission).Started);
+
+        // The answer is recorded by the background thread that ran the pipeline; wait for it.
+        ConversationTurn? answer = null;
+        for (var i = 0; i < 100 && answer is null; i++)
+        {
+            answer = _memory.LoadConversationTurns("c1")
+                .FirstOrDefault(t => t.Role == "assistant");
+            if (answer is null) Thread.Sleep(50);
+        }
+
+        Assert.NotNull(answer);
+        Assert.Equal("OK", answer!.Content);
+        Assert.Equal(id, answer.MissionId);
+    }
+
+    /// <summary>A cancelled conversation gets no late answer — the operator already moved on.</summary>
+    [Fact]
+    public void ACancelledConversation_GetsNoLateMissionAnswer()
+    {
+        var conversation = Chat(EscalationPolicy.Bypass);
+        var id = Guid.NewGuid().ToString();
+        var pipelineDone = new ManualResetEventSlim(false);
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        {
+            onCreated(id);
+            _memory.SaveMission(new Anthill.Core.Domain.Mission
+            {
+                Id = id, Goal = "slow work", Status = Anthill.Core.Domain.MissionStatus.Complete,
+                UserResult = "too late",
+            });
+            // Cancel the conversation while the pipeline is still "running" — but only after the
+            // runner has linked the mission, so the runner's own save cannot overwrite the cancel.
+            for (var i = 0; i < 100 && !(_memory.LoadConversation("c1")?.MissionIds.Contains(id) ?? false); i++)
+                Thread.Sleep(50);
+            _memory.SaveConversation(_memory.LoadConversation("c1")! with { Cancelled = true });
+            pipelineDone.Set();
+            return id;
+        });
+
+        runner.Run(conversation, "slow work", ConversationMode.Mission);
+        Assert.True(pipelineDone.Wait(TimeSpan.FromSeconds(5)));
+        Thread.Sleep(300);   // give the background recorder its chance to misbehave
+
+        Assert.DoesNotContain(_memory.LoadConversationTurns("c1"), t => t.Role == "assistant");
+    }
 }

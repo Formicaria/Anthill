@@ -119,9 +119,10 @@ public class ConsoleNavigationTruthTests
         Assert.DoesNotContain("route:'/scheduled'", app.Replace(" ", ""), StringComparison.Ordinal);
 
         // PAGE_ROUTE's answer for objboard, and the nav item's route, must be the same string.
-        Assert.Contains("objboard:'/operations/automation/objectives'", app.Replace(" ", ""),
+        // v0.3.8.48: Objectives is a top-level destination at /objectives.
+        Assert.Contains("objboard:'/objectives'", app.Replace(" ", ""),
             StringComparison.Ordinal);
-        Assert.Contains("route:'/operations/automation/objectives',page:'objboard'",
+        Assert.Contains("route:'/objectives',page:'objboard'",
             app.Replace(" ", ""), StringComparison.Ordinal);
     }
 
