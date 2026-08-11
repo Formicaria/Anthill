@@ -41,6 +41,24 @@ public static partial class ApiHost
                     ?? throw new InvalidOperationException($"Proxmox credential '{AnthillRuntime.HomelabProxmoxCredentialId}' is not configured — save it under Homelab → + Add / Manage → Virtualization Connections."),
                 AnthillRuntime.HomelabProxmoxInsecureTls,
                 protocol: AnthillRuntime.HomelabProxmoxProtocol)));
+        // v0.3.8.40: Docker container lifecycle, on a server/container deployment only.
+        //
+        // Registered UNCONDITIONALLY with respect to configuration, and gated inside the runner
+        // instead. That is deliberate: a runner absent from the list makes DryRunAvailable false and
+        // the operator sees an action that simply cannot be dry-run, with no reason given. Present
+        // and refusing means they get the REASON — wrong deployment mode, or execution disabled —
+        // which is the difference between a missing feature and an explained one.
+        //
+        // Before the mock runner, which claims every catalogued action and would otherwise shadow
+        // this one; the ordering lesson v2.3.1.1 records about Proxmox applies identically here.
+        // Gates are read through delegates, not captured: both are live settings, and a value
+        // sampled at boot would keep answering with whatever was true then — an operator who turned
+        // execution off would find it still on.
+        runners.Add(new DockerActionRunner(
+            isServerDeployment: () => AnthillRuntime.Deployment == DeploymentMode.Server,
+            deploymentDescription: () =>
+                $"{AnthillRuntime.Deployment.ToString().ToLowerInvariant()} ({AnthillRuntime.DeploymentReason})",
+            executeEnabled: () => AnthillRuntime.DockerExecuteEnabled));
         // v2.3.1.1: the mock runner is registered LAST. It claims every catalog action, so with the
         // dev mock gate on it previously shadowed the real Proxmox runner (first CanRun match wins)
         // and reported real actions as executed without touching anything.

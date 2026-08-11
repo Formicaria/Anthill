@@ -46,7 +46,44 @@ public static partial class ApiHost
                 ["provider"] = p.Id, ["name"] = p.Name, ["kind"] = p.Kind, ["description"] = p.Description,
                 ["requires_key"] = p.RequiresKey, ["default_endpoint"] = p.DefaultEndpoint,
                 ["key_help_url"] = p.KeyHelpUrl, ["default_model"] = p.DefaultModel, ["models"] = p.Models,
+                ["agent"] = false, ["installed"] = true,
             }).ToList();
+
+            /*
+             * v3.8.39 — installed CLI agents join the routing choices, so an ant can be given one.
+             *
+             * Composed HERE rather than in ProviderCatalog because that list lives in Anthill.SDK,
+             * which is contracts-only and may not reference a module. The API is the composition
+             * root, already constructs the reasoning module, and joining two catalogues is exactly
+             * the work a composition root exists to do.
+             *
+             * `default_model` is the agent's own name and must never be empty. ModelRouter treats a
+             * non-keyed provider with no model as a local model needing resolution, and would ask
+             * Ollama to resolve a model for Claude Code — an answer that cannot exist. Carrying a
+             * model keeps that branch unreached.
+             *
+             * Uninstalled agents are listed too, marked installed:false. Hiding them would leave an
+             * operator wondering why Anthill offers Codex on one screen and not another; showing
+             * them with their state is the rule the agents page already follows.
+             */
+            catalog.AddRange(AgentCliDiscovery.Scan().Select(s => new Dictionary<string, object?>
+            {
+                ["provider"] = s.Agent.Id,
+                ["name"] = s.Agent.DisplayName + " (agent)",
+                ["kind"] = "agent",
+                ["description"] = s.Installed
+                    ? $"Delegates the turn to {s.Agent.DisplayName} on this machine, signed in as you. "
+                    + "Anthill starts it and never holds your credentials."
+                    : $"Not installed. {s.Agent.InstallCommand}",
+                ["requires_key"] = false,
+                ["default_endpoint"] = null,
+                ["key_help_url"] = s.Agent.DocsUrl,
+                ["default_model"] = s.Agent.DisplayName,
+                ["models"] = new[] { s.Agent.DisplayName },
+                ["agent"] = true,
+                ["installed"] = s.Installed,
+            }));
+
             return ApiJson.Ok(catalog);
         });
 
@@ -660,6 +697,59 @@ public static partial class ApiHost
         app.MapPost("/providers/{provider}/test", (HttpContext ctx, string provider) =>
         {
             var auth = RequireAuth(ctx, "manage_providers"); if (auth is not null) return auth;
+
+            /*
+             * v3.8.39 — an installed CLI agent is testable too.
+             *
+             * This gated on KeyedProviders, which is the set of providers holding an API KEY. An
+             * agent holds none — the operator signed into the vendor's own tool — so agents failed
+             * here with "Unknown provider", and an operator could ROUTE an ant to Claude Code but
+             * could not check it worked first. Selecting something you cannot verify is exactly
+             * when a Test button matters.
+             *
+             * Handled before NormalizeProvider, which lowercases and trims for the credential
+             * store's benefit and has no business rewriting a namespaced agent id.
+             */
+            if (AgentCliCatalog.IsAgentId(provider))
+            {
+                if (Queen.Router is null)
+                    return ApiJson.Error("Model routing is disabled for this colony.", "bad_request");
+
+                var agent = AgentCliCatalog.ById(provider);
+                if (agent is null) return ApiJson.Error($"No such agent: {provider}.", "not_found");
+
+                /*
+                 * Bounded SHORT, and built directly rather than through the router.
+                 *
+                 * A connection test answers one question — "can I reach this right now" — and must
+                 * come back while the operator is still looking at the button. A mission turn is a
+                 * different question with a legitimately different bound: a coding agent editing
+                 * files runs for minutes, so the routed provider allows that.
+                 *
+                 * Found live: `opencode run` did not return, and this endpoint had inherited the
+                 * mission-length allowance, so Test hung with the request still open on the server.
+                 * Thirty seconds is long enough for any agent that is going to answer at all and
+                 * short enough that a hung one reports rather than pins a request.
+                 */
+                // Held as IReasoningProvider, not as AgentCliProvider: `Generate` is a DEFAULT
+                // INTERFACE METHOD, which C# dispatches only through the interface. Calling it on
+                // the concrete type is CS1061, and the message ("does not contain a definition")
+                // reads like a missing member rather than the interface rule it actually is.
+                IReasoningProvider probe = new AgentCliProvider(agent, TimeSpan.FromSeconds(30));
+                var agentReply = probe.Generate("Reply with the single word: OK", retries: 1);
+
+                // Deliberately NOT recorded through SetProviderVerification. That table is the
+                // credential store's view of a keyed provider, and an agent has no row in it —
+                // writing one would invent a credential Anthill does not hold and never will.
+                return agentReply.Ok
+                    ? ApiJson.Ok(new Dictionary<string, object?>
+                    {
+                        ["provider"] = agent.Id,
+                        ["reply"] = agentReply.Content,
+                    }, $"{agent.DisplayName} answered.")
+                    : ApiJson.Error(agentReply.Content, "provider_test_failed");
+            }
+
             var p = SqliteMemory.NormalizeProvider(provider);
             if (!ProviderCatalog.KeyedProviders.Contains(p))
                 return ApiJson.Error($"Unknown provider '{p}'.", "bad_request");

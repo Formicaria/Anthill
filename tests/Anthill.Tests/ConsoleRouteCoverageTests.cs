@@ -104,11 +104,32 @@ public class ConsoleRouteCoverageTests
     /// <summary>
     /// Does the console reach this route? Prefix-based, because the console composes paths
     /// (`api('/missions/' + id)`) — so a reference to the stem counts as covering the family.
+    ///
+    /// v0.3.8.40 — the stem must BEGIN a quoted path literal, not merely appear somewhere.
+    ///
+    /// A bare Contains matched a route inside any longer path ending with it. When `/agents` was
+    /// added the nav table already held the route string `/colony/agents`, so the new endpoint
+    /// counted as reached before a line of UI existed — verified at the time: two new routes, zero
+    /// console code, and this audit passed them both. The guard was answering a question about
+    /// substrings while appearing to answer one about coverage, which is worse than not asking,
+    /// because a whole backend surface can arrive with no operator access and nothing says so.
+    ///
+    /// An opening quote is the cheapest rule that means what the test claims. Every console
+    /// reference is a string literal — api('/x'), route:'/x', fetch(`/x`) — so a real caller always
+    /// has one and a coincidental suffix inside a longer path never does.
+    ///
+    /// Verdicts were compared across all 178 routes before and after this change: none differed. The
+    /// rule is strictly tighter and cost nothing, which is what made it safe to tighten in one go
+    /// rather than behind a migration.
     /// </summary>
     private static bool ReachedByConsole(string route, string console)
     {
         var stem = route.Split('*')[0].TrimEnd('/');
-        return stem.Length > 1 && console.Contains(stem, StringComparison.Ordinal);
+        if (stem.Length <= 1) return false;
+
+        return console.Contains("'" + stem, StringComparison.Ordinal)
+            || console.Contains("\"" + stem, StringComparison.Ordinal)
+            || console.Contains("`" + stem, StringComparison.Ordinal);
     }
 
     /// <summary>The ledger. A route with no surface and no recorded reason is an oversight.</summary>

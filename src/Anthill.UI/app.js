@@ -399,7 +399,8 @@ const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
   activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
-  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users'
+  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
+  agentcli:'Agents', chat:'Chat', projects:'Projects', toolsview:'Tools'   // v3.8.39: installable CLI agents; chat-first surface
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -413,9 +414,18 @@ PAGE_ENTER['overview']=()=>{
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
+PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli(); };
+PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
+  document.getElementById('chat-input')?.focus(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
 const IAICON = {
+  // v3.8.39: without an entry here buildNav writes the string "undefined" into the nav icon,
+  // because it interpolates IAICON[d.id] unguarded.
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>',
+  projects:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  tools:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/></svg>',
+  scheduled:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
   monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
@@ -427,6 +437,14 @@ const IAICON = {
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
 const IA = [
+  // v3.8.39: the conversation is the product's primary act, so it leads the navigation.
+  { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
+  // v0.3.8.40: the top row. Each promotes an existing surface that was only reachable as a
+  // dashboard widget an operator had to know to enable — Projects are mission workspaces, Tools is
+  // the capability report, Scheduled is the Director's standing objectives. No new backend.
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
+  { type:'item', id:'scheduled', label:'Scheduled', route:'/scheduled', page:'objboard', vis:'admin' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
   { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
     { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
@@ -468,6 +486,8 @@ const IA = [
     { label:'Agents', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
       { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
       { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
+      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own ants.
+      { label:'Coding Agents', route:'/colony/agents/coding', page:'agentcli', vis:'admin' },
     ]},
     { label:'Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
     { label:'Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
@@ -1833,10 +1853,11 @@ function topologyMountTo(where){
   topologyCaptureHome();
   let target=null;
   if(where==='dashboard') target=document.getElementById('ws-topology');
+  else if(where==='chat') target=document.getElementById('chat-colony-mount');   // v3.8.39
   else if(topologyHome) target=topologyHome.parent;
   if(!target) return;
   if(area.parentElement===target && where===topologyHost) return;   // already correct: no churn
-  if(where==='dashboard') target.appendChild(area);
+  if(where==='dashboard'||where==='chat') target.appendChild(area);
   else target.insertBefore(area, topologyHome.next);
   topologyHost=where;
   topologyRemeasure();
@@ -2622,6 +2643,17 @@ function renderStatusPop(){
     or===true?(modelOk?'var(--green)':'var(--amber,#f59e0b)'):or===false?'var(--red)':'var(--dim)';
   setEl('sp-ollama-host',s.ollama_host||'—');
   setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  // v0.3.8.40: deployment mode, with its reason on hover and whether it was detected or set.
+  // "Desktop" and "Server" are what the operator sees; deployment_mode is the wire value.
+  const depMode=(s.deployment_mode||'').toLowerCase();
+  const depEl=document.getElementById('sp-deployment');
+  if(depEl){
+    depEl.textContent = depMode==='server' ? 'Server / container'
+                      : depMode==='desktop' ? 'Desktop'
+                      : '—';
+    depEl.title = (s.deployment_reason||'')
+                + (s.deployment_detected===false ? '' : ' (detected — set deployment_mode in configuration to override)');
+  }
   setEl('sp-default',s.default_model||'—');
   // v3.8.34: roles routed to a model that cannot meet their contract. Reported here because the
   // only other surface is the Tools & Routing widget, which ships hidden — so on a default
@@ -3782,6 +3814,284 @@ async function loadAntObsDirectory(grid){
       `<div style="grid-column:1/-1;margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.08em;">COLONY DIRECTORY · ${total} ants — every registered role and worker with its duty</div>`+html);
   }catch(e){ /* directory is additive; telemetry cards above still render */ }
 }
+/* ── Chat-first surface (v3.8.39) ─────────────────────────────────────────────────────────────
+ *
+ * The conversation as the application, rather than a widget on a grid the operator has to learn
+ * first. Same endpoints the Conversations panel already uses — /conversations, /{id},
+ * /{id}/turns — because the escalation gate, the approval policy and the mission handoff are
+ * already right there and a second client for them would be a second thing to keep true.
+ *
+ * The colony is available BESIDE the conversation rather than instead of it. Watching the ants is
+ * the thing an operator wants occasionally and a newcomer wants never, so it is a toggle rather
+ * than the landing view.
+ */
+let chatActiveId = null;
+let chatColonyOpen = false;
+// v0.3.8.40: /conversations/{id} does NOT return a title — only the list does. Without this the
+// header read "Conversation" for every thread, including the one whose title was right there in
+// the rail beside it.
+const chatTitles = {};
+
+function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
+
+async function loadChat(){
+  const list=document.getElementById('chat-conv-list'); if(!list) return;
+  try{
+    const r=await api('/conversations');
+    if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load conversations.')}</div>`; return; }
+    const convs=(r.data&&r.data.conversations)||[];
+    if(!convs.length){
+      list.innerHTML='<div class="hud-state">Nothing yet — your first message starts one.</div>';
+    }else{
+      convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
+      list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
+        ${escapeHtml(c.title||'Conversation')}
+        ${c.doing?`<span class="attn">Working…</span>`:''}
+      </div>`).join('');
+      list.querySelectorAll('.chat-conv').forEach(el=>
+        el.addEventListener('click',()=>chatOpen(el.dataset.id)));
+      if(!chatActiveId) chatOpen(convs[0].id);
+    }
+  }catch(e){ pollWarnOnce('loadChat', e); }
+}
+
+async function chatOpen(id){
+  if(!id) return;
+  chatActiveId=id;
+  const thread=document.getElementById('chat-thread'); if(!thread) return;
+  try{
+    const r=await api('/conversations/'+encodeURIComponent(id));
+    if(!r||!r.success){ thread.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open that conversation.')}</div>`; return; }
+    const d=r.data||{}, turns=d.turns||[];
+
+    // Only the operator's own words are theirs; everything else is the colony speaking, whichever
+    // ant or provider produced it. Labelling each turn by its role would make the reader learn the
+    // roster before they can read the answer.
+    thread.innerHTML = turns.length
+      ? turns.map(t=>{
+          const mine=String(t.role||'').toLowerCase()==='user';
+          return `<div class="chat-turn ${mine?'user':'colony'}">
+            <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>${escapeHtml(t.content||'')}
+          </div>`;
+        }).join('')
+      : '<div class="hud-state">No messages yet.</div>';
+    thread.scrollTop = thread.scrollHeight;
+
+    // v0.3.8.40 — the escalation gate, IN the thread.
+    //
+    // `needs_operator` means the colony has stopped and is waiting for a person: it wants to do
+    // something its approval policy will not let it do unasked. That is the single most important
+    // thing the chat surface can say, and until now it said nothing — the prompt appeared only in
+    // the old Conversations widget, which is hidden on the default dashboard. An operator working
+    // in Chat would have waited on a colony that was waiting on them.
+    //
+    // Rendered after the turns, where the next thing to happen belongs, and using the same
+    // convApprove/convCancel calls the old panel uses so there is one approval path rather than two.
+    if(d.needs_operator){
+      const waiting = d.waiting_on || [];
+      const box = document.createElement('div');
+      box.className = 'chat-approve';
+      box.innerHTML =
+        `<div class="chat-approve-hd">The colony is waiting for you</div>`
+        + `<div class="chat-approve-what">It wants to ${escapeHtml(waiting.join(', ') || 'do real work')}. `
+        + `Nothing happens until you say so.</div>`
+        + `<div class="chat-approve-actions">`
+        + waiting.map(a=>`<button class="btn btn-primary chat-approve-yes" data-act="${escapeHtml(a)}">Allow ${escapeHtml(a)}</button>`).join('')
+        + `<button class="btn chat-approve-no">Stop this</button></div>`;
+      thread.appendChild(box);
+      // Bound after render, never as an inline handler: the console's CSP is script-src 'self'
+      // with no unsafe-inline, so an onclick attribute here is dropped silently by the browser.
+      box.querySelectorAll('.chat-approve-yes').forEach(b=>
+        b.addEventListener('click', async ()=>{ await convApprove(id, b.dataset.act); chatOpen(id); }));
+      box.querySelector('.chat-approve-no')
+        ?.addEventListener('click', async ()=>{ await convCancel(id); chatOpen(id); });
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    chatSetState(d.needs_operator ? 'Waiting on you' : (d.doing ? 'Working…' : ''));
+    document.querySelectorAll('.chat-conv').forEach(el=>
+      el.classList.toggle('active', el.dataset.id===id));
+  }catch(e){ pollWarnOnce('chatOpen', e); }
+}
+
+async function chatSend(){
+  const el=document.getElementById('chat-input');
+  const msg=(el&&el.value||'').trim();
+  if(!msg) return;
+  if(el){ el.value=''; el.style.height=''; }
+  chatSetState('Sending…');
+  try{
+    if(!chatActiveId){
+      // First message creates the conversation. 'ask' is the policy a newcomer wants: the colony
+      // checks before it does anything that changes real files.
+      const c=await api('/conversations','POST',{ title: msg.slice(0,48), policy:'ask' });
+      if(!c||!c.success){ chatSetState((c&&c.message)||'Could not start.'); return; }
+      chatActiveId=c.data.id;
+    }
+    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:'chat' });
+    if(r&&r.data&&r.data.started===false) chatSetState(r.data.summary||'Refused');
+    else chatSetState('');
+  }catch(e){ chatSetState('Could not send: '+(e.message||'')); }
+  finally{ apiCacheBust('/conversations'); loadChat(); chatOpen(chatActiveId); }
+}
+
+function chatToggleColony(open){
+  const side=document.getElementById('chat-side'); if(!side) return;
+  chatColonyOpen = open===undefined ? !chatColonyOpen : !!open;
+  side.hidden = !chatColonyOpen;
+  if(chatColonyOpen && typeof topologyMountTo==='function') topologyMountTo('chat');
+  else if(typeof topologyMountTo==='function') topologyMountTo('home');
+}
+
+document.getElementById('chat-send')?.addEventListener('click', chatSend);
+document.getElementById('chat-new')?.addEventListener('click', ()=>{
+  chatActiveId=null;
+  setEl('chat-title','New conversation'); chatSetState('');
+  const thread=document.getElementById('chat-thread');
+  if(thread) thread.innerHTML='<div class="chat-welcome"><h2>What would you like done?</h2>'
+    + '<p>Describe it in your own words. The colony plans the work, carries it out, and shows you '
+    + 'every step — you approve anything that changes real files.</p></div>';
+  document.getElementById('chat-input')?.focus();
+  loadChat();
+});
+document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
+document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
+document.getElementById('chat-input')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); chatSend(); }
+});
+// Grow with the message rather than scrolling a one-line box — a multi-step request is normal here.
+document.getElementById('chat-input')?.addEventListener('input', e=>{
+  e.target.style.height='auto';
+  e.target.style.height=Math.min(e.target.scrollHeight,180)+'px';
+});
+
+/* ── Projects & Tools as destinations (v0.3.8.40) ─────────────────────────────────────────────
+ *
+ * Both read the same endpoints their dashboard widgets read. The widgets stay; this is about
+ * REACHABILITY, not duplication — DEFAULT_DASHBOARD_VIEW ships both hidden, so until now an
+ * operator had to know they existed and enable them before they could see either.
+ */
+async function loadProjects(){
+  const el=document.getElementById('projects-list'); if(!el) return;
+  try{
+    const r=await api('/workspaces');
+    if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load projects.')}</div>`; return; }
+    const ws=(r.data&&r.data.workspaces)||r.data||[];
+    if(!ws.length){ el.innerHTML='<div class="hud-state">No projects yet — the colony creates one the first time a mission needs to change files.</div>'; return; }
+    el.innerHTML=ws.map(w=>`<div class="card agentcli-card">
+      <div class="agentcli-hd">
+        <span class="health-dot ${w.usable?'ok':''}"></span>
+        <span class="agentcli-name">${escapeHtml(w.mission_id||w.id||'workspace')}</span>
+        <span class="hud-badge ${w.state==='live'?'active':''}">${escapeHtml(w.state||'')}</span>
+        ${w.deletable?'<span class="hud-badge">can be cleaned up</span>':''}
+      </div>
+      <div class="agentcli-sub">${escapeHtml(w.mode||'')}${w.branch?' · '+escapeHtml(w.branch):''}${w.base_revision?' · based on '+escapeHtml(String(w.base_revision).slice(0,10)):''}</div>
+    </div>`).join('');
+  }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
+}
+
+async function loadToolsView(){
+  const el=document.getElementById('toolsview-body'); if(!el) return;
+  try{
+    const r=await api('/tools');
+    if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load tools.')}</div>`; return; }
+    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[], unfit=fitness.filter(f=>!f.fit);
+    el.innerHTML =
+      (unfit.length
+        ? `<div class="card agentcli-card"><div class="agentcli-hd">
+             <span class="health-dot"></span><span class="agentcli-name">${unfit.length} of ${fitness.length} ants cannot use the model they are routed to</span></div>
+           <div class="agentcli-sub">${unfit.map(f=>escapeHtml(f.role)+' — '+escapeHtml((f.unmet||[]).join('; '))).join('<br>')}</div></div>`
+        : `<div class="card agentcli-card"><div class="agentcli-hd"><span class="health-dot ok"></span>
+             <span class="agentcli-name">All ${fitness.length} ants are routed to a capable model.</span></div></div>`)
+      + `<div class="card agentcli-card"><div class="agentcli-hd">
+           <span class="agentcli-name">${tools.length} tools registered</span></div>
+         <div class="agentcli-sub">${tools.map(t=>escapeHtml(t.name||t)).join(', ')||'None.'}</div></div>`;
+  }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
+}
+
+PAGE_ENTER['projects']=()=>loadProjects();
+PAGE_ENTER['toolsview']=()=>loadToolsView();
+document.getElementById('projects-reload')?.addEventListener('click',()=>loadProjects());
+document.getElementById('toolsview-reload')?.addEventListener('click',()=>loadToolsView());
+
+/* ── Coding agents (v3.8.39) ──────────────────────────────────────────────────────────────────
+ *
+ * Installable CLI agents the colony can delegate a turn to. Two facts are shown separately for
+ * every one, because they have different remedies and collapsing them prints the wrong
+ * instruction: whether it is INSTALLED on this host, and whether the operator has SIGNED IN to it.
+ *
+ * Anthill never holds the credential. The sign-in command is printed for the operator to run in
+ * their own terminal, under their own account, exactly as they would without Anthill — so there is
+ * nothing here to store, refresh or leak.
+ */
+function agentCliMsg(text, ok){
+  const el=document.getElementById('agentcli-msg'); if(!el) return;
+  el.style.display = text ? '' : 'none';
+  el.textContent = text || '';
+  el.style.color = ok ? 'var(--green)' : 'var(--red)';
+}
+
+async function loadAgentCli(force){
+  const list=document.getElementById('agentcli-list'); if(!list) return;
+  try{
+    const r=await api('/agents'+(force?'?refresh=true':''));
+    if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not read the agent list.')}</div>`; return; }
+    const d=r.data||{}, agents=d.agents||[];
+    if(!agents.length){ list.innerHTML='<div class="hud-state">No agents are catalogued in this build.</div>'; return; }
+
+    list.innerHTML = agents.map(a=>{
+      const installed=!!a.installed;
+      return `<div class="card agentcli-card">
+        <div class="agentcli-hd">
+          <!-- health-dot, not t-dot: t-dot's variants are severity names (info/warning/error) and
+               have no neutral member, so 'not installed' had nothing honest to render as. -->
+          <span class="health-dot ${installed?'ok':''}"></span>
+          <span class="agentcli-name">${escapeHtml(a.name||a.id)}</span>
+          <span class="agentcli-vendor">${escapeHtml(a.vendor||'')}</span>
+          ${installed?`<span class="hud-badge completed">Installed${a.version?' · '+escapeHtml(a.version):''}</span>`
+                     :`<span class="hud-badge">Not installed</span>`}
+          ${a.writes?`<span class="hud-badge pending" title="This agent edits files and runs commands. The colony confines it to a mission workspace.">Can make changes</span>`:''}
+        </div>
+        ${installed
+          ? `<div class="agentcli-sub">Sign in once in your own terminal if you have not already:
+               <code>${escapeHtml(a.auth_command||'')}</code></div>`
+          : `<div class="agentcli-sub">${escapeHtml(a.unavailable_reason||'Not found on this machine.')}</div>`}
+        <div class="agentcli-actions">
+          ${installed?'':(d.install_enabled
+            ? `<button class="btn btn-primary agentcli-install" data-agent="${escapeHtml(a.id)}">Install</button>`
+            : `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`)}
+          <a class="btn btn-ghost" href="${escapeHtml(a.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Bound after render, not inline: the console's CSP is script-src 'self' with no unsafe-inline,
+    // so an onclick attribute here would be silently dropped by the browser.
+    list.querySelectorAll('.agentcli-install').forEach(btn=>{
+      btn.addEventListener('click', ()=>installAgentCli(btn.dataset.agent, btn));
+    });
+  }catch(e){
+    list.innerHTML=`<div class="hud-state err">Could not read the agent list: ${escapeHtml(e.message||'')}</div>`;
+  }
+}
+
+async function installAgentCli(id, btn){
+  const agent=id||'';
+  if(!await uiConfirm('Install this agent on this machine?\n\nIt runs the vendor\'s install command '
+    + 'here and changes this host. You will still need to sign in to it yourself afterwards.')) return;
+  if(btn){ btn.disabled=true; btn.textContent='Installing…'; }
+  agentCliMsg('Installing — a package install can take a few minutes.', true);
+  try{
+    const r=await api('/agents/'+encodeURIComponent(agent)+'/install','POST');
+    if(r&&r.success){ agentCliMsg((r.message||'Installed.')+' '+((r.data&&r.data.next_step)||''), true); }
+    else{ agentCliMsg((r&&r.message)||'Install failed.', false); }
+  }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Install'; } loadAgentCli(true); }
+}
+
+document.getElementById('agentcli-reload')?.addEventListener('click',()=>loadAgentCli(true));
+
 async function onAntRecentToggle(det){
   if(!det.open || det.dataset.loaded) return;
   det.dataset.loaded='1';
@@ -4338,8 +4648,10 @@ function restoreLayout(){
       if(r && !canSee(r.vis)){ go('/dashboard',false); return; }
       go(PAGE_HOME[last],false); return;
     }
-    go('/dashboard',false);
-  }catch{ try{ showPage('overview'); }catch{} }
+    // v3.8.39: a first-time operator lands in the conversation rather than on a grid of
+    // widgets. Anyone with a remembered page keeps it — that branch is above and untouched.
+    go('/chat',false);
+  }catch{ try{ showPage('chat'); }catch{} }
 }
 
 // -- Card collapse --------------------------------------------------------------

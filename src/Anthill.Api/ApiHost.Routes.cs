@@ -661,5 +661,6 @@ public static partial class ApiHost
         MapAutonomyEndpoints(app);
         MapDashboardEndpoints(app);
         MapProviderEndpoints(app);
+        MapAgentEndpoints(app);   // v3.8.39: installable CLI agents — see ApiHost.Agents.cs
     }
 }
