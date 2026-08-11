@@ -68,6 +68,16 @@ jobs:
             -p:PublishSingleFile=true -p:DebugType=none \
             -o ./publish/linux-x64
 
+      # v0.3.8.43: the Windows desktop shell builds here even though it only RUNS on Windows
+      # (EnableWindowsTargeting). Outside Anthill.sln by the Anthill.UI rule, so this explicit
+      # build is what keeps it compiling; DesktopShellTests pins this step's existence.
+      - name: Build AnthillDesktop (win-x64 desktop shell, cross-targeted)
+        run: |
+          dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:DebugType=none \
+            -o ./publish/win-x64-desktop
+
       - name: Run the framework self-test harness
         run: |
           chmod +x ./publish/linux-x64/anthill

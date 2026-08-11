@@ -1202,38 +1202,38 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   line-height:1.5;max-height:180px;font-family:inherit;}
 .chat-input:focus{border-color:rgba(34,211,238,.45);}
 .chat-hint{font-size:9px;color:var(--dim);padding:6px 18px 12px;}
-/* v0.3.8.42: Chat + Colony — the live topology beside the conversation, wide enough to read.
-   The old fixed 400px strip squeezed a spatial map and vanished below 900px, which made the
-   Colony button a silent no-op on small screens. This pane defaults to ~45% of the page, is
-   resizable from its divider, and below 900px overlays the page full-width with its own close. */
+/* v0.3.8.43: Chat + Colony — the live topology as a full-page layer BEHIND the conversation,
+   per the SOW. The conversation floats above it as a readable frosted panel; the map stays
+   visible and interactive around it. Rebuilt on the two fixes found live in v0.3.8.42: the mount
+   is a flex column (#colony-canvas-area sizes itself with flex:1 — a plain block measured it
+   0×0), and the colony page's mission bar rides inside the canvas area and is hidden here (chat
+   is the canonical entry surface). */
 .chat-wrap{position:relative;}
-.chat-colony-pane{flex:0 0 var(--chat-colony-w,45%);min-width:340px;max-width:72%;display:flex;
+.chat-colony-layer{position:absolute;inset:0;z-index:0;display:flex;flex-direction:column;
   min-height:0;background:var(--bg);}
-.chat-colony-pane[hidden]{display:none;}
-.chat-colony-divider{width:6px;flex-shrink:0;cursor:col-resize;background:var(--border);
-  opacity:.6;transition:background var(--t),opacity var(--t);}
-.chat-colony-divider:hover,.chat-colony-divider:focus-visible,
-.chat-colony-divider.dragging{background:rgba(34,211,238,.5);opacity:1;outline:none;}
-.chat-colony-inner{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
-.chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;flex-shrink:0;
+.chat-colony-layer[hidden]{display:none;}
+.chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;flex-shrink:0;
   border-bottom:1px solid var(--border);background:var(--panel);}
 .ccb-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);flex-shrink:0;}
 .ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .ccb-spacer{flex:1;}
-/* #colony-canvas-area sizes itself with flex:1, so its host must be a flex column — as a plain
-   block the canvas measured 0×0 and the pane rendered an empty void (found live, v0.3.8.42). */
 .chat-colony-mount{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;}
-/* The colony page's own mission bar travels inside #colony-canvas-area. In the chat pane it would
-   be a SECOND composer beside the conversation's — chat is the canonical entry surface here. */
 .chat-colony-mount #mission-bar{display:none;}
-/* When the pane is open the rail yields first — conversation and colony are the point. */
+/* While the layer is open the conversation floats above it as a readable, high-contrast panel;
+   the rail yields the space and the topology stays interactive in the visible regions. */
 #page-chat.colony-open .chat-rail{display:none;}
-/* Narrow: a side-by-side split is unreadable. The pane overlays the page full-width; its own ✕
-   (and Escape) returns to the conversation with draft and scroll intact. */
-@media (max-width:900px){
-  .chat-rail{display:none;}
-  .chat-colony-pane{position:absolute;inset:0;z-index:2;min-width:0;max-width:none;}
-  .chat-colony-divider{display:none;}
+#page-chat.colony-open .chat-main{position:relative;z-index:1;flex:0 1 700px;max-width:94%;
+  margin:52px auto 16px;border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  box-shadow:0 10px 44px rgba(0,0,0,.55);}
+@supports not (background:color-mix(in srgb, red 50%, blue)){
+  #page-chat.colony-open .chat-main{background:var(--panel);} }
+/* Narrow: layering is unreadable. Colony mode becomes a clean full-screen switch — the layer's
+   own ✕ (and Escape) returns to the conversation with draft and scroll intact. */
+@media (max-width:900px){ .chat-rail{display:none;} }
+@media (max-width:640px){
+  #page-chat.colony-open .chat-main{display:none;}
 }
 
 /* v0.3.8.40: the escalation gate in the thread. Amber, not red — the colony is asking, not failing. */
@@ -3062,6 +3062,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            watch rather than by default. -->
       <div class="page" id="page-chat">
         <div class="chat-wrap">
+          <!-- v0.3.8.43: the live colony as a full-page layer BEHIND the conversation — the SOW's
+               required presentation, rebuilt on the fixes the first attempt lacked (flex-column
+               mount, the colony page's mission bar hidden in this context). The canonical canvas
+               (#colony-canvas-area) is re-parented into #chat-colony-mount: same node, listeners
+               and camera as the Colony page; one renderer, one subscription lifecycle. -->
+          <div class="chat-colony-layer" id="chat-colony-layer" hidden aria-label="Live colony view">
+            <div class="chat-colony-bar">
+              <span class="ccb-title">Colony — live</span>
+              <span class="ccb-mission" id="chat-colony-mission" aria-live="polite"></span>
+              <span class="ccb-spacer"></span>
+              <button class="btn btn-ghost" id="chat-colony-fit" title="Fit the colony back into view">⌖ Fit view</button>
+              <button class="btn btn-ghost" id="chat-colony-full" title="Open the dedicated Colony page">Open full Colony</button>
+              <button class="btn btn-ghost" id="chat-colony-close" title="Hide the colony view" aria-label="Hide the colony view">✕</button>
+            </div>
+            <div id="chat-colony-mount" class="chat-colony-mount"></div>
+          </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
             <div class="chat-rail-hd">Conversations</div>
@@ -3106,26 +3122,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="chat-hint">Enter sends a message · ⚒ asks the colony to do the work (your approval policy applies)</div>
           </main>
 
-          <!-- v0.3.8.42: the live colony beside the conversation, at a width where the map is
-               actually readable. The canonical canvas (#colony-canvas-area) is re-parented into
-               #chat-colony-mount — same node, same listeners, same state as the Colony page; one
-               renderer, one subscription lifecycle. The divider resizes the split; below 900px the
-               pane overlays the page full-width with its own close. -->
-          <aside class="chat-colony-pane" id="chat-colony-layer" hidden aria-label="Live colony view">
-            <div class="chat-colony-divider" id="chat-colony-divider" role="separator"
-                 aria-orientation="vertical" aria-label="Resize the colony view" tabindex="0"
-                 title="Drag to resize · arrow keys work too"></div>
-            <div class="chat-colony-inner">
-              <div class="chat-colony-bar">
-                <span class="ccb-title">Colony — live</span>
-                <span class="ccb-mission" id="chat-colony-mission" aria-live="polite"></span>
-                <span class="ccb-spacer"></span>
-                <button class="btn btn-ghost" id="chat-colony-full" title="Open the dedicated Colony page">Open full Colony</button>
-                <button class="btn btn-ghost" id="chat-colony-close" title="Hide the colony view" aria-label="Hide the colony view">✕</button>
-              </div>
-              <div id="chat-colony-mount" class="chat-colony-mount"></div>
-            </div>
-          </aside>
         </div>
       </div>
 

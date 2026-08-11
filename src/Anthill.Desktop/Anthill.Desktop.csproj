@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- v0.3.8.43 — the Windows desktop shell: the same colony, the same console, in a native
+       window. One WebView2 over the API the CLI already hosts; no second UI, no Electron, no new
+       toolchain (UI-ALIGNMENT-BRIEF §0). Deliberately OUTSIDE Anthill.sln, the same rule as
+       Anthill.UI: it is a packaging artifact of the console, and putting a Windows-targeted exe in
+       the cross-platform solution would tax every build for a project only the win-x64 publish
+       needs. It cannot rot invisibly for the same reason the node suite cannot: CI and
+       scripts/validate build it by name, and DesktopShellTests pins that wiring. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Lets a Linux host compile and publish the Windows shell; running it still needs Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Anthill.Desktop</RootNamespace>
+    <AssemblyName>AnthillDesktop</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <!-- The API host runs IN-PROCESS (boot-or-attach; see Program.cs), so the shell needs the same
+       shared framework the CLI's -api path needs. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anthill.Core\Anthill.Core.csproj" />
+    <ProjectReference Include="..\Anthill.Api\Anthill.Api.csproj" />
+    <!-- Composition root, exactly as the CLI: modules are wired here, never referenced by core. -->
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
+  </ItemGroup>
+
+</Project>

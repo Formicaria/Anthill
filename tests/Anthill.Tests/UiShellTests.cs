@@ -1033,11 +1033,11 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.42: Chat + Colony is a resizable pane BESIDE the conversation, and it reuses the
-    /// canonical topology. The properties pinned here are the ones that made the old side panel
-    /// wrong: a fixed 400px strip that squeezed a spatial map and vanished below 900px, and the
-    /// standing risk of a second canvas. One canvas element, one mount mechanism (re-parenting),
-    /// the pane in the page, the old strip gone.
+    /// v0.3.8.43: Chat + Colony is a full-page layer BEHIND the conversation (the SOW's required
+    /// presentation), the chat floating above it as a frosted, readable panel, and it reuses the
+    /// canonical topology. The properties pinned here are the ones that made every earlier shape
+    /// wrong somewhere: a second canvas, a 0×0 mount, a stowaway composer, a silent no-op below
+    /// 900px. One canvas element, one mount mechanism (re-parenting), the layer in the page.
     /// </summary>
     [Fact]
     public void ChatColony_IsALayer_ReusingTheOneCanvas()
@@ -1082,13 +1082,26 @@ public class UiShellTests
         // second composer beside the conversation's. Chat is the canonical entry surface.
         Assert.Contains(".chat-colony-mount #mission-bar{display:none;}", html);
 
-        // The pane is resizable from a real, keyboard-reachable divider…
-        Assert.Contains("id=\"chat-colony-divider\"", html);
-        Assert.Contains("chat-colony-divider')", js);
-        // …and on narrow screens it overlays full-width instead of shrinking into a strip. The
-        // old panel's failure mode was display:none below 900px — a silent no-op button.
-        Assert.Contains(".chat-colony-pane{position:absolute;inset:0;", html);
-        Assert.DoesNotContain(".chat-colony-pane{display:none", html);
+        // The layer sits BEHIND the conversation, which floats above it as a frosted panel.
+        Assert.Contains(".chat-colony-layer{position:absolute;inset:0;z-index:0;", html);
+        Assert.Contains("#page-chat.colony-open .chat-main{position:relative;z-index:1;", html);
+        Assert.Contains("backdrop-filter", html);
+        // The old side pane and its divider are gone — the SOW's closing clause, honored.
+        Assert.DoesNotContain("chat-colony-divider", html);
+        Assert.DoesNotContain("chat-colony-pane", html);
+        Assert.DoesNotContain("chat-colony-divider", js);
+
+        // Panning that loses the colony has an obvious way home, wired to the canonical reset.
+        Assert.Contains("id=\"chat-colony-fit\"", html);
+        Assert.Contains("colonyResetView", BodyOf(js, "document.getElementById('chat-colony-fit')?.addEventListener('click', ()=>"));
+
+        // Reduced motion is honored at the render loop: idle + reduced → 4fps; real work → full
+        // rate, because at that point the motion IS the information.
+        Assert.Contains("prefers-reduced-motion", js);
+        Assert.Contains("REDUCED_MOTION && !colonyRunning", BodyOf(js, "function loop(ts)"));
+
+        // Mobile is a clean switch, not a miniature unusable graph under the thread.
+        Assert.Contains("#page-chat.colony-open .chat-main{display:none;}", html);
     }
 
     /// <summary>

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.42
+**Current version:** v0.3.8.43
 
 **Runs on:** Windows or Linux
 
@@ -55,6 +55,19 @@ and you can choose a different model that better fits your hardware.
 
 ## Windows quick start
 
+**The desktop app.** `AnthillDesktop.exe` is ANTHILL as a native Windows application — the same
+colony and the same console the server install runs, in its own window instead of a browser tab.
+Start it and it boots the colony in-process; if an ANTHILL server is already running on this
+machine it attaches to that one instead of starting a second colony. It needs the Microsoft Edge
+WebView2 Runtime, which Windows 11 and updated Windows 10 already include (otherwise:
+[aka.ms/webview2](https://aka.ms/webview2)). Build it from source with:
+
+```powershell
+dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish/win-x64-desktop
+```
+
+The steps below are the browser-based server install; the desktop app replaces steps 3–4 only.
+
 ### 1. Install Ollama
 
 Download and install [Ollama for Windows](https://ollama.com/download/windows).
@@ -70,7 +83,7 @@ If PowerShell says `ollama` is not recognized, close PowerShell, open it again, 
 ### 2. Download ANTHILL
 
 Download
-[`anthill-0.3.8.41-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.41/anthill-0.3.8.41-win-x64.zip)
+[`anthill-0.3.8.43-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.43/anthill-0.3.8.43-win-x64.zip)
 and extract it somewhere permanent, such as:
 
 ```text
@@ -123,8 +136,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.41/anthill-0.3.8.41-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.41-linux-x64.tar.gz
+curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.43/anthill-0.3.8.43-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.43-linux-x64.tar.gz
 chmod +x anthill
 ```
 
