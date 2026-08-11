@@ -1195,12 +1195,18 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-welcome{margin:auto;max-width:460px;text-align:center;color:var(--muted);}
 .chat-welcome h2{font-size:17px;color:var(--text);margin:0 0 10px;font-weight:700;}
 .chat-welcome p{font-size:12px;line-height:1.6;margin:0;}
-.chat-turn{max-width:min(760px,92%);font-size:12px;line-height:1.6;white-space:pre-wrap;
-  padding:10px 13px;border-radius:9px;}
+/* v0.3.8.47 (operator: "the chat bubbles look like shit"): a bubble is as wide as what it says.
+   fit-content sizes to the message; the max keeps long answers readable; min keeps the header row
+   (speaker · time · copy) from crushing one-word bubbles. */
+.chat-turn{width:fit-content;max-width:min(760px,92%);font-size:12px;
+  line-height:1.6;white-space:pre-wrap;padding:10px 13px;border-radius:9px;}
 .chat-turn.user{align-self:flex-end;background:rgba(34,211,238,.10);border:1px solid rgba(34,211,238,.22);color:var(--text);}
 .chat-turn.colony{align-self:flex-start;background:var(--panel);border:1px solid var(--border);color:var(--muted);}
-.chat-turn .who{display:block;font-size:9px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--dim);margin-bottom:5px;}
+/* v0.3.8.47: the header is ONE quiet line — name, time, cost, actions — flex so nothing stacks
+   or injects height. Bubbles hug their text; the header never exceeds it visually. */
+.chat-turn .who{display:flex;align-items:center;gap:7px;font-size:9px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:4px;white-space:nowrap;}
+.chat-turn .who .chat-when,.chat-turn .who .chat-tok{margin-left:0;}
 /* v0.3.8.42 (§13): per-message copy — quiet until the message is hovered or the control focused. */
 .chat-copy{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;
   padding:0 4px;opacity:0;transition:opacity var(--t);vertical-align:middle;}
@@ -1285,6 +1291,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* v0.3.8.46: token count, only when the provider reported one. */
 .chat-tok{font-size:9px;color:var(--dim);font-weight:400;margin-left:6px;border:1px solid var(--border);
   border-radius:3px;padding:0 4px;}
+/* v0.3.8.47: attachments — chips on the composer, a quiet listing on the turn, drop highlight. */
+.attach-chips{display:flex;flex-wrap:wrap;gap:5px;width:100%;}
+.attach-chips:empty{display:none;}
+.attach-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);
+  border:1px solid var(--border);border-radius:5px;padding:3px 7px;background:var(--bg);}
+.attach-size{color:var(--dim);font-size:9px;}
+.attach-x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:10px;padding:0 2px;}
+.attach-x:hover{color:var(--text);}
+.chat-composer{flex-wrap:wrap;}
+.chat-composer.dragging{outline:2px dashed rgba(34,211,238,.5);outline-offset:-4px;border-radius:8px;}
+.turn-attach{margin-top:6px;font-size:10px;color:var(--dim);border-top:1px dashed var(--border);padding-top:5px;}
 /* v0.3.8.46: syntax highlighting — four token classes, tuned quiet against the dark panel. */
 .chat-code .hl-k{color:#c084fc;}
 .chat-code .hl-s{color:#86efac;}
@@ -2815,6 +2832,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
             <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
+            <!-- v0.3.8.47: the self-improvement seed. One click fills the form with a standing
+                 objective aimed at ANTHILL's own codebase — the Director turns it into missions
+                 through the same plan → patch → tester/soldier → verification → approval pipeline
+                 every mission uses. Nothing new is claimed; the colony's machinery points at itself. -->
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" id="obj-seed-improve" title="Fill the form with a standing self-improvement objective aimed at ANTHILL's own code">🐜 Seed: improve ANTHILL</button></div>
           </div>
           <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
         </div>
@@ -3173,6 +3195,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
+            <!-- v0.3.8.47: import — the inverse of export. A JSON file of {title, turns:[{role,content}]}. -->
+            <button class="btn btn-ghost" id="chat-import" title="Import a conversation from a JSON file">⇪ Import</button>
+            <input type="file" id="chat-import-file" accept=".json,application/json" hidden>
             <label class="sr-only" for="chat-search">Search conversations</label>
             <input class="chat-search" id="chat-search" type="search"
                    placeholder="Search title and messages…" autocomplete="off">
@@ -3206,6 +3231,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
 
             <div class="chat-composer">
+              <!-- v0.3.8.47: attachments — 📎 or drop files here; chips show what rides the next message. -->
+              <div id="chat-attach-chips" class="attach-chips"></div>
+              <button class="btn btn-ghost" id="chat-attach" title="Attach text files to your next message">📎</button>
+              <input type="file" id="chat-attach-file" multiple accept=".txt,.md,.json,.js,.cs,.py,.html,.css,.yml,.yaml,.xml,.csv,.log,.sh,.sql,text/*" hidden>
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
                         placeholder="Describe what you want done…"></textarea>
@@ -3227,14 +3256,41 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            destination. A "project" is the isolated checkout a mission works in; the colony's rule is
            that the active tree is never an agent scratchpad, so this is where the work actually
            happens and an operator should be able to find it without customising a dashboard. -->
+      <!-- v0.3.8.47: real Projects. One is created with every new conversation; this page also
+           creates them by hand — name, markdown purpose (standing context for its conversations),
+           optional working-directory path. The mission-workspace checkouts report stays below:
+           those are the isolated checkouts missions physically work in. -->
       <div class="page page-scroll" id="page-projects">
         <div class="page-hdr">
           <div>
-            <h1>Mission Workspaces</h1>
-            <div class="sub">Each mission that changes files works in its own isolated checkout. Nothing here touches your live files until you approve a change.</div>
+            <h1>Projects</h1>
+            <div class="sub">Long-lived containers: each conversation lives in one, with its missions and history. The purpose you write here travels with every message in the project.</div>
           </div>
-          <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" id="project-new-btn">＋ New project</button>
+            <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
+          </div>
         </div>
+        <div class="card" id="project-new-form" hidden style="margin-bottom:12px;">
+          <div style="padding:12px;display:flex;flex-direction:column;gap:8px;">
+            <label class="sr-only" for="project-new-name">Project name</label>
+            <input class="provider-input" id="project-new-name" placeholder="Project name" maxlength="120">
+            <label class="sr-only" for="project-new-desc">Purpose (markdown)</label>
+            <textarea class="provider-input" id="project-new-desc" rows="4"
+              placeholder="What is this project for? Markdown welcome — this travels with every conversation in the project."></textarea>
+            <label class="sr-only" for="project-new-path">Working directory (optional)</label>
+            <input class="provider-input" id="project-new-path"
+              placeholder="Optional: a working directory path ANTHILL should know about (e.g. /home/you/repos/thing)">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-primary" id="project-new-create">Create project</button>
+              <button class="btn btn-ghost" id="project-new-cancel">Cancel</button>
+              <span class="save-msg text-green" id="project-new-msg"></span>
+            </div>
+          </div>
+        </div>
+        <div id="project-cards"><div class="hud-state">Loading…</div></div>
+        <h2 style="font-size:12px;margin:18px 0 8px;color:var(--muted);">Mission workspace checkouts</h2>
+        <div class="sub" style="margin-bottom:8px;">Each mission that changes files works in its own isolated checkout. Nothing here touches your live files until you approve a change.</div>
         <div id="projects-list"><div class="hud-state">Loading…</div></div>
       </div>
 

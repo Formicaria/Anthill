@@ -412,6 +412,37 @@ public sealed class ConversationRequest
     public string? Role { get; set; }
     /// <summary>ask | autoapprove | bypass. Recorded with its author when it is not ask.</summary>
     public string? Policy { get; set; }
+    /// <summary>v0.3.8.47: an existing project to join. Absent = a new project is created.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("project_id")]
+    public string? ProjectId { get; set; }
+}
+
+public sealed class AttachmentBody
+{
+    public string? Filename { get; set; }
+    public string? Content { get; set; }
+}
+
+/// <summary>v0.3.8.47: import a transcript. Turns become history; nothing is invented for them.</summary>
+public sealed class ImportRequest
+{
+    public string? Title { get; set; }
+    public List<ImportTurn>? Turns { get; set; }
+}
+public sealed class ImportTurn
+{
+    public string? Role { get; set; }
+    public string? Content { get; set; }
+}
+
+/// <summary>v0.3.8.47: create or update a project. Null fields on PATCH mean "leave unchanged".</summary>
+public sealed class ProjectRequest
+{
+    public string? Name { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("description_md")]
+    public string? DescriptionMd { get; set; }
+    public string? Path { get; set; }
+    public bool? Archived { get; set; }
 }
 
 /// <summary>v3.7.0: one turn, with the operator's answers for anything it needs permission to do.</summary>
@@ -422,6 +453,8 @@ public sealed class TurnRequest
     public string? Mode { get; set; }
     /// <summary>Action name to "approve". Absence is NOT consent.</summary>
     public Dictionary<string, string>? Answers { get; set; }
+    /// <summary>v0.3.8.47: text files handed to this turn. Capped and text-only, enforced loudly.</summary>
+    public List<AttachmentBody>? Attachments { get; set; }
     /// <summary>v0.3.8.44: deliver the reply as SSE deltas while it is produced. The recorded turn
     /// and the final outcome are identical either way — streaming is presentation, not contract.</summary>
     public bool Stream { get; set; }

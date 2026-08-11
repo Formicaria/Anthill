@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows.Forms;
 using Anthill.Core.Configuration;
 using Microsoft.Web.WebView2.WinForms;
@@ -24,6 +25,13 @@ internal sealed class ShellForm : Form
         Text = "Starting the colony…",
     };
 
+    // v0.3.8.47: the tray. Minimize sends Anthill there instead of the taskbar; the icon's menu
+    // reopens or quits; a balloon says where the window went the first time so nobody thinks the
+    // colony died. Closing the WINDOW still quits — hijacking the X into "secretly keep running"
+    // is desktop behaviour people rightly hate; the tray is where MINIMIZE goes, by choice.
+    private readonly NotifyIcon _tray = new();
+    private bool _trayBalloonShown;
+
     public ShellForm()
     {
         Text = $"Anthill v{AnthillRuntime.Version}";
@@ -32,8 +40,82 @@ internal sealed class ShellForm : Form
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(_status);
-        Load += (_, _) => BeginBoot();
+
+        _tray.Icon = Icon ?? SystemIcons.Application;
+        _tray.Text = $"Anthill v{AnthillRuntime.Version}";
+        _tray.Visible = true;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Open Anthill", null, (_, _) => RestoreFromTray());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Quit", null, (_, _) => { _tray.Visible = false; Application.Exit(); });
+        _tray.ContextMenuStrip = menu;
+        _tray.DoubleClick += (_, _) => RestoreFromTray();
+
+        Resize += (_, _) =>
+        {
+            if (WindowState != FormWindowState.Minimized) return;
+            Hide();
+            if (_trayBalloonShown) return;
+            _trayBalloonShown = true;
+            _tray.BalloonTipTitle = "Anthill is still running";
+            _tray.BalloonTipText = "The colony keeps working in the tray. Double-click the ant to reopen.";
+            _tray.ShowBalloonTip(4000);
+        };
+        FormClosed += (_, _) => _tray.Visible = false;
+
+        Load += (_, _) => { BeginBoot(); BeginUpdateCheck(); };
     }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    /// <summary>
+    /// v0.3.8.47 — the update check: ASK GitHub, TELL the operator, change NOTHING. One request at
+    /// startup, comparing the latest release tag to this build; a newer one adds a tray menu item
+    /// that opens the release page in the default browser. No download, no silent install — an
+    /// update the operator did not choose is the desktop failure mode this product exists to avoid.
+    /// Failure is silence: an offline machine must not see errors about a convenience.
+    /// </summary>
+    private void BeginUpdateCheck() =>
+        new Thread(() =>
+        {
+            try
+            {
+                using var http = new HttpClient();
+                http.Timeout = TimeSpan.FromSeconds(10);
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("AnthillDesktop/" + AnthillRuntime.Version);
+                var json = http.GetStringAsync(
+                    "https://api.github.com/repos/thexonexone/operation-anthill/releases/latest")
+                    .GetAwaiter().GetResult();
+                var tag = System.Text.Json.JsonDocument.Parse(json)
+                    .RootElement.GetProperty("tag_name").GetString() ?? "";
+                var latest = tag.TrimStart('v');
+                if (string.IsNullOrWhiteSpace(latest)
+                    || !Version.TryParse(latest, out var them)
+                    || !Version.TryParse(AnthillRuntime.Version, out var us)
+                    || them <= us) return;
+
+                BeginInvoke(() =>
+                {
+                    var item = new ToolStripMenuItem($"Update available: v{latest} — open release page");
+                    item.Click += (_, _) => System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(
+                            $"https://github.com/thexonexone/operation-anthill/releases/tag/{tag}")
+                        { UseShellExecute = true });
+                    _tray.ContextMenuStrip!.Items.Insert(0, item);
+                    _tray.BalloonTipTitle = $"Anthill v{latest} is available";
+                    _tray.BalloonTipText = "You are on v" + AnthillRuntime.Version
+                        + ". Right-click the tray icon to open the release page. Nothing installs itself.";
+                    _tray.ShowBalloonTip(6000);
+                });
+            }
+            catch (Exception error) { DesktopLog.Write("update-check: " + error.Message); }
+        })
+        { IsBackground = true, Name = "anthill-update-check" }.Start();
 
     private void BeginBoot() =>
         // The boot runs off the UI thread; the window narrates it. BeginInvoke marshals every
