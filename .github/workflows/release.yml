@@ -79,6 +79,16 @@ jobs:
             -p:PublishSingleFile=true -p:DebugType=none \
             -o ./publish/${{ matrix.rid }}
 
+      # v0.3.8.44: the Windows archive carries the DESKTOP APP beside the server binary — one
+      # download, both shapes of the product. Cross-compiled here exactly as CI already proves.
+      - name: Publish AnthillDesktop (win-x64 only)
+        if: matrix.rid == 'win-x64'
+        run: |
+          dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:DebugType=none \
+            -o ./publish/win-x64
+
       - name: Package archive
         run: |
           VERSION="${{ needs.verify-version.outputs.version }}"

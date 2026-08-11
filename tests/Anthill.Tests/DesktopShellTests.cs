@@ -36,6 +36,43 @@ public class DesktopShellTests
         Assert.Contains("Mutex", program);
     }
 
+    /// <summary>
+    /// v0.3.8.44 — the first field failure, pinned so it cannot return. The report was "click and
+    /// nothing happens": the runtime's default bind (0.0.0.0) was refused by the security posture,
+    /// the refusal printed to a console a WinExe does not have, and the process waited blind then
+    /// died faceless. Three mechanisms now stand where those three failures were.
+    /// </summary>
+    [Fact]
+    public void TheFirstFieldFailure_CannotReturn()
+    {
+        var program = Read("src", "Anthill.Desktop", "Program.cs");
+
+        // A local window binds loopback by default — the desktop twin of `--host 127.0.0.1`.
+        // Config/env still win: only an UNSET host is defaulted.
+        Assert.Contains("ANTHILL_HOST", program);
+        Assert.Contains("127.0.0.1", program);
+
+        // Everything the host prints survives to be read, and failures quote it.
+        Assert.Contains("DesktopLog.Attach()", program);
+        Assert.Contains("DesktopLog.Tail()", program);
+
+        // No blind wait: a host that exits or crashes is reported NOW, with its exit code.
+        Assert.Contains("if (!api.IsAlive)", program);
+
+        // No silent death at any frame.
+        Assert.Contains("FATAL", program);
+
+        // And the window exists from the first moment, narrating the boot.
+        var form = Read("src", "Anthill.Desktop", "ShellForm.cs");
+        Assert.Contains("Starting the colony", form);
+        Assert.Contains("ShowFailure", form);
+
+        // The packaging half: WebView2's native loader cannot load from inside a single-file
+        // bundle; self-extraction is what makes the published exe capable of opening a window.
+        Assert.Contains("<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>",
+            Read("src", "Anthill.Desktop", "Anthill.Desktop.csproj"));
+    }
+
     [Fact]
     public void TheProbe_ChecksForAnthill_NotMerelyForAServer()
     {
@@ -70,6 +107,10 @@ public class DesktopShellTests
             Read(".github", "workflows", "ci.yml"));
         Assert.Contains("src/Anthill.Desktop/Anthill.Desktop.csproj",
             Read("scripts", "validate.ps1"));
+        // v0.3.8.44: and the RELEASE ships it — the Windows archive carries the desktop app
+        // beside the server binary, so "download Anthill for Windows" means both shapes.
+        Assert.Contains("src/Anthill.Desktop/Anthill.Desktop.csproj",
+            Read(".github", "workflows", "release.yml"));
         // And deliberately not in the solution — if it moves in, this test is the reminder to
         // remove the now-redundant explicit builds rather than run three.
         Assert.DoesNotContain("Anthill.Desktop", Read("Anthill.sln"));

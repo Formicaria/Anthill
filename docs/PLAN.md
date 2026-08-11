@@ -1,7 +1,13 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.43** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.44** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.44: chat answers ARRIVE as they are produced — a real streaming contract from SDK to
+> provider to SSE to console, with abort reaching the model call — and the desktop app's first
+> field failure was fixed at all three of its layers (loopback default, a log with the host's
+> words, native-library self-extraction) with the Windows release archive now carrying
+> `AnthillDesktop.exe` beside the server binary.
 
 > v0.3.8.43 adds the two shapes the product had been promised: **AnthillDesktop**, the colony in a
 > native Windows window (one WebView2 over the same in-process API — a window onto the colony,
