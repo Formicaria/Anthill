@@ -75,6 +75,9 @@ public class ConsoleRouteCoverageTests
         ["/source-quality"] = "UI GAP — research source-quality trails are recorded and never shown; "
                             + "relates to the pheromone surface, which also has no operator view",
         ["/shadow/judge"] = "UI GAP — shadow-mode judgments are recorded and not surfaced",
+        ["/missions/plan"] = "UI GAP — the dry-run plan preview lost its only surface when the "
+                           + "dashboard composer retired (v0.3.8.42 §3: chat is the one mission "
+                           + "entry). The capability was not removed; Chat should grow a preview step",
     };
 
     /// <summary>Every route literal the API maps, normalised so `{id}` segments compare.</summary>

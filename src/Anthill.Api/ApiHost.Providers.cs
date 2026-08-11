@@ -303,9 +303,18 @@ public static partial class ApiHost
                         {
                             ["role"] = f.RoleId,
                             ["provider"] = f.Provider,
+                            // The EFFECTIVE model — what a call would really use. v0.3.8.41. This
+                            // reported the CONFIGURED model, which is empty when nobody has chosen
+                            // one, so the console showed `ollama:` and listed capabilities that
+                            // empty string lacked.
                             ["model"] = f.Model,
                             ["fit"] = f.Fit,
                             ["unmet"] = f.Unmet,
+                            // Null unless the route cannot resolve at all. A consumer must show this
+                            // INSTEAD of `unmet`: "choose a model" and "your model lacks structured
+                            // output" are different problems, and the second is false when the first
+                            // is true.
+                            ["unresolved"] = f.Unresolved,
                         }).ToList(),
             });
         });
@@ -471,6 +480,11 @@ public static partial class ApiHost
                 ["did"] = state.Did,
                 ["waiting_on"] = state.WaitingOn,
                 ["needs_operator"] = state.NeedsOperator,
+                // v0.3.8.42: the LIST projected this and the DETAIL did not, so the chat page had
+                // to guess from the prose — and Doing() answers "cancelled" as a STRING, which a
+                // truthiness check renders as "Working…", keeps a live Stop over a stopped
+                // conversation, and overwrites refusal summaries. State travels as state.
+                ["cancelled"] = state.Cancelled,
                 ["policy"] = state.Policy.ToString().ToLowerInvariant(),
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>

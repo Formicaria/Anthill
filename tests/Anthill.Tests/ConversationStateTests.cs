@@ -58,6 +58,55 @@ public class ConversationStateTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.42: "conversational work" used to be the answer FOREVER once any turn existed —
+    /// replies are produced synchronously inside the turn, so a persistent working state was a
+    /// claim about work this reader could never see, and the console rendered it as an eternal
+    /// spinner. An answered conversation is idle, and idle is spelled "".
+    /// </summary>
+    [Fact]
+    public void AnAnsweredConversation_IsIdle_NotEternallyWorking()
+    {
+        Chat();
+        _memory.SaveConversationTurn(new ConversationTurn("t1", "c1", 1, "user", "hello"));
+        _memory.SaveConversationTurn(new ConversationTurn("t2", "c1", 2, "assistant", "hi") { Provider = "local", Model = "llama" });
+
+        Assert.Equal("", Read().Doing);
+    }
+
+    /// <summary>An operator turn with no reply after it is the one persistent state worth naming:
+    /// it means the answer failed or was interrupted, and the operator should see that.</summary>
+    [Fact]
+    public void AnUnansweredLastMessage_IsNamed()
+    {
+        Chat();
+        _memory.SaveConversationTurn(new ConversationTurn("t1", "c1", 1, "user", "hello"));
+
+        Assert.Contains("unanswered", Read().Doing);
+    }
+
+    /// <summary>
+    /// v0.3.8.42, found by the live walkthrough: a linked mission read "running" FOREVER — the
+    /// exact stored-status lie this class's own doc warns about, computed once and never
+    /// re-checked. The canonical evaluation is written when a mission settles; its absence means
+    /// the work is genuinely in flight, and its presence means the claim must stop.
+    /// </summary>
+    [Fact]
+    public void ASettledMission_IsNoLongerClaimedRunning()
+    {
+        Save(Chat() with { MissionIds = new[] { "m-settled" } });
+        Assert.Equal("running mission m-settled", Read().Doing);   // no evaluation yet: in flight
+
+        _memory.SaveMission(new Anthill.Core.Domain.Mission { Id = "m-settled", Goal = "walkthrough" });
+        _memory.SaveMissionEvaluation(new Anthill.Core.Outcomes.MissionEvaluation(
+            MissionId: "m-settled", OutcomeCode: "completed_verified", StructuralStatus: "complete",
+            VerificationStatus: "verified", DeliverableStatus: "delivered", StopReason: null,
+            EvaluatorVersion: "test", EvaluatedAt: DateTime.UtcNow.ToString("o"),
+            Explanation: "settled in test"));
+
+        Assert.Equal("", Read().Doing);
+    }
+
+    /// <summary>
     /// The state that matters most: work stopped, and it stopped because it needs a human. This is
     /// the one condition where nothing moves until the operator acts, so it is a first-class
     /// property rather than something a UI has to infer.

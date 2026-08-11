@@ -280,7 +280,6 @@ function enterApp(){
   setupEl.style.display='none';
   document.getElementById('app-shell').classList.remove('hidden');
   applyRoleVisibility();
-  enableInput(true);
   if(!pollingStarted){ pollingStarted=true; startPolling(); }
   startEventStream();   // v3.8.3: live push alongside the pollers, not instead of them yet
   // Restore nav collapse state
@@ -397,10 +396,10 @@ function applyRoleVisibility(){
 // deep-linkable routes, breadcrumbs, and contextual sub-navigation for the grouped domains.
 const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
-  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
-  activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
+  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
+  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Agents', chat:'Chat', projects:'Projects', toolsview:'Tools'   // v3.8.39: installable CLI agents; chat-first surface
+  agentcli:'Coding Agents', chat:'Chat', projects:'Mission Workspaces', toolsview:'Tools'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -417,7 +416,12 @@ PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony
 PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli();
   if(typeof refreshAgentCatalog==='function') refreshAgentCatalog(); };
 PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
-  if(!lastAgentCatalog && typeof refreshAgentCatalog==='function') refreshAgentCatalog();
+  // v0.3.8.42: re-entering Chat restores the colony layer's mount if it was open when the
+  // operator left — the Colony page legitimately reclaims the canvas on its own entry, so Chat
+  // must reclaim it on its. chatColonyOpen is declared later in the script; page entry only ever
+  // fires after the whole script has run.
+  if(typeof chatColonyOpen!=='undefined'&&chatColonyOpen&&typeof topologyMountTo==='function') topologyMountTo('chat');
+  if(typeof lastAgentCatalog!=='undefined'&&!lastAgentCatalog && typeof refreshAgentCatalog==='function') refreshAgentCatalog();
   document.getElementById('chat-input')?.focus(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
@@ -427,9 +431,10 @@ const IAICON = {
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>',
   projects:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   tools:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/></svg>',
-  scheduled:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  // v0.3.8.42 (§7): the monitoring icon retired with its domain.
+  // v0.3.8.41: a target, not a clock. The clock was the tell — see the IA entry below.
+  objectives:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg>',
   dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
-  monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
   infrastructure:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>',
   colony:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>',
@@ -444,33 +449,48 @@ const IA = [
   // v0.3.8.40: the top row. Each promotes an existing surface that was only reachable as a
   // dashboard widget an operator had to know to enable — Projects are mission workspaces, Tools is
   // the capability report, Scheduled is the Director's standing objectives. No new backend.
-  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  // v0.3.8.42 (§5 of the truthfulness audit): "Projects" implied project management the backend
+  // does not have. The backend concept is a mission workspace — the isolated checkout a mission
+  // works in — so the surface now says that. Route unchanged; bookmarks keep working.
+  { type:'item', id:'projects', label:'Mission Workspaces', route:'/projects', page:'projects', vis:'all' },
   { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
-  { type:'item', id:'scheduled', label:'Scheduled', route:'/scheduled', page:'objboard', vis:'admin' },
+  // v0.3.8.41/42 — was `Scheduled` at `/scheduled`, and neither word was true.
+  //
+  // ANTHILL HAS NO SCHEDULING SUBSYSTEM. There is no cron, no interval, no next-run and no cadence
+  // anywhere in the objective model, the Director, or the API. An operator clicking "Scheduled"
+  // was promised a feature that does not exist, and the console said so itself one click later —
+  // PAGE_TITLES already names this page `Objectives`, and the icon was a clock.
+  //
+  // Both branches of this release fixed it independently; this is the union. The top-row
+  // promotion stays with the truthful label on the CANONICAL route (v0.3.8.40 promoted it because
+  // standing objectives were reachable only as a hidden dashboard widget — that was right, the
+  // label was not), and old `/scheduled` bookmarks resolve through ROUTE_ALIAS.
+  { type:'item', id:'objectives', label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
-  { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
-    { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
-      { label:'All', route:'/monitoring/activity', page:'activity', vis:'all' },
-      { label:'Events', route:'/monitoring/activity/events', page:'events', vis:'all' },
-      { label:'Mission Results', route:'/monitoring/activity/results', page:'results', vis:'all' },
-      { label:'Changes', route:'/monitoring/activity/changes', page:'patches', vis:'admin' },
-      { label:'Autonomous Runs', route:'/monitoring/activity/runs', page:'autonomy', vis:'admin' },
-      { label:'Infra Changes', route:'/monitoring/activity/infra', page:'homelab', hlsub:'activity', vis:'hl' },
-    ]},
-    { label:'Alerts', route:'/monitoring/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
-  ]},
+  // v0.3.8.42 (§7): the Monitoring domain dissolved — every section in it was a second door to a
+  // concept that already had a home. Activity/Events/Results live with Missions, whose activity
+  // they are; the Changes tab duplicated Operations → Changes & Approvals; "Autonomous Runs"
+  // opened the Director page under a second name; the two homelab views moved home to
+  // Infrastructure. Old /monitoring/* bookmarks resolve through ROUTE_ALIAS below.
   { type:'domain', id:'operations', label:'Operations', vis:'all', sections:[
     { label:'Missions', route:'/operations/missions', page:'missions', vis:'all', badge:'nav-jobs-badge', tabs:[
       { label:'Console', route:'/operations/missions/console', page:'missions', vis:'all' },
       { label:'History', route:'/operations/missions/history', page:'results', vis:'all' },
+      { label:'Activity', route:'/operations/missions/activity', page:'activity', vis:'all' },
+      { label:'Events', route:'/operations/missions/events', page:'events', vis:'all' },
     ]},
     { label:'Automation', route:'/operations/automation', page:'autonomy', vis:'admin', badge:'nav-autonomy-badge', tabs:[
       { label:'Director', route:'/operations/automation/director', page:'autonomy', vis:'admin' },
       { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
       { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
     ]},
-    { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals', badge:'nav-patches-badge' },
-    { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
+    // v0.3.8.42 (§2): ONE entry for one backend store. Approvals and Changes were two sidebar
+    // entries opening the same page in different views — the approval is a state of the change,
+    // not a separate product area. Both routes survive as tabs; bookmarks keep working.
+    { label:'Changes & Approvals', route:'/operations/changes', page:'patches', vis:'admin', view:'changes', badge:'nav-patches-badge', tabs:[
+      { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
+      { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals' },
+    ]},
   ]},
   { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
     { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
@@ -480,28 +500,37 @@ const IA = [
     { label:'Network', route:'/infrastructure/network', page:'homelab', hlsub:'networking', vis:'hl' },
     { label:'Services', route:'/infrastructure/services', page:'homelab', hlsub:'services', vis:'hl' },
     { label:'Health', route:'/infrastructure/health', page:'homelab', hlsub:'monitoring', vis:'hl' },
+    // v0.3.8.42 (§7): moved home from the dissolved Monitoring domain — both are homelab views.
+    { label:'Alerts', route:'/infrastructure/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
+    { label:'Activity', route:'/infrastructure/activity', page:'homelab', hlsub:'activity', vis:'hl' },
     { label:'Automation Rules', route:'/infrastructure/automation', page:'homelab', hlsub:'automation', vis:'hl' },
     { label:'Apps', route:'/infrastructure/apps', page:'homelab', hlsub:'apps', vis:'hl' },
   ]},
   { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
     { label:'Topology', route:'/colony/topology', page:'colony', vis:'all' },
-    { label:'Agents', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
+    // v0.3.8.42 (§2/§9): "Roles", because that is the backend concept — the twelve colony roles
+    // and their workers. "Agents" blurred them with the installable coding agents one tab over
+    // and with provider routing, which are different things with different remedies.
+    { label:'Roles', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
       { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
       { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
-      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own ants.
+      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own roles.
       { label:'Coding Agents', route:'/colony/agents/coding', page:'agentcli', vis:'admin' },
     ]},
-    { label:'Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
-    { label:'Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
-      { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
-      { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
-    ]},
+    { label:'Memory & Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
   ]},
   { type:'domain', id:'security', label:'Security', vis:'admin', sections:[
     { label:'Security Center', route:'/security/posture', page:'security', vis:'admin' },
     { label:'Access & Targets', route:'/security/access', page:'homelab', hlsub:'networking', vis:'hl' },
   ]},
   { type:'domain', id:'administration', label:'Administration', vis:'admin', sections:[
+    // v0.3.8.42 (§2/§11): provider routing is CONFIGURATION, not a property of the colony — a
+    // role routed across providers is settings, not extra colony members. Moved here from the
+    // Colony domain; the /colony/model-routing routes are unchanged so bookmarks keep working.
+    { label:'Providers & Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
+      { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
+      { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
+    ]},
     { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
     { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
     { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
@@ -535,8 +564,8 @@ const DOMAIN_HOME = {};
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
   overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  activity:'/monitoring/activity',
-  results:'/monitoring/activity/results', events:'/monitoring/activity/events',
+  activity:'/operations/missions/activity',
+  results:'/operations/missions/history', events:'/operations/missions/events',
   patches:'/operations/changes', objboard:'/operations/automation/objectives',
   pheromones:'/colony/signals', homelab:'/infrastructure/overview',
   antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
@@ -550,17 +579,29 @@ const HLSUB_ROUTE={
   containers:'/infrastructure/containers', storage:'/infrastructure/storage',
   networking:'/infrastructure/network', services:'/infrastructure/services',
   monitoring:'/infrastructure/health', automation:'/infrastructure/automation',
-  apps:'/infrastructure/apps', alerts:'/monitoring/alerts', activity:'/monitoring/activity/infra'
+  apps:'/infrastructure/apps', alerts:'/infrastructure/alerts', activity:'/infrastructure/activity'
 };
 // Legacy hash → new route (URL migration; §9 of the proposal).
 const LEGACY_REDIRECT={
   overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  events:'/monitoring/activity/events', results:'/monitoring/activity/results',
+  events:'/operations/missions/events', results:'/operations/missions/history',
   patches:'/operations/changes', objboard:'/operations/automation/objectives',
   pheromones:'/colony/signals', homelab:'/infrastructure/overview',
   antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
   autonomy:'/operations/automation/director', security:'/security/posture',
   shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+};
+// v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
+// links keep working; the router resolves these before the table lookup.
+const ROUTE_ALIAS={
+  '/monitoring/activity':'/operations/missions/activity',
+  '/monitoring/activity/events':'/operations/missions/events',
+  '/monitoring/activity/results':'/operations/missions/history',
+  '/monitoring/activity/changes':'/operations/changes',
+  '/monitoring/activity/runs':'/operations/automation/director',
+  '/monitoring/activity/infra':'/infrastructure/activity',
+  '/monitoring/alerts':'/infrastructure/alerts',
+  '/scheduled':'/operations/automation/objectives',
 };
 
 function canSee(vis){
@@ -617,6 +658,7 @@ function buildNav(){
 
 // Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
 function go(route,push){
+  if(ROUTE_ALIAS[route]) route=ROUTE_ALIAS[route];   // v0.3.8.42 (§7): moved routes stay reachable
   const r=ROUTE_TABLE[route]; if(!r) return;
   if(!canSee(r.vis)) return;
   showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,noHistory:true});
@@ -734,6 +776,7 @@ function router(){
   let h=(location.hash||'').replace(/^#/,'');
   if(!h) return false;
   if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
+  if(ROUTE_ALIAS[h]) h=ROUTE_ALIAS[h];   // v0.3.8.42 (§7): moved routes stay reachable
   const r=ROUTE_TABLE[h];
   if(r && canSee(r.vis)){ go(h,false); return true; }
   return false;
@@ -747,12 +790,10 @@ document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
   setTimeout(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')) resize(); },220);
 });
 
-function enableInput(on){
-  ['mission-input','send-btn','ms-mission-input','ms-send-btn','ov-mission-input','ov-send-btn','ov-preview-btn'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.disabled=!on;
-  });
-}
+// v0.3.8.42 (§3): the mission composers are gone — Chat is the one mission entry, and the three
+// surfaces that used to compete with it (colony bar, Missions console, dashboard Mission Command)
+// now point there. enableInput, the Play⇄Stop composer state and dispatchMission went with them;
+// stopping a run lives on the jobs list (Cancel, durable) and in Chat itself.
 
 // -- Settings overlay (now a page) --------------------------------------------
 let settingsModelInfo = null;
@@ -771,8 +812,8 @@ async function saveSettings(){
   setApiBase(base);
   try{
     const r=await api('/status');
-    if(r.success){ enableInput(true); setConnected(true); }
-  }catch{ setConnected(false); enableInput(false); }
+    if(r.success) setConnected(true);
+  }catch{ setConnected(false); }
 }
 
 PAGE_ENTER['settings']=()=>{
@@ -1034,18 +1075,38 @@ function colonyAngleFor(role,index,total){
   const c=roleColony(role),ci=Math.max(0,CHAMBER_ORDER.indexOf(c));
   return -115 + ci*(230/Math.max(1,CHAMBER_ORDER.length-1)) + (index%3-1)*7;
 }
+// v0.3.8.42 (§9/§14): registry failure is a STATE, not a console.warn. Both branches of this
+// release fixed it independently; this is the union. What the operator sees: with cached roles,
+// the map keeps drawing them and the legend marks them STALE with when, why, and a retry; with
+// nothing cached, the map shows the two core nodes (Queen and Director are structural facts of
+// the product, not runtime discoveries) and the legend says exactly what failed — never the
+// six-role fiction buildNodes used to invent, which marked every invented ant Enabled and
+// Executable and was six releases stale besides (twelve roles run by default since v0.3.8.41).
+let colonyRegistryProblem=null;   // {message, at} | null — "loaded and now failing" keeps its roles
+let colonyRegistryAt=0;           // when the roles on screen were actually fetched
 async function loadColonyRegistry(){
   try{
     const r=await api('/colony/registry');
-    if(r.success){
-      colonyRegistry=r.data;
+    if(r&&r.success){
+      colonyRegistry=r.data; colonyRegistryProblem=null; colonyRegistryAt=Date.now();
       // v2.14.13: truthful per-role runtime state for the inspector, from the same fetch.
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
       buildNodes();renderColonyLegend();
       if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
+      return;
     }
-  }catch(e){console.warn('colony registry unavailable',e);}
+    // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
+    // refusal or a 500 left the previous drawing on screen with nothing saying it was old.
+    colonyRegistryProblem={message:(r&&r.message)||'registry request rejected', at:Date.now()};
+  }catch(e){ colonyRegistryProblem={message:e.message||'registry unreachable', at:Date.now()}; }
+  buildNodes();renderColonyLegend();
+}
+function colonyRegistryRetry(){
+  apiCacheBust('/colony/registry');
+  const el=document.getElementById('chud-legend-problem');
+  if(el) el.textContent='Retrying…';
+  loadColonyRegistry();
 }
 
 function buildNodes(){
@@ -1054,11 +1115,10 @@ function buildNodes(){
   nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core',chamber:"Queen's Core" });
   nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core',chamber:"Queen's Core" });
   edges.push({from:'queen',to:'director'});
-  if(!colonyRegistry){
-    const fallback=['researcher','file','web','coder','builder','verifier'].map(id=>({RoleId:id,DisplayName:ANT_MAP[id].label,Colony:ANT_MAP[id].role,Purpose:'Legacy executable ant',Enabled:true,Executable:true,Workers:[]}));
-    colonyRegistry={roles:fallback};
-  }
-  const roles=visibleRoles();
+  // v0.3.8.42 (§9): no fabricated roster — the full forensics live on loadColonyRegistry above.
+  // With no registry the map draws the control plane only; visibleRoles() answers [] then, and
+  // the guard here says so explicitly rather than relying on the optional chain.
+  const roles = colonyRegistry ? visibleRoles() : [];
   // v2.14.5 chamber mode: cluster each colony around its own centre. Roles fan out inside their
   // chamber instead of sharing one global ring, so groups are visually distinct on the SAME canvas.
   const chamberMode=colonyView==='group';
@@ -2012,38 +2072,27 @@ function hudRisk(level){ const l=(level||'unknown').toString().toLowerCase();
 const JOB_STATUS_LABEL = {
   // Not a failure and not a success: the colony stopped on purpose and wants a person to decide.
   escalated: 'needs you',
+  timed_out: 'timed out',   // v0.3.8.42: the raw status rendered with its underscore
 };
 const JOB_STATUS_TITLE = {
   escalated: 'The colony stopped and handed this to you — nothing broke, it declined to continue without your judgment. Internal state: escalated.',
 };
+// v0.3.8.42: ONE terminal-status set, keyed to ApiJobRegistry.IsTerminalStatus
+// (complete | failed | cancelled | timed_out | escalated). Before this, three call sites each
+// carried their own subset: the active-job poller omitted 'cancelled' and 'timed_out' (locking the
+// composer forever after a cancel), and the jobs list omitted 'timed_out' (a timed-out run had no
+// View Result and no Re-run). 'partial' stays for rows persisted before v2.26.0 mapped it away.
+const JOB_TERMINAL_STATUSES=['complete','failed','cancelled','timed_out','escalated','partial'];
+const jobIsTerminal=s=>JOB_TERMINAL_STATUSES.includes(s);
 function hudStatusClass(st){ st=(st||'').toString().toLowerCase();
   if(st==='complete') return 'completed'; if(st==='partial') return 'warning';
   if(st==='reverted') return 'rejected'; // v2.7.0: undone patch — neutral/terminal styling
   if(['running','active','queued','complete','partial','failed','paused','pending','approved','applied','rejected','completed','stopped','looping','idle','proposed'].includes(st)) return st==='proposed'?'pending':st;
   return 'unknown'; }
 
-// -- Mission command modes (front-end prompt helpers ? v1.8.23 planner constraints) --
-let ovMode='';
-const OV_MODE_TEXT={
-  inspect:'Inspect only. Do not modify files. ',
-  verify:'Verify only. Do not create patches. ',
-  patch:'Create patch proposals only. Do not apply changes. ',
-  build:'Create changes only if needed and run the normal build/test checks. ',
-};
-// v3.8.34: display only — the badge shown once a mode is chosen. The INSTRUCTION the model
-// receives is OV_MODE_TEXT above and is deliberately untouched; renaming what the operator reads
-// must not change what the colony is told.
-const OV_MODE_LABEL={inspect:'LOOK ONLY',verify:'CHECK MY WORK',patch:'SUGGEST CHANGES',build:'MAKE CHANGES & TEST'};
-function setOvMode(mode){
-  ovMode = (ovMode===mode) ? '' : mode; // toggle
-  document.querySelectorAll('#ov-modes .hud-act').forEach(b=>b.setAttribute('aria-pressed', b.dataset.mode===ovMode ? 'true':'false'));
-  const badge=document.getElementById('ov-mode-badge');
-  if(badge) badge.innerHTML = ovMode ? hudBadge('active',OV_MODE_LABEL[ovMode]) : '';
-  const hint=document.getElementById('ov-mode-hint');
-  if(hint) hint.textContent = ovMode
-    ? `Mode active — "${OV_MODE_TEXT[ovMode].trim()}" will be prepended to your directive.`
-    : 'Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.';
-}
+// v0.3.8.42 (§3): the Mission Command working modes (ovMode / OV_MODE_TEXT / setOvMode) retired
+// with the dashboard composer. The constraint wording they prepended is planner vocabulary an
+// operator can still type in Chat verbatim; nothing model-facing changed.
 
 // -- Overview command dashboard (v1.8.23) -------------------------------------
 // v2.2.6: shared stores — pollHud is the single computer of core state + hardware signals;
@@ -2215,7 +2264,11 @@ function renderJobList(jobs, listId, badgeId, limit){
     const isRunning=j.status==='running';
     // v3.8.34: 'escalated' is terminal. Omitting it here would leave an adaptively-stopped run
     // with no View Result and no Re-run — finished work the operator could not open.
-    const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated';
+    // v0.3.8.42: the shared set — 'timed_out' was omitted here, leaving a timed-out run with no
+    // View Result and no Re-run, the same defect one status over. A queued run is cancellable
+    // (the registry supports cancel-while-queued) so it gets the Cancel button too.
+    const isDone=jobIsTerminal(j.status);
+    const canCancel=isRunning||j.status==='queued';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
     const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
@@ -2230,8 +2283,8 @@ function renderJobList(jobs, listId, badgeId, limit){
       <div class="job-actions">
         ${isDone?`<button class="job-btn view" data-onclick="event.stopPropagation();openJobResult('${j.id}','${j.mission_id||''}')">View Result</button>`
           :isRunning?`<button class="job-btn view" data-onclick="event.stopPropagation();selectJob('${j.id}')">View Status</button>`:''}
-        ${isRunning?`<button class="job-btn cancel" data-onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
-        ${isDone||j.status==='cancelled'?`<button class="job-btn" data-onclick="event.stopPropagation();reRunJob('${j.id}')" title="Dispatch a new mission with the same directive">↻ Re-run</button>`:''}
+        ${canCancel?`<button class="job-btn cancel" data-onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
+        ${isDone?`<button class="job-btn" data-onclick="event.stopPropagation();reRunJob('${j.id}')" title="Dispatch a new mission with the same directive">↻ Re-run</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2259,9 +2312,10 @@ async function pollJobs(){
     // mission actually finished — otherwise the 10s TTL keeps this cheap. Rendering is now
     // incremental, so an unchanged payload costs no DOM work at all.
     if(document.getElementById('page-missions')?.classList.contains('active')){
-      const done=jobs.some(j=>['complete','failed','partial','cancelled'].includes(j.status));
-      const settled=done&&msLastSettledCount!==jobs.filter(j=>['complete','failed','partial','cancelled'].includes(j.status)).length;
-      if(settled) msLastSettledCount=jobs.filter(j=>['complete','failed','partial','cancelled'].includes(j.status)).length;
+      // v0.3.8.42: the shared terminal set — timed-out and escalated runs also settle the thread.
+      const settledNow=jobs.filter(j=>jobIsTerminal(j.status)).length;
+      const settled=settledNow>0&&msLastSettledCount!==settledNow;
+      if(settled) msLastSettledCount=settledNow;
       loadMissionThread(settled?{fresh:true}:undefined);
     }
     // Nav badge
@@ -2326,22 +2380,43 @@ function buildDataFlowEdges(taskNodes){
 }
 
 // -- Colony Live Canvas 2.0 · caste legend + real pheromone trails --
-const CHUD_CASTES=['researcher','web','file','coder','builder','verifier'];
+// v0.3.8.42 (§9): CHUD_CASTES deleted — it was the legend's hardcoded six-role stand-in.
 let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
 
 function renderColonyLegend(){
   const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
   const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
+
+  // v0.3.8.42 (§9/§14): the legend states the registry's real condition instead of padding it —
+  // both branches of this release removed the six-role stand-in independently; this is the union.
+  // Never loaded and no failure yet → "Reading…". Failed with nothing cached → name the failure,
+  // offer retry, list nothing. Failed with cached roles → keep them visible, marked STALE with
+  // when and why. Loaded → the complete roster, uncapped (v2.14.15).
+  // ONE element, ONE id, in every branch — two template branches each declaring the id is a
+  // duplicate to the guard even though only one renders (it reads templates, not the DOM).
+  let problemText='', retry='';
+  if(colonyRegistryProblem){
+    const since=fmtTime(new Date(colonyRegistryProblem.at).toISOString());
+    problemText = roles.length
+      ? `Roles are STALE (last refresh failed at ${escapeHtml(since)}: ${escapeHtml(colonyRegistryProblem.message)})`
+      : `Role registry unavailable — ${escapeHtml(colonyRegistryProblem.message)}`;
+    retry = `<button class="conv-btn" id="chud-legend-retry">Retry</button>`;
+  } else if(!roles.length){
+    // The third state: never loaded, not failed either — say so, claim nothing.
+    problemText = 'Reading the colony registry…';
+  }
+  const notice = problemText
+    ? `<div class="chud-problem" id="chud-legend-problem">${problemText}</div>`+retry
+    : '';
+
   // v2.14.15: no arbitrary cap. This used to .slice(0,15), which silently dropped all eight
-  // homelab ants (inventory, network_scout, health, proxmox, storage, backup, security_scout,
-  // change_archivist) from the legend while they were still drawn on the canvas. The legend is
-  // now a hideable, scrollable overlay, so it can afford to be complete.
-  const want=(roles.length?roles.map(roleId):CHUD_CASTES);
-  el.innerHTML=want.map(a=>{
+  // homelab ants from the legend while they were still drawn on the canvas.
+  el.innerHTML = notice + roles.map(roleId).map(a=>{
     const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
     const on=(colonyActivity[a]||0)>0;
     return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${am.color};background:${am.color}"></span>${am.label}</div>`;
   }).join('');
+  document.getElementById('chud-legend-retry')?.addEventListener('click', colonyRegistryRetry);
 }
 
 // Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
@@ -2686,7 +2761,10 @@ function renderStatusPop(){
   document.getElementById('sp-ollama').style.color =
     or===true?(modelOk?'var(--green)':'var(--amber,#f59e0b)'):or===false?'var(--red)':'var(--dim)';
   setEl('sp-ollama-host',s.ollama_host||'—');
-  setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  // v0.3.8.42 (§11): "configured", because that is what the field measures. providers_configured
+  // counts stored keys; it says nothing about reachability or auth, and calling it "connected"
+  // reported health the colony had never checked.
+  setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) configured`:''));
   // v0.3.8.40: deployment mode, with its reason on hover and whether it was detected or set.
   // "Desktop" and "Server" are what the operator sees; deployment_mode is the wire value.
   const depMode=(s.deployment_mode||'').toLowerCase();
@@ -2710,11 +2788,14 @@ function renderStatusPop(){
     fitRow.style.display = unfit>0 ? '' : 'none';
     const fitEl = document.getElementById('sp-fitness');
     if(fitEl){
-      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot use the routed model';
+      // v0.3.8.41 — worded for BOTH causes. The count now includes roles whose route cannot
+      // resolve at all (no model chosen), and telling those operators their model "lacks a
+      // capability" sent them looking for a better model when they had not picked one.
+      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot run';
       fitEl.style.color = 'var(--amber,#f59e0b)';
-      fitEl.title = 'These roles are routed to a model missing a capability their contract needs — '
-                  + 'they will run and return empty or unusable results. Open Tools & Routing for '
-                  + 'the per-role reasons.';
+      fitEl.title = 'These roles either have no model to run on, or are routed to one missing a '
+                  + 'capability their contract needs — either way they return empty or unusable '
+                  + 'results. Open Tools & Routing for the exact reason.';
     }
   }
   const routes=s.routes||[];
@@ -3548,18 +3629,37 @@ function diffLine(cls,gutter,text){
   const sign=cls==='add'?'+':cls==='del'?'-':' ';
   return `<div class="dl ${cls}"><span class="gutter">${gutter}</span><span>${sign} ${escapeHtml(text)}</span></div>`;
 }
+/* v0.3.8.42 (§8): ONE double-submit rule for every patch mutation. pcVerify disabled its button;
+ * the other five mutations disabled nothing, so a double-click on Approve posted twice and a slow
+ * Apply invited a second Apply. The guard is keyed per patch, and the pending state lands on the
+ * card's own controls — the place the operator is looking. */
+const pcInFlight=new Set();
+function pcSetBusy(pid,busy){
+  document.querySelectorAll(`[data-patch="${(window.CSS&&CSS.escape)?CSS.escape(pid):pid}"] .pc-act`)
+    .forEach(b=>{ b.disabled=busy; });
+}
+async function pcMutate(pid,fn){
+  if(pcInFlight.has(pid)) return;
+  pcInFlight.add(pid); pcSetBusy(pid,true);
+  try{ await fn(); }
+  finally{ pcInFlight.delete(pid); pcSetBusy(pid,false); }
+}
 async function pcApprove(approvalId,patchId){
-  try{ const res=await fetch(url('/approve/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Patch approved — apply it below to write it to disk.'); loadPatches(); pollApprovals();
-  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/approve/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      pcToast('Patch approved — apply it below to write it to disk.'); loadPatches(); pollApprovals();
+    }catch(e){ pcToast('Approve failed: '+e.message,false); }
+  });
 }
 async function pcReject(approvalId,patchId){
   if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
-  try{ const res=await fetch(url('/reject/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
-  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/reject/'+approvalId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+    }catch(e){ pcToast('Reject failed: '+e.message,false); }
+  });
 }
 async function pcApply(patchId){
   const d=pcDetailCache[patchId]; if(!d){ pcToast('Reopen the patch and try again.',false); return; }
@@ -3572,18 +3672,20 @@ async function pcApply(patchId){
     (warns.length?('⚠ '+warns.join('\n⚠ ')+'\n\n'):'')+
     'This writes to disk. A backup is taken and a failed build auto-rolls back.';
   if(!await uiConfirm(msg)) return;
-  try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
-    const txt=await res.text();
-    if(!res.ok){
-      // v1.10.0: surface the server's reason instead of a bare HTTP code, and give the operator
-      // the actual next step when the apply capability gate is off.
-      let msg='HTTP '+res.status;
-      try{ const j=JSON.parse(txt); if(j&&j.message) msg=j.message; }catch(e2){}
-      if(res.status===403&&/apply_patch|disabled/i.test(msg)) msg+=' → enable "Patch application" in Settings, then retry.';
-      throw new Error(msg);
-    }
-    pcToast('Apply requested — see result in the patch row.'); loadPatches();
-  }catch(e){ pcToast('Apply failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/apply/'+d.approval_id),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+      const txt=await res.text();
+      if(!res.ok){
+        // v1.10.0: surface the server's reason instead of a bare HTTP code, and give the operator
+        // the actual next step when the apply capability gate is off.
+        let msg2='HTTP '+res.status;
+        try{ const j=JSON.parse(txt); if(j&&j.message) msg2=j.message; }catch(e2){}
+        if(res.status===403&&/apply_patch|disabled/i.test(msg2)) msg2+=' → enable "Patch application" in Settings, then retry.';
+        throw new Error(msg2);
+      }
+      pcToast('Apply requested — see result in the patch row.'); loadPatches();
+    }catch(e){ pcToast('Apply failed: '+e.message,false); }
+  });
 }
 // v2.7.0: undo an applied patch. Deletes the created file (add) or restores the pre-apply backup
 // (modify), then the row flips to "reverted". Fulfills the Changes page's "roll back" promise.
@@ -3595,25 +3697,31 @@ async function pcRevert(patchId){
       : 'The file will be restored from its pre-apply backup (if one was recorded).')+
     '\n\nThis writes to the sandboxed workspace.';
   if(!await uiConfirm(msg)) return;
-  try{ const res=await fetch(url('/revert/'+patchId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
-    const txt=await res.text();
-    if(!res.ok){ let m='HTTP '+res.status; try{ const j=JSON.parse(txt); if(j&&j.message) m=j.message; }catch(e2){} throw new Error(m); }
-    pcToast('Patch reverted.'); apiCacheBust('/patches'); loadPatches();
-  }catch(e){ pcToast('Revert failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/revert/'+patchId),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+      const txt=await res.text();
+      if(!res.ok){ let m='HTTP '+res.status; try{ const j=JSON.parse(txt); if(j&&j.message) m=j.message; }catch(e2){} throw new Error(m); }
+      pcToast('Patch reverted.'); apiCacheBust('/patches'); loadPatches();
+    }catch(e){ pcToast('Revert failed: '+e.message,false); }
+  });
 }
 // -- Patch Center 2.0 (v1.8.24): approve/reject by patch id, verify, edit-as-alternative --------
 async function pcApproveDirect(patchId){
-  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/approve'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Approval record created and patch approved — apply it to write to disk.'); loadPatches(); pollApprovals();
-  }catch(e){ pcToast('Approve failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/approve'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      pcToast('Approval record created and patch approved — apply it to write to disk.'); loadPatches(); pollApprovals();
+    }catch(e){ pcToast('Approve failed: '+e.message,false); }
+  });
 }
 async function pcRejectDirect(patchId){
   if(!await uiConfirm('Reject this patch? It stays visible in history but will not be applied.')) return;
-  try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/reject'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    pcToast('Patch rejected.'); loadPatches(); pollApprovals();
-  }catch(e){ pcToast('Reject failed: '+e.message,false); }
+  await pcMutate(patchId, async ()=>{
+    try{ const res=await fetch(url('/patches/'+encodeURIComponent(patchId)+'/reject'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({reason:'Rejected from Patch Center'})});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      pcToast('Patch rejected.'); loadPatches(); pollApprovals();
+    }catch(e){ pcToast('Reject failed: '+e.message,false); }
+  });
 }
 async function pcVerify(patchId){
   const btn=document.getElementById('pc-verify-'+patchId);
@@ -3870,6 +3978,7 @@ async function loadAntObsDirectory(grid){
  * than the landing view.
  */
 let chatActiveId = null;
+let chatComposingNew = false;   // v0.3.8.42 (§13): an explicit "New conversation" wins over auto-open
 let chatColonyOpen = false;
 // v0.3.8.40: /conversations/{id} does NOT return a title — only the list does. Without this the
 // header read "Conversation" for every thread, including the one whose title was right there in
@@ -3890,36 +3999,82 @@ async function loadChat(){
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
-        ${c.doing?`<span class="attn">Working…</span>`:''}
+        ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
+          :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
       </div>`).join('');
       list.querySelectorAll('.chat-conv').forEach(el=>
-        el.addEventListener('click',()=>chatOpen(el.dataset.id)));
-      if(!chatActiveId) chatOpen(convs[0].id);
+        el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
+      // v0.3.8.42 (§13): found live — "New conversation" cleared chatActiveId, then THIS auto-open
+      // immediately re-selected the old thread, so the next message went to a conversation the
+      // operator had deliberately left (in the found case, a cancelled one, which refused it).
+      // The auto-open is for page ENTRY only; an explicit New wins until the first send.
+      if(!chatActiveId && !chatComposingNew) chatOpen(convs[0].id);
     }
   }catch(e){ pollWarnOnce('loadChat', e); }
 }
 
+/* v0.3.8.42 (§13) — chat quality-of-life, all frontend, all on current APIs.
+ *
+ * Fenced code blocks render as code. Everything passes through escapeHtml FIRST and the only
+ * structure added is <pre><code> around the fenced spans — no markdown engine, no third-party
+ * renderer, no new sanitisation surface. The rest of the message keeps pre-wrap text semantics. */
+function chatRenderContent(text){
+  const parts=String(text||'').split('```');
+  let html='';
+  for(let i=0;i<parts.length;i++){
+    if(i%2===0){ html+=escapeHtml(parts[i]); continue; }
+    // Odd segments are fenced. The first line may be a language tag; it is dropped from display.
+    const nl=parts[i].indexOf('\n');
+    const code=nl>=0?parts[i].slice(nl+1):parts[i];
+    html+='<pre class="chat-code"><code>'+escapeHtml(code)+'</code></pre>';
+  }
+  return html;
+}
+
+let chatFingerprint='';        // what is currently on screen, so a poll that changes nothing costs nothing
+let chatTurnContents=[];       // per-turn raw text for the copy action (kept out of the DOM)
 async function chatOpen(id){
   if(!id) return;
   chatActiveId=id;
   const thread=document.getElementById('chat-thread'); if(!thread) return;
   try{
     const r=await api('/conversations/'+encodeURIComponent(id));
-    if(!r||!r.success){ thread.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open that conversation.')}</div>`; return; }
+    if(!r||!r.success){ chatFingerprint=''; thread.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open that conversation.')}</div>`; return; }
     const d=r.data||{}, turns=d.turns||[];
 
-    // Only the operator's own words are theirs; everything else is the colony speaking, whichever
-    // ant or provider produced it. Labelling each turn by its role would make the reader learn the
-    // roster before they can read the answer.
-    thread.innerHTML = turns.length
-      ? turns.map(t=>{
-          const mine=String(t.role||'').toLowerCase()==='user';
-          return `<div class="chat-turn ${mine?'user':'colony'}">
-            <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>${escapeHtml(t.content||'')}
-          </div>`;
-        }).join('')
-      : '<div class="hud-state">No messages yet.</div>';
-    thread.scrollTop = thread.scrollHeight;
+    // Re-render only when something actually changed. The chat poll calls this every few seconds;
+    // rebuilding an unchanged thread would destroy selection and scroll for nothing.
+    const print=id+':'+turns.length+':'+(turns.length?String(turns[turns.length-1].content||'').length:0)
+      +':'+String(d.doing||'')+':'+(d.needs_operator?1:0)+':'+(d.cancelled?1:0);
+    const changed = print!==chatFingerprint;
+    chatFingerprint=print;
+
+    if(changed){
+      // Preserve the reading position: follow new content only when the reader is already at the
+      // bottom; someone reading history stays exactly where they were.
+      const nearBottom = thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 48;
+      const keepTop = thread.scrollTop;
+
+      chatTurnContents = turns.map(t=>String(t.content||''));
+      // Only the operator's own words are theirs; everything else is the colony speaking,
+      // whichever ant or provider produced it.
+      thread.innerHTML = turns.length
+        ? turns.map((t,i)=>{
+            const mine=String(t.role||'').toLowerCase()==='user';
+            return `<div class="chat-turn ${mine?'user':'colony'}">
+              <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
+                <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
+            </div>`;
+          }).join('')
+        : '<div class="hud-state">No messages yet.</div>';
+      // CSP is script-src 'self' with no unsafe-inline, so handlers are bound, never inlined.
+      thread.querySelectorAll('.chat-copy').forEach(b=>b.addEventListener('click',async ()=>{
+        try{ await navigator.clipboard.writeText(chatTurnContents[+b.dataset.i]||''); b.textContent='✓'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
+        catch{ b.textContent='✕'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
+      }));
+      if(nearBottom) thread.scrollTop = thread.scrollHeight;
+      else thread.scrollTop = keepTop;
+    }
 
     // v0.3.8.40 — the escalation gate, IN the thread.
     //
@@ -3931,7 +4086,8 @@ async function chatOpen(id){
     //
     // Rendered after the turns, where the next thing to happen belongs, and using the same
     // convApprove/convCancel calls the old panel uses so there is one approval path rather than two.
-    if(d.needs_operator){
+    // Appended only on a changed render — the unchanged path leaves the existing box alone.
+    if(changed && d.needs_operator){
       const waiting = d.waiting_on || [];
       const box = document.createElement('div');
       box.className = 'chat-approve';
@@ -3953,18 +4109,37 @@ async function chatOpen(id){
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
-    chatSetState(d.needs_operator ? 'Waiting on you' : (d.doing ? 'Working…' : ''));
+    // v0.3.8.42: `cancelled` is a field, and `doing` is now a truthful present-tense vocabulary
+    // ("running mission …", "unanswered — …", "" for idle) rather than a permanent "conversational
+    // work" — so the state line SHOWS it instead of translating everything into "Working…".
+    chatSetState(d.needs_operator ? 'Waiting on you'
+               : d.cancelled ? 'Stopped — start a new conversation to continue'
+               : (d.doing||''));
+    // The Stop control exists exactly while there is something stoppable — a running mission.
+    // Chat replies are synchronous inside the send; "unanswered" is a failure state, not work.
+    const stopBtn=document.getElementById('chat-stop');
+    if(stopBtn) stopBtn.hidden = !(d.doing||'').startsWith('running mission') || !!d.needs_operator || !!d.cancelled;
+    if(chatColonyOpen) chatColonyMissionNote();   // keep the layer's mission line current
     document.querySelectorAll('.chat-conv').forEach(el=>
       el.classList.toggle('active', el.dataset.id===id));
   }catch(e){ pollWarnOnce('chatOpen', e); }
 }
 
-async function chatSend(){
+let chatLastSent='';   // v0.3.8.42 (§13): Up-arrow in an empty composer recalls this
+/** @param mode 'chat' (default) or 'mission' — the same two modes the runtime has. A mission
+ *  request goes through the escalation gate; under Ask the approval renders IN the thread. */
+async function chatSend(mode){
+  mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
   const msg=(el&&el.value||'').trim();
   if(!msg) return;
+  chatLastSent=msg;
   if(el){ el.value=''; el.style.height=''; }
-  chatSetState('Sending…');
+  chatSetState(mode==='mission'?'Asking to start work…':'Sending…');
+  // v0.3.8.42: the refusal summary must OUTLIVE the refresh. chatOpen() recomputes the state line
+  // from the conversation detail, so setting the refusal before refreshing meant the one message
+  // that explains what happened was overwritten milliseconds later.
+  let note='';
   try{
     if(!chatActiveId){
       // First message creates the conversation. 'ask' is the policy a newcomer wants: the colony
@@ -3972,25 +4147,92 @@ async function chatSend(){
       const c=await api('/conversations','POST',{ title: msg.slice(0,48), policy:'ask' });
       if(!c||!c.success){ chatSetState((c&&c.message)||'Could not start.'); return; }
       chatActiveId=c.data.id;
+      chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
-    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:'chat' });
-    if(r&&r.data&&r.data.started===false) chatSetState(r.data.summary||'Refused');
-    else chatSetState('');
-  }catch(e){ chatSetState('Could not send: '+(e.message||'')); }
-  finally{ apiCacheBust('/conversations'); loadChat(); chatOpen(chatActiveId); }
+    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
+    if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+  }catch(e){ note='Could not send: '+(e.message||''); }
+  finally{
+    apiCacheBust('/conversations'); loadChat();
+    await chatOpen(chatActiveId);
+    if(note) chatSetState(note);
+  }
 }
 
+/* v0.3.8.42 — Chat + Colony mode: the canonical topology in a resizable pane BESIDE the
+ * conversation. One renderer: the same #colony-canvas-area the Colony page owns is re-parented
+ * into the pane (topologyMountTo), so there is no second canvas, no second render loop, and no
+ * second subscription — toggling moves a node, it does not build one. Closing hands the canvas
+ * back to its home slot; refreshTopologyAwake() then measures 0×0 in the hidden pane and the
+ * loop stops drawing it. Chat state (draft, scroll, selection) is untouched in both directions
+ * because nothing in the conversation subtree is rebuilt. */
 function chatToggleColony(open){
-  const side=document.getElementById('chat-side'); if(!side) return;
+  const layer=document.getElementById('chat-colony-layer'); if(!layer) return;
   chatColonyOpen = open===undefined ? !chatColonyOpen : !!open;
-  side.hidden = !chatColonyOpen;
-  if(chatColonyOpen && typeof topologyMountTo==='function') topologyMountTo('chat');
-  else if(typeof topologyMountTo==='function') topologyMountTo('home');
+  layer.hidden = !chatColonyOpen;
+  document.getElementById('page-chat')?.classList.toggle('colony-open', chatColonyOpen);
+  const btn=document.getElementById('chat-colony-toggle');
+  if(btn) btn.setAttribute('aria-pressed', chatColonyOpen?'true':'false');
+  if(typeof topologyMountTo==='function') topologyMountTo(chatColonyOpen?'chat':'home');
+  // Topology failure must not break Chat: if the canonical canvas is not in the document at all,
+  // the layer says so plainly instead of presenting an empty black region as a working map.
+  if(chatColonyOpen){
+    const mount=document.getElementById('chat-colony-mount');
+    if(mount&&!document.getElementById('colony-canvas-area'))
+      mount.innerHTML='<div class="hud-state err" style="margin:24px auto;max-width:420px">The colony view could not load. The conversation is unaffected — try Open full Colony, or reload the console.</div>';
+    chatColonyMissionNote();
+  }
 }
 
-document.getElementById('chat-send')?.addEventListener('click', chatSend);
+/* The truthful mission line in the layer's bar. The conversation detail carries mission_ids
+ * (v3.7.0); the topology itself renders the colony's real current activity from /graph. This
+ * line says which of three states is true rather than pretending the map is always "the
+ * conversation's mission": linked-and-running (the activity IS this mission), linked-and-settled,
+ * or not linked (the map shows the colony as it is — including a legitimate idle).
+ *
+ * Found by the live walkthrough: this read /jobs, and conversation-ESCALATED missions run through
+ * the Queen directly — the jobs registry only holds POST /missions submissions — so the note said
+ * "not in the recent runs list" about exactly the missions chat creates. The conversation's own
+ * state is the first authority, and mission HISTORY is the settled record. */
+async function chatColonyMissionNote(){
+  const el=document.getElementById('chat-colony-mission'); if(el===null) return;
+  if(!chatActiveId){ el.textContent='No mission linked — the map shows the colony as it is.'; return; }
+  try{
+    const r=await api('/conversations/'+encodeURIComponent(chatActiveId));
+    const d=(r&&r.success&&r.data)||{};
+    const ids=d.mission_ids||[];
+    if(!ids.length){ el.textContent='No mission linked — the map shows the colony as it is.'; return; }
+    const mid=String(ids[ids.length-1]);
+    if((d.doing||'').startsWith('running mission')){
+      el.textContent='This conversation’s mission is running — the activity below is it.';
+      return;
+    }
+    const hist=(await api('/missions/json?limit=40'));
+    const m=((hist&&hist.success&&hist.data)||[]).find(x=>String(x.id)===mid);
+    el.textContent = m
+      ? `This conversation’s last mission: ${m.status}${m.success_score!=null?' · score '+m.success_score:''}.`
+      : 'Linked mission '+mid.substring(0,8)+'… — not in recent history.';
+  }catch{ el.textContent=''; }
+}
+
+document.getElementById('chat-send')?.addEventListener('click', ()=>chatSend());
+document.getElementById('chat-work')?.addEventListener('click', ()=>chatSend('mission'));
+let chatStopInFlight=false;
+document.getElementById('chat-stop')?.addEventListener('click', async ()=>{
+  if(chatStopInFlight||!chatActiveId) return;
+  chatStopInFlight=true;
+  const b=document.getElementById('chat-stop'); if(b){ b.disabled=true; b.textContent='Stopping…'; }
+  try{ await convCancel(chatActiveId); }
+  finally{
+    chatStopInFlight=false;
+    if(b){ b.disabled=false; b.textContent='■ Stop'; }
+    chatOpen(chatActiveId);
+  }
+});
 document.getElementById('chat-new')?.addEventListener('click', ()=>{
   chatActiveId=null;
+  chatComposingNew=true;
+  chatFingerprint='';   // the welcome screen replaced the thread outside chatOpen's knowledge
   setEl('chat-title','New conversation'); chatSetState('');
   const thread=document.getElementById('chat-thread');
   if(thread) thread.innerHTML='<div class="chat-welcome"><h2>What would you like done?</h2>'
@@ -4001,9 +4243,58 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
 });
 document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
-document.getElementById('chat-input')?.addEventListener('keydown', e=>{
-  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); chatSend(); }
+// Secondary action for operators who want the dedicated page. Close first so the canvas is home
+// before the Colony route claims it — the same hand-off order navigation itself performs.
+document.getElementById('chat-colony-full')?.addEventListener('click', ()=>{
+  chatToggleColony(false); go('/colony/topology');
 });
+// The divider resizes the split by pointer or arrow keys. Width is a CSS custom property on the
+// wrap so one rule owns the layout; the canvas re-measures on release rather than every pixel.
+(function(){
+  const div=document.getElementById('chat-colony-divider'); if(!div) return;
+  const wrap=div.closest('.chat-wrap'); const pane=document.getElementById('chat-colony-layer');
+  const clamp=(px)=>{ const w=wrap.clientWidth||1; return Math.min(Math.max(px,340),w*0.72); };
+  const apply=(px)=>{ wrap.style.setProperty('--chat-colony-w', clamp(px)+'px'); };
+  const remeasure=()=>{ if(typeof topologyRemeasure==='function') topologyRemeasure(); };
+  div.addEventListener('pointerdown',e=>{
+    e.preventDefault(); div.setPointerCapture(e.pointerId); div.classList.add('dragging');
+    const move=ev=>apply((wrap.getBoundingClientRect().right)-ev.clientX);
+    const up=ev=>{ div.releasePointerCapture(e.pointerId); div.classList.remove('dragging');
+      div.removeEventListener('pointermove',move); div.removeEventListener('pointerup',up); remeasure(); };
+    div.addEventListener('pointermove',move); div.addEventListener('pointerup',up);
+  });
+  div.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
+    e.preventDefault();
+    const cur=pane.getBoundingClientRect().width||wrap.clientWidth*0.45;
+    apply(cur+(e.key==='ArrowLeft'?32:-32)); remeasure();
+  });
+})();
+// Escape closes the layer — but never out from under a real modal, which owns the key first.
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape'||!chatColonyOpen) return;
+  if(!document.getElementById('page-chat')?.classList.contains('active')) return;
+  if(document.querySelector('.ui-modal-ov')||document.getElementById('result-overlay')?.classList.contains('show')) return;
+  chatToggleColony(false);
+});
+document.getElementById('chat-input')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); chatSend(); return; }
+  // v0.3.8.42 (§13): Up-arrow recalls the last submitted message — only when the composer is
+  // EMPTY, so cursor movement inside a draft is never hijacked.
+  if(e.key==='ArrowUp' && chatLastSent && !e.target.value){
+    e.preventDefault(); e.target.value=chatLastSent;
+    e.target.dispatchEvent(new Event('input'));   // reuse the auto-grow handler
+    e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+  }
+});
+// v0.3.8.42 (§13): the open conversation stays current on its own. The fingerprint inside
+// chatOpen makes an unchanged poll cost nothing and destroy nothing (selection, scroll), so this
+// is safe at a chat-appropriate cadence. Only runs while the Chat page is actually on screen.
+setInterval(()=>{
+  if(!chatActiveId) return;
+  if(!document.getElementById('page-chat')?.classList.contains('active')) return;
+  chatOpen(chatActiveId);
+}, 4000);
 // Grow with the message rather than scrolling a one-line box — a multi-step request is normal here.
 document.getElementById('chat-input')?.addEventListener('input', e=>{
   e.target.style.height='auto';
@@ -4020,9 +4311,9 @@ async function loadProjects(){
   const el=document.getElementById('projects-list'); if(!el) return;
   try{
     const r=await api('/workspaces');
-    if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load projects.')}</div>`; return; }
+    if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load workspaces.')}</div>`; return; }
     const ws=(r.data&&r.data.workspaces)||r.data||[];
-    if(!ws.length){ el.innerHTML='<div class="hud-state">No projects yet — the colony creates one the first time a mission needs to change files.</div>'; return; }
+    if(!ws.length){ el.innerHTML='<div class="hud-state">No workspaces yet — the colony creates one the first time a mission needs to change files.</div>'; return; }
     el.innerHTML=ws.map(w=>`<div class="card agentcli-card">
       <div class="agentcli-hd">
         <span class="health-dot ${w.usable?'ok':''}"></span>
@@ -4035,22 +4326,21 @@ async function loadProjects(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
+/* v0.3.8.42 (§5): ONE Tools implementation. This page previously carried its own thin summary of
+ * /tools while the dashboard widget carried the real one — fitness alarms, broken-tool reasons,
+ * operator-tool registration. Two renderers of one endpoint is how they drift; the page now calls
+ * the same renderToolsPanel the widget uses, plus the full inventory a destination page owes. */
 async function loadToolsView(){
   const el=document.getElementById('toolsview-body'); if(!el) return;
   try{
     const r=await api('/tools');
     if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load tools.')}</div>`; return; }
-    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[], unfit=fitness.filter(f=>!f.fit);
-    el.innerHTML =
-      (unfit.length
-        ? `<div class="card agentcli-card"><div class="agentcli-hd">
-             <span class="health-dot"></span><span class="agentcli-name">${unfit.length} of ${fitness.length} ants cannot use the model they are routed to</span></div>
-           <div class="agentcli-sub">${unfit.map(f=>escapeHtml(f.role)+' — '+escapeHtml((f.unmet||[]).join('; '))).join('<br>')}</div></div>`
-        : `<div class="card agentcli-card"><div class="agentcli-hd"><span class="health-dot ok"></span>
-             <span class="agentcli-name">All ${fitness.length} ants are routed to a capable model.</span></div></div>`)
-      + `<div class="card agentcli-card"><div class="agentcli-hd">
-           <span class="agentcli-name">${tools.length} tools registered</span></div>
-         <div class="agentcli-sub">${tools.map(t=>escapeHtml(t.name||t)).join(', ')||'None.'}</div></div>`;
+    // Both branches fixed this page independently: theirs taught it the registered/planned/
+    // rejected/blocked distinctions the widget always had; ours consolidated it ONTO the widget's
+    // renderer so the two cannot drift again. The consolidation is the stronger form of the same
+    // fix, and the one v0.3.8.41 insight it lacked — an unresolved route is not an unfit model —
+    // now lives in renderToolsPanel, where both surfaces get it.
+    renderToolsPanel(r.data||{}, 'toolsview-body', {inventory:true});
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
@@ -4215,31 +4505,20 @@ async function pollActiveJob(){
     const j=r.data;
     // v3.8.34: 'escalated' is terminal — without it this poller never stops, the directive box
     // stays disabled, and the operator is locked out waiting for a run that already ended.
-    if(j.status==='complete'||j.status==='failed'||j.status==='partial'||j.status==='escalated'){
+    // v0.3.8.42: 'cancelled' and 'timed_out' too — cancelling from the jobs list left this poller
+    // running forever and the composer locked, the same defect 'escalated' fixed, one status over.
+    // The set now lives in JOB_TERMINAL_STATUSES, keyed to ApiJobRegistry.IsTerminalStatus.
+    if(jobIsTerminal(j.status)){
       clearInterval(jobPollTimer);jobPollTimer=null;
       showJobResult(activeJobId);
-      enableInput(true);
       activeJobId=null;
     }
   }catch{}
 }
 
 // -- Mission dispatch ----------------------------------------------------------
-// Mission inputs are auto-growing <textarea>s: they wrap into a paragraph instead of
-// scrolling as a single line, capped at max-height (then they scroll internally).
-function autoGrowMissionInput(el){
-  el.style.height='auto';
-  el.style.height=Math.min(el.scrollHeight,140)+'px';
-}
-
-// Compose the effective goal for the Overview node: prepend the selected mode's safe wording
-// (read by the v1.8.23 planner constraints) to the raw directive.
-function composeOvGoal(raw){
-  if(ovMode && typeof OV_MODE_TEXT!=='undefined' && OV_MODE_TEXT[ovMode]) return OV_MODE_TEXT[ovMode] + raw;
-  return raw;
-}
-// Core dispatch: POST a goal and start tracking the resulting job. Shared by direct dispatch and
-// by the Mission Composer's Approve & Dispatch, so both submit the exact same goal string.
+// v0.3.8.42 (§3): dispatch has ONE production caller left — Re-run on the jobs list. The four
+// composers that used to feed it are retired; missions start in Chat.
 /** v2.17.1: surface the failure instead of silently re-enabling the input. */
 function msShowDispatchError(message){
   const box=document.getElementById('ms-error');
@@ -4256,14 +4535,15 @@ function msClearDispatchError(){
  * textarea or hand the directive back. Previously a rejected dispatch discarded what the operator
  * had typed AND told them nothing — `if(!r.success){enableInput(true);return;}`.
  */
+let msDispatchInFlight=false;
 async function submitMissionGoal(goal){
   if(!goal) return false;
-  enableInput(false);
+  if(msDispatchInFlight) return false;   // double-submit guard, kept from the composer era
+  msDispatchInFlight=true;
   msClearDispatchError();
   try{
     const r=await api('/missions','POST',{goal});
     if(!r.success){
-      enableInput(true);
       msShowDispatchError('Could not dispatch: '+(r.message||'the colony rejected the mission.'));
       return false;
     }
@@ -4277,118 +4557,20 @@ async function submitMissionGoal(goal){
       loadMissionThread({fresh:true});
     return true;
   }catch(e){
-    enableInput(true);
     msShowDispatchError('Could not dispatch: '+((e&&e.message)||'the colony is unreachable.'));
     return false;
-  }
-}
-let msDispatchInFlight=false;
-async function dispatchMission(inputId){
-  const input=document.getElementById(inputId||'mission-input');
-  if(!input) return;
-  let val=input.value.trim(); if(!val) return;       // empty directives do nothing
-  if(msDispatchInFlight) return;                      // guards the Enter key as well as the button
-  if(inputId==='ov-mission-input'){ val=composeOvGoal(val); hidePlanPreview(); }
-
-  // v2.17.1: hold the text until the colony accepts it. It used to be cleared first, so a
-  // rejected dispatch lost the directive entirely.
-  const typed=input.value;
-  msDispatchInFlight=true;
-  try{
-    const accepted=await submitMissionGoal(val);
-    if(accepted){ input.value=''; }
-    else { input.value=typed; }
-    autoGrowMissionInput(input);
-    if(!accepted) input.focus();
   } finally { msDispatchInFlight=false; }
 }
 
-// -- Mission Composer plan preview (v1.8.23, UI Phase 3) ----------------------
-let ovPreviewGoal='';
-async function previewPlan(){
-  const input=document.getElementById('ov-mission-input'); if(!input) return;
-  const raw=input.value.trim();
-  if(!raw){ if(typeof pcToast==='function') pcToast('Enter a directive to preview.',false); return; }
-  ovPreviewGoal=composeOvGoal(raw);
-  const box=document.getElementById('ov-plan'); if(!box) return;
-  box.style.display=''; box.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Planning… (the planner runs once; no mission is created)</div>';
-  const btn=document.getElementById('ov-preview-btn'); if(btn) btn.disabled=true;
-  try{
-    const r=await api('/missions/plan','POST',{goal:ovPreviewGoal});
-    if(!r.success){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(r.message||'error')}</div>`; return; }
-    renderPlan(r.data||{});
-  }catch(e){ box.innerHTML=`<div class="hud-state err">Plan failed: ${escapeHtml(e.message)}</div>`; }
-  finally{ if(btn) btn.disabled=false; }
-}
-function renderPlan(d){
-  const box=document.getElementById('ov-plan'); if(!box) return;
-  const c=d.constraints||{}, tasks=Array.isArray(d.tasks)?d.tasks:[];
-  const flags=[];
-  if(c.verification_only) flags.push('verification-only');
-  if(c.read_only) flags.push('read-only');
-  if(c.no_patches) flags.push('no file changes');
-  if(c.one_shot) flags.push('one-shot');
-  let banner='';
-  if(c.blocks_patches) banner=`<div class="hud-plan-banner warn">Constraint: ${flags.join(' · ')} — this plan proposes <b>no file changes</b> (coder patch steps are dropped).</div>`;
-  else if(d.has_coder_task) banner=`<div class="hud-plan-banner info">This plan includes a <b>coder patch-proposal</b> step. Nothing is written to disk until you approve &amp; apply the patch in Changes.</div>`;
-  const steps=tasks.map(t=>{
-    const ant=(t.ant||'').toLowerCase();
-    const deps=(t.depends_on||[]).length?` · after step ${(t.depends_on||[]).join(', ')}`:'';
-    const crit=t.critical===false?' · optional':'';
-    // v1.8.23: show the resolved worker sub-caste, when the planner picked one.
-    const worker=t.worker&&t.worker!==t.ant?`<span style="color:var(--dim);font-size:9px">${escapeHtml(String(t.worker).split('.').pop())}</span> `:'';
-    // v3.1.0: the preview runs the same authorization gate dispatch does, so a step the runtime
-    // would refuse is marked HERE — it used to render as an ordinary planned step and fail the
-    // moment the operator approved it.
-    const refused=t.blocked===true;
-    const mark=refused?`<span style="color:var(--status-danger);font-size:9px;font-weight:700;letter-spacing:.05em">REFUSED</span> `:'';
-    const why=refused&&t.blocked_reason?`<div class="p-meta" style="color:var(--status-danger)">${escapeHtml(t.blocked_reason)}</div>`:'';
-    return `<div class="plan-step"${refused?' style="opacity:.6"':''}><span class="p-num">${t.index}</span><div class="p-body">`+
-      `<div class="p-title">${mark}${escapeHtml(t.title||'')}</div>`+
-      `<div class="p-meta"><span class="ant-badge ${ant}">${escapeHtml(ant||'ant')}</span> ${worker}${escapeHtml(t.task_type||'')}${deps}${crit}</div>`+
-      why+
-      `</div></div>`;
-  }).join('')||'<div class="hud-state">Planner returned no steps.</div>';
-  // v1.8.23: surface any capability-contract warnings from worker validation.
-  const warns=(Array.isArray(d.constraint_warnings)?d.constraint_warnings:[]).filter(Boolean);
-  if(warns.length) banner+=`<div class="hud-plan-banner warn">Capability notes: ${warns.map(escapeHtml).join(' · ')}</div>`;
-  box.innerHTML=
-    `<div class="hud-hd"><span class="hud-hd-title">Plan Preview</span>`+
-    `<span class="hud-hd-sub">${d.task_count||tasks.length} step(s)${d.spec_ingestion?' · spec-ingestion':''}</span></div>`+
-    banner+
-    `<div style="font-size:10px;color:var(--dim);margin-bottom:6px;word-break:break-word">Goal: ${escapeHtml(d.goal||ovPreviewGoal)}</div>`+
-    steps+
-    `<div class="hud-actions" style="margin-top:10px">`+
-      `<button class="hud-act primary" data-onclick="approveDispatch()">✓ Approve &amp; Dispatch</button>`+
-      `<button class="hud-act" data-onclick="editPlan()">Edit</button>`+
-      `<button class="hud-act danger" data-onclick="hidePlanPreview()">Reject</button>`+
-    `</div>`;
-}
-function approveDispatch(){
-  if(!ovPreviewGoal){ hidePlanPreview(); return; }
-  const goal=ovPreviewGoal; ovPreviewGoal='';
-  const input=document.getElementById('ov-mission-input'); if(input){ input.value=''; autoGrowMissionInput(input); }
-  hidePlanPreview();
-  submitMissionGoal(goal);
-}
-function editPlan(){ hidePlanPreview(); document.getElementById('ov-mission-input')?.focus(); }
-function hidePlanPreview(){ const b=document.getElementById('ov-plan'); if(b){ b.style.display='none'; b.innerHTML=''; } }
+// v0.3.8.42 (§3): the plan-preview flow (previewPlan / renderPlan / approveDispatch) retired with
+// the dashboard composer it belonged to. POST /missions/plan keeps working and is recorded as a
+// UI GAP in ConsoleRouteCoverageTests until Chat grows a preview step — the capability was not
+// removed, its only surface was.
 
-// Wire up all mission dispatch inputs — Enter dispatches, Shift+Enter inserts a newline.
-['mission-input','ms-mission-input','ov-mission-input'].forEach(id=>{
-  const el=document.getElementById(id);
-  el.addEventListener('keydown',e=>{
-    if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); dispatchMission(id); }
-  });
-  el.addEventListener('input',()=>autoGrowMissionInput(el));
-});
-document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
-document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
 // v2.16.0: the conversation loads when the page opens. Job polling keeps it current after that.
 // v2.17.1: page entry forces a fresh read (not the 10s cache) so the newest answers are present
 // immediately, and re-announces nothing that was already on screen.
 PAGE_ENTER['missions']=()=>loadMissionThread({fresh:true});
-document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // -- Helpers -------------------------------------------------------------------
 function fmtTime(iso){
@@ -4498,7 +4680,7 @@ const PALETTE_PAGES=[
   ['shell','Terminal',true],['settings','Settings',true],['users','Users',true],
 ];
 const PALETTE_ACTIONS=[
-  ['new-mission','New mission (compose)',()=>{ showPage('overview'); setTimeout(()=>document.getElementById('ov-mission-input')?.focus(),80); },false],
+  ['new-mission','New mission (in Chat)',()=>{ go('/chat'); setTimeout(()=>document.getElementById('chat-input')?.focus(),80); },false],
   ['toggle-nav','Toggle navigation sidebar',()=>document.getElementById('nav-collapse-btn')?.click(),false],
   ['shortcuts','Show keyboard shortcuts',()=>openShortcuts(),false],
   ['tour','Restart onboarding tour',()=>startTour(true),false],
@@ -5480,6 +5662,9 @@ function antcfgProviderOptions(curProvider){
 var ORCHESTRATION_ROLES = [
   { id:'planner',    label:'Planner',    why:'Turns a goal into the task plan. If this model is missing the colony silently falls back to a static plan.' },
   { id:'strategist', label:'Strategist', why:'Adaptive mission control — decides whether to replan mid-mission.' },
+  // v0.3.8.42: who speaks for the colony in Chat. Any provider is a valid answer — local model,
+  // keyed API, or an installed agent CLI — which is the whole point of routing it.
+  { id:'conversation', label:'Conversation', why:'Answers chat turns. Route it to whichever provider should speak for the colony — Ollama, a keyed API, or an installed agent.' },
   { id:'fallback',   label:'Fallback',   why:'Used by any role with no route of its own, and when a preferred route is unhealthy.' },
 ];
 
@@ -8029,7 +8214,8 @@ function renderTelemetryBar(containerId){
 
 // -- V2.2 Pass B: Overview command-center cards (real data + labeled empty states) ----
 const OV2={healthTrend:[]};
-function ov2FocusMission(){ const el=document.getElementById('ov-mission-input'); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus(); } }
+// v0.3.8.42 (§3): Create Mission goes to the canonical composer — Chat.
+function ov2FocusMission(){ go('/chat'); setTimeout(()=>document.getElementById('chat-input')?.focus(),80); }
 function ov2Empty(id,msg){ const el=document.getElementById(id); if(el) el.innerHTML='<div class="ov2-empty">'+escapeHtml(msg)+'</div>'; }
 
 async function pollOv2(){
@@ -8708,18 +8894,14 @@ function renderConversations(list){
   const body=document.getElementById('ov-conversations-body');
   if(!body) return;
 
-  // The composer is rebuilt only when absent, so typing survives a refresh. A poll that wipes a
-  // half-written message is a poll that makes the panel unusable.
-  if(!document.getElementById('conv-new-msg')){
+  // v0.3.8.42 (§3): the widget's own composer and per-row message boxes retired — Chat is the one
+  // conversation surface. What remains is what a dashboard widget owes: what is WAITING on the
+  // operator, one-click answers through the same convApprove/convCancel path Chat uses (one
+  // approval path, not two), and a way into the real conversation.
+  if(!document.getElementById('conv-list')){
     body.innerHTML =
       `<div class="conv-new">
-         <input id="conv-new-msg" class="conv-input" placeholder="Ask the colony something…" />
-         <select id="conv-new-policy" class="conv-select" title="How much do you want to be asked?">
-           <option value="ask">Ask me first</option>
-           <option value="autoapprove">Auto-approve</option>
-           <option value="bypass">No approvals</option>
-         </select>
-         <button class="conv-btn primary" data-onclick="convStart()">Start</button>
+         <button class="conv-btn primary" data-onclick="go('/chat')">✎ Start a conversation in Chat</button>
        </div>
        <div id="conv-list"></div>`;
   }
@@ -8738,7 +8920,7 @@ function renderConversations(list){
   if(!listEl) return;
 
   if(!list.length){
-    listEl.innerHTML='<div class="conv-empty">No conversations yet. Start one above — it stays chat until you approve real work.</div>';
+    listEl.innerHTML='<div class="conv-empty">No conversations yet. Start one in Chat — it stays chat until you approve real work.</div>';
     return;
   }
 
@@ -8771,36 +8953,18 @@ function renderConversations(list){
       ${(c.mission_ids&&c.mission_ids.length)?`<div class="conv-missions">${c.mission_ids.length} mission(s) started</div>`:''}
       ${attention}
       ${c.cancelled?'':`<div class="conv-say">
-        <input class="conv-input" id="conv-msg-${escapeHtml(c.id)}" placeholder="Say something…" />
-        <button class="conv-btn" data-onclick="convSend('${jsArg(c.id)}','chat')">Send</button>
-        <button class="conv-btn work" data-onclick="convSend('${jsArg(c.id)}','mission')" title="Asks for real, multi-task work — gated by your approval policy">Do the work</button>
+        <button class="conv-btn" data-onclick="openConversationInChat('${jsArg(c.id)}')">Open in Chat</button>
       </div>`}
     </div>`;
   }).join('');
 }
 
-/** Start a conversation, then immediately send the first message if one was typed. */
-async function convStart(){
-  const msgEl=document.getElementById('conv-new-msg');
-  const polEl=document.getElementById('conv-new-policy');
-  const msg=(msgEl&&msgEl.value||'').trim();
-  const r=await api('/conversations','POST',{ title: msg.slice(0,48)||'Conversation', policy: polEl?polEl.value:'ask' });
-  if(!r||!r.success){ convSay(r&&r.message||'Could not start conversation', false); return; }
-  if(msg){ await api('/conversations/'+r.data.id+'/turns','POST',{ message:msg, mode:'chat' }); }
-  if(msgEl) msgEl.value='';
-  apiCacheBust('/conversations'); pollConversations();
-}
+/** v0.3.8.42 (§3): the widget's way into the real conversation surface. */
+function openConversationInChat(id){ go('/chat'); chatOpen(id); }
 
-async function convSend(id, mode){
-  const el=document.getElementById('conv-msg-'+id);
-  const msg=(el&&el.value||'').trim();
-  if(!msg){ convSay('Type something first.', false); return; }
-  const r=await api('/conversations/'+id+'/turns','POST',{ message:msg, mode:mode||'chat' });
-  if(el) el.value='';
-  // A refusal is the interesting outcome, so it is SAID rather than left to the next poll.
-  if(r&&r.data&&r.data.started===false) convSay(r.data.summary||'Refused', false);
-  apiCacheBust('/conversations'); pollConversations();
-}
+// v0.3.8.42 (§3): convStart and convSend retired with the widget's composer and per-row message
+// boxes — messages travel through the Chat page. convApprove and convCancel stay: they are the ONE
+// approval path, shared by the chat escalation gate and the widget's attention rows.
 
 /**
  * Answer a pending escalation.
@@ -8846,20 +9010,30 @@ var TOOL_STATUS_LABEL = {
   rejected:'rejected — see why', disabled:'switched off by you',
 };
 
-/** Poll + render both panels. One GET each, only while the Overview is on screen. */
+/* v0.3.8.42: the poll serves whichever Tools surface is on screen — the Overview widget or the
+ * Tools page — so the CRUD actions' refresh reaches the surface the operator is looking at. */
+function activeToolsTarget(){
+  if(document.getElementById('page-toolsview')?.classList.contains('active')) return 'toolsview-body';
+  if(document.getElementById('ov-tools-body') && document.getElementById('page-overview')?.classList.contains('active')) return 'ov-tools-body';
+  return null;
+}
 async function pollToolsPanel(){
-  var body=document.getElementById('ov-tools-body');
-  if(!body || !document.getElementById('page-overview')?.classList.contains('active')) return;
+  const target=activeToolsTarget(); if(!target) return;
   try{
     const r=await api('/tools');
     if(!r||!r.success) return;
-    renderToolsPanel(r.data||{});
+    renderToolsPanel(r.data||{}, target, target==='toolsview-body'?{inventory:true}:undefined);
   }catch(e){ pollWarnOnce('pollToolsPanel', e); }
 }
 
-function renderToolsPanel(d){
-  const body=document.getElementById('ov-tools-body');
+function renderToolsPanel(d, targetId, opts){
+  const body=document.getElementById(targetId||'ov-tools-body');
   if(!body) return;
+  // One renderer, two possible surfaces, one DOM: the inactive surface must not keep a stale copy
+  // of the registration form, or the document carries duplicate tp-* ids and getElementById feeds
+  // the CRUD actions from whichever copy came first.
+  const other=document.getElementById((targetId||'ov-tools-body')==='ov-tools-body'?'toolsview-body':'ov-tools-body');
+  if(other&&other.querySelector('#tp-name')) other.innerHTML='<div class="hud-state">Loading…</div>';
 
   const tools=d.tools||[], userTools=d.user_tools||[], fitness=d.model_fitness||[];
 
@@ -8869,8 +9043,25 @@ function renderToolsPanel(d){
   // tool. In a transcript that reads as a weak model rather than as a misconfiguration an operator
   // could fix in thirty seconds. Only the misfits are listed: a table of all-green is noise, and
   // noise is what taught everyone to skim past this kind of panel.
-  const unfit=fitness.filter(f=>!f.fit);
-  const fitnessHtml = unfit.length
+  // v0.3.8.41 — UNRESOLVED is separated from UNFIT, because they are different problems.
+  //
+  // "No model is chosen" is one fact about the colony with one remedy, and it made every role look
+  // individually broken: seven rows naming capabilities the operator's model was never asked about,
+  // on a host with a perfectly good model installed. Listing it per role also buries the remedy
+  // under the symptom.
+  const unresolved=fitness.filter(f=>f.unresolved);
+  const unfit=fitness.filter(f=>!f.fit && !f.unresolved);
+
+  const unresolvedHtml = unresolved.length
+    ? `<div class="tp-alarm">
+         <div class="tp-alarm-hd">${unresolved.length} role(s) have no model to run on</div>
+         <div class="tp-alarm-row"><span class="tp-unmet">${escapeHtml(unresolved[0].unresolved)}</span></div>
+         <div class="tp-alarm-row"><span class="tp-role">Affected</span>
+           <span class="tp-model">${escapeHtml(unresolved.map(f=>f.role).join(', '))}</span></div>
+       </div>`
+    : '';
+
+  const fitnessHtml = unresolvedHtml + (unfit.length
     ? `<div class="tp-alarm">
          <div class="tp-alarm-hd">${unfit.length} role(s) routed to a model that cannot do the job</div>
          ${unfit.map(f=>`<div class="tp-alarm-row">
@@ -8879,9 +9070,9 @@ function renderToolsPanel(d){
             <span class="tp-unmet">${escapeHtml((f.unmet||[]).join(', '))}</span>
           </div>`).join('')}
        </div>`
-    : fitness.length
+    : (fitness.length && !unresolved.length)
       ? `<div class="tp-quiet">All ${fitness.length} contracted roles are routed to a capable model.</div>`
-      : '';
+      : '');
 
   // ---- tools that will not run, and why ------------------------------------
   const broken=tools.filter(t=>t.status!=='registered');
@@ -8959,10 +9150,24 @@ function renderToolsPanel(d){
   const keep=['tp-name','tp-desc','tp-url','tp-method']
     .map(id=>[id, document.getElementById(id)?.value]);
 
+  // The destination page owes the full inventory the widget deliberately omits (the widget's rule
+  // is show-what-is-wrong-first). Built-ins are read-only by contract: the API offers no mutation
+  // for them, so the UI offers none either.
+  const inventoryHtml = opts&&opts.inventory
+    ? `<div class="tp-group"><div class="tp-section-hd">All built-in tools (${tools.length}) — read-only</div>`
+      + (tools.map(t=>`<div class="tp-item ${t.status==='registered'?'':'off'}">
+           <span class="tp-name">${escapeHtml(t.name||t)}</span>
+           <span class="tp-status">${escapeHtml(TOOL_STATUS_LABEL[t.status]||t.status||'')}</span>
+           <span class="tp-why">${escapeHtml(t.description||'')}</span>
+         </div>`).join('')||'<div class="tp-quiet">None.</div>')
+      + `</div>`
+    : '';
+
   body.innerHTML =
     fitnessHtml + blockedHtml +
     `<div class="tp-group">${brokenHtml}</div>` +
-    `<div class="tp-group"><div class="tp-section-hd">Operator-defined tools</div>${utHtml}</div>`;
+    `<div class="tp-group"><div class="tp-section-hd">Operator-defined tools</div>${utHtml}</div>` +
+    inventoryHtml;
 
   for(const [id, value] of keep){
     if(value===undefined || value==='') continue;
@@ -9041,7 +9246,10 @@ async function toolEnable(name){
  * transcript in which a since-revoked tool was called.
  */
 async function toolDelete(name){
-  if(!window.confirm('Delete the definition for "'+name+'" permanently?\n\nDisable keeps it and stops offering it to agents. Delete cannot be undone from the console.')) return;
+  // v0.3.8.42: uiConfirm, not window.confirm — the native dialog blocks the renderer's main
+  // thread, which is the exact defect the in-app modal exists to prevent (see uiConfirm).
+  if(!await uiConfirm('Delete the definition for "'+name+'" permanently? Disable keeps it and stops offering it to agents. Delete cannot be undone from the console.',
+      {title:'Delete tool', ok:'Delete', danger:true})) return;
   const r=await api('/tools/user/'+encodeURIComponent(name)+'?purge=true','DELETE');
   convSay((r&&r.message)||'Deleted', !!(r&&r.success));
   apiCacheBust('/tools'); pollToolsPanel();
