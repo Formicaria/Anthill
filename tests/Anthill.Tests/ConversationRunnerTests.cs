@@ -61,7 +61,7 @@ public class ConversationRunnerTests : IDisposable
     /// then keeps working, so the runner can record history without waiting for the work to finish.
     /// A fake that only returned the id would test a pipeline that does not exist.
     /// </summary>
-    private ConversationRunner Runner(Func<string, ConversationReply>? ask = null) => new(_memory, (_, onCreated, token) =>
+    private ConversationRunner Runner(Func<string, Action<string>?, ConversationReply>? ask = null) => new(_memory, (_, onCreated, token) =>
     {
         var id = $"mission-{Interlocked.Increment(ref _missionsStarted)}";
         _lastToken = token;
@@ -106,7 +106,7 @@ public class ConversationRunnerTests : IDisposable
     public void Chat_RunsWithoutAnEscalationDecision_AndIsAnswered()
     {
         string? seen = null;
-        var outcome = Runner(prompt => { seen = prompt;
+        var outcome = Runner((prompt, _) => { seen = prompt;
             return new ConversationReply(true, "It orchestrates missions.", "agent:claude-code", "Claude Code", null); })
             .Run(Chat(), "what does this repository do?");
 
@@ -143,7 +143,7 @@ public class ConversationRunnerTests : IDisposable
     [Fact]
     public void Chat_ProviderFailure_RecordsNoFakeTurn()
     {
-        var outcome = Runner(_ => new ConversationReply(false, "", "local", "llama", "ConnectError: Could not connect"))
+        var outcome = Runner((_, _) => new ConversationReply(false, "", "local", "llama", "ConnectError: Could not connect"))
             .Run(Chat(), "hello?");
 
         Assert.False(outcome.Started);
@@ -158,7 +158,7 @@ public class ConversationRunnerTests : IDisposable
     public void Chat_ReplyAfterCancel_IsDiscarded()
     {
         var chat = Chat();
-        var runner = Runner(_ =>
+        var runner = Runner((_, _) =>
         {
             // The cancel arrives while the provider is thinking.
             _memory.SaveConversation(chat with { Cancelled = true });

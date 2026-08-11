@@ -128,11 +128,14 @@ public sealed class ConversationRunner
     /// the operator chooses under Administration → Providers &amp; Model Routing. Null means the
     /// runtime was composed without reasoning, and the turn says so instead of pretending.
     /// </summary>
-    private readonly Func<string, ConversationReply>? _ask;
+    /// <summary>v0.3.8.44: the second argument is the delta channel — null when the caller wants
+    /// one reply, a sink when it wants the reply as it is produced. The delegate decides whether
+    /// its provider can actually stream; the runner never fakes it.</summary>
+    private readonly Func<string, Action<string>?, ConversationReply>? _ask;
 
     public ConversationRunner(SqliteMemory memory,
         Func<string, Action<string>, CancellationToken, string> startMission,
-        Func<string, ConversationReply>? ask = null)
+        Func<string, Action<string>?, ConversationReply>? ask = null)
     {
         _memory = memory;
         _startMission = startMission;
@@ -151,7 +154,8 @@ public sealed class ConversationRunner
         string message,
         ConversationMode requested = ConversationMode.Chat,
         IReadOnlyDictionary<string, string>? answers = null,
-        CancellationToken cancel = default)
+        CancellationToken cancel = default,
+        Action<string>? onDelta = null)
     {
         if (conversation is null)
             return new ConversationOutcome(requested, false, null, "no conversation");
@@ -179,7 +183,7 @@ public sealed class ConversationRunner
                     "no reasoning provider is composed — the message is recorded, and nothing can answer it");
 
             ConversationReply reply;
-            try { reply = _ask(ChatPrompt(conversation)); }
+            try { reply = _ask(ChatPrompt(conversation), onDelta); }
             catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
 
             if (!reply.Ok)

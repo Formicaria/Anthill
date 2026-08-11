@@ -143,6 +143,32 @@ public static class ProviderWireFormat
         }
     }
 
+    /// <summary>
+    /// v0.3.8.44 — read ONE OpenAI-compatible stream chunk (the JSON after an SSE <c>data:</c>
+    /// prefix). Returns the content delta if the chunk carries one, and whether the stream is
+    /// finished. Never throws: a malformed chunk is skipped, because one bad line in a stream of
+    /// hundreds must not abort an answer that is otherwise arriving.
+    ///
+    /// The terminal <c>[DONE]</c> sentinel is handled by the CALLER before parsing — it is not
+    /// JSON and pretending otherwise here would turn the protocol's end marker into a parse error
+    /// swallowed on every single stream.
+    /// </summary>
+    public static (string? Delta, bool Finished, string? FinishReason) ReadOpenAiStreamChunk(string chunkJson)
+    {
+        try
+        {
+            var choice = JsonNode.Parse(chunkJson)?.AsObject()?["choices"]?.AsArray()
+                ?.FirstOrDefault()?.AsObject();
+            var delta = choice?["delta"]?.AsObject()?["content"]?.GetValue<string>();
+            var finish = choice?["finish_reason"]?.GetValue<string>();
+            return (string.IsNullOrEmpty(delta) ? null : delta, finish is { Length: > 0 }, finish);
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
+        {
+            return (null, false, null);
+        }
+    }
+
     // ---- Anthropic messages --------------------------------------------------------------------
 
     /// <summary>

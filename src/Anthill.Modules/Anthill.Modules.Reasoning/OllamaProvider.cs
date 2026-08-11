@@ -27,7 +27,7 @@ namespace Anthill.Modules.Reasoning;
 /// always means the model is not pulled, and saying so — with the exact <c>ollama pull</c> command
 /// — is the difference between a two-second fix and an operator debugging their network.
 /// </summary>
-public sealed class OllamaClient : IReasoningProvider
+public sealed class OllamaClient : IStreamingReasoningProvider
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(185) };
     private readonly string _model;
@@ -128,6 +128,101 @@ public sealed class OllamaClient : IReasoningProvider
             }
         }
         return lastError;
+    }
+
+    /// <summary>
+    /// v0.3.8.44 — the streamed form of <see cref="Send"/>: same endpoint, same body plus
+    /// <c>"stream": true</c>, deltas delivered as they arrive, and the return value classified
+    /// exactly as Send classifies — the final response is the record, the deltas are presentation.
+    ///
+    /// A request that negotiated TOOLS falls back to the non-streaming call: recovering tool
+    /// calls from stream fragments is a real protocol with real edge cases, and v1 claiming it
+    /// untested would be the streaming lie wearing a tool-call hat. Chat turns — the caller this
+    /// exists for — offer no tools.
+    ///
+    /// No retry loop, deliberately. A retry is invisible inside Send; here the operator has
+    /// already WATCHED half an answer arrive, and silently starting over would replay text they
+    /// have read. A failed stream reports as the failure it is.
+    /// </summary>
+    public ModelResponse SendStreaming(ModelRequest request, Action<string> onDelta, int retries = 2)
+    {
+        var url = ChatEndpoint(_host);
+        var model = request.Model ?? _model;
+        var negotiated = ModelCapabilityCatalog.Negotiate(
+            request, OllamaCapabilityCache.For(_host, model));
+        if (negotiated.Tools is { Count: > 0 })
+            return Send(request, retries);
+
+        var body = ProviderWireFormat.OpenAiBody(negotiated, model);
+        body["stream"] = true;
+
+        var ambient = ModelCallScope.Current;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ambient);
+        cts.CancelAfter(TimeSpan.FromSeconds(_options.ModelCallTimeoutSeconds));
+        var text = new StringBuilder();
+        string? finishReason = null;
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            };
+            // Headers-first: the whole point is reading the body as it is produced.
+            using var response = Http.Send(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errBody = response.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
+                var detail = errBody.Length > 0 && errBody.Length <= 300 ? $" — {errBody.Trim()}" : "";
+                return (int)response.StatusCode == 404
+                    ? Fail(ModelCallOutcome.NotAvailable, model,
+                        $"ERROR: Ollama at {_host} is reachable but model '{model}' is not available{detail}. Run: ollama pull {model} (an offline machine needs the model blobs copied in — it cannot pull).")
+                    : Fail(ModelCallOutcome.HttpError, model,
+                        $"ERROR: Ollama at {_host} answered HTTP {(int)response.StatusCode}{detail}.");
+            }
+
+            using var stream = response.Content.ReadAsStream(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            while (reader.ReadLine() is { } line)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                var payload = line["data:".Length..].Trim();
+                if (payload.Length == 0) continue;
+                if (payload == "[DONE]") break;   // the protocol's end marker, not JSON
+                var (delta, finished, reason) = ProviderWireFormat.ReadOpenAiStreamChunk(payload);
+                if (delta is not null) { text.Append(delta); onDelta(delta); }
+                if (finished) { finishReason = reason; }
+            }
+
+            return new ModelResponse
+            {
+                Status = text.Length == 0 ? ModelCallOutcome.Empty : ModelCallOutcome.Ok,
+                Content = text.ToString(),
+                Provider = "ollama",
+                Model = model,
+                FinishReason = finishReason,
+                // Usage is deliberately absent: the OpenAI-compatible stream does not carry it by
+                // default, and inventing token counts would be a number with no producer.
+            };
+        }
+        catch (HttpRequestException error)
+        {
+            return Fail(ModelCallOutcome.ConnectError, model, $"ERROR: Could not connect to Ollama at {_host} ({error.GetBaseException().Message}). "
+                + "Check: is Ollama running there; if it is on another machine, is OLLAMA_HOST=0.0.0.0 set on it "
+                + "(Ollama binds only 127.0.0.1 by default) and does ANTHILL's ollama_host point at its IP, not localhost?");
+        }
+        catch (OperationCanceledException) when (ambient.IsCancellationRequested)
+        {
+            return Fail(ModelCallOutcome.Cancelled, model, "ERROR: Ollama request cancelled because the mission was stopped.");
+        }
+        catch (OperationCanceledException)
+        {
+            return Fail(ModelCallOutcome.Timeout, model, $"ERROR: Ollama request timed out after {_options.ModelCallTimeoutSeconds}s.");
+        }
+        catch (Exception error)
+        {
+            return Fail(ModelCallOutcome.Error, model, $"ERROR: Ollama request failed: {error.Message}.");
+        }
     }
 
     /// <summary>
