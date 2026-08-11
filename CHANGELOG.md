@@ -20,6 +20,8 @@ conversation with draft and scroll intact, and narrow widths becoming a clean fu
 switch. Guard tests now pin the split geometry and forbid the frosted floating panel outright —
 a presentation this product has rejected twice from live use cannot quietly return.
 
+## v0.3.8.44 - the answer arrives as it is produced, and the desktop app survives the field
+
 **Chat streams.** Three layers, each honest about what it is. The SDK gains
 `IStreamingReasoningProvider` — ADDITIVE, a capability a caller asks about with a type test,
 never a wrapper faking a trickle over a blocking call (the "streaming claims" lie the
