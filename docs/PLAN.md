@@ -1,7 +1,12 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.44** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.45** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.45: Chat + Colony became a SPLIT page on the field's verdict — the desktop tester could
+> not see the colony (it drew, centred, under the opaque floating conversation panel) and the
+> operator ruled "should be a split page". Conversation left, colony right, in-flow, one
+> canonical canvas; the frosted-overlay presentation is now forbidden by guard test.
 
 > v0.3.8.44: chat answers ARRIVE as they are produced — a real streaming contract from SDK to
 > provider to SSE to console, with abort reaching the model call — and the desktop app's first
