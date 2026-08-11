@@ -3,505 +3,315 @@
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
 **Current version:** v0.3.8.41
-**Stack:** .NET 9 with optional C++20 native kernel  
-**Default runtime:** local Ollama  
-**Web UI:** `http://localhost:8713/ui`
 
-ANTHILL is a local task-orchestration app. You give it a goal, it breaks that goal into tasks, routes those tasks through specialized roles, stores the run history, and shows the result in a browser console.
+**Runs on:** Windows or Linux
 
-It is built to run on your own hardware first. Ollama is the default model backend. External providers can be added later from **Settings → Providers** if you want to route specific roles to OpenAI, Anthropic, Perplexity, or OpenRouter.
+**Web interface:** `http://localhost:8713/ui`
 
----
+ANTHILL is a self-hosted AI workspace built around a simple idea: give the colony a goal, let the
+Queen organize the work, and have specialized roles research, inspect, build, test, review, and
+report back.
 
-## Contents
+You use it through a browser, much like a normal AI chat. The difference is that a request can
+become a structured mission with a visible task trail, safety checks, proposed file changes, and a
+result you can inspect before anything is applied.
 
-- [What ANTHILL Does](#what-anthill-does)
-- [Current Version Notes](#current-version-notes)
-- [Requirements](#requirements)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Run Options](#run-options)
-- [Using the Web UI](#using-the-web-ui)
-- [Patch Review and File Changes](#patch-review-and-file-changes)
-- [Autonomy](#autonomy)
-- [Useful API Endpoints](#useful-api-endpoints)
-- [Build, Test, and Publish](#build-test-and-publish)
-- [Updating](#updating)
-- [Troubleshooting](#troubleshooting)
-- [Project Layout](#project-layout)
-- [License](#license)
+ANTHILL runs on your own hardware and keeps its history in a local SQLite database. The easiest
+model setup is [Ollama](https://ollama.com/), although external model providers can also be added
+after installation.
 
----
+> **New here?** Start with the Windows or Linux instructions below. You do not need to edit a
+> configuration file, build the source, or understand the colony architecture to get the first
+> mission running.
 
-## What ANTHILL Does
+## Pick the install that fits you
 
-ANTHILL runs a local workflow loop:
+| Your setup | Best choice |
+| --- | --- |
+| Windows desktop | [Windows quick start](#windows-quick-start) |
+| Linux desktop or a quick test server | [Linux quick start](#linux-quick-start) |
+| Proxmox or an always-on Debian/Ubuntu server | [LXC and systemd install](#lxc-and-systemd-install) |
+| Linux host where you already use Docker | [Docker](#docker) |
+| You want to change ANTHILL itself | [Build from source](#build-from-source) |
 
-1. You submit a mission.
-2. The Queen plans the mission.
-3. Tasks are assigned to roles such as `researcher`, `file`, `web`, `coder`, `builder`, and `verifier`.
-4. Tasks run in dependency order.
-5. Results, events, patches, approvals, and objective history are stored in SQLite.
-6. The web UI shows the mission result, task flow, patches, approvals, and system status.
+## Before you install
 
-The active codebase is .NET-first. The optional native C++ kernel is used for some dependency/scheduler work when available. If the native kernel is not present, ANTHILL falls back to the managed C# implementation.
+ANTHILL is the application. The AI model normally runs through Ollama, either on the same computer
+or on another machine on your network.
 
-The Python original was archived at `py.old/` and deleted in v3.8.17 (refactor phase 7). It is
-reachable in git history if it is ever needed; nothing in the build refers to it.
+For the simplest first setup, you need:
 
----
+- A 64-bit Windows or Linux computer
+- A web browser
+- Ollama with at least one chat model installed
+- About 10 GB of free disk space for ANTHILL, its data, and a small model
+- 8 GB of system RAM at minimum; 16 GB or more is much more comfortable
 
-## Current Version Notes
+The model is what uses most of the RAM and GPU memory. ANTHILL itself is comparatively light. A GPU
+is helpful but not required for a small Ollama model.
 
-The repo is on the **v3.x line**, and the **3.8 line is CLOSED at v3.8.32**. Planning lives in ONE
-document: **[docs/PLAN.md](docs/PLAN.md)** — where the colony measurably is, and what is left.
+This guide uses `llama3.1:8b` as an approachable starter model. It is not hardcoded into ANTHILL,
+and you can choose a different model that better fits your hardware.
 
-Two programs ran in 3.8 and both finished.
+## Windows quick start
 
-**The Core/Modules refactor (v3.8.3–v3.8.18).** `Anthill.Core` went from 34,247 lines to 24,973 with
-nothing deleted; the reasoning providers, the whole homelab and the tools that act on the machine
-moved to `Anthill.Modules.*`; and the boundary is enforced by assembly-reference tests rather than by
-review. `docs/adr/ADR-007-module-boundary.md` records the rule and what it costs.
+### 1. Install Ollama
 
-**The twelve-role activation program (v3.8.19–v3.8.32).** The colony had twelve registered roles, six
-of which had never run — one of them, the archivist, had never executed once in the project's
-history. All twelve now have a real production trigger, an enforced execution contract, and the tools
-their work requires. Patches are verified by compiling them in a sandbox that contains them; the
-verifier reads stored evidence rather than parsing a model's prose; and learning records only
-outcomes the colony actually verified.
+Download and install [Ollama for Windows](https://ollama.com/download/windows).
 
-The recurring finding across those releases is worth knowing before reading the code: **eight
-subsystems were implemented, tested, and unreachable.** Every one had passing tests, because the tests
-called the code directly and nothing asked whether production could get there.
-
-Its sibling cost five more defects. v3.8.31 declared the line closed; an external review then found
-five that were still present, each with passing tests, each the same shape — **a test that builds its
-own input in the form its own side expects**, so the two halves of a boundary are verified against an
-assumption rather than against each other. v3.8.32 fixed them and added the detectors.
-`docs/PLAN.md` §6 records every instance of both patterns.
-
-`docs/archive/v3/` holds the four planning documents PLAN.md replaced. V2 — the Homelab Command
-Center era — closed at v2.26.0 and is archived under `docs/archive/v2/`.
-
-The table below stops at v3.0.1 and is not maintained release by release — **`CHANGELOG.md` is the
-complete record.** What is kept here is the handful of entries that explain how the project got its
-current shape.
-
-Recent important changes:
-
-| Version | What changed |
-|---|---|
-| `v3.0.1` | **Generation-integrity mission scoring.** Found by live end-to-end testing: with the routed model (Ollama) unavailable, read-only missions still reported `completed_verified` (score 1.00) on canned non-model fallbacks — the outcome reflected structural completion, not whether the answer was actually generated. Fixed by carrying the ant's existing structured degraded-generation disclosure (`succeeded_with_warnings` + `provider_failure`) onto the task as `Task.GenerationDegraded`, and adding a **generation-integrity layer** to the canonical `MissionEvaluator`: a mission whose answer came from a degraded fallback can no longer be `completed_verified` (it demotes to `completed_unverified`, so it never reinforces learning or auto-apply). Fully additive and default-safe — the flag defaults false, so every prior case and the v2.26 characterization truth-table are unchanged. |
-| `v3.0.0` | **V3 baseline lock.** First V3 release; no new feature behavior by design. The V2 planning documents are archived at `docs/archive/v2/` and the V3 North Star + roadmap (`docs/archive/v3/NORTH_STAR.md`, `docs/archive/v3/ROADMAP.md`) were canonical at the time; both folded into `docs/PLAN.md` at v3.8.24. The centrepiece is the **generated runtime inventory + call-site audit**: 300 declarations (roles, feature gates, endpoints, tables, background loops) each paired with its production consumers, and a CI-gating audit that fails on any declaration without one — the defect V2 hit seven times and caught by eye every time. Its first run found an eighth: `cors_enabled`, a security-adjacent switch parsed from config, projected into the runtime, and read by nothing; removed rather than implemented. The audit fails in both directions, so a stale exemption is a failure too, and the exemption list ships intentionally empty. Also cleared: a duplicate mission-deadline call and the Python-era `docs.python.org` source-authority default. Live view at `GET /runtime/inventory`. |
-| `v2.26.0` | **Pre-V3 runtime hardening.** An external deep-dive was verified claim-by-claim (docs/archive/v2/PRE_V3_RUNTIME_HARDENING.md) and every confirmed defect fixed in one release, under one principle: *one outcome, one verification authority, one durable stop, one task lifecycle, one learning boundary, one action lifecycle.* Highlights: a canonical persisted `MissionEvaluation` computed exactly once and consumed by every positive path (Director, auto-apply, skill credit, pheromones, jobs — none re-derive success); `Promotable` intrinsically requires deterministic evidence and Queen's fabricated semantic PASS bundle is gone; a durable STOP survives restart because starting the Director no longer clears it; mission deadline/cancel now cancels in-flight work and drains it bounded — a terminal mission never contains a running task; job status maps from the canonical outcome (no more `complete`+`timed_out`); the Planner is stateless (concurrent plans cannot cross-contaminate skill provenance); skills persist row-atomically with revisions; the five core ants declare typed outcomes (zero-source research, zero-patch coder runs and all-reads-failed inspections are no longer "success"); model calls return typed results (empty is never success); Strategist follow-ups land as `suggested` and need operator approval; failed action verification returns failure; keep-without-verify is break-glass that unqualifies the installation; pheromone writes carry signal categories and planning reads only learning-bearing ones; plus config health (`/config/health`), deterministic self-introspection (`/colony/introspection`), a measured qualification report, interval-based backups, and a real fix for v2.23's route registration that had never once fired in production. |
-| `v2.25.0` | **V2 closes.** The last four items from every roadmap, in one release. *Safe Action executor migration:* the homelab executor's transitions now come FROM the canonical `ActionLifecycle` (shipped v2.14.0, never consulted by the one system that changes external state); verification becomes the only door to completion — a failed post-execution verify is canonically `failed`, not "executed with a warning in the text" — and produces a recovery **recommendation** on the audit stream, never a recovery execution. *Automation as a conversation:* the NORTH_STAR v2.16.0 "Next:" item — runs read as what the rule noticed and what the colony did about it, with restraint (cooldowns, caps) reading as deliberate quiet. *Scheduled fault injection:* the catalog runs daily on the shared scheduler and every run is recorded with a behaviour fingerprint — stability means identical fingerprints across 2+ passing runs, so pass-preserving drift still breaks the streak. *The V3 readiness gate:* all ten NORTH_STAR thresholds evaluated at `/readiness/json` from live data plus explicit operator attestations (`/readiness/attest`); a measured check can never be attested into passing and vice versa; `/readiness/certification` is always truthful about an unready system. Also closes the seventh call-site gap: `/shadow/judge` lets the operator actually judge shadow recommendations. |
-| `v2.24.0` | **Was the goal met?** A mission whose goal was "add a CHANGELOG entry" could describe the change, pass verification honestly, and deliver no file change — `completed_verified` then flowed to pheromones, EMA, skill credit and auto-apply. `ObjectiveVerification` adds a deliverable check: a goal that plainly asks for a file change must have PROPOSED one. Additive — the interim gate stays the floor and this can only narrow, proven across every goal/verification/proposal combination. Goals whose intent cannot be read fall back to the floor alone. Off by default (`objective_verification_enabled`). **Shadow gets a track record.** The Shadow Operations line shipped across two releases with no table, no production call site and no surface — so qualification could only ever be computed over replayed scenarios. Recommendations and operator judgments now persist and join into scoreable pairs; `LiveIncidentObserver` records what shadow would have done when a real incident opens and never executes; `QualificationScoreboard.Compute` is finally called on rehydrated history behind `/shadow/json` and a Homelab → Automation panel. Persisting the risk approval flag fixed an invariant that could only ever have read as satisfied. An empty scoreboard reports **not qualified**, never a pass. Off by default (`shadow_observation_enabled`). |
-| `v2.23.0` | **Observed routes become hypotheses.** The archivist has recorded "this route worked on a verified mission" since v2.20.0 and the skill evaluation model never heard about it. A verified route now registers as a skill **Candidate** — usable for nothing, in no plan, with no permission — which earns standing only by being followed and verified again. Registration records no outcome, so observation can never promote. Route ids derive from the route, so the same sequence converges on one skill accumulating evidence rather than many that can never certify. |
-| `v2.22.0` | **The skills loop closes.** A task records the procedure it was planned from (`tasks.skill_id`, migration 13), and a finished mission credits it — gated on `completed_verified`, so an unverified mission cannot advance a procedure's standing. A claimed `skill_id` is honoured only if it names a skill the planner was actually shown, so a model cannot invent an id and have success credited to it. Also fixes a planner prompt that listed an enabled specialist as available and forbidden in the same breath. *Objective progress:* an objective that exhausted its run budget without ever verifying anything is no longer reported as `completed_successfully` — a new `exhausted_without_success` end reason draws the distinction, judged on evidence rather than on whether the final run happened to succeed. *Activation tiers:* `activation_tier` (`core`/`adaptive`/`full`) replaces ad-hoc reasoning over six flags, as a ceiling that can narrow but never widen; defaults to `full` so upgrade behaviour is unchanged. |
-| `v2.21.0` | **Adaptive mission control.** *Handoff ingestion:* Specialists have emitted structured handoffs since v2.19.0 and nothing acted on them: `HandoffGate.Evaluate` had zero production call sites. Handoffs now become real follow-up tasks, admitted through the gate AND the same `AntRegistry.ValidateTask` authorization a planned task passes — no admission path skips them, and a handoff can never grant a capability. Fixes a bound that was not bounding: every specialist hardcodes `Depth: 1`, so depth is now derived from the source task lineage and persisted, making recursive task creation genuinely finite. Rejections are recorded, never silent. Off by default (`handoff_ingestion_enabled`). *Runtime-aware planning:* the planner's roster is derived from the live registry, so an enabled specialist becomes plannable (previously enabling one changed nothing) and control-plane roles are excluded structurally. *Durable skills:* the V2.12 evaluation model had zero production instantiations and no table — every promotion was lost on exit; skills now persist (migration 12, status restored as recorded, unreadable data fails closed to `Candidate`) and certified procedures reach the planner as routes to consider, never as scripts. *Adaptive decision layer:* `AdaptiveMissionController` assesses a mission after each wave and returns a typed decision — continue / delta-plan / repair / escalate / finish — under separate replan and repair budgets that never borrow from each other, with a fingerprint that distinguishes "still working" from "stuck". A failed critical step is repaired before the plan is rewritten. |
-| `v2.20.0` | **Adaptive mission runtime, part 2 — the learning reset.** One-time, idempotent, backed-up and audited reset of learning state derived under the pre-v2.19 completion rule: objective EMAs to neutral (old value snapshotted to metadata), pheromone trails to neutral strength with success counters restarted and rows marked `legacy_unverified` — retained for reporting, protected from pruning, excluded from planning until they record a post-reset success. Failure history and all raw mission/event/audit history preserved in place. The reset date is surfaced in `/memory/explorer`, trail rows, and the Strategist pheromone context. Also closes the fourth "tested code with no call site" defect: the archivist `memory_candidate` artifacts are now ingested by the Queen as durable events with provenance (stored, never certified, never fed to planning). |
-| `v2.19.0` | **Adaptive mission runtime, part 1 — ants declare outcomes, missions require proof.** Specialists built structured results and then discarded them through a compatibility adapter, so a returned `failed_retryable` was recorded as a completed task, graded the mission Complete/Partial, was read as success by the Director, and satisfied the auto-apply precondition — a failing agent could drive an automatic code change. All six specialists now return `AntExecutionResult` and the adapter is **deleted**; `TaskOutcomeMapper` decides a task's fate from the declared status and fails closed on anything unrecognised; `VerifierAnt` declares a verdict and `MissionVerification` requires a real PASS instead of a merely completed verification task; partial and unverified missions reinforce **nothing**. The apparent success rate will drop — that is metric correction, not regression. Stage 7 (derived-learning reset) ships in v2.20.0; see `docs/archive/v2/ADAPTIVE_RUNTIME_STATUS.md`. |
-| `v2.18.0` | **Shadow Operations Stage 2 — fault-injection catalog + simulation harness.** `FaultScenarioCatalog` encodes the sixteen phase-required fault scenarios (service crash, health-check false positive, full disk, failed backup, stale DNS, unreachable node, stuck VM, firewall regression, dependency outage, expired credential, rate-limited provider, interrupted mission, failed verification, failed rollback, duplicate delivery, prompt injection in logs) as replayable observations. `ShadowSimulation.Run` feeds each through `ShadowOperator` and scores two invariants: shadow mode never blindly recommends execution, and every high-risk scenario requires approval — proven in tests to hold **even when a certified, high-confidence skill exists for the exact operation**, so skill confidence can never buy a high-risk action out of the approval gate. Additive, deterministic, offline. |
-| `v2.17.0` | **Shadow Operations & Operator Qualification (Phase 7), Stage 1.** The qualification gate before any V3 authority: `ShadowOperator.Recommend` observes an incident and produces a full recommendation — diagnosis, proposed action, chosen skill, risk score, predicted outcome, verification plan, rollback plan — and then STOPS; it never executes. It assembles the bundle deterministically from the shipped subsystems (`RiskEngine`, `VerificationPolicy`, the `SkillRegistry`, `RecoveryOrchestrator`), so a recommendation is reproducible and model-free at decision time. `QualificationScoreboard` scores recommendations against operator-recorded ground truth into diagnosis precision/recall, action-selection accuracy, unnecessary-action rate and predicted-success accuracy (division-guarded). Additive library; the live-incident wiring, fault-injection harness, timing metrics and release thresholds follow in later stages. |
-| `v2.11.2` | **Model routing failover activated.** `ModelRouter.Generate` now resolves its route through `ResolveRoute`: when a provider's circuit breaker is open and a distinct configured `fallback` route is healthy, the call fails over to the fallback (via the deterministic, stability-preferring `ModelRoutingPolicy`) so a mission keeps moving instead of erroring on a dead provider — with the reroute reason recorded on the `model_call` event. Naturally gated by the circuit breaker being enabled; no reroute when the primary is healthy or no distinct fallback is configured, so normal routing is unchanged. |
-| `v2.11.1` | **Coder → sandbox loop activated (behind the gate).** `CoderAnt` now routes through `SandboxedCoderRunner` when `sandbox_execution_enabled` is on: it iterates in a disposable git-worktree sandbox — propose → apply-in-sandbox → `dotnet build` → refine on failure with the check output fed back into the prompt — and returns the verified proposals as the same patch JSON the approval pipeline already consumes. The entire prior one-shot path is preserved as the default and as the fallback for any unavailability (gate off, no workspace root, refused check); the live workspace is never touched and every proposal stays human-approval-gated. Model-router wiring for capability/health-aware routing still follows in v2.11.x. |
-| `v2.11.0` | **Sandboxed coder loop + model routing intelligence (additive, gated).** `SandboxedCoderRunner` wraps the coder in `BoundedAgentLoop` inside a disposable git-worktree `SandboxWorkspace` — propose → apply-in-sandbox → run one allowlisted check → inspect → replan on failure, bounded so every run ends with an explicable stop reason and the live checkout is never touched (result is a diff + proposals for the existing approve-then-apply gate). `ModelRoutingPolicy` + `ModelStats` add deterministic, explainable per-task route selection over recorded call health (favor healthy/fast routes for low-risk work; keep the configured route's stability for high/critical). Both land as additive units behind `sandbox_execution_enabled` (default off); the hot-path wiring into `CoderAnt`/`ModelRouter` follows in v2.11.x. |
-| `v2.5.4` | **Console Refit R4 — allow/blocklist management + collections framework.** Blocklist lands first-class in the D1 target list (`list_kind` column, idempotent migration): deny beats allow, and every guard consumer — integration clients, health checks, the approval-gated action executor — honors it with zero changes of their own. Full CRUD API: create with kind, `PUT /homelab/allowlist/{id}` edit-in-place, bulk enable/disable/remove (one audited change per batch). New reusable collection-manager UI component (search, filter, sortable columns, row selection, bulk + per-row actions) debuts as the Targets surface on the Networking sub-page with kind/origin/timestamps/notes visible. |
-| `v2.5.3` | **Console Refit R3 — navigation + information architecture.** The Homelab page gains eleven category sub-pages (Overview, Services, Virtualization, Containers, Storage, Networking, Monitoring, Automation, Apps, Alerts, Activity) via a sticky sub-nav; every card declares exactly ONE home (`data-hlsub`) — the collapsible "secondary detail" mega-cards were split so VMs, containers, storage, devices, and risk findings each live on their own page; drawers (entity detail, incident detail, + Add / Manage) stay reachable from every sub-page. Keyboard nav extended: `g h` opens Homelab, `1-9` / `0` / `-` switch sub-pages; last sub-page restored per browser. |
-| `v2.5.2` | **Console Refit R2 — widget framework.** One JS widget runtime, `widget(kind, integrationId, el)`: full lifecycle (labeled loading/empty/error/success), per-kind TTL polling that stops when the element leaves the DOM, manual refresh, responsive grid sizing, and a per-operator layout registry persisted via `/ui/state` (ordered arrays — drag-and-drop ready). Ten registered widget kinds (health + queue live today from the *arr integrations; the rest render honestly empty until R5/R6 syncs publish them). Widgets never know their page — the Homelab "Widgets" card is just the first zone. |
-| `v2.5.1` | **Console Refit R1 — generic integration framework.** The *arr pattern generalizes into the platform core: `IIntegrationDefinition` contract + `IntegrationCatalog` registry (adding an integration = one class + one registry entry), new `integration_instances`/`integration_state` tables with an idempotent migration off `arr_apps`, one scheduler sync job for every registered kind, and the `GET/POST /homelab/integrations` + `…/{id}/widgets/{kind}` API. The `/homelab/arr` endpoints and UI keep working unchanged as a compatibility view. |
-| `v2.4.3` | Honest Ollama diagnostics: a 404 from a missing model no longer masquerades as "could not connect" (it now names the model and the fix, including the offline-install case), true connection failures name the configured host + the OLLAMA_HOST=0.0.0.0 binding gotcha, and the system summary adds `ollama_model_present` via `/api/tags` so a green chip can no longer hide an absent model. |
-| `v2.4.2` | Registering a host (`POST/PUT /homelab/hosts`) or an *arr app (`POST /homelab/arr`) now auto-adds its address to the D1 target allowlist (audited, operator-attributed) — the separate manual allowlist step was friction that caused silent sync dead-ends. Provider syncs still cannot widen the allowlist; the general SSRF guard is untouched. |
-| `v2.4.1` | **Dynamic Service Deck + node metrics + guest pages + *arr apps.** Nothing nested: detail sections open full sub-pages with a top ✕ Close. Deck tiles/nodes are hideable + restorable from a tray. Proxmox node CPU/RAM/disk/uptime persisted (`node_metrics`, `GET /homelab/metrics/nodes`) and rendered as bars on host cards. Every VM/LXC gets its own page (facts, events, approval-gated action shortcuts). Homarr-style *arr integrations for sonarr/radarr/lidarr/readarr/whisparr/prowlarr/bazarr: GET-only client, credential-store keys, allowlist-gated, scheduler-synced status/health/queue, per-app pages. |
-| `v2.3.2` | **Homelab Service Deck (UI full-replace) + Proxmox write-runner hardening.** The Homelab page is now a Homarr-style deck: hosts and synced virtualization nodes as cards, their VMs/containers/services as live status tiles (click to open, ⚡ to pre-fill an approval-gated action), all registration forms and integration config folded into one "+ Add / Manage" drawer, secondary tables collapsible, the dependency graph hidden until relationships exist, and 7-second labeled fallbacks instead of infinite "Loading...". Hardening (was staged v2.3.1.1): the write client enforces the **D1 target allowlist** before every request, the `node` target segment is character-validated (blocks query/fragment smuggling past the structural path allowlist), the dev mock runner registers **after** the Proxmox runner (no more shadowed real execution), `dry_run_available` computed against the real proposal, stale errors now point at `homelab_proxmox_write_actions_enabled`, xUnit2012 cleared. |
-| `v2.3.1` | **ProxmoxActionRunner** — the first write-capable runner behind the v2.3.0 approval pipeline. Separate `ProxmoxActionClient` whose POST surface is structurally allowlisted to guest power (`start`/`shutdown`/`reboot` — stop is always a clean shutdown, never a hard stop), snapshot creation, and vzdump backup; double-gated behind the Proxmox integration AND the new `homelab_proxmox_write_actions_enabled` opt-in (default off); credential-store token per client; post-execution verification polls guest state and reports honestly. |
-| `v2.3.0` | **Approval-gated homelab actions** (NORTH_STAR Phase 12) — the framework release. The v1.14 `IApprovable`/`ActionProposal` design becomes a working pipeline: **propose → blast-radius score → approve → execute → verify → audit**. Deterministic `BlastRadius` scorer over the shipped rubric fields (dependency fan-out, criticality, backup coverage, exposure, rollback availability — unknown data scores toward caution); allowlisted `ActionCatalog` (restart/start/stop VM·LXC·service, snapshot, backup, resolve-incident, inventory note, diagnostic) with the forbidden set (deletes, wipes, firewall, secrets, backup-disable) **refused inside the executor**, not just the UI; TOCTOU-guarded `ActionExecutor` (re-reads state, only `approved` runs, mandatory rollback note, dry-run, post-execution verification, full `homelab_events` audit); **HOMELAB_STOP kill switch** (`POST /homelab/actions/stop\|resume` — engaging needs approve, resuming needs execute); action proposals join the **unified approvals queue**; new **Actions panel** on the Homelab page. v2.3.0 ships **local + mock runners only** — the narrowly-scoped Proxmox write runner is v2.3.1's own reviewed diff. Both action capability gates still default **OFF** (fail closed). |
-| `v2.1.0.1` | Field fix: a connected Proxmox showed no data because its host wasn't on the target allowlist (a hard gate in front of every homelab request) — and the v2.1.0 connection panel gave no way to see/fix it, so sync failed silently. Each connection card now shows **host allowlist status** with a one-click **"Allow this host"** (`host_allowlisted` added to status), and a **subsystem bar** surfaces/flips `homelab_enabled`/`scheduler_enabled` instead of "edit config.json". Hooking up a hypervisor is now host → save cred → allow host → sync, all in the panel. |
-| `v2.1.0` | **Multi-hypervisor read-only inventory + Virtualization Connections UI.** Extends the read-only virtualization layer beyond Proxmox to **VMware ESXi/vCenter** (vSphere REST), **Docker** (Engine API), and **Hyper-V** (WinRM WMI read-only Enumerate) — every client read-only *by construction* (GET / Enumerate only; the vSphere session POST is auth-only), credential in the store, host allowlist-gated, `AllowAutoRedirect=false`. All four project into one inventory via `GET /homelab/virtualization/status` + `POST /homelab/virtualization/{kind}/sync`, built on demand from current config so UI edits work without a restart. New **Virtualization Connections** panel (per-integration enable/host/port/credential + Save cred + Sync), and the dependency graph now draws hosts as **boxes**, services as **pills** with a legend. Wire-tested read-only. |
-| `v1.14.0.1` | Bug-finder pass on v1.14.0: `ApprovableProjections.DedupePending` (behind `GET /homelab/approvals/unified`) only superseded older pending duplicates when the *newest* item in a dedupe group was itself pending — so if the newest was already approved/executed, two older pendings both stayed live, breaking "at most one pending per key". Now keeps the newest still-pending item and supersedes all older pendings regardless; regression test added. Rest of v1.14.0 reviewed clean (structural + security sweeps). |
-| `v2.0.0` | **🐜 Homelab Command Center launch** (NORTH_STAR Phase 11). Pass 1 — the data layer: one `GET /homelab/dashboard` aggregation (counts, health rollup, incidents, risks, storage/backup totals, job stamps, failed checks, recent changes) built by the testable `CommandCenter`; an **interactive dependency graph** (implicit runs_on + mapped dependencies, failure **impact propagation**, click-to-highlight paths, transitive "what depends on this"); host/service **detail drawers**; deterministic **"What Should I Do Next"**. Pass 2 — the ANTHILL identity: centralized semantic subsystem tokens (health/compute/storage/security/incident/memory) accenting every card, a low-contrast **colony-mesh background**, KPI command strip with a data-derived colony-link pulse, purposeful motion only (failed-node pulse, connection-cue row flashes, hover path emphasis — all `prefers-reduced-motion` aware), and labeled empty states everywhere. No framework migration; vanilla HTML/CSS/JS preserved. |
-| `v1.14.0` | **Incident + change memory + the IApprovable design** (NORTH_STAR Phase 10, closing the V1.x line): health-failure streaks **auto-open deduped incidents**; every incident reconstructs a **timeline** (changes in the 24h before it broke are flagged SUSPECT, plus correlated events and health results); **similar-incident matching** surfaces past root causes as *"this fixed it last time"* (durable fix memory); repeat offenders get **pattern-flagged** and open at error severity. Plus **`IApprovable`** — the one approval abstraction (one queue, one lifecycle, one dedupe rule, per-kind renderers) with today's patch approvals projected into `GET /homelab/approvals/unified`, the inert V2.1 `ActionProposal` skeleton carrying the blast-radius rubric fields, and the full design in [docs/APPROVALS.md](docs/APPROVALS.md). Incidents panel with timeline drawer + fix suggestions in the console. Tracking and recommendations only — nothing remediates. |
-| `v1.13.0` | **Network + security awareness** (NORTH_STAR Phase 9): deterministic **risk findings** computed from registered/synced inventory — risky open ports, unknown devices, ownerless services, un-backed-up hosts, internet-exposed dashboards, duplicate IPs, missing DNS names, unwatched services, never-verified credentials — with **stable-id reconciliation** (fixed problems auto-resolve, acknowledgements stick), a manual/import **network-device registry** (MAC/IP/VLAN/known-flag, in the export bundle), `risk-analysis` on the shared scheduler, `/homelab/devices` + `/homelab/risks` endpoints, and Network & Risk panels in the console. **Zero network I/O — no scanning exists in this phase.** |
-| `v1.12.0.1` | Security hardening (bug-finder pass on v1.12.0): the Proxmox `ProxmoxApiClient` left `AllowAutoRedirect` at the .NET default (`true`), so a `3xx` from a compromised/misconfigured node could bounce the authenticated GET to a `Location` the target-allowlist never vetted (SSRF). Both handlers now set `AllowAutoRedirect = false` (PVE never legitimately redirects), plus a wire-level regression test asserting a 302 fails clean and is not followed off-host. |
-| `v1.12.0` | **Proxmox read-only integration** (NORTH_STAR Phase 8): a **GET-only** PVE API client (write operations are structurally impossible — proven by type-surface and wire-traffic tests), inventory sync (nodes → hypervisor hosts, QEMU VMs, LXC containers, storage pools incl. backup-capable, failed tasks as dedup'd events) riding the shared scheduler, API-token via the credential store (PVEAuditor role recommended), target-allowlist discipline, `/homelab/vms|containers|storage|proxmox/*` endpoints, and Virtualization panels (VMs/containers/storage with usage coloring) on the Homelab page. |
-| `v1.11.0.2` | Fix: replace the blocking native `window.confirm()`/`prompt()` used for every destructive action with a promise-based in-app modal (`uiConfirm`/`uiPrompt`). Native dialogs freeze the renderer's main thread until dismissed — which hung the Autonomy **Stop** button — and clash with the HUD. New modal is non-blocking, themed, and keyboard-navigable; all 18 call sites migrated with unchanged confirm/cancel behavior. |
-| `v1.11.0.1` | Fixes from live-verifying the auto-apply → git loop on the LXC: (1) **auto-apply now logs the git step** — `AutoApplyRunner` emits `autonomy_autoapply_committed` on a successful commit/push (sha, branch, files, push result), so a working commit is no longer invisible in the Event Log; (2) **UI reliably bounces to login on a 401** — `onUnauthorized` re-asserts the login screen on any 401 while the shell is visible, instead of getting stuck half-loaded after a mid-session token invalidation (e.g. a redeploy). |
-| `v1.11.0` | **Health checks + notifications** (NORTH_STAR Phase 7): ping/HTTP/TCP/service-URL checks (plus disk/uptime placeholders) run on the shared homelab scheduler against **allowlisted targets only**, under strict timeouts, with per-target failure streaks promoting to **incident candidates** at 3 consecutive failures. Config-gated **Slack/Discord/generic webhook notifications** (off by default; URLs never logged). Health panel on the Homelab page: add/run/delete checks, live summary, test-notify. No auto-remediation anywhere. |
-| `v1.10.0` | **Inventory + service registry** (NORTH_STAR Phase 6) with a new **Homelab page in the console** (hosts, services, ports, dependencies, recent changes, JSON import/export) — plus two operator-facing fixes: **Patch Center "Apply" no longer 403s** (the `apply_patch` capability gate now follows `patch_application_enabled`; error toasts surface the server's reason), and homelab gates are editable from Settings. |
-| `v1.9.1` | **Homelab scheduler + mock-provider harness** (NORTH_STAR Phase 5): five deterministic, network-free fake providers (Proxmox/DNS/DHCP/firewall/health) run through the shared `HomelabScheduler` pattern — jittered intervals, failure backoff, global concurrency cap, persisted job state, target-allowlist discipline — plus a reusable test harness every real provider (v1.10+) must pass, `GET /homelab/providers` statuses, and a `homelab_mock_providers_enabled` gate (off by default). Still zero real network calls. |
-| `v1.9.0` | **Homelab foundation** (NORTH_STAR Phase 4): read-only backend groundwork for the V2 Homelab Command Center — `HomelabRepository` (15 new SQLite tables), provider interfaces, operator-managed **target allowlist** (isolated from the general SSRF guard), **write-only credential store** with audit events, new `homelab_operator` role + homelab permissions (action gates OFF until V2.1), disabled-by-default `HomelabScheduler` skeleton, 8 visible-only homelab ants, permission-scoped `/homelab/*` endpoints, [docs/HOMELAB.md](docs/HOMELAB.md), and the `Anthill.Tests.Homelab` suite. No infrastructure control of any kind. |
-| `v1.8.29.1` | Auto-apply end-to-end on a fresh LXC install: (1) coder **add-vs-modify** — an `add` for a file that already exists is applied as a backed-up overwrite (`add_overwrite`) instead of hard-refusing, and the coder prompt now picks `add`/`modify` by existence; (2) **default paths** — enabling auto-apply seeds an editable `docs/**` + `src/**` allowlist so it's never a silent no-op; (3) **LXC provisioning** in `setup.sh` — git-checkout workspace, service-user git identity + `safe.directory`, standalone-branch checkout, and a private deploy-key slot, all idempotent. |
-| `v1.8.27` | Docs: added **[docs/archive/v3/NORTH_STAR.md](docs/archive/v3/NORTH_STAR.md)** as the single canonical roadmap / build order (v1.8.27 → V3.0), and marked the older roadmap docs (`ROADMAP.md`, `UI_ROADMAP.md`, `AUTONOMY.md`) as subsystem history pointing to it. No runtime change. |
-| `v1.8.26.1` | Harden auto-apply git for the systemd sandbox: set the commit identity inline (`git -c user.name/user.email`) so `commit` never fails without host git config, and write ssh `known_hosts` to `/tmp` (writable under `PrivateTmp`) so the push works without `.ssh` in `ReadWritePaths`. |
-| `v1.8.26` | Auto-apply **git integration**: commit verified changes to a standalone branch `<github-username>-anthill` and (optionally) push it via an **SSH deploy key** (referenced by path — never stored). One-way sync only (origin/main → branch); **main is never committed to, pushed, or merged into**. New Security → Auto-Apply fields (username → branch, remote, key path, push toggle). |
-| `v1.8.25.4` | Fix: the **Autonomous Auto-Apply** toggles ("Enable auto-apply" and "Git-commit verified changes") never saved — `saveSecurity()` collected toggle state only from other containers, so these two flipped visually but were dropped from the payload. Both now persist. |
-| `v1.8.25.3` | Fix: approved patches were un-appliable — `ApproveRequest` flipped only the approval record, never the patch, so the Patch Center's Apply button (gated on patch status `approved`) never appeared. Approving now flips the patch to `approved`, and the UI also honors `approval_status`. |
-| `v1.8.25.2` | CI: new `ui-integrity` job fails the build on any UI glyph corruption (`�`, bare `>?<` icons, `>? Label` buttons, `'?':'?'` carets) + a `node --check` of the embedded JS — so the recurring corruption can never merge again. CI-only. |
-| `v1.8.25.1` | Fix: repair residual UTF-8 glyph corruption in the console — 19 icon glyphs (collapse/caret `▾`, send `▶`, close `✕`, expand `⛶`, pheromone `✓`/`✕` headers) plus 4 JS-literal carets, the apply-warning `⚠`, and the autonomy-running `●` badge had been flattened to `?`. The legitimate `?` help-shortcut key is preserved. |
-| `v1.8.25` | UI Phase 10 — Full Command Center Polish: Ctrl+K command palette with global mission-memory search, header notification center with unread badge, `g`-key page navigation + `?` shortcuts help, saved layout restore, and a first-login onboarding tour. UI roadmap complete. |
-| `v1.8.24` | UI Phase 7 — Visual Patch Center 2.0: grouping (status/risk/file/mission/objective); operator approve/reject for pending patches with no approval record; operator-edited **alternative patches** behind the normal approval gate; **unbiased verify & auto-approve** (apply-with-backup → build+test → always restore → approve only if green; apply stays manual). |
-| `v1.8.23.3` | CI now uploads a release-ready `anthill-linux-x64-v<version>.tar.gz` artifact from every successful run (after publish + selftest pass) — find it under the run's **Artifacts** on the Actions tab. |
-| `v1.8.23.2` | Fix: Patch Center empty HTTP 500 — `GET /patches` was registered twice (legacy text list + structured list), throwing `AmbiguousMatchException` in routing. Removed the duplicate and added a boot-time duplicate-route guard that fails loudly instead of silently 500ing. |
-| `v1.8.23.1` | Fix: repair UTF-8 corruption in the console (28 button icons + 354 replacement chars from the v1.8.23 save); harden API responses so serialization failures return a real error instead of an empty HTTP 500. |
-| `v1.8.23` | Phase 9 Memory + Pheromone Explorer — success/failure and loop-pattern visualization, mission memory search, and prune controls. |
-| `v1.8.22` | Phase 8 Ant Inspector + Performance Observatory (+ ASCII banner on setup/shell); **Ant Capability Profiles + Worker Runtime** — 17 role definitions with permission contracts, sub-worker selection per task, capability validation in planner/queen, worker telemetry, and `/colony/registry` + `/colony/workers/telemetry` endpoints. |
-| `v1.8.21` | Fix: autonomous auto-apply now persists on deployments without a build toolchain (`autonomy_autoapply_keep_without_verify`); clearer keep/revert reporting. |
-| `v1.8.20` | Objective Command Board (lifecycle lanes) + Mission Timeline & Task DAG viewer. |
-| `v1.8.19` | Colony Live Canvas 2.0 — caste legend + live pheromone-trail HUD, pheromone drift, real task-load inspector. |
-| `v1.8.18.1` | Fix: Patch Center empty HTTP 500 — scrub invalid UTF-16 in JSON responses. |
-| `v1.8.18` | Mission Composer + plan preview (dry-run planner endpoint, approve/reject before dispatch). |
-| `v1.8.17` | Colony Command Center HUD (design system + Overview command dashboard). |
-| `v1.8.16` | Objective lifecycle hardening, planner constraint handling, and the Visual Patch Center. |
-| `v1.8.15.7` | Overview System Health panel. |
-| `v1.8.15.5` | Completed Objectives box for loop-retired objectives. |
-| `v1.8.15` | Gated auto-apply path with verification and rollback controls. |
-| `v1.8.12` | ResourceGovernor and concurrent mission handling. |
-
-**Ant execution:** six always-on mission agents (researcher, web, file, coder, builder, verifier)
-plus six gated specialists (ui_cartographer, tester, soldier, scribe, medic, archivist — all
-implemented, disabled by default behind `specialist_ant_execution_enabled` + per-role flags).
-Control-plane roles and deterministic homelab services are never mission workers. Capability
-enforcement, contracts, and rollout rules: **[docs/ANT_EXECUTION.md](docs/ANT_EXECUTION.md)**.
-
-**Console direction:** the Dashboard is being rebuilt as a topology-first workspace — the live
-colony map becomes the persistent canvas with customizable floating panels above it, shipped in
-small stages behind `dashboard_workspace_enabled` (default off). Design, decisions, current status,
-and next steps: **[docs/archive/v3/DASHBOARD_WORKSPACE.md](docs/archive/v3/DASHBOARD_WORKSPACE.md)**.
-
-Through v2.14.10 the colony has **one** topology renderer (the live canvas; the old chamber SVG is
-gone) with seven functional chambers you can drag and rename, canvas-owned map preferences, and the
-dashboard's cards registered as movable panels. The topology becomes the dashboard background in
-v2.14.12.
-
-For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/PLAN.md](docs/PLAN.md)** — the canonical build order. Since v2.9.0, planner output is schema-validated against machine-readable task contracts with capability-based permissions — see **[docs/CONTRACTS.md](docs/CONTRACTS.md)**.
-
----
-
-## Requirements
-
-### Minimum
-
-| Component | Minimum |
-|---|---|
-| CPU | 4-core x86-64 |
-| RAM | 8 GB |
-| Disk | 10 GB+ |
-| OS | Windows 10+ or Ubuntu 22.04+ |
-| .NET SDK | 9.0+ if building from source |
-| Ollama | Required for the default local route |
-
-Minimum model:
-
-```bash
-ollama pull llama3.1:8b
-```
-
-### Recommended
-
-| Component | Recommended |
-|---|---|
-| CPU | 8+ cores |
-| RAM | 32 GB+ |
-| GPU | NVIDIA GPU with 16 GB+ VRAM |
-| Disk | 100 GB SSD |
-| OS | Ubuntu 22.04 LTS or Windows 11 |
-| Ollama | Latest release |
-
-Recommended models:
-
-```bash
-ollama pull llama3.1:8b
-ollama pull llama3.3:70b
-ollama pull qwen2.5-coder:32b
-```
-
-Use the smaller model first if you only want to verify the install.
-
----
-
-## Quick Start
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/thexonexone/operation-anthill.git
-cd operation-anthill
-```
-
-### 2. Pull at least one Ollama model
-
-```bash
-ollama pull llama3.1:8b
-```
-
-Optional larger routes:
-
-```bash
-ollama pull llama3.3:70b
-ollama pull qwen2.5-coder:32b
-```
-
-### 3. Copy the config
-
-Linux/macOS:
-
-```bash
-mkdir -p .anthill
-cp config.example.json .anthill/config.json
-```
-
-Windows PowerShell:
+Open **PowerShell** and download one model:
 
 ```powershell
-New-Item -ItemType Directory -Force .anthill
-Copy-Item config.example.json .anthill\config.json
+ollama pull llama3.1:8b
 ```
 
-### 4. Edit `.anthill/config.json`
+If PowerShell says `ollama` is not recognized, close PowerShell, open it again, and retry.
 
-At minimum, check these values:
+### 2. Download ANTHILL
 
-```jsonc
-{
-  "api_host": "0.0.0.0",
-  "api_port": 8713,
-  "use_ollama": true,
-  "ollama_host": "http://localhost:11434",
-  "ollama_model": "llama3.1:8b",
-  "agent_workspace_dir": ".anthill/workspace"
-}
+Download
+[`anthill-0.3.8.41-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.41/anthill-0.3.8.41-win-x64.zip)
+and extract it somewhere permanent, such as:
+
+```text
+C:\Anthill
 ```
 
-If Ollama runs on another machine, change:
+The download already contains the .NET runtime. You do not need to install the .NET SDK.
 
-```jsonc
-"ollama_host": "http://OLLAMA_MACHINE_IP:11434"
-```
+### 3. Start ANTHILL
 
-### 5. Build and run
-
-Linux/macOS:
-
-```bash
-./build.sh
-dotnet run --project src/Anthill.Cli -- --api
-```
-
-Windows PowerShell:
+Open the extracted folder, right-click an empty area, and choose **Open in Terminal**. Then run:
 
 ```powershell
-.\build.ps1
-dotnet run --project src\Anthill.Cli -- --api
+.\anthill.exe --api --host 127.0.0.1
 ```
 
-### 6. Open the UI
+Keep that terminal open while ANTHILL is running.
+
+If Windows SmartScreen appears, make sure the file came from the official release link above
+before choosing **More info â†’ Run anyway**.
+
+### 4. Open the colony
+
+Go to:
 
 ```text
 http://localhost:8713/ui
 ```
 
-On first launch, create the first administrator account. After that, log in with username and password.
+Create the first administrator account, sign in, and continue to
+[Your first mission](#your-first-mission).
 
----
+The command above keeps ANTHILL local to that computer. If you later want to reach it from another
+device on your private network, start it with `--host 0.0.0.0` and use the LAN address printed in
+the terminal.
 
-## Configuration
+## Linux quick start
 
-Main config file:
+These instructions use the prebuilt release, so the .NET SDK is not required.
+
+### 1. Install Ollama and a model
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.1:8b
+```
+
+### 2. Download and unpack ANTHILL
+
+```bash
+mkdir -p "$HOME/anthill"
+cd "$HOME/anthill"
+curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.41/anthill-0.3.8.41-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.41-linux-x64.tar.gz
+chmod +x anthill
+```
+
+### 3. Start it
+
+```bash
+./anthill --api --host 127.0.0.1
+```
+
+Open `http://localhost:8713/ui`, create the first administrator account, and continue to
+[Your first mission](#your-first-mission).
+
+For a headless server that should be available on your private network, use:
+
+```bash
+./anthill --api --host 0.0.0.0
+```
+
+Then open the LAN URL printed at startup. Do not expose port `8713` directly to the public internet.
+
+## LXC and systemd install
+
+This is the easiest always-on installation for Proxmox or a dedicated Debian/Ubuntu machine. The
+installer creates an unprivileged `anthill` service account, builds ANTHILL, starts it with systemd,
+and keeps its data across upgrades.
+
+For a Proxmox LXC, a practical starting size is:
+
+- Debian 12 or Ubuntu 22.04/24.04
+- Unprivileged container
+- 2 CPU cores
+- 4 GB RAM
+- 16 GB disk
+- DHCP or a reserved LAN address
+
+That is enough for ANTHILL itself. Ollama will usually run on a separate machine with more memory or
+a GPU.
+
+Open the container console as `root` and run:
+
+```bash
+apt-get update && apt-get install -y curl ca-certificates git
+curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o /tmp/anthill-setup.sh
+bash /tmp/anthill-setup.sh
+```
+
+Check that the service started:
+
+```bash
+systemctl status anthill --no-pager
+journalctl -u anthill -n 30 --no-pager
+```
+
+The log prints the URL to open from another computer. Create the administrator account there.
+
+If Ollama is on another machine, sign in and set its address under **Settings â†’ Colony â†’ Ollama
+Host**, for example:
 
 ```text
-.anthill/config.json
+http://192.168.1.50:11434
 ```
 
-Common settings:
+Ollama must be listening on the network, and your firewall must allow the ANTHILL machine to reach
+port `11434`. See [Using Ollama on another machine](#using-ollama-on-another-machine).
 
-| Setting | Purpose |
-|---|---|
-| `api_host` | API bind address. Use `0.0.0.0` for LAN/container access or `127.0.0.1` for local-only. |
-| `api_port` | Default is `8713`. |
-| `ollama_host` | Ollama API URL. |
-| `ollama_model` | Default model when no role-specific route matches. |
-| `agent_workspace_dir` | Root folder ANTHILL may inspect and propose patches against. |
-| `api_job_workers` | Concurrent missions. Keep at `1` unless you know your hardware can handle more. |
-| `max_parallel_workers` | Parallel tasks inside one mission. |
-| `web_search_enabled` | Enables external web search. |
-| `patch_application_enabled` | Allows approved patches to be applied. |
-| `file_writing_enabled` | Allows file writes after approval. |
-| `shell_tool_enabled` | Enables allowlisted shell/check commands. |
-| `file_tools_enabled` | Allows workspace file listing/reading. |
+The complete Proxmox, systemd, Docker, and Windows-service notes live in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Environment variables can override common settings:
+## Docker
 
-| Variable | Overrides |
-|---|---|
-| `ANTHILL_HOST` | `api_host` |
-| `ANTHILL_PORT` | `api_port` |
-| `ANTHILL_OLLAMA_HOST` | `ollama_host` |
-| `ANTHILL_OLLAMA_MODEL` | `ollama_model` |
-| `ANTHILL_API_TOKEN` | Optional programmatic admin token, minimum 32 characters |
-
-Normal web login does not require `ANTHILL_API_TOKEN`.
-
-### Autonomous auto-apply (advanced)
-
-Gated auto-apply lets the Director apply low-risk patches without human review, then **verify and roll
-back** if the check fails. It is OFF by default and does nothing without a path allowlist.
-
-| Setting | Purpose |
-|---|---|
-| `autonomy_autoapply_enabled` | Master switch (default `false`). |
-| `autonomy_autoapply_paths` | Workspace-relative globs a patch must match (empty = nothing eligible). |
-| `autonomy_autoapply_verify_cmd` | Verify command run in `agent_workspace_dir`. Empty = built-in `dotnet build && dotnet test`. |
-| `autonomy_autoapply_keep_without_verify` | If `true` **and** no verify command is set, keep applied patches without verifying (default `false`). |
-| `autonomy_autoapply_git_commit` | After keeping, `git add` + `git commit` locally (never pushed). |
-
-**Important:** the built-in verify needs a *buildable* `agent_workspace_dir` (a checkout with a
-solution) **and** the dotnet SDK on the host. On a published-binary deployment (e.g. an LXC without
-the SDK), point `agent_workspace_dir` at a real checkout and set `autonomy_autoapply_verify_cmd` to a
-check it can run — **or** set `autonomy_autoapply_keep_without_verify: true` to keep changes without a
-verify gate. Otherwise every auto-applied patch fails verify and is rolled back (nothing persists).
-
----
-
-## Run Options
-
-### Run from source
-
-```bash
-dotnet run --project src/Anthill.Cli -- --api
-```
-
-### Run a self-test
-
-```bash
-dotnet run --project src/Anthill.Cli -- --selftest
-```
-
-### Print status
-
-```bash
-dotnet run --project src/Anthill.Cli -- --status
-```
-
-### Run one mission from CLI
-
-```bash
-dotnet run --project src/Anthill.Cli -- --mission "Summarize this repository."
-```
-
----
-
-## Deploy on Linux
-
-### Option A — source checkout
+Use this route if you are already comfortable with Docker. The included Compose file is designed
+for a **Linux Docker host** and uses host networking so a local Ollama service works without extra
+container networking.
 
 ```bash
 git clone https://github.com/thexonexone/operation-anthill.git
 cd operation-anthill
-./build.sh
-cp config.example.json .anthill/config.json
-nano .anthill/config.json
-dotnet run --project src/Anthill.Cli -- --api
-```
-
-### Option B — Docker
-
-```bash
 docker compose up -d --build
 docker compose logs -f anthill
 ```
 
-Open the URL printed in the logs.
+Open the URL shown in the logs. ANTHILL's database and configuration are stored in the named
+`anthill-data` volume.
 
-Update Docker deployment:
+Docker Desktop on Windows and macOS needs bridge networking instead of the shipped host-network
+configuration. Follow the bridge-mode example in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-```bash
-git pull
-docker compose up -d --build
-```
+## Your first mission
 
-### Option C — LXC / Proxmox
+### 1. Confirm the model is ready
 
-Inside a fresh Debian or Ubuntu LXC container:
+If Ollama has exactly one model installed, ANTHILL uses it automatically. If you have several,
+ANTHILL will ask you to choose instead of guessing.
 
-```bash
-apt-get update && apt-get install -y curl ca-certificates git
-curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o setup.sh
-bash setup.sh
-```
+To select one manually:
 
-Check service status:
+1. Open **Settings**.
+2. Choose the **Colony** tab.
+3. Enter the exact model name, such as `llama3.1:8b`.
+4. Click **Save Colony Settings**.
 
-```bash
-systemctl status anthill --no-pager
-journalctl -u anthill -n 50 --no-pager
-```
-
-Update an existing LXC install:
+You can see installed model names with:
 
 ```bash
-cd /opt/anthill/src
-git pull
-bash deploy/lxc/setup.sh
+ollama list
 ```
 
-### Option D — systemd service
+### 2. Send a simple message
 
-Use the LXC installer when possible. For a manual service install, publish the binary, place it under `/opt/anthill`, create a dedicated `anthill` user, and run it with:
+Open **Chat** and try:
 
 ```text
-/opt/anthill/anthill --api
+Explain how this colony processes a mission. Keep the answer short.
 ```
 
-The service should run as an unprivileged user and keep write access limited to `.anthill`.
+ANTHILL should create a mission, route the work, and return an answer in the conversation. The
+mission details are there when you want them, but you do not need to understand every internal
+event to use Chat.
 
----
+### 3. Give it a project to work with
 
-## Deploy on Windows
+ANTHILL can only inspect files inside its configured workspace boundary.
 
-### Run from source
+1. Put the project in Git so you can restore it if needed.
+2. In ANTHILL, open **Security â†’ Workspace Boundary**.
+3. Set `agent_workspace_dir` to the absolute path of the project.
+4. Save the setting.
 
-```powershell
-git clone https://github.com/thexonexone/operation-anthill.git
-cd operation-anthill
-.\build.ps1
-Copy-Item config.example.json .anthill\config.json
-notepad .anthill\config.json
-dotnet run --project src\Anthill.Cli -- --api
+For example:
+
+```text
+C:\Users\you\source\my-project
 ```
 
-### Publish a standalone exe
+or:
 
-```powershell
-dotnet publish src\Anthill.Cli\Anthill.Cli.csproj `
-  -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:DebugType=none `
-  -o .\publish\win-x64
+```text
+/home/you/source/my-project
 ```
 
-Run:
+For Docker, the project must also be bind-mounted into the container. The example is in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-```powershell
-.\publish\win-x64\anthill.exe --api
+Start with a read-only mission:
+
+```text
+Inspect this project and explain what it does. Do not change any files.
 ```
 
----
+## What is enabled on a new install?
 
-## Ollama Setup
+Version `v0.3.8.41` starts with the full twelve-role colony available. Roles still run only when a
+mission actually needs them; enabling the full roster does not force every role into every mission.
 
-If Ollama is on the same machine:
+These are the fresh-install defaults that matter most:
 
-```jsonc
-"ollama_host": "http://localhost:11434"
-```
+| Area | Fresh-install behavior |
+| --- | --- |
+| Colony roster | `full` â€” all twelve roles are available, with per-role kill switches |
+| Local model | Unchosen; the only installed Ollama model is selected automatically, otherwise ANTHILL asks |
+| File access | Read tools are on, limited to `.anthill/workspace` until you choose another boundary |
+| Web, AI shell, writes, and patch application | Off |
+| Autonomy, auto-apply, homelab, and container execution | Off |
+| Operator Shell | On for administrators; disable it under **Security** if you do not need a host terminal |
+| Network bind | `0.0.0.0` by default; the desktop commands in this guide override it to `127.0.0.1` |
 
-If Ollama is on another machine:
+For colony-run missions, the `SAFE_LOCAL` safety profile keeps web search, the ant shell tool, file
+writing, patch application, and unattended auto-apply closed until you deliberately enable them.
+The read-only file tool remains available inside the workspace boundary.
 
-```jsonc
-"ollama_host": "http://192.168.1.50:11434"
-```
+Before allowing repository changes:
 
-On Linux, expose Ollama to the network with a systemd override:
+- Use a Git repository with a clean backup or remote.
+- Keep the workspace boundary as narrow as possible.
+- Review proposed changes and verification evidence.
+- Leave auto-apply off until you have tested the full flow on a disposable project.
+- Disable the admin Operator Shell if you do not need a browser-accessible terminal.
+
+ANTHILL is still pre-1.0 software under active development. It has deliberate safety gates, but it
+should not be trusted with irreplaceable files or unattended production changes. The measured
+current state and known gaps are kept in [`docs/PLAN.md`](docs/PLAN.md).
+
+## Using Ollama on another machine
+
+On the Ollama machine, make Ollama listen on the network.
+
+Linux:
 
 ```bash
 sudo systemctl edit ollama
@@ -514,451 +324,246 @@ Add:
 Environment="OLLAMA_HOST=0.0.0.0:11434"
 ```
 
-Then restart:
+Then restart it:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart ollama
+```
+
+From the ANTHILL machine, confirm it is reachable:
+
+```bash
 curl http://OLLAMA_MACHINE_IP:11434/api/tags
 ```
 
-On Windows, set the machine environment variable:
+Finally, set **Settings â†’ Colony â†’ Ollama Host** to:
+
+```text
+http://OLLAMA_MACHINE_IP:11434
+```
+
+Only expose Ollama to a trusted private network or protect it with an appropriate network boundary.
+
+## Where ANTHILL keeps its data
+
+ANTHILL creates its configuration automatically on first launch. You do **not** need to copy or edit
+`config.example.json` to get started.
+
+| Installation | Data location |
+| --- | --- |
+| Windows or Linux release archive | `.anthill` inside the folder you launch ANTHILL from |
+| Source checkout | `<repo>/.anthill` |
+| LXC installer | `/opt/anthill/.anthill` |
+| Docker | The `anthill-data` volume, mounted at `/app/.anthill` |
+
+That directory contains the database, configuration, logs, backups, exports, workspace, and local
+encryption material. Back it up before upgrading or moving the installation. Do not publish it or
+commit it to Git.
+
+Most settings are easier and safer to change through the web interface. The generated configuration
+file is `.anthill/config.json` if you need it for advanced deployment work.
+
+Useful launch overrides:
+
+| Option | What it changes |
+| --- | --- |
+| `--host 127.0.0.1` | Only this computer can open ANTHILL |
+| `--host 0.0.0.0` | Devices on the private network can open it |
+| `--port 8714` | Uses a different web port |
+| `--ollama-host http://IP:11434` | Uses Ollama on another machine |
+| `--ollama-model model:tag` | Selects a specific local model |
+
+## Updating
+
+Back up the `.anthill` data directory first.
+
+### Windows or Linux release archive
+
+1. Stop ANTHILL.
+2. Download the newest archive from [GitHub Releases](https://github.com/thexonexone/operation-anthill/releases/latest).
+3. Replace the program files with the files from the new archive.
+4. Keep the existing `.anthill` directory.
+5. Start ANTHILL again.
+
+Database and configuration migrations run automatically at startup.
+
+### LXC / systemd
+
+```bash
+cd /opt/anthill/src
+git pull --ff-only
+bash deploy/lxc/setup.sh
+```
+
+### Docker deployment
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+The `anthill-data` volume remains in place.
+
+### Source checkout
+
+```bash
+git pull --ff-only
+dotnet build Anthill.sln -c Release
+dotnet test Anthill.sln -c Release --no-build
+```
+
+## Troubleshooting
+
+### The web page does not open
+
+- Make sure the ANTHILL process is still running.
+- Use `http://localhost:8713/ui` on the same computer.
+- On another device, use the LAN URL printed at startup.
+- Do not enter `http://0.0.0.0:8713`; `0.0.0.0` is a listening address, not a browser address.
+- If port `8713` is busy, restart with `--port 8714` and open that port instead.
+- For LAN access, make sure the host firewall allows the selected port on private networks.
+
+### Ollama is unreachable or no model is selected
+
+Check Ollama locally:
+
+```bash
+ollama list
+curl http://localhost:11434/api/tags
+```
+
+If Ollama is on another machine, replace `localhost` with its IP address. If several models are
+installed, choose one under **Settings â†’ Colony**.
+
+### A mission cannot read the project
+
+- Confirm **Security â†’ Workspace Boundary** points to the project's absolute path.
+- Confirm the ANTHILL user has permission to read that directory.
+- For Docker, confirm the directory is mounted inside the container.
+- For an external coding agent, confirm its working directory is still inside the same boundary.
+
+### Reset a broken configuration without deleting mission history
+
+Stop ANTHILL and rename `.anthill/config.json` to `config.json.bak`. Start ANTHILL again and it will
+create a fresh configuration. Your SQLite database remains in `.anthill/anthill.db`.
+
+### Find the logs
+
+LXC / systemd:
+
+```bash
+journalctl -u anthill -n 100 --no-pager
+```
+
+Docker:
+
+```bash
+docker compose logs --tail 100 anthill
+```
+
+Portable Windows or Linux installs print startup and runtime errors in the terminal where ANTHILL
+was started.
+
+If you open a [bug report](https://github.com/thexonexone/operation-anthill/issues/new/choose), include
+your ANTHILL version, operating system, installation method, and the relevant error text. Remove API
+keys, tokens, passwords, webhook URLs, and other secrets first.
+
+## Command-line checks
+
+Run these from the folder containing `anthill` or `anthill.exe`.
+
+Linux:
+
+```bash
+./anthill --version
+./anthill --selftest
+./anthill --status
+```
+
+Windows PowerShell:
 
 ```powershell
-[System.Environment]::SetEnvironmentVariable("OLLAMA_HOST", "0.0.0.0:11434", "Machine")
-Stop-Process -Name "ollama" -Force
-Start-Process "ollama" -ArgumentList "serve"
+.\anthill.exe --version
+.\anthill.exe --selftest
+.\anthill.exe --status
 ```
 
----
+Run `anthill --help` for the complete command list.
 
-## Model Routes
+## Build from source
 
-Routes are configured in `.anthill/config.json` or from **Settings → Ant Config**.
+You only need this section if you are developing ANTHILL or want to build your own binary.
 
-Example:
+Requirements:
 
-```jsonc
-"model_routes": {
-  "planner":    { "provider": "ollama", "model": "llama3.1:8b" },
-  "researcher": { "provider": "ollama", "model": "llama3.1:8b" },
-  "coder":      { "provider": "ollama", "model": "qwen2.5-coder:32b" },
-  "builder":    { "provider": "ollama", "model": "qwen2.5-coder:32b" },
-  "verifier":   { "provider": "ollama", "model": "llama3.1:8b" },
-  "web":        { "provider": "ollama", "model": "llama3.1:8b" },
-  "fallback":   { "provider": "ollama", "model": "llama3.1:8b" }
-}
-```
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- Git
+- Optional: CMake and a C++20 compiler for the native kernel
 
-If a provider route points to OpenAI, Anthropic, Perplexity, or OpenRouter, connect that provider first in **Settings → Providers**.
+The native kernel is optional. Without a C++ toolchain, ANTHILL uses the managed C# implementation.
 
----
-
-## Using the Web UI
-
-Open:
-
-```text
-http://YOUR_HOST:8713/ui
-```
-
-The console is organised into workflow domains with real, deep-linkable routes
-(e.g. `http://YOUR_HOST:8713/ui#/infrastructure/compute`):
-
-| Domain | Contains |
-|---|---|
-| Dashboard | System health, mission command, operator-attention items, and status cards. |
-| Monitoring | **Activity** — a unified event / mission-result / change timeline with category facets — and **Alerts**. |
-| Operations | **Missions** (console + history), **Automation** (Director, objectives, schedules), **Approvals** (pending patch queue), and **Changes** (patch history, apply, rollback). |
-| Infrastructure | Homelab inventory across **Compute, Containers, Storage, Network, Services, Health, Automation Rules, Apps**, plus registration/import and virtualization connections. |
-| Colony | **Topology** (live role graph and task flow), **Agents** (names, colours, providers, model routes — view and configure), **Signals** (task-pattern memory), and **Model Routing**. |
-| Security | Posture, capability gates, access policy / targets, auto-apply policy, and credentials. |
-| Administration | **Users**, **Settings** (connection, integrations, system, maintenance), and **Terminal** (admin shell, if enabled). |
-
-Navigation is fully keyboard-operable — `g`-key jumps, breadcrumbs, contextual sub-navigation, and
-browser back/forward — and screen-reader friendly (ARIA-labelled controls, visible focus states).
-
----
-
-## Patch Review and File Changes
-
-ANTHILL does not write code changes directly from a task result.
-
-The normal flow is:
-
-```text
-Mission runs
-  -> coder produces a structured patch proposal
-  -> proposal is validated
-  -> approval request is saved
-  -> operator reviews it in the UI
-  -> operator approves or rejects it
-  -> approved patch may then be applied
-```
-
-Key rules:
-
-- File changes require approval.
-- Approval and apply are separate steps unless you use the UI's combined approve-and-queue option.
-- Patch proposals are stored and visible in the Patch Center.
-- `modify` and `delete` patches need exact `old_content`.
-- `add` patches can create or append content, depending on the proposal.
-- Backups are created before applied changes.
-
-Apply an approved patch from the API:
+Clone and run:
 
 ```bash
-curl -X POST http://localhost:8713/apply/APPROVAL_ID \
-  -H "Authorization: Bearer YOUR_TOKEN"
+git clone https://github.com/thexonexone/operation-anthill.git
+cd operation-anthill
+dotnet run --project src/Anthill.Cli -- --api --host 127.0.0.1
 ```
 
-Use the UI for normal review when possible.
+Run the full validation and publish flow:
 
----
-
-## Autonomy
-
-Autonomy is off by default. When enabled, the Director works through objectives under configured limits.
-
-Common controls are in **Autonomy** and **Security**.
-
-Important behavior:
-
-- Objectives can be pending, active, paused, completed, stopped, looping, or failed.
-- One-shot and verification-only objectives should end cleanly when finished.
-- Loop detection is for repeated work that is not discovering anything new.
-- Completed or loop-retired objectives appear in the completed-objective area.
-- Low-risk auto-apply is gated and off by default.
-- Auto-apply verifies changes and rolls them back if checks fail.
-
-Useful endpoints:
-
-```text
-GET  /autonomy/status
-POST /autonomy/start
-POST /autonomy/stop
-GET  /objectives
-POST /objectives
-GET  /autonomy/runs
-POST /objectives/clear
-```
-
----
-
-## Useful API Endpoints
-
-Most endpoints require an authenticated session or bearer token.
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Basic health check. |
-| `GET` | `/status` | System status. |
-| `GET` | `/system/summary` | Header/system summary. |
-| `POST` | `/missions` | Submit a mission. |
-| `GET` | `/jobs` | Job list. |
-| `GET` | `/missions/json` | Mission history as JSON. |
-| `GET` | `/missions/{id}/report` | Structured mission report. |
-| `GET` | `/events` | Event log. |
-| `GET` | `/patches` | Patch Center list. |
-| `GET` | `/patches/{id}/detail` | Patch detail/diff data. |
-| `GET` | `/approvals` | Pending approvals. |
-| `POST` | `/approve/{id}` | Approve a patch. |
-| `POST` | `/reject/{id}` | Reject a patch. |
-| `POST` | `/apply/{id}` | Apply an approved patch. |
-| `GET` | `/config` | Runtime config summary. |
-| `GET` | `/models` | Model route status. |
-| `GET` | `/ollama/models` | Models available from Ollama. |
-| `GET` | `/maintenance/stats` | Disk/DB/backup stats. |
-| `POST` | `/maintenance/flush` | Prune old backups/events and compact DB. |
-| `POST` | `/maintenance/clear-missions` | Clear mission history. |
-| `POST` | `/maintenance/reset-config` | Reset tunable settings. |
-
----
-
-## Authentication
-
-On first run, the UI creates the first administrator.
-
-Roles:
-
-| Role | Access |
-|---|---|
-| Administrator | Full access. |
-| Mission Coordinator | Submit missions and read allowed status/event data. |
-
-Notes:
-
-- Web login uses username and password.
-- Passwords are stored as salted PBKDF2-SHA256 hashes.
-- Sessions are in memory and expire.
-- Restarting the service logs users out.
-- `ANTHILL_API_TOKEN` is optional and intended for scripts/CI.
-
-Reset an admin password from the host:
-
-```bash
-dotnet run --project src/Anthill.Cli -- --set-password admin <new-password>
-```
-
-Add a user:
-
-```bash
-dotnet run --project src/Anthill.Cli -- --add-user <username> <password> admin
-```
-
-Use `coordinator` instead of `admin` for limited access.
-
----
-
-## Security Notes
-
-ANTHILL is meant to be run on hardware you control.
-
-Main controls:
-
-- Password-based operator login.
-- Role-based permissions.
-- Optional static token for scripts.
-- Rate limits on mission and auth endpoints.
-- Path traversal checks.
-- Workspace boundary through `agent_workspace_dir`.
-- Web search, shell, file writes, patch apply, and auto-apply are gated by config.
-- Sensitive provider keys are encrypted at rest.
-- Operator shell is admin-only and audit-logged.
-
-For local-only access, set:
-
-```jsonc
-"api_host": "127.0.0.1"
-```
-
-For LAN or container access, use:
-
-```jsonc
-"api_host": "0.0.0.0"
-```
-
-Only expose the UI/API to networks you trust.
-
----
-
-## Build, Test, and Publish
-
-### Full build
-
-Linux/macOS:
+Linux:
 
 ```bash
 ./build.sh
 ```
 
-Windows:
+Windows PowerShell:
 
 ```powershell
 .\build.ps1
 ```
 
-### .NET-only build
-
-```bash
-dotnet build Anthill.sln -c Release
-```
-
-### Run tests
+Run only the tests:
 
 ```bash
 dotnet test Anthill.sln -c Release
 ```
 
-### Publish Linux binary
-
-```bash
-dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
-  -c Release -r linux-x64 --self-contained true \
-  -p:PublishSingleFile=true -p:DebugType=none \
-  -o ./publish/linux-x64
-```
-
-### Publish Windows binary
-
-```powershell
-dotnet publish src\Anthill.Cli\Anthill.Cli.csproj `
-  -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:DebugType=none `
-  -o .\publish\win-x64
-```
-
----
-
-## Updating
-
-### Source checkout
-
-```bash
-git pull
-./build.sh
-dotnet run --project src/Anthill.Cli -- --api
-```
-
-### LXC install
-
-```bash
-cd /opt/anthill/src
-git pull
-bash deploy/lxc/setup.sh
-```
-
-### Docker
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-Your `.anthill` data, config, database, users, logs, backups, and keys should remain in place during normal updates.
-
----
-
-## Troubleshooting
-
-### UI cannot reach Ollama
-
-Check Ollama:
-
-```bash
-curl http://localhost:11434/api/tags
-```
-
-If Ollama is remote:
-
-```bash
-curl http://OLLAMA_MACHINE_IP:11434/api/tags
-```
-
-Then confirm `.anthill/config.json`:
-
-```jsonc
-"ollama_host": "http://OLLAMA_MACHINE_IP:11434"
-```
-
-Restart ANTHILL after changing config.
-
-### Port 8713 is already in use
-
-Linux:
-
-```bash
-lsof -i :8713
-kill $(lsof -t -i:8713)
-```
-
-Windows:
-
-```powershell
-netstat -ano | findstr :8713
-taskkill /PID <PID> /F
-```
-
-Or change:
-
-```jsonc
-"api_port": 9000
-```
-
-### dotnet command not found
-
-Install .NET 9 SDK.
-
-Ubuntu example:
-
-```bash
-wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt-get update
-sudo apt-get install -y dotnet-sdk-9.0
-```
-
-### No approvals are appearing
-
-Check:
-
-- the mission actually requested a file change
-- patch proposals were created
-- the target file type is allowed by runtime config
-- the proposal includes `old_content` for modify/delete
-- Event Log for `patch_proposal_parse_failed`
-- Patch Center for rejected, failed, or superseded patches
-
-### Mission keeps repeating
-
-Check:
-
-- objective `max_runs`
-- whether the objective is one-shot or standing
-- Autonomy page for completed/stopped/looping status
-- Completed Objectives detail
-- Event Log for objective lifecycle events
-
-### Disk usage is growing
-
-Use:
+## How the repository is organized
 
 ```text
-Settings → Maintenance → Flush Cache
+src/Anthill.Cli/          Command-line entry point
+src/Anthill.Api/          Web API and runtime host
+src/Anthill.Core/         Queen, mission flow, memory, policy, and domain logic
+src/Anthill.Modules/      Reasoning, tools, and homelab integrations
+src/Anthill.SDK/          Shared contracts for modules and tools
+src/Anthill.UI/           Browser interface
+tests/                    Automated test projects
+deploy/lxc/               LXC and systemd installer
+docs/                     Architecture, operations, and roadmap documentation
 ```
 
-Or call:
+## Learn more
 
-```bash
-curl -X POST http://localhost:8713/maintenance/flush \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
+- [`docs/PLAN.md`](docs/PLAN.md) â€” what is working now and what is still missing
+- [`docs/ANT_EXECUTION.md`](docs/ANT_EXECUTION.md) â€” canonical colony roles and execution gates
+- [`docs/APPROVALS.md`](docs/APPROVALS.md) â€” patch and approval lifecycle
+- [`docs/AUTONOMY.md`](docs/AUTONOMY.md) â€” Director, objectives, budgets, and stop controls
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) â€” detailed deployment and service setup
+- [`CHANGELOG.md`](CHANGELOG.md) â€” complete release history
 
----
+## Current release
 
-## Project Layout
+`v0.3.8.41` makes the full twelve-role roster the default for new installations, confines
+write-capable external agents to ANTHILL's workspace boundary, and ensures Archivist output exists
+before the learning pass consumes it. Finalization steps are also recorded so they are not applied
+twice during recovery.
 
-```text
-.github/workflows/        CI and release workflows
-deploy/lxc/               LXC/Proxmox installer and service templates
-docs/                     Deployment, autonomy, roadmap, and design notes
-native/anthill_kernel/    Optional C++20 native kernel
-src/                      Active .NET source
-test/Anthill.Tests/       Test project path
-tests/Anthill.Tests/      Test project path
-Anthill.sln               Solution file
-build.sh                  Linux/macOS build script
-build.ps1                 Windows build script
-config.example.json       Default runtime config
-Dockerfile                Container build
-docker-compose.yml        Docker Compose deployment
-```
-
----
+That is the only release summary kept in this README. Older release notes belong in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
-See `LICENSE`.
-
----
-
-## Notes for Future README Updates
-
-Keep this README short and practical.
-
-Good additions:
-
-- exact install commands
-- exact config values
-- current version notes
-- deployment fixes
-- troubleshooting steps
-
-Avoid:
-
-- long marketing descriptions
-- repeated explanations
-- outdated runtime notes
-- fake feature language
-- Python-era instructions
-- duplicate deployment docs already covered in `docs/DEPLOYMENT.md`
+[MIT](LICENSE)
