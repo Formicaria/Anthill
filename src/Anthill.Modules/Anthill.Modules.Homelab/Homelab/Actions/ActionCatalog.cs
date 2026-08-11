@@ -15,6 +15,10 @@ public static class ActionCatalog
         "restart_service",
         "start_vm", "stop_vm", "restart_vm",
         "start_container", "stop_container", "restart_container",
+        // v0.3.8.40: compose is a REVERSIBLE pair — down is undone by up and vice versa,
+        // from the same file. That is the rollback story container CREATION lacks, which is
+        // why these are here and `docker run` is not.
+        "compose_up", "compose_down",
         "create_snapshot",
         "run_backup",
         "resolve_incident",
@@ -42,6 +46,8 @@ public static class ActionCatalog
     {
         "restart_service", "start_vm", "stop_vm", "restart_vm",
         "start_container", "stop_container", "restart_container",
+        // Compose moves a whole stack at once, so its blast radius is never small.
+        "compose_up", "compose_down",
     };
 
     /// <summary>Purely local actions — they touch only ANTHILL's own database, never the network.</summary>

@@ -1158,6 +1158,75 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .mission-node .mn-send{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.4);color:var(--hud-cyan);border-radius:5px;
   width:30px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;}
 .mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
+/* v3.8.39: chat-first surface. Full height, three columns, and the colony pane only when asked. */
+/* No display override: `.page` is already flex:1 / column and `.page.active` makes it flex, so the
+   chat surface inherits full height by cooperating with that rather than fighting it. */
+#page-chat{min-height:0;overflow:hidden;}
+.chat-wrap{display:flex;flex:1;min-height:0;}
+.chat-rail{width:230px;flex-shrink:0;border-right:1px solid var(--border);padding:12px;
+  display:flex;flex-direction:column;gap:10px;overflow-y:auto;background:var(--panel);}
+.chat-new{width:100%;}
+.chat-rail-hd{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);}
+.chat-conv{padding:8px 9px;border-radius:6px;cursor:pointer;font-size:11px;color:var(--muted);
+  border:1px solid transparent;line-height:1.4;}
+.chat-conv:hover{background:rgba(255,255,255,.04);}
+.chat-conv.active{background:rgba(34,211,238,.09);border-color:rgba(34,211,238,.3);color:var(--text);}
+.chat-conv .attn{color:var(--amber,#f59e0b);font-size:9px;display:block;margin-top:3px;}
+.chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
+.chat-hd{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);}
+.chat-title{font-weight:700;color:var(--text);font-size:13px;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chat-hd-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.chat-state{font-size:10px;color:var(--muted);}
+/* justify-content:flex-end keeps the newest message at the bottom, where every chat client puts
+   it. Without it a short thread pinned to the top of a tall empty panel, which reads as broken. */
+.chat-thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;
+  min-height:0;justify-content:flex-end;}
+/* The welcome block is the exception: it is centred, not a message. */
+.chat-thread:has(.chat-welcome){justify-content:center;}
+.chat-welcome{margin:auto;max-width:460px;text-align:center;color:var(--muted);}
+.chat-welcome h2{font-size:17px;color:var(--text);margin:0 0 10px;font-weight:700;}
+.chat-welcome p{font-size:12px;line-height:1.6;margin:0;}
+.chat-turn{max-width:min(760px,92%);font-size:12px;line-height:1.6;white-space:pre-wrap;
+  padding:10px 13px;border-radius:9px;}
+.chat-turn.user{align-self:flex-end;background:rgba(34,211,238,.10);border:1px solid rgba(34,211,238,.22);color:var(--text);}
+.chat-turn.colony{align-self:flex-start;background:var(--panel);border:1px solid var(--border);color:var(--muted);}
+.chat-turn .who{display:block;font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:5px;}
+.chat-composer{display:flex;gap:8px;align-items:flex-end;padding:12px 18px 4px;border-top:1px solid var(--border);}
+.chat-input{flex:1;background:var(--bg-soft,rgba(255,255,255,.03));border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-size:12px;padding:10px 12px;resize:none;outline:none;
+  line-height:1.5;max-height:180px;font-family:inherit;}
+.chat-input:focus{border-color:rgba(34,211,238,.45);}
+.chat-hint{font-size:9px;color:var(--dim);padding:6px 18px 12px;}
+.chat-side{width:400px;flex-shrink:0;border-left:1px solid var(--border);display:flex;
+  flex-direction:column;min-height:0;background:var(--panel);}
+.chat-side[hidden]{display:none;}
+.chat-side-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
+  border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);}
+.chat-colony-mount{flex:1;min-height:0;position:relative;}
+/* Narrow: the rail and the colony pane are the first things to go — the conversation is the point. */
+@media (max-width:1100px){ .chat-side{width:320px;} }
+@media (max-width:900px){ .chat-rail{display:none;} .chat-side{display:none;} }
+
+/* v0.3.8.40: the escalation gate in the thread. Amber, not red — the colony is asking, not failing. */
+.chat-approve{align-self:stretch;max-width:min(760px,92%);border:1px solid rgba(245,158,11,.35);
+  background:rgba(245,158,11,.07);border-radius:9px;padding:12px 14px;}
+.chat-approve-hd{font-size:12px;font-weight:700;color:var(--amber,#f59e0b);margin-bottom:5px;}
+.chat-approve-what{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px;}
+.chat-approve-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* v3.8.39: installable coding agents */
+.agentcli-card{padding:12px 14px;margin-bottom:10px;}
+.agentcli-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.agentcli-name{font-weight:700;color:var(--text);font-size:13px;}
+.agentcli-vendor{font-size:10px;color:var(--dim);}
+.agentcli-sub{font-size:11px;color:var(--muted);margin:8px 0 10px;line-height:1.5;}
+.agentcli-sub code{font-family:var(--mono);font-size:10px;color:var(--hud-cyan);
+  background:rgba(34,211,238,.08);padding:1px 5px;border-radius:3px;}
+.agentcli-actions{display:flex;gap:8px;align-items:center;}
+.agentcli-msg{font-size:11px;margin-bottom:10px;}
 .mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
 /* v3.8.34: the mode row now says what it is FOR, and that skipping it is allowed. Four bare
    buttons read as a required choice a newcomer had no basis to make. */
@@ -1433,6 +1502,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="sp-row"><span class="sp-key">API server</span><span class="sp-val" id="sp-api">—</span></div>
           <div class="sp-row"><span class="sp-key">Ollama backend</span><span class="sp-val" id="sp-ollama">—</span></div>
           <div class="sp-row"><span class="sp-key">Ollama host</span><span class="sp-val" id="sp-ollama-host" style="font-size:10px;color:var(--dim);">—</span></div>
+          <!-- v0.3.8.40: which of the two Anthills this is. Titled with the reason, because an
+               operator whose colony decided it was a server needs to see what it decided that from. -->
+          <div class="sp-row"><span class="sp-key">Running as</span><span class="sp-val" id="sp-deployment">—</span></div>
           <div class="sp-head">Model Routing</div>
           <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">—</span></div>
           <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">—</span></div>
@@ -2980,6 +3052,98 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: USERS
       --------------------------------------------------------------------- -->
+      <!-- v3.8.39: the chat-first surface.
+           Anthill's primary act has always been "describe what you want done" — it was buried in a
+           widget on a grid the operator had to learn first. Here it IS the application: one
+           conversation, full height, with the colony available beside it when the operator wants to
+           watch rather than by default. -->
+      <div class="page" id="page-chat">
+        <div class="chat-wrap">
+          <aside class="chat-rail">
+            <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
+            <div class="chat-rail-hd">Conversations</div>
+            <div id="chat-conv-list"><div class="hud-state">Loading…</div></div>
+          </aside>
+
+          <main class="chat-main">
+            <header class="chat-hd">
+              <div class="chat-title" id="chat-title">New conversation</div>
+              <div class="chat-hd-actions">
+                <span id="chat-state" class="chat-state"></span>
+                <button class="btn btn-ghost" id="chat-colony-toggle"
+                        title="Watch the colony work on this, beside the conversation">◧ Colony</button>
+              </div>
+            </header>
+
+            <div class="chat-thread" id="chat-thread">
+              <div class="chat-welcome">
+                <h2>What would you like done?</h2>
+                <p>Describe it in your own words. The colony plans the work, carries it out, and
+                   shows you every step — you approve anything that changes real files.</p>
+              </div>
+            </div>
+
+            <div class="chat-composer">
+              <label class="sr-only" for="chat-input">Message the colony</label>
+              <textarea id="chat-input" class="chat-input" rows="1"
+                        placeholder="Describe what you want done…"></textarea>
+              <button class="mn-send" id="chat-send" title="Send (Enter)">▶</button>
+            </div>
+            <div class="chat-hint">Press Enter to send · Shift+Enter for a new line</div>
+          </main>
+
+          <aside class="chat-side" id="chat-side" hidden>
+            <div class="chat-side-hd">
+              <span>Colony</span>
+              <button class="btn btn-ghost" id="chat-colony-close" title="Hide the colony">✕</button>
+            </div>
+            <div id="chat-colony-mount" class="chat-colony-mount"></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- v0.3.8.40: Projects — mission workspaces, promoted from a hidden dashboard widget to a
+           destination. A "project" is the isolated checkout a mission works in; the colony's rule is
+           that the active tree is never an agent scratchpad, so this is where the work actually
+           happens and an operator should be able to find it without customising a dashboard. -->
+      <div class="page page-scroll" id="page-projects">
+        <div class="page-hdr">
+          <div>
+            <h1>Projects</h1>
+            <div class="sub">Isolated workspaces the colony does its work in. Nothing here touches your live files until you approve a change.</div>
+          </div>
+          <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
+        </div>
+        <div id="projects-list"><div class="hud-state">Loading…</div></div>
+      </div>
+
+      <!-- v0.3.8.40: Tools — what the colony can actually do, and what it is routed to. -->
+      <div class="page page-scroll" id="page-toolsview">
+        <div class="page-hdr">
+          <div>
+            <h1>Tools</h1>
+            <div class="sub">What the colony is able to do, and whether each ant is routed to a model that can do it.</div>
+          </div>
+          <button class="btn btn-ghost" id="toolsview-reload">↺ Refresh</button>
+        </div>
+        <div id="toolsview-body"><div class="hud-state">Loading…</div></div>
+      </div>
+
+      <!-- v3.8.39: installable CLI agents. The colony can delegate a turn to Claude Code, Codex,
+           Gemini CLI and the rest; this is where an operator sees what exists, what is on this
+           machine, and installs one. -->
+      <div class="page page-scroll" id="page-agentcli">
+        <div class="page-hdr">
+          <div>
+            <h1>Agents</h1>
+            <div class="sub">Coding agents the colony can hand work to. Anthill starts them; you stay signed in to them yourself.</div>
+          </div>
+          <button class="btn btn-ghost" id="agentcli-reload">↺ Re-scan</button>
+        </div>
+        <div id="agentcli-msg" class="agentcli-msg" style="display:none;"></div>
+        <div id="agentcli-list"><div class="hud-state">Checking what's installed…</div></div>
+      </div>
+
       <div class="page page-scroll" id="page-users">
         <div class="page-hdr">
           <div>

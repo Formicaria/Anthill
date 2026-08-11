@@ -78,6 +78,22 @@ public sealed class AnthillConfig
     // this is arbitrary command execution by a logged-in human admin, every command audit-logged.
     // It is host remote-code-execution by design; keep it off on anything network-exposed you
     // don't fully trust. Default working directory for the console (blank = agent_workspace_dir).
+    /// <summary>
+    /// v0.3.8.40 — "desktop", "server", or "auto" (the default, which detects).
+    ///
+    /// Anthill on a laptop is a personal assistant; in an LXC or Docker host it is a shared control
+    /// plane expected to manage infrastructure. Declared once here rather than inferred separately
+    /// by each feature that cares, because two features inferring it independently will disagree on
+    /// exactly the host where the answer matters.
+    /// </summary>
+    [JsonPropertyName("deployment_mode")] public string DeploymentMode { get; set; } = "auto";
+    /// <summary>
+    /// v0.3.8.40 — whether APPROVED container actions may actually run. Off by default.
+    ///
+    /// Dry run works regardless: an operator can see exactly what would happen before deciding to
+    /// enable this. An execute path nobody has watched run is not something to switch on for them.
+    /// </summary>
+    [JsonPropertyName("docker_execute_enabled")] public bool DockerExecuteEnabled { get; set; } = false;
     [JsonPropertyName("operator_shell_enabled")] public bool OperatorShellEnabled { get; set; } = true;
     [JsonPropertyName("operator_shell_dir")] public string OperatorShellDir { get; set; } = "";
 

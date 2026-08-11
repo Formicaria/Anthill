@@ -1,5 +1,57 @@
 # ANTHILL Changelog
 
+## v0.3.8.40 - the colony delegates, and says what it is waiting for
+
+**Installed CLI agents became reasoning providers.** Claude Code, Codex, Gemini CLI, Aider and
+OpenCode are routable per role, under the same contracts, budgets and verification as Ollama.
+Anthill starts a process and holds no credential: the operator signs into the vendor's own tool
+once, and the tool keeps its session. There is no secret in the database to leak, nothing to
+refresh, and revoking access in the vendor's account settings revokes it here with no Anthill
+involvement. Prompts are passed as a discrete argv vector against `UseShellExecute=false`, because
+"fix the bug in `main`; it fails when x=1" is an ordinary request and three commands to a shell.
+
+Proven end to end rather than argued: `agent:claude-code` returned "Not logged in · Please run
+/login" in 1.0s — catalogue, router, factory, subprocess, the vendor's own words, and Classify
+mapping them to a typed AuthError.
+
+**The conversation became the application.** Chat is a full-height surface and the first navigation
+item, with the colony beside it behind a toggle rather than as the landing view. The escalation gate
+renders IN the thread: `needs_operator` means the colony has stopped and is waiting for a person,
+and until now that prompt appeared only in a widget the default dashboard ships hidden — an operator
+working in Chat would have waited on a colony that was waiting on them.
+
+Projects, Tools and Scheduled join the top row. All three had data already and were reachable only
+as hidden widgets an operator had to know to enable.
+
+**Anthill knows which of its two deployments it is.** Desktop or Server, resolved once from
+`deployment_mode` and reported with its reason. The decision is a pure function over host facts and
+the probing is separate — otherwise the Docker and LXC branches would be verified on a laptop by
+never executing, and nobody would know until an operator's LXC came up as a desktop.
+
+**Docker container control, through the approval pipeline rather than around it.** Start, stop,
+restart and compose up/down as an IHomelabActionRunner, inheriting the kill switch, blast-radius
+scoring, the structural approval gate, the rollback note and verification. Three gates on top:
+deployment mode, the catalogue allowlist, and a target guard — the name is passed as argv so it
+cannot be shell injection, but `-v` would be read by docker as an OPTION. Execution is OFF by
+default; dry run works regardless and reports the real command and the container's real state.
+
+Compose earned its place by being reversible: down and up undo each other from the same file, which
+is the property container CREATION lacks. `docker run` is still absent for that reason and
+`delete_container` remains structurally Forbidden.
+
+**Console defects found by using it.** pollHud threw on every poll when Operator Attention was
+hidden — the default layout — aborting the missions, changes and objectives summaries with it. Two
+homelab automation controls passed a fetch-style options object where `api()` takes the method
+positionally, so they never sent a request. Seven of ten roles were routed to a model that could not
+meet their contract and the only surface saying so was a hidden widget. Ctrl+C waited out the host
+shutdown timeout because `/events/stream` never observed ApplicationStopping.
+
+**Guards.** ConsoleRouteCoverageTests matched route stems as SUBSTRINGS, so `/agents` counted as
+reached because the nav table held `/colony/agents` — two new routes passed the coverage audit with
+zero console code. The stem must now begin a quoted path literal; verdicts were compared across all
+178 routes and none changed. ConsoleRouteAgreementTests checks the other direction. All 29 analyzer
+warnings cleared.
+
 ## v0.3.8.38 - the durable mission contract
 
 An external audit of v0.3.8.36 named five backend defects behind the console work. Each was

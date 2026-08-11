@@ -135,6 +135,14 @@ public static partial class ApiHost
             ["providers_configured"] = providersConfigured,
             ["routes"] = routeList,
 
+            // v0.3.8.40 — which of the two Anthills this is. On a laptop it is a personal
+            // assistant; in an LXC or Docker host it is a shared control plane expected to manage
+            // infrastructure. Reported with its REASON, because an operator whose colony decided
+            // it was a server needs to see what it decided that from.
+            ["deployment_mode"] = AnthillRuntime.Deployment.ToString().ToLowerInvariant(),
+            ["deployment_reason"] = AnthillRuntime.DeploymentReason,
+            ["deployment_detected"] = AnthillRuntime.DeploymentDetected,
+
             // v3.8.34 — how many contracted roles cannot actually use the model they are routed to.
             //
             // AntModelFitness has computed this since v3.4.2 and `/tools` has reported it in full,
