@@ -1,5 +1,63 @@
 # ANTHILL Changelog
 
+## v0.3.8.42 - UI truthfulness and cohesion: the console claims only what the backend proves
+
+The release the audit governs: `docs/UI-CONTRACT-AUDIT.md`, spec §1–§20. The method mattered as
+much as the list — every UI change was driven against the running console, and four of the defects
+below were found that way, not by reading.
+
+**Chat is the ONE mission entry.** The four composers that competed with it — the colony page's
+mission bar, the Missions console box, the dashboard's Mission Command widget (with its working
+modes and plan preview), and the Conversations widget's message boxes — are retired. Each surface
+keeps a path ("Start a mission in Chat"), because a control removed without a path left behind is a
+dead end, not a consolidation. Dispatch survives with one production caller (Re-run), the stop
+affordance follows the entry (a chat-header Stop wired to the conversation cancel, shown exactly
+while the colony works; the jobs list keeps its durable per-run Cancel), and `POST /missions/plan`
+is recorded as a UI GAP in the route-coverage ledger until Chat grows a preview step.
+
+**The colony opens BESIDE the conversation.** The chat Colony button mounts the canonical topology
+into a resizable split pane — the same `#colony-canvas-area` node the Colony page owns,
+re-parented, so there is no second canvas, render loop or subscription. The pane's bar tells the
+truth about mission linkage in three states; below 900px it is a clean full-screen switch instead
+of the old strip's `display:none` no-op. Driving it live found two rendering defects (the mount
+measured the canvas 0×0; the colony page's mission bar rode inside the canvas area as a second
+composer), both pinned in tests.
+
+**The composer's Play became Stop, and the terminal-status vocabulary has one home.**
+`JOB_TERMINAL_STATUSES` is keyed to `ApiJobRegistry.IsTerminalStatus` across the boundary; before
+this the active-job poller omitted `cancelled` and `timed_out` (a cancel locked the composer
+forever) and the jobs list left a timed-out run with no View Result and no Re-run.
+
+**State travels as state.** The conversation detail endpoint now projects `cancelled` (the list
+always did), because `Doing()` answers "cancelled" as prose and a truthiness check rendered a
+stopped conversation as "Working…" with a live Stop, forever — and overwrote refusal summaries.
+"New conversation" now actually starts one: the rail's auto-open used to re-select the thread the
+operator had just left. And a failed role registry is a state, never a fiction: `buildNodes` no
+longer invents six "Legacy executable ant" roles, the legend names the failure with a retry beside
+it, and cached roles are marked stale with when and why.
+
+**One home per concept.** The Monitoring domain dissolved — Activity/Events/History moved in with
+Missions, its Changes tab duplicated Changes & Approvals (now ONE nav entry with both routes as
+tabs), "Autonomous Runs" opened the Director under a second name, and the homelab views went home
+to Infrastructure. `ROUTE_ALIAS` keeps every moved bookmark working. "Projects" is **Mission
+Workspaces** (the backend concept: per-mission isolated checkouts); "Scheduled" is gone as a
+top-level claim; quick actions carry navigational labels ("Patch Colony" patched nothing); Colony
+carries **Roles** and **Memory & Signals**; provider routing lives under Administration as
+configuration, not colony membership; and the Tools page renders through the same implementation
+as its dashboard widget instead of a drifting summary.
+
+**Chat quality of life, safely.** The open conversation refreshes itself (4s, only while the page
+is on screen) behind a render fingerprint, so an unchanged poll costs and destroys nothing; the
+reading position survives updates unless the reader was already at the bottom; fenced code blocks
+render escape-first with only `<pre><code>` added — no markdown engine, no new sanitisation
+surface; Up-arrow recalls the last message into an empty composer; every message has a copy
+control fed from JS state, not DOM attributes.
+
+**Smaller truths.** All six patch mutations share one double-submit rule with pending state on the
+card (five had none); `providers_configured` reads "configured" instead of the "connected" it
+never measured; `window.confirm` left the tool-delete path (the native dialog blocks the
+renderer); cancelled/timed_out job chips are styled; and the dead composer CSS/JS went with the
+composers rather than hiding in the file.
 ## v0.3.8.41 - the full roster by default, the agent runs where it is told, and finalization in the right order
 
 **A writing agent was running in the operator's checkout.** `AgentCliProvider` has taken a

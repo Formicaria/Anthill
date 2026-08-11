@@ -61,7 +61,7 @@ public class ConversationRunnerTests : IDisposable
     /// then keeps working, so the runner can record history without waiting for the work to finish.
     /// A fake that only returned the id would test a pipeline that does not exist.
     /// </summary>
-    private ConversationRunner Runner() => new(_memory, (_, onCreated, token) =>
+    private ConversationRunner Runner(Func<string, ConversationReply>? ask = null) => new(_memory, (_, onCreated, token) =>
     {
         var id = $"mission-{Interlocked.Increment(ref _missionsStarted)}";
         _lastToken = token;
@@ -74,7 +74,7 @@ public class ConversationRunnerTests : IDisposable
         catch (OperationCanceledException) { /* cancelled mid-flight, which is a valid ending */ }
 
         return id;
-    });
+    }, ask);
 
     private Conversation Chat(EscalationPolicy policy = EscalationPolicy.Ask, bool cancelled = false)
     {
@@ -97,17 +97,79 @@ public class ConversationRunnerTests : IDisposable
     /// Chat runs without an escalation decision. The tools it may call are gated at DISPATCH, which
     /// is the correct place: a conversation that only reads needs no permission, and one that tries
     /// to write is stopped at the write rather than at the sentence before it.
+    ///
+    /// v0.3.8.42: and it is ANSWERED. The reply is recorded as an assistant turn carrying the
+    /// provider/model that produced it, and the prompt the provider saw contains the operator's
+    /// message — the loop the ConversationMode.Chat doc always described, finally built.
     /// </summary>
     [Fact]
-    public void Chat_RunsWithoutAnEscalationDecision()
+    public void Chat_RunsWithoutAnEscalationDecision_AndIsAnswered()
     {
-        var outcome = Runner().Run(Chat(), "what does this repository do?");
+        string? seen = null;
+        var outcome = Runner(prompt => { seen = prompt;
+            return new ConversationReply(true, "It orchestrates missions.", "agent:claude-code", "Claude Code", null); })
+            .Run(Chat(), "what does this repository do?");
 
         Assert.Equal(ConversationMode.Chat, outcome.Mode);
         Assert.True(outcome.Started);
         Assert.Null(outcome.MissionId);
         Assert.Equal(0, _missionsStarted);
         Assert.Empty(_memory.LoadEscalationDecisions("c1"));
+        Assert.Contains("answered by agent:claude-code/Claude Code", outcome.Summary);
+        Assert.Contains("what does this repository do?", seen);
+
+        var turns = _memory.LoadConversationTurns("c1");
+        Assert.Equal(2, turns.Count);
+        Assert.Equal("assistant", turns[1].Role);
+        Assert.Equal("It orchestrates missions.", turns[1].Content);
+        Assert.Equal("agent:claude-code", turns[1].Provider);
+        Assert.Equal("Claude Code", turns[1].Model);
+    }
+
+    /// <summary>A runtime composed without reasoning says so — it does not spin, and it does not
+    /// pretend. The message is still recorded; history survives the missing capability.</summary>
+    [Fact]
+    public void Chat_WithoutAComposedProvider_SaysSo()
+    {
+        var outcome = Runner().Run(Chat(), "hello?");
+
+        Assert.False(outcome.Started);
+        Assert.Contains("no reasoning provider is composed", outcome.Summary);
+        Assert.Single(_memory.LoadConversationTurns("c1"));   // the operator's message, nothing invented
+    }
+
+    /// <summary>A failed provider call records NO fake turn — the summary carries the classified
+    /// error and the remedy (route 'conversation' to a working provider).</summary>
+    [Fact]
+    public void Chat_ProviderFailure_RecordsNoFakeTurn()
+    {
+        var outcome = Runner(_ => new ConversationReply(false, "", "local", "llama", "ConnectError: Could not connect"))
+            .Run(Chat(), "hello?");
+
+        Assert.False(outcome.Started);
+        Assert.Contains("Could not connect", outcome.Summary);
+        Assert.Contains("Providers & Model Routing", outcome.Summary);
+        Assert.Single(_memory.LoadConversationTurns("c1"));
+    }
+
+    /// <summary>Stop pressed while the provider was thinking: the reply is discarded, because a
+    /// reply landing in a cancelled conversation would look like it ignored the Stop.</summary>
+    [Fact]
+    public void Chat_ReplyAfterCancel_IsDiscarded()
+    {
+        var chat = Chat();
+        var runner = Runner(_ =>
+        {
+            // The cancel arrives while the provider is thinking.
+            _memory.SaveConversation(chat with { Cancelled = true });
+            return new ConversationReply(true, "too late", "local", "llama", null);
+        });
+
+        var outcome = runner.Run(chat, "hello?");
+
+        Assert.False(outcome.Started);
+        Assert.Contains("cancelled while answering", outcome.Summary);
+        Assert.Single(_memory.LoadConversationTurns("c1"));
     }
 
     [Fact]

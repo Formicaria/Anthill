@@ -28,6 +28,13 @@ public sealed record ConversationOutcome(
     EscalationDecision? Decision = null);
 
 /// <summary>
+/// v0.3.8.42 — one conversational reply: the text, and which provider/model actually produced it.
+/// The attribution is not decoration: capability-aware routing can substitute providers, and a
+/// transcript that cannot say who answered cannot be audited.
+/// </summary>
+public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error);
+
+/// <summary>
 /// v3.7.0 — the escalation boundary: what turns a conversation into a mission.
 ///
 /// The phase asks for "one conversational surface that starts as chat and ESCALATES into autonomous
@@ -106,11 +113,30 @@ public sealed class ConversationRunner
     /// id through its callback AS SOON AS THE ROW EXISTS, then keeps running — the runner needs the
     /// id to record history, and must not wait for the work to finish to get it.
     /// </summary>
+    /// <summary>How many recent turns travel to the provider as context. Bounded, like everything.</summary>
+    public const int ChatContextTurns = 12;
+
+    /// <summary>
+    /// v0.3.8.42 — the reasoning call behind chat turns, injected like the mission pipeline is.
+    ///
+    /// Until this existed, Chat mode recorded the operator's message and answered NOTHING: the
+    /// "bounded conversational work" summary described a loop that had never been built, the
+    /// console rendered the permanent "conversational work" state as an eternal spinner, and the
+    /// natural misreading was "the model endpoint is down" when the truth was "no model is ever
+    /// asked". The delegate resolves through the SAME router the roles use — the `conversation`
+    /// route key, so Ollama, a keyed API or an installed agent CLI are equally valid answers and
+    /// the operator chooses under Administration → Providers &amp; Model Routing. Null means the
+    /// runtime was composed without reasoning, and the turn says so instead of pretending.
+    /// </summary>
+    private readonly Func<string, ConversationReply>? _ask;
+
     public ConversationRunner(SqliteMemory memory,
-        Func<string, Action<string>, CancellationToken, string> startMission)
+        Func<string, Action<string>, CancellationToken, string> startMission,
+        Func<string, ConversationReply>? ask = null)
     {
         _memory = memory;
         _startMission = startMission;
+        _ask = ask;
     }
 
     /// <summary>
@@ -145,8 +171,37 @@ public sealed class ConversationRunner
             // which is the correct place: a conversation that only reads needs no permission, and
             // one that tries to write is stopped at the write rather than at the sentence before it.
             RecordTurn(conversation, ordinal, message, null);
+
+            // v0.3.8.42: the turn is ANSWERED. Before this the message was recorded and nothing
+            // was ever asked — see the _ask field for what that cost.
+            if (_ask is null)
+                return new ConversationOutcome(ConversationMode.Chat, false, null,
+                    "no reasoning provider is composed — the message is recorded, and nothing can answer it");
+
+            ConversationReply reply;
+            try { reply = _ask(ChatPrompt(conversation)); }
+            catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
+
+            if (!reply.Ok)
+                return new ConversationOutcome(ConversationMode.Chat, false, null,
+                    $"no answer: {reply.Error ?? "the provider returned nothing"} — route "
+                  + "'conversation' to a working provider under Administration → Providers & Model Routing");
+
+            // Cancelled while the provider was thinking: the operator has already moved on, and a
+            // reply landing in a cancelled conversation would look like it ignored the Stop.
+            var current = _memory.LoadConversation(conversation.Id);
+            if (current?.Cancelled == true)
+                return new ConversationOutcome(ConversationMode.Chat, false, null,
+                    "cancelled while answering — the reply was discarded");
+
+            _memory.SaveConversationTurn(new ConversationTurn(
+                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", reply.Content)
+            {
+                Provider = reply.Provider,
+                Model = reply.Model,
+            });
             return new ConversationOutcome(ConversationMode.Chat, true, null,
-                "handled as bounded conversational work");
+                $"answered by {reply.Provider}/{reply.Model}");
         }
 
         // The shared budget, checked BEFORE the gate. A conversation that has spent its mission
@@ -313,4 +368,26 @@ public sealed class ConversationRunner
         {
             MissionId = missionId,
         });
+
+    /// <summary>
+    /// The bounded prompt: a short instruction and the last <see cref="ChatContextTurns"/> turns,
+    /// the just-recorded message included. Provider-agnostic text, because the delegate may be
+    /// backed by anything from a local model to an installed agent CLI, and the least capable
+    /// transport (a prompt on argv) sets the contract for all of them.
+    /// </summary>
+    private string ChatPrompt(Conversation conversation)
+    {
+        var turns = _memory.LoadConversationTurns(conversation.Id);
+        var recent = turns.Skip(Math.Max(0, turns.Count - ChatContextTurns));
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("You are the ANTHILL colony's conversational assistant. Answer the operator's "
+            + "last message concisely and truthfully. You have no tools in this conversation: if the "
+            + "operator is asking for real multi-step work, say that missions are started by asking "
+            + "for the work explicitly — never claim work you did not do.");
+        sb.AppendLine();
+        foreach (var t in recent)
+            sb.AppendLine((string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator: " : "Colony: ") + t.Content);
+        sb.AppendLine("Colony:");
+        return sb.ToString();
+    }
 }

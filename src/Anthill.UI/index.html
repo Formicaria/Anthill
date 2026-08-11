@@ -540,26 +540,10 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
   padding:7px 10px 9px;
   background:linear-gradient(0deg,rgba(9,14,23,.96) 60%,transparent);
 }
-.mission-row{display:flex;gap:7px;align-items:center;}
-.mission-input{
-  flex:1;padding:8px 14px;border-radius:18px;
-  background:rgba(22,36,64,.85);border:1px solid var(--border);
-  color:var(--text);font-size:12px;font-family:var(--font);line-height:1.5;
-  transition:border-color var(--t);
-  box-sizing:border-box;resize:none;overflow-y:auto;
-  min-height:34px;max-height:140px;
-  white-space:pre-wrap;word-wrap:break-word;
-}
-.mission-input:focus{outline:none;border-color:var(--queen);}
-.mission-input:disabled{opacity:.35;cursor:default;}
-.send-btn{
-  width:34px;height:34px;border-radius:50%;flex-shrink:0;
-  background:var(--queen);color:#080808;font-size:13px;font-weight:700;
-  display:flex;align-items:center;justify-content:center;
-  transition:opacity var(--t);
-}
-.send-btn:hover:not(:disabled){opacity:.85;}
-.send-btn:disabled{opacity:.28;cursor:default;}
+.mission-row{display:flex;gap:7px;align-items:center;justify-content:center;}
+/* v0.3.8.42 (§3/§20): the .mission-input / .send-btn rules retired with the composers they
+   styled. The rows they sat in now hold one affordance each — the way into Chat. */
+.start-in-chat{font-size:12px;padding:8px 16px;border-radius:18px;}
 .bar-hint{font-size:9px;color:var(--dim);margin-top:3px;text-align:center;}
 
 /* -- Cards / Panels ---------------------------------------------------------- */
@@ -624,6 +608,10 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* v3.8.34: an adaptive stop handed to a human. Amber, not red — nothing broke, and the operator's
    next move is a decision rather than a repair. Without this rule the new status rendered unstyled. */
 .job-status.escalated{color:var(--amber,#f59e0b);background:rgba(245,158,11,.12);}
+/* v0.3.8.42: the two remaining terminal statuses rendered unstyled — the v3.8.34 lesson, two
+   statuses over. Amber like escalated: stopped-on-purpose (or by the clock) is not a failure. */
+.job-status.cancelled{color:var(--amber,#f59e0b);background:rgba(245,158,11,.12);}
+.job-status.timed_out{color:var(--orange,#fb923c);background:rgba(251,146,60,.12);}
 .job-goal{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
 .job-actions{display:flex;gap:4px;margin-top:4px;}
 .job-btn{font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid;cursor:pointer;transition:opacity var(--t);}
@@ -1152,12 +1140,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .mission-node .mn-prompt{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
   padding:8px 10px;transition:border-color .2s,box-shadow .2s;}
 .mission-node .mn-prompt:focus-within{border-color:var(--hud-cyan);box-shadow:0 0 0 1px rgba(34,211,238,.15),0 0 18px -8px rgba(34,211,238,.5);}
-.mission-node .mn-prefix{font-family:var(--mono);font-size:11px;color:var(--hud-cyan);font-weight:700;white-space:nowrap;user-select:none;}
-.mission-node textarea{flex:1;background:transparent;border:none;color:var(--text);font-family:var(--mono);font-size:12px;resize:none;
-  outline:none;line-height:1.4;max-height:120px;}
-.mission-node .mn-send{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.4);color:var(--hud-cyan);border-radius:5px;
+/* v0.3.8.42 (§3/§20): the node's textarea/prefix/send rules retired with the composer. mn-send
+   remains only on the chat composer's own button. */
+.mn-send{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.4);color:var(--hud-cyan);border-radius:5px;
   width:30px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;}
-.mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
 /* v3.8.39: chat-first surface. Full height, three columns, and the colony pane only when asked. */
 /* No display override: `.page` is already flex:1 / column and `.page.active` makes it flex, so the
    chat surface inherits full height by cooperating with that rather than fighting it. */
@@ -1178,6 +1164,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chat-hd-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .chat-state{font-size:10px;color:var(--muted);}
+.chat-stop{color:var(--status-danger,#e5484d);border-color:rgba(229,72,77,.45);}
+.chat-stop:hover{background:rgba(229,72,77,.12);}
+/* The mission request is visually its own act — amber like every "this asks for authority" cue. */
+.chat-work{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.45);color:var(--amber,#f59e0b);}
+.chat-work:hover{background:rgba(245,158,11,.2);}
+/* v0.3.8.42 (§9/§14): the topology legend's registry-problem notice — amber for stale, and the
+   retry sits beside the failure it retries. */
+.chud-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;margin-bottom:6px;
+  max-width:220px;white-space:normal;}
 /* justify-content:flex-end keeps the newest message at the bottom, where every chat client puts
    it. Without it a short thread pinned to the top of a tall empty panel, which reads as broken. */
 .chat-thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;
@@ -1193,22 +1188,53 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-turn.colony{align-self:flex-start;background:var(--panel);border:1px solid var(--border);color:var(--muted);}
 .chat-turn .who{display:block;font-size:9px;letter-spacing:.07em;text-transform:uppercase;
   color:var(--dim);margin-bottom:5px;}
+/* v0.3.8.42 (§13): per-message copy — quiet until the message is hovered or the control focused. */
+.chat-copy{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;
+  padding:0 4px;opacity:0;transition:opacity var(--t);vertical-align:middle;}
+.chat-turn:hover .chat-copy,.chat-copy:focus-visible{opacity:1;}
+/* Fenced code blocks: escaped content, mono, scrolls sideways instead of wrapping into soup. */
+.chat-code{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:6px;
+  padding:9px 11px;margin:6px 0;overflow-x:auto;font-family:var(--mono);font-size:11px;
+  line-height:1.5;white-space:pre;}
 .chat-composer{display:flex;gap:8px;align-items:flex-end;padding:12px 18px 4px;border-top:1px solid var(--border);}
 .chat-input{flex:1;background:var(--bg-soft,rgba(255,255,255,.03));border:1px solid var(--border);
   border-radius:8px;color:var(--text);font-size:12px;padding:10px 12px;resize:none;outline:none;
   line-height:1.5;max-height:180px;font-family:inherit;}
 .chat-input:focus{border-color:rgba(34,211,238,.45);}
 .chat-hint{font-size:9px;color:var(--dim);padding:6px 18px 12px;}
-.chat-side{width:400px;flex-shrink:0;border-left:1px solid var(--border);display:flex;
-  flex-direction:column;min-height:0;background:var(--panel);}
-.chat-side[hidden]{display:none;}
-.chat-side-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
-  border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.08em;color:var(--muted);}
-.chat-colony-mount{flex:1;min-height:0;position:relative;}
-/* Narrow: the rail and the colony pane are the first things to go — the conversation is the point. */
-@media (max-width:1100px){ .chat-side{width:320px;} }
-@media (max-width:900px){ .chat-rail{display:none;} .chat-side{display:none;} }
+/* v0.3.8.42: Chat + Colony — the live topology beside the conversation, wide enough to read.
+   The old fixed 400px strip squeezed a spatial map and vanished below 900px, which made the
+   Colony button a silent no-op on small screens. This pane defaults to ~45% of the page, is
+   resizable from its divider, and below 900px overlays the page full-width with its own close. */
+.chat-wrap{position:relative;}
+.chat-colony-pane{flex:0 0 var(--chat-colony-w,45%);min-width:340px;max-width:72%;display:flex;
+  min-height:0;background:var(--bg);}
+.chat-colony-pane[hidden]{display:none;}
+.chat-colony-divider{width:6px;flex-shrink:0;cursor:col-resize;background:var(--border);
+  opacity:.6;transition:background var(--t),opacity var(--t);}
+.chat-colony-divider:hover,.chat-colony-divider:focus-visible,
+.chat-colony-divider.dragging{background:rgba(34,211,238,.5);opacity:1;outline:none;}
+.chat-colony-inner{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
+.chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;flex-shrink:0;
+  border-bottom:1px solid var(--border);background:var(--panel);}
+.ccb-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);flex-shrink:0;}
+.ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.ccb-spacer{flex:1;}
+/* #colony-canvas-area sizes itself with flex:1, so its host must be a flex column — as a plain
+   block the canvas measured 0×0 and the pane rendered an empty void (found live, v0.3.8.42). */
+.chat-colony-mount{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;}
+/* The colony page's own mission bar travels inside #colony-canvas-area. In the chat pane it would
+   be a SECOND composer beside the conversation's — chat is the canonical entry surface here. */
+.chat-colony-mount #mission-bar{display:none;}
+/* When the pane is open the rail yields first — conversation and colony are the point. */
+#page-chat.colony-open .chat-rail{display:none;}
+/* Narrow: a side-by-side split is unreadable. The pane overlays the page full-width; its own ✕
+   (and Escape) returns to the conversation with draft and scroll intact. */
+@media (max-width:900px){
+  .chat-rail{display:none;}
+  .chat-colony-pane{position:absolute;inset:0;z-index:2;min-width:0;max-width:none;}
+  .chat-colony-divider{display:none;}
+}
 
 /* v0.3.8.40: the escalation gate in the thread. Amber, not red — the colony is asking, not failing. */
 .chat-approve{align-self:stretch;max-width:min(760px,92%);border:1px solid rgba(245,158,11,.35);
@@ -1227,29 +1253,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   background:rgba(34,211,238,.08);padding:1px 5px;border-radius:3px;}
 .agentcli-actions{display:flex;gap:8px;align-items:center;}
 .agentcli-msg{font-size:11px;margin-bottom:10px;}
+/* v0.3.8.41: where an installed agent runs from — kept; the mode-row rules retired with the
+   composer (§3/§20). */
 .agentcli-where{font-size:10px;color:var(--dim);margin-bottom:12px;}
-.mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
-/* v3.8.34: the mode row now says what it is FOR, and that skipping it is allowed. Four bare
-   buttons read as a required choice a newcomer had no basis to make. */
-.mn-modes-label{font-size:10px;color:var(--muted);margin-top:11px;font-weight:600;}
-.mn-optional{font-weight:400;color:var(--dim);}
-/* Available to assistive tech, absent from the visual layout. The mission box is the console's
-   primary control and had no label at all — only a placeholder, which is not a name. */
+/* Available to assistive tech, absent from the visual layout. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;}
 .mn-hint{font-size:9px;color:var(--dim);margin-top:8px;}
-.mn-actions{display:flex;gap:6px;margin-top:9px;}
-/* Plan preview (Mission Composer, v1.8.23) */
-.hud-plan{margin-top:10px;border:1px solid var(--hud-line);border-radius:6px;padding:10px 12px;background:rgba(2,6,23,.35);}
-.hud-plan-banner{font-size:10px;padding:6px 9px;border-radius:5px;margin-bottom:8px;line-height:1.4;}
-.hud-plan-banner.warn{color:var(--amber);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.3);}
-.hud-plan-banner.info{color:var(--hud-cyan);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);}
-.plan-step{display:flex;gap:9px;align-items:flex-start;padding:6px 2px;border-bottom:1px solid rgba(30,51,84,.4);}
-.plan-step:last-child{border-bottom:none;}
-.plan-step .p-num{font-family:var(--mono);font-size:10px;color:var(--dim);min-width:18px;text-align:right;flex-shrink:0;padding-top:2px;}
-.plan-step .p-body{min-width:0;flex:1;}
-.plan-step .p-title{font-size:11px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.plan-step .p-meta{font-size:9px;color:var(--dim);margin-top:1px;}
+/* v0.3.8.42 (§3/§20): mode selector and plan-preview rules (.mn-modes, .hud-plan, .plan-step)
+   retired with the dashboard composer. */
 .ant-badge{display:inline-flex;align-items:center;font-size:8px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em;}
 .ant-badge.researcher{color:var(--blue);background:rgba(59,130,246,.12);}
 .ant-badge.web{color:var(--cyan);background:rgba(6,182,212,.12);}
@@ -1559,9 +1571,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="ath-card ov2-resources"><div class="ath-card-title">Resource Usage</div><div id="ov2-resources-body"><div class="ov2-empty">Connecting...</div></div></div>
           <div class="ath-card ov2-actions"><div class="ath-card-title">Quick Actions</div>
             <div class="ov2-qa">
+              <!-- v0.3.8.42: quick actions say what clicking does. The old patch/diagnose labels
+                   were navigation dressed as mutations — clicking neither patched nor diagnosed
+                   anything. Navigational labels for navigation. -->
               <button data-onclick="ov2FocusMission()">🎯 Create Mission</button>
-              <button data-onclick="showPage('patches')">🩹 Patch Colony</button>
-              <button data-onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
+              <!-- Both branches relabelled these independently — the old action verbs promised
+                   mutations that never happened, and on a console whose whole job is proposing
+                   changes, a button labelled Patch is the worst place to be imprecise. -->
+              <button data-onclick="showPage('patches')">🗂 View Changes</button>
+              <button data-onclick="showPage('autonomy')">⚡ View Automation</button>
               <button data-onclick="showPage('pheromones')">🧪 View Signals</button>
               <button data-onclick="showPage('events')">📜 Events</button>
               <button data-onclick="showPage('settings')">⚙ Colony Settings</button>
@@ -1584,31 +1602,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                  plan-preview review step — was reachable only on the classic overview grid, which
                  has been hidden behind the topology canvas since v2.15.0. -->
             <div id="ov-composer-body">
-            <!-- v3.8.34: the front door, in plain English.
-                 The terminal prefix went: it read as a command line to someone who had never used
-                 one, which is a warning ("you could break something") rather than an invitation.
-                 The colony metaphor stays — that is the product — but "directive", "dispatch",
-                 "prepended" and "patch" were vocabulary the operator had to learn before typing
-                 anything at all. -->
+            <!-- v0.3.8.42 (§3): Chat is the one mission entry — this widget was the fourth
+                 composer. The working modes and the plan preview retired with it; /missions/plan
+                 losing its surface is recorded in ConsoleRouteCoverageTests until Chat grows a
+                 preview step. -->
             <div class="mn-prompt">
-              <label class="sr-only" for="ov-mission-input">What would you like the colony to do?</label>
-              <textarea class="mission-input" id="ov-mission-input" placeholder="Describe what you want done…" autocomplete="off" rows="1" disabled></textarea>
-              <button class="mn-send" id="ov-send-btn" disabled title="Send (Enter)">▶</button>
+              <button class="btn btn-primary start-in-chat" data-onclick="go('/chat')" title="Missions start from the conversation">✎ Start a mission in Chat</button>
             </div>
-            <div class="mn-modes-label" id="ov-modes-label">How should the colony work? <span class="mn-optional">Optional — leave unset to let it decide.</span></div>
-            <!-- Labels are plain; data-mode still carries the semantics, and the exact instruction
-                 sent to the model lives in OV_MODE_TEXT, unchanged. -->
-            <div class="mn-modes" id="ov-modes" role="group" aria-labelledby="ov-modes-label">
-              <button class="hud-act" data-mode="inspect" aria-pressed="false" data-onclick="setOvMode('inspect')" title="Reads files and reports back. Changes nothing.">Look only</button>
-              <button class="hud-act" data-mode="verify" aria-pressed="false" data-onclick="setOvMode('verify')" title="Checks existing work. Proposes no changes.">Check my work</button>
-              <button class="hud-act" data-mode="patch" aria-pressed="false" data-onclick="setOvMode('patch')" title="Proposes edits for you to approve. Applies nothing on its own.">Suggest changes</button>
-              <button class="hud-act" data-mode="build" aria-pressed="false" data-onclick="setOvMode('build')" title="Makes changes where needed, then runs the build and tests.">Make changes &amp; test</button>
-            </div>
-            <div class="mn-hint" id="ov-mode-hint">Press Enter to send · Shift+Enter for a new line</div>
-            <div class="mn-actions">
-              <button class="hud-act" id="ov-preview-btn" data-onclick="previewPlan()" title="See the steps the colony would take, without running them">⌕ Show me the plan first</button>
-            </div>
-            <div class="hud-plan" id="ov-plan" style="display:none"></div>
+            <div class="mn-hint">Describe what you want done in your own words. The colony plans the work, carries it out, and asks before changing real files.</div>
             </div><!-- /ov-composer-body -->
           </div>
 
@@ -1835,13 +1836,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <!-- v2.15.2: overlay show/hide and anchoring moved into the workspace Modules menu,
                so there is one place to control everything that is on screen. That menu lives in
                the always-present toolbar, so hiding every overlay is still recoverable. -->
-          <!-- Mission bar overlays the bottom of the canvas -->
+          <!-- v0.3.8.42 (§3): Chat is the one mission entry. This bar held the third of four
+               composers; it now points at the canonical one instead of competing with it. -->
           <div class="mission-bar-wrap" id="mission-bar">
             <div class="mission-row">
-              <textarea class="mission-input" id="mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled></textarea>
-              <button class="send-btn" id="send-btn" disabled title="Dispatch mission (Enter)">▶</button>
+              <button class="btn btn-primary start-in-chat" data-onclick="go('/chat')" title="Missions start from the conversation">✎ Start a mission in Chat</button>
             </div>
-            <div class="bar-hint">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
+            <div class="bar-hint">Describe what you want done — the Queen plans it and the colony carries it out.</div>
           </div>
         </div><!-- /colony-canvas-area -->
 
@@ -1908,13 +1909,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                mission instead. -->
           <div id="ms-announce" class="ms-sr" role="status" aria-live="polite"></div>
 
+          <!-- v0.3.8.42 (§3): Missions is an inspection surface; missions START in Chat. The
+               error box stays — Re-run dispatches through the same path and reports here. -->
           <div class="ms-composer">
             <div id="ms-error" class="ms-error" role="alert" hidden></div>
             <div class="mission-row" style="gap:8px;">
-              <textarea class="mission-input" id="ms-mission-input" placeholder="Enter a mission directive..." autocomplete="off" rows="1" disabled style="position:relative;"></textarea>
-              <button class="send-btn" id="ms-send-btn" disabled title="Dispatch (Enter)">&#9654;</button>
+              <button class="btn btn-primary start-in-chat" data-onclick="go('/chat')" title="Missions start from the conversation">✎ Start a mission in Chat</button>
             </div>
-            <div class="bar-hint" style="margin-top:4px;">Enter to dispatch, Shift+Enter for a new line &rarr; Queen orchestrates the colony</div>
+            <div class="bar-hint" style="margin-top:4px;">This page shows what ran and what came back. Re-run repeats a mission with the same directive.</div>
           </div>
         </div>
       </div><!-- /page-missions -->
@@ -3071,8 +3073,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <div class="chat-title" id="chat-title">New conversation</div>
               <div class="chat-hd-actions">
                 <span id="chat-state" class="chat-state"></span>
-                <button class="btn btn-ghost" id="chat-colony-toggle"
-                        title="Watch the colony work on this, beside the conversation">◧ Colony</button>
+                <!-- v0.3.8.42 (§3): Chat is the one mission entry, so the stop affordance lives
+                     here too — POST /conversations/{id}/cancel, the same durable path the old
+                     Conversations panel used. Hidden unless the colony is actually working. -->
+                <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
+                        title="Stop the colony's current work on this conversation">■ Stop</button>
+                <button class="btn btn-ghost" id="chat-colony-toggle" aria-pressed="false"
+                        title="Watch the colony work behind the conversation">◧ Colony</button>
               </div>
             </header>
 
@@ -3088,17 +3095,36 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
                         placeholder="Describe what you want done…"></textarea>
+              <!-- v0.3.8.42 (§3): chat is the one mission entry, so the MISSION request lives here
+                   too — the same escalation-gated path the retired widget carried. Send asks;
+                   Do the work asks for real multi-task execution, and under the Ask policy the
+                   gate appears in the thread before anything runs. -->
+              <button class="mn-send chat-work" id="chat-work"
+                      title="Do the work — asks for real, multi-task execution, gated by your approval policy">⚒</button>
               <button class="mn-send" id="chat-send" title="Send (Enter)">▶</button>
             </div>
-            <div class="chat-hint">Press Enter to send · Shift+Enter for a new line</div>
+            <div class="chat-hint">Enter sends a message · ⚒ asks the colony to do the work (your approval policy applies)</div>
           </main>
 
-          <aside class="chat-side" id="chat-side" hidden>
-            <div class="chat-side-hd">
-              <span>Colony</span>
-              <button class="btn btn-ghost" id="chat-colony-close" title="Hide the colony">✕</button>
+          <!-- v0.3.8.42: the live colony beside the conversation, at a width where the map is
+               actually readable. The canonical canvas (#colony-canvas-area) is re-parented into
+               #chat-colony-mount — same node, same listeners, same state as the Colony page; one
+               renderer, one subscription lifecycle. The divider resizes the split; below 900px the
+               pane overlays the page full-width with its own close. -->
+          <aside class="chat-colony-pane" id="chat-colony-layer" hidden aria-label="Live colony view">
+            <div class="chat-colony-divider" id="chat-colony-divider" role="separator"
+                 aria-orientation="vertical" aria-label="Resize the colony view" tabindex="0"
+                 title="Drag to resize · arrow keys work too"></div>
+            <div class="chat-colony-inner">
+              <div class="chat-colony-bar">
+                <span class="ccb-title">Colony — live</span>
+                <span class="ccb-mission" id="chat-colony-mission" aria-live="polite"></span>
+                <span class="ccb-spacer"></span>
+                <button class="btn btn-ghost" id="chat-colony-full" title="Open the dedicated Colony page">Open full Colony</button>
+                <button class="btn btn-ghost" id="chat-colony-close" title="Hide the colony view" aria-label="Hide the colony view">✕</button>
+              </div>
+              <div id="chat-colony-mount" class="chat-colony-mount"></div>
             </div>
-            <div id="chat-colony-mount" class="chat-colony-mount"></div>
           </aside>
         </div>
       </div>
@@ -3110,8 +3136,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div class="page page-scroll" id="page-projects">
         <div class="page-hdr">
           <div>
-            <h1>Projects</h1>
-            <div class="sub">Isolated workspaces the colony does its work in. Nothing here touches your live files until you approve a change.</div>
+            <h1>Mission Workspaces</h1>
+            <div class="sub">Each mission that changes files works in its own isolated checkout. Nothing here touches your live files until you approve a change.</div>
           </div>
           <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
         </div>
