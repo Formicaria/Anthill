@@ -41,12 +41,19 @@ public sealed class ReasoningModule : IAnthillModule
     public void Register(IModuleContext context)
     {
         context.RegisterReasoningProvider(new ReasoningProviderFactory());
+        // v3.8.39: installed command-line agents — Claude Code, Codex, Gemini CLI, Aider, OpenCode —
+        // as ordinary reasoning providers, routed per role like any other. Registered
+        // unconditionally and cheaply: CanServe answers from the catalogue, so nothing here probes
+        // PATH or starts a process, and an agent that is not installed reports a typed
+        // NotAvailable naming its install command when it is actually called.
+        context.RegisterReasoningProvider(new AgentCliProviderFactory());
         context.RegisterCapabilityProbe(new OllamaCapabilityProbe(_ollamaHost));
 
         context.Events.Publish(new ColonyEvent
         {
             EventType = EventTypes.ModuleRegistered,
-            Message = "Reasoning providers available: ollama, openai, perplexity, openrouter, anthropic.",
+            Message = "Reasoning providers available: ollama, openai, perplexity, openrouter, anthropic, "
+                    + $"plus {AgentCliCatalog.All.Count} installable CLI agents.",
             Metadata = new Dictionary<string, object?> { ["module"] = Name, ["version"] = Version },
         });
     }

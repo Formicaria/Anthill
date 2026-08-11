@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.38";
+    public const string Version = "0.3.8.40";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -405,6 +405,14 @@ public static class AnthillRuntime
     /// is how a gate becomes decoration.
     /// </summary>
     public static IReadOnlyList<string> UserToolAllowedHosts = Array.Empty<string>();
+    /// <summary>v0.3.8.40 — whether approved container actions may run. Off by default; dry run always works.</summary>
+    public static bool DockerExecuteEnabled = false;
+    /// <summary>v0.3.8.40 — Desktop or Server. Resolved once at Initialize; see DeploymentMode.cs.</summary>
+    public static DeploymentMode Deployment = DeploymentMode.Desktop;
+    /// <summary>Why <see cref="Deployment"/> holds that value, in a sentence an operator can act on.</summary>
+    public static string DeploymentReason = "";
+    /// <summary>True when the mode was detected rather than configured, so the console can say which.</summary>
+    public static bool DeploymentDetected = true;
     /// <summary>Operator shell console (admin-only interactive host terminal). Distinct from EnableShellTool (the AI ants' allowlisted tool).</summary>
     public static bool EnableOperatorShell = true;
     /// <summary>Default working directory for the operator shell console; empty falls back to AllowedWorkspaceRoot.</summary>
@@ -653,6 +661,13 @@ public static class AnthillRuntime
         UserToolAllowedHosts = (config.UserToolAllowedHosts ?? new())
             .Select(h => (h ?? "").Trim().ToLowerInvariant())
             .Where(h => h.Length > 0).Distinct().ToList();
+        // v0.3.8.40 — resolved ONCE, here, so every feature that cares reads the same answer.
+        // The probe is cheap (three guarded file reads) and the alternative is each caller
+        // detecting for itself, which is how two of them come to disagree on the one host where
+        // the distinction matters.
+        DockerExecuteEnabled = config.DockerExecuteEnabled;
+        (Deployment, DeploymentReason, DeploymentDetected) =
+            DeploymentModeResolver.Resolve(config.DeploymentMode, DeploymentModeResolver.Probe());
         EnableOperatorShell = config.OperatorShellEnabled;
         OperatorShellDir = config.OperatorShellDir ?? "";
         EnableFileTools = config.FileToolsEnabled;
@@ -1008,6 +1023,12 @@ public static class AnthillRuntime
         ["homelab_hyperv_sync_interval_seconds"] = HomelabHypervSyncIntervalSeconds,
         ["homelab_risk_interval_seconds"] = HomelabRiskIntervalSeconds,
         ["homelab_incident_sweep_seconds"] = HomelabIncidentSweepSeconds,
+        // v0.3.8.40 — reported as the mode AND why. A mode with no stated reason is one nobody can
+        // argue with when detection surprises them.
+        ["docker_execute_enabled"] = DockerExecuteEnabled,
+        ["deployment_mode"] = Deployment.ToString().ToLowerInvariant(),
+        ["deployment_reason"] = DeploymentReason,
+        ["deployment_detected"] = DeploymentDetected,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
         ["operator_shell_enabled"] = EnableOperatorShell,
