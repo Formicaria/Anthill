@@ -27,11 +27,11 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO conversations
                     (id, title, role, policy, policy_set_by, policy_set_at, mission_ids_json,
-                     cancelled, pinned, created_at, updated_at)
-                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @pinned, @created, @updated)
+                     cancelled, pinned, project_id, created_at, updated_at)
+                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @pinned, @project, @created, @updated)
                   ON CONFLICT(id) DO UPDATE SET
                     title=@title, role=@role, policy=@policy, policy_set_by=@by, policy_set_at=@at,
-                    mission_ids_json=@missions, cancelled=@cancelled, pinned=@pinned, updated_at=@updated",
+                    mission_ids_json=@missions, cancelled=@cancelled, pinned=@pinned, project_id=@project, updated_at=@updated",
                 ("@id", conversation.Id),
                 ("@title", conversation.Title),
                 ("@role", conversation.Role),
@@ -44,6 +44,7 @@ public sealed partial class SqliteMemory
                 ("@missions", Json.SafeDumps(conversation.MissionIds)),
                 ("@cancelled", conversation.Cancelled ? 1 : 0),
                 ("@pinned", conversation.Pinned ? 1 : 0),
+                ("@project", (object?)conversation.ProjectId ?? DBNull.Value),
                 ("@created", conversation.CreatedAt.ToIso()),
                 ("@updated", conversation.UpdatedAt.ToIso()));
         }
@@ -128,6 +129,38 @@ public sealed partial class SqliteMemory
     private static int? ReadNullableInt(object? value) =>
         value is null || value is DBNull ? null : Convert.ToInt32(value);
 
+    // ---- v0.3.8.47: attachments -----------------------------------------------------------------
+
+    public void SaveAttachment(ConversationAttachment attachment)
+    {
+        if (attachment is null || string.IsNullOrWhiteSpace(attachment.Id)) return;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT OR REPLACE INTO conversation_attachments
+                    (id, conversation_id, turn_id, filename, bytes, content, created_at)
+                  VALUES (@id, @cid, @tid, @name, @bytes, @content, @created)",
+                ("@id", attachment.Id), ("@cid", attachment.ConversationId),
+                ("@tid", attachment.TurnId), ("@name", attachment.Filename),
+                ("@bytes", attachment.Bytes), ("@content", attachment.Content),
+                ("@created", attachment.CreatedAt.ToIso()));
+        }
+    }
+
+    public IReadOnlyList<ConversationAttachment> LoadTurnAttachments(string turnId) =>
+        Query("SELECT * FROM conversation_attachments WHERE turn_id=@tid ORDER BY filename",
+            ("@tid", turnId ?? ""))
+        .Select(row => new ConversationAttachment(
+            row.GetValueOrDefault("id")?.ToString() ?? "",
+            row.GetValueOrDefault("conversation_id")?.ToString() ?? "",
+            row.GetValueOrDefault("turn_id")?.ToString() ?? "",
+            row.GetValueOrDefault("filename")?.ToString() ?? "",
+            Convert.ToInt64(row.GetValueOrDefault("bytes") ?? 0L),
+            row.GetValueOrDefault("content")?.ToString() ?? "")
+        { CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()) })
+        .ToList();
+
     /// <summary>
     /// Record what was decided about one side-effecting action.
     ///
@@ -181,6 +214,7 @@ public sealed partial class SqliteMemory
         MissionIds = Json.SafeLoadList(row.GetValueOrDefault("mission_ids_json")?.ToString()),
         Cancelled = Convert.ToInt64(row.GetValueOrDefault("cancelled") ?? 0L) != 0,
         Pinned = Convert.ToInt64(row.GetValueOrDefault("pinned") ?? 0L) != 0,
+        ProjectId = row.GetValueOrDefault("project_id") is null or DBNull ? null : row.GetValueOrDefault("project_id")?.ToString(),
         CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         UpdatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("updated_at")?.ToString()),
     };

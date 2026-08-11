@@ -1,7 +1,11 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.46** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.47** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.47: real projects (one per conversation, purpose-as-context, optional working
+> directory), attachments with drag-and-drop, import and edit-resend, whitespace-tight chat
+> bubbles, line-streamed agent stdout, and a desktop tray with a tell-only update check.
 
 > v0.3.8.46: conversation search (server-side, over titles and transcript content), pinned
 > conversations (stored, restart-safe, recency-beating), and markdown export with the decision

@@ -178,6 +178,12 @@ public sealed record Conversation
     /// </summary>
     public bool Pinned { get; init; }
 
+    /// <summary>
+    /// v0.3.8.47: the project this conversation lives in. Set at creation (one project per
+    /// conversation, or the operator's chosen existing project). Null only for legacy rows.
+    /// </summary>
+    public string? ProjectId { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 

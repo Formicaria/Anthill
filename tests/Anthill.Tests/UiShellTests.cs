@@ -1212,10 +1212,12 @@ public class UiShellTests
 
     /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
-    /// "Projects" implied project management over what is really GET /workspaces — per-mission
-    /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.
-    /// Quick actions "Patch Colony" and "Run Diagnostic" were navigation dressed as mutations:
-    /// clicking neither patched nor diagnosed anything.
+    /// "Projects" implied project management over what is really GET /workspaces, so the label was
+    /// corrected to "Mission Workspaces". v0.3.8.47 BUILT the project concept — a projects table,
+    /// per-conversation creation, purpose-as-context, the CRUD endpoints — so the label "Projects"
+    /// is now the truthful one, and the checkout report keeps its own honest heading below.
+    /// "Scheduled" presented the Director's objectives as a general scheduler. Quick actions
+    /// "Patch Colony" and "Run Diagnostic" were navigation dressed as mutations.
     /// </summary>
     [Fact]
     public void SurfacesClaimOnlyWhatTheBackendProvides()
@@ -1223,8 +1225,13 @@ public class UiShellTests
         var js = Ui("app.js");
         var html = Ui("index.html");
 
-        Assert.Contains("label:'Mission Workspaces'", js);
-        Assert.Contains("<h1>Mission Workspaces</h1>", html);
+        Assert.Contains("label:'Projects'", js);
+        Assert.Contains("<h1>Projects</h1>", html);
+        // The claim is backed: the console actually calls the project endpoints.
+        Assert.Contains("'/projects'", js);
+        Assert.Contains("project_id", js);
+        // The checkout report is still honestly named, one level down.
+        Assert.Contains("Mission workspace checkouts", html);
 
         // No top-level Scheduled entry; the objectives board stays reachable through Automation.
         Assert.DoesNotContain("label:'Scheduled'", js);

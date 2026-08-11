@@ -1,5 +1,40 @@
 # ANTHILL Changelog
 
+## v0.3.8.47 - projects, attachments, and a chat that finally looks the part
+
+**Projects are real.** One per CONVERSATION — created at conversation start, never per message —
+with the conversation carrying its project link. The Projects tab makes them by hand too: a name,
+a markdown statement of purpose, an optional working-directory path. The purpose travels into
+every turn of the project's conversations as standing context (Claude-projects shaped, and proven
+live: the model answered with the purpose and path verbatim); the path is recorded and shown to
+the model, and no surface claims wiring deeper than what exists. Cards, archive, and
+new-conversation-here on the page; the mission-checkout report keeps its own honest heading
+below. The nav says "Projects" again because the backend finally has them.
+
+**Attachments.** 📎 or drag-and-drop onto the composer: text files ride the message as chips,
+are stored against the turn, listed under the bubble, and fed to the model clearly framed as
+operator-provided files. Text-only, 256 KB per file, at most eight — enforced on both sides and
+said out loud. Import joins export (a JSON transcript comes in as recorded history with nothing
+invented for it), and ✎ on your own message puts it back in the composer to revise and resend as
+a NEW turn — the record is an audit trail and editing never rewrites it.
+
+**The bubbles look right.** The real culprit was found by screenshot: the turn template's own
+newlines rendered as literal blank space under pre-wrap. The template is whitespace-tight now,
+the header is one quiet flex line (name · time · cost · actions), and bubbles hug their text.
+
+**Agents stream, the desktop grows up.** CLI agents deliver stdout line by line through the same
+delta path Ollama uses — lines because that is what a pipe really delivers — and ■ kills the
+process tree. Claude Code goes further: stream-json with
+--include-partial-messages delivers real token deltas — the parser reads the wrapped
+content_block_delta events and skips the whole-message repeat so the answer never doubles. The Windows shell gains a polite tray — minimize goes
+there with a first-time balloon, the X still quits — and a startup update check that ASKS GitHub
+once, points at the release page when something newer exists, and never downloads or installs
+anything. Offline is silence, not errors. And the Objectives board gains the self-improvement seed: one
+click fills the form with a standing objective aimed at ANTHILL's own codebase — one small
+verifiable improvement per run, patch plus tests, the normal review pipeline — and the operator
+reads it before pressing Add, because a colony pointed at its own repo is exactly the kind of
+thing that should be read before it exists.
+
 ## v0.3.8.46 - find it, keep it, take it with you
 
 Three chat quality-of-life features from the maturation directive, each backed by the store
