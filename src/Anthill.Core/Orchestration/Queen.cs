@@ -212,6 +212,8 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                     response.Usage.PromptTokens, response.Usage.CompletionTokens);
             });
 
+        Scheduler = new Projects.ProjectScheduler(Memory, Conversations);
+
         Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
         foreach (var note in Workspaces.Recover())
             Console.Error.WriteLine($"[workspace-recovery] {note}");
@@ -425,6 +427,12 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// moment the request ended, which is the one thing it exists to remember.
     /// </summary>
     public Conversations.ConversationRunner Conversations { get; private set; } = null!;
+
+    /// <summary>
+    /// v0.3.8.48: the project schedule executor. Constructed with the runtime but NOT started —
+    /// the API host starts it, so thousands of test-constructed Queens never spin a live timer.
+    /// </summary>
+    public Projects.ProjectScheduler Scheduler { get; private set; } = null!;
 
     /// <summary>
     /// v3.5.0: disposable, attributable workspaces for code missions. Owned by the Queen because

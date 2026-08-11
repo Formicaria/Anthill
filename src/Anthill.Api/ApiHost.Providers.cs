@@ -335,26 +335,26 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<ConversationRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
 
-            var policy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var p)
-                ? p : EscalationPolicy.Ask;
             var who = CurrentUsername(ctx) ?? "operator";
 
-            // v0.3.8.47: one project per CONVERSATION — created here, at conversation start, never
-            // per message. The operator may instead pass an existing project_id (the Projects tab
-            // or a project's own "new conversation"); it must exist, or the link would dangle.
+            // v0.3.8.48 (directive correction of the .47 behaviour): a project is NOT created per
+            // conversation. The operator selects or creates one first — the UI's picker enforces
+            // that flow; the API enforces the invariant. This is what stops Projects collapsing
+            // into a list of one-conversation containers.
             var projectId = (body?.ProjectId ?? "").Trim();
-            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
-                return ApiJson.Error($"No project '{projectId}'.", "not_found");
             if (projectId.Length == 0)
-            {
-                var project = new Anthill.Core.Projects.Project
-                {
-                    Id = Guid.NewGuid().ToString("N")[..12],
-                    Name = string.IsNullOrWhiteSpace(body?.Title) ? "New conversation" : body!.Title!.Trim(),
-                };
-                Queen.Memory.SaveProject(project);
-                projectId = project.Id;
-            }
+                return ApiJson.Error("A conversation lives in a project. Pick one or create one first.", "project_required");
+            var owner = Queen.Memory.LoadProject(projectId);
+            if (owner is null) return ApiJson.Error($"No project '{projectId}'.", "not_found");
+            if (owner.Archived) return ApiJson.Error($"\"{owner.Name}\" is archived. Unarchive it to start new work there.", "bad_request");
+
+            // Policy: explicit request wins; otherwise the PROJECT's attributed default applies —
+            // and it applies with the project author's attribution, because that is who made the
+            // standing decision. No author anywhere = Ask. Fail closed, same rule as ever.
+            var policy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var p)
+                ? p : owner.EffectiveDefaultPolicy;
+            var policyBy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out _)
+                ? who : owner.DefaultPolicyBy;
 
             var conversation = new Conversation
             {
@@ -365,7 +365,7 @@ public static partial class ApiHost
                 ProjectId = projectId,
                 // Attribution is written for ANY standing permission. Ask needs none — nobody has to
                 // sign for the safe default.
-                PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
+                PolicySetBy = policy == EscalationPolicy.Ask ? null : policyBy,
                 PolicySetAt = policy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc(),
             };
 
@@ -477,6 +477,41 @@ public static partial class ApiHost
                 var outcome = Queen.Conversations.Run(conversation, message, mode, answers, attachments: attachments);
                 return ApiJson.Ok(OutcomePayload(outcome), outcome.Summary);
             }
+        });
+
+        // v0.3.8.48: change a conversation's approval policy in place — the selector in the chat
+        // header. Attributed on every change; Ask clears attribution (the safe default needs no
+        // signature). This changes which OPERATOR PROMPTS appear; it never touches authentication,
+        // role permissions, workspace boundaries, capability gates, or verification requirements.
+        app.MapPost("/conversations/{id}/policy", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+            ConversationRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ConversationRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (!Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var policy))
+                return ApiJson.Error("Policy must be ask, autoapprove, or bypass.", "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            Queen.Memory.SaveConversation(conversation with
+            {
+                Policy = policy,
+                PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
+                PolicySetAt = policy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc(),
+                UpdatedAt = AnthillTime.NowUtc(),
+            });
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["policy"] = policy.ToString().ToLowerInvariant(),
+                ["set_by"] = policy == EscalationPolicy.Ask ? null : who,
+            }, policy switch
+            {
+                EscalationPolicy.Ask => "Manual approval — the colony asks before side effects.",
+                EscalationPolicy.AutoApprove => "Automatically approve — eligible side effects proceed, every decision recorded.",
+                _ => "Skip all approvals — prompts are skipped; security gates and verification still apply.",
+            });
         });
 
         // Cancel: marks the conversation AND signals the work it started. Reports how many live
@@ -597,6 +632,10 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
 
+            // v0.3.8.48: changing the default policy is a standing decision — recorded with the
+            // caller's name and the moment. Unchanged fields keep their existing attribution.
+            var who = CurrentUsername(ctx) ?? "operator";
+            var policyChanged = Enum.TryParse<EscalationPolicy>(body?.DefaultPolicy, ignoreCase: true, out var newPolicy);
             Queen.Memory.SaveProject(project with
             {
                 Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
@@ -604,10 +643,165 @@ public static partial class ApiHost
                 Path = body?.Path is null ? project.Path
                      : (string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim()),
                 Archived = body?.Archived ?? project.Archived,
+                DefaultPolicy = policyChanged ? newPolicy : project.DefaultPolicy,
+                DefaultPolicyBy = policyChanged ? (newPolicy == EscalationPolicy.Ask ? null : who) : project.DefaultPolicyBy,
+                DefaultPolicyAt = policyChanged ? (newPolicy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc()) : project.DefaultPolicyAt,
+                DefaultProvider = body?.DefaultProvider ?? project.DefaultProvider,
+                DefaultModel = body?.DefaultModel ?? project.DefaultModel,
                 UpdatedAt = AnthillTime.NowUtc(),
             });
             return ApiJson.Ok(null, "Project updated.");
         });
+
+        /*
+         * v0.3.8.48 — project schedules. Real persistence, real execution (ProjectScheduler),
+         * honest wording everywhere: schedules run while the Anthill host runs.
+         */
+        app.MapGet("/projects/{id}/schedules", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["schedules"] = Queen.Memory.LoadProjectSchedules(id).Select(ScheduleView).ToList(),
+                ["note"] = "Schedules execute while the Anthill host is running.",
+            });
+        });
+
+        app.MapPost("/projects/{id}/schedules", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            ScheduleRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ScheduleRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var error = ValidateSchedule(body);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            var now = AnthillTime.NowUtc();
+            var s = new Anthill.Core.Projects.ProjectSchedule
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                ProjectId = id,
+                Name = body!.Name!.Trim(),
+                Prompt = (body.Prompt ?? "").Trim(),
+                TriggerType = body.Trigger!,
+                Cron = body.Cron,
+                OneTimeAt = AnthillTime.ParseIsoOrNull(body.OneTimeAt),
+                LocalTime = body.LocalTime,
+                Timezone = string.IsNullOrWhiteSpace(body.Timezone) ? "UTC" : body.Timezone!,
+                ApprovalMode = ParsePolicy(body.ApprovalMode),
+                Provider = body.Provider, Model = body.Model,
+                OverlapPolicy = body.OverlapPolicy == "queue" ? "queue" : "skip",
+                CreatedBy = who, UpdatedBy = who,
+            };
+            s = s with { NextRunAt = s.ComputeNextRun(now) };
+            Queen.Memory.SaveSchedule(s);
+            return ApiJson.Ok(ScheduleView(s), $"Schedule \"{s.Name}\" created.");
+        });
+
+        app.MapPatch("/schedules/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var s = Queen.Memory.LoadSchedule(id);
+            if (s is null) return ApiJson.Error($"No schedule '{id}'.", "not_found");
+            ScheduleRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ScheduleRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var who = CurrentUsername(ctx) ?? "operator";
+            var updated = s with
+            {
+                Name = string.IsNullOrWhiteSpace(body?.Name) ? s.Name : body!.Name!.Trim(),
+                Prompt = body?.Prompt ?? s.Prompt,
+                TriggerType = string.IsNullOrWhiteSpace(body?.Trigger) ? s.TriggerType : body!.Trigger!,
+                Cron = body?.Cron ?? s.Cron,
+                OneTimeAt = body?.OneTimeAt is null ? s.OneTimeAt : AnthillTime.ParseIsoOrNull(body.OneTimeAt),
+                LocalTime = body?.LocalTime ?? s.LocalTime,
+                Timezone = string.IsNullOrWhiteSpace(body?.Timezone) ? s.Timezone : body!.Timezone!,
+                ApprovalMode = body?.ApprovalMode is null ? s.ApprovalMode : ParsePolicy(body.ApprovalMode),
+                Provider = body?.Provider ?? s.Provider,
+                Model = body?.Model ?? s.Model,
+                Enabled = body?.Enabled ?? s.Enabled,
+                OverlapPolicy = body?.OverlapPolicy is null ? s.OverlapPolicy : (body.OverlapPolicy == "queue" ? "queue" : "skip"),
+                UpdatedBy = who, UpdatedAt = AnthillTime.NowUtc(),
+            };
+            if (updated.TriggerType == "cron" && !Anthill.Core.Projects.ProjectSchedule.CronIsValid(updated.Cron))
+                return ApiJson.Error("That cron expression is not valid (five fields: minute hour day month weekday; numbers, * and comma lists).", "bad_request");
+            updated = updated with { NextRunAt = updated.ComputeNextRun(AnthillTime.NowUtc()) };
+            Queen.Memory.SaveSchedule(updated);
+            return ApiJson.Ok(ScheduleView(updated), "Schedule updated.");
+        });
+
+        app.MapDelete("/schedules/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadSchedule(id) is null) return ApiJson.Error($"No schedule '{id}'.", "not_found");
+            Queen.Memory.DeleteSchedule(id);
+            return ApiJson.Ok(null, "Schedule deleted. Its run history is kept.");
+        });
+
+        app.MapPost("/schedules/{id}/run", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var s = Queen.Memory.LoadSchedule(id);
+            if (s is null) return ApiJson.Error($"No schedule '{id}'.", "not_found");
+            var run = Queen.Scheduler.RunNow(s, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["run_id"] = run.Id, ["status"] = run.Status,
+                ["conversation_id"] = run.ConversationId, ["summary"] = run.Summary,
+            }, run.Status == "skipped_overlap" ? "Skipped — the previous run is still in progress."
+             : run.Status == "waiting_approval" ? "Started — waiting on your approval in its conversation."
+             : "Run finished.");
+        });
+
+        app.MapGet("/schedules/{id}/runs", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadSchedule(id) is null) return ApiJson.Error($"No schedule '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["runs"] = Queen.Memory.LoadScheduleRuns(id).Select(r => new Dictionary<string, object?>
+                {
+                    ["id"] = r.Id, ["status"] = r.Status, ["trigger"] = r.Trigger,
+                    ["conversation_id"] = r.ConversationId, ["summary"] = r.Summary,
+                    ["started_at"] = r.StartedAt.ToIso(), ["finished_at"] = r.FinishedAt?.ToIso(),
+                }).ToList(),
+            });
+        });
+
+        static Dictionary<string, object?> ScheduleView(Anthill.Core.Projects.ProjectSchedule s) => new()
+        {
+            ["id"] = s.Id, ["project_id"] = s.ProjectId, ["name"] = s.Name, ["prompt"] = s.Prompt,
+            ["trigger"] = s.TriggerType, ["cron"] = s.Cron, ["one_time_at"] = s.OneTimeAt?.ToIso(),
+            ["local_time"] = s.LocalTime, ["timezone"] = s.Timezone,
+            ["approval_mode"] = s.ApprovalMode.ToString().ToLowerInvariant(),
+            ["provider"] = s.Provider, ["model"] = s.Model, ["enabled"] = s.Enabled,
+            ["overlap_policy"] = s.OverlapPolicy,
+            ["next_run_at"] = s.NextRunAt?.ToIso(), ["last_run_at"] = s.LastRunAt?.ToIso(),
+            ["created_by"] = s.CreatedBy, ["updated_by"] = s.UpdatedBy,
+        };
+
+        static string? ValidateSchedule(ScheduleRequest? b)
+        {
+            if (string.IsNullOrWhiteSpace(b?.Name)) return "A schedule needs a name.";
+            if (!Anthill.Core.Projects.ProjectSchedule.TriggerTypes.Contains(b!.Trigger ?? ""))
+                return "Trigger must be one of: " + string.Join(", ", Anthill.Core.Projects.ProjectSchedule.TriggerTypes);
+            if (b.Trigger != "manual" && string.IsNullOrWhiteSpace(b.Prompt))
+                return "A schedule that fires on its own needs instructions to run.";
+            if (b.Trigger == "once" && AnthillTime.ParseIsoOrNull(b.OneTimeAt) is null)
+                return "A one-time schedule needs a valid ISO timestamp.";
+            if (b.Trigger == "cron" && !Anthill.Core.Projects.ProjectSchedule.CronIsValid(b.Cron))
+                return "That cron expression is not valid (five fields: minute hour day month weekday; numbers, * and comma lists).";
+            if (!string.IsNullOrWhiteSpace(b.Timezone))
+                try { TimeZoneInfo.FindSystemTimeZoneById(b.Timezone!); }
+                catch { return $"Unknown timezone '{b.Timezone}'. Use an IANA id like America/Chicago."; }
+            return null;
+        }
+
+        static EscalationPolicy ParsePolicy(string? p) =>
+            Enum.TryParse<EscalationPolicy>(p, ignoreCase: true, out var pol) ? pol : EscalationPolicy.Ask;
 
         // The conversations inside one project — what the Projects page opens.
         app.MapGet("/projects/{id}", (HttpContext ctx, string id) =>
@@ -620,6 +814,10 @@ public static partial class ApiHost
                 ["id"] = project.Id, ["name"] = project.Name,
                 ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
                 ["archived"] = project.Archived,
+                ["default_policy"] = project.EffectiveDefaultPolicy.ToString().ToLowerInvariant(),
+                ["default_policy_by"] = project.DefaultPolicyBy,
+                ["default_provider"] = project.DefaultProvider, ["default_model"] = project.DefaultModel,
+                ["schedule_count"] = Queen.Memory.LoadProjectSchedules(id).Count,
                 ["conversations"] = Queen.Memory.LoadProjectConversations(id).Select(c => new Dictionary<string, object?>
                 {
                     ["id"] = c.Id, ["title"] = c.Title, ["pinned"] = c.Pinned,

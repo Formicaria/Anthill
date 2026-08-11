@@ -107,10 +107,16 @@ public static partial class ApiHost
             var charter = (body?.Charter ?? "").Trim();
             if (title.Length == 0 || charter.Length == 0)
                 return ApiJson.Error("Both 'title' and 'charter' are required.", "bad_request");
+            // v0.3.8.48: an objective may declare its project at creation. A named project must
+            // exist; absence is recorded as unassigned, never guessed.
+            var projectId = (body?.ProjectId ?? "").Trim();
+            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
+                return ApiJson.Error($"No project '{projectId}'.", "not_found");
             var o = new Objective
             {
                 Title = title, Charter = charter,
                 Priority = body!.Priority ?? 0, MaxRuns = Math.Max(0, body.MaxRuns ?? 0),
+                ProjectId = projectId.Length > 0 ? projectId : null,
             };
             Queen.Memory.SaveObjective(o);
             return ApiJson.Ok(ObjectiveDict(o), "Objective added to the backlog.");

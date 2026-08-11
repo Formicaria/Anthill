@@ -1,5 +1,54 @@
 # ANTHILL Changelog
 
+## v0.3.8.48 - the project-centered restructure
+
+The directive release: Anthill reorganized around long-lived Projects, top to bottom.
+
+**Projects own the work.** A conversation never invents its project again — the picker selects
+or creates one before anything exists, the API enforces the invariant (`project_required`), and
+new conversations inherit the project's ATTRIBUTED default approval policy. Clicking a card opens
+the deep-linkable workspace at `#/projects/{id}`: Chat (the project's conversations), Schedules,
+History (its missions), and Settings (name, purpose, path, default approval with a spoken
+confirmation before Skip-all, archive). Nine project defects closed on the way, from the dead
+card cursor to errors that rendered green.
+
+**Schedules are real.** A persisted, restart-safe scheduler: UTC instants beside IANA timezones
+(daily 07:00 stays 07:00 across DST; skipped local times nudge past the gap), manual / one-time /
+hourly / daily / weekdays / weekly / validated-cron triggers, atomic claims that lose their race
+exactly once, overlap skips recorded rather than silent, missed occurrences firing once, one-time
+schedules retiring themselves, and restart recovery that fails orphaned runs with honest words.
+Every run IS a conversation in its project; Ask-mode runs wait visibly and never self-promote to
+automatic. The UI says the one true thing throughout: schedules execute while the Anthill host is
+running.
+
+**Approvals live on the conversation.** The chat header carries the gate — Manual approval,
+Automatically approve, Skip all approvals — mapped to the three policies the backend always had,
+attributed on every change, with Skip-all confirmed in words that say the honest thing: prompts
+are skipped, security is not. Proposed changes render as cards IN the thread — status, risk,
+verification, diff on demand, Approve & apply running both audited transitions in sequence,
+Reject and Revert beside it. The Changes page stops being the only door.
+
+**Seven destinations.** Chat, Projects, Objectives, Dashboard, Tools (Capabilities plus Memory &
+Signals), Integrations, Settings (General, Providers, Roles, Security, Users, System, Readiness,
+Terminal). Operations, Infrastructure, Colony, Security and Administration are gone as domains;
+some forty old routes resolve through ROUTE_ALIAS. Integrations is a real page from the real
+catalog — configured connections first with their verify state, available second, installed
+agents as the integrations they are, the homelab as one card into its own deck. Objectives carry
+project ownership (legacy rows read "unassigned", never guessed). The Roles page offers ONE
+selector per role listing only models that can actually run, saving through a merge-safe
+single-role endpoint; the prose route parser is gone. And the small dignities: the mojibake
+question marks became the arrows and checks they were, and every login label claims its input.
+
+**Found by the final live walkthrough.** Three defects the running console confessed to: the
+objectives project filter and search had been built into the hidden legacy page instead of the
+live board, so the board they filter never showed them — moved where the operator actually is;
+approving a refused start_mission re-sent the same message and the transcript said the operator
+spoke twice — the refused attempt IS the turn, and approval now links the mission to it instead
+of inventing a duplicate; and a settled mission's answer sat in mission history while the chat
+that started it showed nothing — the pipeline's result is now recorded as the conversation's
+next turn (a cancelled conversation still gets no late answer), which also makes schedule runs
+readable end to end: the prompt asked, the answer beneath it.
+
 ## v0.3.8.47 - projects, attachments, and a chat that finally looks the part
 
 **Projects are real.** One per CONVERSATION — created at conversation start, never per message —
