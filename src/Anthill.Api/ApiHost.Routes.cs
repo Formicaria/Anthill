@@ -1,5 +1,7 @@
 using System.Reflection;
 using Anthill.Core.Agents;
+using Anthill.Modules.Reasoning;   // v0.3.8.48
+using Anthill.SDK.Reasoning;      // ProviderCatalog   // v0.3.8.48: AgentCliDiscovery for the structured routes surface
 using Anthill.Core.Shadow;
 using Anthill.Core.Autonomy;
 using Anthill.Core.Common;
@@ -124,6 +126,72 @@ public static partial class ApiHost
         ProtectedText(app, "/pheromones", "read_pheromones", () => Queen.FormatPheromoneView());
         ProtectedText(app, "/models", "read_models", () => Queen.FormatModelStatus());
         ProtectedText(app, "/routes", "read_models", () => Queen.FormatModelRoutes());
+
+        /*
+         * v0.3.8.48 — the STRUCTURED routes surface (defects 16/18): per-role provider+model as
+         * data, plus the unified list of models that can actually run — installed local models,
+         * configured providers' catalogs, installed agents. The console stops parsing prose.
+         */
+        app.MapGet("/routes/json", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_models"); if (auth is not null) return auth;
+
+            var available = new List<Dictionary<string, object?>>();
+            // Installed local models, from the live Ollama the colony actually calls.
+            foreach (var m in await DiscoverOllamaModelsAsync())
+                available.Add(new() { ["provider"] = "ollama", ["model"] = m,
+                    ["label"] = $"{m} · Ollama" });
+            // Configured keyed providers offer their curated lists; unconfigured ones offer nothing.
+            var configured = Queen.Memory.ListProviderConnections()
+                .Where(c => Convert.ToBoolean(c.GetValueOrDefault("configured") ?? false))
+                .Select(c => c.GetValueOrDefault("provider")?.ToString() ?? "")
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in ProviderCatalog.All.Where(p => configured.Contains(p.Id)))
+                foreach (var m in p.Models ?? Array.Empty<string>())
+                    available.Add(new() { ["provider"] = p.Id, ["model"] = m,
+                        ["label"] = $"{m} · {p.Name}" });
+            // Installed agents route as themselves.
+            foreach (var a in AgentCliDiscovery.Scan().Where(x => x.Installed))
+                available.Add(new() { ["provider"] = a.Agent.Id, ["model"] = a.Agent.DisplayName,
+                    ["label"] = $"{a.Agent.DisplayName} · agent" });
+
+            var availableKeys = available
+                .Select(m => $"{m["provider"]}|{m["model"]}".ToLowerInvariant()).ToHashSet();
+            var roles = AnthillRuntime.RoutableRoles.Select(role =>
+            {
+                var (provider, model) = Queen.Router!.GetRoute(role);
+                return new Dictionary<string, object?>
+                {
+                    ["role"] = role, ["provider"] = provider, ["model"] = model,
+                    // An unavailable CURRENT selection is warned about, never hidden.
+                    ["available"] = availableKeys.Contains($"{provider}|{model}".ToLowerInvariant()),
+                };
+            }).ToList();
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["roles"] = roles, ["available_models"] = available });
+        });
+
+        // Merge-safe single-role update (defect 18's fix): ONE role changes, the rest of
+        // model_routes is untouched, and the router re-projects from the saved config.
+        app.MapPost("/routes/{role}", async (HttpContext ctx, string role) =>
+        {
+            var auth = RequireAuth(ctx, "manage_models"); if (auth is not null) return auth;
+            if (!AnthillRuntime.RoutableRoles.Contains(role))
+                return ApiJson.Error($"'{role}' is not a routable role.", "bad_request");
+            RouteBody? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<RouteBody>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Provider) || string.IsNullOrWhiteSpace(body?.Model))
+                return ApiJson.Error("Both provider and model are required.", "bad_request");
+
+            AnthillRuntime.ModelRouting[role] = new Dictionary<string, string>
+                { ["provider"] = body!.Provider!.Trim(), ["model"] = body.Model!.Trim() };
+            AnthillRuntime.SaveConfig();
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["role"] = role, ["provider"] = body.Provider, ["model"] = body.Model },
+                $"{role} now routes to {body.Model} ({body.Provider}).");
+        });
 
         // Per-provider circuit-breaker health: which model routes are healthy vs. open (cooling down
         // after repeated timeouts) vs. half-open (probing). Powers the console's provider-health chip.

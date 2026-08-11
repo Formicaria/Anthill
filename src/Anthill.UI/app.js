@@ -403,7 +403,7 @@ const PAGE_TITLES = {
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
-  readiness:'Readiness'
+  readiness:'Readiness', projectview:'Project', integrations:'Integrations'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -443,104 +443,40 @@ const IAICON = {
   infrastructure:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>',
   colony:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>',
   security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  // v0.3.8.48: the two new top-level ids. The old domain icons above stay harmlessly unused
+  // until the next cleanup pass; an id WITHOUT an entry writes "undefined" into the rail.
+  integrations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4a2 2 0 0 1-2 2H3M15 21v-4a2 2 0 0 1 2-2h4M21 9h-4a2 2 0 0 1-2-2V3M3 15h4a2 2 0 0 1 2 2v4"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>',
   administration:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>'
 };
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
 const IA = [
-  // v3.8.39: the conversation is the product's primary act, so it leads the navigation.
+  // v0.3.8.48 — the project-centered navigation. Seven destinations, named for what an operator
+  // wants, not for runtime internals. Operations, Infrastructure, Colony, Security and
+  // Administration are gone as domains; every old route resolves through ROUTE_ALIAS below.
   { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
-  // v0.3.8.40: the top row. Each promotes an existing surface that was only reachable as a
-  // dashboard widget an operator had to know to enable — Projects are mission workspaces, Tools is
-  // the capability report, Scheduled is the Director's standing objectives. No new backend.
-  // v0.3.8.42 (§5 of the truthfulness audit): "Projects" implied project management the backend
-  // does not have. The backend concept is a mission workspace — the isolated checkout a mission
-  // works in — so the surface now says that. Route unchanged; bookmarks keep working.
-  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },   // v0.3.8.47: truthful again — the backend now HAS projects
-  { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
-  // v0.3.8.41/42 — was `Scheduled` at `/scheduled`, and neither word was true.
-  //
-  // ANTHILL HAS NO SCHEDULING SUBSYSTEM. There is no cron, no interval, no next-run and no cadence
-  // anywhere in the objective model, the Director, or the API. An operator clicking "Scheduled"
-  // was promised a feature that does not exist, and the console said so itself one click later —
-  // PAGE_TITLES already names this page `Objectives`, and the icon was a clock.
-  //
-  // Both branches of this release fixed it independently; this is the union. The top-row
-  // promotion stays with the truthful label on the CANONICAL route (v0.3.8.40 promoted it because
-  // standing objectives were reachable only as a hidden dashboard widget — that was right, the
-  // label was not), and old `/scheduled` bookmarks resolve through ROUTE_ALIAS.
-  { type:'item', id:'objectives', label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'objectives', label:'Objectives', route:'/objectives', page:'objboard', vis:'admin' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
-  // v0.3.8.42 (§7): the Monitoring domain dissolved — every section in it was a second door to a
-  // concept that already had a home. Activity/Events/Results live with Missions, whose activity
-  // they are; the Changes tab duplicated Operations → Changes & Approvals; "Autonomous Runs"
-  // opened the Director page under a second name; the two homelab views moved home to
-  // Infrastructure. Old /monitoring/* bookmarks resolve through ROUTE_ALIAS below.
-  { type:'domain', id:'operations', label:'Operations', vis:'all', sections:[
-    { label:'Missions', route:'/operations/missions', page:'missions', vis:'all', badge:'nav-jobs-badge', tabs:[
-      { label:'Console', route:'/operations/missions/console', page:'missions', vis:'all' },
-      { label:'History', route:'/operations/missions/history', page:'results', vis:'all' },
-      { label:'Activity', route:'/operations/missions/activity', page:'activity', vis:'all' },
-      { label:'Events', route:'/operations/missions/events', page:'events', vis:'all' },
-    ]},
-    { label:'Automation', route:'/operations/automation', page:'autonomy', vis:'admin', badge:'nav-autonomy-badge', tabs:[
-      { label:'Director', route:'/operations/automation/director', page:'autonomy', vis:'admin' },
-      { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
-      { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
-    ]},
-    // v0.3.8.42 (§2): ONE entry for one backend store. Approvals and Changes were two sidebar
-    // entries opening the same page in different views — the approval is a state of the change,
-    // not a separate product area. Both routes survive as tabs; bookmarks keep working.
-    { label:'Changes & Approvals', route:'/operations/changes', page:'patches', vis:'admin', view:'changes', badge:'nav-patches-badge', tabs:[
-      { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
-      { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals' },
-    ]},
+  { type:'domain', id:'tools', label:'Tools', vis:'all', sections:[
+    { label:'Capabilities', route:'/tools-view', page:'toolsview', vis:'all' },
+    // The colony's memory and learning signals belong beside the capabilities that use them.
+    { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
   ]},
-  { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
-    { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
-    { label:'Compute', route:'/infrastructure/compute', page:'homelab', hlsub:'virtualization', vis:'hl' },
-    { label:'Containers', route:'/infrastructure/containers', page:'homelab', hlsub:'containers', vis:'hl' },
-    { label:'Storage', route:'/infrastructure/storage', page:'homelab', hlsub:'storage', vis:'hl' },
-    { label:'Network', route:'/infrastructure/network', page:'homelab', hlsub:'networking', vis:'hl' },
-    { label:'Services', route:'/infrastructure/services', page:'homelab', hlsub:'services', vis:'hl' },
-    { label:'Health', route:'/infrastructure/health', page:'homelab', hlsub:'monitoring', vis:'hl' },
-    // v0.3.8.42 (§7): moved home from the dissolved Monitoring domain — both are homelab views.
-    { label:'Alerts', route:'/infrastructure/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
-    { label:'Activity', route:'/infrastructure/activity', page:'homelab', hlsub:'activity', vis:'hl' },
-    { label:'Automation Rules', route:'/infrastructure/automation', page:'homelab', hlsub:'automation', vis:'hl' },
-    { label:'Apps', route:'/infrastructure/apps', page:'homelab', hlsub:'apps', vis:'hl' },
-  ]},
-  { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
-    { label:'Topology', route:'/colony/topology', page:'colony', vis:'all' },
-    // v0.3.8.42 (§2/§9): "Roles", because that is the backend concept — the twelve colony roles
-    // and their workers. "Agents" blurred them with the installable coding agents one tab over
-    // and with provider routing, which are different things with different remedies.
-    { label:'Roles', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
-      { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
-      { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
-      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own roles.
-      { label:'Coding Agents', route:'/colony/agents/coding', page:'agentcli', vis:'admin' },
-    ]},
-    { label:'Memory & Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
-  ]},
-  { type:'domain', id:'security', label:'Security', vis:'admin', sections:[
-    { label:'Security Center', route:'/security/posture', page:'security', vis:'admin' },
-    { label:'Access & Targets', route:'/security/access', page:'homelab', hlsub:'networking', vis:'hl' },
-  ]},
-  { type:'domain', id:'administration', label:'Administration', vis:'admin', sections:[
-    // v0.3.8.42 (§2/§11): provider routing is CONFIGURATION, not a property of the colony — a
-    // role routed across providers is settings, not extra colony members. Moved here from the
-    // Colony domain; the /colony/model-routing routes are unchanged so bookmarks keep working.
+  { type:'item', id:'integrations', label:'Integrations', route:'/integrations', page:'integrations', vis:'admin' },
+  { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
+    { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
     { label:'Providers & Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
       { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
       { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
     ]},
-    { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
-    { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
-    // v0.3.8.46: the qualification snapshot and the colony's introspection, surfaced. Both
-    // endpoints spent releases computing results with no reader.
-    { label:'Readiness', route:'/administration/readiness', page:'readiness', vis:'admin' },
-    { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
+    { label:'Roles', route:'/settings/roles', page:'antconfig', vis:'admin' },
+    { label:'Security', route:'/settings/security', page:'security', vis:'admin' },
+    { label:'Users', route:'/settings/users', page:'users', vis:'admin' },
+    { label:'System', route:'/settings/system', page:'events', vis:'admin' },
+    { label:'Readiness', route:'/settings/readiness', page:'readiness', vis:'admin' },
+    { label:'Terminal', route:'/settings/terminal', page:'shell', vis:'admin' },
   ]},
 ];
 
@@ -570,14 +506,15 @@ const DOMAIN_HOME = {};
 })();
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
-  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  activity:'/operations/missions/activity',
-  results:'/operations/missions/history', events:'/operations/missions/events',
-  patches:'/operations/changes', objboard:'/operations/automation/objectives',
-  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
-  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
-  autonomy:'/operations/automation/director', security:'/security/posture',
-  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  activity:'/settings/system',
+  results:'/projects', events:'/settings/system',
+  patches:'/chat', objboard:'/objectives',
+  pheromones:'/tools/memory', homelab:'/integrations',
+  antconfig:'/settings/roles', antobs:'/settings/roles',
+  autonomy:'/objectives', security:'/settings/security',
+  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
+  integrations:'/integrations', projectview:'/projects', readiness:'/settings/readiness'
 });
 // Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
 // existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
@@ -590,25 +527,61 @@ const HLSUB_ROUTE={
 };
 // Legacy hash → new route (URL migration; §9 of the proposal).
 const LEGACY_REDIRECT={
-  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  events:'/operations/missions/events', results:'/operations/missions/history',
-  patches:'/operations/changes', objboard:'/operations/automation/objectives',
-  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
-  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
-  autonomy:'/operations/automation/director', security:'/security/posture',
-  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  events:'/settings/system', results:'/projects',
+  patches:'/chat', objboard:'/objectives',
+  pheromones:'/tools/memory', homelab:'/integrations',
+  antconfig:'/settings/roles', antobs:'/settings/roles',
+  autonomy:'/objectives', security:'/settings/security',
+  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
 const ROUTE_ALIAS={
-  '/monitoring/activity':'/operations/missions/activity',
-  '/monitoring/activity/events':'/operations/missions/events',
-  '/monitoring/activity/results':'/operations/missions/history',
-  '/monitoring/activity/changes':'/operations/changes',
-  '/monitoring/activity/runs':'/operations/automation/director',
-  '/monitoring/activity/infra':'/infrastructure/activity',
-  '/monitoring/alerts':'/infrastructure/alerts',
-  '/scheduled':'/operations/automation/objectives',
+  // v0.3.8.48 — every route the restructure removed, resolved to its new home. Bookmarks are
+  // promises; these keep them.
+  '/colony/topology':'/dashboard',
+  '/colony/agents':'/settings/roles',
+  '/colony/agents/configure':'/settings/roles',
+  '/colony/agents/inspect':'/settings/roles',
+  '/colony/agents/coding':'/integrations',
+  '/colony/signals':'/tools/memory',
+  '/administration/users':'/settings/users',
+  '/administration/settings':'/settings/general',
+  '/administration/terminal':'/settings/terminal',
+  '/administration/readiness':'/settings/readiness',
+  '/security/posture':'/settings/security',
+  '/security/access':'/integrations',
+  '/infrastructure/overview':'/integrations',
+  '/infrastructure/compute':'/integrations',
+  '/infrastructure/containers':'/integrations',
+  '/infrastructure/storage':'/integrations',
+  '/infrastructure/network':'/integrations',
+  '/infrastructure/services':'/integrations',
+  '/infrastructure/health':'/integrations',
+  '/infrastructure/alerts':'/integrations',
+  '/infrastructure/activity':'/integrations',
+  '/infrastructure/automation':'/integrations',
+  '/infrastructure/apps':'/integrations',
+  '/operations/missions':'/projects',
+  '/operations/missions/console':'/projects',
+  '/operations/missions/history':'/projects',
+  '/operations/missions/activity':'/settings/system',
+  '/operations/missions/events':'/settings/system',
+  '/operations/changes':'/chat',
+  '/operations/approvals':'/chat',
+  '/operations/automation':'/objectives',
+  '/operations/automation/director':'/objectives',
+  '/operations/automation/objectives':'/objectives',
+  '/operations/automation/rules':'/integrations',
+  '/monitoring/activity':'/settings/system',
+  '/monitoring/activity/events':'/settings/system',
+  '/monitoring/activity/results':'/projects',
+  '/monitoring/activity/changes':'/chat',
+  '/monitoring/activity/runs':'/objectives',
+  '/monitoring/activity/infra':'/integrations',
+  '/monitoring/alerts':'/integrations',
+  '/scheduled':'/projects',
 };
 
 function canSee(vis){
@@ -666,6 +639,14 @@ function buildNav(){
 // Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
 function go(route,push){
   if(ROUTE_ALIAS[route]) route=ROUTE_ALIAS[route];   // v0.3.8.42 (§7): moved routes stay reachable
+  // v0.3.8.48: the one parameterised route — a project workspace. Deep-linkable, reload-safe.
+  const pm=/^\/projects\/([A-Za-z0-9]+)$/.exec(route);
+  if(pm){
+    projectViewId=pm[1];
+    showPage('projectview',{route:route,noHistory:true});
+    try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
+    return;
+  }
   const r=ROUTE_TABLE[route]; if(!r) return;
   if(!canSee(r.vis)) return;
   showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,noHistory:true});
@@ -784,6 +765,7 @@ function router(){
   if(!h) return false;
   if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
   if(ROUTE_ALIAS[h]) h=ROUTE_ALIAS[h];   // v0.3.8.42 (§7): moved routes stay reachable
+  if(/^\/projects\/[A-Za-z0-9]+$/.test(h)){ go(h,false); return; }
   const r=ROUTE_TABLE[h];
   if(r && canSee(r.vis)){ go(h,false); return true; }
   return false;
@@ -2071,7 +2053,7 @@ async function pollHealth(){
     // Alert line — nudge reclaimable disk
     const alert=document.getElementById('ov-health-alert');
     const reclaimable=(d.backup_count||0)>(d.max_db_backups||10);
-    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`? ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings ? Maintenance ? Flush Cache`; }
+    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`⚠ ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings → Maintenance → Flush Cache`; }
     else alert.style.display='none';
   }catch{}
 }
@@ -3811,7 +3793,7 @@ const OB_LANES=[
   ['looping','Looping','var(--orange)'],
   ['failed','Failed','var(--red)'],
 ];
-PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin') loadObjBoard(); };
+PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin'){ objLoadProjectNames().then(loadObjBoard); } };
 function objLane(o){
   const st=(o.status||'').toLowerCase();
   const end=o.end_reason||(o.retired_code==='looping_goals'?'retired_looping':null);
@@ -3826,6 +3808,27 @@ function objLane(o){
   if(st==='pending') return 'backlog';
   return 'active';
 }
+/* v0.3.8.48 — objectives are project-owned. The board shows each objective's project (or the
+ * word "unassigned" for legacy rows) and links back to the owning workspace. */
+let objProjectNames={};
+async function objLoadProjectNames(){
+  const r=await api('/projects');
+  objProjectNames=Object.fromEntries(((r&&r.data&&r.data.projects)||[]).map(p=>[p.id,p.name]));
+}
+let objFilterProject='', objFilterSearch='';
+function objMatchesFilters(o){
+  if(objFilterProject && (o.project_id||'')!==objFilterProject) return false;
+  if(objFilterSearch){
+    const q=objFilterSearch.toLowerCase();
+    if(!((o.title||'').toLowerCase().includes(q)||(o.charter||'').toLowerCase().includes(q))) return false;
+  }
+  return true;
+}
+if(!window.__objFiltersWired){ window.__objFiltersWired=true;
+  document.getElementById('obj-filter-project')?.addEventListener('change',e=>{ objFilterProject=e.target.value; loadObjBoard(); });
+  document.getElementById('obj-filter-search')?.addEventListener('input',e=>{ clearTimeout(window.__objFT);
+    window.__objFT=setTimeout(()=>{ objFilterSearch=e.target.value.trim(); loadObjBoard(); },250); });
+}
 async function loadObjBoard(){
   const board=document.getElementById('ob-board'); if(!board) return;
   board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div>';
@@ -3833,8 +3836,13 @@ async function loadObjBoard(){
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
     const objectives=Array.isArray(r.data)?r.data:[];
     setEl('ob-count',`${objectives.length} objective${objectives.length===1?'':'s'}`);
+    // v0.3.8.48: project + search filters apply before laning; the dropdown carries live names.
+    const pf=document.getElementById('obj-filter-project');
+    if(pf&&pf.options.length<=1)
+      for(const [pid,name] of Object.entries(objProjectNames))
+        pf.insertAdjacentHTML('beforeend',`<option value="${escapeHtml(pid)}">${escapeHtml(name)}</option>`);
     const byLane={}; OB_LANES.forEach(([k])=>byLane[k]=[]);
-    objectives.forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
+    objectives.filter(objMatchesFilters).forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
     board.innerHTML=OB_LANES.map(([key,name,col])=>{
       const items=byLane[key]||[];
       const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">—</div>';
@@ -3851,6 +3859,10 @@ function objCard(o){
   return `<details class="ob-card" data-obj="${o.id}" data-ontoggle="onObjCardToggle(this)">
     <summary>
       <div class="oc-title">${escapeHtml(o.title||'(untitled)')}</div>
+      <div class="oc-project" title="${o.project_id?'Owned by this project — click to open':'Legacy objective with no project owner'}">${
+        o.project_id
+          ? `<a href="#/projects/${escapeHtml(o.project_id)}">${escapeHtml(objProjectNames[o.project_id]||o.project_id)}</a>`
+          : 'unassigned'}</div>
       <div class="oc-meta">
         <span class="ob-chip">runs ${o.run_count??0}${o.max_runs?'/'+o.max_runs:''}</span>
         <span class="ob-chip" title="Success EMA">ema ${ema}</span>
@@ -4250,6 +4262,11 @@ async function chatOpen(id){
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    // v0.3.8.48: the selector shows the conversation's EFFECTIVE policy, and says who set it.
+    const polSel=document.getElementById('chat-policy');
+    if(polSel){ polSel.value=d.policy||'ask'; polSel.dataset.current=d.policy||'ask'; }
+    // Inline change cards: this conversation's proposed patches, reviewed where the work happened.
+    chatRenderPatches(d, thread);
     chatOpenAfterRender(d);
   }catch(e){ pollWarnOnce('chatOpen', e); }
 }
@@ -4383,6 +4400,47 @@ if(_composer){
   _composer.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) chatStageFiles(e.dataTransfer.files); });
 }
 
+/* v0.3.8.48 — the project picker. Shown when a conversation is about to be born outside any
+ * project: pick an active project or name a new one. Returns the project id, or null on cancel.
+ * Built as a real modal (CSP-safe bound handlers, focus into the list, Escape cancels). */
+let chatPendingProjectId=null;
+function chatPickProject(){
+  return new Promise(async resolve=>{
+    const r=await api('/projects');
+    const projects=((r&&r.data&&r.data.projects)||[]).filter(p=>!p.archived);
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-label="Choose a project" style="max-width:440px;width:92%;">
+      <h3 style="margin:0 0 4px;font-size:13px;">Where does this conversation live?</h3>
+      <div class="sub" style="margin-bottom:10px;">Every conversation belongs to a project — its purpose and working directory travel with your messages.</div>
+      <div class="pick-list" style="max-height:220px;overflow-y:auto;margin-bottom:10px;">
+        ${projects.map(p=>`<button class="pick-row" data-pick="${escapeHtml(p.id)}">
+          <b>${escapeHtml(p.name||'Untitled')}</b>
+          <span>${p.conversations} conversation(s)</span></button>`).join('')
+          ||'<div class="hud-state">No projects yet — name your first one below.</div>'}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input class="provider-input" data-newname placeholder="Or start a new project…" style="flex:1" maxlength="120">
+        <button class="btn btn-primary" data-create>Create</button>
+        <button class="btn btn-ghost" data-cancel>Cancel</button>
+      </div></div>`;
+    const done=v=>{ ov.remove(); document.removeEventListener('keydown',esc,true); resolve(v); };
+    const esc=e=>{ if(e.key==='Escape'){ e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown',esc,true);
+    ov.addEventListener('click',e=>{ if(e.target===ov) done(null); });
+    ov.querySelectorAll('.pick-row').forEach(b=>b.addEventListener('click',()=>done(b.dataset.pick)));
+    ov.querySelector('[data-cancel]').addEventListener('click',()=>done(null));
+    ov.querySelector('[data-create]').addEventListener('click',async ()=>{
+      const name=ov.querySelector('[data-newname]').value.trim();
+      if(!name) return;
+      const c=await api('/projects','POST',{name});
+      if(c&&c.success&&c.data) done(c.data.id);
+    });
+    document.body.appendChild(ov);
+    (ov.querySelector('.pick-row')||ov.querySelector('[data-newname]')).focus();
+  });
+}
+
 async function chatSend(mode){
   mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
@@ -4398,10 +4456,14 @@ async function chatSend(mode){
   let note='';
   try{
     if(!chatActiveId){
-      // First message creates the conversation. 'ask' is the policy a newcomer wants: the colony
-      // checks before it does anything that changes real files.
-      const c=await api('/conversations','POST',{ title: msg.slice(0,48), policy:'ask' });
-      if(!c||!c.success){ chatSetState((c&&c.message)||'Could not start.'); return; }
+      // v0.3.8.48: a conversation lives in a project — chosen, never invented. The picker
+      // resolves to a project id (existing or newly named by the operator) before anything is
+      // created; the message stays in the composer if they cancel.
+      const pid=chatPendingProjectId||await chatPickProject();
+      if(!pid){ if(el) el.value=msg; chatSetState('Pick a project to start this conversation in.'); return; }
+      chatPendingProjectId=null;
+      const c=await api('/conversations','POST',{ title: msg.slice(0,48), project_id: pid });
+      if(!c||!c.success){ if(el) el.value=msg; chatSetState((c&&c.message)||'Could not start.'); return; }
       chatActiveId=c.data.id;
       chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
@@ -4579,6 +4641,94 @@ document.getElementById('chat-export')?.addEventListener('click', async ()=>{
   }catch(e){ chatSetState('Export failed: '+(e&&e.message||e)); }
 });
 
+// v0.3.8.48 — the approval gate on the conversation. Skip-all is a real decision: confirmed in
+// words. The refusal path snaps the selector back; nothing changes silently.
+document.getElementById('chat-policy')?.addEventListener('change', async e=>{
+  const sel=e.target, want=sel.value, was=sel.dataset.current||'ask';
+  if(!chatActiveId){ sel.value=was; chatSetState('Open a conversation first.'); return; }
+  if(want==='bypass' && !confirm('Skip all approvals for this conversation?\n\nThe colony will act '
+      +'without asking you first. Authentication, workspace boundaries, capability gates and '
+      +'verification requirements still apply — this skips prompts, not security.')){
+    sel.value=was; return;
+  }
+  sel.disabled=true;
+  const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/policy','POST',{policy:want});
+  sel.disabled=false;
+  if(r&&r.success){ sel.dataset.current=want; chatSetState(r.message||''); }
+  else{ sel.value=was; chatSetState((r&&r.message)||'Could not change the approval mode.'); }
+});
+
+/* v0.3.8.48 — the change, reviewed where the work happened. Every proposed patch from this
+ * conversation's missions renders as a card IN the thread: path, risk, verification, and the
+ * actions. Approve & apply runs the two backend transitions in sequence, keeping both audit
+ * records; nothing navigates away. */
+let chatPatchFingerprint='';
+async function chatRenderPatches(d, thread){
+  const missions=d.mission_ids||[];
+  if(!missions.length){ chatPatchFingerprint=''; return; }
+  const rows=[];
+  for(const mid of missions.slice(-3)){
+    const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=20');
+    if(r&&r.success&&Array.isArray(r.data)) rows.push(...r.data);
+  }
+  const print=rows.map(p=>p.id+':'+p.status).join('|');
+  if(print===chatPatchFingerprint) return;
+  chatPatchFingerprint=print;
+  thread.querySelectorAll('.patch-card').forEach(el=>el.remove());
+  for(const p of rows){
+    const card=document.createElement('div');
+    card.className='patch-card'+(p.status==='applied'?' applied':p.status==='rejected'?' rejected':'');
+    card.innerHTML=`<div class="patch-hd"><b>Proposed change</b>
+        <span class="sch-badge">${escapeHtml(p.status||'')}</span>
+        ${p.risk?`<span class="sch-badge">risk: ${escapeHtml(p.risk)}</span>`:''}
+        ${p.verified?`<span class="sch-badge">verified</span>`:''}
+      </div>
+      <div class="patch-path">${escapeHtml(p.file||p.path||'')}</div>
+      <div class="patch-diff" hidden></div>
+      <div class="patch-actions">
+        <button class="btn btn-ghost" data-p-diff>View diff</button>
+        ${p.status==='proposed'?`<button class="btn btn-primary" data-p-approve>Approve &amp; apply</button>
+        <button class="btn btn-ghost" data-p-reject>Reject</button>`:''}
+        ${p.status==='applied'?`<button class="btn btn-ghost" data-p-revert>Revert</button>`:''}
+      </div>`;
+    thread.appendChild(card);
+    const pid=p.id;
+    card.querySelector('[data-p-diff]')?.addEventListener('click', async ()=>{
+      const box=card.querySelector('.patch-diff');
+      if(!box.hidden){ box.hidden=true; return; }
+      const det=await api('/patches/'+encodeURIComponent(pid)+'/detail');
+      box.hidden=false;
+      box.textContent=(det&&det.success&&det.data&&(det.data.diff||det.data.new_content))||
+        (det&&det.message)||'No diff available.';
+    });
+    card.querySelector('[data-p-approve]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true; b.textContent='Applying…';
+      const ap=await fetch(url('/patches/'+encodeURIComponent(pid)+'/approve'),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      if(!(ap&&ap.success!==false)){ chatSetState((ap&&ap.message)||'Approve failed.'); b.disabled=false; b.textContent='Approve & apply'; return; }
+      const approvalId=ap&&ap.data&&(ap.data.approval_id||ap.data.id);
+      const done=approvalId?await fetch(url('/apply/'+encodeURIComponent(approvalId)),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null):null;
+      chatSetState((done&&done.message)||(ap&&ap.message)||'Approved.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+    card.querySelector('[data-p-reject]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true;
+      const r2=await fetch(url('/patches/'+encodeURIComponent(pid)+'/reject'),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      chatSetState((r2&&r2.message)||'Rejected.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+    card.querySelector('[data-p-revert]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true;
+      const r2=await fetch(url('/revert/'+encodeURIComponent(pid)),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      chatSetState((r2&&r2.message)||'Reverted.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+  }
+}
+
 document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
 // Secondary action for operators who want the dedicated page. Close first so the canvas is home
@@ -4668,6 +4818,306 @@ async function loadToolsView(){
 
 PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
 
+/* v0.3.8.48 — the project workspace. One project, whole: Chat (its conversations), Schedules
+ * (the real subsystem), History (conversations + their missions), Settings (name, purpose, path,
+ * attributed default approval, archive). Deep-linked at #/projects/{id}; reload-safe. */
+var projectViewId=null;
+let pvProject=null;
+PAGE_ENTER['projectview']=()=>{ if(projectViewId) loadProjectView(); };
+
+/* v0.3.8.48 — Integrations: the real catalog, honestly ordered. Configured providers first with
+ * their verify state, unconfigured second as "available", installed agents as integrations (they
+ * are — see the directive), and the homelab as one card into its own deck. Nothing invented. */
+PAGE_ENTER['integrations']=()=>loadIntegrations();
+async function loadIntegrations(){
+  const host=document.getElementById('int-body'); if(!host) return;
+  const [cat,conn]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+  const catalog=(cat&&cat.data)||[];
+  const conns=(conn&&conn.data)||[];
+  const byId=Object.fromEntries(conns.map(c=>[c.provider,c]));
+  const row=(p)=>{
+    const c=byId[p.provider]||{};
+    const configured=!!(c.configured||p.agent&&p.installed);
+    const status=p.agent
+      ? (p.installed?'installed':'not installed')
+      : c.configured
+        ? (c.last_verify_ok===true?'verified':c.last_verify_ok===false?'failing':'configured — not yet tested')
+        : 'not configured';
+    return {p,c,configured,status};
+  };
+  const rows=catalog.map(row).sort((a,b)=>(b.configured?1:0)-(a.configured?1:0));
+  host.innerHTML=rows.map(({p,c,configured,status})=>`<div class="card${configured?'':' int-avail'}" style="margin-bottom:6px;">
+    <div style="padding:11px 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <b style="color:var(--text);font-size:12px;">${escapeHtml(p.name||p.provider)}</b>
+      <span class="sch-badge">${escapeHtml(p.kind||'provider')}</span>
+      <span class="sch-badge" style="${status==='verified'||status==='installed'?'color:var(--green,#34d399)':status==='failing'?'color:var(--red,#f87171)':''}">${escapeHtml(status)}</span>
+      ${c.last_verified_at?`<span style="font-size:9px;color:var(--dim)">last test ${escapeHtml(chatTurnTime(c.last_verified_at)||'')}</span>`:''}
+      ${c.last_verify_message&&c.last_verify_ok===false?`<span style="font-size:9px;color:var(--red,#f87171)">${escapeHtml(String(c.last_verify_message).slice(0,80))}</span>`:''}
+      <span style="flex:1"></span>
+      ${!p.agent?`<button class="btn btn-ghost" data-int-cfg>Configure</button>`:''}
+      ${!p.agent&&c.configured?`<button class="btn btn-ghost" data-int-test="${escapeHtml(p.provider)}">Test connection</button>`:''}
+      ${p.agent&&!p.installed?`<button class="btn btn-ghost" data-int-agents>Install…</button>`:''}
+    </div></div>`).join('')
+    +`<div class="card" style="margin-top:10px;"><div style="padding:11px 13px;display:flex;align-items:center;gap:10px;">
+       <b style="color:var(--text);font-size:12px;">Homelab</b>
+       <span class="sch-badge">infrastructure</span>
+       <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
+       <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
+  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>go('/colony/model-routing/providers')));
+  host.querySelectorAll('[data-int-agents]').forEach(b=>b.addEventListener('click',()=>go('/integrations')||showPage('agentcli',{noHistory:false})));
+  host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
+  host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true; b.textContent='Testing…';
+    const r=await api('/providers/'+encodeURIComponent(b.dataset.intTest)+'/test','POST',{},30000);
+    b.disabled=false; b.textContent='Test connection';
+    chatSetState&&0; loadIntegrations();
+    const note=document.createElement('div'); note.className='hud-state';
+    note.textContent=(r&&r.message)||'Test finished.';
+    host.prepend(note); setTimeout(()=>note.remove(),4000);
+  }));
+}
+if(!window.__intReloadWired){ window.__intReloadWired=true;
+  document.getElementById('int-reload')?.addEventListener('click',()=>loadIntegrations()); }
+
+async function loadProjectView(){
+  const r=await api('/projects/'+encodeURIComponent(projectViewId));
+  if(!(r&&r.success&&r.data)){ setEl('pv-name','Project not found'); setEl('pv-sub',(r&&r.message)||''); return; }
+  pvProject=r.data;
+  setEl('pv-name', pvProject.name||'Untitled project');
+  setEl('pv-sub', [
+    pvProject.path?('📁 '+pvProject.path):null,
+    (pvProject.conversations||[]).length+' conversation(s)',
+    pvProject.schedule_count+' schedule(s)',
+    pvProject.archived?'archived':null,
+  ].filter(Boolean).join(' · '));
+  pvRenderChat(); pvRenderObjectives(); pvRenderSchedules(); pvRenderRules(); pvRenderHistory(); pvFillSettings();
+}
+
+function pvTab(name){
+  document.querySelectorAll('.pv-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.pv-body').forEach(b=>b.hidden=b.id!=='pv-body-'+name);
+}
+document.querySelectorAll('.pv-tab').forEach(t=>t.addEventListener('click',()=>pvTab(t.dataset.tab)));
+document.getElementById('pv-back')?.addEventListener('click',()=>go('/projects'));
+document.getElementById('pv-new-conv')?.addEventListener('click',()=>{
+  chatPendingProjectId=projectViewId; chatActiveId=null; chatComposingNew=true; go('/chat');
+  document.getElementById('chat-input')?.focus();
+});
+
+function pvRenderChat(){
+  const host=document.getElementById('pv-body-chat'); if(!host) return;
+  const convs=pvProject.conversations||[];
+  host.innerHTML = convs.length
+    ? convs.map(c=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-open="${escapeHtml(c.id)}">
+        <div style="padding:10px 13px;display:flex;align-items:center;gap:9px;">
+          ${c.pinned?'<span title="Pinned">★</span>':''}
+          <b style="color:var(--text);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title||'Conversation')}</b>
+          ${(c.mission_ids||[]).length?`<span class="sch-badge">${c.mission_ids.length} mission(s)</span>`:''}
+          ${c.cancelled?'<span class="sch-badge">stopped</span>':''}
+          <span style="font-size:10px;color:var(--dim)">${escapeHtml(chatTurnTime(c.updated_at)||'')}</span>
+        </div></div>`).join('')
+    : '<div class="hud-state">No conversations yet — start the first one above.</div>';
+  host.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>{
+    chatComposingNew=false; go('/chat'); chatOpen(el.dataset.open);
+  }));
+}
+
+/* v0.3.8.48 — the project's objectives: created HERE, in the owning project, exactly as the
+ * directive orders. The global board is the aggregate view; this is where they are born. */
+async function pvRenderObjectives(){
+  const host=document.getElementById('pv-obj-list'); if(!host) return;
+  const r=await api('/objectives');
+  const mine=((r&&r.data)||[]).filter(o=>o.project_id===projectViewId);
+  host.innerHTML=mine.length?mine.map(o=>`<div class="card" style="margin-bottom:6px;"><div style="padding:9px 13px;font-size:11px;">
+      <b style="color:var(--text)">${escapeHtml(o.title||'')}</b>
+      <span class="sch-badge" style="margin-left:7px;">${escapeHtml(o.status||'')}</span>
+      <span class="sch-badge">runs ${escapeHtml(String(o.run_count||0))}${o.max_runs?'/'+escapeHtml(String(o.max_runs)):''}</span>
+      ${o.last_run_at?`<span style="font-size:9px;color:var(--dim);margin-left:6px;">last ${escapeHtml(chatTurnTime(o.last_run_at)||'')}</span>`:''}
+      <div style="font-size:10px;color:var(--muted);margin-top:3px;">${escapeHtml((o.charter||'').slice(0,140))}</div>
+    </div></div>`).join('')
+    :'<div class="hud-state">No objectives in this project yet.</div>';
+}
+if(!window.__pvObjWired){ window.__pvObjWired=true;
+  document.getElementById('pv-obj-create')?.addEventListener('click', async ()=>{
+    const btn=document.getElementById('pv-obj-create'); btn.disabled=true;
+    const r=await api('/objectives','POST',{
+      title:document.getElementById('pv-obj-title').value.trim(),
+      charter:document.getElementById('pv-obj-charter').value.trim(),
+      max_runs:+document.getElementById('pv-obj-maxruns').value||0,
+      project_id:projectViewId,
+    });
+    btn.disabled=false;
+    const msg=document.getElementById('pv-obj-msg');
+    if(msg){ msg.textContent=(r&&r.message)||'Create failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+    if(r&&r.success){ ['pv-obj-title','pv-obj-charter'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';}); pvRenderObjectives(); }
+  });
+}
+
+/* v0.3.8.48 — rules, quarantined honestly. The deterministic homelab rules predate project
+ * ownership; the directive forbids silently attaching them to any project, so they appear here
+ * as what they are: legacy triggers with no project owner, managed in the homelab deck until
+ * each is claimed. No global Automation domain remains. */
+async function pvRenderRules(){
+  const host=document.getElementById('sch-rules'); if(!host) return;
+  const r=await api('/homelab/automation/rules').catch(()=>null);
+  const rules=(r&&r.success&&(r.data&&r.data.rules||r.data))||[];
+  host.innerHTML=(Array.isArray(rules)&&rules.length)
+    ? `<div class="sub" style="margin-bottom:6px;">Legacy rules with no project owner — quarantined, not attached. Manage them in the homelab deck until each is claimed by a project.</div>`
+      + rules.slice(0,20).map(x=>`<div class="card" style="margin-bottom:5px;"><div style="padding:8px 12px;font-size:10px;color:var(--muted);">
+          <b style="color:var(--text)">${escapeHtml(x.name||x.id||'rule')}</b>
+          <span class="sch-badge" style="margin-left:6px;">${x.enabled?'enabled':'paused'}</span>
+          <span class="sch-badge">no project owner</span>
+        </div></div>`).join('')
+    : '<div class="hud-state">No event-trigger rules exist yet.</div>';
+}
+
+async function pvRenderSchedules(){
+  const host=document.getElementById('sch-list'); if(!host) return;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/schedules');
+  const list=(r&&r.data&&r.data.schedules)||[];
+  host.innerHTML = list.length
+    ? list.map(sc=>`<div class="card" style="margin-bottom:6px;"><div style="padding:10px 13px;">
+        <div class="sch-row">
+          <b style="color:var(--text);font-size:12px;">${escapeHtml(sc.name)}</b>
+          <span class="sch-badge">${escapeHtml(sc.trigger)}${sc.local_time?' '+escapeHtml(sc.local_time):''} ${escapeHtml(sc.timezone||'')}</span>
+          <span class="sch-badge">${escapeHtml(sc.approval_mode==='ask'?'Manual approval':sc.approval_mode==='autoapprove'?'Automatically approve':'Skip all approvals')}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:10px;color:var(--dim)">next: ${sc.next_run_at?escapeHtml(chatTurnTime(sc.next_run_at)):'—'} · last: ${sc.last_run_at?escapeHtml(chatTurnTime(sc.last_run_at)):'never'}</span>
+        </div>
+        <div style="display:flex;gap:7px;margin-top:7px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" data-sch-run="${escapeHtml(sc.id)}">Run now</button>
+          <button class="btn btn-ghost" data-sch-toggle="${escapeHtml(sc.id)}" data-en="${sc.enabled?'1':'0'}">${sc.enabled?'Pause':'Resume'}</button>
+          <button class="btn btn-ghost" data-sch-runs="${escapeHtml(sc.id)}">Past runs</button>
+          <button class="btn btn-ghost" data-sch-del="${escapeHtml(sc.id)}">Delete</button>
+        </div>
+        <div data-sch-runlist="${escapeHtml(sc.id)}" hidden style="margin-top:7px;"></div>
+      </div></div>`).join('')
+    : '<div class="hud-state">No schedules yet.</div>';
+  host.querySelectorAll('[data-sch-run]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true; b.textContent='Running…';
+    const r2=await api('/schedules/'+b.dataset.schRun+'/run','POST',{},180000);
+    setEl('sch-msg',(r2&&r2.message)||'Run failed.');
+    b.disabled=false; b.textContent='Run now'; pvRenderSchedules(); loadProjectView();
+  }));
+  host.querySelectorAll('[data-sch-toggle]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true;
+    await api('/schedules/'+b.dataset.schToggle,'PATCH',{enabled:b.dataset.en!=='1'});
+    pvRenderSchedules();
+  }));
+  host.querySelectorAll('[data-sch-del]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true;
+    const r2=await api('/schedules/'+b.dataset.schDel,'DELETE');
+    setEl('sch-msg',(r2&&r2.message)||''); pvRenderSchedules();
+  }));
+  host.querySelectorAll('[data-sch-runs]').forEach(b=>b.addEventListener('click',async ()=>{
+    const box=host.querySelector(`[data-sch-runlist="${b.dataset.schRuns}"]`);
+    if(!box.hidden){ box.hidden=true; return; }
+    const r2=await api('/schedules/'+b.dataset.schRuns+'/runs');
+    const runs=(r2&&r2.data&&r2.data.runs)||[];
+    box.hidden=false;
+    box.innerHTML=runs.length?runs.map(x=>`<div style="font-size:10px;color:var(--muted);padding:2px 0;">
+      ${escapeHtml(chatTurnTime(x.started_at)||'')} · <b>${escapeHtml(x.status)}</b> (${escapeHtml(x.trigger)})
+      ${x.conversation_id?`· <a href="#/chat" data-run-open="${escapeHtml(x.conversation_id)}">open conversation</a>`:''}
+      ${x.summary?` — ${escapeHtml(String(x.summary).slice(0,90))}`:''}</div>`).join('')
+      :'<div class="hud-state">No runs yet.</div>';
+    box.querySelectorAll('[data-run-open]').forEach(a=>a.addEventListener('click',e=>{
+      e.preventDefault(); chatComposingNew=false; go('/chat'); chatOpen(a.dataset.runOpen);
+    }));
+  }));
+}
+
+document.getElementById('sch-trigger')?.addEventListener('change',e=>{
+  const v=e.target.value;
+  document.getElementById('sch-cron').hidden=v!=='cron';
+  document.getElementById('sch-once').hidden=v!=='once';
+  document.getElementById('sch-time').hidden=!(v==='daily'||v==='weekdays'||v==='weekly'||v==='hourly');
+});
+document.getElementById('sch-create')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('sch-create'); btn.disabled=true;
+  const trig=document.getElementById('sch-trigger').value;
+  const onceLocal=document.getElementById('sch-once').value;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/schedules','POST',{
+    name:document.getElementById('sch-name').value.trim(),
+    prompt:document.getElementById('sch-prompt').value.trim(),
+    trigger:trig,
+    local_time:document.getElementById('sch-time').value.trim()||null,
+    timezone:document.getElementById('sch-tz').value.trim()||Intl.DateTimeFormat().resolvedOptions().timeZone,
+    cron:document.getElementById('sch-cron').value.trim()||null,
+    one_time_at:onceLocal?new Date(onceLocal).toISOString():null,
+    approval_mode:document.getElementById('sch-approval').value,
+  });
+  btn.disabled=false;
+  const msg=document.getElementById('sch-msg');
+  if(msg){ msg.textContent=(r&&r.message)||'Create failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+  if(r&&r.success){ ['sch-name','sch-prompt'].forEach(id=>{const e2=document.getElementById(id); if(e2) e2.value='';}); pvRenderSchedules(); }
+});
+
+async function pvRenderHistory(){
+  const host=document.getElementById('pv-body-history'); if(!host) return;
+  const ids=(pvProject.conversations||[]).flatMap(c=>c.mission_ids||[]);
+  const hist=await api('/missions/json?limit=100');
+  const all=((hist&&hist.data)||[]).filter(m=>ids.includes(String(m.id)));
+  host.innerHTML = (pvProject.conversations||[]).length
+    ? `<div class="sub" style="margin:8px 0;">Everything this project has done — its conversations and the missions they started.</div>`
+      + all.map(m=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-mission="${escapeHtml(String(m.id))}"><div style="padding:9px 13px;font-size:11px;color:var(--muted);">
+          <b style="color:var(--text)">${escapeHtml((m.goal||'').slice(0,90))}</b>
+          <span class="sch-badge" style="margin-left:7px;">${escapeHtml(m.status||'')}</span>
+          ${m.success_score!=null?`<span class="sch-badge">score ${escapeHtml(String(m.success_score))}</span>`:''}
+          <div class="pv-mission-detail" hidden style="margin-top:7px;font-size:10px;white-space:pre-wrap;"></div>
+        </div></div>`).join('')
+      + (all.length?'':'<div class="hud-state">No missions yet.</div>')
+    : '<div class="hud-state">Nothing yet.</div>';
+  // v0.3.8.48: mission detail INLINE — the task trail and result open in place, no legacy page.
+  host.querySelectorAll('[data-mission]').forEach(card=>card.addEventListener('click', async ()=>{
+    const box=card.querySelector('.pv-mission-detail');
+    if(!box.hidden){ box.hidden=true; return; }
+    box.hidden=false; box.textContent='Loading…';
+    // Found live: /missions/{id} is not a JSON surface — /missions/{id}/report is, and it is the
+    // same report the mission thread reads. final_output is the answer; the tasks are the trail.
+    const d=await api('/missions/'+encodeURIComponent(card.dataset.mission)+'/report').catch(()=>null);
+    const det=(d&&d.success&&d.data)||{};
+    box.textContent=[
+      det.final_output||det.raw_output||'',
+      (det.tasks||[]).map(t=>`• ${t.title||''} — ${t.status||''}`).join('\n'),
+    ].filter(Boolean).join('\n\n')||'No detail recorded.';
+  }));
+}
+
+function pvFillSettings(){
+  const g=id=>document.getElementById(id);
+  if(g('pv-edit-name')) g('pv-edit-name').value=pvProject.name||'';
+  if(g('pv-edit-desc')) g('pv-edit-desc').value=pvProject.description_md||'';
+  if(g('pv-edit-path')) g('pv-edit-path').value=pvProject.path||'';
+  if(g('pv-edit-policy')) g('pv-edit-policy').value=pvProject.default_policy||'ask';
+  if(g('pv-archive')) g('pv-archive').textContent=pvProject.archived?'Unarchive':'Archive';
+}
+document.getElementById('pv-save')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-save'); btn.disabled=true;
+  const pol=document.getElementById('pv-edit-policy').value;
+  // Skip all approvals is a real decision — confirmed in words, never a silent dropdown change.
+  if(pol==='bypass' && pvProject.default_policy!=='bypass'
+     && !confirm('Skip all approvals: the colony will act on this project without asking you first. '
+       +'Security gates, workspace boundaries and verification still apply. Continue?')){
+    btn.disabled=false; return;
+  }
+  const r=await api('/projects/'+encodeURIComponent(projectViewId),'PATCH',{
+    name:document.getElementById('pv-edit-name').value.trim(),
+    description_md:document.getElementById('pv-edit-desc').value,
+    path:document.getElementById('pv-edit-path').value.trim(),
+    default_policy:pol,
+  });
+  btn.disabled=false;
+  const msg=document.getElementById('pv-save-msg');
+  if(msg){ msg.textContent=(r&&r.message)||'Save failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+  if(r&&r.success) loadProjectView();
+});
+document.getElementById('pv-archive')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-archive'); btn.disabled=true;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId),'PATCH',{archived:!pvProject.archived});
+  btn.disabled=false;
+  if(r&&r.success) loadProjectView();
+});
+
 /* v0.3.8.47 — real Projects. One is created with every new conversation; here they are made by
  * hand: a name, a markdown purpose that travels with every message in the project, an optional
  * working-directory path. Claude-projects shaped, ANTHILL rules: the purpose is context the
@@ -4696,10 +5146,13 @@ async function loadProjectCards(){
   </div>`).join('');
   host.querySelectorAll('.project-card').forEach(card=>{
     const pid=card.dataset.project;
+    // v0.3.8.48 (defect 1): the CARD opens the workspace; the buttons stop propagation below.
+    card.addEventListener('click',()=>go('/projects/'+pid));
     card.querySelector('.project-chat')?.addEventListener('click', async e=>{
       e.stopPropagation();
-      const r2=await api('/conversations','POST',{project_id:pid});
-      if(r2&&r2.success&&r2.data){ chatActiveId=r2.data.id; chatComposingNew=false; go('/chat'); chatOpen(r2.data.id); }
+      chatPendingProjectId=pid;   // the first message will create the conversation HERE
+      chatActiveId=null; chatComposingNew=true; go('/chat');
+      document.getElementById('chat-input')?.focus();
     });
     card.querySelector('.project-archive')?.addEventListener('click', async e=>{
       e.stopPropagation();
@@ -4709,7 +5162,12 @@ async function loadProjectCards(){
     });
   });
 }
-document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+// v0.3.8.48 (defect 6): ONE refresh listener. PAGE_ENTER already loads both halves; the button
+// calls the same pair once — the duplicate registration that double-fetched /workspaces is gone.
+if(!window.__projectsReloadWired){
+  window.__projectsReloadWired=true;
+  document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+}
 document.getElementById('project-new-btn')?.addEventListener('click', ()=>{
   const f=document.getElementById('project-new-form'); if(f){ f.hidden=!f.hidden; if(!f.hidden) document.getElementById('project-new-name')?.focus(); }
 });
@@ -4723,7 +5181,9 @@ document.getElementById('project-new-create')?.addEventListener('click', async (
     name, description_md:document.getElementById('project-new-desc')?.value||'',
     path:document.getElementById('project-new-path')?.value.trim()||null,
   });
-  setEl('project-new-msg', r&&r.success?'Created.':(r&&r.message)||'Create failed.');
+  const nm=document.getElementById('project-new-msg');
+  if(nm){ nm.textContent=r&&r.success?'Created.':(r&&r.message)||'Create failed.';
+          nm.className='save-msg '+(r&&r.success?'text-green':'text-red'); }   // defect 7: red errors
   if(r&&r.success){
     ['project-new-name','project-new-desc','project-new-path'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
     document.getElementById('project-new-form').hidden=true;
@@ -5475,7 +5935,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     const baseUrl=card.querySelector('.pv-baseurl').value.trim();
     try{
       const r=await api('/providers','POST',{provider,api_key:key||undefined,base_url:baseUrl||undefined});
-      if(r.success){setMsg('Saved ?',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
+      if(r.success){setMsg('Saved ✓',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
       else setMsg(r.message||'Failed',false);
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
@@ -5484,7 +5944,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     setMsg('Testing…',true);
     try{
       const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
-      setMsg(r.success?'Verified ?':(r.message||'Test failed'),r.success);
+      setMsg(r.success?'Verified ✓':(r.message||'Test failed'),r.success);
       await loadProvidersTab();
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
@@ -5508,29 +5968,19 @@ async function loadModelsTab(){
 }
 
 async function loadRoutes(){
+  // v0.3.8.48 (defect 16): structured data. The old parser looked for '?' or '->' in prose the
+  // endpoint stopped emitting, fell back to raw text, and left activeRouteModels empty.
   const grid=document.getElementById('route-grid');
   try{
-    const text=await apiText('/routes');
-    const lines=text.split('\n').filter(l=>l.includes('?')||l.includes('->'));
-    activeRouteModels=new Set();
-    if(!lines.length){
-      const mtext=await apiText('/models');
-      grid.innerHTML=`<div style="font-size:10px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono)">${mtext.substring(0,800)}</div>`;
-      return;
-    }
-    grid.innerHTML=lines.map(l=>{
-      const parts=l.split(/\?|->/).map(s=>s.trim());
-      const role=parts[0]||'';
-      const rest=parts[1]||'';
-      const modelMatch=rest.match(/^([^\s(]+)/);
-      const model=modelMatch?modelMatch[1]:'';
-      if(model) activeRouteModels.add(model);
-      const providerMatch=rest.match(/\(([^)]+)\)/);
-      const provider=providerMatch?providerMatch[1]:'ollama';
-      return `<div class="route-row"><span class="route-role">${role}</span><span class="route-model">${model}</span><span class="route-provider">${provider}</span></div>`;
-    }).join('');
+    const r=await api('/routes/json');
+    if(!(r&&r.success&&r.data)) throw new Error((r&&r.message)||'no data');
+    activeRouteModels=new Set((r.data.roles||[]).map(x=>x.model).filter(Boolean));
+    grid.innerHTML=(r.data.roles||[]).map(x=>
+      `<div class="route-row"><span class="route-role">${escapeHtml(x.role)}</span>`
+      +`<span class="route-model">${escapeHtml(x.model||'')}</span>`
+      +`<span class="route-provider">${escapeHtml(x.provider||'')}${x.available?'':' ⚠ unavailable'}</span></div>`).join('');
   }catch(e){
-    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${e.message}</div>`;
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -6208,7 +6658,39 @@ async function openAntConfig(){
   });
 }
 
-PAGE_ENTER['antconfig']=()=>openAntConfig();
+/* v0.3.8.48 — the Roles page's model assignment (defects 16–18). ONE selector per role, listing
+ * only models that can actually run: installed local models, configured providers' catalogs,
+ * installed agents. The stored selection keeps provider and model separate underneath; a current
+ * route pointing at something unavailable is shown as a warning, never offered to others. Each
+ * change saves through the merge-safe single-role endpoint — nothing else in model_routes moves. */
+async function loadRoleRouting(){
+  const host=document.getElementById('role-routing'); if(!host) return;
+  const r=await api('/routes/json');
+  if(!(r&&r.success&&r.data)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Routes unavailable.')}</div>`; return; }
+  const models=r.data.available_models||[];
+  host.innerHTML=(r.data.roles||[]).map(x=>{
+    const cur=`${x.provider}|${x.model}`;
+    const opts=models.map(m=>{
+      const v=`${m.provider}|${m.model}`;
+      return `<option value="${escapeHtml(v)}"${v===cur?' selected':''}>${escapeHtml(m.label)}</option>`;
+    }).join('');
+    const warn=x.available?'':`<option value="${escapeHtml(cur)}" selected>⚠ ${escapeHtml(x.model)} · ${escapeHtml(x.provider)} (unavailable)</option>`;
+    return `<div class="route-assign"><label for="rr-${escapeHtml(x.role)}">${escapeHtml(x.role)}</label>
+      <select class="provider-input" id="rr-${escapeHtml(x.role)}" data-role="${escapeHtml(x.role)}">${warn}${opts}</select>
+      <span class="save-msg" data-rr-msg="${escapeHtml(x.role)}"></span></div>`;
+  }).join('');
+  host.querySelectorAll('select[data-role]').forEach(sel=>sel.addEventListener('change', async ()=>{
+    const [provider,model]=sel.value.split('|');
+    sel.disabled=true;
+    const res=await api('/routes/'+encodeURIComponent(sel.dataset.role),'POST',{provider,model});
+    sel.disabled=false;
+    const msg=host.querySelector(`[data-rr-msg="${sel.dataset.role}"]`);
+    if(msg){ msg.textContent=(res&&res.message)||'Save failed.';
+             msg.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
+  }));
+}
+
+PAGE_ENTER['antconfig']=()=>{ openAntConfig(); loadRoleRouting(); };
 
 document.getElementById('antcfg-save').addEventListener('click',async()=>{
   const msg=document.getElementById('antcfg-msg'); msg.textContent='';
@@ -6248,7 +6730,7 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
     try{await saveModelRoute(routeUpdate);}
     catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
   }
-  msg.style.color='var(--green)';msg.textContent='Saved ?';setTimeout(()=>msg.textContent='',2500);
+  msg.style.color='var(--green)';msg.textContent='Saved ✓';setTimeout(()=>msg.textContent='',2500);
 });
 
 document.getElementById('antcfg-reset').addEventListener('click',async()=>{

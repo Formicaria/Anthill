@@ -341,6 +341,25 @@ public sealed partial class SqliteMemory : IDisposable
             description_md TEXT NOT NULL DEFAULT '', path TEXT,
             archived INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        // v0.3.8.48: project schedules — real persistence for recurring and one-time work.
+        // Times are stored UTC with the operator's IANA timezone kept beside them, because a
+        // "daily 07:00" means 07:00 WHERE THE OPERATOR LIVES, across DST, forever.
+        @"CREATE TABLE IF NOT EXISTS project_schedules (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
+            prompt TEXT NOT NULL DEFAULT '', trigger_type TEXT NOT NULL DEFAULT 'manual',
+            cron TEXT, one_time_at TEXT, local_time TEXT, timezone TEXT NOT NULL DEFAULT 'UTC',
+            approval_mode TEXT NOT NULL DEFAULT 'Ask', provider TEXT, model TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1, overlap_policy TEXT NOT NULL DEFAULT 'skip',
+            next_run_at TEXT, last_run_at TEXT, claimed_by TEXT, claimed_at TEXT,
+            created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_project_schedules_due ON project_schedules(enabled, next_run_at)",
+        @"CREATE TABLE IF NOT EXISTS schedule_runs (
+            id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL, project_id TEXT NOT NULL,
+            conversation_id TEXT, status TEXT NOT NULL DEFAULT 'running',
+            ""trigger"" TEXT NOT NULL DEFAULT 'schedule', summary TEXT,
+            started_at TEXT NOT NULL, finished_at TEXT)",
+        @"CREATE INDEX IF NOT EXISTS idx_schedule_runs ON schedule_runs(schedule_id, started_at)",
         @"CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'researcher',
             policy TEXT NOT NULL DEFAULT 'Ask', policy_set_by TEXT, policy_set_at TEXT,
@@ -564,6 +583,19 @@ public sealed partial class SqliteMemory : IDisposable
         AddMissing("conversation_turns", new() { ["prompt_tokens"] = "INTEGER", ["completion_tokens"] = "INTEGER" });
         // v0.3.8.47: which project a conversation belongs to. Null for legacy conversations.
         AddMissing("conversations", new() { ["project_id"] = "TEXT" });
+        // v0.3.8.48: project-level defaults. The policy is ATTRIBUTED like the conversation's —
+        // a standing permission with no author reads as Ask, fail closed, same rule everywhere.
+        AddMissing("projects", new()
+        {
+            ["default_policy"] = "TEXT NOT NULL DEFAULT 'Ask'",
+            ["default_policy_by"] = "TEXT",
+            ["default_policy_at"] = "TEXT",
+            ["default_provider"] = "TEXT",
+            ["default_model"] = "TEXT",
+        });
+        // v0.3.8.48: objectives belong to projects. Null = legacy/unassigned, surfaced as such —
+        // never silently attached to an arbitrary project.
+        AddMissing("objectives", new() { ["project_id"] = "TEXT" });
         // v2.26.0: what KIND of signal a trail carries. Planning may only read procedural /
         // routing categories; operational telemetry must not steer strategy.
         AddMissing("pheromone_trails", new() { ["signal_category"] = "TEXT NOT NULL DEFAULT ''" });

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.47
+**Current version:** v0.3.8.48
 
 **Runs on:** Windows or Linux
 
@@ -82,7 +82,7 @@ If PowerShell says `ollama` is not recognized, close PowerShell, open it again, 
 ### 2. Download ANTHILL
 
 Download
-[`anthill-0.3.8.47-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.47/anthill-0.3.8.47-win-x64.zip)
+[`anthill-0.3.8.48-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.48/anthill-0.3.8.48-win-x64.zip)
 and extract it somewhere permanent, such as:
 
 ```text
@@ -135,8 +135,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.47/anthill-0.3.8.47-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.47-linux-x64.tar.gz
+curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.48/anthill-0.3.8.48-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.48-linux-x64.tar.gz
 chmod +x anthill
 ```
 

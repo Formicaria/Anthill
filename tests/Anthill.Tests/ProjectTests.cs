@@ -127,6 +127,38 @@ public class ProjectTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.48: a conversation NEVER invents its project. The endpoint refuses a missing
+    /// project_id with its own error code, no auto-create branch survives, and the picker is the
+    /// UI's answer — pinned at the source seams the behaviour lives in.
+    /// </summary>
+    [Fact]
+    public void AConversation_RequiresAChosenProject()
+    {
+        var api = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Api", "ApiHost.Providers.cs"));
+        Assert.Contains("project_required", api);
+        Assert.DoesNotContain("Name = string.IsNullOrWhiteSpace(body?.Title) ? \"New conversation\"", api);
+
+        var js = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "app.js"));
+        Assert.Contains("chatPickProject", js);
+        // Cancel keeps the operator's message; nothing is created behind their back.
+        Assert.Contains("if(!pid){ if(el) el.value=msg;", js);
+        // No hardcoded policy on creation — the project's attributed default governs.
+        Assert.DoesNotContain("policy:'ask'", js);
+    }
+
+    /// <summary>A project's unattributed non-Ask default reads as Ask. Same fail-closed rule.</summary>
+    [Fact]
+    public void AProjectsDefaultPolicy_FailsClosedWithoutAnAuthor()
+    {
+        var unattributed = new Project { Id = "p", DefaultPolicy = EscalationPolicy.Bypass };
+        Assert.Equal(EscalationPolicy.Ask, unattributed.EffectiveDefaultPolicy);
+
+        var attributed = unattributed with { DefaultPolicyBy = "zwright", DefaultPolicyAt = DateTime.UtcNow };
+        Assert.Equal(EscalationPolicy.Bypass, attributed.EffectiveDefaultPolicy);
+    }
+
+    /// <summary>
     /// The console reaches every surface this feature shipped — a projects API with no caller is
     /// the "no call site, no feature" defect this suite exists to catch.
     /// </summary>

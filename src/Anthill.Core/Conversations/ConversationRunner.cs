@@ -218,7 +218,7 @@ public sealed class ConversationRunner
         // approve something that will be refused anyway trains them to approve without reading.
         if (!conversation.Budget.AllowsAnotherMission(conversation.MissionIds.Count))
         {
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"conversation budget exhausted: {conversation.MissionIds.Count} of "
               + $"{conversation.Budget.MaxMissions} missions already started");
@@ -246,7 +246,7 @@ public sealed class ConversationRunner
             // The turn is recorded even though nothing ran. An attempt to escalate that was refused
             // is part of the conversation's history — arguably the most interesting part, since it
             // is the moment the colony wanted more authority than it had.
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"escalation refused: {decision.Reason}", decision);
         }
@@ -275,7 +275,16 @@ public sealed class ConversationRunner
 
         _ = ThreadingTask.Run(() =>
         {
-            try { _startMission(message, id => idReady.TrySetResult(id), cts.Token); }
+            try
+            {
+                _startMission(message, id => idReady.TrySetResult(id), cts.Token);
+                // v0.3.8.48, found live: the mission finished, its answer sat in mission history,
+                // and the conversation that started it showed nothing — an operator watching the
+                // chat never saw the result of the work they approved. The pipeline call above is
+                // synchronous, so this line runs when the mission has settled: put its answer in
+                // the conversation, where the question was asked.
+                RecordMissionAnswer(conversation.Id, idReady);
+            }
             catch (Exception error) { idReady.TrySetException(error); }
             finally
             {
@@ -299,7 +308,7 @@ public sealed class ConversationRunner
         {
             // The pipeline threw before creating a row. Recorded as a turn that started nothing,
             // because it did — and a silent drop here would lose the attempt entirely.
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"mission failed to start: {error.InnerException?.Message ?? error.Message}", decision);
         }
@@ -309,7 +318,7 @@ public sealed class ConversationRunner
             // The row did not appear in time. The work may still be starting, so this is reported
             // rather than treated as a failure — but it is NOT linked, because linking an id we do
             // not have would be a fabricated history.
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, true, null,
                 "mission started, but its id did not arrive in time to link — check the mission list",
                 decision);
@@ -321,13 +330,13 @@ public sealed class ConversationRunner
             // rather than stored: a bad link is worse than a missing one, because a missing link
             // shows up as a gap an operator can investigate and a bad one silently answers every
             // future join with nothing while looking perfectly healthy.
-            RecordTurn(conversation, ordinal, message, null);
+            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, true, null,
                 "mission started, but the pipeline reported something that is not a mission id — "
               + "not linking it; check the mission list", decision);
         }
 
-        RecordTurn(conversation, ordinal, message, missionId);
+        RecordTurn(conversation, ordinal, message, missionId, reuseIdenticalPending: true);
         _memory.SaveConversation(conversation with
         {
             // The link that makes the conversation and the mission ONE history, which is the exit
@@ -384,9 +393,72 @@ public sealed class ConversationRunner
         return signalled;
     }
 
-    private string RecordTurn(Conversation conversation, int ordinal, string message, string? missionId,
-        IReadOnlyList<(string Filename, string Content)>? attachments = null)
+    /// <summary>
+    /// After an escalated mission SETTLES, its result becomes the conversation's next turn — the
+    /// operator asked in chat, so chat is where the answer belongs. Runs on the background thread
+    /// that just finished the pipeline. A cancelled conversation gets nothing (the operator moved
+    /// on, same rule as chat replies), and a missing result is said plainly rather than invented.
+    /// </summary>
+    private void RecordMissionAnswer(string conversationId, TaskCompletionSource<string> idReady)
     {
+        try
+        {
+            if (!idReady.Task.IsCompletedSuccessfully) return;
+            var missionId = idReady.Task.Result;
+            if (!LooksLikeMissionId(missionId)) return;
+
+            var current = _memory.LoadConversation(conversationId);
+            if (current is null || current.Cancelled) return;
+
+            var mission = _memory.GetMission(missionId);
+            if (mission is null) return;
+            var status = mission.GetValueOrDefault("status")?.ToString() ?? "";
+            var answer = mission.GetValueOrDefault("user_result")?.ToString();
+            if (string.IsNullOrWhiteSpace(answer))
+                answer = mission.GetValueOrDefault("final_result")?.ToString();
+            var content = !string.IsNullOrWhiteSpace(answer)
+                ? answer!
+                : $"The mission finished with status \"{status}\" and recorded no result text — "
+                  + "its task trail is in the mission history.";
+
+            var ordinal = _memory.LoadConversationTurns(conversationId).Count + 1;
+            _memory.SaveConversationTurn(new ConversationTurn(
+                Guid.NewGuid().ToString("N")[..12], conversationId, ordinal, "assistant", content)
+            {
+                MissionId = missionId,
+            });
+            _memory.SaveConversation(current with { UpdatedAt = AnthillTime.NowUtc() });
+        }
+        catch
+        {
+            // A failure to ANNOUNCE the answer must not fail the mission that produced it; the
+            // result still exists in mission history either way.
+        }
+    }
+
+    private string RecordTurn(Conversation conversation, int ordinal, string message, string? missionId,
+        IReadOnlyList<(string Filename, string Content)>? attachments = null,
+        bool reuseIdenticalPending = false)
+    {
+        // v0.3.8.48, found live: approving a refused start_mission re-sends the SAME message
+        // (convApprove restates it to meet the gate), and recording that re-send as a new turn
+        // fabricated a duplicate — the operator spoke once, the transcript said twice. If the last
+        // turn is the operator's identical attempt that started nothing, this IS that attempt:
+        // link the mission to it instead of inventing a second one. A deliberate repeat that
+        // already started work keeps its mission link, so it is never collapsed.
+        if (reuseIdenticalPending)
+        {
+            var last = _memory.LoadConversationTurns(conversation.Id).LastOrDefault();
+            if (last is not null
+                && string.Equals(last.Role, "user", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(last.Content, message ?? "", StringComparison.Ordinal)
+                && last.MissionId is null)
+            {
+                _memory.SaveConversationTurn(last with { MissionId = missionId });
+                return last.Id;
+            }
+        }
+
         var id = Guid.NewGuid().ToString("N")[..12];
         _memory.SaveConversationTurn(new ConversationTurn(
             id, conversation.Id, ordinal, "user", message ?? "")

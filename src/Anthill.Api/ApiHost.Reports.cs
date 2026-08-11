@@ -442,6 +442,8 @@ public static partial class ApiHost
         ["id"] = o.Id, ["title"] = o.Title, ["charter"] = o.Charter, ["priority"] = o.Priority,
         ["status"] = o.Status.Value(), ["max_runs"] = o.MaxRuns, ["run_count"] = o.RunCount,
         ["consecutive_failures"] = o.ConsecutiveFailures, ["parent_objective_id"] = o.ParentObjectiveId,
+        // v0.3.8.48: project ownership. Null reads as unassigned in the console, in those words.
+        ["project_id"] = o.ProjectId,
         ["created_at"] = o.CreatedAt.ToIso(), ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
         ["success_ema"] = o.SuccessEma,
         // Retirement markers (stamped by the Director). Looping-retired objectives are shown in the

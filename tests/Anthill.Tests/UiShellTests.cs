@@ -1211,6 +1211,54 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.48 (defect 20): corrupted replacement glyphs are gone and stay gone. These exact
+    /// strings shipped with a literal '?' where an arrow or check once lived — mojibake from a
+    /// lost encoding pass — and every one of them read as a broken product.
+    /// </summary>
+    [Fact]
+    public void NoCorruptedGlyphs_InVisibleText()
+    {
+        var ui = Ui("index.html") + Ui("app.js");
+
+        foreach (var bad in new[] { "Settings ? Colony", "Configuration ? Security",
+            "Configuration ? Shell", "Saved ?'", "'Verified ?'", "Maintenance ? Flush" })
+            Assert.DoesNotContain(bad, ui);
+    }
+
+    /// <summary>
+    /// v0.3.8.48: approvals live ON the conversation. The selector carries the three exact
+    /// user-facing labels mapped to the three policies the backend has always had; Skip-all
+    /// requires a spoken confirmation and a refusal snaps the selector back; and proposed
+    /// changes render as cards IN the thread with approve-and-apply running both audited
+    /// transitions in sequence. The separate Changes page is no longer the only door.
+    /// </summary>
+    [Fact]
+    public void Approvals_LiveOnTheConversation()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        Assert.Contains("id=\"chat-policy\"", html);
+        Assert.Contains(">Manual approval<", html);
+        Assert.Contains(">Automatically approve<", html);
+        Assert.Contains(">Skip all approvals<", html);
+
+        // Bypass is confirmed in words, and the words say the honest thing.
+        Assert.Contains("this skips prompts, not security", js);
+        Assert.Contains("sel.value=was; return;", js);
+
+        // The policy endpoint is called attributed; the selector reflects the EFFECTIVE policy.
+        Assert.Contains("'/policy','POST'", js);
+
+        // Inline change cards: in the thread, both transitions, no navigation.
+        Assert.Contains("chatRenderPatches", js);
+        Assert.Contains("data-p-approve", js);
+        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve'", js);
+        Assert.Contains("'/apply/'+encodeURIComponent(approvalId)", js);
+        Assert.Contains("'/revert/'+encodeURIComponent(pid)", js);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces, so the label was
     /// corrected to "Mission Workspaces". v0.3.8.47 BUILT the project concept — a projects table,
@@ -1235,7 +1283,7 @@ public class UiShellTests
 
         // No top-level Scheduled entry; the objectives board stays reachable through Automation.
         Assert.DoesNotContain("label:'Scheduled'", js);
-        Assert.Contains("route:'/operations/automation/objectives'", js);
+        Assert.Contains("route:'/objectives'", js);
 
         // Navigation carries navigational labels.
         Assert.DoesNotContain("Patch Colony", html);
@@ -1266,11 +1314,12 @@ public class UiShellTests
         Assert.Contains("ROUTE_ALIAS[h]", BodyOf(js, "function router()"));
         Assert.Contains("ROUTE_ALIAS[route]", BodyOf(js, "function go(route,push)"));
 
-        // The moved pages appear in exactly one IA route each — a second appearance is how the
-        // duplicate-door pattern starts over.
+        // v0.3.8.48: events lives in exactly one IA route (Settings → System); activity and
+        // results left the navigation entirely — their concerns live in project History and
+        // Settings → System, and a reappearance is the duplicate-door pattern starting over.
         Assert.Single(Regex.Matches(js, "page:'events'"));
-        Assert.Single(Regex.Matches(js, "page:'activity'"));
-        Assert.Single(Regex.Matches(js, "page:'results'"));
+        Assert.Empty(Regex.Matches(js, "page:'activity'"));
+        Assert.Empty(Regex.Matches(js, "page:'results'"));
     }
 
     /// <summary>
