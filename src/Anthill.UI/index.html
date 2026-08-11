@@ -1205,15 +1205,19 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   line-height:1.5;max-height:180px;font-family:inherit;}
 .chat-input:focus{border-color:rgba(34,211,238,.45);}
 .chat-hint{font-size:9px;color:var(--dim);padding:6px 18px 12px;}
-/* v0.3.8.43: Chat + Colony — the live topology as a full-page layer BEHIND the conversation,
-   per the SOW. The conversation floats above it as a readable frosted panel; the map stays
-   visible and interactive around it. Rebuilt on the two fixes found live in v0.3.8.42: the mount
-   is a flex column (#colony-canvas-area sizes itself with flex:1 — a plain block measured it
-   0×0), and the colony page's mission bar rides inside the canvas area and is hidden here (chat
-   is the canonical entry surface). */
+/* v0.3.8.45: Chat + Colony is a SPLIT page — the operator's field correction, twice reported
+   ("should be a split page, not the chat box on top of the colony"; the desktop tester could not
+   see the colony at all). The v0.3.8.43 presentation put the conversation as a frosted panel OVER
+   the map, centred exactly where the camera centres the queen: the colony drew, invisibly, under
+   opaque glass. Now the conversation keeps the left half — fully usable, nothing floating on it —
+   and the colony takes the right half in-flow: no overlay, no occlusion, both halves whole.
+   Everything that made v0.3.8.42's side-by-side work is retained: the canonical canvas is
+   re-parented (one renderer), the mount is a flex column (#colony-canvas-area sizes itself with
+   flex:1 — a plain block measured it 0×0), and the colony page's mission bar stays hidden here
+   (chat is the canonical entry surface). */
 .chat-wrap{position:relative;}
-.chat-colony-layer{position:absolute;inset:0;z-index:0;display:flex;flex-direction:column;
-  min-height:0;background:var(--bg);}
+.chat-colony-layer{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1 1 52%;
+  order:2;border-left:1px solid var(--border);background:var(--bg);}
 .chat-colony-layer[hidden]{display:none;}
 .chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;flex-shrink:0;
   border-bottom:1px solid var(--border);background:var(--panel);}
@@ -1222,17 +1226,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .ccb-spacer{flex:1;}
 .chat-colony-mount{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;}
 .chat-colony-mount #mission-bar{display:none;}
-/* While the layer is open the conversation floats above it as a readable, high-contrast panel;
-   the rail yields the space and the topology stays interactive in the visible regions. */
+/* While the split is open the rail yields its space to the two working halves. */
 #page-chat.colony-open .chat-rail{display:none;}
-#page-chat.colony-open .chat-main{position:relative;z-index:1;flex:0 1 700px;max-width:94%;
-  margin:52px auto 16px;border:1px solid var(--border);border-radius:10px;overflow:hidden;
-  background:color-mix(in srgb, var(--panel) 92%, transparent);
-  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-  box-shadow:0 10px 44px rgba(0,0,0,.55);}
-@supports not (background:color-mix(in srgb, red 50%, blue)){
-  #page-chat.colony-open .chat-main{background:var(--panel);} }
-/* Narrow: layering is unreadable. Colony mode becomes a clean full-screen switch — the layer's
+#page-chat.colony-open .chat-main{flex:1 1 48%;order:1;min-width:380px;}
+/* Narrow: a split is unreadable. Colony mode becomes a clean full-screen switch — the pane's
    own ✕ (and Escape) returns to the conversation with draft and scroll intact. */
 @media (max-width:900px){ .chat-rail{display:none;} }
 @media (max-width:640px){
