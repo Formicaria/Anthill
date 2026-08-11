@@ -470,6 +470,126 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// `pollHud` writes only into widget bodies, and a hidden widget has no body — so every write
+    /// there must tolerate a missing element.
+    ///
+    /// v3.8.34. `attnPanel` was null-guarded and `attnList` — the next line, same widget — was not.
+    /// On any dashboard without Operator Attention, `attnList.innerHTML` threw
+    /// "Cannot set properties of null" and took the REST of pollHud with it: the missions, changes
+    /// and objectives summaries below never ran. Every poll. The live console had logged a thousand
+    /// of these, and the visible symptom was only that four panels stayed empty — no broken layout,
+    /// no error surface, nothing an operator could report beyond "buggy".
+    ///
+    /// DEFAULT_DASHBOARD_VIEW ships operator-attention hidden, which made this the DEFAULT
+    /// first-run dashboard rather than an edge case, and is why a guard keyed to the default layout
+    /// is worth more than one keyed to the code alone.
+    /// </summary>
+    [Theory]
+    [InlineData("async function pollHud()")]
+    // v3.8.34: pollHealth had four more of the same shape — two dots, a colour and a class — found
+    // only because the autonomy status was being restyled next to them. One poller fixed and its
+    // neighbour left is how this defect comes back.
+    [InlineData("async function pollHealth()")]
+    public void EveryWidgetBodyWrite_InAPoller_ToleratesAHiddenWidget(string signature)
+    {
+        var js = Ui("app.js");
+        var body = BodyOf(js, signature);
+
+        Assert.True(body.Length > 0, $"{signature} not found — this guard needs its new shape.");
+
+        // The unguarded shape: reach into the DOM and write straight through the result.
+        var chained = Regex.Matches(body, @"document\.getElementById\([^)]*\)\.(innerHTML|textContent|className|style)")
+            .Select(m => m.Value).ToList();
+
+        Assert.True(chained.Count == 0,
+            signature + " writes through getElementById without a null check, so hiding the widget "
+            + "that owns this element throws and aborts the rest of the poll: " + string.Join(", ", chained));
+
+        // And the element that actually caused it: assigned to a local, then written unguarded.
+        var unguarded = Regex.Matches(body, @"(?<!if\s*\()\b(\w+)\.innerHTML\s*=")
+            .Select(m => m.Groups[1].Value)
+            .Distinct()
+            .Where(v => Regex.IsMatch(body, @"\b(?:const|let|var)\s+" + Regex.Escape(v) + @"\s*=\s*document\.getElementById")
+                     && !Regex.IsMatch(body, @"if\s*\(\s*" + Regex.Escape(v) + @"\s*\)"))
+            .ToList();
+
+        Assert.True(unguarded.Count == 0,
+            "these pollHud locals come from getElementById and are written without a null check: "
+            + string.Join(", ", unguarded));
+    }
+
+    /// <summary>
+    /// `api()` takes its method POSITIONALLY, and no caller may pass an options object instead.
+    ///
+    /// v3.8.34. `hlAutoToggle` and `hlAutoEvaluate` called
+    /// `window.api(path, {method:'POST'})` — the fetch-style shape, not this console's. The second
+    /// parameter is `method`, so it received an object, `fetch` stringified it to
+    /// "[object Object]", and the request threw on an invalid method token before leaving the
+    /// browser. `api` catches that and RETURNS `{success:false}` rather than throwing, so the
+    /// `catch(e){}` wrapped around each call never ran either; the result was discarded and the
+    /// panel re-rendered unchanged. Enabling an automation rule did nothing, and said nothing.
+    ///
+    /// Two console call sites out of roughly ninety had this shape and both were dead. The failure
+    /// is invisible at runtime — no console error, no failed request in the network panel, just a
+    /// control that does not work — so it has to be caught in the source.
+    /// </summary>
+    [Fact]
+    public void NoConsoleCall_PassesAnOptionsObjectWhereApiExpectsAMethod()
+    {
+        var js = Ui("app.js");
+
+        // Guard the reader: if `api` stops taking the method positionally this test is describing
+        // a function that no longer exists, and must fail rather than pass vacuously.
+        Assert.Contains("async function api(path, method='GET', body=null)", js, StringComparison.Ordinal);
+
+        // Matched on the object's `method:` key rather than on argument POSITION. Finding the
+        // second argument means balancing parentheses — the offending path was
+        // `'…/'+encodeURIComponent(id)+'/'+(on?'enable':'disable')`, which a positional pattern
+        // cannot span, and a guard that caught one of the two instances would have been worse than
+        // none. An options object handed to this `api` is wrong wherever it appears, so the key is
+        // the reliable signal.
+        var offenders = Regex.Matches(js, @"\bapi\([^;\n]*\{\s*method\s*:")
+            .Select(m => m.Value.Trim())
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "These calls pass an object where api() expects a method string, so the request is sent "
+            + "with an invalid method and fails silently: " + string.Join(" | ", offenders));
+    }
+
+    /// <summary>
+    /// Collapsing the sidebar because the WINDOW is narrow must not rewrite what the operator
+    /// chose.
+    ///
+    /// v3.8.34. `#nav-rail` was a flat `width:var(--nav-w)` — 240px at every size — and none of the
+    /// console's seven narrow breakpoints touched it, so at 760px the rail held about a third of
+    /// the viewport. `applyNarrowNav` reuses the existing `.nav-collapsed` styling rather than
+    /// restating those ten selectors behind a media query, because two copies of one appearance is
+    /// how they come to disagree.
+    ///
+    /// The hazard that reuse introduces is this one: the manual toggle persists to localStorage, so
+    /// an automatic collapse that took the same path would let dragging a window narrow overwrite a
+    /// preference the operator set deliberately — and it would only show up later, on a wide screen,
+    /// as a sidebar that "randomly" remembered the wrong thing. Narrow forces the class; only the
+    /// button writes the preference.
+    /// </summary>
+    [Fact]
+    public void TheAutomaticNavCollapse_NeverWritesTheOperatorsPreference()
+    {
+        var body = BodyOf(Ui("app.js"), "function applyNarrowNav()");
+
+        Assert.True(body.Length > 0,
+            "applyNarrowNav is missing — the sidebar has no automatic narrow-viewport behaviour, "
+            + "which is the state this test was written against.");
+
+        Assert.DoesNotContain("setItem", body);
+
+        // It must still READ the preference, or returning to a wide viewport would forget a
+        // deliberate collapse instead of restoring it.
+        Assert.Contains("getItem", body);
+    }
+
+    /// <summary>
     /// Every control `buildNav` gives an ARIA role must also be given a name.
     ///
     /// v3.8.34. The six domain heads (Monitoring, Operations, Infrastructure, Colony, Security,

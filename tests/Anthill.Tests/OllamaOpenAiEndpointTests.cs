@@ -63,11 +63,11 @@ public class OllamaOpenAiEndpointTests : IDisposable
     public void Dispose() { try { _listener.Stop(); } catch { /* already down */ } }
 
     [Fact]
-    public void ItPostsToTheOpenAiCompatiblePath_NotApiGenerate()
+    public async ThreadingTask ItPostsToTheOpenAiCompatiblePath_NotApiGenerate()
     {
         var serving = ServeOnce("""{"choices":[{"message":{"content":"hi"}}]}""");
         var response = new OllamaClient("llama3.1:8b", _host).Send(ModelRequest.FromPrompt("hello"), retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal("/v1/chat/completions", _path);
         Assert.True(response.Ok);
@@ -80,7 +80,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
     /// which is the loss this move exists to undo.
     /// </summary>
     [Fact]
-    public void MessagesKeepTheirRoles_RatherThanBeingFlattened()
+    public async ThreadingTask MessagesKeepTheirRoles_RatherThanBeingFlattened()
     {
         var serving = ServeOnce("""{"choices":[{"message":{"content":"ok"}}]}""");
         var request = new ModelRequest
@@ -92,7 +92,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
             },
         };
         new OllamaClient("llama3.1:8b", _host).Send(request, retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Contains("\"role\":\"system\"", _body);
         Assert.Contains("\"role\":\"user\"", _body);
@@ -105,7 +105,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
     /// ask to run anything, which put every self-improvement loop out of reach.
     /// </summary>
     [Fact]
-    public void AToolCapableLocalModel_IsOfferedToolsOnTheWire()
+    public async ThreadingTask AToolCapableLocalModel_IsOfferedToolsOnTheWire()
     {
         var serving = ServeOnce("""{"choices":[{"message":{"content":"ok"}}]}""");
         var request = ModelRequest.FromPrompt("list the repo") with
@@ -115,7 +115,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
         };
         // hermes: the reference local function-calling family
         new OllamaClient("hermes3:8b", _host).Send(request, retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Contains("\"tools\"", _body);
         Assert.Contains("\"list_directory\"", _body);
@@ -127,7 +127,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
     /// has to know which local model is loaded.
     /// </summary>
     [Fact]
-    public void AModelWithoutToolSupport_IsNotOfferedTools()
+    public async ThreadingTask AModelWithoutToolSupport_IsNotOfferedTools()
     {
         var serving = ServeOnce("""{"choices":[{"message":{"content":"ok"}}]}""");
         var request = ModelRequest.FromPrompt("list the repo") with
@@ -135,14 +135,14 @@ public class OllamaOpenAiEndpointTests : IDisposable
             Tools = new[] { new ModelToolSpec("list_directory", "lists a directory", "{}") },
         };
         new OllamaClient("some-old-local-model", _host).Send(request, retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.DoesNotContain("\"tools\"", _body);
     }
 
     /// <summary>A tool call from a local model is read back as structure, not prose.</summary>
     [Fact]
-    public void AToolCallFromALocalModel_ComesBackAsStructure()
+    public async ThreadingTask AToolCallFromALocalModel_ComesBackAsStructure()
     {
         var serving = ServeOnce("""
             {"choices":[{"message":{"content":null,"tool_calls":[
@@ -151,7 +151,7 @@ public class OllamaOpenAiEndpointTests : IDisposable
              "usage":{"prompt_tokens":12,"completion_tokens":4}}
             """);
         var response = new OllamaClient("hermes3:8b", _host).Send(ModelRequest.FromPrompt("go"), retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(response.Ok);                       // tool calls without prose are a SUCCESS
         Assert.Equal("list_directory", Assert.Single(response.ToolCalls).Name);
@@ -164,11 +164,11 @@ public class OllamaOpenAiEndpointTests : IDisposable
     /// operator debugging their network.
     /// </summary>
     [Fact]
-    public void AMissingModel_StillSaysHowToPullIt()
+    public async ThreadingTask AMissingModel_StillSaysHowToPullIt()
     {
         var serving = ServeOnce("""{"error":"model not found"}""", status: 404);
         var response = new OllamaClient("not-pulled:70b", _host).Send(ModelRequest.FromPrompt("hi"), retries: 1);
-        serving.Wait(TimeSpan.FromSeconds(10));
+        await serving.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(ModelCallOutcome.NotAvailable, response.Status);
         Assert.Contains("ollama pull not-pulled:70b", response.Content);
