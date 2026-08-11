@@ -11,7 +11,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- v0.3.8.48, found by Windows CI: invariant globalization disables the ICU mapping that
+         lets Windows resolve IANA timezone ids ("America/Chicago"), so FindSystemTimeZoneById
+         threw, the scheduler's fallback degraded every zone to UTC, and each Windows schedule
+         would have fired hours off its local time. Linux never showed it — tz lookups there
+         come from the OS zoneinfo files, no ICU required. Globalization stays ON so the
+         project-schedule contract (UTC instants beside real IANA zones) holds on every OS. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
     <!-- Must always match AnthillRuntime.Version — enforced by RegressionGuardTests + CI. -->
     <AnthillVersion>0.3.8.48</AnthillVersion>
     <Version>$(AnthillVersion)</Version>
