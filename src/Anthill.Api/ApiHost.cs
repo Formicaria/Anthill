@@ -422,6 +422,9 @@ public sealed class TurnRequest
     public string? Mode { get; set; }
     /// <summary>Action name to "approve". Absence is NOT consent.</summary>
     public Dictionary<string, string>? Answers { get; set; }
+    /// <summary>v0.3.8.44: deliver the reply as SSE deltas while it is produced. The recorded turn
+    /// and the final outcome are identical either way — streaming is presentation, not contract.</summary>
+    public bool Stream { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }

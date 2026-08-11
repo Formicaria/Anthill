@@ -16,6 +16,11 @@
     <RootNamespace>Anthill.Desktop</RootNamespace>
     <AssemblyName>AnthillDesktop</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- v0.3.8.44, from the first field failure: WebView2 ships a NATIVE loader
+         (WebView2Loader.dll) that cannot be loaded from inside a single-file bundle. Without
+         self-extraction the packaged exe dies before any window exists — the exact "click and
+         nothing happens" a tester reported. Applies to publish; harmless otherwise. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <!-- The API host runs IN-PROCESS (boot-or-attach; see Program.cs), so the shell needs the same

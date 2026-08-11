@@ -1,5 +1,36 @@
 # ANTHILL Changelog
 
+## v0.3.8.44 - the answer arrives as it is produced, and the desktop app survives the field
+
+**Chat streams.** Three layers, each honest about what it is. The SDK gains
+`IStreamingReasoningProvider` — ADDITIVE, a capability a caller asks about with a type test,
+never a wrapper faking a trickle over a blocking call (the "streaming claims" lie the
+truthfulness audit forbids). `ProviderWireFormat.ReadOpenAiStreamChunk` is the pure seam every
+OpenAI-compatible stream shares; Ollama implements streaming through the same body builder as its
+blocking call, one `stream:true` apart, with tools falling back to the tested non-streaming path
+and no retry loop — an operator who has watched half an answer arrive must not have it silently
+replayed. The conversation runner threads a delta sink to the Queen's routing, which asks the
+routed client whether it CAN stream; `POST /conversations/{id}/turns` with `stream:true` answers
+as SSE with the outcome as the terminal `done` event, and the client's disconnect token is bound
+into `ModelCallScope` — closing the tab or pressing ■ aborts the model call itself, not merely
+the animation. The console renders deltas through the SAME escape-first renderer every recorded
+turn uses, preserves the reading position, and on completion the provisional bubble yields to the
+recorded turn: what remains on screen is exactly what the database holds. A provider that cannot
+stream produces no deltas and the `done` frame carries the whole reply — one code path, no fake
+trickle.
+
+**The desktop app's first field failure, fixed at all three of its layers.** The report was
+"click and nothing happens, it made a folder". The runtime's default bind (0.0.0.0) hit the
+security posture's correct refusal of a public bind without a token — and the refusal printed to
+a console a WinExe does not have. The shell now binds loopback by default (config/env still win),
+redirects console out/err to `%LOCALAPPDATA%\Anthill\desktop.log`, opens its window IMMEDIATELY
+and narrates the boot — a host that exits or crashes is reported now, with its own logged words,
+not after a blind wait — and nothing in the process can die without a face. Underneath it the
+packaging half: WebView2's native loader cannot load from inside a single-file bundle;
+`IncludeNativeLibrariesForSelfExtract` makes the published exe capable of opening a window at
+all. And the release's Windows archive now carries `AnthillDesktop.exe` beside the server binary
+— one download, both shapes of the product.
+
 ## v0.3.8.43 - the desktop shell, and the colony behind the conversation
 
 **AnthillDesktop — the colony in a native Windows window.** The original Operation Anthill
