@@ -1,6 +1,24 @@
 # ANTHILL Changelog
 
-## v0.3.8.44 - the answer arrives as it is produced, and the desktop app survives the field
+## v0.3.8.45 - chat and colony split the page, because the field said so twice
+
+**The layered Chat + Colony view is retired by its own users.** The desktop tester's report —
+"its like the colony behind the chat but you cant like see the colony" — was diagnosed live: the
+map WAS drawing, every frame, centred exactly under the frosted, 92%-opaque conversation panel,
+which was itself centred. And the operator's ruling was explicit: "should be a split page, not
+the chat box on top of the colony." Two independent reports from real use against one
+presentation is a verdict.
+
+**The split.** The conversation keeps the left half — fully usable, nothing floating over it —
+and the colony takes the right half as an in-flow sibling: no absolute overlay, no frosted
+glass, no occlusion arithmetic. The camera centres the canvas it owns again (`cx=W/2`), because
+a pane nothing covers needs no offset. Everything that made the earlier shapes work is retained
+and still pinned: ONE canonical canvas re-parented into the pane (no second renderer), the
+flex-column mount (a plain block measured the canvas 0×0), the colony page's mission bar hidden
+here, the truthful mission line, ⌖ Fit view, Open full Colony, ✕/Escape returning the
+conversation with draft and scroll intact, and narrow widths becoming a clean full-screen
+switch. Guard tests now pin the split geometry and forbid the frosted floating panel outright —
+a presentation this product has rejected twice from live use cannot quietly return.
 
 **Chat streams.** Three layers, each honest about what it is. The SDK gains
 `IStreamingReasoningProvider` — ADDITIVE, a capability a caller asks about with a type test,

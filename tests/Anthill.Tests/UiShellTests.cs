@@ -1033,11 +1033,13 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.43: Chat + Colony is a full-page layer BEHIND the conversation (the SOW's required
-    /// presentation), the chat floating above it as a frosted, readable panel, and it reuses the
-    /// canonical topology. The properties pinned here are the ones that made every earlier shape
-    /// wrong somewhere: a second canvas, a 0×0 mount, a stowaway composer, a silent no-op below
-    /// 900px. One canvas element, one mount mechanism (re-parenting), the layer in the page.
+    /// v0.3.8.45: Chat + Colony is a SPLIT page. The v0.3.8.43 frosted-overlay presentation was
+    /// corrected from the field twice — the desktop tester could not see the colony (it drew,
+    /// centred, exactly under the opaque panel), and the operator's ruling was explicit: "should
+    /// be a split page not the chat box on top of the colony." The properties pinned here are the
+    /// ones that made every earlier shape wrong somewhere: a second canvas, a 0×0 mount, a
+    /// stowaway composer, a silent no-op below 900px, and now an overlay occluding the map.
+    /// One canvas element, one mount mechanism (re-parenting), two working halves side by side.
     /// </summary>
     [Fact]
     public void ChatColony_IsALayer_ReusingTheOneCanvas()
@@ -1082,14 +1084,12 @@ public class UiShellTests
         // second composer beside the conversation's. Chat is the canonical entry surface.
         Assert.Contains(".chat-colony-mount #mission-bar{display:none;}", html);
 
-        // The layer sits BEHIND the conversation, which floats above it as a frosted panel.
-        Assert.Contains(".chat-colony-layer{position:absolute;inset:0;z-index:0;", html);
-        Assert.Contains("#page-chat.colony-open .chat-main{position:relative;z-index:1;", html);
-        Assert.Contains("backdrop-filter", html);
-        // The old side pane and its divider are gone — the SOW's closing clause, honored.
-        Assert.DoesNotContain("chat-colony-divider", html);
-        Assert.DoesNotContain("chat-colony-pane", html);
-        Assert.DoesNotContain("chat-colony-divider", js);
+        // The split itself: the colony pane is IN-FLOW beside the conversation — not an absolute
+        // overlay, not frosted glass over the map. Both halves are whole; neither occludes.
+        Assert.Contains(".chat-colony-layer{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1 1 52%;", html);
+        Assert.Contains("#page-chat.colony-open .chat-main{flex:1 1 48%;order:1;min-width:380px;}", html);
+        Assert.DoesNotContain("position:absolute;inset:0;z-index:0;display:flex;flex-direction:column", html);
+        Assert.DoesNotContain("backdrop-filter:blur(8px)", html);
 
         // Panning that loses the colony has an obvious way home, wired to the canonical reset.
         Assert.Contains("id=\"chat-colony-fit\"", html);
@@ -1102,6 +1102,31 @@ public class UiShellTests
 
         // Mobile is a clean switch, not a miniature unusable graph under the thread.
         Assert.Contains("#page-chat.colony-open .chat-main{display:none;}", html);
+    }
+
+    /// <summary>
+    /// v0.3.8.45 — the field reports behind the split, pinned so the overlay cannot return.
+    /// Desktop tester: "its like the colony behind the chat but you cant like see the colony" —
+    /// the map WAS drawing, centred exactly under the opaque centred panel. Operator: "should be
+    /// a split page not the chat box on top of the colony." A presentation where the conversation
+    /// floats over the map is a design this product has now rejected twice from live use.
+    /// </summary>
+    [Fact]
+    public void ChatColony_ColonyIsVisible_NotCentredBehindTheGlass()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // No frosted floating panel, no translucent conversation over the map.
+        Assert.DoesNotContain("backdrop-filter:blur(8px)", html);
+        Assert.DoesNotContain("color-mix(in srgb, var(--panel) 92%, transparent)", html);
+        // The camera centres the canvas it owns — no occlusion means no offset arithmetic.
+        var resize = BodyOf(js, "function resize()");
+        Assert.Contains("cx=W/2; cy=H/2;", resize);
+        // The pane is a sibling in the page's own flow: the conversation orders first, the
+        // colony second, and hiding the pane returns the row to a plain full-width chat.
+        Assert.Contains("order:2;border-left:1px solid var(--border);", html);
+        Assert.Contains(".chat-colony-layer[hidden]{display:none;}", html);
     }
 
     /// <summary>
