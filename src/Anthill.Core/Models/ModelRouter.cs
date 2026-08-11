@@ -105,8 +105,25 @@ public sealed class ModelRouter
         var route = AnthillRuntime.ModelRouting.GetValueOrDefault(role)
                     ?? AnthillRuntime.ModelRouting.GetValueOrDefault("fallback")
                     ?? new Dictionary<string, string> { ["provider"] = AnthillRuntime.DefaultModelProvider, ["model"] = AnthillRuntime.OllamaModel };
-        return (route.GetValueOrDefault("provider", AnthillRuntime.DefaultModelProvider),
-                route.GetValueOrDefault("model", AnthillRuntime.OllamaModel));
+
+        var provider = route.GetValueOrDefault("provider", AnthillRuntime.DefaultModelProvider);
+
+        // v0.3.8.41 — the Ollama model is only a default for the LOCAL provider.
+        //
+        // This read `route.GetValueOrDefault("model", AnthillRuntime.OllamaModel)`, so a route that
+        // named a provider and no model inherited whatever Ollama happened to be set to. Routing
+        // every ant to Claude Code produced `agent:claude-code : gemma4:31b` — an agent paired with
+        // a local model it has never heard of and cannot serve. The same applied to any keyed
+        // provider: an OpenAI route with no model would have carried gemma4:31b too.
+        //
+        // Decided by whether the provider is the local one rather than by naming agents, because
+        // the core may not know what an agent is. Empty means "this provider decides", which is
+        // exactly what GetClient already does for keyed providers via the catalogue default, and
+        // what a module-registered provider does for itself.
+        var isLocalProvider = string.Equals(provider, AnthillRuntime.DefaultModelProvider, StringComparison.OrdinalIgnoreCase);
+        var model = route.GetValueOrDefault("model", isLocalProvider ? AnthillRuntime.OllamaModel : "");
+
+        return (provider, model);
     }
 
     /// <summary>
@@ -139,9 +156,15 @@ public sealed class ModelRouter
         var endpoint = string.IsNullOrWhiteSpace(storedBaseUrl)
             ? info?.DefaultEndpoint ?? (keyed ? "" : AnthillRuntime.OllamaHost)
             : storedBaseUrl;
-        var effectiveModel = string.IsNullOrWhiteSpace(model)
-            ? info?.DefaultModel ?? AnthillRuntime.OllamaModel
-            : model;
+        // v0.3.8.41 — a provider the catalogue does not know keeps its own (possibly empty) model.
+        //
+        // `info?.DefaultModel ?? AnthillRuntime.OllamaModel` handed the Ollama tag to every provider
+        // the core has never heard of, which is the second half of the same defect as RoleRoute: an
+        // agent arrived carrying gemma4:31b. A module-registered provider describes itself, so the
+        // core substituting a local model name for it is guesswork dressed as a default.
+        var effectiveModel = !string.IsNullOrWhiteSpace(model) ? model
+            : info is not null ? (info.DefaultModel ?? AnthillRuntime.OllamaModel)
+            : "";
 
         // v3.8.33 — a LOCAL provider with no model chosen refuses, naming what to do about it.
         //
@@ -153,7 +176,13 @@ public sealed class ModelRouter
         //
         // Keyed providers are exempt: they DO have meaningful defaults, because the provider owns the
         // model list. Ollama serves whatever you pulled.
-        if (!keyed && string.IsNullOrWhiteSpace(effectiveModel))
+        // v0.3.8.41 — only a provider the SDK catalogue KNOWS is a local model server gets its
+        // model resolved from Ollama. A provider registered by a module — a CLI agent, say — is not
+        // a bag of local model tags, and asking LocalModelResolver to pick an Ollama model for
+        // Claude Code is a question with no possible answer. `info is null` is the decidable form
+        // of "the core does not know this provider", which is true precisely for the ones that
+        // describe themselves.
+        if (!keyed && info is not null && string.IsNullOrWhiteSpace(effectiveModel))
         {
             var choice = LocalModelResolver.Resolve(AnthillRuntime.OllamaModel, endpoint, _modelLister);
             if (!choice.Resolved) return UnavailableProvider.NoModelChosen(provider, choice.Reason);

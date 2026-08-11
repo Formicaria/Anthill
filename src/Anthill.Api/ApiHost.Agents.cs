@@ -40,6 +40,10 @@ public static partial class ApiHost
                 // draw an Install button the server would refuse — the same rule the workspace
                 // `deletable` flag follows.
                 ["install_enabled"] = AnthillRuntime.EnableOperatorShell,
+                // v0.3.8.41 — TOP LEVEL, because it is one directory for every agent rather than a
+                // property of each. It was emitted per-row and read from the top by the console, so
+                // the line telling an operator where their agents went never rendered at all.
+                ["install_dir"] = AgentCliInstaller.AgentHome,
                 ["install_disabled_reason"] = AnthillRuntime.EnableOperatorShell
                     ? null
                     : "Installing from the console runs a command on this host, so it needs the "
@@ -54,7 +58,7 @@ public static partial class ApiHost
                     ["installed"] = s.Installed,
                     ["version"] = s.Version,
                     ["unavailable_reason"] = s.Unavailable,
-                    ["install_command"] = s.Agent.InstallCommand,
+                    ["install_command"] = AgentCliCatalog.InstallHint(s.Agent),
                     // Printed, never run. A sign-in is an interactive act belonging to the person
                     // whose account it is, and Anthill holds no credential of theirs to use.
                     ["auth_command"] = s.Agent.AuthCommand,
@@ -93,7 +97,7 @@ public static partial class ApiHost
             // that wedges the host, which is exactly the case anyone will want the record for.
             Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "agent_install_started",
                 $"Operator {who} started installing {agent.DisplayName}.", antName: "operator",
-                metadata: new() { ["operator"] = who, ["agent"] = agent.Id, ["command"] = agent.InstallCommand });
+                metadata: new() { ["operator"] = who, ["agent"] = agent.Id, ["command"] = AgentCliCatalog.InstallHint(agent) });
 
             var result = AgentCliInstaller.Install(agent);
 

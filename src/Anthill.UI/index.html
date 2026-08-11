@@ -1227,6 +1227,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   background:rgba(34,211,238,.08);padding:1px 5px;border-radius:3px;}
 .agentcli-actions{display:flex;gap:8px;align-items:center;}
 .agentcli-msg{font-size:11px;margin-bottom:10px;}
+.agentcli-where{font-size:10px;color:var(--dim);margin-bottom:12px;}
 .mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
 /* v3.8.34: the mode row now says what it is FOR, and that skipping it is allowed. Four bare
    buttons read as a required choice a newcomer had no basis to make. */
@@ -3140,6 +3141,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <button class="btn btn-ghost" id="agentcli-reload">↺ Re-scan</button>
         </div>
+        <div id="agentcli-where" class="agentcli-where" style="display:none;"></div>
         <div id="agentcli-msg" class="agentcli-msg" style="display:none;"></div>
         <div id="agentcli-list"><div class="hud-state">Checking what's installed…</div></div>
       </div>

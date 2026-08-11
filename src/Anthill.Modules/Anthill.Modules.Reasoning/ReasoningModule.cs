@@ -48,6 +48,12 @@ public sealed class ReasoningModule : IAnthillModule
         // NotAvailable naming its install command when it is actually called.
         context.RegisterReasoningProvider(new AgentCliProviderFactory());
         context.RegisterCapabilityProbe(new OllamaCapabilityProbe(_ollamaHost));
+        // v0.3.8.41 — without this, routing an ant to Claude Code reported it as unfit for its own
+        // contract: ModelCapabilityCatalog falls through to TextOnly for a provider it has never
+        // heard of, which is right for an unknown model and wrong for a coding agent. Registered
+        // beside Ollama's probe because capabilities are a module's knowledge about its own
+        // providers, not something a shared name table in the SDK can carry.
+        context.RegisterCapabilityProbe(new AgentCapabilityProbe());
 
         context.Events.Publish(new ColonyEvent
         {

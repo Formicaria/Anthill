@@ -14,6 +14,30 @@ public interface IReasoningRuntimeOptions
 {
     /// <summary>Per-call deadline. Read on every request.</summary>
     int ModelCallTimeoutSeconds { get; }
+
+    /// <summary>
+    /// The absolute directory a provider that ACTS is confined to, or null when there is none.
+    /// v0.3.8.41.
+    ///
+    /// Most providers ignore this: an HTTP call to a model has no filesystem. It exists for the
+    /// command-line agents, which edit files and run commands in whatever directory their process
+    /// starts in — and a process started with no working directory inherits the API host's, which
+    /// is the operator's live checkout.
+    ///
+    /// That is the whole reason this member is here rather than a constructor argument. Anthill's
+    /// standing rule is that the active checkout is never an agent scratchpad; it is enforced for
+    /// Anthill's own coder by <c>SandboxWorkspace</c> and <c>WorkspacePathGuard</c>, and an agent
+    /// from another vendor does not get an exemption from it just because it arrived as a "model".
+    ///
+    /// NULL IS NOT A FALLBACK. A provider that acts must refuse when this is null rather than run
+    /// somewhere arbitrary. Defaulting to the current directory is the defect this was added to
+    /// close, and re-introducing it as a convenience would close nothing.
+    ///
+    /// Deliberately abstract rather than a default interface member returning null. Every
+    /// implementer has to answer, because the wrong answer here is silent and destructive, and the
+    /// one thing worse than an implementer being forced to think about it is one that is not.
+    /// </summary>
+    string? AgentWorkspaceRoot { get; }
 }
 
 /// <summary>
@@ -29,6 +53,15 @@ public sealed class DefaultReasoningRuntimeOptions : IReasoningRuntimeOptions
 {
     public static readonly DefaultReasoningRuntimeOptions Instance = new();
     public int ModelCallTimeoutSeconds => 120;
+
+    /// <summary>
+    /// None, because a provider built outside the colony has no colony workspace to be confined to.
+    ///
+    /// This is the safe answer rather than the empty one: an agent given this options object will
+    /// REFUSE to run rather than act in the test process's directory. A test that wants a writing
+    /// agent to run has to say where, which is exactly the decision that was missing in production.
+    /// </summary>
+    public string? AgentWorkspaceRoot => null;
 }
 
 /// <summary>

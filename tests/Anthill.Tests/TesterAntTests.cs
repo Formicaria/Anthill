@@ -67,6 +67,76 @@ public class TesterAntTests : IDisposable
         Assert.Contains("check_id=dotnet_version", r.Output);
     }
 
+    // ---- Which tree was judged -----------------------------------------------------------------
+    //
+    // v0.3.8.41. RunAllowlistedCheckTool resolves its working directory from whatever workspace is
+    // ambient, and a mission has TWO at different moments: the mission workspace, which is the
+    // source as the coder left it, and the disposable tree VerifyPatchSet materialises a patch set
+    // into. Only the second contains the proposal.
+    //
+    // A tester ant runs as its own task in the DAG, after VerifyPatchSet has returned and disposed
+    // its scope — so it resolves to the FIRST, and "3 checks passed" was recorded as though it said
+    // something about the patch. It did not; it was a true statement about a tree with no patch in
+    // it, which is the same shape as v3.8.22's build verdicts.
+    //
+    // These pin the distinction into the record. They do not claim the tester runs on the patched
+    // tree — it does not, and a test asserting otherwise would be describing a fix that is not here.
+
+    [Fact]
+    public void AReportFromTheMissionWorkspace_SaysTheTreeIsUnpatched()
+    {
+        var tester = Harness();
+        var (task, mission) = CheckTask("dotnet_version");
+
+        using var _ = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(new Anthill.Core.Workspaces.MissionWorkspace
+        {
+            Id = "ws-1", MissionId = mission.Id, Root = _dir,
+            State = Anthill.Core.Workspaces.WorkspaceState.Active,
+            // No MaterializedPatchSetId: this is the coder's tree, not a patched one.
+        });
+
+        var result = tester.Execute(task, mission);
+
+        Assert.Contains("UNPATCHED", result.Summary, StringComparison.Ordinal);
+        Assert.Contains(result.Evidence, e => e.Kind == "workspace");
+    }
+
+    [Fact]
+    public void AReportFromAMaterializedPatchTree_NamesThePatchSet()
+    {
+        var tester = Harness();
+        var (task, mission) = CheckTask("dotnet_version");
+
+        using var _ = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(new Anthill.Core.Workspaces.MissionWorkspace
+        {
+            Id = "verify-ps-7", MissionId = mission.Id, Root = _dir,
+            State = Anthill.Core.Workspaces.WorkspaceState.Active,
+            MaterializedPatchSetId = "ps-7",
+        });
+
+        var result = tester.Execute(task, mission);
+
+        Assert.Contains("ps-7", result.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("UNPATCHED", result.Summary, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The pass/fail counts are parsed out of the report lines, so the line naming the tree must not
+    /// be counted as a check. Worth pinning rather than assuming: the counting is substring-based,
+    /// and a tree description is free text that will change.
+    /// </summary>
+    [Fact]
+    public void TheTreeLine_IsNotCountedAsACheck()
+    {
+        var tester = Harness();
+        var (task, mission) = CheckTask("dotnet_version");
+
+        var result = tester.Execute(task, mission);
+
+        Assert.Contains("1 check(s)", result.Summary, StringComparison.Ordinal);
+        Assert.Single(result.Evidence, e => e.Kind == "check");
+    }
+
     // ---- TesterAnt behavior --------------------------------------------------------------------
 
     // v2.19.0: these three asserted against the JSON that Compat() embedded in the returned

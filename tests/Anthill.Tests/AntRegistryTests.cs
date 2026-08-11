@@ -6,6 +6,11 @@ using Xunit;
 
 namespace Anthill.Tests;
 
+// v0.3.8.41 — joins the serialised collection because two tests here now SET the rollout gates.
+// They read them before and got away with it while the default was `core` and the statics never
+// moved; with `full` the state is real, and a test that mutates process-global gates in parallel
+// with another that reads them is a flake waiting for a slow machine.
+[Collection("specialist-gates")]
 public class AntRegistryTests
 {
     [Fact]
@@ -106,11 +111,39 @@ public class AntRegistryTests
         Assert.Equal("Read the registry file.", task.Description);
     }
 
+    /// <summary>
+    /// A role whose gate is shut is visible-only, and the runtime refuses to resolve a worker for it.
+    ///
+    /// v0.3.8.41 — the gate is now forced shut by the test instead of being assumed. It used to be
+    /// assumed correctly for one reason only: the default roster was `core`, so the tester's rollout
+    /// flag was off in every process, and this read like a test about visible-only roles while
+    /// actually depending on the shipped default. With `full` as the default the tester's gate is
+    /// OPEN, `AntRuntime.Resolve` gets past the visible-only check, and the refusal it produces is
+    /// the scheduling-mode one — a different rule, correctly applied, failing a test that meant to
+    /// ask about a different thing.
+    ///
+    /// Both refusals are worth having, so both are asserted, each against the state that provokes it.
+    /// </summary>
     [Fact]
-    public void Runtime_RejectsVisibleOnlyRoles()
+    public void Runtime_RejectsVisibleOnlyRoles() => RosterGates.With(() =>
     {
         var task = new Task { AssignedAnt = "tester", AssignedWorker = "tester.dotnet_tester", TaskType = "verification", Description = "Run checks." };
         var error = Assert.Throws<InvalidOperationException>(() => AntRuntime.Resolve(task, MissionConstraints.None));
         Assert.Contains("visible-only", error.Message);
-    }
+    }, specialists: false, tester: false);
+
+    /// <summary>
+    /// And with the gate OPEN the tester is no longer visible-only — it is refused for the other
+    /// reason, because a policy-inserted role carries no parent when the planner produces it.
+    ///
+    /// This is the half the old test could never reach, and it is the half the full roster makes
+    /// normal: under the default profile every refusal here is a scheduling-mode refusal.
+    /// </summary>
+    [Fact]
+    public void Runtime_RejectsAPlannedPolicyInsertedRole() => RosterGates.With(() =>
+    {
+        var task = new Task { AssignedAnt = "tester", AssignedWorker = "tester.dotnet_tester", TaskType = "verification", Description = "Run checks." };
+        var error = Assert.Throws<InvalidOperationException>(() => AntRuntime.Resolve(task, MissionConstraints.None));
+        Assert.Contains("PolicyInserted", error.Message);
+    }, specialists: true, tier: ActivationTier.Full, tester: true);
 }
