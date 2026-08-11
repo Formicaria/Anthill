@@ -402,7 +402,7 @@ const PAGE_TITLES = {
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Coding Agents', chat:'Chat', projects:'Mission Workspaces', toolsview:'Tools',
+  agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -456,7 +456,7 @@ const IA = [
   // v0.3.8.42 (§5 of the truthfulness audit): "Projects" implied project management the backend
   // does not have. The backend concept is a mission workspace — the isolated checkout a mission
   // works in — so the surface now says that. Route unchanged; bookmarks keep working.
-  { type:'item', id:'projects', label:'Mission Workspaces', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },   // v0.3.8.47: truthful again — the backend now HAS projects
   { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
   // v0.3.8.41/42 — was `Scheduled` at `/scheduled`, and neither word was true.
   //
@@ -3886,6 +3886,18 @@ async function onObjCardToggle(det){
   }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
 }
 document.getElementById('ob-refresh')?.addEventListener('click',loadObjBoard);
+// v0.3.8.47: the self-improvement seed — fills the form, the OPERATOR presses Add. Deliberately
+// not a silent create: a standing objective that starts missions against the colony's own repo
+// is exactly the kind of thing that should be read before it exists.
+document.getElementById('obj-seed-improve')?.addEventListener('click',()=>{
+  const t=document.getElementById('obj-title'), c=document.getElementById('obj-charter'), m=document.getElementById('obj-maxruns');
+  if(t) t.value='Improve ANTHILL';
+  if(c) c.value='Review the ANTHILL codebase for technical debt, incomplete implementations, and missing tests. '
+    +'Each run: pick ONE small, verifiable improvement, propose it as a patch with tests, and stop. '
+    +'Never widen scope; every change goes through the normal review and approval pipeline.';
+  if(m) m.value='10';
+  setEl('obj-msg','Seeded — read it, adjust it, then press Add. Nothing was created yet.');
+});
 
 // -- Ant Inspector + Performance Observatory (v1.8.23, UI Phase 8) ------------
 const ANTOBS_CASTES=[
@@ -4166,15 +4178,29 @@ async function chatOpen(id){
             const tok=(t.completion_tokens!=null||t.prompt_tokens!=null)
               ? `<span class="chat-tok" title="prompt ${t.prompt_tokens??'?'} · completion ${t.completion_tokens??'?'} tokens">${(t.prompt_tokens??0)+(t.completion_tokens??0)} tok</span>`
               : '';
-            return `<div class="chat-turn ${mine?'user':'colony'}">
-              <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
-                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}${tok}
-                <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
-            </div>`;
+            // v0.3.8.47: ✎ on your own messages — puts the text back in the composer to revise
+            // and RESEND as a new turn. The record is an audit trail; editing never rewrites it.
+            //
+            // BUILT WHITESPACE-TIGHT on purpose (found live, "the bubbles look like shit"): the
+            // bubble renders with pre-wrap, so any newline or indentation inside this template
+            // becomes literal blank space in every message. One string, no stray characters.
+            return `<div class="chat-turn ${mine?'user':'colony'}">`
+              + `<span class="who"><span class="who-name">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>`
+              + (when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:'')
+              + tok
+              + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
+              + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
+              + chatRenderContent(t.content)
+              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`📄 ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
+              + `</div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
       // CSP is script-src 'self' with no unsafe-inline, so handlers are bound, never inlined.
-      thread.querySelectorAll('.chat-copy').forEach(b=>b.addEventListener('click',async ()=>{
+      thread.querySelectorAll('.chat-edit').forEach(b=>b.addEventListener('click',()=>{
+        const inp=document.getElementById('chat-input');
+        if(inp){ inp.value=chatTurnContents[+b.dataset.i]||''; inp.focus(); }
+      }));
+      thread.querySelectorAll('.chat-copy:not(.chat-edit)').forEach(b=>b.addEventListener('click',async ()=>{
         try{ await navigator.clipboard.writeText(chatTurnContents[+b.dataset.i]||''); b.textContent='✓'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
         catch{ b.textContent='✕'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
       }));
@@ -4324,6 +4350,39 @@ async function chatConsumeStream(response){
 
 /** @param mode 'chat' (default) or 'mission' — the same two modes the runtime has. A mission
  *  request goes through the escalation gate; under Ask the approval renders IN the thread. */
+/* v0.3.8.47 — attachments. Files staged on the composer (📎 or drag-and-drop), sent WITH the
+ * message, recorded against that turn. Text only and capped, mirroring the server's own rule —
+ * refusing here just says it sooner and kinder. */
+let chatStagedFiles=[];
+function chatRenderStaged(){
+  const host=document.getElementById('chat-attach-chips'); if(!host) return;
+  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">📄 ${escapeHtml(f.filename)}`
+    +` <span class="attach-size">${f.content.length>1024?Math.round(f.content.length/1024)+' KB':f.content.length+' B'}</span>`
+    +`<button class="attach-x" data-x="${i}" title="Remove" aria-label="Remove attachment">✕</button></span>`).join('');
+  host.querySelectorAll('.attach-x').forEach(b=>b.addEventListener('click',()=>{
+    chatStagedFiles.splice(+b.dataset.x,1); chatRenderStaged();
+  }));
+}
+async function chatStageFiles(fileList){
+  for(const file of fileList||[]){
+    if(chatStagedFiles.length>=8){ chatSetState('At most 8 attachments per message.'); break; }
+    if(file.size>262144){ chatSetState(`"${file.name}" is too large — 256 KB of text max.`); continue; }
+    const content=await file.text();
+    if(content.includes('\0')){ chatSetState(`"${file.name}" looks binary — attach text files.`); continue; }
+    chatStagedFiles.push({filename:file.name, content});
+  }
+  chatRenderStaged();
+}
+document.getElementById('chat-attach')?.addEventListener('click', ()=>document.getElementById('chat-attach-file')?.click());
+document.getElementById('chat-attach-file')?.addEventListener('change', e=>{ chatStageFiles(e.target.files); e.target.value=''; });
+// Drag-and-drop onto the composer area.
+const _composer=document.querySelector('.chat-composer');
+if(_composer){
+  ['dragover','dragenter'].forEach(ev=>_composer.addEventListener(ev, e=>{ e.preventDefault(); _composer.classList.add('dragging'); }));
+  ['dragleave','drop'].forEach(ev=>_composer.addEventListener(ev, e=>{ e.preventDefault(); _composer.classList.remove('dragging'); }));
+  _composer.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) chatStageFiles(e.dataTransfer.files); });
+}
+
 async function chatSend(mode){
   mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
@@ -4355,7 +4414,7 @@ async function chatSend(mode){
       const response=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/turns'),{
         method:'POST',
         headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
-        body:JSON.stringify({message:msg, mode:mode, stream:true}),
+        body:JSON.stringify({message:msg, mode:mode, stream:true, attachments:chatStagedFiles}),
         signal:chatStreamAbort.signal,
       });
       if((response.headers.get('content-type')||'').includes('text/event-stream')){
@@ -4366,7 +4425,7 @@ async function chatSend(mode){
         if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
     }else{
-      const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
+      const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
       if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
   }catch(e){
@@ -4374,6 +4433,7 @@ async function chatSend(mode){
   }
   finally{
     chatStreamAbort=null; chatSetComposerStreaming(false);
+    chatStagedFiles=[]; chatRenderStaged();
     chatStreamLiveEl?.remove(); chatStreamLiveEl=null;
     chatFingerprint='';   // the provisional bubble yields to the recorded turn
     apiCacheBust('/conversations'); loadChat();
@@ -4477,6 +4537,21 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   document.getElementById('chat-input')?.focus();
   loadChat();
 });
+// v0.3.8.47: import — the inverse of export. Reads a JSON file, sends it whole, opens the result.
+// The file is parsed HERE so a malformed one fails with a message instead of a 400 round-trip.
+document.getElementById('chat-import')?.addEventListener('click', ()=>document.getElementById('chat-import-file')?.click());
+document.getElementById('chat-import-file')?.addEventListener('change', async e=>{
+  const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+  try{
+    const parsed=JSON.parse(await file.text());
+    const turns=Array.isArray(parsed.turns)?parsed.turns:Array.isArray(parsed)?parsed:null;
+    if(!turns||!turns.length){ chatSetState('Import: no turns found in that file.'); return; }
+    const r=await api('/conversations/import','POST',{title:parsed.title||file.name.replace(/\.json$/i,''), turns},30000);
+    if(r&&r.success&&r.data){ chatSetState(r.message||'Imported.'); chatComposingNew=false; chatOpen(r.data.id); loadChat(); }
+    else chatSetState((r&&r.message)||'Import failed.');
+  }catch(err){ chatSetState('Import: that file is not valid JSON.'); }
+});
+
 // v0.3.8.46: the rail search box — debounced, and Escape clears it.
 let chatSearchTimer=null;
 document.getElementById('chat-search')?.addEventListener('input', e=>{
@@ -4591,7 +4666,70 @@ async function loadToolsView(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
-PAGE_ENTER['projects']=()=>loadProjects();
+PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
+
+/* v0.3.8.47 — real Projects. One is created with every new conversation; here they are made by
+ * hand: a name, a markdown purpose that travels with every message in the project, an optional
+ * working-directory path. Claude-projects shaped, ANTHILL rules: the purpose is context the
+ * model SEES, the path is recorded and shown to it — no surface claims wiring that isn't built. */
+async function loadProjectCards(){
+  const host=document.getElementById('project-cards'); if(!host) return;
+  const r=await api('/projects');
+  if(!(r&&r.success)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load projects.')}</div>`; return; }
+  const list=(r.data&&r.data.projects)||[];
+  if(!list.length){ host.innerHTML='<div class="hud-state">No projects yet — your first conversation creates one, or make one here.</div>'; return; }
+  host.innerHTML=list.map(p=>`<div class="card project-card${p.archived?' archived':''}" data-project="${escapeHtml(p.id)}" style="margin-bottom:8px;cursor:pointer;">
+    <div style="padding:11px 13px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <b style="color:var(--text);font-size:13px;">${escapeHtml(p.name||'Untitled project')}</b>
+        ${p.archived?'<span class="chat-tok">archived</span>':''}
+        <span style="flex:1"></span>
+        <span style="font-size:10px;color:var(--dim)">${p.conversations} conversation(s) · ${p.missions} mission(s)</span>
+      </div>
+      ${p.description_md?`<div style="font-size:11px;color:var(--muted);margin-top:5px;white-space:pre-wrap;">${escapeHtml(String(p.description_md).slice(0,240))}</div>`:''}
+      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">📁 ${escapeHtml(p.path)}</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-ghost project-chat">＋ New conversation here</button>
+        <button class="btn btn-ghost project-archive">${p.archived?'Unarchive':'Archive'}</button>
+      </div>
+    </div>
+  </div>`).join('');
+  host.querySelectorAll('.project-card').forEach(card=>{
+    const pid=card.dataset.project;
+    card.querySelector('.project-chat')?.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const r2=await api('/conversations','POST',{project_id:pid});
+      if(r2&&r2.success&&r2.data){ chatActiveId=r2.data.id; chatComposingNew=false; go('/chat'); chatOpen(r2.data.id); }
+    });
+    card.querySelector('.project-archive')?.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const arch=card.classList.contains('archived');
+      await api('/projects/'+encodeURIComponent(pid),'PATCH',{archived:!arch});
+      loadProjectCards();
+    });
+  });
+}
+document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+document.getElementById('project-new-btn')?.addEventListener('click', ()=>{
+  const f=document.getElementById('project-new-form'); if(f){ f.hidden=!f.hidden; if(!f.hidden) document.getElementById('project-new-name')?.focus(); }
+});
+document.getElementById('project-new-cancel')?.addEventListener('click', ()=>{
+  const f=document.getElementById('project-new-form'); if(f) f.hidden=true;
+});
+document.getElementById('project-new-create')?.addEventListener('click', async ()=>{
+  const name=document.getElementById('project-new-name')?.value.trim();
+  if(!name){ setEl('project-new-msg','A project needs a name.'); return; }
+  const r=await api('/projects','POST',{
+    name, description_md:document.getElementById('project-new-desc')?.value||'',
+    path:document.getElementById('project-new-path')?.value.trim()||null,
+  });
+  setEl('project-new-msg', r&&r.success?'Created.':(r&&r.message)||'Create failed.');
+  if(r&&r.success){
+    ['project-new-name','project-new-desc','project-new-path'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+    document.getElementById('project-new-form').hidden=true;
+    loadProjectCards();
+  }
+});
 PAGE_ENTER['toolsview']=()=>loadToolsView();
 document.getElementById('projects-reload')?.addEventListener('click',()=>loadProjects());
 document.getElementById('toolsview-reload')?.addEventListener('click',()=>loadToolsView());

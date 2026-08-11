@@ -47,6 +47,13 @@ public sealed record AgentCli
     public required IReadOnlyList<string> PromptArgs { get; init; }
 
     /// <summary>
+    /// v0.3.8.47: arguments for a turn whose stdout STREAMS as NDJSON events, for agents that
+    /// have such a mode. Null means the agent has no streaming mode and plain line streaming is
+    /// the honest best; Claude Code buffers a piped answer entirely, which is why this exists.
+    /// </summary>
+    public IReadOnlyList<string>? StreamArgs { get; init; }
+
+    /// <summary>
     /// Which package manager ships it: "npm", "pip", or "" for an agent Anthill cannot install.
     ///
     /// v0.3.8.41 — split out of the old free-text InstallCommand. A verbatim shell line could only
@@ -100,6 +107,11 @@ public static class AgentCliCatalog
             Vendor = "Anthropic",
             Binary = "claude",
             PromptArgs = new[] { "-p", "{prompt}" },
+            // stream-json emits one JSON event per line as the answer is produced; --verbose is
+            // required by the CLI for stream-json in print mode.
+            // --include-partial-messages adds stream_event token deltas; without it stream-json
+            // emits one assistant event per COMPLETE message and nothing trickles.
+            StreamArgs = new[] { "-p", "{prompt}", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
             PackageManager = "npm",
             Package = "@anthropic-ai/claude-code",
             AuthCommand = "claude",           // first run walks the operator through sign-in
@@ -193,4 +205,9 @@ public static class AgentCliCatalog
     /// </summary>
     public static IReadOnlyList<string> BuildArgs(AgentCli agent, string prompt) =>
         agent.PromptArgs.Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
+
+    /// <summary>v0.3.8.47: the streaming variant. Falls back to the plain args when the agent has none.</summary>
+    public static IReadOnlyList<string> BuildStreamArgs(AgentCli agent, string prompt) =>
+        (agent.StreamArgs ?? agent.PromptArgs)
+        .Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
 }

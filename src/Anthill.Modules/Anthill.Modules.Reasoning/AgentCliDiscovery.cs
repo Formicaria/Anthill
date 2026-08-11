@@ -196,4 +196,55 @@ public static class AgentCliDiscovery
 
         return (true, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult(), p.ExitCode);
     }
+
+    /// <summary>
+    /// v0.3.8.47 — the same run, with stdout delivered line by line as the agent produces it.
+    /// Lines rather than characters because that is what a pipe actually delivers from a child
+    /// process; pretending to a finer grain would be a fake trickle over real chunks. The
+    /// cancellation token (the caller passes ModelCallScope's) KILLS the process — an operator's
+    /// stop must reach the agent, not merely the reader. Stderr is still drained concurrently and
+    /// returned whole: it is diagnosis, not answer, and does not stream to the operator.
+    /// </summary>
+    internal static (bool Started, string Stdout, string Stderr, int ExitCode) RunStreaming(
+        string binary, IReadOnlyList<string> args, TimeSpan timeout, Action<string> onLine,
+        CancellationToken cancel, string? workingDirectory = null)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = Resolve(binary),
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        if (!string.IsNullOrWhiteSpace(workingDirectory)) psi.WorkingDirectory = workingDirectory;
+
+        using var p = new Process { StartInfo = psi };
+
+        try { if (!p.Start()) return (false, "", "", -1); }
+        catch (System.ComponentModel.Win32Exception) { return (false, "", "", -1); }
+        catch (System.IO.FileNotFoundException) { return (false, "", "", -1); }
+
+        using var reg = cancel.Register(() => { try { p.Kill(entireProcessTree: true); } catch { } });
+
+        var collected = new System.Text.StringBuilder();
+        var stderr = p.StandardError.ReadToEndAsync();
+        string? line;
+        while ((line = p.StandardOutput.ReadLine()) is not null)
+        {
+            collected.AppendLine(line);
+            try { onLine(line + "\n"); } catch { /* a broken sink must not kill the agent's run */ }
+        }
+
+        if (!p.WaitForExit((int)timeout.TotalMilliseconds))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { }
+            return (true, collected.ToString(), $"timed out after {timeout.TotalSeconds:0}s", -1);
+        }
+        if (cancel.IsCancellationRequested)
+            return (true, collected.ToString(), "cancelled by the operator", -1);
+
+        return (true, collected.ToString(), stderr.GetAwaiter().GetResult(), p.ExitCode);
+    }
 }
