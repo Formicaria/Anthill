@@ -1,9 +1,19 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.41** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.42** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
-**v0.3.8.41 changes one thing in the table below.** `roster_profile` now defaults to `full`, so the
+> v0.3.8.42 is the *UI truthfulness and cohesion* release: the console claims only what the
+> backend proves. Chat became the one mission entry (the four competing composers retired, each
+> leaving a path behind) and chat turns are ANSWERED, through the same router the roles use; the
+> topology opens beside the conversation through the one re-parented canvas; the Monitoring domain
+> dissolved into the homes its concepts already had; and the found-by-driving-it defects closed
+> (the fabricated role roster, cancelled-as-prose conversation state, double-submitting patch
+> mutations, configured-reported-as-connected, fitness graded against a route no call would use).
+> The governing audit is `docs/UI-CONTRACT-AUDIT.md`; §2 below still measures v0.3.8.40/41 and is
+> superseded only where that document says so.
+
+**v0.3.8.41 changed one thing in the table below.** `roster_profile` now defaults to `full`, so the
 twelve mission roles are enabled on a new installation and on any existing one that never touched
 the roster (`ConfigSchema` migrates only untouched legacy defaults; explicit choices and
 `disabled_roles` survive). Finalization was reordered so the archivist writes its memory candidates

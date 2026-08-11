@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Anthill.Api;
 using Anthill.Core.Configuration;
 using Xunit;
 
@@ -339,23 +340,24 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// A rejected dispatch must show the error and hand the directive back, not clear the box and
-    /// go quiet. v2.16.0 did `input.value=''` before the request and swallowed the failure.
+    /// A rejected dispatch must surface the error, not go quiet. v2.16.0 swallowed the failure
+    /// entirely. v0.3.8.42 (§3): the typed-directive composers are retired — dispatch's one
+    /// remaining production caller is Re-run — but the failure-surfacing rules survive it: the
+    /// error is shown, the double-submit guard holds, and the caller learns whether it worked.
     /// </summary>
     [Fact]
-    public void Dispatch_SurfacesFailures_AndKeepsTheTypedDirective()
+    public void Dispatch_SurfacesFailures()
     {
         var js = Ui("app.js");
-        var dispatch = BodyOf(js, "async function dispatchMission(inputId)");
-        Assert.Contains("const typed=input.value;", dispatch);
-        Assert.Contains("else { input.value=typed; }", dispatch);
-        Assert.Contains("msDispatchInFlight", dispatch);          // double-submit guard
 
         var submit = BodyOf(js, "async function submitMissionGoal(goal)");
         Assert.Contains("msShowDispatchError", submit);
+        Assert.Contains("msDispatchInFlight", submit);            // double-submit guard
         Assert.Contains("return true;", submit);
         Assert.Contains("return false;", submit);
 
+        // The one production caller, and the surface its errors land on.
+        Assert.Contains("submitMissionGoal(goal)", BodyOf(js, "async function reRunJob(id)"));
         Assert.Contains("id=\"ms-error\"", Ui("index.html"));
     }
 
@@ -637,14 +639,12 @@ public class UiShellTests
     /// <summary>
     /// v3.1.1, restated for the grid: every control that starts or reviews work must be REACHABLE.
     ///
-    /// The defect: the Mission Composer lived only on the classic overview grid, which the
-    /// topology workspace hid, so from v2.15.0 the execution mode selector and the plan REVIEW
-    /// step had no reachable control at all. The endpoint, the renderer and the button all
-    /// existed; nothing could reach them. CallSiteAudit cannot see this class of defect — it
-    /// proves a C# declaration has a production consumer, and says nothing about whether a UI
-    /// control has a path to it.
-    ///
-    /// Being present in the markup is not the same as being reachable.
+    /// The original defect: the Mission Composer lived only on the classic overview grid, which
+    /// the topology workspace hid, so from v2.15.0 the plan-review step had no reachable control.
+    /// v0.3.8.42 (§3) retired the composer deliberately — Chat is the one mission entry — so the
+    /// property this test defends is restated once more: the widget that replaced the composer
+    /// must REACH the canonical entry, from the same dashboard slot. A card that says "start in
+    /// Chat" and goes nowhere would be the v3.1.1 defect wearing the new design.
     /// </summary>
     [Fact]
     public void EveryWorkWorkflowControl_IsReachableOnTheDashboard()
@@ -652,7 +652,7 @@ public class UiShellTests
         var html = Ui("index.html");
         var app = Ui("app.js");
 
-        // The composer is a registered grid widget, so it renders on the default dashboard.
+        // The widget is still registered, so it renders on the default dashboard.
         Assert.Contains("body:'ov-composer-body'", app.Replace(" ", ""));
         Assert.Contains("id=\"ov-composer-body\"", html);
 
@@ -661,9 +661,11 @@ public class UiShellTests
         Assert.True(open >= 0 && close > open, "ov-composer-body wrapper not found or unterminated.");
         var body = html[open..close];
 
-        Assert.Contains("id=\"ov-preview-btn\"", body);   // plan review
-        Assert.Contains("id=\"ov-modes\"", body);         // execution mode selector
-        Assert.Contains("id=\"ov-plan\"", body);          // where the reviewed plan renders
+        // The card reaches Chat, and no composer remnant survives in it.
+        Assert.Contains("go('/chat')", body);
+        Assert.DoesNotContain("ov-mission-input", body);
+        Assert.DoesNotContain("ov-preview-btn", body);
+        Assert.DoesNotContain("ov-modes", body);
     }
 
     /// <summary>
@@ -895,9 +897,10 @@ public class UiShellTests
         Assert.Contains("cls:'mission-node'", composer.Value);
         Assert.Contains("if(cls) existing.classList.add(cls)", appJs);
 
-        // and the rules it depends on must still be scoped that way, or the class is cargo
+        // and the rules it depends on must still be scoped that way, or the class is cargo.
+        // v0.3.8.42 (§3): .mn-send left this scope — the composer retired and the rule now styles
+        // the chat composer's button globally — so .mn-prompt is the remaining scoped dependency.
         Assert.Contains(".mission-node .mn-prompt", html);
-        Assert.Contains(".mission-node .mn-send", html);
     }
 
     /// <summary>
@@ -925,5 +928,286 @@ public class UiShellTests
         // back to the CSS floor and scroll, never grow the page to fit a long list.
         Assert.Contains("--dg-widget-h", body);
         Assert.Contains("desired < cap", body);
+    }
+
+    /// <summary>
+    /// v0.3.8.42: the console's terminal-status set is keyed to the registry's, derived rather
+    /// than restated — the same rule <c>EveryEndingStatus_IsRecognisedAsTerminal</c> enforces
+    /// server-side, asserted across the boundary.
+    ///
+    /// Three console call sites each carried their own subset. The active-job poller omitted
+    /// 'cancelled' and 'timed_out', so cancelling a run from the jobs list left the poller running
+    /// forever and the composer locked — the exact defect v3.8.34 fixed for 'escalated', one
+    /// status over. The jobs list omitted 'timed_out', leaving a timed-out run with no View Result
+    /// and no Re-run. The set now has a single home (JOB_TERMINAL_STATUSES) and this test fails if
+    /// a call site re-inlines its own copy or the registry ends a job on a status the console
+    /// does not recognise.
+    /// </summary>
+    [Fact]
+    public void ConsoleTerminalStatuses_MatchTheRegistry()
+    {
+        var js = Ui("app.js");
+        var m = Regex.Match(js, @"JOB_TERMINAL_STATUSES\s*=\s*\[([^\]]*)\]");
+        Assert.True(m.Success, "JOB_TERMINAL_STATUSES not found in app.js");
+        var jsSet = Regex.Matches(m.Groups[1].Value, @"'([^']+)'").Select(x => x.Groups[1].Value).ToHashSet();
+
+        // Every status the registry can end a job on, derived from the real mapper.
+        var vocabulary = new string?[]
+        {
+            "completed", "completed_verified", "completed_unverified", "partial", "failed",
+            "failed_retryable", "failed_permanent", "timed_out", "cancelled", "escalated",
+            "compensating", "compensated", "rollback_failed", null, "",
+        };
+        var ending = vocabulary.Select(v => ApiJobRegistry.StatusFromOutcome(v, null))
+            .Concat(vocabulary.Select(v => ApiJobRegistry.StatusFromOutcome("completed", v)))
+            .Where(ApiJobRegistry.IsTerminalStatus)
+            .Distinct().ToList();
+        Assert.True(ending.Count >= 4, "status mapping looks broken");
+
+        var missing = ending.Where(s => !jsSet.Contains(s!)).ToList();
+        Assert.True(missing.Count == 0,
+            "the registry ends jobs on statuses the console does not treat as terminal, so the "
+            + "composer stays locked and the run gets no View Result: " + string.Join(", ", missing));
+
+        // The call sites consume the shared set — a re-inlined copy is how this drifted twice.
+        Assert.Contains("jobIsTerminal(j.status)", BodyOf(js, "async function pollActiveJob()"));
+        Assert.Contains("jobIsTerminal(j.status)", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
+        Assert.Contains("jobIsTerminal(j.status)", BodyOf(js, "async function pollJobs()"));
+    }
+
+    /// <summary>
+    /// v0.3.8.42 (§3): Chat is the ONE mission entry. The three composers that competed with it —
+    /// the colony page's mission bar, the Missions console box, the dashboard's Mission Command —
+    /// are retired, and every former entry point now REACHES Chat instead of quietly disappearing
+    /// (the v3.1.1 lesson: a control removed without a path left behind is a dead end, not a
+    /// consolidation). Stopping work follows the entry: the chat header carries a Stop wired to
+    /// the conversation cancel, shown exactly while the colony is working, and the jobs list keeps
+    /// its durable per-run Cancel.
+    /// </summary>
+    [Fact]
+    public void Chat_IsTheOneMissionEntry_AndCarriesTheStop()
+    {
+        var js = Ui("app.js");
+        var html = Ui("index.html");
+
+        // The retired composers are GONE — inputs, send buttons and their wiring.
+        foreach (var relic in new[] { "id=\"mission-input\"", "id=\"send-btn\"",
+                 "id=\"ms-mission-input\"", "id=\"ms-send-btn\"", "id=\"ov-mission-input\"", "id=\"ov-send-btn\"" })
+            Assert.DoesNotContain(relic, html);
+        Assert.DoesNotContain("function dispatchMission", js);
+        Assert.DoesNotContain("setComposerRunState", js);
+
+        // Every former entry surface points at the canonical one.
+        Assert.Equal(3, Regex.Matches(html, "Start a mission in Chat").Count);
+        Assert.Contains("data-onclick=\"go('/chat')\"", html);
+
+        // The chat Stop: present in the header, wired to the conversation cancel, and shown only
+        // while the colony is actually working — a visible Stop over an idle conversation would
+        // claim there is something to stop.
+        Assert.Contains("id=\"chat-stop\"", html);
+        Assert.Contains("await convCancel(chatActiveId)", js);
+        // v0.3.8.42: `doing` became a truthful vocabulary — Stop exists exactly while something
+        // stoppable is running; "unanswered" is a failure state, not work.
+        Assert.Contains("stopBtn.hidden = !(d.doing||'').startsWith('running mission')", js);
+        Assert.Contains("/conversations/'+id+'/cancel'", BodyOf(js, "async function convCancel(id)"));
+
+        // Found by driving the real page: Doing() answers "cancelled" as PROSE, so a truthiness
+        // check rendered a stopped conversation as "Working…" with a live Stop, forever, and
+        // masked refusal summaries. The detail endpoint now carries the flag the list always had,
+        // and the console consumes the field rather than string-matching the prose.
+        Assert.Contains("[\"cancelled\"] = state.Cancelled", ApiHostSource.All());
+        Assert.Contains("d.cancelled ? 'Stopped", js);
+        // The refusal summary outlives the refresh that used to overwrite it.
+        var send = BodyOf(js, "async function chatSend(mode)");
+        Assert.Contains("await chatOpen(chatActiveId);", send);
+        Assert.Contains("if(note) chatSetState(note);", send);
+
+        // The jobs list keeps the durable per-run Cancel.
+        Assert.Contains("cancelJob", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
+
+        // And the MISSION request itself lives in chat — mode:'mission' through the same
+        // escalation-gated turn endpoint, so "chat is the one mission entry" is literally true.
+        Assert.Contains("id=\"chat-work\"", html);
+        Assert.Contains("chatSend('mission')", js);
+        Assert.Contains("mode:mode", BodyOf(js, "async function chatSend(mode)"));
+    }
+
+    /// <summary>
+    /// v0.3.8.42: Chat + Colony is a resizable pane BESIDE the conversation, and it reuses the
+    /// canonical topology. The properties pinned here are the ones that made the old side panel
+    /// wrong: a fixed 400px strip that squeezed a spatial map and vanished below 900px, and the
+    /// standing risk of a second canvas. One canvas element, one mount mechanism (re-parenting),
+    /// the pane in the page, the old strip gone.
+    /// </summary>
+    [Fact]
+    public void ChatColony_IsALayer_ReusingTheOneCanvas()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // The layer and its controls exist; the retired side panel does not.
+        Assert.Contains("id=\"chat-colony-layer\"", html);
+        Assert.Contains("id=\"chat-colony-mount\"", html);
+        Assert.Contains("id=\"chat-colony-full\"", html);
+        Assert.DoesNotContain("id=\"chat-side\"", html);
+        Assert.DoesNotContain("chat-side-hd", html);
+
+        // ONE canvas host element in the document, ever. The layer must be fed by re-parenting
+        // the canonical node, not by a Chat-specific renderer.
+        Assert.Single(Regex.Matches(html, "id=\"colony-canvas-area\""));
+        var toggle = BodyOf(js, "function chatToggleColony(open)");
+        Assert.Contains("topologyMountTo(chatColonyOpen?'chat':'home')", toggle);
+        Assert.DoesNotContain("createElement('canvas')", toggle);
+
+        // The toggle is a real toggle: pressed state exposed, both directions through one function.
+        Assert.Contains("aria-pressed", Regex.Match(html, "<button[^>]*id=\"chat-colony-toggle\"[^>]*>").Value);
+        Assert.Contains("setAttribute('aria-pressed'", toggle);
+
+        // Escape closes the layer, but never out from under a modal that owns the key.
+        Assert.Contains(".ui-modal-ov", js[js.IndexOf("e.key!=='Escape'||!chatColonyOpen", StringComparison.Ordinal)..][..600]);
+
+        // Leaving for the full Colony page hands the canvas home BEFORE navigating, and re-entering
+        // Chat reclaims it — the two directions of the same hand-off.
+        Assert.Contains("chatToggleColony(false); go('/colony/topology');", js);
+        Assert.Contains("topologyMountTo('chat')", BodyOf(js, "PAGE_ENTER['chat']=()=>"));
+
+        // Topology failure stays a topology-sized problem: the layer reports it, chat survives.
+        Assert.Contains("The colony view could not load.", toggle);
+
+        // Two defects found by driving the real page, pinned so they cannot return:
+        // #colony-canvas-area sizes itself with flex:1, so its host must be a flex column — as a
+        // plain block the canvas measured 0×0 and the pane was an empty void…
+        Assert.Matches(new Regex(@"\.chat-colony-mount\{[^}]*display:flex;flex-direction:column;"), html);
+        // …and the colony page's mission bar lives INSIDE the canvas area; unhidden it becomes a
+        // second composer beside the conversation's. Chat is the canonical entry surface.
+        Assert.Contains(".chat-colony-mount #mission-bar{display:none;}", html);
+
+        // The pane is resizable from a real, keyboard-reachable divider…
+        Assert.Contains("id=\"chat-colony-divider\"", html);
+        Assert.Contains("chat-colony-divider')", js);
+        // …and on narrow screens it overlays full-width instead of shrinking into a strip. The
+        // old panel's failure mode was display:none below 900px — a silent no-op button.
+        Assert.Contains(".chat-colony-pane{position:absolute;inset:0;", html);
+        Assert.DoesNotContain(".chat-colony-pane{display:none", html);
+    }
+
+    /// <summary>
+    /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
+    /// "Projects" implied project management over what is really GET /workspaces — per-mission
+    /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.
+    /// Quick actions "Patch Colony" and "Run Diagnostic" were navigation dressed as mutations:
+    /// clicking neither patched nor diagnosed anything.
+    /// </summary>
+    [Fact]
+    public void SurfacesClaimOnlyWhatTheBackendProvides()
+    {
+        var js = Ui("app.js");
+        var html = Ui("index.html");
+
+        Assert.Contains("label:'Mission Workspaces'", js);
+        Assert.Contains("<h1>Mission Workspaces</h1>", html);
+
+        // No top-level Scheduled entry; the objectives board stays reachable through Automation.
+        Assert.DoesNotContain("label:'Scheduled'", js);
+        Assert.Contains("route:'/operations/automation/objectives'", js);
+
+        // Navigation carries navigational labels.
+        Assert.DoesNotContain("Patch Colony", html);
+        Assert.DoesNotContain("Run Diagnostic", html);
+    }
+
+    /// <summary>
+    /// v0.3.8.42 (§7): one home per concept. The Monitoring domain was a second door to five
+    /// concepts that already had homes — its Activity/Events/Results moved in with Missions, its
+    /// Changes tab duplicated Changes &amp; Approvals, "Autonomous Runs" opened the Director page
+    /// under a second name, and the two homelab views went home to Infrastructure. Dissolving a
+    /// domain must not break a bookmark: every route that lived there resolves through
+    /// ROUTE_ALIAS, and both route consumers consult it.
+    /// </summary>
+    [Fact]
+    public void MovedRoutes_StayReachable_AndConceptsHaveOneHome()
+    {
+        var js = Ui("app.js");
+
+        Assert.DoesNotContain("id:'monitoring'", js);
+
+        foreach (var old in new[]{ "/monitoring/activity", "/monitoring/activity/events",
+            "/monitoring/activity/results", "/monitoring/activity/changes",
+            "/monitoring/activity/runs", "/monitoring/activity/infra", "/monitoring/alerts",
+            "/scheduled" })
+            Assert.Contains("'" + old + "':", js);
+
+        Assert.Contains("ROUTE_ALIAS[h]", BodyOf(js, "function router()"));
+        Assert.Contains("ROUTE_ALIAS[route]", BodyOf(js, "function go(route,push)"));
+
+        // The moved pages appear in exactly one IA route each — a second appearance is how the
+        // duplicate-door pattern starts over.
+        Assert.Single(Regex.Matches(js, "page:'events'"));
+        Assert.Single(Regex.Matches(js, "page:'activity'"));
+        Assert.Single(Regex.Matches(js, "page:'results'"));
+    }
+
+    /// <summary>
+    /// v0.3.8.42 (§13): chat quality-of-life, and the properties that keep it safe. The thread
+    /// re-renders only when its fingerprint changes (the 4s poll must cost nothing and destroy
+    /// nothing), the reading position is preserved unless the reader was already at the bottom
+    /// (the v2.17.1 mission-thread lesson, applied to chat), fenced code renders through
+    /// escapeHtml FIRST with only &lt;pre&gt;&lt;code&gt; structure added — no markdown engine, no
+    /// new sanitisation surface — and Up-arrow recall never hijacks a non-empty draft.
+    /// </summary>
+    [Fact]
+    public void ChatThread_RefreshesLive_WithoutDestroyingTheReader()
+    {
+        var js = Ui("app.js");
+        var open = BodyOf(js, "async function chatOpen(id)");
+
+        // Fingerprinted rendering: unchanged polls skip the rebuild entirely.
+        Assert.Contains("print!==chatFingerprint", open);
+        Assert.Contains("if(changed)", open);
+        // Scroll preserved unless already following the bottom.
+        Assert.Contains("nearBottom", open);
+        Assert.Contains("thread.scrollTop = keepTop", open);
+
+        // The poll runs only while the Chat page is on screen.
+        Assert.Contains("page-chat')?.classList.contains('active')", js);
+
+        // Escape-first code rendering: the only unescaped structure is the pre/code wrapper.
+        var render = BodyOf(js, "function chatRenderContent(text)");
+        Assert.Contains("escapeHtml(parts[i])", render);
+        Assert.Contains("'<pre class=\"chat-code\"><code>'+escapeHtml(code)", render);
+
+        // Up-arrow recall only into an EMPTY composer.
+        Assert.Contains("e.key==='ArrowUp' && chatLastSent && !e.target.value", js);
+
+        // Copy exists per message and reads content from JS state, not from DOM attributes.
+        Assert.Contains("chat-copy", js);
+        Assert.Contains("chatTurnContents[+b.dataset.i]", js);
+    }
+
+    /// <summary>
+    /// v0.3.8.42 (§9/§14): a failed role registry is a STATE the operator sees, never a fiction.
+    /// buildNodes used to invent six "Legacy executable ant" roles whenever /colony/registry had
+    /// not answered, and the legend padded itself from a hardcoded list — so a dead endpoint drew
+    /// a healthy colony. Now: no data → core nodes only, and the legend names the failure with a
+    /// retry beside it; stale data → cached roles stay visible, marked stale with when and why.
+    /// </summary>
+    [Fact]
+    public void RegistryFailure_IsAState_NeverAFabricatedRoster()
+    {
+        var js = Ui("app.js");
+
+        Assert.DoesNotContain("Legacy executable ant", js);
+        Assert.DoesNotContain("CHUD_CASTES=[", js);
+
+        // The failure is captured with its reason, in both the rejected and unreachable shapes…
+        Assert.Contains("colonyRegistryProblem={message:(r&&r.message)||'registry request rejected'", js);
+        Assert.Contains("colonyRegistryProblem={message:e.message||'registry unreachable'", js);
+        // …rendered where the roles would be, with retry beside it, distinguishing stale from absent…
+        var legend = BodyOf(js, "function renderColonyLegend()");
+        Assert.Contains("Roles are STALE", legend);
+        Assert.Contains("Role registry unavailable", legend);
+        Assert.Contains("chud-legend-retry", legend);
+        // …and retry busts the cache, or it would re-read the same failure for 30 seconds.
+        Assert.Contains("apiCacheBust('/colony/registry')", BodyOf(js, "function colonyRegistryRetry()"));
     }
 }

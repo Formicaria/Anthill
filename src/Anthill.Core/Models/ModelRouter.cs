@@ -99,6 +99,18 @@ public sealed class ModelRouter
             ? (AnthillRuntime.ModelPriorityProvider, AnthillRuntime.ModelPriorityModel)
             : RoleRoute(role);
 
+    /// <summary>
+    /// A route with its model actually resolved, or the reason it could not be. v0.3.8.41.
+    ///
+    /// <paramref name="Resolved"/> false means a call to this route would REFUSE — it is not a
+    /// degraded answer to be displayed as if it were a model. A reader showing an unresolved route
+    /// must show <paramref name="Reason"/>, which names the remedy.
+    /// </summary>
+    public sealed record ResolvedRoute(string Provider, string Model, bool Resolved, string Reason)
+    {
+        public static ResolvedRoute Ok(string provider, string model) => new(provider, model, true, "");
+    }
+
     /// <summary>The route configured for this role specifically, ignoring any priority override.</summary>
     public (string Provider, string Model) RoleRoute(string role)
     {
@@ -146,48 +158,92 @@ public sealed class ModelRouter
     /// Construction is cheap (each client shares one static HttpClient), so this costs an
     /// allocation and buys correctness.
     /// </summary>
-    private IModelClient GetClient(string provider, string model)
+    /// <summary>
+    /// Where calls to this provider go. ONE implementation. v0.3.8.41.
+    ///
+    /// Extracted because <see cref="ResolveEffectiveModel"/> needs the same endpoint
+    /// <see cref="GetClient"/> uses — <c>LocalModelResolver</c> asks the host what it has installed,
+    /// so a second copy of this expression would let the reported model and the called model be
+    /// resolved against different hosts.
+    /// </summary>
+    private string EndpointFor(string provider)
+    {
+        var info = ProviderCatalog.Find(provider);
+        var keyed = ProviderCatalog.KeyedProviders.Contains(provider);
+        var stored = _memory?.GetProviderBaseUrl(provider);
+        return string.IsNullOrWhiteSpace(stored)
+            ? info?.DefaultEndpoint ?? (keyed ? "" : AnthillRuntime.OllamaHost)
+            : stored;
+    }
+
+    /// <summary>
+    /// The model a call would ACTUALLY use, and when it would not, why. v0.3.8.41.
+    ///
+    /// THE DEFECT THIS EXISTS FOR. Model resolution had two halves living in different places. The
+    /// CONFIGURED route came from <see cref="RoleRoute"/> and could legitimately carry an empty
+    /// model since v3.8.33 — "no model chosen" became an honest state. The EFFECTIVE model was then
+    /// worked out inside <see cref="GetClient"/>, on the call path, where the catalogue default and
+    /// <c>LocalModelResolver</c>'s sole-installed-model rule were applied.
+    ///
+    /// Everything that DISPLAYS a route read the first and everything that CALLS a model used the
+    /// second, so they answered different questions and nothing made them agree. On this project's
+    /// own machine that produced seven boot warnings of the form "role 'coder' is routed to
+    /// `ollama:`, which is missing: structured output" — grading the capabilities of a model whose
+    /// name is the empty string, on a host with `llama3.1:8b` installed and working. `builder` came
+    /// back FIT and `coder` UNFIT from the same empty string, which is the tell: the report was a
+    /// function of the role's requirements and nothing else.
+    ///
+    /// This is the same defect v3.8.2 fixed in the same report — fitness computed against a source
+    /// the call path does not use — returning through a different door once an empty model became
+    /// legal. So the resolution is now ONE method that both the caller and every reader go through.
+    /// </summary>
+    public ResolvedRoute ResolveEffectiveModel(string provider, string configuredModel)
     {
         var info = ProviderCatalog.Find(provider);
         var keyed = ProviderCatalog.KeyedProviders.Contains(provider);
 
-        var apiKey = keyed ? _memory?.GetDecryptedApiKey(provider) : null;
-        var storedBaseUrl = _memory?.GetProviderBaseUrl(provider);
-        var endpoint = string.IsNullOrWhiteSpace(storedBaseUrl)
-            ? info?.DefaultEndpoint ?? (keyed ? "" : AnthillRuntime.OllamaHost)
-            : storedBaseUrl;
         // v0.3.8.41 — a provider the catalogue does not know keeps its own (possibly empty) model.
         //
         // `info?.DefaultModel ?? AnthillRuntime.OllamaModel` handed the Ollama tag to every provider
         // the core has never heard of, which is the second half of the same defect as RoleRoute: an
         // agent arrived carrying gemma4:31b. A module-registered provider describes itself, so the
         // core substituting a local model name for it is guesswork dressed as a default.
-        var effectiveModel = !string.IsNullOrWhiteSpace(model) ? model
+        var model = !string.IsNullOrWhiteSpace(configuredModel) ? configuredModel
             : info is not null ? (info.DefaultModel ?? AnthillRuntime.OllamaModel)
             : "";
 
-        // v3.8.33 — a LOCAL provider with no model chosen refuses, naming what to do about it.
+        if (keyed || info is null || !string.IsNullOrWhiteSpace(model))
+            return ResolvedRoute.Ok(provider, model);
+
+        // The ROUTE's configured model, not the global one. v0.3.8.41.
         //
-        // This used to be impossible to reach because `AnthillRuntime.OllamaModel` defaulted to
-        // `llama3.1:8b`, so an operator who had never chosen a model still got one — and on a host
-        // without that exact tag every call failed with `model not found`, which reads as a broken
-        // colony rather than as an unmade decision. Empty is now an honest state and this is where it
-        // is answered, once, for every role that routes here.
-        //
-        // Keyed providers are exempt: they DO have meaningful defaults, because the provider owns the
-        // model list. Ollama serves whatever you pulled.
-        // v0.3.8.41 — only a provider the SDK catalogue KNOWS is a local model server gets its
-        // model resolved from Ollama. A provider registered by a module — a CLI agent, say — is not
-        // a bag of local model tags, and asking LocalModelResolver to pick an Ollama model for
-        // Claude Code is a question with no possible answer. `info is null` is the decidable form
-        // of "the core does not know this provider", which is true precisely for the ones that
-        // describe themselves.
-        if (!keyed && info is not null && string.IsNullOrWhiteSpace(effectiveModel))
-        {
-            var choice = LocalModelResolver.Resolve(AnthillRuntime.OllamaModel, endpoint, _modelLister);
-            if (!choice.Resolved) return UnavailableProvider.NoModelChosen(provider, choice.Reason);
-            effectiveModel = choice.Model;
-        }
+        // This read `AnthillRuntime.OllamaModel` — a second read of a global that
+        // `RoleRoute` has already consulted and, for a per-role route, deliberately overridden. A
+        // role explicitly routed to Ollama with no model of its own would have had the colony-wide
+        // tag substituted here, behind the route's back. We only reach this line when the resolved
+        // model is blank, so passing the route's own (blank) value is both correct and one fewer
+        // mutable static on the path.
+        var choice = LocalModelResolver.Resolve(configuredModel, EndpointFor(provider), _modelLister);
+        return choice.Resolved
+            ? ResolvedRoute.Ok(provider, choice.Model)
+            : new ResolvedRoute(provider, "", false, choice.Reason);
+    }
+
+    private IModelClient GetClient(string provider, string model)
+    {
+        var keyed = ProviderCatalog.KeyedProviders.Contains(provider);
+
+        var apiKey = keyed ? _memory?.GetDecryptedApiKey(provider) : null;
+        var endpoint = EndpointFor(provider);
+
+        // The resolution — catalogue default, then the sole-installed-model rule for a local
+        // provider — now lives in ResolveEffectiveModel, which every reporting surface also calls.
+        // A LOCAL provider with no model chosen still refuses here, naming what to do about it
+        // (v3.8.33); what changed in v0.3.8.41 is only that the refusal and the answer are computed
+        // in one place instead of two.
+        var resolution = ResolveEffectiveModel(provider, model);
+        if (!resolution.Resolved) return UnavailableProvider.NoModelChosen(provider, resolution.Reason);
+        var effectiveModel = resolution.Model;
 
         if (keyed) return ReasoningProviders.Resolve(provider, effectiveModel, apiKey, endpoint);
 
