@@ -154,6 +154,63 @@ public static class ReasoningProviders
     {
         public static readonly RuntimeOptions Instance = new();
         public int ModelCallTimeoutSeconds => AnthillRuntime.ModelCallTimeoutSeconds;
+
+        /// <summary>
+        /// The agent workspace, absolute, or null when the runtime has not established one.
+        ///
+        /// <c>AllowedWorkspaceRoot</c> is the root every other actor is already confined to, so a
+        /// writing agent is confined to the SAME place rather than somewhere invented for it — one
+        /// boundary is auditable, two are a question about which one applied.
+        ///
+        /// Made absolute here, at the last point that knows the colony's layout. The stored value is
+        /// relative by default (<c>.anthill/workspace</c>), and a relative working directory would
+        /// resolve against the host process's current directory — which is the live checkout, and
+        /// therefore precisely the confinement failure this exists to prevent.
+        ///
+        /// The <c>"."</c> check is the one that matters. That is the field's pre-initialisation
+        /// value, and it resolves to the checkout root: a provider built before
+        /// <c>AnthillRuntime.Initialize</c> would otherwise be handed the repository as its
+        /// workspace with nothing to indicate anything was wrong. Null makes an agent refuse, and a
+        /// refusal that names the cause is recoverable in a way a silent write into the source tree
+        /// is not.
+        /// </summary>
+        public string? AgentWorkspaceRoot => ReasoningProviders.AgentWorkspaceRoot;
+    }
+
+    /// <summary>
+    /// The absolute directory an acting provider is confined to, or null when there is none.
+    /// v0.3.8.41.
+    ///
+    /// <c>AllowedWorkspaceRoot</c> is the root every other actor is already confined to, so a
+    /// writing agent is confined to the SAME place rather than somewhere invented for it — one
+    /// boundary is auditable, two are a question about which one applied.
+    ///
+    /// Made absolute here, at the last point that knows the colony's layout. The stored value is
+    /// relative by default (<c>.anthill/workspace</c>), and a relative working directory would
+    /// resolve against the host process's current directory — which is the live checkout, and
+    /// therefore precisely the confinement failure this exists to prevent.
+    ///
+    /// The <c>"."</c> check is the one that matters. That is the field's pre-initialisation value
+    /// and it resolves to the checkout root: a provider built before <c>AnthillRuntime.Initialize</c>
+    /// would otherwise be handed the repository as its workspace with nothing to indicate anything
+    /// was wrong. Null makes an agent refuse, and a refusal naming its cause is recoverable in a way
+    /// a silent write into the source tree is not.
+    ///
+    /// PUBLIC because there are two readers and they must not drift. The router reaches it through
+    /// <see cref="IReasoningRuntimeOptions"/>; the API's provider-test endpoint builds an agent
+    /// directly, deliberately bypassing the router for a short bounded probe, and would otherwise
+    /// have needed its own copy of this rule. Two copies of a confinement rule is one copy that
+    /// eventually disagrees.
+    /// </summary>
+    public static string? AgentWorkspaceRoot
+    {
+        get
+        {
+            var root = AnthillRuntime.AllowedWorkspaceRoot;
+            if (string.IsNullOrWhiteSpace(root) || root == ".") return null;
+            try { return AnthillRuntime.PathFromScript(root); }
+            catch { return null; }   // an unresolvable root is no root, not a licence to roam
+        }
     }
 
     /// <summary>Presents an <see cref="IReasoningProvider"/> under the core's older alias.</summary>

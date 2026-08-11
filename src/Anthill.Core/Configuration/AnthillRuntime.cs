@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.40";
+    public const string Version = "0.3.8.41";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -264,12 +264,31 @@ public static class AnthillRuntime
     public static int ReadinessMinShadowSample = 10;
     public static double ReadinessMinDiagnosisPrecision = 0.8;
     public static double ReadinessMinActionAccuracy = 0.8;
-    /// <summary>The resolved roster profile name — `core` (default) or `full`. v3.8.26.</summary>
-    public static string RosterProfile = "core";
+    /// <summary>The resolved roster profile name — `full` (default since v0.3.8.41) or `core`.</summary>
+    public static string RosterProfile = RosterProfiles.Full;
 
     /// <summary>Roles switched off explicitly, whatever the profile says. The rollback path.</summary>
     public static IReadOnlySet<string> DisabledRoles =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The roster as it actually resolved, per switchable role. v0.3.8.41.
+    ///
+    /// ONE reader of the six flags, so the startup log, <c>/status</c> and the console cannot each
+    /// assemble their own answer. The six core ants are absent deliberately: they are not switchable,
+    /// and listing them here as permanently "on" would invite a future caller to treat this as the
+    /// whole roster.
+    /// </summary>
+    public static IReadOnlyDictionary<string, bool> EffectiveRoster() =>
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tester"] = EnableTesterAnt,
+            ["soldier"] = EnableSoldierAnt,
+            ["medic"] = EnableMedicAnt,
+            ["archivist"] = EnableArchivistAnt,
+            ["ui_cartographer"] = EnableUiCartographerAnt,
+            ["scribe"] = EnableScribeAnt,
+        };
 
     public static bool EnableTesterAnt = false;
     public static bool EnableSoldierAnt = false;
@@ -611,8 +630,30 @@ public static class AnthillRuntime
             config = JsonSerializer.Deserialize<AnthillConfig>(JsonSerializer.Serialize(dict), AnthillConfig.JsonOptions)!;
         }
         config.SafetyProfile = (config.SafetyProfile ?? "SAFE_LOCAL").ToUpperInvariant();
+
+        // v0.3.8.41 — the roster migration, planned from the RAW document and applied here.
+        //
+        // Raw rather than merged, and that is the whole design: the plan's job is telling an absent
+        // key from a present one, and `config` above has had every default overlaid onto it, so it
+        // has no absent keys left to read. Running the plan against it would report every
+        // installation as having explicitly chosen its defaults, which is the exact confusion the
+        // schema version exists to remove.
+        var migration = ConfigSchema.Plan(raw);
+        config.RosterProfile = migration.RosterProfile;
+        config.DisabledRoles = migration.DisabledRoles.ToArray();
+        config.ConfigSchemaVersion = migration.ToVersion;
+        LastConfigMigration = migration;
         return config;
     }
+
+    /// <summary>
+    /// What the configuration migration did on this run, or null before <see cref="Initialize"/>.
+    ///
+    /// Held rather than only printed because "why did six roles switch on when I upgraded" is a
+    /// question an operator asks through the console, not through a startup log they have already
+    /// scrolled past. <c>/config/health</c> and <c>/status</c> both surface it.
+    /// </summary>
+    public static ConfigMigrationResult? LastConfigMigration { get; private set; }
 
     private static void EnsureWorkspace(AnthillConfig config)
     {
@@ -722,7 +763,7 @@ public static class AnthillRuntime
         // false. Third occurrence this release cycle of a derived value computed before its inputs
         // arrived (RuntimeProfile v3.8.16, CapabilityGrant v3.8.25, this). RosterProfiles.Resolve
         // TAKES the flags, so it cannot be called before they exist.
-        RosterProfile = (config.RosterProfile ?? RosterProfiles.Core).Trim().ToLowerInvariant();
+        RosterProfile = (config.RosterProfile ?? RosterProfiles.Full).Trim().ToLowerInvariant();
         DisabledRoles = new HashSet<string>(
             config.DisabledRoles ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
 
@@ -753,6 +794,19 @@ public static class AnthillRuntime
         EnableScribeAnt = roster.Scribe;
         EnableHandoffIngestion = roster.HandoffIngestion;
         EnableAdaptiveMissionControl = roster.AdaptiveMissionControl;
+
+        // v0.3.8.41 — the migration and the EFFECTIVE roster, said out loud exactly once per start.
+        //
+        // Both halves matter and only together. The migration line explains why the colony changed
+        // shape on upgrade; the roster line states what it changed to. An operator who reads only the
+        // first has to work out what "full" means, and one who reads only the second cannot tell a
+        // deliberate configuration from one a release picked for them.
+        if (LastConfigMigration is { } migrated)
+            Console.Error.WriteLine($"[config-migration] {migrated.Explanation}");
+        Console.Error.WriteLine(
+            $"[roster] profile '{RosterProfile}': "
+            + string.Join(", ", EffectiveRoster().Select(r => $"{r.Key}={(r.Value ? "on" : "off")}"))
+            + (DisabledRoles.Count > 0 ? $" (kill switches: {string.Join(", ", DisabledRoles)})" : ""));
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
         HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
         HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();

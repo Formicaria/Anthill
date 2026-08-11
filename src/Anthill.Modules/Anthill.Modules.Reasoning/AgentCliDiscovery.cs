@@ -75,7 +75,8 @@ public static class AgentCliDiscovery
                 {
                     Agent = agent,
                     Installed = false,
-                    Unavailable = $"'{agent.Binary}' is not on PATH. Install it with: {agent.InstallCommand}",
+                    Unavailable = $"'{agent.Binary}' was not found on PATH or in {AgentCliInstaller.AgentHome}. "
+                                + $"Install it from this page, or yourself with: {AgentCliCatalog.InstallHint(agent)}",
                 };
             }
 
@@ -108,6 +109,41 @@ public static class AgentCliDiscovery
         }
     }
 
+    /// <summary>
+    /// Where this binary actually lives.
+    ///
+    /// A bare name is looked for in Anthill's own bin directories first, then handed to the OS to
+    /// resolve against PATH as before. A name that is already a path is returned untouched, so a
+    /// caller that knows exactly what it wants is never second-guessed.
+    ///
+    /// This is the other half of installing outside the global prefix: the installer writes here,
+    /// so discovery must look here. Changing one without the other silently breaks both.
+    /// </summary>
+    internal static string Resolve(string binary)
+    {
+        if (binary.Contains('/') || binary.Contains('\\')) return binary;
+
+        foreach (var dir in AgentCliInstaller.BinDirectories())
+        {
+            foreach (var candidate in Candidates(binary))
+            {
+                try
+                {
+                    var full = Path.Combine(dir, candidate);
+                    if (File.Exists(full)) return full;
+                }
+                catch { /* an unreadable directory is not a reason to fail the lookup */ }
+            }
+        }
+        return binary;
+    }
+
+    /// <summary>On Windows the executable carries an extension; npm ships .cmd shims.</summary>
+    private static IEnumerable<string> Candidates(string binary) =>
+        OperatingSystem.IsWindows()
+            ? new[] { binary + ".cmd", binary + ".exe", binary + ".bat", binary }
+            : new[] { binary };
+
     private static string Trim(string s) =>
         s.Replace("\r", "", StringComparison.Ordinal).Split('\n').FirstOrDefault()?.Trim() ?? "";
 
@@ -120,11 +156,16 @@ public static class AgentCliDiscovery
     /// the same feature with a command-injection hole in it.
     /// </summary>
     internal static (bool Started, string Stdout, string Stderr, int ExitCode) Run(
-        string binary, IReadOnlyList<string> args, TimeSpan timeout, string? workingDirectory = null)
+        string binary, IReadOnlyList<string> args, TimeSpan timeout, string? workingDirectory = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = binary,
+            // v0.3.8.41: resolve against Anthill's own bin directories before falling back to PATH.
+            // Agents are installed into ~/.anthill/agents rather than a root-owned global prefix,
+            // so they are deliberately NOT on the operator's PATH — without this they would install
+            // successfully and then be reported as missing, which is the worst of both.
+            FileName = Resolve(binary),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -132,6 +173,8 @@ public static class AgentCliDiscovery
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         if (!string.IsNullOrWhiteSpace(workingDirectory)) psi.WorkingDirectory = workingDirectory;
+        if (environment is not null)
+            foreach (var (k, v) in environment) psi.Environment[k] = v;
 
         using var p = new Process { StartInfo = psi };
 

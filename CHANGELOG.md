@@ -1,5 +1,178 @@
 # ANTHILL Changelog
 
+## v0.3.8.41 - the full roster by default, the agent runs where it is told, and finalization in the right order
+
+**A writing agent was running in the operator's checkout.** `AgentCliProvider` has taken a
+`workingDirectory` since it was written, documented as what keeps a writing agent inside the same
+boundary as every other actor. Neither production caller passed it — not `AgentCliProviderFactory`,
+not the `/providers/{id}/test` endpoint. Null meant `ProcessStartInfo.WorkingDirectory` was never
+set, and a child process that is not given one inherits its parent's: the directory the API host was
+started from.
+
+So routing an ant to Claude Code handed a tool with `Writes = true` a shell in the source tree.
+`SandboxWorkspace`, `WorkspacePathGuard`, PatchSet review and the approve-then-apply gate all sit on
+a path that this went around in one step, and silently — an agent's edits were never events Anthill
+saw. `Writes` itself had one consumer: a JSON field the console displays. No call site, no feature.
+
+Not an absent feature. A feature PRESENT AND WIRED WRONG, which a sweep for "is confinement
+implemented?" answers yes to, having found a documented parameter and a flag.
+
+`IReasoningRuntimeOptions.AgentWorkspaceRoot` now carries the confinement, resolved from
+`AllowedWorkspaceRoot` — the root every other actor already uses, because one boundary is auditable
+and two are a question about which applied. Made absolute at the last point that knows the colony's
+layout, since a relative working directory resolves against the host process's directory and is the
+same bug again. Abstract rather than a defaulted interface member: a silent null is what caused
+this. An agent that writes and has nowhere to be confined REFUSES, rather than falling back to a
+temp directory whose contents nothing collects. Read-only agents are not gated; the hazard is
+writing outside a boundary, not running.
+
+**The Ollama model tag was a default for everything.** Two lines, both spelling
+`?? AnthillRuntime.OllamaModel`: `RoleRoute` defaulted a stored route's missing model, and
+`GetClient` defaulted an unknown provider's. Routing every ant to Claude Code produced
+`agent:claude-code : gemma4:31b` — an agent paired with a local model tag it has never heard of and
+cannot serve. It was never an agent problem: a keyed OpenAI route with no model carried it too, and
+the symptom reads as a display bug for a long time before anyone checks the router. The rule is now
+"is this the local provider", not "is this an agent", because the core may not know what an agent
+is. Empty means the provider decides, which is already what keyed and module-registered providers
+do. `GetClient` also stopped handing unknown providers to `LocalModelResolver`, which would have
+asked Ollama to resolve a model for Claude Code.
+
+**A test that passed for the wrong reason, found by the one that failed.** Two of the three new
+routing tests set `AnthillRuntime.OllamaModel` directly and then wrote a route — and writing a route
+is `ApplySettingsUpdate`, which ends in `ProjectConfig`, which re-reads that field from `Config`. The
+assignment was erased by the next line. They asserted `NotEqual("gemma4:31b")` against a value that
+was never `gemma4:31b`, so they agreed with the fix while testing nothing about it and would have
+passed against the unfixed router. Setup goes through settings now, and the non-local cases assert
+the model is EMPTY.
+
+**An installed agent is reported capable.** `ModelCapabilityCatalog` matches model-name fragments
+then a provider table and falls through to `TextOnly` for the unknown — right for an unknown model,
+wrong for a coding agent, and it made the boot log warn that `ui_cartographer` was routed to
+something "missing tool calling" when the thing was a tool-calling agent. `AgentCapabilityProbe`
+answers for catalogued agents and null for everything else, so Ollama's discovered capabilities are
+never overridden by a guess.
+
+**Agents install without root.** `npm install -g` targets `/usr/lib/node_modules`, which is
+root-owned, so every install failed with EACCES and the remedy on offer was "be root". The catalogue
+now declares a package manager and a package rather than a verbatim command line, and the installer
+chooses the destination: `~/.anthill/agents`. Discovery searches there before PATH, because agents
+installed outside the global prefix are deliberately not on it — installing successfully and then
+reporting as missing is the worst of both.
+
+**A check result now names the tree it judged.** `RunAllowlistedCheckTool` resolves its working
+directory from whatever workspace is ambient, and a mission has two at different moments: the
+mission workspace, which is the source as the coder left it, and the disposable tree
+`VerifyPatchSet` materialises a patch set into. Only the second contains the proposal. A tester ant
+runs as its own task in the DAG, after that scope is disposed — so it resolved to the first, and "3
+checks passed" was recorded as though it said something about the patch. `MissionWorkspace` now
+records `MaterializedPatchSetId` and the tester's report names the tree, patched or not.
+
+This does not move the tester onto the patched tree, and this entry says so rather than implying
+otherwise: that requires the patch to outlive `VerifyPatchSet`'s sandbox, which is a lifecycle change
+to the most safety-critical path in the repository and is not in this release.
+
+**Console.** The model chip groups by PROVIDER before model, so a colony entirely on Claude Code
+with stale model strings no longer reports "2 models". `install_dir` moved to the top level of
+`/agents`, where the console was already reading it — it was emitted per-agent, so the line telling
+an operator where their agents went never rendered.
+
+**The default roster is the whole colony.** `roster_profile` ships as `full`: all twelve mission
+roles, handoff ingestion and bounded adaptive control. For six releases the default was `core` and
+the argument for it was sound — qualification proved the roster *can* run without deciding that it
+*should*. A role that is proven to work and switched off by default is a role nobody runs, and the
+staged rollout was always meant to end.
+
+Existing installations are not switched over blindly. `config_schema_version` exists to make one
+distinction that the on-disk bytes cannot: whether `"roster_profile": "core"` is a choice or a
+leftover default. Below version 2 it is a leftover and is migrated; at version 2 or above it can
+only have been chosen, and is preserved. Any hand-enabled specialist marks the configuration as
+customised and stops the migration entirely. `disabled_roles` survives unconditionally — a kill
+switch an upgrade can undo is not a kill switch.
+
+`ConfigSchema.Plan` is a pure function over the RAW document, before defaults are overlaid, because
+its whole job is telling an absent key from a present one and a merged document has no absent keys
+left. `TheMigrationInspects_EverySwitchTheFullProfileTurnsOn` keeps the inspected key list complete
+against `RosterProfiles.SwitchableRoles`: a seventh switchable role added later and forgotten here
+would make a customised configuration read as untouched.
+
+**Learning ran before the thing it learns from.** `LearningRecorder.RegisterProceduralRoutes` reads
+the mission's `memory_candidate` events — the archivist's output — and it was called from
+`FinalizeMission`, which returns before the archivist runs. That query has returned an empty list on
+every mission this project has ever run.
+
+The shape is familiar and the history is worse than the bug. v2.26.0 moved route registration to
+finalization to fix an earlier version of the same defect, where it resolved the outcome while the
+mission was still Running and therefore always read a negative. It landed one step short, because
+the producer had no trigger yet. v3.8.26 gave the archivist its trigger and placed it *after*
+learning, which completed the loop in the wrong direction. So the order is now: canonical evaluation
+persisted, archivist writes candidates, learning consumes them.
+
+That reorder needed a narrow write. `SaveMission` is an INSERT OR REPLACE that does not carry the
+evaluation columns, so calling it after `SaveMissionEvaluation` would erase the evaluation moments
+after writing it — the hazard the ordering comment in `Queen.RunMission` has warned about since
+v2.26.0, arriving from the other direction. `SaveMissionScore` updates one column of one row, and
+`ThePheromoneScore_IsPersistedWithoutErasingTheEvaluation` refuses any wide write after that point.
+
+**Finalization happens once per evaluation.** Pheromone strength, skill observations and reputation
+are cumulative, so a recovery pass over an already-finalised mission does not produce a slightly
+stale answer — it produces a permanently doubled one, and afterwards nothing distinguishes "this
+route succeeded twice" from "it succeeded once and was counted twice". `MissionFinalizationLedger`
+claims each step against the durable event log, keyed by the evaluation rather than the mission, so
+a re-evaluation that legitimately reaches a different canonical outcome can still be learned while a
+replay of the same one cannot. The claim survives a reopened database, which is the state a restart
+actually produces; an in-memory flag would pass every other test and fail exactly there. A refused
+claim is recorded, because "skipped, already done" and "never wired" look identical otherwise.
+
+**The verifier now waits for the evidence it is supposed to read.** `AutoWireDependencies` wires a
+planned verifier to everything before it — meaning everything the *planner* produced. Tester and
+soldier do not exist at planning time; they are inserted when a patch set appears. So the verifier's
+dependency set was fixed before its two most important inputs existed, and it could be dispatched,
+ask a model whether the mission succeeded, and answer, while the checks it was meant to be reading
+had not run. Nothing failed when that happened, because a verifier returns a verdict either way.
+
+`InsertPolicyReviewTasks` now also binds the verifier: an existing, not-yet-started verification task
+has the evidence tasks added to its dependencies, and if there is none, one is inserted parented to
+the task whose output made verification meaningful. Widening rather than adding a second verifier is
+deliberate — two verdicts about one deliverable with no rule for which wins is worse than one. A
+verification that cannot be inserted sets a `DeterministicBlock` rather than being skipped, so an
+unverifiable mission cannot read as a verified one. The informational branch gets the same treatment
+from the other end: a completed builder deliverable on a mission with no patch set inserts its own
+verification.
+
+One near-miss is pinned rather than merely fixed. The obvious way to ask "does a verifier already
+exist" is `MissionVerification.IsVerificationTask`, whose role set is {verifier, tester, soldier} —
+so it finds the *tester* inserted three lines earlier, concludes a verifier is present, and wires the
+tester to depend on the soldier. No verdict would ever be scheduled and nothing would report a
+problem. `TheVerifierLookup_AsksForTheVerifierRole_NotForAnyVerificationStep` refuses that helper
+inside this method by name.
+
+**v0.3.8.39 is finally written down**, reconstructed from commit `aecc926`, and the guard that would
+have caught its absence now exists. `VersionMarkers_ChangelogHasEntryForRuntimeVersion` only ever
+checks the CURRENT version, so a release that ships and is never written down passes it, passes the
+ordering guard, passes the frozen-entry guard, and leaves every version marker in agreement.
+`EveryReleaseCommitOnTheActiveLine_HasAChangelogEntry` reads the release commit subjects instead —
+the one place a shipped version records itself independently of the documents describing it.
+`NoTwoReleaseCommits_ClaimTheSameVersion` covers the other half: two commits both claimed
+`v0.3.8.40`, so one of them shipped untagged, and untagged is unfindable. That one is recorded rather
+than rewritten; history is not editable and making a guard green by editing the record is the wrong
+direction.
+
+**What this release does not do, stated so nobody has to find out.** There is still no deterministic
+Queen-driven acceptance suite reaching all twelve roles through their production triggers in one
+mission, and no live twelve-role mission has run against a real model. Turning the roster on by
+default does not create that evidence — it makes its absence matter more, which is the argument for
+doing it now rather than after another fixture-only release, and it is why the kill switches and the
+migration got the care they did.
+
+The tester still does not run on the patched tree. Both halves of this release stop short of that
+line from opposite directions and agree about where it is: the tester's report now NAMES the tree it
+judged, and the verifier is now bound to the tester's and soldier's evidence, but the patch does not
+yet outlive `VerifyPatchSet`'s sandbox. Making it outlive that scope is a lifecycle change to the
+most safety-critical path in the repository and belongs in its own release. Also still open: the
+external coding-agent CLIs are confined to a workspace but remain ordinary reasoning providers
+assignable to any role, and Chat records only the user's turn. All of these are `docs/PLAN.md` §6
+items and are named there.
+
 ## v0.3.8.40 - the colony delegates, and says what it is waiting for
 
 **Installed CLI agents became reasoning providers.** Claude Code, Codex, Gemini CLI, Aider and
@@ -51,6 +224,52 @@ reached because the nav table held `/colony/agents` — two new routes passed th
 zero console code. The stem must now begin a quoted path literal; verdicts were compared across all
 178 routes and none changed. ConsoleRouteAgreementTests checks the other direction. All 29 analyzer
 warnings cleared.
+
+## v0.3.8.39 - the console says what it means, and stops crashing when you hide a widget
+
+*Recorded at v0.3.8.41.* This release shipped as commit `aecc926` (#223) with no changelog entry and
+no tag — the version markers all agreed at the time because
+`VersionMarkers_ChangelogHasEntryForRuntimeVersion` only checks the CURRENT version, so a skipped
+entry in between passes every guard. The entry below is reconstructed from the commit.
+
+**Hiding a dashboard widget stopped the dashboard updating.** The live console had logged a thousand
+`TypeError: Cannot set properties of null` at `pollHud`. Widget bodies do not exist in the DOM when
+the widget is hidden; `attnPanel` was null-guarded and `attnList` — the next line, same widget — was
+not. The throw took the *rest* of `pollHud` with it, so the missions, changes and objectives
+summaries below never ran, every poll, indefinitely. `DEFAULT_DASHBOARD_VIEW` ships
+`operator-attention` hidden, so this was the default first-run dashboard: four panels that stay empty
+with no broken layout and nothing to report beyond "buggy". Four more writes in `pollHud` and five in
+`pollHealth` had the same shape; all are guarded individually, because which widgets are on screen is
+the operator's choice and hiding one must not stop the others updating.
+
+**Roles say when they cannot use the model they are routed to.** `AntModelFitness` has computed this
+since v3.4.2 and `/tools` reports it per role — and the only console surface was a widget that ships
+hidden. On a first-run dashboard the operator was told the model was reachable, present and resolved,
+all true, while seven of ten roles would return empty results. `unfit_role_count` joins the status
+summary, hidden at zero.
+
+**The homelab automation controls were calling nothing.** `api(path, method, body)` takes its method
+positionally; two call sites passed `{method:'POST'}`, so `method` stringified to `[object Object]`
+and `fetch` threw on an invalid method token before leaving the browser. `api` catches that and
+returns `{success:false}` rather than propagating, so the surrounding `catch` never ran either. A
+toggle flipped, snapped back on reload, and produced no console message and no failed request —
+because no request was ever made.
+
+**The sidebar collapses when the viewport cannot afford it**, driven from `matchMedia` so the ten
+existing `.nav-collapsed` rules are reused rather than restated. The automatic path never writes the
+operator's stored preference.
+
+**Plain English at the three places a newcomer arrives first** — sign-in, mission command, autonomy
+status. `OV_MODE_TEXT`, the instruction actually sent to the model, is untouched: renaming what the
+operator reads must not change what the colony is told. HALTED became "Stopped" and amber; red for a
+state someone engaged on purpose teaches people to ignore red.
+
+**Ctrl+C no longer waits out the shutdown timeout.** `/events/stream` watched only
+`ctx.RequestAborted`, which fires when the client disconnects and not when the server is stopping, so
+Kestrel waited the full shutdown timeout once per connected tab.
+
+Also: the queue is named after what is in it (Jobs → Missions), a single run's cancel confirmation
+says what survives, and 29 analyzer warnings cleared.
 
 ## v0.3.8.38 - the durable mission contract
 

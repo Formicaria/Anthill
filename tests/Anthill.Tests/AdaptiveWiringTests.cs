@@ -1,3 +1,4 @@
+using Anthill.Core.Agents;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
@@ -80,11 +81,34 @@ public class AdaptiveWiringTests : IDisposable
         Assert.Empty(mem.GetRecentEvents(200, "adaptive_repair", b.Id));
     }
 
+    /// <summary>
+    /// Adaptive control is on under the shipped profile, and off under `core`. v0.3.8.41.
+    ///
+    /// This test asserted it was off by default, and that inverting is the intended change rather
+    /// than a casualty of one. The roster profile is now `full`, and `full` enables adaptive control
+    /// deliberately: the reasoning is in `RosterProfiles` and is that a tester which cannot hand off
+    /// to a medic, in a mission that cannot grow the repair task the handoff asks for, is six roles
+    /// that run and never collaborate.
+    ///
+    /// What is still worth asserting — and is now asserted directly rather than through a static
+    /// whose value depends on whether configuration has been loaded in this process — is that the
+    /// CONFIG KEY remains opt-in and that choosing `core` still switches it off. An operator who
+    /// wants the old behaviour has an exact way to ask for it.
+    /// </summary>
     [Fact]
-    public void AdaptiveMissionControl_IsOffByDefault()
+    public void AdaptiveMissionControl_IsOnUnderTheShippedProfileAndOffUnderCore()
     {
-        Assert.False(AnthillRuntime.EnableAdaptiveMissionControl);
+        // The key itself is still off. `full` is what turns it on, so the flag stays a flag.
         Assert.False(new AnthillConfig().AdaptiveMissionControlEnabled);
+
+        var nothingOn = new RosterActivation(false, ActivationTier.Core,
+            false, false, false, false, false, false, false, false);
+
+        Assert.True(RosterProfiles.Resolve(RosterProfiles.Full, null, nothingOn).AdaptiveMissionControl);
+        Assert.False(RosterProfiles.Resolve(RosterProfiles.Core, null, nothingOn).AdaptiveMissionControl);
+
+        // And the shipped default is the profile that enables it.
+        Assert.Equal(RosterProfiles.Full, new AnthillConfig().RosterProfile);
     }
 
     // ---- the wiring itself -----------------------------------------------------------------------

@@ -217,12 +217,33 @@ public sealed class TesterAnt : BaseAnt
             if (!run.Success) allPassed = false;
         }
 
+        // v0.3.8.41 — WHICH TREE. A check result that does not name the tree it ran in is not
+        // evidence about anything in particular.
+        //
+        // RunAllowlistedCheckTool resolves its working directory from whatever workspace is ambient,
+        // and a mission has two at different moments: the MISSION workspace, which is the source as
+        // the coder left it, and the disposable tree VerifyPatchSet materialises a patch set into.
+        // Only the second contains the proposal. A tester ant runs as its own task in the DAG, after
+        // VerifyPatchSet has returned and disposed its scope — so it resolves to the first, and
+        // "3 checks passed" was being recorded as though it said something about the patch.
+        //
+        // This does not move the tester onto the patched tree; it makes the tree it DID judge part
+        // of the record, which is the same remedy v3.8.22's build verdicts needed. A reader can now
+        // tell the two apart, and so can a verifier weighing this evidence.
+        var judged = Workspaces.MissionWorkspaceScope.Current;
+        var tree = judged?.MaterializedPatchSetId is { } patched
+            ? $"patched tree (patch set {patched})"
+            : judged is not null ? "mission workspace — UNPATCHED" : "the configured workspace";
+        evidence.Add(new AntEvidence("workspace", "tree", tree));
+        lines.Add($"checked in: {tree}");
+
         var report = new AntArtifact("test_report", "Deterministic check report", string.Join("\n", lines));
         var result = new AntExecutionResult
         {
             Success = allPassed,
             StatusCode = allPassed ? "succeeded" : "failed_retryable",
-            Summary = $"{requested.Count} check(s): {lines.Count(l => l.Contains(": PASS"))} passed, {lines.Count(l => l.Contains(": FAIL"))} failed.",
+            Summary = $"{requested.Count} check(s): {lines.Count(l => l.Contains(": PASS"))} passed, "
+                    + $"{lines.Count(l => l.Contains(": FAIL"))} failed, in {tree}.",
             Artifacts = { report },
             Evidence = evidence,
             Handoffs =

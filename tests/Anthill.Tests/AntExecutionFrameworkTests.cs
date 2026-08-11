@@ -18,15 +18,41 @@ public class AntExecutionFrameworkTests
 
     // ---- Nothing was activated by Stage A ------------------------------------------------------
 
+    /// <remarks>
+    /// v0.3.8.41 — the gates are forced shut rather than assumed shut.
+    ///
+    /// The property is "declaring a contract does not activate a role", and it was being tested
+    /// against whatever the process happened to have configured. That was reliable while `core` was
+    /// the shipped default and is not now: with `full`, `ExecutableRoleIds` legitimately contains
+    /// twelve. The test was measuring the default; it now measures the rule.
+    /// </remarks>
     [Fact]
-    public void StageA_ActivatesNothing_ExecutableSetIsStillTheOriginalSix()
-    {
-        Assert.Equal(6, AntRegistry.ExecutableRoleIds.Count);
-        foreach (var ant in new[] { "researcher", "web", "file", "coder", "builder", "verifier" })
-            Assert.Contains(ant, AntRegistry.ExecutableRoleIds);
-        foreach (var s in Specialists)
-            Assert.DoesNotContain(s, AntRegistry.ExecutableRoleIds);
-    }
+    public void StageA_ActivatesNothing_ExecutableSetIsStillTheOriginalSix() =>
+        RosterGates.WithAll(false, () =>
+        {
+            Assert.Equal(6, AntRegistry.ExecutableRoleIds.Count);
+            foreach (var ant in new[] { "researcher", "web", "file", "coder", "builder", "verifier" })
+                Assert.Contains(ant, AntRegistry.ExecutableRoleIds);
+            foreach (var s in Specialists)
+                Assert.DoesNotContain(s, AntRegistry.ExecutableRoleIds);
+            return 0;
+        });
+
+    /// <summary>
+    /// And with the gates OPEN the set is twelve — the shipped default since v0.3.8.41.
+    ///
+    /// The counterpart matters as much as the rule above. Without it this file only ever proved the
+    /// colony can be switched off, which is the half that was never in doubt.
+    /// </summary>
+    [Fact]
+    public void WithTheGatesOpen_TheExecutableSetIsAllTwelve() =>
+        RosterGates.WithAll(true, () =>
+        {
+            Assert.Equal(12, AntRegistry.ExecutableRoleIds.Count);
+            foreach (var s in Specialists)
+                Assert.Contains(s, AntRegistry.ExecutableRoleIds);
+            return 0;
+        });
 
     // ---- Classification (spec §4.1) -------------------------------------------------------------
 
@@ -55,14 +81,36 @@ public class AntExecutionFrameworkTests
         Assert.False(AntExecutionCatalog.PlannerEligible("future_mystery_ant"));
     }
 
+    /// <summary>
+    /// Classification is independent of activation, in BOTH directions.
+    ///
+    /// v0.3.8.41 — renamed from `SpecialistMissionAgents_ClassifiedButNotYetEligible`, because "not
+    /// yet" stopped being true: under the shipped profile these six are eligible. The property the
+    /// test was always really about survives and is now stated as a pair — a role's KIND does not
+    /// move when its gate does, and eligibility tracks the gate exactly.
+    /// </summary>
     [Fact]
-    public void SpecialistMissionAgents_ClassifiedButNotYetEligible()
+    public void SpecialistMissionAgents_AreClassifiedOnceAndEligibleOnlyWhenGated_Open()
     {
-        foreach (var s in Specialists)
+        RosterGates.WithAll(false, () =>
         {
-            Assert.Equal(AntRuntimeKind.MissionAgent, AntExecutionCatalog.KindOf(s));
-            Assert.False(AntExecutionCatalog.PlannerEligible(s)); // implemented-but-not-activated ≠ eligible
-        }
+            foreach (var s in Specialists)
+            {
+                Assert.Equal(AntRuntimeKind.MissionAgent, AntExecutionCatalog.KindOf(s));
+                Assert.False(AntExecutionCatalog.PlannerEligible(s));   // implemented ≠ activated
+            }
+            return 0;
+        });
+
+        RosterGates.WithAll(true, () =>
+        {
+            foreach (var s in Specialists)
+            {
+                Assert.Equal(AntRuntimeKind.MissionAgent, AntExecutionCatalog.KindOf(s));
+                Assert.True(AntExecutionCatalog.PlannerEligible(s));
+            }
+            return 0;
+        });
     }
 
     [Fact]

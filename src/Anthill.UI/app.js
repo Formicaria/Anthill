@@ -414,8 +414,10 @@ PAGE_ENTER['overview']=()=>{
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
-PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli(); };
+PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli();
+  if(typeof refreshAgentCatalog==='function') refreshAgentCatalog(); };
 PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
+  if(!lastAgentCatalog && typeof refreshAgentCatalog==='function') refreshAgentCatalog();
   document.getElementById('chat-input')?.focus(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
@@ -2604,6 +2606,15 @@ async function pollModelInfo(){
   }catch{}
 }
 
+/** An `agent:` provider id as the operator knows it. Null for anything else. */
+function AGENT_LABEL(provider){
+  const p=String(provider||'');
+  if(!p.startsWith('agent:')) return null;
+  const a=(lastAgentCatalog||[]).find(x=>x.provider===p);
+  return a ? a.name.replace(/ \(agent\)$/,'') : p.slice('agent:'.length);
+}
+let lastAgentCatalog = null;
+
 function renderStatusChip(){
   const s=lastSystemSummary; if(!s) return;
   const providers=s.routing_mode!=='local';
@@ -2612,13 +2623,46 @@ function renderStatusChip(){
   const modeEl=document.getElementById('sc-mode'); modeEl.style.color=modeCol;
   modeEl.querySelector('.sc-mode-icon').innerHTML=providers?CLOUD_ICON:LOCAL_ICON;
   setEl('sc-mode-txt',modeTxt);
-  setEl('sc-model',s.default_model||'—');
+  // v0.3.8.41 — the chip names what the ANTS ARE ROUTED TO, not the Ollama default.
+  //
+  // It read `default_model`, which is the local-model fallback and has nothing to do with per-role
+  // routing. Route every ant to Claude Code and the chip still said gemma4:31b — the console
+  // advertising a model no role was using, while the boot log said otherwise three lines apart.
+  //
+  // Derived from `routes`, which is the same list the popover already renders, so the chip and the
+  // detail beneath it cannot disagree. One distinct pair means one name; several means a count,
+  // because inventing a winner among genuinely mixed routes would be a different lie.
+  const routes = s.routes || [];
+  const routeProviders = [...new Set(routes.map(r => r.provider || ''))];
+  const models = [...new Set(routes.map(r => r.model || ''))];
+  if (routes.length && routeProviders.length === 1) {
+    // Grouped by PROVIDER before model, and that ordering is the point. Routing every ant to
+    // Claude Code can still leave a stale model string on some rows — the agent ignores it — and
+    // counting distinct models would report "2 models" for a colony that is entirely on one agent.
+    // The provider is the answer to "what is running my ants"; the model only refines it.
+    const label = AGENT_LABEL(routeProviders[0]) || (models.length === 1 ? models[0] : routeProviders[0]);
+    setEl('sc-model', label);
+  } else if (routeProviders.length > 1) {
+    setEl('sc-model', routeProviders.length + ' providers');
+  } else {
+    setEl('sc-model', s.default_model || '—');
+  }
+  const modelEl = document.getElementById('sc-model');
+  if (modelEl) modelEl.title = routes.length
+    ? routes.map(r => r.role + ' → ' + (r.provider || '?') + ':' + (r.model || '?')).join('\n')
+    : '';
+
   // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
   const dot=document.getElementById('sc-dot');
   // v3.8.33: a reachable host with no usable model is NOT ok. The chip used to go green on
   // reachability alone, which is exactly the state where every mission fails.
-  const modelBad = s.use_ollama && (s.model_resolved===false || s.ollama_model_present===false);
-  const ok = connected && (s.ollama_reachable!==false) && !modelBad;
+  //
+  // v0.3.8.41: and only when a role actually USES Ollama. With every ant routed to a CLI agent,
+  // Ollama's health is no longer this colony's health, and a red chip for an idle local server
+  // would be a false alarm about a component nothing is asking anything of.
+  const usesOllama = routes.some(r => (r.provider || '').toLowerCase() === 'ollama');
+  const modelBad = s.use_ollama && usesOllama && (s.model_resolved===false || s.ollama_model_present===false);
+  const ok = connected && (!usesOllama || s.ollama_reachable!==false) && !modelBad;
   dot.className='sc-dot '+(ok?'ok':'err');
   document.getElementById('status-chip').title = ok?'Online — click for details'
     :(s.ollama_reachable===false?'Ollama unreachable — click for details'
@@ -4032,6 +4076,18 @@ function agentCliMsg(text, ok){
   el.style.color = ok ? 'var(--green)' : 'var(--red)';
 }
 
+/**
+ * Keep the provider catalogue for AGENT_LABEL, so the header chip can say "Claude Code" rather
+ * than the wire id `agent:claude-code`. Refreshed alongside the agents page rather than fetched
+ * separately: one more poll for a display name would not earn its request.
+ */
+async function refreshAgentCatalog(){
+  try{
+    const r=await api('/providers/catalog');
+    if(r&&r.success&&Array.isArray(r.data)) lastAgentCatalog=r.data.filter(p=>p.agent);
+  }catch(e){ /* the chip falls back to the id, which is still truthful */ }
+}
+
 async function loadAgentCli(force){
   const list=document.getElementById('agentcli-list'); if(!list) return;
   try{
@@ -4039,6 +4095,16 @@ async function loadAgentCli(force){
     if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not read the agent list.')}</div>`; return; }
     const d=r.data||{}, agents=d.agents||[];
     if(!agents.length){ list.innerHTML='<div class="hud-state">No agents are catalogued in this build.</div>'; return; }
+
+    // v0.3.8.41: where Anthill puts them. Agents install into Anthill's own directory rather than
+    // the system-wide npm prefix, which is what makes installing possible without root — and it
+    // also means they are NOT on the operator's PATH, so saying where they went avoids the
+    // reasonable conclusion that nothing happened.
+    const whereEl=document.getElementById('agentcli-where');
+    if(whereEl && d.install_dir){
+      whereEl.textContent='Installed into '+d.install_dir+' — no administrator rights needed, and removing that folder uninstalls them.';
+      whereEl.style.display='';
+    }
 
     list.innerHTML = agents.map(a=>{
       const installed=!!a.installed;
