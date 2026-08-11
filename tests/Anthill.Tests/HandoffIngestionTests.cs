@@ -141,11 +141,30 @@ public class HandoffIngestionTests : IDisposable
 
     // ---- ingestion is gated, and off by default -------------------------------------------------
 
+    /// <summary>
+    /// Handoff ingestion is on under the shipped profile, and off under `core`. v0.3.8.41.
+    ///
+    /// The inversion is intended. `full` enables ingestion because the roster is not "on" in any
+    /// useful sense without it — the tester's failure handoff to the medic is the colony's entire
+    /// repair path, and with ingestion off it is recorded as a proposal and acted on by nothing.
+    ///
+    /// The opt-in property survives where it matters: the config key still defaults false, `core`
+    /// still switches ingestion off, and an operator who wants the previous behaviour can say so
+    /// exactly. Asserted through the profile rather than through the runtime static, which now
+    /// depends on whether configuration has been loaded in this process.
+    /// </summary>
     [Fact]
-    public void HandoffIngestion_IsOffByDefault()
+    public void HandoffIngestion_IsOnUnderTheShippedProfileAndOffUnderCore()
     {
-        Assert.False(AnthillRuntime.EnableHandoffIngestion);
         Assert.False(new AnthillConfig().HandoffIngestionEnabled);
+
+        var nothingOn = new RosterActivation(false, ActivationTier.Core,
+            false, false, false, false, false, false, false, false);
+
+        Assert.True(RosterProfiles.Resolve(RosterProfiles.Full, null, nothingOn).HandoffIngestion);
+        Assert.False(RosterProfiles.Resolve(RosterProfiles.Core, null, nothingOn).HandoffIngestion);
+
+        Assert.Equal(RosterProfiles.Full, new AnthillConfig().RosterProfile);
     }
 
     // ---- the call site (the whole point of this phase) -------------------------------------------

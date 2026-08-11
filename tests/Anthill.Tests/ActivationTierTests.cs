@@ -19,19 +19,24 @@ public class ActivationTierTests
         finally { AnthillRuntime.ActivationTier = previous; }
     }
 
+    /// <remarks>
+    /// v0.3.8.41 — restores the PREVIOUS gate state rather than setting everything to false.
+    ///
+    /// Restoring to false was indistinguishable from correct while false was also the shipped
+    /// default. Now that the default roster is `full`, a helper that resets to false is a way for one
+    /// test to switch the colony off for every test that runs after it in the same process — a flake
+    /// that would appear as an unrelated failure somewhere else, ordered by the runner.
+    /// </remarks>
     private static T WithGates<T>(ActivationTier tier, string role, Func<T> body) => WithTier(tier, () =>
     {
+        var previous = RosterGates.Capture();
         try
         {
             AnthillRuntime.EnableSpecialistAntExecution = true;
             SetRoleFlag(role, true);
             return body();
         }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            SetRoleFlag(role, false);
-        }
+        finally { RosterGates.Restore(previous); }
     });
 
     private static void SetRoleFlag(string role, bool value)
@@ -105,16 +110,21 @@ public class ActivationTierTests
     /// colony exactly as it was — otherwise the tier would be a second, weaker way to enable a
     /// role, defeating the rollout gates.
     /// </summary>
+    /// <remarks>
+    /// v0.3.8.41 — the per-role flags are now forced OFF rather than assumed off. `WithTier` only
+    /// ever saved and restored the tier, which was sufficient while `core` was the shipped default
+    /// and the flags were false in every process. With `full` as the default they are true, so this
+    /// test was reading "the tier is Full and the flags are on" and reporting it as the tier having
+    /// opened a gate by itself. The property is unchanged; only the setup was leaning on a default.
+    /// </remarks>
     [Fact]
-    public void RaisingTheTierAlone_EnablesNothing()
-    {
+    public void RaisingTheTierAlone_EnablesNothing() => RosterGates.WithAll(false, () =>
         WithTier(ActivationTier.Full, () =>
         {
             foreach (var role in new[] { "tester", "medic", "soldier", "scribe", "archivist", "ui_cartographer" })
                 Assert.False(AntExecutorCatalog.SpecialistGateOpen(role), $"{role} opened without its own flag");
             return 0;
-        });
-    }
+        }));
 
     [Fact]
     public void ARoleWithItsFlagSet_StillNeedsTheTierToAdmitIt()
@@ -131,41 +141,59 @@ public class ActivationTierTests
         Assert.False(WithGates(ActivationTier.Adaptive, "soldier", () => AntExecutorCatalog.SpecialistGateOpen("soldier")));
     }
 
+    /// <remarks>
+    /// v0.3.8.41 — the master switch is now forced OFF by the test rather than assumed off.
+    ///
+    /// It passed before by accident of ordering: some neighbouring test's `finally` had set
+    /// `EnableSpecialistAntExecution = false` first, and while `core` was the default that reset was
+    /// invisible. With `full` as the default this assertion is only true if the test makes it true,
+    /// which is what a test asserting "the master switch governs everything" should have been doing
+    /// all along.
+    /// </remarks>
     [Fact]
-    public void TheMasterSwitchStillGovernsEverything()
-    {
-        WithTier(ActivationTier.Full, () =>
+    public void TheMasterSwitchStillGovernsEverything() =>
+        RosterGates.With(() => WithTier(ActivationTier.Full, () =>
         {
-            try
-            {
-                AnthillRuntime.EnableTesterAnt = true;   // flag on, tier full, master OFF
-                Assert.False(AntExecutorCatalog.SpecialistGateOpen("tester"));
-            }
-            finally { AnthillRuntime.EnableTesterAnt = false; }
+            // flag on, tier full, master OFF — the gate must still be shut.
+            Assert.False(AntExecutorCatalog.SpecialistGateOpen("tester"));
             return 0;
-        });
-    }
+        }), specialists: false, tester: true);
 
     // ---- upgrade safety ------------------------------------------------------------------------------
 
     /// <summary>
-    /// The default is Full — "defer entirely to the per-role flags", i.e. exactly the behaviour
+    /// The default tier is Full — "defer entirely to the per-role flags", i.e. exactly the behaviour
     /// before the tier existed. Defaulting to Core would have silently stopped specialists in every
-    /// deployment that had already enabled them, on upgrade, with nothing announcing it. Safety
-    /// comes from the per-role flags, which remain off by default.
+    /// deployment that had already enabled them, on upgrade, with nothing announcing it.
+    ///
+    /// v0.3.8.41 — the second half of this test used to add "and that default still leaves the
+    /// colony fully closed, because the flags are off". That sentence has stopped being true and its
+    /// replacement is more precise about what the tier is: the tier is not what opens a role, and it
+    /// never was. The ROSTER PROFILE opens roles; the tier can only narrow. So the assertion below is
+    /// made with the flags explicitly closed, which is the condition it was always really about, and
+    /// the new fact — that the shipped profile is what turns them on — is asserted beside it rather
+    /// than left implied.
     /// </summary>
     [Fact]
-    public void TheDefaultPreservesPreTierBehaviour()
+    public void TheDefaultTierDefersToTheFlags_AndTheProfileIsWhatSetsThem()
     {
-        Assert.Equal(ActivationTier.Full, ActivationTiers.Parse(new AnthillConfig().ActivationTier));
+        var defaultTier = ActivationTiers.Parse(new AnthillConfig().ActivationTier);
+        Assert.Equal(ActivationTier.Full, defaultTier);
 
-        // ...and that default still leaves the colony fully closed, because the flags are off.
-        WithTier(ActivationTiers.Parse(new AnthillConfig().ActivationTier), () =>
+        // With the flags closed, the default tier opens nothing. This is the tier's whole contract.
+        RosterGates.WithAll(false, () => WithTier(defaultTier, () =>
         {
             Assert.DoesNotContain("tester", AntRegistry.ExecutableRoleIds);
             Assert.DoesNotContain("soldier", AntRegistry.ExecutableRoleIds);
             return 0;
-        });
+        }));
+
+        // And the shipped ROSTER PROFILE is what sets those flags — a different dial, deliberately.
+        var shipped = RosterProfiles.Resolve(new AnthillConfig().RosterProfile, disabledRoles: null,
+            new RosterActivation(false, ActivationTier.Core, false, false, false, false, false, false, false, false));
+
+        Assert.True(shipped.Tester);
+        Assert.True(shipped.Soldier);
     }
 
     [Fact]

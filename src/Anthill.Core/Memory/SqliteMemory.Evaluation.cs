@@ -34,6 +34,33 @@ public sealed partial class SqliteMemory
     }
 
     /// <summary>
+    /// Persist ONLY the mission's pheromone score. v0.3.8.41.
+    ///
+    /// A narrow UPDATE exists for one reason: learning now runs AFTER the canonical evaluation is
+    /// persisted, because the archivist has to write its memory candidates in between and
+    /// <see cref="Orchestration.LearningRecorder"/> is the thing that consumes them. The score is the
+    /// only mission field learning mutates, and <c>SaveMission</c> is an INSERT OR REPLACE that does
+    /// not carry the evaluation columns — so calling it here would silently erase the evaluation
+    /// three lines after it was written, which is the exact defect the ordering comment in
+    /// <c>Queen.RunMission</c> has warned about since v2.26.0.
+    ///
+    /// Two columns, one row, nothing else touched. A wide write in this position cannot be made safe;
+    /// a narrow one cannot be made unsafe.
+    /// </summary>
+    public void SaveMissionScore(string missionId, double? score)
+    {
+        if (string.IsNullOrWhiteSpace(missionId)) return;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                "UPDATE missions SET success_score=@score WHERE id=@id",
+                ("@id", missionId), ("@score", score));
+        }
+        InvalidateCache();
+    }
+
+    /// <summary>
     /// Load the persisted evaluation. Null when the row predates persisted evaluation — callers
     /// must treat that as LEGACY (never verified), not re-derive their own answer from task rows.
     /// </summary>

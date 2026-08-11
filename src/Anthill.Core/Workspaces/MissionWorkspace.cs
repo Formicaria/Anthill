@@ -103,6 +103,27 @@ public sealed record MissionWorkspace
     /// <summary>Why it was rejected or orphaned. Never used for control flow; read by operators.</summary>
     public string? Note { get; init; }
 
+    /// <summary>
+    /// The patch set written into this tree, or null when the tree is unpatched. v0.3.8.41.
+    ///
+    /// The distinction a check result cannot otherwise make. <c>RunAllowlistedCheckTool</c> resolves
+    /// its working directory from whatever workspace is ambient, and TWO different trees are ambient
+    /// at different moments of the same mission: the mission workspace, which is the source as the
+    /// coder left it, and the disposable tree <c>VerifyPatchSet</c> materialises a patch set into.
+    /// A tester that runs in the first and reports PASS has said something true about a tree that
+    /// does not contain the proposal — the same shape as v3.8.22's build verdicts, which were true
+    /// statements about the wrong workspace.
+    ///
+    /// Recorded rather than inferred from <see cref="Id"/>. The verification scope happens to name
+    /// itself `verify-{patchSetId}`, and parsing that string would make a naming convention
+    /// load-bearing — the kind of coupling that survives exactly until someone renames it for
+    /// readability.
+    ///
+    /// Null is the honest default and means UNPATCHED, not unknown: every workspace that carries a
+    /// patch is built by code that knows it does.
+    /// </summary>
+    public string? MaterializedPatchSetId { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 

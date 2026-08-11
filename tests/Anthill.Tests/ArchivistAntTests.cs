@@ -132,20 +132,19 @@ public class ArchivistAntTests
         Assert.Contains("[REDACTED]", Candidates(o));
     }
 
+    /// <remarks>
+    /// v0.3.8.41 — both halves now set the state they are asserting about, and the restore puts back
+    /// what was there rather than false. The closed half used to rely on the shipped default being
+    /// `core`; with `full` the archivist is executable, which is correct and made this read as a
+    /// broken gate. The gate is fine — the test was describing a default.
+    /// </remarks>
     [Fact]
     public void GatesControlExecutability()
     {
-        Assert.DoesNotContain("archivist", AntRegistry.ExecutableRoleIds);
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            AnthillRuntime.EnableArchivistAnt = true;
-            Assert.Contains("archivist", AntRegistry.ExecutableRoleIds);
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableArchivistAnt = false;
-        }
+        RosterGates.With(() => Assert.DoesNotContain("archivist", AntRegistry.ExecutableRoleIds),
+            specialists: false, archivist: false);
+
+        RosterGates.With(() => Assert.Contains("archivist", AntRegistry.ExecutableRoleIds),
+            specialists: true, tier: ActivationTier.Full, archivist: true);
     }
 }

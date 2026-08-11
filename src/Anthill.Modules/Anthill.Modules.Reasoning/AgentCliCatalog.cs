@@ -46,8 +46,19 @@ public sealed record AgentCli
     /// </summary>
     public required IReadOnlyList<string> PromptArgs { get; init; }
 
-    /// <summary>How the operator installs it, verbatim, to run in their own shell.</summary>
-    public required string InstallCommand { get; init; }
+    /// <summary>
+    /// Which package manager ships it: "npm", "pip", or "" for an agent Anthill cannot install.
+    ///
+    /// v0.3.8.41 — split out of the old free-text InstallCommand. A verbatim shell line could only
+    /// be run as written, and as written every npm one was `install -g`, which writes to
+    /// /usr/lib/node_modules and fails with EACCES for any non-root operator. The manager and the
+    /// package name are now separate so the installer can decide the DESTINATION, which is the
+    /// whole fix.
+    /// </summary>
+    public required string PackageManager { get; init; }
+
+    /// <summary>The package to install. Never interpolated into a shell by the installer.</summary>
+    public required string Package { get; init; }
 
     /// <summary>
     /// How the operator authenticates it — in the vendor's own flow, in their own terminal.
@@ -89,7 +100,8 @@ public static class AgentCliCatalog
             Vendor = "Anthropic",
             Binary = "claude",
             PromptArgs = new[] { "-p", "{prompt}" },
-            InstallCommand = "npm install -g @anthropic-ai/claude-code",
+            PackageManager = "npm",
+            Package = "@anthropic-ai/claude-code",
             AuthCommand = "claude",           // first run walks the operator through sign-in
             DocsUrl = "https://docs.claude.com/en/docs/claude-code/overview",
             Writes = true,
@@ -101,7 +113,8 @@ public static class AgentCliCatalog
             Vendor = "OpenAI",
             Binary = "codex",
             PromptArgs = new[] { "exec", "{prompt}" },
-            InstallCommand = "npm install -g @openai/codex",
+            PackageManager = "npm",
+            Package = "@openai/codex",
             AuthCommand = "codex login",
             DocsUrl = "https://developers.openai.com/codex/cli",
             Writes = true,
@@ -113,7 +126,8 @@ public static class AgentCliCatalog
             Vendor = "Google",
             Binary = "gemini",
             PromptArgs = new[] { "-p", "{prompt}" },
-            InstallCommand = "npm install -g @google/gemini-cli",
+            PackageManager = "npm",
+            Package = "@google/gemini-cli",
             AuthCommand = "gemini",
             DocsUrl = "https://github.com/google-gemini/gemini-cli",
             Writes = true,
@@ -125,7 +139,8 @@ public static class AgentCliCatalog
             Vendor = "Aider (open source)",
             Binary = "aider",
             PromptArgs = new[] { "--no-pretty", "--yes", "--message", "{prompt}" },
-            InstallCommand = "python -m pip install aider-install && aider-install",
+            PackageManager = "pip",
+            Package = "aider-chat",
             AuthCommand = "aider --model <model>   # uses your own provider API key",
             DocsUrl = "https://aider.chat/docs/install.html",
             Writes = true,
@@ -137,7 +152,8 @@ public static class AgentCliCatalog
             Vendor = "OpenCode (open source)",
             Binary = "opencode",
             PromptArgs = new[] { "run", "{prompt}" },
-            InstallCommand = "npm install -g opencode-ai",
+            PackageManager = "npm",
+            Package = "opencode-ai",
             AuthCommand = "opencode auth login",
             DocsUrl = "https://opencode.ai/docs/",
             Writes = true,
@@ -145,6 +161,18 @@ public static class AgentCliCatalog
     };
 
     public static IReadOnlyList<AgentCli> All => Known;
+
+    /// <summary>
+    /// What the operator would type to install it themselves, for display and for a refusal that
+    /// names the remedy. NOT what Anthill runs — the installer targets its own directory instead,
+    /// so the two differ deliberately and this one is the copy-pasteable version.
+    /// </summary>
+    public static string InstallHint(AgentCli agent) => agent.PackageManager switch
+    {
+        "npm" => $"npm install -g {agent.Package}",
+        "pip" => $"python3 -m pip install --user {agent.Package}",
+        _ => $"see {agent.DocsUrl}",
+    };
 
     public static AgentCli? ById(string? id) =>
         string.IsNullOrWhiteSpace(id)

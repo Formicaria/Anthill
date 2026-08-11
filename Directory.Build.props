@@ -13,7 +13,7 @@
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Must always match AnthillRuntime.Version — enforced by RegressionGuardTests + CI. -->
-    <AnthillVersion>0.3.8.40</AnthillVersion>
+    <AnthillVersion>0.3.8.41</AnthillVersion>
     <Version>$(AnthillVersion)</Version>
     <Authors>ANTHILL Project</Authors>
     <Product>ANTHILL Core</Product>

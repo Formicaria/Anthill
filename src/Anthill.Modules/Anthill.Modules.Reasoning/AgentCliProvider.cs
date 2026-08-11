@@ -26,9 +26,15 @@ public sealed class AgentCliProvider : IReasoningProvider
     private readonly string? _workingDirectory;
 
     /// <param name="workingDirectory">
-    /// The mission workspace, when there is one. This is what keeps a writing agent inside the same
+    /// The workspace this agent is confined to. This is what keeps a writing agent inside the same
     /// boundary as every other actor: the colony's rule is that the active checkout is never an
     /// agent scratchpad, and an agent from another vendor does not get an exemption from it.
+    ///
+    /// Null means UNCONFINED, and for an agent that writes that is a refusal, not a default — see
+    /// <see cref="Confinement"/>. It stays nullable because a read-only agent has nothing to be
+    /// confined from, and because the alternative, a required parameter, would be satisfied by
+    /// whatever string a caller had to hand. This parameter previously had exactly one production
+    /// caller and that caller did not pass it; the check is what makes that unrepeatable.
     /// </param>
     public AgentCliProvider(AgentCli agent, TimeSpan? timeout = null, string? workingDirectory = null)
     {
@@ -43,6 +49,11 @@ public sealed class AgentCliProvider : IReasoningProvider
         if (string.IsNullOrWhiteSpace(prompt))
             return Fail(ModelCallOutcome.ConfigError, "No prompt to send.");
 
+        // Confinement is checked BEFORE the process starts, because after it starts there is nothing
+        // left to check: an agent that edits files has already edited them by the time it exits.
+        var confinement = Confinement();
+        if (confinement is not null) return confinement;
+
         // Retries are deliberately NOT applied here. A CLI agent turn is minutes long, may have
         // already edited files, and is not idempotent — re-running one after a timeout could apply
         // the same change twice. The bounded-retry policy that suits a stateless HTTP call is the
@@ -56,7 +67,8 @@ public sealed class AgentCliProvider : IReasoningProvider
 
         if (!started)
             return Fail(ModelCallOutcome.NotAvailable,
-                $"{_agent.DisplayName} is not installed. Install it with: {_agent.InstallCommand}");
+                $"{_agent.DisplayName} is not installed. Install it from the Agents page, or with: "
+                + AgentCliCatalog.InstallHint(_agent));
 
         if (exit != 0)
         {
@@ -75,6 +87,43 @@ public sealed class AgentCliProvider : IReasoningProvider
             Model = _agent.DisplayName,
             FinishReason = "exit_0",
         };
+    }
+
+    /// <summary>
+    /// Whether this agent may run at all, given where it would run. Null means yes. v0.3.8.41.
+    ///
+    /// Only agents that ACT are gated. One that merely answers is a text pipe and its working
+    /// directory is uninteresting, so an operator who has routed a read-only agent is not stopped by
+    /// a rule that protects against writes — <see cref="AgentCli.Writes"/> finally decides something
+    /// here, having previously been a flag that was serialised to the console and consulted nowhere.
+    ///
+    /// A REFUSAL, not a fallback to some safe-ish directory. Two candidates were available and both
+    /// are wrong: the current directory is the bug, and silently inventing a temp directory would
+    /// mean the agent's work lands somewhere the operator never looks and nothing collects — a
+    /// mission that appears to succeed and changes nothing is harder to diagnose than one that
+    /// refuses and says why.
+    ///
+    /// The existence check is not paranoia about a missing directory. Process.Start with a working
+    /// directory that is not there throws the same Win32Exception as a binary that is not there, and
+    /// this provider maps that to "the agent is not installed" — an error naming the wrong problem
+    /// and prescribing an install that would not fix it.
+    /// </summary>
+    private ModelResponse? Confinement()
+    {
+        if (!_agent.Writes) return null;
+
+        if (string.IsNullOrWhiteSpace(_workingDirectory))
+            return Fail(ModelCallOutcome.ConfigError,
+                $"{_agent.DisplayName} edits files and runs commands, so it will not be started without a "
+                + "workspace to be confined to — unconfined it would act in whatever directory Anthill "
+                + "itself was started from. Set an agent workspace in Configuration → Workspace.");
+
+        if (!Directory.Exists(_workingDirectory))
+            return Fail(ModelCallOutcome.ConfigError,
+                $"{_agent.DisplayName} is confined to '{_workingDirectory}', which does not exist. "
+                + "Create it, or set an agent workspace in Configuration → Workspace.");
+
+        return null;
     }
 
     /// <summary>
@@ -165,6 +214,26 @@ public sealed class AgentCliProviderFactory : IReasoningProviderFactory
         // allowance rather than the value itself: a real coding turn legitimately runs for minutes,
         // and an operator's 120s HTTP deadline would abort work that was going fine.
         var seconds = Math.Max(context.Options.ModelCallTimeoutSeconds, 1);
-        return new AgentCliProvider(agent, TimeSpan.FromSeconds(seconds * 4));
+
+        // v0.3.8.41 — THE WORKING DIRECTORY IS PASSED. It was not, and that was the whole defect.
+        //
+        // AgentCliProvider has taken a workingDirectory since it was written, documented as "what
+        // keeps a writing agent inside the same boundary as every other actor". This line — the only
+        // place production ever constructs one — omitted it. The parameter defaulted to null, null
+        // meant "don't set ProcessStartInfo.WorkingDirectory", and a child process that is not given
+        // one inherits its parent's: the directory the API host was started from, i.e. the
+        // operator's live checkout.
+        //
+        // So routing an ant to Claude Code handed a tool with Writes = true a shell in the source
+        // tree. Every guard the colony has for its own coder — SandboxWorkspace, WorkspacePathGuard,
+        // PatchSet review, the approve-then-apply gate — sits on a path that this went around
+        // entirely, and it did so silently, because the agent's edits are simply not events Anthill
+        // ever saw.
+        //
+        // This is the failure mode this repository keeps naming: not an absent feature, a feature
+        // PRESENT AND WIRED WRONG. A sweep for "is confinement implemented?" finds a documented
+        // parameter and a Writes flag and answers yes.
+        return new AgentCliProvider(agent, TimeSpan.FromSeconds(seconds * 4),
+            context.Options.AgentWorkspaceRoot);
     }
 }

@@ -201,18 +201,32 @@ public class FullRosterQualificationTests
     }
 
     /// <summary>
-    /// The default is STILL `core`. Qualification proves the roster CAN run; it does not decide that
-    /// it should, and a release that silently switched six roles on for every existing installation
-    /// would invert the rollout discipline the whole program rests on.
+    /// The default IS `full`, as of v0.3.8.41 — and this test inverting is the intended change.
+    ///
+    /// For six releases it asserted the opposite, with the reasoning that qualification proves the
+    /// roster CAN run without deciding that it should. The staged rollout was always meant to end,
+    /// and it ends here: all twelve roles are structurally qualified by the fixture in this file, and
+    /// all twelve now have a production trigger — policy insertion for tester, soldier and verifier
+    /// (v3.8.26 and v0.3.8.41), failure for the medic, post-finalization for the archivist, the plan
+    /// for the rest. A role that is qualified and switched off by default is a role nobody runs.
+    ///
+    /// Stated plainly, because the distinction is exactly the kind this suite exists to keep honest:
+    /// there is still NO deterministic Queen-driven acceptance test reaching all twelve through those
+    /// triggers in one mission. What this file proves is that nothing STRUCTURAL stops the roster.
+    /// The rest is recorded as open in <c>docs/PLAN.md</c>.
+    ///
+    /// The rollout discipline moves to <see cref="ConfigSchema"/> rather than disappearing. An
+    /// existing installation is migrated ONLY if it never touched the roster; anything explicit
+    /// survives, and <c>disabled_roles</c> survives unconditionally.
     /// </summary>
     [Fact]
-    public void QualifyingDoesNotChangeTheDefault()
+    public void TheDefaultProfileIsFull_AndKillSwitchesStillStartEmpty()
     {
         var config = new AnthillConfig();
 
-        Assert.Equal(RosterProfiles.Core, config.RosterProfile);
+        Assert.Equal(RosterProfiles.Full, config.RosterProfile);
         Assert.Empty(config.DisabledRoles);
-        Assert.False(config.SpecialistAntExecutionEnabled);
+        Assert.Equal(ConfigSchema.Current, config.ConfigSchemaVersion);
     }
 
     /// <summary>

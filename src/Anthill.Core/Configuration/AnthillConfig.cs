@@ -130,15 +130,39 @@ public sealed class AnthillConfig
     /// about and get consistent. Getting one wrong produces a role that is silently absent, and
     /// nothing correlated the nine into "is the roster on".
     ///
-    /// <c>"core"</c> (default) is exactly today's behaviour: no specialist runs unless its own flag
-    /// says so. <c>"full"</c> enables all six and raises the tier, and is the intended way to run a
-    /// qualified colony.
+    /// <c>"core"</c> runs the six original ants and nothing else. <c>"full"</c> enables all twelve
+    /// mission roles, handoff ingestion and bounded adaptive control.
     ///
-    /// The default does NOT change. A profile that silently switched six roles on for every existing
-    /// installation on upgrade would be the opposite of the rollout discipline this whole program is
-    /// built on.
+    /// v0.3.8.41 — THE DEFAULT IS NOW <c>full</c>, and the honest basis for that is worth stating
+    /// because it is narrower than it sounds. Every one of the twelve roles is STRUCTURALLY
+    /// qualified — handler, contract, declared tools registered, required capabilities grantable
+    /// (<c>FullRosterQualificationTests</c>) — and every one now has a production trigger: policy
+    /// insertion for tester, soldier and verifier, failure for medic, post-finalization for the
+    /// archivist, the plan for the rest. A role that is qualified and switched off by default is a
+    /// role nobody runs.
+    ///
+    /// What does NOT yet exist is a deterministic Queen-driven acceptance suite that reaches all
+    /// twelve through those triggers in one real mission. That gap is recorded in
+    /// <c>docs/PLAN.md</c> §6 and is the next release's work. Flipping the default makes the gap
+    /// more visible rather than smaller, which is the argument for doing it now: the roster is where
+    /// operators will find what the fixture cannot.
+    ///
+    /// Existing installations are NOT switched over blindly. <see cref="ConfigSchema"/> migrates only
+    /// a configuration that still matches the untouched legacy defaults exactly; any explicit
+    /// operator choice — including a deliberate <c>core</c> recorded at schema version 2 or later —
+    /// is preserved, and <see cref="DisabledRoles"/> always survives.
     /// </summary>
-    [JsonPropertyName("roster_profile")] public string RosterProfile { get; set; } = "core";
+    [JsonPropertyName("roster_profile")] public string RosterProfile { get; set; } = RosterProfiles.Full;
+
+    /// <summary>
+    /// The configuration schema version this document was written at. v0.3.8.41.
+    ///
+    /// It exists to make one distinction that is otherwise unrepresentable: whether
+    /// <c>roster_profile: "core"</c> is a choice or a leftover default. Below
+    /// <see cref="ConfigSchema.Current"/> it is a leftover; at or above it, it is a choice. See
+    /// <see cref="ConfigSchema"/>.
+    /// </summary>
+    [JsonPropertyName("config_schema_version")] public int ConfigSchemaVersion { get; set; } = ConfigSchema.Current;
 
     /// <summary>
     /// Per-role kill switches that survive the profile. v3.8.26.

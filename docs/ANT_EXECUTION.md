@@ -48,10 +48,21 @@ exists. Rejections carry reasons. Recursive unlimited task creation is structura
 ## Rollout gates
 
 `specialist_ant_execution_enabled` (master) AND one per-role flag (`tester_ant_enabled`, …) must
-BOTH be true for a specialist to become executable/plannable. All default false. Startup
-validation (`AntExecutorCatalog.Initialize`) verifies handlers/contracts and publishes per-role
-availability with explicit unavailability reasons, surfaced in `/colony/graph.runtime_status` and
-the Ant Inspector.
+BOTH be true for a specialist to become executable/plannable. Startup validation
+(`AntExecutorCatalog.Initialize`) verifies handlers/contracts and publishes per-role availability
+with explicit unavailability reasons, surfaced in `/colony/graph.runtime_status` and the Ant
+Inspector.
+
+**v0.3.8.41 — the shipped default sets all of them.** `roster_profile` defaults to `full`, and
+`RosterProfiles.Resolve` turns the master switch, all six per-role flags, handoff ingestion and
+adaptive mission control on. The individual flags still exist and still bind: `roster_profile:
+"core"` leaves every one of them false, and `disabled_roles` subtracts from whatever the profile
+resolved — applied last and absolutely, because a kill switch a profile could override would not be
+a kill switch.
+
+Existing installations are migrated by `ConfigSchema` only when the on-disk configuration still
+matches the untouched legacy defaults. An explicit `core`, any hand-enabled specialist, or a
+configuration already at schema version 2 is preserved exactly. See `ConfigMigrationTests`.
 
 ## Role matrix
 
@@ -63,12 +74,12 @@ the Ant Inspector.
 | coder | MissionAgent | yes | yes | on | code_change | model only | proposals only, no apply |
 | builder | MissionAgent | yes | yes | on | build_answer | model only | — |
 | verifier | MissionAgent | yes | yes | on | verification | model only | — |
-| ui_cartographer | MissionAgent | yes | gated | **off** | ui_mapping … | list_directory, read_text_file | read-only; hands to coder |
-| tester | MissionAgent | yes | gated | **off** | build_check, test_execution … | run_allowlisted_check ONLY | no shell, no model, evidence required |
-| soldier | MissionAgent | yes | gated | **off** | security_review … | deterministic PolicyScan | blocks not model-overridable |
-| scribe | MissionAgent | yes | gated | **off** | release_notes, docs_patch_proposal … | read summaries | docs-path patches only |
-| medic | MissionAgent | yes | gated | **off** | failure_diagnosis … | read failure context | 2 diagnoses/mission, repeat → escalate |
-| archivist | MissionAgent | yes | gated | **off** | memory_consolidation … | emits memory candidates | positive ONLY from completed_verified |
+| ui_cartographer | MissionAgent | yes | gated | **on** (full profile) | ui_mapping … | list_directory, read_text_file | read-only; hands to coder |
+| tester | MissionAgent | yes | gated | **on** (full profile) | build_check, test_execution … | run_allowlisted_check ONLY | no shell, no model, evidence required |
+| soldier | MissionAgent | yes | gated | **on** (full profile) | security_review … | deterministic PolicyScan | blocks not model-overridable |
+| scribe | MissionAgent | yes | gated | **on** (full profile) | release_notes, docs_patch_proposal … | read summaries | docs-path patches only |
+| medic | MissionAgent | yes | gated | **on** (full profile) | failure_diagnosis … | read failure context | 2 diagnoses/mission, repeat → escalate |
+| archivist | MissionAgent | yes | gated | **on** (full profile) | memory_consolidation … | emits memory candidates | positive ONLY from completed_verified |
 | quartermaster | DeterministicService | n/a | never | n/a | — | — | intentionally non-executable (no metrics contract yet) |
 | queen/director/planner/constraint | ControlPlane | yes | never | n/a | — | — | — |
 | 8 homelab roles | DeterministicService | yes | never | n/a | — | C# services/providers | never LLM-directed |

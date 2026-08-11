@@ -588,6 +588,9 @@ public sealed class ExecutionService : IExecutionService
                 _memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
                 if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, context, task, scheduler);
+                // v0.3.8.41 — the informational branch of the lifecycle. A draft deliverable exists,
+                // so verification is inserted after it rather than left to the plan.
+                if (task.AssignedAnt == "builder") EnsureVerificationAfterDeliverable(mission, context, task, scheduler);
                 if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
                 IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
@@ -959,6 +962,10 @@ public sealed class ExecutionService : IExecutionService
                 SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
                 BaseRevision = materialized.BaseRevision,
                 State = Workspaces.WorkspaceState.Active,
+                // v0.3.8.41 — this tree CONTAINS the patch, and now says so. Anything running a
+                // check here can distinguish it from the MISSION workspace, which is the same source
+                // WITHOUT the proposal in it and is what a tester ant resolves to instead.
+                MaterializedPatchSetId = patchSet.Id,
             });
 
             // v3.8.22: one request PER PROPOSAL, carrying the change. v3.8.21 sent a single request
@@ -1453,6 +1460,10 @@ public sealed class ExecutionService : IExecutionService
     {
         if (patchSet.Proposals.Count == 0) return;
 
+        // The evidence tasks this patch set now has, collected so the verifier can be made to wait
+        // for them. v0.3.8.41 — see EnsureVerificationWaitsFor.
+        var inserted = new List<string>();
+
         foreach (var role in new[] { "tester", "soldier" })
         {
             // A role whose gate is closed is SKIPPED and SAID SO. Silently not inserting it would
@@ -1503,7 +1514,162 @@ public sealed class ExecutionService : IExecutionService
                 created.Id, role,
                 new() { ["role"] = role, ["patch_set_id"] = patchSet.Id, ["source_task_id"] = coderTask.Id });
             Console.WriteLine($"Policy inserted {role} review for patch set {patchSet.Id}.");
+            inserted.Add(created.Id);
         }
+
+        // v0.3.8.41 — and the VERIFIER waits for both of them.
+        EnsureVerificationWaitsFor(mission, context, coderTask, scheduler, inserted,
+            because: $"patch set {patchSet.Id} must be verified against its own test and security evidence",
+            evidence: new() { ["patch_set_id"] = patchSet.Id });
+    }
+
+    /// <summary>
+    /// The verifier runs AFTER the evidence it is supposed to read. v0.3.8.41.
+    ///
+    /// THE DEFECT. `SchedulingMode.PolicyInserted` covers tester and soldier; the verifier stayed
+    /// `PlannerSelectable`, and `AutoWireDependencies` wires it to "everything before it" — which
+    /// means everything the PLANNER produced. The tester and soldier tasks do not exist at planning
+    /// time; they are inserted later, when a patch set appears. So the verifier's dependency set was
+    /// computed before its two most important inputs existed, and it could be dispatched, ask a model
+    /// whether the mission succeeded, and answer — while the checks it was meant to be reading had
+    /// not run.
+    ///
+    /// Nothing failed when that happened. The verifier returns a verdict either way, and a verdict
+    /// reached without evidence looks exactly like one reached with it. That is the shape of every
+    /// defect in this repository's record: a check answering an adjacent question, and passing.
+    ///
+    /// TWO PATHS, ONE RULE. If a verification task already exists — planned, or added by the adaptive
+    /// controller — its dependencies are WIDENED rather than a second one being created. Two
+    /// verifiers on one mission is worse than none, because the colony then holds two verdicts about
+    /// one deliverable with no rule for which wins. If none exists, one is inserted, parented to the
+    /// task whose output made verification meaningful.
+    ///
+    /// Widening only applies to a task that has not started. A verifier that already ran cannot be
+    /// made to have waited, and quietly adding a dependency to a completed task would produce a graph
+    /// that claims an ordering the run did not have.
+    /// </summary>
+    private void EnsureVerificationWaitsFor(Mission mission, MissionContext context, Task sourceTask,
+        TaskScheduler? scheduler, List<string> evidenceTaskIds, string because,
+        Dictionary<string, object?> evidence)
+    {
+        // Nothing to wait for. Inserting a verifier with no evidence to read would be theatre.
+        if (evidenceTaskIds.Count == 0) return;
+
+        if (!AntExecutorCatalog.RuntimeAvailable("verifier"))
+        {
+            _memory.LogEvent(mission.Id, "verification_skipped",
+                "Verification not inserted: "
+                + (AntExecutorCatalog.Snapshot.GetValueOrDefault("verifier")?.UnavailabilityReason ?? "unavailable"),
+                sourceTask.Id, "queen",
+                MergeMetadata(new Dictionary<string, object?>(evidence), new() { ["role"] = "verifier" }));
+            return;
+        }
+
+        // The VERIFIER role, not `MissionVerification.IsVerificationTask`.
+        //
+        // That helper answers "is this task a verification STEP", and its role set is
+        // {verifier, tester, soldier} — correct for grading a mission, and wrong here by exactly the
+        // margin that matters: the tester task inserted four lines ago satisfies it, so this lookup
+        // would find the tester, decide a verifier already exists, and wire the tester to depend on
+        // the soldier. A real verdict would never be scheduled and nothing would say so. Using a
+        // near-enough predicate for a question it was not written for is the defect this file's
+        // history is mostly made of.
+        var existing = mission.Tasks.FirstOrDefault(t =>
+            string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)
+            && t.Status is TaskStatus.Pending or TaskStatus.Ready or TaskStatus.Blocked);
+
+        if (existing is not null)
+        {
+            var added = evidenceTaskIds
+                .Where(id => id != existing.Id && !existing.DependsOn.Contains(id))
+                .ToList();
+            if (added.Count == 0) return;
+
+            existing.DependsOn = existing.DependsOn.Concat(added).ToList();
+            // Re-evaluated so the scheduler sees the new edges before it can pick the task up.
+            scheduler?.Evaluate();
+            _memory.SaveTask(mission.Id, existing);
+
+            _memory.LogEvent(mission.Id, "verification_bound_to_evidence",
+                $"Verification now waits for {added.Count} evidence task(s): {because}.",
+                existing.Id, "verifier",
+                MergeMetadata(new Dictionary<string, object?>(evidence), new()
+                {
+                    ["verification_task_id"] = existing.Id,
+                    ["waits_for"] = added,
+                    ["source_task_id"] = sourceTask.Id,
+                }));
+            Console.WriteLine($"Verification bound to {added.Count} evidence task(s).");
+            return;
+        }
+
+        // Already verified, or verification already failed. Either way there is a verdict on record
+        // and a second one would not be a stronger answer. Verifier role only, for the reason above.
+        if (mission.Tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var verify = new Task
+        {
+            Title = "Verify the deliverable against its evidence",
+            Description = $"Verify the mission's deliverable against the evidence produced for it: {because}. "
+                        + $"Goal: {TextUtil.Truncate(mission.Goal, 400)}",
+            AssignedAnt = "verifier",
+            TaskType = "verification",
+            // The parent is what makes this admissible under the scheduling rule, and it is honest:
+            // this task was caused by evidence arriving, not scheduled speculatively.
+            ParentTaskIds = new List<string> { sourceTask.Id },
+            DependsOn = evidenceTaskIds.Append(sourceTask.Id).Distinct().ToList(),
+            // A mission that could not verify its own deliverable is not a verified mission.
+            Critical = true,
+        };
+
+        if (TryAdmitDynamicTask(mission, scheduler, verify, context.Constraints) is { Length: > 0 } refusal)
+        {
+            // Fail CLOSED and say so. An unverifiable deliverable must not read as a verified one,
+            // and `DeterministicBlock` is the existing mechanism for exactly that demotion.
+            sourceTask.DeterministicBlock ??= $"verification could not be inserted: {refusal}";
+            _memory.LogEvent(mission.Id, "verification_refused",
+                $"Verification could not be inserted, so this mission cannot be verified: {refusal}",
+                sourceTask.Id, "queen",
+                MergeMetadata(new Dictionary<string, object?>(evidence), new()
+                {
+                    ["reason"] = refusal, ["blocks_verification"] = true,
+                }));
+            return;
+        }
+
+        _memory.LogEvent(mission.Id, "verification_inserted",
+            $"Verification inserted by policy — {because}.", verify.Id, "verifier",
+            MergeMetadata(new Dictionary<string, object?>(evidence), new()
+            {
+                ["waits_for"] = verify.DependsOn, ["source_task_id"] = sourceTask.Id,
+            }));
+        Console.WriteLine($"Policy inserted verification after {sourceTask.AssignedAnt}.");
+    }
+
+    /// <summary>
+    /// The non-change branch of the lifecycle: a draft deliverable exists, so it gets verified.
+    /// v0.3.8.41.
+    ///
+    /// Stage 4A of the canonical flow is "Builder creates a typed draft deliverable, THEN Verifier is
+    /// inserted automatically after the draft exists". For a repository-change mission the trigger is
+    /// the patch set and its assurance evidence; for an informational one it is the deliverable
+    /// itself, because there is no patch to test and the thing being verified is the answer.
+    ///
+    /// Guarded on there being no patch set: a code mission's builder writes the OPERATOR SUMMARY
+    /// after verification, and treating that as a fresh deliverable to verify would insert a second
+    /// verification of a mission that already has one.
+    /// </summary>
+    private void EnsureVerificationAfterDeliverable(Mission mission, MissionContext context, Task builderTask,
+        TaskScheduler? scheduler)
+    {
+        if (_memory.CountPatchProposalsForMission(mission.Id) > 0) return;
+
+        EnsureVerificationWaitsFor(mission, context, builderTask, scheduler,
+            evidenceTaskIds: new List<string> { builderTask.Id },
+            because: "a deliverable was produced and must be checked against the goal, its sources and "
+                   + "the mission's constraints",
+            evidence: new Dictionary<string, object?> { ["deliverable_task_id"] = builderTask.Id });
     }
 
     private string? TryAdmitDynamicTask(Mission mission, TaskScheduler? scheduler, Task created,

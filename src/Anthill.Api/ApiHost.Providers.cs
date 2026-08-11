@@ -74,7 +74,7 @@ public static partial class ApiHost
                 ["description"] = s.Installed
                     ? $"Delegates the turn to {s.Agent.DisplayName} on this machine, signed in as you. "
                     + "Anthill starts it and never holds your credentials."
-                    : $"Not installed. {s.Agent.InstallCommand}",
+                    : $"Not installed. {AgentCliCatalog.InstallHint(s.Agent)}",
                 ["requires_key"] = false,
                 ["default_endpoint"] = null,
                 ["key_help_url"] = s.Agent.DocsUrl,
@@ -735,7 +735,15 @@ public static partial class ApiHost
                 // INTERFACE METHOD, which C# dispatches only through the interface. Calling it on
                 // the concrete type is CS1061, and the message ("does not contain a definition")
                 // reads like a missing member rather than the interface rule it actually is.
-                IReasoningProvider probe = new AgentCliProvider(agent, TimeSpan.FromSeconds(30));
+                //
+                // v0.3.8.41 — CONFINED, like the routed one. Building directly is a deliberate
+                // shortcut around the router's timeout, not around its safety: this endpoint starts
+                // a real agent process, and an agent with Writes = true given no working directory
+                // acts in whatever directory the API host was started from. Skipping the router must
+                // not mean skipping the boundary — that is how the routed path lost it in the first
+                // place, by omitting one argument at the only site that supplied it.
+                IReasoningProvider probe = new AgentCliProvider(
+                    agent, TimeSpan.FromSeconds(30), ReasoningProviders.AgentWorkspaceRoot);
                 var agentReply = probe.Generate("Reply with the single word: OK", retries: 1);
 
                 // Deliberately NOT recorded through SetProviderVerification. That table is the

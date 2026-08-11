@@ -658,7 +658,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         var stopReason = Execution.Execute(mission, context, missionCts.Token);
 
         var evaluation = FinalizeMission(mission, context, stopReason);
-        Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
         Memory.SaveMission(mission);
         // The evaluation is persisted AFTER the final SaveMission on purpose: SaveMission is an
         // INSERT OR REPLACE, and a row replacement erases columns it does not carry — writing the
@@ -683,6 +682,35 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // exactly what a planner-scheduled archivist would have done, and why the contract forbids
         // that.
         RunArchivistAfterFinalization(mission, evaluation);
+
+        // v0.3.8.41 — LEARNING RUNS HERE, AFTER THE ARCHIVIST. This is a real ordering fix.
+        //
+        // `LearningRecorder.RegisterProceduralRoutes` reads the mission's `memory_candidate` events
+        // — the archivist's output — and turns qualifying ones into skill candidates. It ran inside
+        // `FinalizeMission`, which is BEFORE the archivist has produced a single candidate, so that
+        // query returned an empty list on every mission that has ever run. v2.26.0 moved route
+        // registration to finalization to fix a different version of the same bug (it used to run
+        // while the mission was still Running and always read a negative outcome); it landed one step
+        // short, because the producer had not been given a trigger yet. v3.8.26 gave the archivist
+        // its trigger and put it AFTER learning, which completed the loop in the wrong direction.
+        //
+        // So the order is now: evaluation persisted -> archivist writes candidates -> learning
+        // consumes them. Each step's input exists before the step that needs it, which is the whole
+        // property, and `FinalizationOrderTests.TheArchivistRunsBeforeLearning` asserts it by
+        // position — because position is exactly what the defect was.
+        //
+        // IDEMPOTENT. Recovery may call finalization again for a mission that already finished, and
+        // pheromone strength and skill observations are CUMULATIVE — learning twice does not produce
+        // a wrong answer slowly, it produces a wrong answer immediately. The ledger below is checked
+        // against the durable event log rather than an in-memory flag, because the process that ran
+        // the mission is exactly the process a restart no longer has.
+        if (MissionFinalizationLedger.TryClaimLearning(Memory, mission.Id, evaluation))
+        {
+            _learning.Record(mission, context, evaluation);
+            // A NARROW update: SaveMission here would erase the evaluation columns written above.
+            Memory.SaveMissionScore(mission.Id, mission.SuccessScore);
+            Console.WriteLine($"Pheromone score: {mission.SuccessScore}");
+        }
 
         // v2.7.0 (canonical since v2.26.0): the operator-facing "why it ended" derives from the
         // ONE persisted evaluation — the reason text is presentation; the code is authority.
@@ -781,6 +809,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
 
         if (!_ants.TryGetValue("archivist", out var archivist)) return;
 
+        // v0.3.8.41 — once per evaluation. Memory candidates are the input to skill-candidate
+        // registration, and registering the same observation twice is how a promotion threshold that
+        // requires repeat evidence across missions gets satisfied by one mission finalised twice.
+        if (!MissionFinalizationLedger.TryClaimArchivist(Memory, mission.Id, evaluation)) return;
+
         try
         {
             var synthetic = new Domain.Task
@@ -872,11 +905,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                     Memory.CountPatchProposalsForMission(mission.Id)),
                 metadata: new() { ["goal"] = TextUtil.Truncate(mission.Goal, 300) });
 
-        // v3.1.0 (ADR-001): everything a finished mission teaches the colony — scoring, pheromone
-        // reinforcement, skill credit, route registration — behind one interface. The Queen still
-        // decides WHEN learning happens: after every task is terminal, after the ONE canonical
-        // evaluation exists, and before completion is published anywhere.
-        _learning.Record(mission, context, evaluation);
+        // v0.3.8.41 — learning is NOT called here any more. It moved to `RunMission`, after the
+        // canonical evaluation is persisted and after the archivist has written its memory
+        // candidates, because learning is the thing that consumes those candidates. See the comment
+        // at the call site; this note stays so the absence reads as a decision rather than a
+        // deletion.
 
         // v3.5.0: whatever the mission changed in its workspace becomes a REVIEWABLE change set.
         //

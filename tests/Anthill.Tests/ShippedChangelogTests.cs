@@ -36,7 +36,26 @@ public class ShippedChangelogTests
 {
     private static string Root() => SourceText.RepoRoot();
 
-    /// <summary>Run a git command at the repo root. Null when git is unavailable or the command failed.</summary>
+    /// <summary>
+    /// Run a git command at the repo root. Null when git is unavailable or the command failed.
+    ///
+    /// <b>The output is decoded as UTF-8, explicitly.</b> v0.3.8.41 — without this the guard was
+    /// broken on Windows and green on Linux, which is the worst arrangement available: CI never saw
+    /// the problem, while the machine releases are actually cut from reported 37 of 41 shipped
+    /// entries as having been edited after their tag.
+    ///
+    /// <c>RedirectStandardOutput</c> defaults to <c>Console.OutputEncoding</c>, which on an English
+    /// Windows console is code page 437 or 1252 rather than UTF-8. <c>git show</c> emits the blob's
+    /// bytes, and this changelog is full of em-dashes and curly quotes — so every entry containing
+    /// one decoded to mojibake and compared unequal to the same entry read from disk by
+    /// <c>File.ReadAllText</c>, which does detect UTF-8. The four entries that passed were the ones
+    /// that happen to be pure ASCII.
+    ///
+    /// Worth stating because of what the failure LOOKED like: a guard confidently naming thirty-seven
+    /// releases as tampered with. A check that is wrong on every run is one people learn to ignore,
+    /// which costs nothing until the day it is right — the same argument v3.8.2 made about the
+    /// model-fitness alarm.
+    /// </summary>
     private static string? Git(string arguments)
     {
         try
@@ -46,6 +65,8 @@ public class ShippedChangelogTests
                 WorkingDirectory = Root(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
@@ -169,6 +190,94 @@ public class ShippedChangelogTests
 
         var firstTag = anyTag.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0].Trim();
         Assert.NotNull(Git($"show {firstTag}:CHANGELOG.md"));
+    }
+
+    /// <summary>
+    /// EVERY release commit on the active line has a changelog entry. v0.3.8.41.
+    ///
+    /// THE GAP THIS CLOSES. `VersionMarkers_ChangelogHasEntryForRuntimeVersion` checks that the
+    /// version the runtime reports has an entry — the CURRENT one, and only that one. A release that
+    /// ships and is never written down passes it, passes the ordering guard, passes the frozen-entry
+    /// guard, and leaves every version marker in agreement.
+    ///
+    /// That is not hypothetical. v0.3.8.39 shipped as commit `aecc926` (#223) with no changelog
+    /// entry and no tag; `.38` and `.40` sat next to each other and nothing said a release was
+    /// missing. It was found by hand, during an audit that was looking for something else. Two
+    /// commits also both claimed `v0.3.8.40`, with one tag between them.
+    ///
+    /// The subject is the RELEASE COMMIT SUBJECT, because that is the one place a shipped version
+    /// records itself independently of the documents describing it. Skips cleanly without git, like
+    /// its neighbours above, and for the same reason: the mistake is made while releasing locally,
+    /// which is exactly where git is.
+    /// </summary>
+    [Fact]
+    public void EveryReleaseCommitOnTheActiveLine_HasAChangelogEntry()
+    {
+        var log = Git("log --format=%s -n 400");
+        if (log is null) return;   // git unavailable — see the class comment
+
+        // "v0.3.8.39: the console says what it means ..." — the shape every release commit here uses.
+        var released = Regex.Matches(log, @"^v(0\.\d+(?:\.\d+)+)\s*[:\-]", RegexOptions.Multiline)
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (released.Count == 0) return;   // shallow clone, or a squash history without subjects
+
+        var entries = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+
+        var undocumented = released
+            .Where(v => !entries.ContainsKey(v))
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(undocumented.Count == 0,
+            "These versions have a release commit on this branch and NO changelog entry, so the "
+            + "repository contains releases whose contents are unrecorded. That is how v0.3.8.39 "
+            + "shipped unwritten: the current-version guard only ever checks the current version, so "
+            + "a skipped entry in between passes everything. Write the entry (reconstructing it from "
+            + "the commit is fine, and should say so): " + string.Join(", ", undocumented));
+    }
+
+    /// <summary>
+    /// One release commit per version. v0.3.8.41.
+    ///
+    /// Two commits claimed `v0.3.8.40` (#224 and #225) and one tag points at one of them, so the
+    /// other shipped untagged and untagged is unfindable. A version is a name for a specific tree;
+    /// naming two trees with it means the name identifies neither.
+    /// </summary>
+    /// <summary>
+    /// Duplicates already in the history, named with their reason.
+    ///
+    /// History is not editable and rewriting it to make a guard green would be the wrong direction —
+    /// the same reasoning <see cref="CorrectedAfterShipping"/> carries. What the guard must catch is
+    /// the NEXT one.
+    /// </summary>
+    private static readonly Dictionary<string, string> DuplicateReleaseCommits =
+        new(StringComparer.Ordinal)
+        {
+            ["0.3.8.40"] = "#224 and #225 both shipped under this version; the tag points at one of "
+                         + "them. Found during the v0.3.8.41 audit, recorded rather than rewritten.",
+        };
+
+    [Fact]
+    public void NoTwoReleaseCommits_ClaimTheSameVersion()
+    {
+        var log = Git("log --format=%s -n 400");
+        if (log is null) return;
+
+        var duplicates = Regex.Matches(log, @"^v(0\.\d+(?:\.\d+)+)\s*[:\-]", RegexOptions.Multiline)
+            .Select(m => m.Groups[1].Value)
+            .GroupBy(v => v, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Where(g => !DuplicateReleaseCommits.ContainsKey(g.Key))
+            .Select(g => $"{g.Key} ({g.Count()} commits)")
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(duplicates.Count == 0,
+            "These versions are claimed by more than one release commit, so the tag can only point "
+            + "at one of them and the rest shipped unfindable: " + string.Join(", ", duplicates));
     }
 
     /// <summary>
