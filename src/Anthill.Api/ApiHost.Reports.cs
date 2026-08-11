@@ -134,6 +134,22 @@ public static partial class ApiHost
             ["provider_role_count"] = providerRoles.Count,
             ["providers_configured"] = providersConfigured,
             ["routes"] = routeList,
+
+            // v3.8.34 — how many contracted roles cannot actually use the model they are routed to.
+            //
+            // AntModelFitness has computed this since v3.4.2 and `/tools` has reported it in full,
+            // but the only console surface for it is the Tools & Routing widget, which
+            // DEFAULT_DASHBOARD_VIEW ships HIDDEN. So on a first-run dashboard the operator is told
+            // the model is reachable and resolved, and nothing says that seven of ten roles will
+            // parse prose into an empty result.
+            //
+            // The count belongs here for the same reason `ollama_model_present` was added to this
+            // summary in v2.4.3: the header status is the one surface that is always visible, and a
+            // fault nobody can see is a fault nobody fixes. The full per-role reasons stay on
+            // /tools — this is the pointer, not the report.
+            ["unfit_role_count"] = Queen.Router is null
+                ? 0
+                : AntModelFitness.CheckAll(Queen.Router, AntExecutionCatalog.Contracts).Count(f => !f.Fit),
         };
     }
 
