@@ -27,11 +27,11 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO conversations
                     (id, title, role, policy, policy_set_by, policy_set_at, mission_ids_json,
-                     cancelled, created_at, updated_at)
-                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @created, @updated)
+                     cancelled, pinned, created_at, updated_at)
+                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @pinned, @created, @updated)
                   ON CONFLICT(id) DO UPDATE SET
                     title=@title, role=@role, policy=@policy, policy_set_by=@by, policy_set_at=@at,
-                    mission_ids_json=@missions, cancelled=@cancelled, updated_at=@updated",
+                    mission_ids_json=@missions, cancelled=@cancelled, pinned=@pinned, updated_at=@updated",
                 ("@id", conversation.Id),
                 ("@title", conversation.Title),
                 ("@role", conversation.Role),
@@ -43,6 +43,7 @@ public sealed partial class SqliteMemory
                 ("@at", (object?)conversation.PolicySetAt?.ToIso() ?? DBNull.Value),
                 ("@missions", Json.SafeDumps(conversation.MissionIds)),
                 ("@cancelled", conversation.Cancelled ? 1 : 0),
+                ("@pinned", conversation.Pinned ? 1 : 0),
                 ("@created", conversation.CreatedAt.ToIso()),
                 ("@updated", conversation.UpdatedAt.ToIso()));
         }
@@ -51,8 +52,28 @@ public sealed partial class SqliteMemory
     public Conversation? LoadConversation(string id) =>
         Query("SELECT * FROM conversations WHERE id=@id", ("@id", id ?? "")).Select(ReadConversation).FirstOrDefault();
 
+    /// <summary>Pinned first, then most recently touched — the rail's order, decided here once.</summary>
     public IReadOnlyList<Conversation> LoadConversations() =>
-        Query("SELECT * FROM conversations ORDER BY updated_at DESC").Select(ReadConversation).ToList();
+        Query("SELECT * FROM conversations ORDER BY pinned DESC, updated_at DESC").Select(ReadConversation).ToList();
+
+    /// <summary>
+    /// v0.3.8.46: search over what is actually stored — titles and turn content, case-insensitive,
+    /// pinned-then-recent like the rail. The match is plain substring (SQL LIKE with escaped
+    /// wildcards), which is exactly what the search box claims and nothing more.
+    /// </summary>
+    public IReadOnlyList<Conversation> SearchConversations(string query, int limit = 50)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return LoadConversations();
+        var like = "%" + query.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        return Query(
+            @"SELECT DISTINCT c.* FROM conversations c
+              LEFT JOIN conversation_turns t ON t.conversation_id = c.id
+              WHERE c.title LIKE @q ESCAPE '\' OR t.content LIKE @q ESCAPE '\'
+              ORDER BY c.pinned DESC, c.updated_at DESC
+              LIMIT @limit",
+            ("@q", like), ("@limit", Math.Clamp(limit, 1, 200)))
+            .Select(ReadConversation).ToList();
+    }
 
     public void SaveConversationTurn(ConversationTurn turn)
     {
@@ -64,9 +85,10 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO conversation_turns
                     (id, conversation_id, ordinal, role, content, provider, model,
-                     tools_offered_json, tools_called_json, mission_id, created_at)
+                     tools_offered_json, tools_called_json, mission_id, prompt_tokens,
+                     completion_tokens, created_at)
                   VALUES (@id, @cid, @ord, @role, @content, @provider, @model,
-                          @offered, @called, @mission, @created)
+                          @offered, @called, @mission, @ptok, @ctok, @created)
                   ON CONFLICT(id) DO UPDATE SET content=@content, tools_called_json=@called, mission_id=@mission",
                 ("@id", turn.Id), ("@cid", turn.ConversationId), ("@ord", turn.Ordinal),
                 ("@role", turn.Role), ("@content", turn.Content),
@@ -75,6 +97,8 @@ public sealed partial class SqliteMemory
                 ("@offered", Json.SafeDumps(turn.ToolsOffered)),
                 ("@called", Json.SafeDumps(turn.ToolsCalled)),
                 ("@mission", (object?)turn.MissionId ?? DBNull.Value),
+                ("@ptok", (object?)turn.PromptTokens ?? DBNull.Value),
+                ("@ctok", (object?)turn.CompletionTokens ?? DBNull.Value),
                 ("@created", turn.CreatedAt.ToIso()));
         }
     }
@@ -95,8 +119,14 @@ public sealed partial class SqliteMemory
             ToolsOffered = Json.SafeLoadList(row.GetValueOrDefault("tools_offered_json")?.ToString()),
             ToolsCalled = Json.SafeLoadList(row.GetValueOrDefault("tools_called_json")?.ToString()),
             MissionId = row.GetValueOrDefault("mission_id")?.ToString(),
+            PromptTokens = ReadNullableInt(row.GetValueOrDefault("prompt_tokens")),
+            CompletionTokens = ReadNullableInt(row.GetValueOrDefault("completion_tokens")),
             CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         }).ToList();
+
+    /// <summary>Null stays null: an unreported token count must never rehydrate as zero.</summary>
+    private static int? ReadNullableInt(object? value) =>
+        value is null || value is DBNull ? null : Convert.ToInt32(value);
 
     /// <summary>
     /// Record what was decided about one side-effecting action.
@@ -150,6 +180,7 @@ public sealed partial class SqliteMemory
         PolicySetAt = AnthillTime.ParseIsoOrNull(row.GetValueOrDefault("policy_set_at")?.ToString()),
         MissionIds = Json.SafeLoadList(row.GetValueOrDefault("mission_ids_json")?.ToString()),
         Cancelled = Convert.ToInt64(row.GetValueOrDefault("cancelled") ?? 0L) != 0,
+        Pinned = Convert.ToInt64(row.GetValueOrDefault("pinned") ?? 0L) != 0,
         CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         UpdatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("updated_at")?.ToString()),
     };

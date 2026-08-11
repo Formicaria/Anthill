@@ -142,6 +142,31 @@ public class ConversationStateTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.46, found live: "later approved" must mean LATER. An approval from earlier in the
+    /// conversation's life must not swallow a fresh refusal of the same action — that is how the
+    /// second mission a conversation asked for became invisible: the first approval cleared every
+    /// future request from the waiting list, and the colony waited on an operator who was never
+    /// told anything was waiting.
+    /// </summary>
+    [Fact]
+    public void AnOldApproval_DoesNotSwallowANewRefusal()
+    {
+        var earlier = DateTime.UtcNow.AddMinutes(-30);
+        _memory.SaveEscalationDecision(new EscalationDecision(
+            "d1", "c1", "start_mission", Allowed: true, EscalationPolicy.Ask,
+            "operator", earlier, "approved the first mission"));
+        _memory.SaveEscalationDecision(new EscalationDecision(
+            "d2", "c1", "start_mission", Allowed: false, EscalationPolicy.Ask,
+            "nobody", DateTime.UtcNow, "no operator decision was recorded for this action"));
+        Save(new Conversation { Id = "c1" });
+
+        var state = Read();
+
+        Assert.True(state.NeedsOperator);
+        Assert.Contains("start_mission", state.WaitingOn);
+    }
+
+    /// <summary>
     /// A standing policy never produces a waiting state — nothing was ever refused for want of a
     /// decision, because the decision was made in advance.
     /// </summary>

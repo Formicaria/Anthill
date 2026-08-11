@@ -45,7 +45,6 @@ public class ConsoleRouteCoverageTests
         ["/schema"] = "plain-text schema dump for support and CI; the console shows what it means instead",
         ["/selftest"] = "CI and support diagnostic; a failing self-test surfaces through /config/health",
         ["/runtime/inventory"] = "the generated declaration/call-site audit CI gates on; not operator-facing",
-        ["/readiness/attest"] = "POST paired with the readiness report; no reader until that report has a UI",
 
         // --- superseded by a richer surface the console already uses -----------------------------
         ["/tasks"] = "plain-text task metrics; the console reads per-mission tasks from /missions/*",
@@ -64,20 +63,16 @@ public class ConsoleRouteCoverageTests
         ["/homelab/backup/impact/*"] = "homelab backup impact; no console area yet",
         ["/homelab/graph/dependents/*"] = "homelab dependency graph; the deck renders the graph itself",
 
-        // --- UI GAPS. Real, recorded, owned by the alignment brief. --------------------------------
-        ["/readiness/json"] = "UI GAP — the qualification snapshot has no console view. AUTONOMY-10 "
-                            + "makes qualification the exit gate for every phase and an operator "
-                            + "currently cannot see it. Deliverable A/B in UI-ALIGNMENT-BRIEF.md",
-        ["/readiness/certification"] = "UI GAP — as /readiness/json",
-        ["/readiness/qualification-report"] = "UI GAP — as /readiness/json",
-        ["/colony/introspection"] = "UI GAP — the colony's own account of its wiring; Layer-3 "
-                                  + "diagnostic with no console home yet",
-        ["/source-quality"] = "UI GAP — research source-quality trails are recorded and never shown; "
-                            + "relates to the pheromone surface, which also has no operator view",
-        ["/shadow/judge"] = "UI GAP — shadow-mode judgments are recorded and not surfaced",
-        ["/missions/plan"] = "UI GAP — the dry-run plan preview lost its only surface when the "
-                           + "dashboard composer retired (v0.3.8.42 §3: chat is the one mission "
-                           + "entry). The capability was not removed; Chat should grow a preview step",
+        // --- The UI GAPS section emptied at v0.3.8.46. Every entry left by gaining a surface: ----
+        // "/readiness/json", "/readiness/certification" and "/readiness/qualification-report" —
+        //   the Readiness page (Administration → Readiness): snapshot with attestation, the
+        //   certification download, the report action.
+        // "/colony/introspection" — rendered on the same Readiness page.
+        // "/source-quality" — shown on Memory & Signals, beside the learning signals it belongs with.
+        // "/shadow/judge" — the pending queue renders in the shadow panel with the judgment form
+        //   attached; a recorded judgment feeds the scoreboard.
+        // "/missions/plan" — the dry-run preview renders inside chat's escalation gate, at the
+        //   moment of the yes/no it informs.
     };
 
     /// <summary>Every route literal the API maps, normalised so `{id}` segments compare.</summary>
@@ -206,19 +201,24 @@ public class ConsoleRouteCoverageTests
     }
 
     /// <summary>
-    /// The UI gaps stay VISIBLE. If someone deletes the entries instead of fixing the gaps, the
-    /// ledger silently becomes a list of excuses — so their presence is asserted until the console
-    /// work lands and they are removed together with the gap.
+    /// v0.3.8.46: the last recorded UI gap gained a surface, and the guard that kept the gaps
+    /// visible retired with them — exactly as its own failure message instructed. What remains is
+    /// its inverse: the console must now actually REACH every route the gaps named, so deleting a
+    /// surface reopens a gap loudly instead of silently.
     /// </summary>
     [Fact]
-    public void TheRecordedUiGaps_AreStillDeclaredAsGaps()
+    public void TheFormerGaps_AreActuallySurfaced()
     {
-        var gaps = NoConsoleSurface.Where(kv => kv.Value.StartsWith("UI GAP", StringComparison.Ordinal))
-            .Select(kv => kv.Key).ToList();
+        var console = ConsoleSource();
 
-        Assert.True(gaps.Count > 0,
-            "No route is recorded as a UI gap. If the console genuinely now surfaces readiness, "
-            + "colony introspection, source quality and shadow judgments, delete this test with the "
-            + "entries. If it does not, the gaps must stay recorded.");
+        foreach (var route in new[] { "/readiness/json", "/readiness/certification",
+            "/readiness/qualification-report", "/colony/introspection", "/source-quality",
+            "/shadow/judge", "/missions/plan" })
+        {
+            Assert.True(ReachedByConsole(route, console),
+                $"{route} was a recorded UI gap, closed at v0.3.8.46 — and the console no longer "
+                + "reaches it. Its surface has been removed; restore it or put the gap back on the "
+                + "ledger honestly.");
+        }
     }
 }
