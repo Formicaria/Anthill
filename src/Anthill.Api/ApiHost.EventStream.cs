@@ -5,6 +5,7 @@ using Anthill.Core.Common;
 using Anthill.SDK.Events;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;   // v3.8.34: IHostApplicationLifetime, so the stream ends on shutdown
 using ThreadingTask = System.Threading.Tasks.Task;
 
 namespace Anthill.Api;
@@ -40,7 +41,7 @@ public static partial class ApiHost
 
     private static void MapEventStreamEndpoints(WebApplication app)
     {
-        app.MapGet("/events/stream", async (HttpContext ctx) =>
+        app.MapGet("/events/stream", async (HttpContext ctx, IHostApplicationLifetime lifetime) =>
         {
             // Same permission as /events/json. The stream is the same data by a faster route; it
             // must not become a way to see events a caller could not otherwise read.
@@ -50,6 +51,20 @@ public static partial class ApiHost
                 await auth.ExecuteAsync(ctx);
                 return;
             }
+
+            // v3.8.34 — the stream must also end when the HOST stops, not only when the client goes.
+            //
+            // `ctx.RequestAborted` fires on client disconnect. It does NOT fire because the server
+            // is shutting down: Kestrel stops accepting new connections and then WAITS for in-flight
+            // requests to finish, up to the host's shutdown timeout. This request never finishes on
+            // its own — it is an infinite loop by design — so Ctrl+C sat there for the full timeout
+            // with an open dashboard, once per connected tab. The colony looked hung on the way out.
+            //
+            // Linking `ApplicationStopping` makes the loop observe the shutdown the same way it
+            // observes a closed tab, which is what it already knows how to do cleanly.
+            using var streamEnd = CancellationTokenSource.CreateLinkedTokenSource(
+                ctx.RequestAborted, lifetime.ApplicationStopping);
+            var streamToken = streamEnd.Token;
 
             var missionFilter = ctx.Request.Query["mission_id"].FirstOrDefault();
             var typeFilter = ctx.Request.Query["type"].FirstOrDefault();
@@ -80,33 +95,34 @@ public static partial class ApiHost
                 buffer.Writer.TryWrite(ev);
             });
 
-            await WriteCommentAsync(ctx, "connected", ctx.RequestAborted);
+            await WriteCommentAsync(ctx, "connected", streamToken);
 
             foreach (var row in ReplayRows(missionFilter, typeFilter))
-                await WriteEventAsync(ctx, row, ctx.RequestAborted);
+                await WriteEventAsync(ctx, row, streamToken);
 
             try
             {
-                while (!ctx.RequestAborted.IsCancellationRequested)
+                while (!streamToken.IsCancellationRequested)
                 {
-                    using var idle = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+                    using var idle = CancellationTokenSource.CreateLinkedTokenSource(streamToken);
                     idle.CancelAfter(Heartbeat);
                     try
                     {
                         var ev = await buffer.Reader.ReadAsync(idle.Token);
-                        await WriteEventAsync(ctx, Serialize(ev), ctx.RequestAborted);
+                        await WriteEventAsync(ctx, Serialize(ev), streamToken);
                     }
-                    catch (OperationCanceledException) when (!ctx.RequestAborted.IsCancellationRequested)
+                    catch (OperationCanceledException) when (!streamToken.IsCancellationRequested)
                     {
                         // Idle window elapsed, client still there. Prove the connection is alive.
-                        await WriteCommentAsync(ctx, "keepalive", ctx.RequestAborted);
+                        await WriteCommentAsync(ctx, "keepalive", streamToken);
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                // The browser closed the tab. Ordinary, and not an error worth logging: with one
-                // dashboard open and a page refresh, this fires constantly.
+                // The browser closed the tab, or the colony is shutting down. Both are ordinary and
+                // neither is worth logging: with one dashboard open and a page refresh, the first
+                // fires constantly.
             }
             finally
             {

@@ -56,7 +56,7 @@ public class HomelabEventBridgeTests : IDisposable
     }
 
     [Fact]
-    public void A_recorded_event_reaches_the_colony_stream()
+    public async Task A_recorded_event_reaches_the_colony_stream()
     {
         using var bus = new InProcessEventBus();
         using var repo = NewRepo();
@@ -66,8 +66,7 @@ public class HomelabEventBridgeTests : IDisposable
 
         repo.RecordEvent(Event());
 
-        Assert.True(seen.Task.Wait(Timeout));
-        var published = seen.Task.Result;
+        var published = await seen.Task.WaitAsync(Timeout);
 
         // Prefixed, not passed through: homelab draws from a different type vocabulary, and a
         // console filtering on a bare name would mix infrastructure activity into mission panels
@@ -87,7 +86,7 @@ public class HomelabEventBridgeTests : IDisposable
     /// a stream full of things that did not just happen.
     /// </summary>
     [Fact]
-    public void A_duplicate_event_is_not_announced_a_second_time()
+    public async Task A_duplicate_event_is_not_announced_a_second_time()
     {
         using var bus = new InProcessEventBus();
         using var repo = NewRepo();
@@ -110,7 +109,7 @@ public class HomelabEventBridgeTests : IDisposable
         distinct.SubjectId = "vm-999";
         repo.RecordEvent(distinct);
 
-        Assert.True(second.Task.Wait(Timeout));
+        await second.Task.WaitAsync(Timeout);
         Assert.Equal(2, published);
         Assert.Equal(2, repo.RecentEvents(10).Count);
     }
@@ -120,7 +119,7 @@ public class HomelabEventBridgeTests : IDisposable
     /// or a later database failure turns the audit log into a best-effort one.
     /// </summary>
     [Fact]
-    public void An_event_is_already_stored_when_subscribers_see_it()
+    public async Task An_event_is_already_stored_when_subscribers_see_it()
     {
         using var bus = new InProcessEventBus();
         using var repo = NewRepo();
@@ -130,7 +129,7 @@ public class HomelabEventBridgeTests : IDisposable
 
         repo.RecordEvent(Event());
 
-        Assert.True(readBack.Task.Wait(Timeout));
-        Assert.Equal(1, readBack.Task.Result);
+        var readBackCount = await readBack.Task.WaitAsync(Timeout);
+        Assert.Equal(1, readBackCount);
     }
 }

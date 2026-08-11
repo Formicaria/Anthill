@@ -270,7 +270,7 @@ public class RepositoryIndexTests : IDisposable
     {
         var symbols = RepositoryIndexBuilder.ExtractSymbols(language, System.Text.Encoding.UTF8.GetBytes(source));
 
-        var found = Assert.Single(symbols.Where(s => s.Name == name));
+        var found = Assert.Single(symbols, s => s.Name == name);
         Assert.Equal(kind, found.Kind);
     }
 

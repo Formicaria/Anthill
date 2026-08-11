@@ -285,6 +285,36 @@ function enterApp(){
   startEventStream();   // v3.8.3: live push alongside the pollers, not instead of them yet
   // Restore nav collapse state
   if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
+  applyNarrowNav();
+}
+
+/**
+ * v3.8.34: collapse the sidebar on its own when the viewport cannot afford it.
+ *
+ * `#nav-rail` was a flat `width:var(--nav-w)` — 240px at every size. The console has seven narrow
+ * breakpoints and not one of them touched the rail, so at 760px it held roughly a third of the
+ * screen and the content it pushed aside got the rest. `.nav-collapsed` already styles exactly the
+ * state that is wanted; nothing was asking for it.
+ *
+ * Driven from matchMedia rather than a media query so the EXISTING collapsed rules are reused. A
+ * CSS breakpoint would have to restate the ten `.nav-collapsed` selectors, and two copies of one
+ * appearance is how they come to disagree.
+ *
+ * The operator's stored choice is never written here. Narrow forces collapse; returning to a wide
+ * viewport restores whatever they last chose deliberately — so resizing a window cannot silently
+ * rewrite a preference the operator set on purpose.
+ */
+var _narrowNav = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+function applyNarrowNav(){
+  if(!_narrowNav) return;
+  if(_narrowNav.matches) document.body.classList.add('nav-collapsed');
+  else document.body.classList.toggle('nav-collapsed', localStorage.getItem('nav-collapsed')==='1');
+}
+if(_narrowNav){
+  // addEventListener on MediaQueryList is the modern form; addListener is the fallback that keeps
+  // this working on older WebKit, which is a real target for a console opened from a NAS or phone.
+  if(_narrowNav.addEventListener) _narrowNav.addEventListener('change', applyNarrowNav);
+  else if(_narrowNav.addListener) _narrowNav.addListener(applyNarrowNav);
 }
 
 // Login
@@ -1889,10 +1919,31 @@ async function pollHealth(){
     const s=a.data||{}, d=m.data||{};
     // Autonomy
     const running=!!s.running, killed=!!s.kill_switch_engaged, enabled=!!s.enabled;
+    // v3.8.34: a presentation layer over the autonomy state, per the status vocabulary rule.
+    //
+    // This read RUNNING / HALTED / IDLE / OFF, and HALTED was red — the loudest thing on a default
+    // dashboard, with nothing saying what it meant or whether it was bad. It is not a fault: the
+    // kill switch is engaged BY an operator, from a confirmation that spells that out. Red for a
+    // state someone chose on purpose teaches people to ignore red.
+    //
+    // The internal state stays available on hover rather than being thrown away.
     const autoState=running?'RUNNING':(killed?'HALTED':(enabled?'IDLE':'OFF'));
-    setEl('ov-h-auto',autoState);
-    document.getElementById('ov-h-auto').style.color=running?'var(--green)':(killed?'var(--red)':'var(--muted)');
-    document.getElementById('ov-h-auto-dot').className='health-dot '+(running?'ok':(killed?'err':''));
+    const AUTO_LABEL={RUNNING:'Working',HALTED:'Stopped',IDLE:'Ready',OFF:'Off'};
+    const AUTO_WHY={
+      RUNNING:'The colony is working through its own objectives right now.',
+      HALTED:'Automatic work is stopped by the safety switch. Nothing runs on its own until you clear it — you can still send missions yourself.',
+      IDLE:'Automatic work is switched on, with nothing to do at the moment.',
+      OFF:'Automatic work is switched off. The colony only runs missions you send it.',
+    };
+    setEl('ov-h-auto',AUTO_LABEL[autoState]||autoState);
+    const autoEl=document.getElementById('ov-h-auto');
+    if(autoEl) autoEl.title=(AUTO_WHY[autoState]||'')+' (internal state: '+autoState+')';
+    // Amber, not red: stopped-on-purpose is not a failure. Red stays for things that broke.
+    autoEl && (autoEl.style.color=running?'var(--green)':(killed?'var(--amber,#f59e0b)':'var(--muted)'));
+    // Amber dot to match the amber text — a state the operator chose is not an error. Guarded for
+    // the same reason as pollHud: these are widget bodies, and a hidden widget has none.
+    const autoDot=document.getElementById('ov-h-auto-dot');
+    if(autoDot) autoDot.className='health-dot '+(running?'ok':(killed?'warn':''));
     setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
     setEl('ov-h-auto-backlog',`${(s.backlog_pending??0)+(s.backlog_active??0)}`);
     setEl('ov-h-auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
@@ -1903,7 +1954,8 @@ async function pollHealth(){
     const bar=document.getElementById('ov-h-disk-bar'); bar.style.width=usedPct+'%';
     const diskWarn=usedPct>=85, diskDanger=usedPct>=93;
     bar.style.background=diskDanger?'var(--red)':(diskWarn?'var(--queen)':'var(--green)');
-    document.getElementById('ov-h-disk-dot').className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
+    const diskDot=document.getElementById('ov-h-disk-dot');
+    if(diskDot) diskDot.className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
     setEl('ov-h-db',humanBytes(d.db_bytes));
     setEl('ov-h-backups',`${d.backup_count||0} · ${humanBytes(d.backup_bytes)}`);
     // Coder patch health (from recent events)
@@ -1911,8 +1963,10 @@ async function pollHealth(){
     const ok=c['patch_set_created']||0, fail=c['patch_proposal_parse_failed']||0, applied=c['autonomy_autoapply_applied']||0;
     const rate=(ok+fail)>0?Math.round(ok/(ok+fail)*100):null;
     setEl('ov-h-coder',rate==null?'—':rate+'%');
-    document.getElementById('ov-h-coder').style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
-    document.getElementById('ov-h-coder-dot').className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
+    const coderEl=document.getElementById('ov-h-coder');
+    if(coderEl) coderEl.style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
+    const coderDot=document.getElementById('ov-h-coder-dot');
+    if(coderDot) coderDot.className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
     setEl('ov-h-coder-ok',ok); setEl('ov-h-coder-fail',fail); setEl('ov-h-coder-applied',applied);
     // Alert line — nudge reclaimable disk
     const alert=document.getElementById('ov-health-alert');
@@ -1953,7 +2007,10 @@ const OV_MODE_TEXT={
   patch:'Create patch proposals only. Do not apply changes. ',
   build:'Create changes only if needed and run the normal build/test checks. ',
 };
-const OV_MODE_LABEL={inspect:'INSPECT',verify:'VERIFY',patch:'PATCH PROPOSAL',build:'FULL BUILD/TEST'};
+// v3.8.34: display only — the badge shown once a mode is chosen. The INSTRUCTION the model
+// receives is OV_MODE_TEXT above and is deliberately untouched; renaming what the operator reads
+// must not change what the colony is told.
+const OV_MODE_LABEL={inspect:'LOOK ONLY',verify:'CHECK MY WORK',patch:'SUGGEST CHANGES',build:'MAKE CHANGES & TEST'};
 function setOvMode(mode){
   ovMode = (ovMode===mode) ? '' : mode; // toggle
   document.querySelectorAll('#ov-modes .hud-act').forEach(b=>b.setAttribute('aria-pressed', b.dataset.mode===ovMode ? 'true':'false'));
@@ -2072,14 +2129,26 @@ async function pollHud(){
   setEl('attn-count', attn.length?`${attn.length} item${attn.length===1?'':'s'}`:'');
   const attnPanel=document.getElementById('hud-attn-panel');
   attnPanel&&attnPanel.classList.toggle('glow-warn', attn.length>0);
-  if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
-  else attnList.innerHTML=attn.slice(0,6).map(it=>
-    `<div class="hud-attn-item" data-onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
-    `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+  // v3.8.34: every write below is to a WIDGET BODY, and a hidden widget has no body in the DOM.
+  //
+  // `attnPanel` was guarded and `attnList` — the very next line, same widget — was not, so on any
+  // dashboard without Operator Attention this threw `Cannot set properties of null` and took the
+  // REST OF pollHud with it: the missions, changes and objectives summaries below never ran, on
+  // every poll, forever. DEFAULT_DASHBOARD_VIEW ships operator-attention hidden, so this was the
+  // default first-run dashboard, and the symptom was silent — four panels that simply stayed empty.
+  //
+  // Guarded individually rather than behind one early return: which widgets are on screen is the
+  // operator's choice, and hiding one must not stop the others from updating.
+  if(attnList){
+    if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
+    else attnList.innerHTML=attn.slice(0,6).map(it=>
+      `<div class="hud-attn-item" data-onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
+      `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+  }
 
   // -- Summaries --
   const msEl=document.getElementById('ov-sum-missions');
-  msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
+  if(msEl) msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
     `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid rgba(30,51,84,.4)" data-onclick="openResults('${m.id}')">`+
     hudBadge(hudStatusClass(m.status),m.status)+
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
@@ -2088,7 +2157,8 @@ async function pollHud(){
 
   const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
   const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
-  document.getElementById('ov-sum-patches').innerHTML = patches.length ?
+  const pxEl=document.getElementById('ov-sum-patches');
+  if(pxEl) pxEl.innerHTML = patches.length ?
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
       chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
@@ -2101,7 +2171,8 @@ async function pollHud(){
     else if(o.end_reason==='failed') oc.failed++;
     else if(st==='done') oc.done++; else if(st==='paused') oc.paused++;
     else if(st==='active'||st==='pending') oc.active++; });
-  document.getElementById('ov-sum-objectives').innerHTML = objectives.length ?
+  const objEl=document.getElementById('ov-sum-objectives');
+  if(objEl) objEl.innerHTML = objectives.length ?
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
       (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`
@@ -2481,7 +2552,12 @@ async function doApproval(id,action,kind){
 }
 
 async function cancelJob(id){
-  if(!await uiConfirm('Cancel this running job?')) return;
+  // v3.8.34: the only bare confirmation in the console — every other one states its consequence,
+  // including "Cancel all" directly above it. Worded from what the server actually does: the token
+  // aborts the in-flight model call and stops the scheduler, and ComputeOutcome then records
+  // "Cancelled by operator — N/M tasks finished before stopping", so finished tasks survive.
+  if(!await uiConfirm('Stop this mission run? Tasks that already finished are kept; the step in '
+                    + 'progress is abandoned and the run ends there.')) return;
   try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
 }
 // v2.7.0: re-dispatch a finished/cancelled mission with the exact same directive (the mode prefix
@@ -2547,6 +2623,24 @@ function renderStatusPop(){
   setEl('sp-ollama-host',s.ollama_host||'—');
   setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
   setEl('sp-default',s.default_model||'—');
+  // v3.8.34: roles routed to a model that cannot meet their contract. Reported here because the
+  // only other surface is the Tools & Routing widget, which ships hidden — so on a default
+  // dashboard an operator was told the model was reachable and resolved while seven of ten roles
+  // would parse prose into an empty result. The row appears ONLY when something is wrong, so a
+  // healthy colony gains no clutter; the per-role reasons stay one click away in Tools & Routing.
+  const unfit = Number(s.unfit_role_count)||0;
+  const fitRow = document.getElementById('sp-fitness-row');
+  if(fitRow){
+    fitRow.style.display = unfit>0 ? '' : 'none';
+    const fitEl = document.getElementById('sp-fitness');
+    if(fitEl){
+      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot use the routed model';
+      fitEl.style.color = 'var(--amber,#f59e0b)';
+      fitEl.title = 'These roles are routed to a model missing a capability their contract needs — '
+                  + 'they will run and return empty or unusable results. Open Tools & Routing for '
+                  + 'the per-role reasons.';
+    }
+  }
   const routes=s.routes||[];
   document.getElementById('sp-routes').innerHTML=routes.map(rt=>{
     const local=(rt.provider||'ollama').toLowerCase()==='ollama';
@@ -5880,12 +5974,26 @@ async function hlLoadAutomation(){
       : '';
   }catch(e){ body.innerHTML='<span style="color:var(--red)">Error: '+escapeHtml(e.message||'')+'</span>'; }
 }
+// v3.8.34: both of these were dead, and silently.
+//
+// `api(path, method='GET', body=null)` takes the method POSITIONALLY. These two passed
+// `{method:'POST'}` as that second argument — the only two call sites in the console that did — so
+// `method` was an object, `fetch` stringified it to "[object Object]", and the request threw on an
+// invalid method token before it ever left the browser. `api` catches that and RETURNS
+// `{success:false}` rather than throwing, so the `catch(e){}` never even ran; the result was simply
+// discarded and `hlLoadAutomation()` re-rendered the unchanged state.
+//
+// The operator's experience: the toggle flips, snaps back on the reload, and nothing says why.
+// Two defects stacked — a wrong call shape, and a swallowed result that hid it — which is why a
+// rule that no endpoint ever received still looked like a rule that refused to change.
 async function hlAutoToggle(id,on){
-  try{ await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),{method:'POST'}); }catch(e){}
+  const r=await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),'POST');
+  hlMsg(r&&r.success ? ('Rule '+(on?'enabled':'disabled')+'.') : ((r&&r.message)||'Could not change the rule.'), !!(r&&r.success));
   hlLoadAutomation();
 }
 async function hlAutoEvaluate(){
-  try{ await window.api('/homelab/automation/evaluate',{method:'POST'}); }catch(e){}
+  const r=await window.api('/homelab/automation/evaluate','POST');
+  hlMsg(r&&r.success ? 'Rules evaluated.' : ((r&&r.message)||'Could not evaluate the rules.'), !!(r&&r.success));
   hlLoadAutomation();
 }
 
@@ -7609,7 +7717,10 @@ function registerGridWidgets(){
     {id:'colony-health',      title:'Colony Health',      icon:'\u25c6', size:'small',  body:'ov2-health-body'},
     {id:'system-core',        title:'System Core',        icon:'\u2699', size:'small',  body:'ov2-core-body'},
     {id:'resource-usage',     title:'Resource Usage',     icon:'\u25a4', size:'small',  body:'ov2-resources-body'},
-    {id:'colony-jobs',        title:'Jobs',               icon:'\u2637', size:'small',  body:'jobs-list'},
+    // v3.8.34: "Job" was a third name for a thing the console already calls a mission.
+    // ApiJobRegistry names the type ApiMissionJob, POST /missions answers "Mission queued.", and
+    // every row carries a mission_id. The queue is named after what is in it.
+    {id:'colony-jobs',        title:'Mission Runs',       icon:'\u2637', size:'small',  body:'jobs-list'},
     {id:'agent-inspector',    title:'Agent Inspector',    icon:'\u2b21', size:'medium', body:'agent-detail'},
     {id:'live-telemetry',     title:'Live Telemetry',     icon:'\u2261', size:'medium', body:'ov-feed-list'},
     {id:'recent-events',      title:'Recent Events',      icon:'\u25cf', size:'medium', body:'ov2-events-body'},
@@ -7617,7 +7728,11 @@ function registerGridWidgets(){
     {id:'approvals',          title:'Pending Approvals',  icon:'\u2713', size:'medium', body:'ov2-approvals-body'},
     {id:'patch-activity',     title:'Patch Activity',     icon:'\u2726', size:'medium', body:'ov-sum-patches'},
     {id:'objectives',         title:'Objectives',         icon:'\u25ce', size:'large',  body:'ov-sum-objectives'},
-    {id:'recent-jobs',        title:'Recent Jobs',        icon:'\u231b', size:'large',  body:'ov-jobs-list'},
+    // Same endpoint and same renderer as 'colony-jobs' above, capped at 5 rows instead of 8 \u2014
+    // pollJobs feeds both from one /jobs array. Renamed for consistency rather than merged: it is
+    // registered, an operator may have it enabled in a saved layout, and removing a widget is a
+    // product decision rather than a naming one.
+    {id:'recent-jobs',        title:'Recent Mission Runs',icon:'\u231b', size:'large',  body:'ov-jobs-list'},
     // v3.7.2: the operator surface for v3.4.1, v3.4.2 and v3.5.0. Registered but off by default \u2014
     // both answer questions an operator asks occasionally rather than continuously, and a console
     // that opens on everything is a wall rather than a dashboard.

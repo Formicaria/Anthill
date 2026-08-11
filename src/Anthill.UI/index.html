@@ -198,7 +198,16 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 }
 .auth-logo{font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--text);margin-bottom:4px;}
 .auth-logo span{color:var(--queen);font-size:12px;font-weight:400;margin-left:8px;font-family:var(--mono);}
-.auth-sub{font-size:11px;color:var(--dim);margin-bottom:22px;}
+.auth-sub{font-size:11px;color:var(--muted);margin-bottom:22px;line-height:1.5;}
+/* v3.8.34: the API base URL, disclosed on request instead of leading the form. */
+.auth-adv{margin-top:16px;}
+.auth-adv>summary{font-size:10px;color:var(--dim);cursor:pointer;list-style:none;user-select:none;}
+.auth-adv>summary:hover{color:var(--muted);}
+.auth-adv>summary::-webkit-details-marker{display:none;}
+.auth-adv>summary::before{content:'▸ ';}
+.auth-adv[open]>summary::before{content:'▾ ';}
+.auth-adv .auth-label{margin-top:10px;}
+.auth-adv-hint{font-size:9px;color:var(--dim);margin-top:5px;}
 .auth-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;}
 .auth-input{
   width:100%;padding:9px 12px;border-radius:var(--r);
@@ -1150,6 +1159,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   width:30px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;}
 .mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
 .mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
+/* v3.8.34: the mode row now says what it is FOR, and that skipping it is allowed. Four bare
+   buttons read as a required choice a newcomer had no basis to make. */
+.mn-modes-label{font-size:10px;color:var(--muted);margin-top:11px;font-weight:600;}
+.mn-optional{font-weight:400;color:var(--dim);}
+/* Available to assistive tech, absent from the visual layout. The mission box is the console's
+   primary control and had no label at all — only a placeholder, which is not a name. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;}
 .mn-hint{font-size:9px;color:var(--dim);margin-top:8px;}
 .mn-actions{display:flex;gap:6px;margin-top:9px;}
 /* Plan preview (Mission Composer, v1.8.23) */
@@ -1194,18 +1211,31 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <div id="setup-overlay">
   <div class="auth-box">
     <div class="auth-logo">ANTHILL <span id="auth-ver"></span></div>
-    <div class="auth-sub">Swarm Intelligence Orchestration</div>
+    <!-- v3.8.34: "Swarm Intelligence Orchestration" names the technology, not the job. Someone
+         opening this for the first time needs to know what it DOES before they are asked to sign
+         in to it. -->
+    <div class="auth-sub">Give it a goal. A colony of agents plans the work, does it, and shows you every step.</div>
 
     <!-- Login form -->
     <div id="auth-login">
-      <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
-      <input class="auth-input" id="apibase-input" type="url" placeholder="http://host:8713" autocomplete="off">
+      <!-- The API Base URL was the FIRST field on the first screen — optional infrastructure
+           configuration above the two fields anyone actually needs. It is still here, still does
+           the same thing, but it no longer greets a newcomer with a question they cannot answer
+           and do not need to. -->
       <label class="auth-label">Username</label>
       <input class="auth-input" id="login-user" type="text" placeholder="admin" autocomplete="username">
       <label class="auth-label">Password</label>
       <input class="auth-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
       <div class="auth-err" id="auth-err"></div>
       <button class="auth-btn" id="login-btn">Sign In</button>
+      <!-- Layer 3, disclosed on request. Only needed when the console is served from somewhere
+           other than the API it talks to. -->
+      <details class="auth-adv">
+        <summary>Connecting to Anthill on another machine?</summary>
+        <label class="auth-label" for="apibase-input">Address of that machine</label>
+        <input class="auth-input" id="apibase-input" type="url" placeholder="http://host:8713" autocomplete="off">
+        <div class="auth-adv-hint">Leave empty if Anthill is running on this machine.</div>
+      </details>
     </div>
 
     <!-- First-run setup form -->
@@ -1406,6 +1436,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="sp-head">Model Routing</div>
           <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">—</span></div>
           <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">—</span></div>
+          <!-- v3.8.34: roles whose routed model cannot meet their contract. Hidden when none are,
+               so a healthy colony gains no row; see renderStatusPop. -->
+          <div class="sp-row" id="sp-fitness-row" style="display:none;">
+            <span class="sp-key">Role fitness</span><span class="sp-val" id="sp-fitness">—</span>
+          </div>
           <div id="sp-routes" style="margin-top:6px;"></div>
           <div style="display:flex;gap:8px;margin-top:12px;">
             <div class="sp-btn" data-onclick="closeStatusPop();showPage('antconfig')">Change models</div>
@@ -1476,20 +1511,29 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                  plan-preview review step — was reachable only on the classic overview grid, which
                  has been hidden behind the topology canvas since v2.15.0. -->
             <div id="ov-composer-body">
+            <!-- v3.8.34: the front door, in plain English.
+                 The terminal prefix went: it read as a command line to someone who had never used
+                 one, which is a warning ("you could break something") rather than an invitation.
+                 The colony metaphor stays — that is the product — but "directive", "dispatch",
+                 "prepended" and "patch" were vocabulary the operator had to learn before typing
+                 anything at all. -->
             <div class="mn-prompt">
-              <span class="mn-prefix">ANTHILL_CORE&nbsp;&gt;</span>
-              <textarea class="mission-input" id="ov-mission-input" placeholder="enter a mission directive…" autocomplete="off" rows="1" disabled></textarea>
-              <button class="mn-send" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
+              <label class="sr-only" for="ov-mission-input">What would you like the colony to do?</label>
+              <textarea class="mission-input" id="ov-mission-input" placeholder="Describe what you want done…" autocomplete="off" rows="1" disabled></textarea>
+              <button class="mn-send" id="ov-send-btn" disabled title="Send (Enter)">▶</button>
             </div>
-            <div class="mn-modes" id="ov-modes">
-              <button class="hud-act" data-mode="inspect" aria-pressed="false" data-onclick="setOvMode('inspect')" title="Inspect only. Do not modify files.">Inspect</button>
-              <button class="hud-act" data-mode="verify" aria-pressed="false" data-onclick="setOvMode('verify')" title="Verify only. Do not create patches.">Verify</button>
-              <button class="hud-act" data-mode="patch" aria-pressed="false" data-onclick="setOvMode('patch')" title="Create patch proposals only. Do not apply.">Patch Proposal</button>
-              <button class="hud-act" data-mode="build" aria-pressed="false" data-onclick="setOvMode('build')" title="Create changes if needed and run build/test.">Full Build/Test</button>
+            <div class="mn-modes-label" id="ov-modes-label">How should the colony work? <span class="mn-optional">Optional — leave unset to let it decide.</span></div>
+            <!-- Labels are plain; data-mode still carries the semantics, and the exact instruction
+                 sent to the model lives in OV_MODE_TEXT, unchanged. -->
+            <div class="mn-modes" id="ov-modes" role="group" aria-labelledby="ov-modes-label">
+              <button class="hud-act" data-mode="inspect" aria-pressed="false" data-onclick="setOvMode('inspect')" title="Reads files and reports back. Changes nothing.">Look only</button>
+              <button class="hud-act" data-mode="verify" aria-pressed="false" data-onclick="setOvMode('verify')" title="Checks existing work. Proposes no changes.">Check my work</button>
+              <button class="hud-act" data-mode="patch" aria-pressed="false" data-onclick="setOvMode('patch')" title="Proposes edits for you to approve. Applies nothing on its own.">Suggest changes</button>
+              <button class="hud-act" data-mode="build" aria-pressed="false" data-onclick="setOvMode('build')" title="Makes changes where needed, then runs the build and tests.">Make changes &amp; test</button>
             </div>
-            <div class="mn-hint" id="ov-mode-hint">Enter to dispatch · Shift+Enter for a new line · a selected mode is prepended to your directive.</div>
+            <div class="mn-hint" id="ov-mode-hint">Press Enter to send · Shift+Enter for a new line</div>
             <div class="mn-actions">
-              <button class="hud-act" id="ov-preview-btn" data-onclick="previewPlan()" title="Generate the task plan without running it">⌕ Preview Plan</button>
+              <button class="hud-act" id="ov-preview-btn" data-onclick="previewPlan()" title="See the steps the colony would take, without running them">⌕ Show me the plan first</button>
             </div>
             <div class="hud-plan" id="ov-plan" style="display:none"></div>
             </div><!-- /ov-composer-body -->

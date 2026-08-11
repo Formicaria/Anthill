@@ -23,7 +23,7 @@ public class EventBusTests
         new() { EventType = type, MissionId = mission, Message = "hello" };
 
     [Fact]
-    public void Subscriber_receives_published_event()
+    public async ThreadingTask Subscriber_receives_published_event()
     {
         using var bus = new InProcessEventBus();
         var seen = new TaskCompletionSource<ColonyEvent>();
@@ -31,13 +31,13 @@ public class EventBusTests
 
         bus.Publish(Ev());
 
-        Assert.True(seen.Task.Wait(Timeout));
-        Assert.Equal("task_started", seen.Task.Result.EventType);
-        Assert.Equal("m1", seen.Task.Result.MissionId);
+        var ev = await seen.Task.WaitAsync(Timeout);
+        Assert.Equal("task_started", ev.EventType);
+        Assert.Equal("m1", ev.MissionId);
     }
 
     [Fact]
-    public void Every_subscriber_receives_every_event()
+    public async ThreadingTask Every_subscriber_receives_every_event()
     {
         using var bus = new InProcessEventBus();
         var a = new TaskCompletionSource();
@@ -47,11 +47,11 @@ public class EventBusTests
 
         bus.Publish(Ev());
 
-        Assert.True(ThreadingTask.WhenAll(a.Task, b.Task).Wait(Timeout));
+        await ThreadingTask.WhenAll(a.Task, b.Task).WaitAsync(Timeout);
     }
 
     [Fact]
-    public void Typed_subscription_ignores_other_event_types()
+    public async ThreadingTask Typed_subscription_ignores_other_event_types()
     {
         using var bus = new InProcessEventBus();
         var wanted = new TaskCompletionSource();
@@ -62,7 +62,7 @@ public class EventBusTests
 
         bus.Publish(Ev(EventTypes.TaskStarted));
 
-        Assert.True(wanted.Task.Wait(Timeout));
+        await wanted.Task.WaitAsync(Timeout);
         Assert.Equal(0, unwantedCount);
     }
 
@@ -71,7 +71,7 @@ public class EventBusTests
     /// the other observers — if it were, adding a dashboard could fail a mission.
     /// </summary>
     [Fact]
-    public void A_throwing_subscriber_does_not_stop_the_others()
+    public async ThreadingTask A_throwing_subscriber_does_not_stop_the_others()
     {
         using var bus = new InProcessEventBus();
         var survivor = new TaskCompletionSource();
@@ -81,11 +81,11 @@ public class EventBusTests
 
         bus.Publish(Ev());
 
-        Assert.True(survivor.Task.Wait(Timeout));
+        await survivor.Task.WaitAsync(Timeout);
     }
 
     [Fact]
-    public void A_throwing_subscriber_stays_subscribed_for_the_next_event()
+    public async ThreadingTask A_throwing_subscriber_stays_subscribed_for_the_next_event()
     {
         using var bus = new InProcessEventBus();
         var calls = 0;
@@ -102,7 +102,7 @@ public class EventBusTests
 
         // Detaching a handler on its first exception would silently kill a dashboard over one
         // malformed event — a far harder failure to diagnose than a repeated log line.
-        Assert.True(twice.Task.Wait(Timeout));
+        await twice.Task.WaitAsync(Timeout);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class EventBusTests
     }
 
     [Fact]
-    public void Disposing_a_subscription_detaches_it()
+    public async ThreadingTask Disposing_a_subscription_detaches_it()
     {
         using var bus = new InProcessEventBus();
         var afterDispose = 0;
@@ -127,7 +127,7 @@ public class EventBusTests
 
         bus.Publish(Ev());
 
-        Assert.True(marker.Task.Wait(Timeout));
+        await marker.Task.WaitAsync(Timeout);
         Assert.Equal(0, afterDispose);
     }
 
@@ -179,7 +179,7 @@ public class EventBusTests
     }
 
     [Fact]
-    public void LogEvent_publishes_what_it_persisted()
+    public async ThreadingTask LogEvent_publishes_what_it_persisted()
     {
         using var bus = new InProcessEventBus();
         using var memory = MemoryWithMission(bus: bus);
@@ -190,8 +190,7 @@ public class EventBusTests
         // surviving publication, not about task persistence.
         var stored = memory.LogEvent("m1", EventTypes.ToolCalled, "ran a tool", antName: "researcher");
 
-        Assert.True(seen.Task.Wait(Timeout));
-        var published = seen.Task.Result;
+        var published = await seen.Task.WaitAsync(Timeout);
 
         // Field for field. ColonyEvent mirrors Domain.Event precisely so that publication drops
         // nothing on the way to a subscriber; if this drifts, one of the two shapes is wrong.
@@ -210,7 +209,7 @@ public class EventBusTests
     /// leaves unrecorded turns a durable log into a best-effort one.
     /// </summary>
     [Fact]
-    public void An_event_is_already_readable_from_storage_when_subscribers_see_it()
+    public async ThreadingTask An_event_is_already_readable_from_storage_when_subscribers_see_it()
     {
         using var bus = new InProcessEventBus();
         using var memory = MemoryWithMission(bus: bus);
@@ -221,7 +220,7 @@ public class EventBusTests
 
         memory.LogEvent("m1", EventTypes.MissionStarted, "go");
 
-        Assert.True(readBack.Task.Wait(Timeout));
-        Assert.Equal(1, readBack.Task.Result);
+        var readBackCount = await readBack.Task.WaitAsync(Timeout);
+        Assert.Equal(1, readBackCount);
     }
 }

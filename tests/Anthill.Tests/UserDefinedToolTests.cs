@@ -326,7 +326,7 @@ public class UserDefinedToolTests : IDisposable
         UserToolRegistrar.Default().RegisterAll(registry, new[] { Http() });
 
         var offered = ToolSchemaProjection.For(registry, "researcher");
-        var spec = Assert.Single(offered.Where(t => t.Name == "fetch_widget"));
+        var spec = Assert.Single(offered, t => t.Name == "fetch_widget");
 
         Assert.Equal("fetches a widget", spec.Description);
         Assert.Contains("\"id\"", spec.ParametersJson);

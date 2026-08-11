@@ -96,7 +96,7 @@ public class ToolCallingLoopTests
         Assert.Equal(1, result.ToolCalls);
 
         // the tool's real output is in the transcript, tagged to the call that produced it
-        var toolMessage = Assert.Single(result.Transcript.Where(m => m.Role == ModelMessage.Tool));
+        var toolMessage = Assert.Single(result.Transcript, m => m.Role == ModelMessage.Tool);
         Assert.Contains("system_info ran", toolMessage.Content);
         Assert.Equal("c1", toolMessage.ToolCallId);
     }
@@ -138,7 +138,7 @@ public class ToolCallingLoopTests
             RegistryWith(new FailingTool { Name = "system_info" }), "researcher", Opening);
 
         Assert.True(result.Completed);
-        var toolMessage = Assert.Single(result.Transcript.Where(m => m.Role == ModelMessage.Tool));
+        var toolMessage = Assert.Single(result.Transcript, m => m.Role == ModelMessage.Tool);
         Assert.Contains("disk is on fire", toolMessage.Content);
     }
 
@@ -163,7 +163,7 @@ public class ToolCallingLoopTests
 
         Assert.True(result.Completed);
         Assert.Equal(0, forbidden.Calls);                // refused BEFORE the tool ran
-        var toolMessage = Assert.Single(result.Transcript.Where(m => m.Role == ModelMessage.Tool));
+        var toolMessage = Assert.Single(result.Transcript, m => m.Role == ModelMessage.Tool);
         Assert.Contains("ERROR", toolMessage.Content);
         Assert.Contains("apply_patch", toolMessage.Content);
     }
@@ -176,7 +176,7 @@ public class ToolCallingLoopTests
             Script(CallsTool("system_info", "{not json"), Answer("sorry, retrying")),
             RegistryWith(new EchoTool { Name = "system_info" }), "researcher", Opening);
 
-        var toolMessage = Assert.Single(result.Transcript.Where(m => m.Role == ModelMessage.Tool));
+        var toolMessage = Assert.Single(result.Transcript, m => m.Role == ModelMessage.Tool);
         Assert.Contains("not valid JSON", toolMessage.Content);
     }
 
