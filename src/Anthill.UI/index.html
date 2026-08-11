@@ -1291,6 +1291,38 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* v0.3.8.46: token count, only when the provider reported one. */
 .chat-tok{font-size:9px;color:var(--dim);font-weight:400;margin-left:6px;border:1px solid var(--border);
   border-radius:3px;padding:0 4px;}
+/* v0.3.8.48: the project workspace. */
+.pv-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;}
+.pv-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+  font-size:12px;padding:8px 14px;cursor:pointer;font-family:inherit;}
+.pv-tab.active{color:var(--text);border-bottom-color:rgba(34,211,238,.7);}
+.pv-tab:focus-visible{outline:1px solid rgba(34,211,238,.5);}
+.sch-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.sch-badge{font-size:9px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--dim);}
+/* v0.3.8.48: the objective card's project owner line. */
+.oc-project{font-size:9px;color:var(--dim);margin-top:2px;}
+.oc-project a{color:var(--cyan,#22d3ee);text-decoration:none;}
+/* v0.3.8.48: the Roles page's model assignment rows. */
+.route-assign{display:flex;align-items:center;gap:10px;padding:4px 0;}
+.route-assign label{min-width:130px;font-size:11px;color:var(--muted);}
+.route-assign select{flex:0 1 340px;font-size:11px;}
+/* v0.3.8.48: the approval selector and the inline change cards. */
+.chat-policy{font-size:10px;padding:4px 7px;width:auto;background:var(--bg);}
+.patch-card{align-self:stretch;max-width:min(760px,92%);border:1px solid var(--border);
+  border-radius:9px;padding:11px 13px;background:rgba(2,6,23,.45);}
+.patch-card.applied{border-color:rgba(52,211,153,.35);}
+.patch-card.rejected{opacity:.65;}
+.patch-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text);}
+.patch-path{font-family:monospace;font-size:10px;color:var(--cyan,#22d3ee);word-break:break-all;}
+.patch-diff{margin-top:7px;max-height:260px;overflow:auto;font-size:10px;background:var(--bg);
+  border:1px solid var(--border);border-radius:6px;padding:8px;white-space:pre;}
+.patch-actions{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap;}
+/* v0.3.8.48: the project picker rows. */
+.pick-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;
+  color:var(--text);cursor:pointer;font-size:12px;margin-bottom:5px;font-family:inherit;}
+.pick-row:hover,.pick-row:focus{border-color:rgba(34,211,238,.45);outline:none;}
+.pick-row span{color:var(--dim);font-size:10px;}
 /* v0.3.8.47: attachments — chips on the composer, a quiet listing on the turn, drop highlight. */
 .attach-chips{display:flex;flex-wrap:wrap;gap:5px;width:100%;}
 .attach-chips:empty{display:none;}
@@ -1369,9 +1401,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            configuration above the two fields anyone actually needs. It is still here, still does
            the same thing, but it no longer greets a newcomer with a question they cannot answer
            and do not need to. -->
-      <label class="auth-label">Username</label>
+      <label class="auth-label" for="login-user">Username</label>
       <input class="auth-input" id="login-user" type="text" placeholder="admin" autocomplete="username">
-      <label class="auth-label">Password</label>
+      <label class="auth-label" for="login-pass">Password</label>
       <input class="auth-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
       <div class="auth-err" id="auth-err"></div>
       <button class="auth-btn" id="login-btn">Sign In</button>
@@ -1390,13 +1422,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div style="font-size:12px;color:var(--queen);margin-bottom:14px;padding:8px 10px;background:var(--queen-dim);border-radius:var(--r);border:1px solid rgba(251,191,36,.25);">
         ✦ First launch — create your admin account
       </div>
-      <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
+      <label class="auth-label" for="setup-apibase">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
       <input class="auth-input" id="setup-apibase" type="url" placeholder="http://host:8713" autocomplete="off">
-      <label class="auth-label">Admin Username</label>
+      <label class="auth-label" for="setup-user">Admin Username</label>
       <input class="auth-input" id="setup-user" type="text" placeholder="admin" value="admin" autocomplete="username">
       <label class="auth-label">Password <span style="font-weight:400;color:var(--dim)">(min 8 characters)</span></label>
       <input class="auth-input" id="setup-pass" type="password" placeholder="••••••••" autocomplete="new-password">
-      <label class="auth-label">Confirm Password</label>
+      <label class="auth-label" for="setup-pass2">Confirm Password</label>
       <input class="auth-input" id="setup-pass2" type="password" placeholder="••••••••" autocomplete="new-password">
       <div class="auth-err" id="setup-err-msg"></div>
       <button class="auth-btn" id="setup-btn">Create Admin Account</button>
@@ -2035,6 +2067,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="page-hdr">
           <div><h1>Objectives</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
+            <label class="sr-only" for="obj-filter-project">Filter by project</label>
+            <select class="provider-input" id="obj-filter-project" style="width:180px;font-size:10px;"><option value="">All projects</option></select>
+            <label class="sr-only" for="obj-filter-search">Search objectives</label>
+            <input class="provider-input" id="obj-filter-search" type="search" placeholder="Search…" style="width:160px;font-size:10px;">
             <span class="hud-hd-sub" id="ob-count"></span>
             <button class="btn btn-ghost" id="ob-refresh">↺ Refresh</button>
           </div>
@@ -2171,6 +2207,119 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
       </div><!-- /page-readiness -->
+
+      <!-- --------------------------------------------------------------------
+           PAGE: PROJECT WORKSPACE (v0.3.8.48)
+           One project, whole: its conversations, schedules, history, and
+           settings. Deep-linkable at #/projects/{id}; reload-safe.
+      --------------------------------------------------------------------- -->
+      <div class="page page-scroll" id="page-projectview">
+        <div class="page-hdr">
+          <div style="min-width:0;">
+            <h1 id="pv-name" style="overflow:hidden;text-overflow:ellipsis;">Project</h1>
+            <div class="sub" id="pv-sub"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="pv-msg"></span>
+            <button class="btn btn-primary" id="pv-new-conv">＋ New conversation</button>
+            <button class="btn btn-ghost" id="pv-back">← All projects</button>
+          </div>
+        </div>
+        <div class="pv-tabs" role="tablist">
+          <button class="pv-tab active" data-tab="chat" role="tab">Chat</button>
+          <button class="pv-tab" data-tab="objectives" role="tab">Objectives</button>
+          <button class="pv-tab" data-tab="schedules" role="tab">Schedules</button>
+          <button class="pv-tab" data-tab="history" role="tab">History</button>
+          <button class="pv-tab" data-tab="settings" role="tab">Settings</button>
+        </div>
+        <div id="pv-body-chat" class="pv-body"><div class="hud-state">Loading…</div></div>
+        <div id="pv-body-objectives" class="pv-body" hidden>
+          <div class="card" style="margin-bottom:10px;"><div style="padding:12px;display:flex;flex-direction:column;gap:7px;">
+            <b style="font-size:12px;">New objective in this project</b>
+            <input class="provider-input" id="pv-obj-title" placeholder="Title" maxlength="120">
+            <input class="provider-input" id="pv-obj-charter" placeholder="The standing goal this objective keeps working toward">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="provider-input" id="pv-obj-maxruns" type="number" value="10" style="width:80px" title="Max runs (0 = unlimited)">
+              <button class="btn btn-primary" id="pv-obj-create">Add objective</button>
+              <span class="save-msg" id="pv-obj-msg"></span>
+            </div>
+          </div></div>
+          <div id="pv-obj-list"><div class="hud-state">Loading…</div></div>
+        </div>
+        <div id="pv-body-schedules" class="pv-body" hidden>
+          <div class="sub" style="margin:8px 0;">Schedules execute while the Anthill host is running — there is no cloud.</div>
+          <div class="card" style="margin-bottom:10px;"><div style="padding:12px;display:flex;flex-direction:column;gap:7px;">
+            <b style="font-size:12px;">New scheduled task</b>
+            <input class="provider-input" id="sch-name" placeholder="Name" maxlength="120">
+            <textarea class="provider-input" id="sch-prompt" rows="3" placeholder="Instructions — what should each run ask the colony to do?"></textarea>
+            <div style="display:flex;gap:7px;flex-wrap:wrap;">
+              <select class="provider-input" id="sch-trigger">
+                <option value="manual">Manual only</option><option value="once">One time</option>
+                <option value="hourly">Hourly</option><option value="daily" selected>Daily</option>
+                <option value="weekdays">Weekdays</option><option value="weekly">Weekly</option>
+                <option value="cron">Custom cron</option>
+              </select>
+              <input class="provider-input" id="sch-time" placeholder="Local time HH:MM" value="09:00" style="width:120px">
+              <input class="provider-input" id="sch-tz" placeholder="IANA timezone" style="width:180px">
+              <input class="provider-input" id="sch-cron" placeholder="cron: m h dom mon dow" style="width:180px" hidden>
+              <input class="provider-input" id="sch-once" type="datetime-local" style="width:200px" hidden>
+              <select class="provider-input" id="sch-approval">
+                <option value="ask" selected>Manual approval</option>
+                <option value="autoapprove">Automatically approve</option>
+                <option value="bypass">Skip all approvals</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-primary" id="sch-create">Create schedule</button>
+              <span class="save-msg" id="sch-msg"></span>
+            </div>
+          </div></div>
+          <div class="chat-plan-hd" style="margin:4px 0;">Scheduled tasks</div>
+          <div id="sch-list"><div class="hud-state">Loading…</div></div>
+          <div class="chat-plan-hd" style="margin:14px 0 4px;">Rules / event triggers</div>
+          <div id="sch-rules"><div class="hud-state">Loading…</div></div>
+        </div>
+        <div id="pv-body-history" class="pv-body" hidden><div class="hud-state">Loading…</div></div>
+        <div id="pv-body-settings" class="pv-body" hidden>
+          <div class="card"><div style="padding:12px;display:flex;flex-direction:column;gap:8px;max-width:640px;">
+            <label class="sr-only" for="pv-edit-name">Project name</label>
+            <input class="provider-input" id="pv-edit-name" placeholder="Project name" maxlength="120">
+            <label class="sr-only" for="pv-edit-desc">Purpose</label>
+            <textarea class="provider-input" id="pv-edit-desc" rows="5" placeholder="Purpose — travels with every conversation in this project (markdown)"></textarea>
+            <label class="sr-only" for="pv-edit-path">Working directory</label>
+            <input class="provider-input" id="pv-edit-path" placeholder="Working directory (optional)">
+            <label style="font-size:10px;color:var(--dim);">Default approval for new conversations
+              <select class="provider-input" id="pv-edit-policy" style="width:100%;margin-top:3px;">
+                <option value="ask">Manual approval</option>
+                <option value="autoapprove">Automatically approve</option>
+                <option value="bypass">Skip all approvals</option>
+              </select>
+            </label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="pv-save">Save</button>
+              <button class="btn btn-ghost" id="pv-archive">Archive</button>
+              <span class="save-msg" id="pv-save-msg"></span>
+            </div>
+          </div></div>
+        </div>
+      </div><!-- /page-projectview -->
+
+      <!-- --------------------------------------------------------------------
+           PAGE: INTEGRATIONS (v0.3.8.48)
+           What Anthill connects to: model providers, installed coding agents,
+           and the homelab. Configured first, available second, nothing that
+           does not exist.
+      --------------------------------------------------------------------- -->
+      <div class="page page-scroll" id="page-integrations">
+        <div class="page-hdr">
+          <div>
+            <h1>Integrations</h1>
+            <div class="sub">Everything Anthill connects to — model providers, installed coding agents, and your homelab. Configured connections first.</div>
+          </div>
+          <button class="btn btn-ghost" id="int-reload">↺ Refresh</button>
+        </div>
+        <div id="int-body"><div class="hud-state">Loading…</div></div>
+      </div><!-- /page-integrations -->
 
       <!-- --------------------------------------------------------------------
            PAGE: HOMELAB COMMAND CENTER (v1.10.0 inventory → v2.0.0 command center)
@@ -2734,6 +2883,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: ANT CONFIG
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-antconfig">
+        <!-- v0.3.8.48: model assignment lives with the roles (defect 18: one surface, not two).
+             One selector per role, available models only, merge-safe saves. -->
+        <div class="card" style="margin-bottom:12px;"><div style="padding:12px;">
+          <h2 style="font-size:12px;margin:0 0 4px;">Model routing</h2>
+          <div class="sub" style="margin-bottom:8px;">Which model serves each role. Only models that can actually run are offered; an unavailable current selection is flagged, not hidden.</div>
+          <div id="role-routing"><div class="hud-state">Loading…</div></div>
+        </div></div>
         <div class="page-hdr">
           <div><h1>Agent Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
@@ -2788,7 +2944,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
           </div>
           <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
-            Autonomy is disabled in config. Enable it in Settings ? Colony (Autonomy toggle) before starting the Director.
+            Autonomy is disabled in config. Enable it in Settings → General (Autonomy toggle) before starting the Director.
           </div>
           <div class="kpi-grid">
             <div class="kpi-card" style="border-left-color:var(--green)">
@@ -2828,7 +2984,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="section-head" style="margin-top:0;">Add Objective</div>
           <div class="form-row">
             <div class="form-field"><label>Title</label><input class="form-input" id="obj-title" type="text" placeholder="short title"></div>
-            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="what the Director should keep working on" style="width:100%"></div>
+            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="the standing goal this objective keeps working toward" style="width:100%"></div>
             <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
             <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
@@ -3052,7 +3208,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <div class="card" style="padding:16px 18px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;">Operator Shell</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Configuration ? Shell) · a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Settings → Terminal) · a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
           <div id="sec-shell-toggle"></div>
           <div class="form-field" style="margin-top:10px;"><label>Default shell working directory <span style="color:var(--dim);font-weight:400">(blank = workspace root)</span></label><input class="form-input" id="sec-shell-dir" type="text" placeholder="/opt/anthill/src" style="width:100%;font-family:var(--mono);"></div>
         </div>
@@ -3096,7 +3252,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
         <div id="sh-disabled-note" style="display:none;background:rgba(251,191,36,.08);border:1px solid var(--queen);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--queen);">
-          The operator shell is disabled. Enable it in <b>Configuration ? Security ? Operator Shell</b> to use this terminal.
+          The operator shell is disabled. Enable it in <b>Settings → Security → Operator Shell</b> to use this terminal.
         </div>
         <div class="card" style="padding:0;overflow:hidden;">
           <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);">
@@ -3213,6 +3369,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <!-- v0.3.8.42 (§3): Chat is the one mission entry, so the stop affordance lives
                      here too — POST /conversations/{id}/cancel, the same durable path the old
                      Conversations panel used. Hidden unless the colony is actually working. -->
+                <!-- v0.3.8.48: the approval gate, on the conversation itself. Three modes, the
+                     same three the backend has always had; changing one is attributed. -->
+                <label class="sr-only" for="chat-policy">Approval mode</label>
+                <select class="provider-input chat-policy" id="chat-policy" title="How this conversation handles side effects">
+                  <option value="ask">Manual approval</option>
+                  <option value="autoapprove">Automatically approve</option>
+                  <option value="bypass">Skip all approvals</option>
+                </select>
                 <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"
@@ -3284,7 +3448,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div style="display:flex;gap:8px;align-items:center;">
               <button class="btn btn-primary" id="project-new-create">Create project</button>
               <button class="btn btn-ghost" id="project-new-cancel">Cancel</button>
-              <span class="save-msg text-green" id="project-new-msg"></span>
+              <span class="save-msg" id="project-new-msg"></span>
             </div>
           </div>
         </div>

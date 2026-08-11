@@ -28,6 +28,25 @@ public sealed record Project
     public string? Path { get; init; }
 
     public bool Archived { get; init; }
+
+    /// <summary>
+    /// v0.3.8.48: the project's default approval policy for new conversations. ATTRIBUTED like
+    /// the conversation's own — anything above Ask with no author reads as Ask, fail closed.
+    /// </summary>
+    public Conversations.EscalationPolicy DefaultPolicy { get; init; } = Conversations.EscalationPolicy.Ask;
+    public string? DefaultPolicyBy { get; init; }
+    public DateTime? DefaultPolicyAt { get; init; }
+
+    /// <summary>Optional default route for the project's conversations. Null = the global route.</summary>
+    public string? DefaultProvider { get; init; }
+    public string? DefaultModel { get; init; }
+
+    /// <summary>The policy that actually applies: unattributed standing permission falls to Ask.</summary>
+    public Conversations.EscalationPolicy EffectiveDefaultPolicy =>
+        DefaultPolicy == Conversations.EscalationPolicy.Ask
+        || (!string.IsNullOrWhiteSpace(DefaultPolicyBy) && DefaultPolicyAt is not null)
+            ? DefaultPolicy : Conversations.EscalationPolicy.Ask;
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 }

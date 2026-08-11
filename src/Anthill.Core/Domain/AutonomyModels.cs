@@ -23,6 +23,10 @@ public sealed class Objective
     public int ConsecutiveFailures { get; set; }
     /// <summary>Set when this objective was enqueued as a follow-up discovered by another objective's work.</summary>
     public string? ParentObjectiveId { get; set; }
+
+    /// <summary>v0.3.8.48: the project this objective belongs to. Null = legacy/unassigned —
+    /// shown as exactly that, never silently attached to an arbitrary project.</summary>
+    public string? ProjectId { get; set; }
     public Dictionary<string, object?> Metadata { get; set; } = new();
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
     public DateTime? LastRunAt { get; set; }

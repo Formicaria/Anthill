@@ -21,11 +21,13 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR REPLACE INTO objectives (id, title, charter, priority, status, max_runs, run_count,
-                    consecutive_failures, parent_objective_id, metadata_json, created_at, last_run_at, success_ema)
-                  VALUES (@id, @title, @charter, @prio, @status, @max, @rc, @cf, @parent, @meta, @created, @last, @ema)",
+                    consecutive_failures, parent_objective_id, project_id, metadata_json, created_at, last_run_at, success_ema)
+                  VALUES (@id, @title, @charter, @prio, @status, @max, @rc, @cf, @parent, @project, @meta, @created, @last, @ema)",
                 ("@id", o.Id), ("@title", o.Title), ("@charter", o.Charter), ("@prio", o.Priority),
                 ("@status", o.Status.Value()), ("@max", o.MaxRuns), ("@rc", o.RunCount), ("@cf", o.ConsecutiveFailures),
-                ("@parent", o.ParentObjectiveId), ("@meta", Json.SafeDumps(o.Metadata)),
+                ("@parent", o.ParentObjectiveId),
+                ("@project", (object?)o.ProjectId ?? DBNull.Value),
+                ("@meta", Json.SafeDumps(o.Metadata)),
                 ("@created", o.CreatedAt.ToIso()), ("@last", o.LastRunAt.ToIsoOrNull()), ("@ema", o.SuccessEma));
         }
         InvalidateCache();
@@ -226,6 +228,7 @@ public sealed partial class SqliteMemory
         Charter = row.GetValueOrDefault("charter")?.ToString() ?? "",
         Priority = (int)AsLong(row.GetValueOrDefault("priority")),
         Status = EnumExtensions.ParseObjectiveStatus(row.GetValueOrDefault("status")?.ToString() ?? "pending"),
+        ProjectId = row.GetValueOrDefault("project_id") is null or DBNull ? null : row.GetValueOrDefault("project_id")?.ToString(),
         MaxRuns = (int)AsLong(row.GetValueOrDefault("max_runs")),
         RunCount = (int)AsLong(row.GetValueOrDefault("run_count")),
         ConsecutiveFailures = (int)AsLong(row.GetValueOrDefault("consecutive_failures")),

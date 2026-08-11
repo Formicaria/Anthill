@@ -245,6 +245,11 @@ public static partial class ApiHost
             Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
         }
 
+        // v0.3.8.48: schedules execute while the HOST runs — started here, said plainly in the
+        // UI, and never claimed to be a cloud.
+        Queen.Scheduler.Start();
+        Console.WriteLine("Project scheduler started (runs execute while this host is running).");
+
         if (autostart)
         {
             // v2.26.0: autostart honours a durable STOP. The Director process starts (so status,
@@ -423,6 +428,34 @@ public sealed class AttachmentBody
     public string? Content { get; set; }
 }
 
+/// <summary>v0.3.8.48: one role's route. Both halves required; nothing else is touched.</summary>
+public sealed class RouteBody
+{
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+}
+
+/// <summary>v0.3.8.48: create or update a project schedule. Null on PATCH = leave unchanged.</summary>
+public sealed class ScheduleRequest
+{
+    public string? Name { get; set; }
+    public string? Prompt { get; set; }
+    public string? Trigger { get; set; }
+    public string? Cron { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("one_time_at")]
+    public string? OneTimeAt { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("local_time")]
+    public string? LocalTime { get; set; }
+    public string? Timezone { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("approval_mode")]
+    public string? ApprovalMode { get; set; }
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+    public bool? Enabled { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("overlap_policy")]
+    public string? OverlapPolicy { get; set; }
+}
+
 /// <summary>v0.3.8.47: import a transcript. Turns become history; nothing is invented for them.</summary>
 public sealed class ImportRequest
 {
@@ -443,6 +476,13 @@ public sealed class ProjectRequest
     public string? DescriptionMd { get; set; }
     public string? Path { get; set; }
     public bool? Archived { get; set; }
+    /// <summary>v0.3.8.48: ask | autoapprove | bypass. Attributed to the caller when changed.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("default_policy")]
+    public string? DefaultPolicy { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("default_provider")]
+    public string? DefaultProvider { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("default_model")]
+    public string? DefaultModel { get; set; }
 }
 
 /// <summary>v3.7.0: one turn, with the operator's answers for anything it needs permission to do.</summary>
@@ -484,6 +524,9 @@ public sealed class ObjectiveRequest
     public string? Charter { get; set; }
     public int? Priority { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("max_runs")] public int? MaxRuns { get; set; }
+    /// <summary>v0.3.8.48: the owning project. A named project must exist; absence = unassigned.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("project_id")]
+    public string? ProjectId { get; set; }
 }
 public sealed class ObjectivePatch
 {
