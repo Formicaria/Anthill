@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v0.3.8.43 - the desktop shell, and the colony behind the conversation
+
+**AnthillDesktop — the colony in a native Windows window.** The original Operation Anthill
+packaging goal, claimed at last by the `deployment_mode` the backend has carried since v0.3.8.40.
+One rule shapes it: a WINDOW onto the colony, not a second colony and not a second console.
+WinForms + WebView2 — pure .NET, no Electron, no new toolchain — hosting the same `ApiHost.Run`
+the CLI's `--api` uses, same composition root, same modules, rendering the same `/ui` every
+browser gets, so every feature the console gains arrives in the desktop app for free.
+
+Boot-or-attach: the probe checks that the port serves ANTHILL (not merely a server) and attaches
+rather than booting a rival colony over the same database. One shell per machine via mutex. The
+WebView2 profile lives in `%LOCALAPPDATA%\Anthill` because the install directory may be Program
+Files, and a failed embedded browser names its fix instead of rendering a blank window. The
+project lives outside `Anthill.sln` by the `Anthill.UI` rule — a packaging artifact of the console
+does not tax every cross-platform build — with `EnableWindowsTargeting` so CI's Linux runner
+compiles it, explicit builds in ci.yml and validate.ps1, and `DesktopShellTests` pinning the whole
+arrangement so it cannot rot invisibly.
+
+**The colony renders BEHIND the conversation.** The Chat + Colony presentation the UI-truthfulness
+SOW specified: the live topology as a full-page layer behind a frosted, readable chat panel — not
+a strip, not a split. Rebuilt on the two fixes the first layered attempt lacked (the flex-column
+mount that gives the canvas its height; the colony page's mission bar hidden in this context) and
+carrying everything the intermediate side pane proved out: one re-parented canvas with its camera
+travelling intact, `aria-pressed`, Escape behind the modal guard, truthful mission linkage,
+topology failure that stays topology-sized, and a clean full-screen switch under 640px. New per
+the SOW's remaining asks: a **Fit view** control wired to the canonical camera reset, and
+`prefers-reduced-motion` honored at the render loop — idle plus reduced draws at 4fps, real work
+returns to full rate, because at that point the motion IS the information. The side pane and its
+divider are deleted, not hidden.
+
 ## v0.3.8.42 - UI truthfulness and cohesion: the console claims only what the backend proves
 
 The release the audit governs: `docs/UI-CONTRACT-AUDIT.md`, spec §1–§20. The method mattered as

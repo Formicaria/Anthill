@@ -24,6 +24,11 @@ if ($Full) {
     Write-Host "==> dotnet publish (win-x64, self-contained, single-file)" -ForegroundColor Cyan
     dotnet publish src/Anthill.Cli/Anthill.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=none -o ./publish/validate-win-x64
     if ($LASTEXITCODE -ne 0) { exit 1 }
+    # v0.3.8.43: the Windows desktop shell. Outside Anthill.sln by the Anthill.UI rule (a packaging
+    # artifact of the console), so this explicit build is what keeps it from rotting invisibly.
+    Write-Host "==> dotnet publish AnthillDesktop (win-x64, desktop shell)" -ForegroundColor Cyan
+    dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=none -o ./publish/validate-win-x64-desktop
+    if ($LASTEXITCODE -ne 0) { exit 1 }
     Write-Host "==> --selftest" -ForegroundColor Cyan
     $env:ANTHILL_API_TOKEN = "validate-" + [Guid]::NewGuid().ToString("N")
     & ./publish/validate-win-x64/anthill.exe --selftest

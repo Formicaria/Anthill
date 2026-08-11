@@ -1,7 +1,12 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.42** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.43** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.43 adds the two shapes the product had been promised: **AnthillDesktop**, the colony in a
+> native Windows window (one WebView2 over the same in-process API — a window onto the colony,
+> never a second one), and the **layered Chat + Colony mode** — the topology behind a frosted
+> conversation panel, with Fit view and `prefers-reduced-motion` honored at the render loop.
 
 > v0.3.8.42 is the *UI truthfulness and cohesion* release: the console claims only what the
 > backend proves. Chat became the one mission entry (the four competing composers retired, each
