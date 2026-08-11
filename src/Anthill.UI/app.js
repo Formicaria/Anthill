@@ -1940,12 +1940,22 @@ function refreshTopologyAwake(){
 }
 document.addEventListener('visibilitychange',refreshTopologyAwake);
 
+// v0.3.8.43 (SOW §4): reduced motion, honored at the render loop. When the operator asks for
+// reduced motion and the colony is genuinely idle (no running mission), the map redraws at 4fps —
+// enough to stay current, still, and honest — and returns to full rate the moment real work
+// starts, because at that point the motion IS the information.
+const REDUCED_MOTION = typeof matchMedia==='function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+let _lastReducedDraw=0;
 function loop(ts){
   requestAnimationFrame(loop);
   // v2.14.13: the topology now renders on the dashboard too, i.e. effectively always. Skip the
   // draw when the tab is backgrounded or the canvas has no area; the rAF keeps ticking so the
   // map resumes instantly with no re-init.
   if(!topologyAwake) return;
+  if(REDUCED_MOTION && !colonyRunning){
+    if(ts-_lastReducedDraw<250) return;
+    _lastReducedDraw=ts;
+  }
   camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
   drawBg();
   drawChambers();                  // v2.14.5: chamber grouping lives on this canvas, under the edges
@@ -4159,13 +4169,15 @@ async function chatSend(mode){
   }
 }
 
-/* v0.3.8.42 — Chat + Colony mode: the canonical topology in a resizable pane BESIDE the
- * conversation. One renderer: the same #colony-canvas-area the Colony page owns is re-parented
- * into the pane (topologyMountTo), so there is no second canvas, no second render loop, and no
- * second subscription — toggling moves a node, it does not build one. Closing hands the canvas
- * back to its home slot; refreshTopologyAwake() then measures 0×0 in the hidden pane and the
- * loop stops drawing it. Chat state (draft, scroll, selection) is untouched in both directions
- * because nothing in the conversation subtree is rebuilt. */
+/* v0.3.8.43 — Chat + Colony mode: the canonical topology as a full-page layer BEHIND the
+ * conversation (SOW §4), the chat floating above it as a frosted panel. One renderer: the same
+ * #colony-canvas-area the Colony page owns is re-parented into the layer (topologyMountTo), so
+ * there is no second canvas, no second render loop, and no second subscription — toggling moves a
+ * node, it does not build one. The camera (camX/camY/camZ) travels with the node, so the view an
+ * operator framed on the Colony page is the view they get here. Closing hands the canvas back to
+ * its home slot; refreshTopologyAwake() then measures 0×0 in the hidden layer and the loop stops
+ * drawing it. Chat state (draft, scroll, selection) is untouched in both directions because
+ * nothing in the conversation subtree is rebuilt. */
 function chatToggleColony(open){
   const layer=document.getElementById('chat-colony-layer'); if(!layer) return;
   chatColonyOpen = open===undefined ? !chatColonyOpen : !!open;
@@ -4248,28 +4260,12 @@ document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chat
 document.getElementById('chat-colony-full')?.addEventListener('click', ()=>{
   chatToggleColony(false); go('/colony/topology');
 });
-// The divider resizes the split by pointer or arrow keys. Width is a CSS custom property on the
-// wrap so one rule owns the layout; the canvas re-measures on release rather than every pixel.
-(function(){
-  const div=document.getElementById('chat-colony-divider'); if(!div) return;
-  const wrap=div.closest('.chat-wrap'); const pane=document.getElementById('chat-colony-layer');
-  const clamp=(px)=>{ const w=wrap.clientWidth||1; return Math.min(Math.max(px,340),w*0.72); };
-  const apply=(px)=>{ wrap.style.setProperty('--chat-colony-w', clamp(px)+'px'); };
-  const remeasure=()=>{ if(typeof topologyRemeasure==='function') topologyRemeasure(); };
-  div.addEventListener('pointerdown',e=>{
-    e.preventDefault(); div.setPointerCapture(e.pointerId); div.classList.add('dragging');
-    const move=ev=>apply((wrap.getBoundingClientRect().right)-ev.clientX);
-    const up=ev=>{ div.releasePointerCapture(e.pointerId); div.classList.remove('dragging');
-      div.removeEventListener('pointermove',move); div.removeEventListener('pointerup',up); remeasure(); };
-    div.addEventListener('pointermove',move); div.addEventListener('pointerup',up);
-  });
-  div.addEventListener('keydown',e=>{
-    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
-    e.preventDefault();
-    const cur=pane.getBoundingClientRect().width||wrap.clientWidth*0.45;
-    apply(cur+(e.key==='ArrowLeft'?32:-32)); remeasure();
-  });
-})();
+// v0.3.8.43 (SOW §4): the obvious way back when panning has lost the colony — reset the camera
+// targets and let the loop glide home. The same reset the Colony page's own controls use.
+document.getElementById('chat-colony-fit')?.addEventListener('click', ()=>{
+  if(typeof colonyResetView==='function') colonyResetView();
+  if(typeof topologyRemeasure==='function') topologyRemeasure();
+});
 // Escape closes the layer — but never out from under a real modal, which owns the key first.
 document.addEventListener('keydown', e=>{
   if(e.key!=='Escape'||!chatColonyOpen) return;
