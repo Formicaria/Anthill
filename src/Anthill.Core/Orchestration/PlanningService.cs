@@ -123,7 +123,37 @@ public sealed class PlanningService : IPlanningService
             AutoWireDependencies(graph);
             tasks = graph.Tasks;
         }
+
+        // Structural repair §6: MANDATORY VERIFICATION IS RUNTIME POLICY, NOT A PLANNER OPTION.
+        // The planner may request verification; it cannot omit it. A model-generated plan that
+        // produces a consequential deliverable (any admitted work task) and names no verifier gets
+        // one appended here — bound by lineage and dependency to every deliverable-producing task,
+        // so a planner omission can never yield an unverified mission that merely looks complete.
+        EnsurePlanVerification(tasks);
         return tasks;
+    }
+
+    /// <summary>Append the verifier the plan omitted, when the plan contains admissible work.</summary>
+    internal static void EnsurePlanVerification(List<Task> tasks)
+    {
+        var admissible = tasks.Where(t => t.Status != TaskStatus.Failed).ToList();
+        if (admissible.Count == 0) return;
+        if (admissible.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+            return;
+        if (!AntExecutorCatalog.RuntimeAvailable("verifier")) return;   // said elsewhere, honestly, at insert time
+
+        var work = admissible.Select(t => t.Id).ToList();
+        tasks.Add(new Task
+        {
+            Title = "Verify result",
+            Description = "Independently verify the mission's deliverable against the work that produced it. "
+                        + "[inserted by runtime policy: the plan omitted verification]",
+            AssignedAnt = "verifier",
+            TaskType = "verification",
+            ParentTaskIds = work,
+            DependsOn = work,
+            Critical = true,
+        });
     }
 
     /// <summary>

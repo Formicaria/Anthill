@@ -58,8 +58,36 @@ public static class MissionVerification
         // steps too, but they report evidence and findings rather than the verifier's verdict
         // vocabulary, so parsing their output for a verdict would return Unknown and fail every
         // mission they touch. Their completion remains the signal, as before.
-        return tasks.Where(IsVerdictBearing).All(t => VerificationVerdict.TextIsPass(t.Result));
+        if (!tasks.Where(IsVerdictBearing).All(t => VerificationVerdict.TextIsPass(t.Result))) return false;
+
+        // Structural repair §4 — FRESH EVIDENCE FOR THE LATEST REVISION, fail closed.
+        //
+        // PatchSet A → Tester A → FAIL → Medic → Coder produces PatchSet B: B must receive its own
+        // tester run before anything about the mission may be called verified, and A's evidence —
+        // however green — is not evidence about B. The pairing is structural: the coder task that
+        // produced the CURRENT revision carries ProducedRevisionId, and a check task that executed
+        // inside that revision's tree carries the matching RanRevisionId. A tester that ran against
+        // an earlier revision, or against the unpatched mission workspace (null), does not satisfy
+        // the candidate. Missions that never materialized a revision are unaffected.
+        return HasFreshEvidenceForLatestRevision(tasks);
     }
+
+    /// <summary>True when the mission has no materialized revision, or its latest revision has at
+    /// least one COMPLETED tester run stamped with that exact revision.</summary>
+    internal static bool HasFreshEvidenceForLatestRevision(IReadOnlyList<Task> tasks)
+    {
+        var latest = LatestProducedRevision(tasks);
+        if (latest is null) return true;   // nothing revision-shaped to pair
+        return tasks.Any(t =>
+            string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)
+            && t.Status == TaskStatus.Complete
+            && string.Equals(t.RanRevisionId, latest, StringComparison.Ordinal));
+    }
+
+    internal static string? LatestProducedRevision(IReadOnlyList<Task> tasks) =>
+        tasks.Where(t => !string.IsNullOrEmpty(t.ProducedRevisionId))
+             .OrderBy(t => t.FinishedAt ?? t.CreatedAt)
+             .LastOrDefault()?.ProducedRevisionId;
 
     /// <summary>The verifier is the only role that emits the verdict vocabulary.</summary>
     private static bool IsVerdictBearing(Task t) =>
@@ -129,6 +157,10 @@ public static class MissionVerification
         var badVerdict = tasks.Where(IsVerdictBearing)
             .Select(t => VerificationVerdict.Parse(t.Result))
             .FirstOrDefault(v => !VerificationVerdict.IsPass(v));
-        return badVerdict is not null ? VerificationVerdict.Explain(badVerdict) : "verification satisfied";
+        if (badVerdict is not null) return VerificationVerdict.Explain(badVerdict);
+        if (!HasFreshEvidenceForLatestRevision(tasks))
+            return $"stale evidence: the latest revision ({LatestProducedRevision(tasks)}) has no completed "
+                 + "tester run of its own — evidence from an earlier revision or the unpatched tree does not count";
+        return "verification satisfied";
     }
 }
