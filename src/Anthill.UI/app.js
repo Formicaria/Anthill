@@ -7234,13 +7234,39 @@ let shHistory=[], shHistIdx=-1, shBusy=false;
 PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
 document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
 document.getElementById('sh-run').addEventListener('click',runShell);
-// Quick-command buttons: put the command in the input and run it (restart asks first).
-document.querySelectorAll('.sh-qbtn').forEach(b=>b.addEventListener('click',async()=>{
-  const cmd=b.dataset.cmd;
-  if(cmd==='systemctl restart anthill' && !(await uiConfirm('Restart the ANTHILL service now? The console will briefly disconnect.'))) return;
-  const inp=document.getElementById('sh-input'); if(inp.disabled) return;
-  inp.value=cmd; runShell();
-}));
+
+// v0.4.0 (§14): quick actions are rendered from the platform-aware list /shell/info returns, so the
+// console never offers a Linux command on a Windows host. A "danger" action (restart/stop) confirms
+// first; the rest run immediately. Rebuilt on each shell open in case the host changed.
+function renderShellQuickActions(platform, actions){
+  const host=document.getElementById('sh-quick');
+  const label=document.getElementById('sh-quick-label');
+  if(!host) return;
+  // clear everything except the leading "Quick:" label
+  [...host.querySelectorAll('.sh-qbtn')].forEach(b=>b.remove());
+  const none=host.querySelector('.sh-quick-none'); if(none) none.remove();
+  if(!actions||!actions.length){
+    if(label) label.style.display='none';
+    const n=document.createElement('span'); n.className='sh-quick-none';
+    n.style.cssText='font-size:10px;color:var(--dim);align-self:center;';
+    n.textContent='No quick actions for this environment ('+(platform||'unknown')+') — type commands directly.';
+    host.appendChild(n); return;
+  }
+  if(label) label.style.display='';
+  for(const a of actions){
+    const b=document.createElement('button');
+    b.className='btn btn-ghost sh-qbtn';
+    b.style.cssText='font-size:10px;padding:3px 8px;'+(a.danger?'color:var(--queen);':'');
+    b.textContent=a.label;
+    b.title=a.command;
+    b.addEventListener('click',async()=>{
+      if(a.danger && !(await uiConfirm('Run "'+a.label+'" on this host?\n\n'+a.command+'\n\nThis may disrupt the running service.'))) return;
+      const inp=document.getElementById('sh-input'); if(inp.disabled) return;
+      inp.value=a.command; runShell();
+    });
+    host.appendChild(b);
+  }
+}
 document.getElementById('sh-input').addEventListener('keydown',e=>{
   if(e.key==='Enter'){ e.preventDefault(); runShell(); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); if(shHistory.length){ shHistIdx=Math.max(0,shHistIdx-1); e.target.value=shHistory[shHistIdx]||''; } }
@@ -7267,6 +7293,9 @@ async function initShell(){
     document.getElementById('sh-run').disabled=!enabled;
     setEl('sh-host', info.host?`(${info.host})`:'');
     setEl('sh-host2', (info.host||'host')+' · '+(info.os||''));
+    setEl('sh-platform', info.platform||'unknown');
+    // v0.4.0 (§14): render only the quick actions this platform supports.
+    renderShellQuickActions(info.platform, info.quick_actions||[]);
     const dirEl=document.getElementById('sh-dir');
     if(!dirEl.value) dirEl.value=info.default_dir||'';
   }catch(e){ document.getElementById('sh-disabled-note').style.display='block'; }
