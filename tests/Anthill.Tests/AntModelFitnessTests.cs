@@ -177,4 +177,28 @@ public class AntModelFitnessTests
         Assert.False(tester.AllowsSideEffects);
         Assert.False(tester.ProducesPatchProposals);
     }
+
+    /// <summary>
+    /// v0.4.0 (§15) — the two roles whose work is inference from evidence that does not state its
+    /// own conclusion: the coder holds a change consistent across several files, the medic infers a
+    /// failure's cause from symptoms that never name it. Both declare Reasoning, and on a
+    /// completion-only model — which is what a fresh install's sole local default (llama3.1:8b)
+    /// reports as — both must be reported UNFIT for reasoning. That unfitness is exactly the signal
+    /// the router's reasoning-aware reroute now acts on, instead of letting the role answer fluently
+    /// from a model that cannot actually reason. If either role loses its reasoning requirement, the
+    /// reroute silently stops protecting it — so this test guards the invariant, not just the value.
+    /// </summary>
+    [Theory]
+    [InlineData("coder")]
+    [InlineData("medic")]
+    public void TheInferenceRoles_RequireReasoning_AndAreUnfitOnACompletionOnlyModel(string role)
+    {
+        var contract = AntExecutionCatalog.ContractFor(role);
+
+        Assert.NotNull(contract);
+        Assert.True(contract!.ModelNeeds.Reasoning, $"'{role}' infers from evidence and needs reasoning");
+
+        var unmet = AntModelFitness.Unmet(contract.ModelNeeds, ModelCapabilities.TextOnly);
+        Assert.Contains(unmet, u => u.Contains("reasoning"));
+    }
 }
