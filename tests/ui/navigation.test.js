@@ -35,16 +35,34 @@ function iaRoutes() {
   return routes;
 }
 
-test('the navigation has exactly the seven destinations, in order', () => {
+test('the navigation has exactly the five destinations, in order', () => {
+  // v0.4.0 (UI/UX pass §20): Colony, Projects, Chat, Tools, Settings.
   const top = IA.map(d => d.label);
   assert.deepStrictEqual(top,
-    ['Chat', 'Projects', 'Objectives', 'Dashboard', 'Tools', 'Integrations', 'Settings']);
+    ['Colony', 'Projects', 'Chat', 'Tools', 'Settings']);
 });
 
-test('the removed domains do not render', () => {
+test('the removed / folded destinations do not render as top-level', () => {
   const ids = IA.map(d => d.id);
-  for (const gone of ['operations', 'infrastructure', 'colony', 'security', 'administration'])
-    assert.ok(!ids.includes(gone), `${gone} is still a nav domain`);
+  // Dashboard folded into Colony/Overview; Objectives into Projects; Integrations into Tools;
+  // the old operational domains are gone entirely.
+  for (const gone of ['operations', 'infrastructure', 'administration', 'monitoring',
+                      'dashboard', 'objectives', 'integrations'])
+    assert.ok(!ids.includes(gone), `${gone} is still a top-level nav entry`);
+});
+
+test('Models, Roles, Model Routing and the Inspector live under Colony (§11)', () => {
+  const colony = IA.find(d => d.id === 'colony');
+  assert.ok(colony, 'Colony domain missing');
+  const routes = (colony.sections || []).flatMap(s => [s.route, ...(s.tabs || []).map(t => t.route)]);
+  for (const r of ['/colony/roles', '/colony/inspector', '/colony/model-routing'])
+    assert.ok(routes.includes(r), `${r} is not under Colony`);
+});
+
+test('Integrations lives under Tools (§9)', () => {
+  const tools = IA.find(d => d.id === 'tools');
+  const routes = (tools.sections || []).map(s => s.route);
+  assert.ok(routes.includes('/tools/integrations'), 'Integrations not under Tools');
 });
 
 test('every alias lands on a route that exists', () => {
