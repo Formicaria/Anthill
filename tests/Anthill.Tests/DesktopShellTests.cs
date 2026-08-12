@@ -117,25 +117,38 @@ public class DesktopShellTests
     }
 
     /// <summary>
-    /// v0.3.8.47 — the tray, and the update check that only ever TELLS. Two rules pinned:
-    /// minimize goes to the tray but the X still quits (hijacking close into "secretly keep
-    /// running" is the desktop behaviour people rightly hate), and the update path opens a
-    /// release page — never downloads, never installs, and fails into silence offline.
+    /// v0.3.8.47 pinned an update check that only ever TOLD; v0.3.8.50 (field report) replaced
+    /// the policy deliberately: the check now PROMPTS, and a yes downloads the installer and
+    /// hands over to it. What this test pins is the part that must never change — the tray
+    /// stays polite (minimize hides, the X still quits), and NOTHING downloads or installs
+    /// without the operator's explicit yes: the download call sites are reachable only behind
+    /// the DialogResult.Yes branch of the offer.
     /// </summary>
     [Fact]
-    public void TheTray_IsPolite_AndTheUpdateCheckOnlyTells()
+    public void TheTray_IsPolite_AndTheUpdaterNeedsAYes()
     {
         var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
-
         Assert.Contains("NotifyIcon", shell);
         Assert.Contains("FormWindowState.Minimized", shell);
         Assert.Contains("FormClosed", shell);
         Assert.DoesNotContain("e.Cancel = true", shell);
-        Assert.Contains("releases/latest", shell);
-        Assert.Contains("UseShellExecute = true", shell);
-        Assert.Contains("Nothing installs itself", shell);
-        Assert.DoesNotContain("DownloadFile", shell);
-        Assert.Contains("them <= us", shell);
+        // The explicit update button the field report asked for.
+        Assert.Contains("Check for updates", shell);
+        // The launch check must stay QUIET when up to date — noise about a convenience.
+        Assert.Contains("announceUpToDate: false", shell);
+
+        var updater = Read("src", "Anthill.Desktop", "UpdateService.cs");
+        Assert.Contains("releases/latest", updater);
+        Assert.Contains("UseShellExecute = true", updater);
+        // Consent gates the download: the offer asks, and anything but Yes returns before
+        // DownloadAndRun can be reached.
+        Assert.Contains("MessageBoxButtons.YesNo", updater);
+        Assert.Contains("if (choice != DialogResult.Yes)", updater);
+        Assert.Contains("Nothing ever downloads or installs without a yes", updater);
+        // Version comparison still fails toward "no update" on anything unparsable.
+        Assert.Contains("latest <= mine", updater);
+        // And the installer asset is matched by NAME SHAPE, never guessed.
+        Assert.Contains("anthill-setup-", updater);
     }
 
     /// <summary>The window claims a writable WebView2 profile — the install dir may be
