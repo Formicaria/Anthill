@@ -104,26 +104,27 @@ public class ConsoleNavigationTruthTests
     }
 
     /// <summary>
-    /// The item that replaced it points at the CANONICAL route for its page.
+    /// Objectives is no longer a standalone destination — it folded into Projects (UI/UX pass §5).
     ///
-    /// `/scheduled` was a second route to `objboard` while `PAGE_ROUTE` mapped that page back to
-    /// `/operations/automation/objectives` — so the route in the nav and the route the console
-    /// considers canonical disagreed, which is a duplicate route implementation wearing a label.
+    /// The invariant that matters is unchanged in spirit: there is no duplicate/dead route for the
+    /// objboard page. There is no top-level Objectives nav item and no `/scheduled` alias, and the
+    /// page's canonical home is the Projects route it now lives under, so the nav and the console's
+    /// notion of "where objboard lives" cannot disagree.
     /// </summary>
     [Fact]
-    public void TheObjectivesNavItem_UsesTheCanonicalRouteForItsPage()
+    public void ObjectivesFoldedIntoProjects_LeavesNoDuplicateRoute()
     {
-        var app = AppJs();
+        var app = AppJs().Replace(" ", "");
 
-        Assert.Contains("id:'objectives'", app.Replace(" ", ""), StringComparison.Ordinal);
-        Assert.DoesNotContain("route:'/scheduled'", app.Replace(" ", ""), StringComparison.Ordinal);
+        // No standalone Objectives destination and no legacy /scheduled route.
+        Assert.DoesNotContain("route:'/objectives',page:'objboard'", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("route:'/scheduled'", app, StringComparison.Ordinal);
 
-        // PAGE_ROUTE's answer for objboard, and the nav item's route, must be the same string.
-        // v0.3.8.48: Objectives is a top-level destination at /objectives.
-        Assert.Contains("objboard:'/objectives'", app.Replace(" ", ""),
-            StringComparison.Ordinal);
-        Assert.Contains("route:'/objectives',page:'objboard'",
-            app.Replace(" ", ""), StringComparison.Ordinal);
+        // objboard's canonical home is Projects, where Objectives now lives.
+        Assert.Contains("objboard:'/projects'", app, StringComparison.Ordinal);
+
+        // /objectives still resolves for old bookmarks — as an alias to Projects, not a live route.
+        Assert.Contains("'/objectives':'/projects'", app, StringComparison.Ordinal);
     }
 
     /// <summary>
