@@ -1244,6 +1244,20 @@ public sealed class ExecutionService : IExecutionService
                     ["kind"] = e.Kind, ["value"] = e.Value, ["detail"] = e.Detail,
                 }).ToList(),
                 ["warnings"] = execution.Warnings,
+                // Structural repair §10 — fallback exposure, all derived from STRUCTURE. A role can
+                // do useful deterministic work while its routed model is down; what it may never do
+                // is look like model execution succeeded. These fields keep the two stories apart
+                // in the durable record: role_invoked is always true here (this event exists),
+                // model_executed only when calls were actually made AND generation was not the
+                // degraded fallback, fallback_used mirrors the provider_failure disclosure.
+                ["role_invoked"] = true,
+                ["model_requested_for_role"] = runtimeSelection.ExecutorRoleId,
+                ["model_calls_made"] = execution.Metrics.ModelCalls,
+                ["model_executed"] = execution.Metrics.ModelCalls > 0 && !task.GenerationDegraded,
+                ["fallback_used"] = task.GenerationDegraded,
+                ["generation_degraded"] = task.GenerationDegraded,
+                ["deterministic_work_completed"] = execution.Evidence.Any(e =>
+                    Anthill.SDK.Artifacts.EvidenceKinds.Reproducible.Contains(e.Kind) || e.Kind == "check"),
                 // v3.8.32: wire form, matching every other failure_class in the tree. An event
                 // stream that spells a class differently from the tables is a query that silently
                 // returns nothing.
