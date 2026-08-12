@@ -67,6 +67,51 @@ internal static class Program
             if (Environment.GetEnvironmentVariable("ANTHILL_HOST") is null)
                 Environment.SetEnvironmentVariable("ANTHILL_HOST", "127.0.0.1");
 
+            // PERSISTENT MEMORY ACROSS UPDATES AND INSTALLS (field report). ANTHILL_HOME decides
+            // where the colony's database and config live; unset, the runtime uses the working
+            // directory — which for an installed app is Program Files: read-only for non-admins
+            // and REPLACED by every installer run. The desktop shell homes the colony under
+            // %LOCALAPPDATA%\Anthill, the same place its logs and WebView2 profile already live,
+            // which no install, update or uninstall ever touches. An explicit ANTHILL_HOME
+            // (server operators, portable setups) still wins.
+            if (Environment.GetEnvironmentVariable("ANTHILL_HOME") is null)
+            {
+                var dataHome = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Anthill");
+                Directory.CreateDirectory(dataHome);
+
+                // One-time adoption: a colony that lived beside the exe (the zip era) moves home
+                // rather than being forgotten by the first installed build. COPY, not move — the
+                // old tree stays behind as its own backup.
+                var legacy = Path.Combine(AppContext.BaseDirectory,
+                    Anthill.Core.Configuration.AnthillRuntime.DefaultWorkspace);
+                var adopted = Path.Combine(dataHome,
+                    Anthill.Core.Configuration.AnthillRuntime.DefaultWorkspace);
+                if (Directory.Exists(legacy) && !Directory.Exists(adopted))
+                {
+                    try
+                    {
+                        foreach (var dir in Directory.GetDirectories(legacy, "*", SearchOption.AllDirectories))
+                            Directory.CreateDirectory(dir.Replace(legacy, adopted, StringComparison.Ordinal));
+                        foreach (var file in Directory.GetFiles(legacy, "*", SearchOption.AllDirectories))
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(
+                                file.Replace(legacy, adopted, StringComparison.Ordinal))!);
+                            File.Copy(file, file.Replace(legacy, adopted, StringComparison.Ordinal), overwrite: false);
+                        }
+                        DesktopLog.Write($"Adopted the colony data found beside the exe into {adopted}.");
+                    }
+                    catch (Exception copyError)
+                    {
+                        // Adoption is a courtesy; a half-copied home would be worse than a fresh one.
+                        DesktopLog.Write("Legacy data adoption failed (continuing with a fresh home): " + copyError.Message);
+                        try { if (Directory.Exists(adopted)) Directory.Delete(adopted, recursive: true); } catch { }
+                    }
+                }
+
+                Environment.SetEnvironmentVariable("ANTHILL_HOME", dataHome);
+            }
+
             AnthillRuntime.Initialize();
             var listenHost = AnthillRuntime.ApiHost is "0.0.0.0" or "::" ? "127.0.0.1" : AnthillRuntime.ApiHost;
             var baseUrl = $"http://{listenHost}:{AnthillRuntime.ApiPort}";

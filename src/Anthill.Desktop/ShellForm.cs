@@ -8,8 +8,12 @@ namespace Anthill.Desktop;
 /// <summary>
 /// The window — open from the FIRST moment, narrating what the colony is doing, then becoming it.
 /// v0.3.8.44: the first field failure was thirty blind seconds ending in silence; a window that
-/// exists immediately and speaks ("Starting the colony…" → console, or the real failure with the
-/// host's own logged words) cannot reproduce it.
+/// exists immediately and speaks cannot reproduce it.
+///
+/// Field report (installer batch): the loading screen wears the brand — the console's own dark
+/// background, the ANTHILL wordmark in its weight and letterforms, the version in the queen's
+/// amber — instead of a gray system label. Same palette as src/Anthill.UI/index.html's CSS vars;
+/// change it there, change it here, or the two products drift apart at the front door.
 ///
 /// The WebView2 user-data folder lives under %LOCALAPPDATA%\Anthill: the install directory may be
 /// read-only (Program Files), and "beside the exe" is how packaged WebView2 apps break on first
@@ -17,18 +21,41 @@ namespace Anthill.Desktop;
 /// </summary>
 internal sealed class ShellForm : Form
 {
+    // The console's palette (index.html: --bg, --anthill-text, --queen, --muted).
+    private static readonly Color BrandBg = Color.FromArgb(9, 14, 23);        // --bg #090e17
+    private static readonly Color BrandText = Color.FromArgb(234, 242, 255);  // --anthill-text #eaf2ff
+    private static readonly Color BrandQueen = Color.FromArgb(251, 191, 36);  // --queen #fbbf24
+    private static readonly Color BrandMuted = Color.FromArgb(122, 143, 173);
+
+    private readonly Panel _loading = new() { Dock = DockStyle.Fill, BackColor = BrandBg };
+    private readonly Label _wordmark = new()
+    {
+        Dock = DockStyle.None,
+        AutoSize = true,
+        // The wordmark: Segoe UI at the console's weight, letterspaced the way CSS does it with
+        // .14em — WinForms has no tracking, so the spacing is IN the text. Honest approximation.
+        Font = new Font("Segoe UI", 30f, FontStyle.Bold),
+        ForeColor = BrandText,
+        BackColor = BrandBg,
+        Text = "A N T H I L L",
+    };
+    private readonly Label _version = new()
+    {
+        AutoSize = true,
+        Font = new Font("Consolas", 11f),
+        ForeColor = BrandQueen,
+        BackColor = BrandBg,
+        Text = $"v{AnthillRuntime.Version}",
+    };
     private readonly Label _status = new()
     {
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleCenter,
-        Font = new Font("Segoe UI", 11f),
+        AutoSize = true,
+        Font = new Font("Segoe UI", 10.5f),
+        ForeColor = BrandMuted,
+        BackColor = BrandBg,
         Text = "Starting the colony…",
     };
 
-    // v0.3.8.47: the tray. Minimize sends Anthill there instead of the taskbar; the icon's menu
-    // reopens or quits; a balloon says where the window went the first time so nobody thinks the
-    // colony died. Closing the WINDOW still quits — hijacking the X into "secretly keep running"
-    // is desktop behaviour people rightly hate; the tray is where MINIMIZE goes, by choice.
     private readonly NotifyIcon _tray = new();
     private bool _trayBalloonShown;
 
@@ -39,13 +66,23 @@ internal sealed class ShellForm : Form
         Height = 900;
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
-        Controls.Add(_status);
+        BackColor = BrandBg;
+
+        _loading.Controls.Add(_wordmark);
+        _loading.Controls.Add(_version);
+        _loading.Controls.Add(_status);
+        _loading.Resize += (_, _) => CenterLoading();
+        Controls.Add(_loading);
+        CenterLoading();
 
         _tray.Icon = Icon ?? SystemIcons.Application;
         _tray.Text = $"Anthill v{AnthillRuntime.Version}";
         _tray.Visible = true;
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open Anthill", null, (_, _) => RestoreFromTray());
+        // Field report: the explicit update button. The launch check runs anyway; this is the
+        // operator asking NOW and getting an honest answer either way.
+        menu.Items.Add("Check for updates…", null, (_, _) => UpdateService.CheckAndOffer(this, _tray, announceUpToDate: true));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => { _tray.Visible = false; Application.Exit(); });
         _tray.ContextMenuStrip = menu;
@@ -63,7 +100,25 @@ internal sealed class ShellForm : Form
         };
         FormClosed += (_, _) => _tray.Visible = false;
 
-        Load += (_, _) => { BeginBoot(); BeginUpdateCheck(); };
+        // Field report: the update check PROMPTS on launch now (announceUpToDate: false — an
+        // up-to-date machine hears nothing at startup; noise about a convenience is the old
+        // failure shape). The colony boot starts in parallel.
+        Load += (_, _) => { BeginBoot(); UpdateService.CheckAndOffer(this, _tray, announceUpToDate: false); };
+    }
+
+    private void CenterLoading()
+    {
+        var cx = _loading.Width / 2;
+        var cy = _loading.Height / 2;
+        _wordmark.Location = new Point(cx - _wordmark.Width / 2, cy - _wordmark.Height);
+        _version.Location = new Point(cx - _version.Width / 2, cy + 6);
+        _status.Location = new Point(cx - _status.Width / 2, cy + 40);
+    }
+
+    private void SetStatus(string text)
+    {
+        _status.Text = text;
+        CenterLoading();
     }
 
     private void RestoreFromTray()
@@ -73,55 +128,9 @@ internal sealed class ShellForm : Form
         Activate();
     }
 
-    /// <summary>
-    /// v0.3.8.47 — the update check: ASK GitHub, TELL the operator, change NOTHING. One request at
-    /// startup, comparing the latest release tag to this build; a newer one adds a tray menu item
-    /// that opens the release page in the default browser. No download, no silent install — an
-    /// update the operator did not choose is the desktop failure mode this product exists to avoid.
-    /// Failure is silence: an offline machine must not see errors about a convenience.
-    /// </summary>
-    private void BeginUpdateCheck() =>
-        new Thread(() =>
-        {
-            try
-            {
-                using var http = new HttpClient();
-                http.Timeout = TimeSpan.FromSeconds(10);
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("AnthillDesktop/" + AnthillRuntime.Version);
-                var json = http.GetStringAsync(
-                    "https://api.github.com/repos/Formicaria/Anthill/releases/latest")
-                    .GetAwaiter().GetResult();
-                var tag = System.Text.Json.JsonDocument.Parse(json)
-                    .RootElement.GetProperty("tag_name").GetString() ?? "";
-                var latest = tag.TrimStart('v');
-                if (string.IsNullOrWhiteSpace(latest)
-                    || !Version.TryParse(latest, out var them)
-                    || !Version.TryParse(AnthillRuntime.Version, out var us)
-                    || them <= us) return;
-
-                BeginInvoke(() =>
-                {
-                    var item = new ToolStripMenuItem($"Update available: v{latest} — open release page");
-                    item.Click += (_, _) => System.Diagnostics.Process.Start(
-                        new System.Diagnostics.ProcessStartInfo(
-                            $"https://github.com/Formicaria/Anthill/releases/tag/{tag}")
-                        { UseShellExecute = true });
-                    _tray.ContextMenuStrip!.Items.Insert(0, item);
-                    _tray.BalloonTipTitle = $"Anthill v{latest} is available";
-                    _tray.BalloonTipText = "You are on v" + AnthillRuntime.Version
-                        + ". Right-click the tray icon to open the release page. Nothing installs itself.";
-                    _tray.ShowBalloonTip(6000);
-                });
-            }
-            catch (Exception error) { DesktopLog.Write("update-check: " + error.Message); }
-        })
-        { IsBackground = true, Name = "anthill-update-check" }.Start();
-
     private void BeginBoot() =>
-        // The boot runs off the UI thread; the window narrates it. BeginInvoke marshals every
-        // report back, so the form never touches cross-thread state.
         new Thread(() => Program.EnsureColony(
-            status: s => BeginInvoke(() => _status.Text = s),
+            status: s => BeginInvoke(() => SetStatus(s)),
             ready: url => BeginInvoke(() => ShowConsole(url)),
             failed: why => BeginInvoke(() => ShowFailure(why))))
         { IsBackground = true, Name = "anthill-boot" }.Start();
@@ -142,13 +151,11 @@ internal sealed class ShellForm : Form
         {
             await web.EnsureCoreWebView2Async();
             web.CoreWebView2.Navigate(url);
-            Controls.Remove(_status);
+            Controls.Remove(_loading);
             Controls.Add(web);
         }
         catch (Exception error)
         {
-            // The one dependency this shell has that the CLI does not: the WebView2 runtime.
-            // Windows 11 and updated Windows 10 ship it; the failure names the fix for the rest.
             DesktopLog.Write("WebView2: " + error);
             web.Dispose();
             ShowFailure("The embedded browser could not start.\n\n"
@@ -160,9 +167,11 @@ internal sealed class ShellForm : Form
 
     private void ShowFailure(string why)
     {
+        // Failure keeps the brand background but switches to a readable log presentation.
+        _wordmark.ForeColor = BrandMuted;
         _status.Font = new Font("Consolas", 9.5f);
-        _status.TextAlign = ContentAlignment.MiddleLeft;
-        _status.Padding = new Padding(24);
-        _status.Text = "Anthill could not start.\r\n\r\n" + why.Replace("\n", "\r\n");
+        _status.MaximumSize = new Size(_loading.Width - 96, 0);
+        _status.ForeColor = BrandText;
+        SetStatus("Anthill could not start.\r\n\r\n" + why.Replace("\n", "\r\n"));
     }
 }

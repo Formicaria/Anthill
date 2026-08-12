@@ -79,17 +79,26 @@ ollama pull llama3.1:8b
 
 If PowerShell says `ollama` is not recognized, close PowerShell, open it again, and retry.
 
-### 2. Download ANTHILL
+### 2. Install ANTHILL
 
-Download
-[`anthill-0.3.8.49-win-x64.zip`](https://github.com/Formicaria/Anthill/releases/download/v0.3.8.49/anthill-0.3.8.49-win-x64.zip)
-and extract it somewhere permanent, such as:
+Download `anthill-setup-<version>.exe` from the
+[latest release](https://github.com/Formicaria/Anthill/releases/latest) and run it. It walks
+the normal Windows steps: license agreement, install location (Program Files by default), a
+desktop icon (on by default — untick it in the same screen if you don't want one), a Start
+Menu entry, and a standard uninstaller. When it finishes, hit the desktop icon.
+
+Updates prompt inside the app and install the same way. Your colony's memory and settings
+live under `%LOCALAPPDATA%\Anthill` and survive every update, reinstall, and uninstall.
+
+Prefer a portable copy instead? The
+[`anthill-<version>-win-x64.zip`](https://github.com/Formicaria/Anthill/releases/latest)
+still exists — extract it somewhere permanent, such as:
 
 ```text
 C:\Anthill
 ```
 
-The download already contains the .NET runtime. You do not need to install the .NET SDK.
+Either download already contains the .NET runtime. You do not need to install the .NET SDK.
 
 ### 3. Start ANTHILL
 
