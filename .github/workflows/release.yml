@@ -120,13 +120,14 @@ jobs:
       - name: Build
         run: |
           VERSION="${{ needs.verify-version.outputs.version }}"
-          IMAGE="ghcr.io/${{ github.repository }}"
+          # GHCR image names must be lowercase; the repo is Formicaria/Anthill, so downcase it.
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           docker build -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
 
       - name: Push
         run: |
           VERSION="${{ needs.verify-version.outputs.version }}"
-          IMAGE="ghcr.io/${{ github.repository }}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
 
@@ -157,7 +158,8 @@ jobs:
           fi
           echo "---" >> /tmp/release-notes.md
           echo "" >> /tmp/release-notes.md
-          echo "Docker: \`docker pull ghcr.io/${{ github.repository }}:${VERSION}\`" >> /tmp/release-notes.md
+          IMAGE_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "Docker: \`docker pull ghcr.io/${IMAGE_LC}:${VERSION}\`" >> /tmp/release-notes.md
           echo "LXC: \`curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/deploy/lxc/setup.sh | bash\`" >> /tmp/release-notes.md
 
       - name: Publish release
