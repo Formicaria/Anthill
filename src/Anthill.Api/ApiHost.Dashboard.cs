@@ -583,11 +583,32 @@ public static partial class ApiHost
             var routes = new Dictionary<string, object?>();
             foreach (var role in new[] { "researcher", "web", "file", "coder", "builder", "verifier", "planner", "strategist" })
             {
-                AnthillRuntime.ModelRouting.TryGetValue(role, out var cfg);
+                // v0.4.0 (§12): resolve through the AUTHORITATIVE router, not a second inline copy.
+                //
+                // This used to read `cfg?.GetValueOrDefault("model") ?? OllamaModel`, which handed
+                // the local Ollama tag to EVERY provider — so the Inspector showed every ant as
+                // "agent:claude-code · gemma4:31b", an agent CLI paired with a local model it has
+                // never heard of and cannot serve. That is exactly the defect ModelRouter.RoleRoute
+                // fixed on the call path (a keyed/agent provider with no model of its own keeps an
+                // EMPTY model — the provider decides); reading the raw config here reintroduced it on
+                // the display path. Now the Inspector shows the same route a mission would run.
+                string provider, model;
+                if (Queen.Router is not null)
+                {
+                    var resolved = Queen.Router.ResolveRoute(role);
+                    (provider, model) = (resolved.Provider, resolved.Model);
+                }
+                else
+                {
+                    AnthillRuntime.ModelRouting.TryGetValue(role, out var cfg);
+                    provider = cfg?.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider;
+                    var isLocal = string.Equals(provider, AnthillRuntime.DefaultModelProvider, StringComparison.OrdinalIgnoreCase);
+                    model = cfg?.GetValueOrDefault("model") ?? (isLocal ? AnthillRuntime.OllamaModel : "");
+                }
                 routes[role] = new Dictionary<string, object?>
                 {
-                    ["provider"] = cfg?.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider,
-                    ["model"] = cfg?.GetValueOrDefault("model") ?? AnthillRuntime.OllamaModel,
+                    ["provider"] = provider,
+                    ["model"] = model,
                 };
             }
             return ApiJson.Ok(new Dictionary<string, object?>
