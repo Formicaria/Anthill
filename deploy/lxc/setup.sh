@@ -12,13 +12,13 @@
 #
 # Env vars (all optional):
 #   ANTHILL_REPO_URL      git remote to clone if not already run from inside a checkout
-#                         (default: https://github.com/thexonexone/operation-anthill.git)
+#                         (default: https://github.com/Formicaria/Anthill.git)
 #   ANTHILL_INSTALL_DIR   base directory for the install (default: /opt/anthill)
 #   ANTHILL_SERVICE_USER  dedicated system user the service runs as (default: anthill)
 
 set -euo pipefail
 
-REPO_URL="${ANTHILL_REPO_URL:-https://github.com/thexonexone/operation-anthill.git}"
+REPO_URL="${ANTHILL_REPO_URL:-https://github.com/Formicaria/Anthill.git}"
 INSTALL_DIR="${ANTHILL_INSTALL_DIR:-/opt/anthill}"
 SERVICE_USER="${ANTHILL_SERVICE_USER:-anthill}"
 
@@ -79,6 +79,12 @@ else
         # drift), so every re-run silently rebuilt STALE code and the deployed version froze while
         # releases moved on. The build checkout must always build origin/main — force it.
         log "Existing checkout found — resetting build checkout to origin/main"
+        # v0.3.8.49 repo-move fix: an existing checkout keeps whatever remote it was FIRST cloned
+        # from, so a box provisioned from the old repo kept fetching the old main and rebuilt a
+        # frozen version no matter how many times this ran. Repoint origin at the canonical repo
+        # before fetching, so "origin/main" always means the repo this script came from.
+        git -C "$INSTALL_DIR/src" remote set-url origin "$REPO_URL" 2>/dev/null \
+            || git -C "$INSTALL_DIR/src" remote add origin "$REPO_URL"
         git -C "$INSTALL_DIR/src" fetch origin
         git -C "$INSTALL_DIR/src" checkout -B main origin/main
     else
