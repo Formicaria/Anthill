@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.49** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.50** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 > v0.3.8.49: Formicaria — the UI/UX and architecture pass. Navigation folded to five destinations

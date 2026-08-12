@@ -1,5 +1,44 @@
 # ANTHILL Changelog
 
+## v0.3.8.50 - the colony's claims become true, and the desktop grows up
+
+Three batches in one release: the mission-execution structural repair, a real Windows
+install/update story, and the parked field fixes.
+
+**The structural repair.** The failure boundary now writes a typed `failure_context` artifact —
+canonical class (eighteen distinctions, and UNKNOWN that stays unknown instead of masquerading as
+an internal defect), normalized error, failing checks, revision identity, and a SEMANTIC signature
+that survives task-UUID regeneration. The medic diagnoses the failure that actually invoked it
+(parent lineage, never the globally newest — parallel medics each keep their own), consumes the
+artifact over prose, escalates the unclassifiable instead of guessing, selects specialists from
+task and artifact CLASSIFICATION so the word "UI" in an error can never reroute recovery, and
+detects the same defect returning under a new task id before opening another repair loop.
+
+**The tester finally tests the patch.** A materialized patch set becomes the mission's REVISION —
+owned by a registry that keeps the patched tree alive for the builder, tester and soldier, all of
+whom now execute inside it and stamp their evidence with the revision they judged. A repair's new
+patch set replaces and disposes the old tree, and verification fails closed with "stale evidence"
+unless the LATEST revision has a completed tester run of its own: PatchSet B can never ride
+PatchSet A's green. Verification itself became runtime policy — a model plan that omits the
+verifier gets one appended with full lineage, and the adaptive delta verifier (the last orphan-
+producing path) now carries the work it judges as parents and dependencies. The composed
+acceptance suite submits missions through the Queen's own public path and asserts from persisted
+rows: research end-to-end, cancellation leaving nothing running, restart keeping the graph.
+
+**An ACTUAL INSTALL.** `anthill-setup-<version>.exe`: license agreement, Program Files by
+default, a desktop icon on by default with the standard opt-out, Start Menu, launch-after-install,
+and a real Add/Remove Programs uninstall — compiled by CI and attached beside the zip. The
+desktop app now PROMPTS when a newer release exists (yes downloads the installer and hands over;
+later waits in the tray) and carries an explicit "Check for updates" that answers honestly both
+ways. The loading screen wears the brand — the console's own dark, the ANTHILL wordmark, the
+version in queen amber. And the colony's memory survives it all: data lives under
+%LOCALAPPDATA%\Anthill, which no install, update or uninstall touches, and a zip-era colony
+found beside the exe is adopted in by copy on first run.
+
+**Field fixes.** Configure on an integration opens the real provider-configuration card inline —
+the one thing the retired Settings→Providers tab existed for — and ants get faces: a persisted
+profile (name and color) with an audited endpoint and an editor on every Inspector card.
+
 ## v0.3.8.49 - Formicaria: five doors, a chat that scrolls, and a colony that says what it's doing
 
 The big UI/UX and architecture pass. The console went from a wall of destinations to five —
