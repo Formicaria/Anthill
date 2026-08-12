@@ -465,12 +465,11 @@ const IA = [
     // The living colony — topology, ant activity, pheromone signals, mission state. This is the
     // page the old standalone Dashboard became: one place for the colony at a glance.
     { label:'Overview', route:'/colony', page:'overview', vis:'all' },
-    { label:'Ants & Roles', route:'/colony/roles', page:'antconfig', vis:'admin' },
+    // v0.3.8.49 redo: the standalone "Ants & Roles" tab is gone. Its per-role model routing IS this
+    // "Models & Routing" tab (page antconfig owns the provider/model selectors); the rest of it —
+    // seeing and editing ants — belongs to the Ant Inspector, which now reflects live colony state.
+    { label:'Models & Routing', route:'/colony/model-routing', page:'antconfig', vis:'admin' },
     { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
-    { label:'Models & Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
-      { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
-      { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
-    ]},
     { label:'Automation', route:'/colony/automation', page:'autonomy', vis:'admin' },
   ]},
   { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
@@ -525,7 +524,7 @@ Object.assign(PAGE_HOME,{
   results:'/projects', events:'/settings/system',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/roles', antobs:'/colony/inspector',
+  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
   autonomy:'/colony/automation', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
@@ -545,7 +544,7 @@ const LEGACY_REDIRECT={
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/roles', antobs:'/colony/inspector',
+  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
   autonomy:'/colony/automation', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
@@ -559,11 +558,14 @@ const ROUTE_ALIAS={
   '/objectives':'/projects',
   '/integrations':'/tools/integrations',
   '/tools-view':'/tools',
+  // v0.3.8.49: the standalone Ants & Roles tab folded into Models & Routing.
+  '/colony/roles':'/colony/model-routing',
+  '/colony/model-routing/providers':'/tools/integrations',
   // Roles / Inspector / Automation moved from Settings into Colony.
-  '/settings/roles':'/colony/roles',
+  '/settings/roles':'/colony/model-routing',
   '/colony/topology':'/colony',
-  '/colony/agents':'/colony/roles',
-  '/colony/agents/configure':'/colony/roles',
+  '/colony/agents':'/colony/model-routing',
+  '/colony/agents/configure':'/colony/model-routing',
   '/colony/agents/inspect':'/colony/inspector',
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
@@ -619,48 +621,29 @@ function navKeyActivate(el,fn){
 function buildNav(){
   const root=document.getElementById('nav-scroll'); if(!root) return;
   root.innerHTML='';
+  // v0.3.8.49 (§8/§20 redo): EVERY primary destination is a flat nav-item — one style, one font,
+  // one colour, no sidebar dropdowns. A domain (Colony, Tools, Settings) navigates to its home page
+  // and its sub-sections render as in-page tabs (#domain-subnav), the way "just added pages" reads.
+  // The old collapsible nav-domain/nav-child tree is gone: it was the source of the mismatched
+  // typography and the tiny chevrons, and it duplicated navigation the content-area tabs already do.
   for(const d of IA){
-    if(d.type==='item'){
-      if(!canSee(d.vis)) continue;
-      const it=document.createElement('div');
-      it.className='nav-item'; it.dataset.route=d.route;
-      it.setAttribute('role','link'); it.tabIndex=0; it.setAttribute('aria-label',d.label);
-      it.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span>';
-      it.addEventListener('click',()=>go(d.route)); navKeyActivate(it,()=>go(d.route));
-      root.appendChild(it); continue;
+    const isDomain=d.type==='domain';
+    if(!isDomain && !canSee(d.vis)) continue;
+    let route, domainId=null;
+    if(isDomain){
+      const sections=(d.sections||[]).filter(s=>canSee(s.vis||d.vis));
+      if(!sections.length) continue;
+      route=DOMAIN_HOME[d.id]||sections[0].route; domainId=d.id;
+    } else {
+      route=d.route;
     }
-    const sections=(d.sections||[]).filter(s=>canSee(s.vis||d.vis));
-    if(!sections.length) continue;
-    const dom=document.createElement('div'); dom.className='nav-domain'; dom.dataset.domain=d.id;
-    const head=document.createElement('div'); head.className='nav-dom-head';
-    // v3.8.34: the domain heads were the only nav controls in this function without an explicit
-    // name — `nav-item` and `nav-child` both set one three lines away. Name-from-content cannot be
-    // relied on here: the label sits between an icon span and a `&#9656;` chevron, so a computed
-    // name either fails or picks up the arrow. Six unnamed buttons in primary navigation, verified
-    // in the browser's interactive accessibility tree before the fix.
-    head.setAttribute('role','link'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
-    head.setAttribute('aria-label',d.label);
-    head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
-    // v0.3.8.49 (§8): a domain head is a first-class tab, not a dropdown toggle. Clicking it NAVIGATES
-    // to the domain's home (its first section) and reveals the children as context — the same
-    // behaviour Colony, Projects and Chat have. The chevron still expands/collapses for a user who
-    // only wants to browse the sub-sections; navigation is the primary action.
-    const home=sections[0].route;
-    const activate=()=>{ dom.classList.add('open'); head.setAttribute('aria-expanded','true'); go(home); };
-    const toggle=(e)=>{ e&&e.stopPropagation(); const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
-    head.addEventListener('click',activate); navKeyActivate(head,activate);
-    head.querySelector('.nav-chev')?.addEventListener('click',toggle);
-    dom.appendChild(head);
-    const kids=document.createElement('div'); kids.className='nav-children';
-    for(const s of sections){
-      const c=document.createElement('div'); c.className='nav-child'; c.dataset.route=s.route;
-      c.setAttribute('role','link'); c.tabIndex=0; c.setAttribute('aria-label',s.label);
-      c.innerHTML='<span>'+escapeHtml(s.label)+'</span>'+(s.badge?'<span class="nav-badge" id="'+s.badge+'" style="display:none"></span>':'');
-      c.addEventListener('click',()=>go(s.route)); navKeyActivate(c,()=>go(s.route));
-      kids.appendChild(c);
-    }
-    dom.appendChild(kids);
-    root.appendChild(dom);
+    const it=document.createElement('div');
+    it.className='nav-item'; it.dataset.route=route;
+    if(domainId) it.dataset.domain=domainId;
+    it.setAttribute('role','link'); it.tabIndex=0; it.setAttribute('aria-label',d.label);
+    it.innerHTML='<span class="nav-icon">'+(IAICON[d.id]||'')+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span>';
+    it.addEventListener('click',()=>go(route)); navKeyActivate(it,()=>go(route));
+    root.appendChild(it);
   }
 }
 
@@ -772,17 +755,30 @@ function updateChrome(route,id){
       return '<span class="crumb'+(cur?' cur':'')+(link?' link':'')+'"'+attr+'>'+escapeHtml(c)+'</span>';
     }).join('<span class="crumb-sep">&#8250;</span>');
   }
-  document.querySelectorAll('#nav-scroll .nav-item,#nav-scroll .nav-child').forEach(n=>n.classList.remove('active'));
+  // v0.3.8.49 (§8 redo): highlight the ONE flat nav-item — by domain for a domain route, else by
+  // route. There are no nav-children to clear any more.
+  document.querySelectorAll('#nav-scroll .nav-item').forEach(n=>n.classList.remove('active'));
   const activeRoute=(r&&r.section)?r.section:route;
-  let el=document.querySelector('#nav-scroll [data-route="'+activeRoute+'"]')||document.querySelector('#nav-scroll [data-route="'+route+'"]');
-  if(el){ el.classList.add('active'); const dom=el.closest('.nav-domain'); if(dom){ dom.classList.add('open'); dom.querySelector('.nav-dom-head')?.setAttribute('aria-expanded','true'); } }
+  let el=(r&&r.domain&&document.querySelector('#nav-scroll .nav-item[data-domain="'+r.domain+'"]'))
+        ||document.querySelector('#nav-scroll .nav-item[data-route="'+activeRoute+'"]')
+        ||document.querySelector('#nav-scroll .nav-item[data-route="'+route+'"]');
+  if(el) el.classList.add('active');
+  // The domain's sub-sections render as in-page tabs, not a sidebar dropdown. Built from the IA
+  // sections of the current route's domain, so Colony/Tools/Settings each open with their own tab
+  // strip and a plain item (Projects, Chat) shows none.
   const sn=document.getElementById('domain-subnav');
   if(sn){
-    if(r&&r.tabs&&r.tabs.length){
+    const dom=(r&&r.domain)?IA.find(x=>x.type==='domain'&&x.id===r.domain):null;
+    const sections=dom?(dom.sections||[]).filter(s=>canSee(s.vis||dom.vis)):[];
+    if(sections.length>1){
+      const activeSection=(r&&r.section)||route;
+      const html=sections.map(s=>'<button class="subnav-tab'+(s.route===activeSection?' active':'')+'" data-onclick="go(\''+s.route+'\')">'+escapeHtml(s.label)+'</button>').join('');
+      sn.innerHTML=html; sn.style.display='flex';
+    } else if(r&&r.tabs&&r.tabs.length){
       const active=r.activeTab||route;
-      const html=r.tabs.filter(t=>canSee(t.vis||'all'))
+      sn.innerHTML=r.tabs.filter(t=>canSee(t.vis||'all'))
         .map(t=>'<button class="subnav-tab'+(t.route===active?' active':'')+'" data-onclick="go(\''+t.route+'\')">'+escapeHtml(t.label)+'</button>').join('');
-      sn.innerHTML=html; sn.style.display=html?'flex':'none';
+      sn.style.display='flex';
     } else { sn.innerHTML=''; sn.style.display='none'; }
   }
 }
@@ -1106,6 +1102,13 @@ function persistChamber(name){
 
 /** Reset pan and zoom only. Sets the camera TARGETS so the loop eases there instead of snapping. */
 function colonyResetView(){ tX=0; tY=0; tZ=1; }
+/** v0.3.8.49 — zoom about the viewport centre by a factor, clamped like the wheel path. Keeps the
+ *  centre point fixed so the map grows/shrinks in place rather than drifting. */
+function colonyZoom(factor){
+  const nz=Math.max(.2,Math.min(4,tZ*factor));
+  // Zoom about the canvas centre (cx,cy in world = screen centre): tX/tY stay put for a centre zoom.
+  tZ=nz;
+}
 
 /**
  * Reset layout: drops dragged ant positions and chamber offsets, then rebuilds. Deliberately does
@@ -1251,6 +1254,10 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
     const act=btn.dataset.colonyact;   // v2.14.12: reset buttons share this one dispatch path
     if(act==='reset-view'){ colonyResetView(); return; }
     if(act==='reset-layout'){ colonyResetLayout(); return; }
+    // v0.3.8.49: on-screen zoom — the Ctrl/Cmd+wheel bargain is undiscoverable, so the buttons
+    // zoom about the canvas centre with no modifier required. Eases via the camera targets.
+    if(act==='zoom-in'){ colonyZoom(1.2); return; }
+    if(act==='zoom-out'){ colonyZoom(1/1.2); return; }
     if(view){
       colonyView=view;
       document.querySelectorAll('#colony-viewbar [data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
@@ -4999,7 +5006,7 @@ async function loadIntegrations(){
        <span class="sch-badge">infrastructure</span>
        <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
        <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
-  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>go('/colony/model-routing/providers')));
+  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>go('/tools/integrations')));
   host.querySelectorAll('[data-int-agents]').forEach(b=>b.addEventListener('click',()=>go('/integrations')||showPage('agentcli',{noHistory:false})));
   host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
   host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{

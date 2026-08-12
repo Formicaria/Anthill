@@ -596,15 +596,11 @@ public class UiShellTests
     /// <summary>
     /// Every control `buildNav` gives an ARIA role must also be given a name.
     ///
-    /// v3.8.34. The six domain heads (Monitoring, Operations, Infrastructure, Colony, Security,
-    /// Administration) carried `role="button"`, `tabIndex` and `aria-expanded` but no `aria-label`,
-    /// while `nav-item` and `nav-child` — built in the same loop, three lines away — both set one.
-    /// The browser's interactive accessibility tree showed six buttons with no name at the top of
-    /// primary navigation, against named links for every one of their children.
-    ///
-    /// Name-from-content does not save this. The label span sits between an icon and a `&#9656;`
-    /// chevron, so a computed name is either absent or carries the arrow. That is why the rule is
-    /// "a role implies a name" rather than "a role implies text somewhere inside".
+    /// v3.8.34 caught six unnamed domain-head buttons. v0.3.8.49 flattened the sidebar to a single
+    /// nav-item builder (no domain heads, no nav-children — sub-sections are in-page tabs now), so
+    /// there is ONE roled control here rather than three; the rule it enforces is unchanged: a role
+    /// implies an accessible name, because name-from-content cannot be relied on when a label sits
+    /// between an icon span and other markup.
     ///
     /// Asserted over the source rather than a rendered page because `buildNav` needs a DOM and a
     /// session to run, and a guard that requires a browser is a guard that runs once.
@@ -621,8 +617,8 @@ public class UiShellTests
 
         // Guard the reader: if the regex stops matching, the test must fail loudly rather than
         // pass over an empty set.
-        Assert.True(roled.Count >= 3,
-            $"expected at least three roled nav controls in buildNav, found {roled.Count} — has the "
+        Assert.True(roled.Count >= 1,
+            $"expected at least one roled nav control in buildNav, found {roled.Count} — has the "
             + "construction changed shape?");
 
         var unnamed = roled
