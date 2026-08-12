@@ -179,7 +179,7 @@ public class AntModelFitnessTests
     }
 
     /// <summary>
-    /// v0.4.0 (§15) — the two roles whose work is inference from evidence that does not state its
+    /// v0.3.8.49 (§15) — the two roles whose work is inference from evidence that does not state its
     /// own conclusion: the coder holds a change consistent across several files, the medic infers a
     /// failure's cause from symptoms that never name it. Both declare Reasoning, and on a
     /// completion-only model — which is what a fresh install's sole local default (llama3.1:8b)
