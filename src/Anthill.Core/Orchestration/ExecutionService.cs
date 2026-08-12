@@ -1890,6 +1890,14 @@ public sealed class ExecutionService : IExecutionService
                 LogAdaptiveStop(mission, decision, "verification already present — a delta plan would duplicate it");
                 return true;
             }
+            // Structural repair §7: the delta verifier VERIFIES the mission's completed work, so
+            // that work is its lineage — parents and dependencies both. This was the one dynamic
+            // creation path that produced an orphan (no ParentTaskIds, no DependsOn), which is the
+            // historical reason the verifier stayed planner-selectable: the graph could not carry a
+            // policy-inserted one. It can now.
+            var verified = mission.Tasks
+                .Where(t => t.Status == TaskStatus.Complete && !MissionVerification.IsVerificationTask(t))
+                .Select(t => t.Id).ToList();
             var verify = new Task
             {
                 Title = "Verify mission outcome",
@@ -1898,6 +1906,8 @@ public sealed class ExecutionService : IExecutionService
                 AssignedAnt = "verifier",
                 TaskType = "verify",
                 Critical = true,
+                ParentTaskIds = verified,
+                DependsOn = verified,
             };
             return !RecordAdaptiveAdmission(mission, scheduler, verify, constraints, "adaptive_delta_plan", decision);
         }
