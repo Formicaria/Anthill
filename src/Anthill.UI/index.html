@@ -3307,14 +3307,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-primary" id="sh-run" disabled>Run</button>
           </div>
         </div>
+        <!-- v0.4.0 (§14): quick actions are rendered from /shell/info's platform-aware list, not
+             hardcoded Linux buttons. Populated by initShell(); the label reflects the target OS. -->
         <div id="sh-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-          <span style="font-size:10px;color:var(--dim);align-self:center;">Quick:</span>
-          <button class="btn btn-ghost sh-qbtn" data-cmd="systemctl status anthill --no-pager" style="font-size:10px;padding:3px 8px;">Service status</button>
-          <button class="btn btn-ghost sh-qbtn" data-cmd="journalctl -u anthill -n 40 --no-pager" style="font-size:10px;padding:3px 8px;">Recent logs</button>
-          <button class="btn btn-ghost sh-qbtn" data-cmd="systemctl restart anthill" style="font-size:10px;padding:3px 8px;color:var(--queen);">Restart service</button>
-          <button class="btn btn-ghost sh-qbtn" data-cmd="df -h; echo; free -h; echo; uptime" style="font-size:10px;padding:3px 8px;">Host health</button>
+          <span id="sh-quick-label" style="font-size:10px;color:var(--dim);align-self:center;">Quick:</span>
         </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ?/? for history. Service control (restart/status/logs) works via a scoped polkit rule installed by the LXC setup script.</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history. Quick actions adapt to the host platform (<span id="sh-platform">—</span>); service control works via the scoped rule installed by the platform setup script.</div>
         <!-- ANTHILL shell banner source (hidden; rendered into the terminal on open). Injected verbatim from deploy/anthill-banner.txt -->
         <pre id="sh-banner-src" style="display:none">                                                                                                  
                                                                                     :=:                           
