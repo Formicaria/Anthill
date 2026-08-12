@@ -55,7 +55,9 @@ test('Models, Roles, Model Routing and the Inspector live under Colony (§11)', 
   const colony = IA.find(d => d.id === 'colony');
   assert.ok(colony, 'Colony domain missing');
   const routes = (colony.sections || []).flatMap(s => [s.route, ...(s.tabs || []).map(t => t.route)]);
-  for (const r of ['/colony/roles', '/colony/inspector', '/colony/model-routing'])
+  // v0.3.8.49: the standalone Ants & Roles tab folded away; per-role model routing IS the
+  // Models & Routing tab, and the Inspector holds the rest.
+  for (const r of ['/colony/inspector', '/colony/model-routing'])
     assert.ok(routes.includes(r), `${r} is not under Colony`);
 });
 
