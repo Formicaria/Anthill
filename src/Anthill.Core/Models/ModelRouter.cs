@@ -317,6 +317,40 @@ public sealed class ModelRouter
             .FirstOrDefault();
     }
 
+    /// <summary>
+    /// v0.4.0 (§15) — a model this provider serves that CAN reason (infer a conclusion from evidence
+    /// that does not state one), or null if none is known.
+    ///
+    /// The exact sibling of <see cref="FirstToolCapableModel"/>, and it exists for the exact same
+    /// class of silent failure. `coder` and `medic` both declare <c>Reasoning: true</c> — the coder
+    /// must hold a change consistent across several files, the medic must infer a failure's cause
+    /// from evidence that never names it — yet a fresh install routes every role to the sole local
+    /// default (`llama3.1:8b`), which Ollama reports as <c>completion</c> only. A non-reasoning model
+    /// does not error on a reasoning task; it returns a fluent, plausible answer to the wrong
+    /// question. Routing a declared-reasoning role onto it is the defect, not the model. Discovered
+    /// capabilities only, so with no probe registered this is null and the caller leaves the route
+    /// untouched (the boot-time fitness warning still fires — reporting, not silence).
+    /// </summary>
+    private static string? FirstReasoningCapableModel(string provider)
+    {
+        var probe = ReasoningProviders.Capabilities;
+        if (probe is null) return null;
+        return probe.Snapshot(provider)
+            .Where(kv => kv.Value.Reasoning)
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => kv.Key)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Does this role's declared contract require reasoning? Read from the ONE place role
+    /// requirements live (<see cref="Anthill.Core.Agents.AntExecutionCatalog"/>), so routing honours
+    /// the same requirement the boot-time fitness report grades — never a second, drifting copy.
+    /// </summary>
+    private static bool RoleRequiresReasoning(string role) =>
+        Anthill.Core.Agents.AntExecutionCatalog.Contracts.TryGetValue(role, out var c)
+        && c.ModelNeeds.Reasoning;
+
     public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
     {
         var primary = GetRoute(role);
@@ -422,6 +456,36 @@ public sealed class ModelRouter
             }
         }
         rerouteReason ??= toolCapableReroute;
+
+        /*
+         * v0.4.0 (§15) — REASONING-AWARE ROUTING, the sibling of the tool reroute above.
+         *
+         * The same silent failure, one capability over. `coder` and `medic` declare Reasoning: true
+         * because their work is inference from evidence that does not state its own conclusion — a
+         * change held consistent across files, a cause diagnosed from symptoms that never name it.
+         * A fresh install routes every role to the sole local default (llama3.1:8b), which Ollama
+         * reports as completion-only. That model does not fail the task; it returns a fluent answer
+         * to the wrong question, and the mission reads as a weak result rather than a misroute.
+         *
+         * So when the ROLE's declared contract needs reasoning and the routed model lacks it, move to
+         * a reasoning-capable model the provider actually serves — recorded in the reroute reason,
+         * because answering from a different model than configured is only honest when it is logged.
+         * Guarded by request.Model is null: a caller that pinned a model has made the decision, and
+         * a candidate that is null (no reasoning model installed, or no probe) leaves the route
+         * untouched so the boot-time fitness warning remains the operator's cue.
+         */
+        if (request.Model is null && RoleRequiresReasoning(role)
+            && !CapabilitiesFor(provider, model).Reasoning)
+        {
+            var candidate = FirstReasoningCapableModel(provider);
+            if (candidate is not null && candidate != model)
+            {
+                rerouteReason = rerouteReason is null
+                    ? $"{model} cannot reason; used {candidate}"
+                    : $"{rerouteReason}; {model} cannot reason, used {candidate}";
+                model = candidate;
+            }
+        }
 
         var routeKey = $"{provider}:{model}";
         var started = DateTime.UtcNow;
