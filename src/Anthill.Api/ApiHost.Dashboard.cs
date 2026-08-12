@@ -623,7 +623,49 @@ public static partial class ApiHost
                     ["patch_application"] = AnthillRuntime.EnablePatchApplication,
                     ["shell_tool"] = AnthillRuntime.EnableShellTool,
                 },
+                // v0.3.8.50 (field report §20): operator overrides ride the same fetch the
+                // Inspector already makes — name and color, keyed by ant id.
+                ["profiles"] = Queen.Memory.LoadAntProfiles().ToDictionary(
+                    p => p.AntId,
+                    p => (object?)new Dictionary<string, object?>
+                    {
+                        ["display_name"] = p.DisplayName, ["color"] = p.Color,
+                        ["updated_by"] = p.UpdatedBy,
+                    }),
             });
+        });
+
+        // v0.3.8.50 (field report §20): edit an ant's profile — the operator's display name and
+        // color for a role. Empty name AND empty color clears the override entirely; the registry
+        // identity underneath is never touched. Attributed and audited like every settings write.
+        app.MapPost("/ants/{antId}/profile", async (HttpContext ctx, string antId) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var name = (body?.GetValueOrDefault("display_name") ?? "").Trim();
+            var color = (body?.GetValueOrDefault("color") ?? "").Trim();
+            if (name.Length > 40) return ApiJson.Error("Display name is capped at 40 characters.", "bad_request");
+            if (color.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(color, "^#[0-9a-fA-F]{6}$"))
+                return ApiJson.Error("Color must be a #rrggbb hex value.", "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            if (name.Length == 0 && color.Length == 0)
+            {
+                Queen.Memory.DeleteAntProfile(antId);
+                Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "ant_profile_cleared",
+                    $"Ant profile override cleared for '{antId}' by {who}.", antName: who);
+                return ApiJson.Ok(new Dictionary<string, object?> { ["ant"] = antId, ["cleared"] = true },
+                    $"'{antId}' is back to its registry name and color.");
+            }
+            Queen.Memory.SaveAntProfile(new Anthill.Core.Memory.AntProfile(antId, name, color) { UpdatedBy = who });
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "ant_profile_saved",
+                $"Ant profile for '{antId}' set by {who}: name '{name}', color '{color}'.", antName: who);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ant"] = antId, ["display_name"] = name, ["color"] = color,
+            }, $"'{antId}' now shows as {(name.Length > 0 ? $"\"{name}\"" : "its registry name")}.");
         });
 
         app.MapPost("/pheromones/prune", (HttpContext ctx) =>
