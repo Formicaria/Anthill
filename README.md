@@ -1,8 +1,8 @@
 # ANTHILL
 
-[![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
+[![CI](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.48
+**Current version:** v0.3.8.49
 
 **Runs on:** Windows or Linux
 
@@ -82,7 +82,7 @@ If PowerShell says `ollama` is not recognized, close PowerShell, open it again, 
 ### 2. Download ANTHILL
 
 Download
-[`anthill-0.3.8.48-win-x64.zip`](https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.48/anthill-0.3.8.48-win-x64.zip)
+[`anthill-0.3.8.49-win-x64.zip`](https://github.com/Formicaria/Anthill/releases/download/v0.3.8.49/anthill-0.3.8.49-win-x64.zip)
 and extract it somewhere permanent, such as:
 
 ```text
@@ -135,8 +135,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/thexonexone/operation-anthill/releases/download/v0.3.8.48/anthill-0.3.8.48-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.48-linux-x64.tar.gz
+curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.49/anthill-0.3.8.49-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.49-linux-x64.tar.gz
 chmod +x anthill
 ```
 
@@ -179,7 +179,7 @@ Open the container console as `root` and run:
 
 ```bash
 apt-get update && apt-get install -y curl ca-certificates git
-curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o /tmp/anthill-setup.sh
+curl -fsSL https://raw.githubusercontent.com/Formicaria/Anthill/main/deploy/lxc/setup.sh -o /tmp/anthill-setup.sh
 bash /tmp/anthill-setup.sh
 ```
 
@@ -212,7 +212,7 @@ for a **Linux Docker host** and uses host networking so a local Ollama service w
 container networking.
 
 ```bash
-git clone https://github.com/thexonexone/operation-anthill.git
+git clone https://github.com/Formicaria/Anthill.git
 cd operation-anthill
 docker compose up -d --build
 docker compose logs -f anthill
@@ -393,7 +393,7 @@ Back up the `.anthill` data directory first.
 ### Windows or Linux release archive
 
 1. Stop ANTHILL.
-2. Download the newest archive from [GitHub Releases](https://github.com/thexonexone/operation-anthill/releases/latest).
+2. Download the newest archive from [GitHub Releases](https://github.com/Formicaria/Anthill/releases/latest).
 3. Replace the program files with the files from the new archive.
 4. Keep the existing `.anthill` directory.
 5. Start ANTHILL again.
@@ -477,7 +477,7 @@ docker compose logs --tail 100 anthill
 Portable Windows or Linux installs print startup and runtime errors in the terminal where ANTHILL
 was started.
 
-If you open a [bug report](https://github.com/thexonexone/operation-anthill/issues/new/choose), include
+If you open a [bug report](https://github.com/Formicaria/Anthill/issues/new/choose), include
 your ANTHILL version, operating system, installation method, and the relevant error text. Remove API
 keys, tokens, passwords, webhook URLs, and other secrets first.
 
@@ -518,7 +518,7 @@ The native kernel is optional. Without a C++ toolchain, ANTHILL uses the managed
 Clone and run:
 
 ```bash
-git clone https://github.com/thexonexone/operation-anthill.git
+git clone https://github.com/Formicaria/Anthill.git
 cd operation-anthill
 dotnet run --project src/Anthill.Cli -- --api --host 127.0.0.1
 ```
