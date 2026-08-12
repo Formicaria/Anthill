@@ -10,8 +10,21 @@ namespace Anthill.Tests;
 /// planner may request verification; a plan that omits it and still produces work gets the
 /// verifier appended, bound by lineage and dependency to every deliverable-producing task.
 /// </summary>
-public class PlanVerificationPolicyTests
+public class PlanVerificationPolicyTests : IDisposable
 {
+    /// <summary>
+    /// EnsurePlanVerification fails CLOSED when the executor catalog says the verifier is not
+    /// runtime-available — and the catalog is only populated when a Queen is composed. Found by
+    /// test ordering: two green runs had a Queen-building test execute first; the third did not,
+    /// the catalog was empty, and the policy honestly refused to append a task nothing could run.
+    /// The fixture composes a real Queen so the tests stand in production's shape instead of
+    /// depending on their neighbours to set the stage.
+    /// </summary>
+    private readonly Anthill.Core.Orchestration.Queen _queen =
+        new(new Anthill.Core.Memory.SqliteMemory(":memory:"));
+
+    public void Dispose() => _queen.Dispose();
+
     private static DomainTask Work(string ant, string type = "research") => new()
     {
         Title = $"{ant} work", AssignedAnt = ant, TaskType = type,
