@@ -236,6 +236,15 @@ public sealed class TesterAnt : BaseAnt
             : judged is not null ? "mission workspace — UNPATCHED" : "the configured workspace";
         evidence.Add(new AntEvidence("workspace", "tree", tree));
         lines.Add($"checked in: {tree}");
+        // Structural repair §3: the FULL identity of what was judged, when a revision was ambient —
+        // revision id, patch set hash and tree hash, so this report can be paired with (or refused
+        // against) a candidate artifact by comparison rather than by trust.
+        if (judged?.RevisionId is { } revId)
+        {
+            evidence.Add(new AntEvidence("revision", revId,
+                $"patch_set={judged.MaterializedPatchSetId} patch_set_hash={judged.PatchSetHash} tree_hash={judged.TreeHash}"));
+            lines.Add($"revision: {revId} patch_set_hash: {judged.PatchSetHash} tree_hash: {judged.TreeHash}");
+        }
 
         var report = new AntArtifact("test_report", "Deterministic check report", string.Join("\n", lines));
         var result = new AntExecutionResult
@@ -551,26 +560,41 @@ public sealed class ScribeAnt : BaseAnt
 
 /// <summary>
 /// Execution framework Stage D-5: MedicAnt — diagnoses real failures and recommends ONE bounded
-/// repair route; it never repairs anything itself and never applies changes. Loop control is hard:
-/// at most <see cref="MaxDiagnosesPerMission"/> diagnoses per mission, and a repeated diagnosis of
-/// the same failure escalates to the operator (via builder) instead of looping. Classification is
-/// deterministic keyword→FailureClass mapping; retryability comes from the v2.9 taxonomy.
+/// repair route; it never repairs anything itself and never applies changes.
+///
+/// STRUCTURAL REPAIR (§1). Rewritten around four defects the old shape carried:
+///
+/// <list type="bullet">
+/// <item><b>§1A — it diagnosed the NEWEST failure, not its own.</b> The medic task is created by a
+///   failure handoff and carries <c>ParentTaskIds</c> naming the failed task. That lineage is now
+///   the binding: the medic diagnoses its parent or refuses. Under parallel execution, two medics
+///   each diagnose their own parent; neither can steal the other's failure.</item>
+/// <item><b>§1B — keyword classification.</b> The failure boundary now persists a typed
+///   <c>failure_context</c> artifact (ExecutionService.RecordFailureContext). The medic CONSUMES it.
+///   The keyword scan survives only as a last-resort fallback for failures recorded before the
+///   artifact existed, and its unknown case is now honest.</item>
+/// <item><b>§1C — unknown became InternalDefect(non-retryable).</b> Unknown stays
+///   <see cref="FailureClass.UnknownFailure"/>; an unknown or low-confidence diagnosis escalates
+///   for evidence rather than inventing a permanent verdict.</item>
+/// <item><b>§1D — "ui"/".html"/"app.js" in error prose rerouted recovery.</b> Specialist selection
+///   now derives from the failed task's TYPE, its producing role, its artifact KINDS and the
+///   structured failure class. Words in prose route nothing.</item>
+/// <item><b>§1E — dedupe keyed on task UUID.</b> The loop detector now keys on the failure_context's
+///   SEMANTIC signature, which survives task regeneration; the same defect reappearing under a new
+///   UUID escalates instead of looping.</item>
+/// </list>
 /// </summary>
 public sealed class MedicAnt : BaseAnt
 {
     public const int MaxDiagnosesPerMission = 2;
-    public MedicAnt() : base("medic") { }
 
-    /// <summary>
-    /// v2.19.0: migrated to the structured contract.
-    ///
-    /// Failure DETECTION also changed. It used to sniff prior task result text for
-    /// <c>"status":"failed</c> and <c>": FAIL"</c>, because a failing tester was recorded as a
-    /// COMPLETED task carrying its real outcome inside serialised prose — text-matching was the
-    /// only way to notice. Since stage 3b a failing check genuinely fails, so TaskStatus is
-    /// authoritative and the prose sniffing is not merely redundant but misleading: it would now
-    /// match a summary that merely mentions the word.
-    /// </summary>
+    private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+
+    /// <summary>Optional store, same pattern as SoldierAnt: call sites without one keep working,
+    /// and in that configuration the medic falls back to structured task state (never prose-first).</summary>
+    public MedicAnt(Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("medic") =>
+        _artifacts = artifacts;
+
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var contract = AntExecutionCatalog.ContractFor("medic")!;
@@ -578,75 +602,172 @@ public sealed class MedicAnt : BaseAnt
             return AntExecutionResult.Blocked(
                 $"task type '{task.TaskType}' is outside the medic execution contract");
 
-        // Only diagnose actual failures (spec: never invoke medic before failure).
-        var failed = mission.Tasks
-            .Where(t => t.Id != task.Id && (t.Status == TaskStatus.Failed || t.FailureReason is not null))
-            .OrderByDescending(t => t.FailedAt ?? t.FinishedAt ?? DateTime.MinValue)
-            .FirstOrDefault();
+        // §1A — the diagnosis is BOUND to the failure that invoked it. The handoff path sets
+        // ParentTaskIds to the failed source task; a medic that cannot identify its source failure
+        // refuses rather than guessing at some other failure. (Blocked, not a diagnosis of the
+        // newest failure — "do not inspect some other failure" is the requirement, verbatim.)
+        var failed = (task.ParentTaskIds ?? new List<string>())
+            .Concat(task.ParentTaskId is { } p ? new[] { p } : Array.Empty<string>())
+            .Select(id => mission.Tasks.FirstOrDefault(t => t.Id == id))
+            .FirstOrDefault(t => t is not null && t.Id != task.Id
+                && (t.Status == TaskStatus.Failed || t.FailureReason is not null));
         if (failed is null)
-            return AntExecutionResult.Blocked("no failed task in this mission — nothing to diagnose");
+            return AntExecutionResult.Blocked(
+                "the source failure for this diagnosis cannot be identified from the task's parent "
+                + "lineage — refusing to diagnose an unrelated failure. UNVERIFIED.");
 
         // Loop control 1: diagnosis budget per mission.
         var priorDiagnoses = mission.Tasks.Count(t => t.Id != task.Id && t.AssignedAnt == "medic" && t.Result is not null);
         if (priorDiagnoses >= MaxDiagnosesPerMission)
-            return new AntExecutionResult
-            {
-                Success = true, StatusCode = "succeeded_with_warnings",
-                Summary = $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}) — escalating to operator, no further repair loops.",
-                Narrative = $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}). Repeated failures exceed the repair budget; operator review required.",
-                Artifacts = { new AntArtifact("failure_diagnosis", "Escalation", "repeated failures exceed the repair budget; operator review required") },
-                Handoffs = { new AntHandoff("medic", "builder", "escalation: repair budget exhausted", "build", new[] { "failure_diagnosis" }, true, 1, $"medic-esc:{mission.Id}") },
-                Warnings = { "escalated" },
-            };
+            return Escalation(mission, task,
+                $"Diagnosis budget exhausted ({priorDiagnoses}/{MaxDiagnosesPerMission}) — escalating to operator, no further repair loops.",
+                $"medic-esc:{mission.Id}");
 
-        // Deterministic classification.
-        var text = (failed.FailureReason ?? "") + " " + (failed.Result ?? "");
-        var (cls, cause, confidence) = Classify(text);
+        // §1B/§2 — the typed failure_context is the diagnosis input. Prose is the last resort.
+        var context = LoadFailureContext(mission, failed);
+        FailureClass cls; string cause, confidence, signature;
+        if (context is not null)
+        {
+            cls = Anthill.SDK.Contracts.FailureClassNames.ParseOrNone(context.FailureClass);
+            if (cls == FailureClass.None) cls = FailureClass.UnknownFailure;
+            cause = context.NormalizedError.Length > 0 ? context.NormalizedError : "structured failure without error text";
+            confidence = FailureClassify.IsKnown(cls) ? "high" : "low";
+            signature = context.FailureSignature;
+        }
+        else
+        {
+            (cls, cause, confidence) = Classify((failed.FailureReason ?? "") + " " + (failed.Result ?? ""));
+            signature = Anthill.SDK.Artifacts.FailureContext.ComputeSignature(
+                Anthill.SDK.Contracts.FailureClassNames.Wire(cls),
+                Anthill.SDK.Artifacts.FailureContext.NormalizeError(failed.FailureReason ?? failed.Result),
+                null, null, null, null, null, null);
+        }
         var retryable = FailureClassify.IsRetryable(cls);
 
-        // Loop control 2: identical diagnosis already issued → escalate, don't repeat the route.
-        var dedupe = $"{failed.Id}:{cls}";
+        // §1E — loop control 2, keyed on the SEMANTIC failure signature. A prior medic diagnosis of
+        // the same signature means the same defect came back under a new task UUID without a
+        // materially changed artifact: escalate, do not loop.
         var repeated = mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
-            && (t.Result?.Contains(dedupe) ?? false));
+            && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
+        if (repeated)
+            return Escalation(mission, task,
+                $"Semantic duplicate: failure signature {signature} was already diagnosed in this mission "
+                + "and nothing material changed — escalating instead of looping.",
+                $"medic-dup:{mission.Id}:{signature}", signature);
 
-        var targetRole = repeated ? "builder"
-            : text.Contains("ui", StringComparison.OrdinalIgnoreCase) || text.Contains(".html") || text.Contains("app.js") ? "ui_cartographer"
-            : retryable ? "tester"
-            : "coder";
-        var targetType = targetRole switch
-        {
-            "builder" => "build", "ui_cartographer" => "ui_mapping",
-            "tester" => "test_execution", _ => "code_change",
-        };
+        // §1C — unknown/low-confidence never becomes a confident verdict. It escalates for
+        // evidence; it does not invoke a repair specialist on a guess, and it is not "internal".
+        if (!FailureClassify.IsKnown(cls))
+            return Escalation(mission, task,
+                "The failure is UNCLASSIFIED and the evidence is insufficient for a confident diagnosis "
+                + "— escalating for evidence/operator review rather than guessing a repair route.",
+                $"medic-unk:{mission.Id}:{signature}", signature);
+
+        // §1D — specialist selection from STRUCTURE: policy says no → never route around it;
+        // otherwise the failed task's type/role/artifact kinds pick the specialist. Prose picks nothing.
+        var (targetRole, targetType, routeReason) = SelectSpecialist(cls, failed, context, retryable);
 
         var diagnosis =
-            $"dedupe: {dedupe}\nfailure_classification: {cls}\nprobable_cause: {cause}\nconfidence: {confidence}\n" +
-            $"retryable: {retryable}\nrecommended_role: {targetRole}\nrecommended_task_type: {targetType}\n" +
-            $"verification_plan: re-run the failed check via tester, then verifier\n" +
+            $"failure_signature: {signature}\nfailure_classification: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}\n" +
+            $"probable_cause: {cause}\nconfidence: {confidence}\nretryable: {retryable}\n" +
+            $"failure_context: {(context is not null ? "consumed (typed artifact)" : "ABSENT — legacy prose fallback used")}\n" +
+            $"recommended_role: {targetRole}\nrecommended_task_type: {targetType}\nroute_reason: {routeReason}\n" +
+            $"verification_plan: fresh build/test of the repaired artifact, then verifier bound to its revision\n" +
             $"source_task: {failed.Id} ({failed.Title})";
 
         return new AntExecutionResult
         {
             Success = true,
             StatusCode = "succeeded",
-            Summary = $"Diagnosis: {cls} ({cause}) — route to {targetRole}{(repeated ? " [escalated: repeat diagnosis]" : "")}.",
-            // The full diagnosis becomes the task's recorded text (Queen uses Narrative ?? Summary).
-            // Loop control 2 below matches the dedupe key in a PRIOR medic task's result, so that
-            // key must survive into the record — with only the one-line summary stored, an
-            // identical diagnosis would be re-issued forever instead of escalating.
+            Summary = $"Diagnosis: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)} ({TextShort(cause)}) — route to {targetRole}.",
+            // The full diagnosis becomes the task's recorded text; the signature must survive into
+            // the record because loop control 2 matches it in PRIOR medic results.
             Narrative = diagnosis,
             Artifacts =
             {
                 new AntArtifact("failure_diagnosis", "Failure diagnosis", diagnosis),
-                new AntArtifact("repair_recommendation", "Bounded repair route", $"{targetRole}:{targetType} (single attempt, then re-test)"),
+                new AntArtifact("repair_recommendation", "Bounded repair route", $"{targetRole}:{targetType} (single attempt, then fresh checks)"),
             },
-            Evidence = { new AntEvidence("failure_id", failed.Id, failed.FailureReason ?? "structured failure in result") },
-            Handoffs = { new AntHandoff("medic", targetRole, repeated ? "escalation: repeat diagnosis" : $"repair route for {cls}",
-                targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{dedupe}") },
+            Evidence = { new AntEvidence("failure_id", failed.Id, failed.FailureReason ?? "structured failure in result"),
+                         new AntEvidence("failure_signature", signature) },
+            Handoffs = { new AntHandoff("medic", targetRole, $"repair route for {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}",
+                targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{signature}") },
         };
     }
 
+    /// <summary>§1D — the routing table, from structure. Never from words in error prose.</summary>
+    internal static (string Role, string TaskType, string Reason) SelectSpecialist(
+        FailureClass cls, Task failed, Anthill.SDK.Artifacts.FailureContext? context, bool retryable)
+    {
+        // Policy and security say NO — recovery escalates to the operator, never routes around.
+        if (FailureClassify.MustEscalate(cls))
+            return ("builder", "build", "policy/security/authorization denial — never routed around");
 
+        // Transient classes retry the same deterministic surface.
+        if (retryable)
+            return ("tester", "test_execution", "transient failure class — bounded re-run");
+
+        // A UI specialist is selected by ARTIFACT/TASK classification only: the failed task was
+        // ui-typed work or worked over ui_map artifacts. The word "UI" in a message routes nothing.
+        var uiTyped = failed.TaskType is "ui_mapping" or "frontend_check" or "route_mapping"
+            or "component_mapping" or "style_mapping" or "frontend_dependency_mapping" or "ui_change_impact";
+        var uiArtifacts = context?.ArtifactKinds.Contains("ui_map", StringComparer.OrdinalIgnoreCase) ?? false;
+        if (uiTyped || (uiArtifacts && failed.AssignedAnt == "ui_cartographer"))
+            return ("ui_cartographer", "ui_mapping", "failed task is ui-typed / produced ui artifacts");
+
+        // Deterministic check failures over code work → the coder repairs, then fresh checks.
+        if (cls is FailureClass.BuildFailure or FailureClass.TestFailure or FailureClass.VerificationFailure
+            or FailureClass.PatchConflict)
+            return ("coder", "code_change", "deterministic check failed over code work — repair then fresh checks");
+
+        if (cls is FailureClass.ValidationFailure or FailureClass.InvalidArtifact)
+            return ("coder", "code_change", "structurally invalid artifact — producer must re-produce");
+
+        // Provider/model/dependency/tool problems are environmental: no repair specialist can fix
+        // them by editing code. Escalate with the classification visible.
+        return ("builder", "build", "environmental failure — operator/provider recovery, not a code repair");
+    }
+
+    private AntExecutionResult Escalation(Mission mission, Task task, string message, string dedupeKey, string? signature = null)
+        => new()
+        {
+            Success = true, StatusCode = "succeeded_with_warnings",
+            Summary = message,
+            Narrative = message + (signature is not null ? $"\nfailure_signature: {signature}" : ""),
+            Artifacts = { new AntArtifact("failure_diagnosis", "Escalation", message) },
+            Handoffs = { new AntHandoff("medic", "builder", "escalation to operator", "build",
+                new[] { "failure_diagnosis" }, true, 1, dedupeKey) },
+            Warnings = { "escalated" },
+        };
+
+    /// <summary>The typed failure record for THIS failed task, if the boundary produced one.</summary>
+    private Anthill.SDK.Artifacts.FailureContext? LoadFailureContext(Mission mission, Task failed)
+    {
+        if (_artifacts is null) return null;
+        try
+        {
+            return _artifacts
+                .ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.FailureContext)
+                .Where(a => a.TaskId == failed.Id)
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => Anthill.SDK.Artifacts.FailureContext.FromJson(a.Payload))
+                .FirstOrDefault(c => c is not null);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[medic] could not read failure_context for {failed.Id}: {error.Message}");
+            return null;
+        }
+    }
+
+    private static string TextShort(string s) => s.Length <= 120 ? s : s[..120] + "…";
+
+    /// <summary>
+    /// LEGACY fallback classifier, used only when no failure_context artifact exists (failures
+    /// recorded by older builds, or call sites constructed without a store). §1C: the unmatched
+    /// case is now honestly <see cref="FailureClass.UnknownFailure"/> at low confidence — it is
+    /// NEVER InternalDefect, and the caller escalates it instead of routing a repair.
+    /// </summary>
     internal static (FailureClass, string, string) Classify(string text)
     {
         var t = text.ToLowerInvariant();
@@ -656,7 +777,7 @@ public sealed class MedicAnt : BaseAnt
         if (t.Contains("authorization_denied") || t.Contains("permission")) return (FailureClass.AuthorizationFailure, "capability/tool boundary denied the operation", "high");
         if (t.Contains("exit_code=") || t.Contains(": fail") || t.Contains("build") || t.Contains("test")) return (FailureClass.VerificationFailure, "deterministic check failed", "high");
         if (t.Contains("invalid") || t.Contains("validation")) return (FailureClass.ValidationFailure, "input failed validation", "medium");
-        return (FailureClass.InternalDefect, "unclassified failure — treated as internal defect (not retryable)", "low");
+        return (FailureClass.UnknownFailure, "unclassified failure — evidence insufficient; unknown stays unknown", "low");
     }
 }
 
