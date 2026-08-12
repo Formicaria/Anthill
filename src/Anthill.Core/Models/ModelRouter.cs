@@ -318,7 +318,7 @@ public sealed class ModelRouter
     }
 
     /// <summary>
-    /// v0.4.0 (§15) — a model this provider serves that CAN reason (infer a conclusion from evidence
+    /// v0.3.8.49 (§15) — a model this provider serves that CAN reason (infer a conclusion from evidence
     /// that does not state one), or null if none is known.
     ///
     /// The exact sibling of <see cref="FirstToolCapableModel"/>, and it exists for the exact same
@@ -458,7 +458,7 @@ public sealed class ModelRouter
         rerouteReason ??= toolCapableReroute;
 
         /*
-         * v0.4.0 (§15) — REASONING-AWARE ROUTING, the sibling of the tool reroute above.
+         * v0.3.8.49 (§15) — REASONING-AWARE ROUTING, the sibling of the tool reroute above.
          *
          * The same silent failure, one capability over. `coder` and `medic` declare Reasoning: true
          * because their work is inference from evidence that does not state its own conclusion — a

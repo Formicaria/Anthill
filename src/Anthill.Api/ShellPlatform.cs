@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Anthill.Api;
 
 /// <summary>
-/// v0.4.0 (§14) — platform-aware operator-shell quick actions.
+/// v0.3.8.49 (§14) — platform-aware operator-shell quick actions.
 ///
 /// The console's quick buttons used to be four hardcoded Linux/systemd commands — <c>systemctl
 /// restart</c>, <c>journalctl</c>, <c>df -h; free -h</c>. On a Windows host every one of them is a
