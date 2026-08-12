@@ -206,7 +206,7 @@ Inside the container:
 
 ```bash
 apt-get update && apt-get install -y curl ca-certificates git
-curl -fsSL https://raw.githubusercontent.com/thexonexone/operation-anthill/main/deploy/lxc/setup.sh -o setup.sh
+curl -fsSL https://raw.githubusercontent.com/Formicaria/Anthill/main/deploy/lxc/setup.sh -o setup.sh
 bash setup.sh
 ```
 
@@ -255,7 +255,7 @@ rm -rf /opt/anthill /etc/anthill   # or just delete/destroy the whole LXC contai
 ## 4. Releases
 
 `.github/workflows/release.yml` builds a tagged release: self-contained `linux-x64`/`win-x64`
-binaries, a versioned Docker image pushed to `ghcr.io/thexonexone/operation-anthill`, and a
+binaries, a versioned Docker image pushed to `ghcr.io/Formicaria/Anthill`, and a
 GitHub Release with notes pulled straight from the matching `## vX.Y.Z` section of
 `CHANGELOG.md`.
 

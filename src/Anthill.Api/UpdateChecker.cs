@@ -12,7 +12,7 @@ namespace Anthill.Api;
 /// </summary>
 public static class UpdateChecker
 {
-    private const string Repo = "thexonexone/operation-anthill";
+    private const string Repo = "Formicaria/Anthill";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(6) };
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
     private static readonly object Gate = new();

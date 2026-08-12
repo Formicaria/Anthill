@@ -10,7 +10,7 @@ because a brief that is wrong about the codebase produces work that is confident
 
 ## 0. Corrections to the original draft
 
-**The repository is `https://github.com/thexonexone/operation-anthill`** — not `theonexone`. The
+**The repository is `https://github.com/Formicaria/Anthill`** — not `theonexone`. The
 draft's URL fetches nothing.
 
 **There is no frontend toolchain, and you must not add one.** The draft asks for design primitives,

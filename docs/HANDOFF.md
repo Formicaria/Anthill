@@ -44,7 +44,7 @@ detectors; each was verified to FAIL against v3.8.31 before being kept, because 
 watched fail is a guard nobody has tested.
 
 Repo: C:\Users\jconn\OneDrive\Documents\vscode\anthill\operation-anthill. Origin is
-`thexonexone/operation-anthill` and is the ONLY remote — there is no `upstream`. Build with
+`Formicaria/Anthill` and is the ONLY remote — there is no `upstream`. Build with
 `-c Release` (that's what CI uses). The shell is PowerShell 5.1, so `&&` is a parse error — run
 build and test as separate statements. I run the builds; you don't have a .NET SDK, and you have no
 GitHub credentials either — you can read from origin but not push.
