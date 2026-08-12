@@ -452,7 +452,7 @@ const IAICON = {
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
 //
-// v0.4.0 — the five-destination product IA (UI/UX pass §20). Colony, Projects, Chat, Tools,
+// v0.3.8.49 — the five-destination product IA (UI/UX pass §20). Colony, Projects, Chat, Tools,
 // Settings. Everything that describes how a Colony's ants work — the visualization, roles, models,
 // model routing, the inspector, automation — now lives UNDER Colony, where an operator forms the
 // mental model of their colony without detouring through global settings. Objectives folded into
@@ -552,7 +552,7 @@ const LEGACY_REDIRECT={
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
 const ROUTE_ALIAS={
-  // v0.4.0 — every route earlier restructures removed, resolved to its new home in the
+  // v0.3.8.49 — every route earlier restructures removed, resolved to its new home in the
   // five-destination IA. Bookmarks are promises; these keep them.
   // Dashboard and Objectives lost their standalone destinations this pass.
   '/dashboard':'/colony',
@@ -641,7 +641,7 @@ function buildNav(){
     head.setAttribute('role','link'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
     head.setAttribute('aria-label',d.label);
     head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
-    // v0.4.0 (§8): a domain head is a first-class tab, not a dropdown toggle. Clicking it NAVIGATES
+    // v0.3.8.49 (§8): a domain head is a first-class tab, not a dropdown toggle. Clicking it NAVIGATES
     // to the domain's home (its first section) and reveals the children as context — the same
     // behaviour Colony, Projects and Chat have. The chevron still expands/collapses for a user who
     // only wants to browse the sub-sections; navigation is the primary action.
@@ -880,7 +880,7 @@ const ANT_MAP={
 };
 const ANT_R=15, QUEEN_R=26;
 const colonyActivity={ researcher:0, web:0, file:0, coder:0, builder:0, verifier:0 };
-// v0.4.0 (§18) — discrete per-ant STATE, derived from the SAME real /graph task statuses that
+// v0.3.8.49 (§18) — discrete per-ant STATE, derived from the SAME real /graph task statuses that
 // already drive `colonyActivity`. The scalar answers "how busy"; this answers "doing what", which
 // is what the colony view has to communicate: idle, working, waiting, communicating, blocked,
 // awaiting approval, completed, failed. Keyed by ant id AND worker id; filled in pollGraph().
@@ -1362,7 +1362,7 @@ function drawChambers(){
 }
 
 function updateNodeActivity(){
-  // v0.4.0 (§18): ants that are the SOURCE of a live data-flow edge this frame are communicating —
+  // v0.3.8.49 (§18): ants that are the SOURCE of a live data-flow edge this frame are communicating —
   // an ant-to-ant handoff in progress. Computed from the real dependency edges buildDataFlowEdges
   // derives from the task graph, so the signal is a real interaction, not decoration.
   colonyCommunicating=new Set(dataFlowEdges.map(e=>e.from));
@@ -1506,7 +1506,7 @@ function drawNode(n,ts){
     }
   }
   if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
-  // v0.4.0 (§18): the discrete-state ring — a coloured arc around the ant in its state's colour, so
+  // v0.3.8.49 (§18): the discrete-state ring — a coloured arc around the ant in its state's colour, so
   // blocked/awaiting-approval/failed/working read at a glance rather than being inferred from a
   // glow. Idle draws nothing (a quiet colony stays quiet). The two states an operator must act on —
   // blocked and awaiting approval — pulse; the rest are steady.
@@ -1900,7 +1900,7 @@ function showInspector(n){
   const tasks=n.nodeType==='worker'
     ? (lastGraphData?.worker_counts?.[n.worker]??0)
     : (lastGraphData?.ant_counts?.[n.ant]??0);
-  // v0.4.0 (§18): the inspector names the ant's discrete STATE, not just Active/Idle — the same
+  // v0.3.8.49 (§18): the inspector names the ant's discrete STATE, not just Active/Idle — the same
   // word the ring shows, so hovering an amber ring and reading the panel agree.
   const statusLine=n.id==='queen'?'Commander':(n.state&&n.state!=='idle'?STATE_LABEL[n.state]:(colonyRunning&&act>0?'Active':'Idle'));
   // Real live task load for this caste from the current mission graph.
@@ -2078,7 +2078,7 @@ async function pollStatus(){
     const bc=document.getElementById('bell-count');
     bc.style.display=pending>0?'block':'none';
     bc.textContent=pending;
-    // v0.4.0 (§18): a pending approval is a colony state, not just a badge — the map shows the
+    // v0.3.8.49 (§18): a pending approval is a colony state, not just a badge — the map shows the
     // change-proposing ants awaiting approval so the operator sees WHERE the decision sits.
     colonyAwaitingApproval=pending>0;
     if(colonyAwaitingApproval){ ['coder','builder'].forEach(k=>{ colonyAntState[k]='awaiting_approval'; }); updateNodeActivity(); }
@@ -2435,7 +2435,7 @@ async function pollGraph(){
     });
     Object.keys(colonyActivity).forEach(k=>delete colonyActivity[k]);
     Object.keys(live).forEach(k=>{const s=live[k];colonyActivity[k]=!s?0:(s.running>0?1:(s.queued>0?0.35:0));});
-    // v0.4.0 (§18): discrete state per ant/worker from the real task statuses — the highest-ranked
+    // v0.3.8.49 (§18): discrete state per ant/worker from the real task statuses — the highest-ranked
     // state an ant currently holds. Rebuilt fresh each poll so a cleared mission reads idle again.
     Object.keys(colonyAntState).forEach(k=>delete colonyAntState[k]);
     (r.data?.nodes||[]).forEach(t=>{
@@ -2523,7 +2523,7 @@ function renderColonyLegend(){
     const on=(colonyActivity[a]||0)>0;
     return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${am.color};background:${am.color}"></span>${am.label}</div>`;
   }).join('');
-  // v0.4.0 (§18): a legend for the STATE ring colours — only the states currently present on the
+  // v0.3.8.49 (§18): a legend for the STATE ring colours — only the states currently present on the
   // map, so a quiet colony shows a short list and a busy one explains every ring the operator sees.
   const liveStates=[...new Set(nodes.map(n=>n.state).filter(s=>s&&s!=='idle'))]
     .sort((a,b)=>(STATE_RANK[b]??0)-(STATE_RANK[a]??0));
@@ -4313,7 +4313,7 @@ async function chatOpen(id){
             // BUILT WHITESPACE-TIGHT on purpose (found live, "the bubbles look like shit"): the
             // bubble renders with pre-wrap, so any newline or indentation inside this template
             // becomes literal blank space in every message. One string, no stray characters.
-            // v0.4.0 (§3): a long colony turn is collapsed to a compact preview with a "Show full
+            // v0.3.8.49 (§3): a long colony turn is collapsed to a compact preview with a "Show full
             // response" toggle — Chat should read like an assistant, not dump raw mission state. The
             // operator's own messages are never collapsed. "Long" is measured on the raw text so
             // the decision is stable regardless of how it renders.
@@ -4343,7 +4343,7 @@ async function chatOpen(id){
         try{ await navigator.clipboard.writeText(chatTurnContents[+b.dataset.i]||''); b.textContent='✓'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
         catch{ b.textContent='✕'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
       }));
-      // v0.4.0 (§3): expand/collapse a long colony response. CSP is script-src 'self', so the
+      // v0.3.8.49 (§3): expand/collapse a long colony response. CSP is script-src 'self', so the
       // handler is bound here, never inlined.
       thread.querySelectorAll('.chat-expand').forEach(b=>b.addEventListener('click',()=>{
         const body=thread.querySelector('.chat-body[data-body="'+b.dataset.expand+'"]');
@@ -5635,7 +5635,7 @@ function startPolling(){
 }
 
 // Bell ? navigate to colony and scroll to approvals card
-// v0.4.0 (§1): approvals are decided IN Chat — that is the one authoritative approval surface.
+// v0.3.8.49 (§1): approvals are decided IN Chat — that is the one authoritative approval surface.
 // The bell no longer opens a separate Colony approvals card (a competing surface §1 forbids); it
 // takes the operator to the conversation that is waiting on them and lets them approve/reject in
 // the thread, where the request, the decision and what follows all stay in context.
@@ -5826,7 +5826,7 @@ function notifMarkAllRead(){
   notifRenderBadge(); notifRenderPanel();
 }
 function closeNotifPanel(){ document.getElementById('notif-panel')?.classList.remove('show'); }
-// v0.4.0 (§17): the top-right glyph is the Colony activity / idle view — an ambient glance at the
+// v0.3.8.49 (§17): the top-right glyph is the Colony activity / idle view — an ambient glance at the
 // colony, NOT a notifications dropdown and NOT the old Dashboard. Clicking it opens the Colony view
 // and nothing else. Recent-activity remains readable there (the Overview is the colony at a glance).
 document.getElementById('notif-bell').addEventListener('click',e=>{
@@ -6625,7 +6625,7 @@ function antcfgModelOptions(provider,curModel){
 function antcfgProviderOptions(curProvider, opts){
   opts=opts||{};
   let providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
-  // v0.4.0 (§4): Ollama is NOT a user-facing Chat provider. It stays fully available to ants — every
+  // v0.3.8.49 (§4): Ollama is NOT a user-facing Chat provider. It stays fully available to ants — every
   // other role below still lists it — but the `conversation` role that speaks in Chat must route to
   // a real provider (a keyed API or an installed agent), so it is dropped from that one dropdown.
   // Chat provider configuration and ant execution infrastructure are deliberately separated here.
@@ -6661,7 +6661,7 @@ function antcfgProviderOptions(curProvider, opts){
 var ORCHESTRATION_ROLES = [
   { id:'planner',    label:'Planner',    why:'Turns a goal into the task plan. If this model is missing the colony silently falls back to a static plan.' },
   { id:'strategist', label:'Strategist', why:'Adaptive mission control — decides whether to replan mid-mission.' },
-  // v0.4.0 (§4): who speaks for the colony in Chat. A real provider only — a keyed API or an
+  // v0.3.8.49 (§4): who speaks for the colony in Chat. A real provider only — a keyed API or an
   // installed agent — NOT Ollama, which stays an ant-side backend rather than a chat voice.
   { id:'conversation', label:'Conversation', why:'Answers chat turns. Route it to a keyed API or an installed agent — the colony’s voice in Chat. (Ollama stays available to ants, not here.)' },
   { id:'fallback',   label:'Fallback',   why:'Used by any role with no route of its own, and when a preferred route is unhealthy.' },
@@ -6701,7 +6701,7 @@ function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
     <div class="antcfg-grid" style="margin-bottom:14px">
       ${ORCHESTRATION_ROLES.map(r=>{
         const p=routes[r.id]?.provider||'ollama', m=routes[r.id]?.model||'';
-        // v0.4.0 (§4): the conversation (chat) role hides Ollama; every other orchestration role
+        // v0.3.8.49 (§4): the conversation (chat) role hides Ollama; every other orchestration role
         // keeps it, because Ollama is legitimate ant-side infrastructure.
         const chatRole=r.id==='conversation';
         return `<div class="antcfg-card">
@@ -7341,7 +7341,7 @@ PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
 document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
 document.getElementById('sh-run').addEventListener('click',runShell);
 
-// v0.4.0 (§14): quick actions are rendered from the platform-aware list /shell/info returns, so the
+// v0.3.8.49 (§14): quick actions are rendered from the platform-aware list /shell/info returns, so the
 // console never offers a Linux command on a Windows host. A "danger" action (restart/stop) confirms
 // first; the rest run immediately. Rebuilt on each shell open in case the host changed.
 function renderShellQuickActions(platform, actions){
@@ -7400,7 +7400,7 @@ async function initShell(){
     setEl('sh-host', info.host?`(${info.host})`:'');
     setEl('sh-host2', (info.host||'host')+' · '+(info.os||''));
     setEl('sh-platform', info.platform||'unknown');
-    // v0.4.0 (§14): render only the quick actions this platform supports.
+    // v0.3.8.49 (§14): render only the quick actions this platform supports.
     renderShellQuickActions(info.platform, info.quick_actions||[]);
     const dirEl=document.getElementById('sh-dir');
     if(!dirEl.value) dirEl.value=info.default_dir||'';
@@ -9513,7 +9513,7 @@ function gridMountTarget(bodyId, el, cls){
  */
 var DEFAULT_DASHBOARD_VIEW = {
   locked: true,
-  // v0.4.0 (§6): the default dashboard is COLONY-centric and free of Chat duplicates. The
+  // v0.3.8.49 (§6): the default dashboard is COLONY-centric and free of Chat duplicates. The
   // Mission Command composer and the Conversations list both belonged to Chat, which is now the
   // authoritative mission-and-conversation surface (§1/§3) — on the dashboard they duplicated it,
   // and the composer in particular rendered as a large empty panel. Both stay REGISTERED (one click
