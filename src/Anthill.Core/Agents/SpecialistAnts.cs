@@ -236,6 +236,15 @@ public sealed class TesterAnt : BaseAnt
             : judged is not null ? "mission workspace — UNPATCHED" : "the configured workspace";
         evidence.Add(new AntEvidence("workspace", "tree", tree));
         lines.Add($"checked in: {tree}");
+        // Structural repair §3: the FULL identity of what was judged, when a revision was ambient —
+        // revision id, patch set hash and tree hash, so this report can be paired with (or refused
+        // against) a candidate artifact by comparison rather than by trust.
+        if (judged?.RevisionId is { } revId)
+        {
+            evidence.Add(new AntEvidence("revision", revId,
+                $"patch_set={judged.MaterializedPatchSetId} patch_set_hash={judged.PatchSetHash} tree_hash={judged.TreeHash}"));
+            lines.Add($"revision: {revId} patch_set_hash: {judged.PatchSetHash} tree_hash: {judged.TreeHash}");
+        }
 
         var report = new AntArtifact("test_report", "Deterministic check report", string.Join("\n", lines));
         var result = new AntExecutionResult

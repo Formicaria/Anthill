@@ -521,7 +521,45 @@ public sealed class ExecutionService : IExecutionService
                 }
                 else
                 {
-                    execution = ant.Execute(taskSnapshot, missionSnapshot);
+                    // Structural repair §3: a deterministic check role runs INSIDE the mission's
+                    // current materialized revision when one exists — the patched tree, kept alive
+                    // by MissionRevisionRegistry — and the task is stamped with the revision it
+                    // actually judged. Without a revision (research missions, unpatched work) the
+                    // ambient behaviour is exactly as before and RanRevisionId stays null, which
+                    // MissionVerification reads as "evidence about the unpatched tree".
+                    var revision = ant.Name is "tester" or "soldier" or "builder"
+                        ? Workspaces.MissionRevisionRegistry.CurrentFor(mission.Id)
+                        : null;
+                    if (revision is not null && Directory.Exists(revision.Root))
+                    {
+                        using var revisionScope = Workspaces.MissionWorkspaceScope.Enter(new Workspaces.MissionWorkspace
+                        {
+                            Id = $"revision-{revision.RevisionId}",
+                            MissionId = mission.Id,
+                            Root = revision.Root,
+                            Mode = revision.Mode,
+                            SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
+                            BaseRevision = revision.BaseRevision,
+                            State = Workspaces.WorkspaceState.Active,
+                            MaterializedPatchSetId = revision.PatchSetId,
+                            RevisionId = revision.RevisionId,
+                            TreeHash = revision.TreeHash,
+                            PatchSetHash = revision.PatchSetHash,
+                        });
+                        execution = ant.Execute(taskSnapshot, missionSnapshot);
+                        task.RanRevisionId = revision.RevisionId;
+                        _memory.LogEvent(mission.Id, "task_ran_in_revision",
+                            $"{ant.Name} executed inside revision {revision.RevisionId} (patch set {revision.PatchSetId})",
+                            task.Id, ant.Name, new()
+                            {
+                                ["revision_id"] = revision.RevisionId, ["patch_set_id"] = revision.PatchSetId,
+                                ["tree_hash"] = revision.TreeHash,
+                            });
+                    }
+                    else
+                    {
+                        execution = ant.Execute(taskSnapshot, missionSnapshot);
+                    }
                 }
                 result = execution.Narrative ?? execution.Summary;
             }
@@ -918,6 +956,10 @@ public sealed class ExecutionService : IExecutionService
     {
         if (patchSet.Proposals.Count == 0) return;
 
+        // Owned until the registry takes it. On any exception before registration this is disposed
+        // here — the `using` that used to do that job had to go (§3: the tree must outlive this
+        // method), and an unregistered orphan sandbox must not outlive it too.
+        Verification.MaterializedPatchSet? unregistered = null;
         try
         {
             // v3.8.23: write the patch set into a disposable copy of the workspace and verify THAT.
@@ -944,7 +986,13 @@ public sealed class ExecutionService : IExecutionService
                 return;
             }
 
-            using var materialized = materialization.Materialized!;
+            // Structural repair §3: the materialized tree is NOT disposed here anymore. Ownership
+            // transfers to MissionRevisionRegistry below, which keeps it alive for the policy-
+            // inserted tester/soldier (they run as their own tasks, later) and disposes it when a
+            // newer revision replaces it or the mission finalizes. Before this, "Tester PASS" for a
+            // coding mission was a statement about the UNPATCHED tree.
+            var materialized = materialization.Materialized!;
+            unregistered = materialized;
 
             // The scope is load-bearing, not decoration. RunAllowlistedCheckTool resolves its working
             // directory and its check catalog from WorkspaceCapabilityManifest.ForCurrentMission()
@@ -1046,9 +1094,28 @@ public sealed class ExecutionService : IExecutionService
                 task.DeterministicBlock =
                     $"patch set {patchSet.Id}: {failed.Count} of {bundles.Count} proposal(s) not promotable — " +
                     string.Join("; ", failed.Take(3).Select(b => b.Explain()));
+
+            // Structural repair §3/§4: the patched tree becomes the mission's CURRENT REVISION and
+            // stays alive for the downstream tasks. Registering a second patch set replaces (and
+            // disposes) the first — from that instant, the old revision's evidence can no longer
+            // satisfy verification, which is the fresh-retest invariant made structural. The
+            // producing task carries the revision id so the evaluator can pair candidate and
+            // evidence without parsing anything.
+            var revision = Workspaces.MissionRevisionRegistry.Register(mission.Id, task.Id, materialized);
+            unregistered = null;   // the registry owns it now
+            task.ProducedRevisionId = revision.RevisionId;
+            _memory.LogEvent(mission.Id, "mission_revision_registered",
+                $"Revision {revision.RevisionId} registered: patch set {patchSet.Id} materialized at {revision.Root}",
+                task.Id, task.AssignedAnt, new()
+                {
+                    ["revision_id"] = revision.RevisionId, ["patch_set_id"] = patchSet.Id,
+                    ["patch_set_hash"] = revision.PatchSetHash, ["tree_hash"] = revision.TreeHash,
+                    ["base_revision"] = revision.BaseRevision, ["mode"] = revision.Mode,
+                });
         }
         catch (Exception error)
         {
+            try { unregistered?.Dispose(); } catch { }
             Console.Error.WriteLine($"Verification faulted for task {task.Id}: {error.Message}");
             _memory.LogEvent(mission.Id, "patch_set_verification_faulted",
                 $"Verification could not run: {error.Message}", task.Id, task.AssignedAnt,
