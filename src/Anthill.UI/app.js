@@ -4052,8 +4052,15 @@ async function loadAntObs(){
   try{
     const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
     const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
+    // v0.3.8.50 (field report §20): the operator's names and colors, applied wherever the ant is
+    // drawn on this page. The registry id stays visible in the role line — an override is a face,
+    // not a new identity.
+    antProfiles=d.profiles||{};
     grid.innerHTML=ANTOBS_CASTES.map(([ant,label,gateKeys])=>{
-      const am=(typeof ANT_MAP!=='undefined'&&ANT_MAP[ant])||{color:'var(--muted)',role:ant};
+      let am=(typeof ANT_MAP!=='undefined'&&ANT_MAP[ant])||{color:'var(--muted)',role:ant};
+      const prof=antProfiles[ant]||{};
+      if(prof.color) am={...am,color:prof.color};
+      if(prof.display_name) label=prof.display_name;
       const s=stats[ant]||{total:0,complete:0,failed:0,skipped:0,running:0,avg_seconds:0};
       const total=s.total||0, ok=s.complete||0, fail=s.failed||0, skip=s.skipped||0;
       const rate=total?Math.round(ok/total*100):null;
@@ -4066,7 +4073,9 @@ async function loadAntObs(){
       const okPct=total?ok/total*100:0, failPct=total?fail/total*100:0, skipPct=total?skip/total*100:0;
       return `<div class="ant-card" style="border-left-color:${am.color}">
         <div class="ac-hd"><span class="ac-dot" style="color:${am.color};background:${am.color}"></span>
-          <span class="ac-name">${label}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span></div>
+          <span class="ac-name">${escapeHtml(label)}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span>
+          <button class="chat-copy ant-edit" data-ant-edit="${escapeHtml(ant)}" title="Edit this ant's name and color" aria-label="Edit ant profile">✎</button></div>
+        <div class="ant-edit-slot" data-ant-slot="${escapeHtml(ant)}" hidden></div>
         <div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
         <div class="ac-gates">${gateBadges}</div>
         <div class="ac-stats">
@@ -4082,8 +4091,41 @@ async function loadAntObs(){
         <details data-ant="${ant}" data-ontoggle="onAntRecentToggle(this)"><summary>recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
       </div>`;
     }).join('');
+    wireAntProfileEditors(grid);
     loadAntObsDirectory(grid);
   }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
+}
+
+// v0.3.8.50 (field report §20): the profile editor — a name and a color, saved to the real
+// /ants/{id}/profile endpoint, applied on the next render of every surface that draws the ant.
+// "Reset" clears the override; the registry identity was never touched.
+let antProfiles={};
+function wireAntProfileEditors(scope){
+  scope.querySelectorAll('[data-ant-edit]').forEach(b=>b.addEventListener('click',()=>{
+    const ant=b.dataset.antEdit;
+    const slot=scope.querySelector(`[data-ant-slot="${CSS.escape(ant)}"]`);
+    if(!slot) return;
+    if(!slot.hidden){ slot.hidden=true; slot.innerHTML=''; return; }
+    const prof=antProfiles[ant]||{};
+    slot.innerHTML=`<div style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
+      <input class="provider-input ap-name" maxlength="40" placeholder="Display name" value="${escapeHtml(prof.display_name||'')}" style="width:150px;font-size:10px;">
+      <input class="ap-color" type="color" value="${/^#[0-9a-fA-F]{6}$/.test(prof.color||'')?prof.color:'#7fa0bc'}" title="Ant color" style="width:34px;height:26px;padding:0;border:1px solid var(--border);background:var(--inner);border-radius:4px;">
+      <button class="btn btn-primary ap-save" style="font-size:10px;">Save</button>
+      <button class="btn btn-ghost ap-reset" style="font-size:10px;" title="Back to the registry name and color">Reset</button>
+      <span class="save-msg ap-msg" style="font-size:10px;"></span></div>`;
+    slot.hidden=false;
+    const msg=slot.querySelector('.ap-msg');
+    const done=async(r)=>{ if(r&&r.success){ await loadAntObs(); } else { msg.textContent=(r&&r.message)||'Failed'; msg.style.color='var(--red)'; } };
+    slot.querySelector('.ap-save').addEventListener('click',async ()=>{
+      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{
+        display_name:slot.querySelector('.ap-name').value.trim(),
+        color:slot.querySelector('.ap-color').value,
+      }));
+    });
+    slot.querySelector('.ap-reset').addEventListener('click',async ()=>{
+      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{display_name:'',color:''}));
+    });
+  }));
 }
 
 // v2.2.4: full colony directory — the six cards above are the legacy executable castes with task
@@ -4997,16 +5039,30 @@ async function loadIntegrations(){
       ${c.last_verified_at?`<span style="font-size:9px;color:var(--dim)">last test ${escapeHtml(chatTurnTime(c.last_verified_at)||'')}</span>`:''}
       ${c.last_verify_message&&c.last_verify_ok===false?`<span style="font-size:9px;color:var(--red,#f87171)">${escapeHtml(String(c.last_verify_message).slice(0,80))}</span>`:''}
       <span style="flex:1"></span>
-      ${!p.agent?`<button class="btn btn-ghost" data-int-cfg>Configure</button>`:''}
+      ${!p.agent?`<button class="btn btn-ghost" data-int-cfg="${escapeHtml(p.provider)}">Configure</button>`:''}
       ${!p.agent&&c.configured?`<button class="btn btn-ghost" data-int-test="${escapeHtml(p.provider)}">Test connection</button>`:''}
       ${p.agent&&!p.installed?`<button class="btn btn-ghost" data-int-agents>Install…</button>`:''}
-    </div></div>`).join('')
+    </div>
+    ${!p.agent?`<div class="int-cfg-slot" data-cfg-slot="${escapeHtml(p.provider)}" hidden style="padding:0 13px 13px;"></div>`:''}
+    </div>`).join('')
     +`<div class="card" style="margin-top:10px;"><div style="padding:11px 13px;display:flex;align-items:center;gap:10px;">
        <b style="color:var(--text);font-size:12px;">Homelab</b>
        <span class="sch-badge">infrastructure</span>
        <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
        <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
-  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>go('/tools/integrations')));
+  // v0.3.8.50 (field report): Configure was a link to the page it was already on. The provider
+  // configuration CARD — the one thing the retired Settings→Providers tab existed for — now opens
+  // inline, right under the integration it configures. Same card, same handler, one config path.
+  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>{
+    const provider=b.dataset.intCfg;
+    const slot=host.querySelector(`[data-cfg-slot="${CSS.escape(provider)}"]`);
+    if(!slot) return;
+    if(!slot.hidden){ slot.hidden=true; slot.innerHTML=''; return; }
+    const p=catalog.find(x=>x.provider===provider);
+    if(!p) return;
+    slot.innerHTML=renderProviderCard(p,byId[provider]||{});
+    slot.hidden=false;
+  }));
   host.querySelectorAll('[data-int-agents]').forEach(b=>b.addEventListener('click',()=>go('/integrations')||showPage('agentcli',{noHistory:false})));
   host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
   host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{
@@ -6079,11 +6135,15 @@ function renderProviderCard(p,conn){
   </div>`;
 }
 
-document.getElementById('providers-refresh').addEventListener('click',loadProvidersTab);
+document.getElementById('providers-refresh')?.addEventListener('click',loadProvidersTab);
 
-document.getElementById('providers-grid').addEventListener('click',async(e)=>{
+// v0.3.8.50: ONE handler for provider-card actions, wherever the card renders — the Settings grid
+// or inline under an integration. Refresh follows the surface the card actually lives on.
+async function providerCardAction(e){
   const card=e.target.closest('.provider-card'); if(!card) return;
   const provider=card.dataset.provider;
+  const inIntegrations=!!e.target.closest('#int-body');
+  const refresh=()=>inIntegrations?loadIntegrations():loadProvidersTab();
   const msg=card.querySelector('.pv-msg');
   const setMsg=(t,ok)=>{msg.style.color=ok?'var(--green)':'var(--red)';msg.textContent=t;setTimeout(()=>{if(msg.textContent===t)msg.textContent='';},4000);};
 
@@ -6092,7 +6152,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     const baseUrl=card.querySelector('.pv-baseurl').value.trim();
     try{
       const r=await api('/providers','POST',{provider,api_key:key||undefined,base_url:baseUrl||undefined});
-      if(r.success){setMsg('Saved ✓',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
+      if(r.success){setMsg('Saved ✓',true);card.querySelector('.pv-key').value='';await refresh();}
       else setMsg(r.message||'Failed',false);
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
@@ -6102,7 +6162,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     try{
       const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
       setMsg(r.success?'Verified ✓':(r.message||'Test failed'),r.success);
-      await loadProvidersTab();
+      await refresh();
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
 
@@ -6110,11 +6170,13 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     if(!await uiConfirm(`Remove the ${provider} connection? Ants routed to it will fall back to Ollama.`)) return;
     try{
       const r=await api('/providers/'+encodeURIComponent(provider),'DELETE');
-      if(r.success){setMsg('Removed',true);await loadProvidersTab();}
+      if(r.success){setMsg('Removed',true);await refresh();}
       else setMsg(r.message||'Failed',false);
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
-});
+}
+document.getElementById('providers-grid')?.addEventListener('click',providerCardAction);
+document.getElementById('int-body')?.addEventListener('click',providerCardAction);
 
 // -- Model browser --------------------------------------------------------------
 let activeRouteModels=new Set();
