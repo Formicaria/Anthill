@@ -451,28 +451,42 @@ const IAICON = {
 };
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
+//
+// v0.4.0 — the five-destination product IA (UI/UX pass §20). Colony, Projects, Chat, Tools,
+// Settings. Everything that describes how a Colony's ants work — the visualization, roles, models,
+// model routing, the inspector, automation — now lives UNDER Colony, where an operator forms the
+// mental model of their colony without detouring through global settings. Objectives folded into
+// Projects (the project workspace owns its Objectives tab); Integrations folded into Tools;
+// Providers/Model-Routing moved from Settings into Colony; the standalone Dashboard is Colony's
+// own Overview. Every route the restructure removed resolves through ROUTE_ALIAS below, so
+// bookmarks and deep links keep working.
 const IA = [
-  // v0.3.8.48 — the project-centered navigation. Seven destinations, named for what an operator
-  // wants, not for runtime internals. Operations, Infrastructure, Colony, Security and
-  // Administration are gone as domains; every old route resolves through ROUTE_ALIAS below.
-  { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
-  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
-  { type:'item', id:'objectives', label:'Objectives', route:'/objectives', page:'objboard', vis:'admin' },
-  { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
-  { type:'domain', id:'tools', label:'Tools', vis:'all', sections:[
-    { label:'Capabilities', route:'/tools-view', page:'toolsview', vis:'all' },
-    // The colony's memory and learning signals belong beside the capabilities that use them.
-    { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
-  ]},
-  { type:'item', id:'integrations', label:'Integrations', route:'/integrations', page:'integrations', vis:'admin' },
-  { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
-    { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
-    { label:'Providers & Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
+  { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
+    // The living colony — topology, ant activity, pheromone signals, mission state. This is the
+    // page the old standalone Dashboard became: one place for the colony at a glance.
+    { label:'Overview', route:'/colony', page:'overview', vis:'all' },
+    { label:'Ants & Roles', route:'/colony/roles', page:'antconfig', vis:'admin' },
+    { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
+    { label:'Models & Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
       { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
       { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
     ]},
-    { label:'Roles', route:'/settings/roles', page:'antconfig', vis:'admin' },
-    { label:'Security', route:'/settings/security', page:'security', vis:'admin' },
+    { label:'Automation', route:'/colony/automation', page:'autonomy', vis:'admin' },
+  ]},
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
+  { type:'domain', id:'tools', label:'Tools', vis:'all', sections:[
+    { label:'Capabilities', route:'/tools', page:'toolsview', vis:'all' },
+    // Integrations and external services are tools — they live where the tools do (§9).
+    { label:'Integrations', route:'/tools/integrations', page:'integrations', vis:'admin' },
+    // The colony's memory and learning signals belong beside the capabilities that use them.
+    { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
+  ]},
+  { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
+    { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
+    // Security owns the capability/approval gates (§13) — one authoritative gate system. The gate
+    // DEFINITION lives here; the approval INTERACTION happens in Chat.
+    { label:'Security & Gates', route:'/settings/security', page:'security', vis:'admin' },
     { label:'Users', route:'/settings/users', page:'users', vis:'admin' },
     { label:'System', route:'/settings/system', page:'events', vis:'admin' },
     { label:'Readiness', route:'/settings/readiness', page:'readiness', vis:'admin' },
@@ -506,15 +520,15 @@ const DOMAIN_HOME = {};
 })();
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
-  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  overview:'/colony', colony:'/colony', missions:'/projects',
   activity:'/settings/system',
   results:'/projects', events:'/settings/system',
-  patches:'/chat', objboard:'/objectives',
-  pheromones:'/tools/memory', homelab:'/integrations',
-  antconfig:'/settings/roles', antobs:'/settings/roles',
-  autonomy:'/objectives', security:'/settings/security',
+  patches:'/chat', objboard:'/projects',
+  pheromones:'/tools/memory', homelab:'/tools/integrations',
+  antconfig:'/colony/roles', antobs:'/colony/inspector',
+  autonomy:'/colony/automation', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
-  integrations:'/integrations', projectview:'/projects', readiness:'/settings/readiness'
+  integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
 });
 // Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
 // existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
@@ -527,42 +541,49 @@ const HLSUB_ROUTE={
 };
 // Legacy hash → new route (URL migration; §9 of the proposal).
 const LEGACY_REDIRECT={
-  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  overview:'/colony', colony:'/colony', missions:'/projects',
   events:'/settings/system', results:'/projects',
-  patches:'/chat', objboard:'/objectives',
-  pheromones:'/tools/memory', homelab:'/integrations',
-  antconfig:'/settings/roles', antobs:'/settings/roles',
-  autonomy:'/objectives', security:'/settings/security',
+  patches:'/chat', objboard:'/projects',
+  pheromones:'/tools/memory', homelab:'/tools/integrations',
+  antconfig:'/colony/roles', antobs:'/colony/inspector',
+  autonomy:'/colony/automation', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
 const ROUTE_ALIAS={
-  // v0.3.8.48 — every route the restructure removed, resolved to its new home. Bookmarks are
-  // promises; these keep them.
-  '/colony/topology':'/dashboard',
-  '/colony/agents':'/settings/roles',
-  '/colony/agents/configure':'/settings/roles',
-  '/colony/agents/inspect':'/settings/roles',
-  '/colony/agents/coding':'/integrations',
+  // v0.4.0 — every route earlier restructures removed, resolved to its new home in the
+  // five-destination IA. Bookmarks are promises; these keep them.
+  // Dashboard and Objectives lost their standalone destinations this pass.
+  '/dashboard':'/colony',
+  '/objectives':'/projects',
+  '/integrations':'/tools/integrations',
+  '/tools-view':'/tools',
+  // Roles / Inspector / Automation moved from Settings into Colony.
+  '/settings/roles':'/colony/roles',
+  '/colony/topology':'/colony',
+  '/colony/agents':'/colony/roles',
+  '/colony/agents/configure':'/colony/roles',
+  '/colony/agents/inspect':'/colony/inspector',
+  '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
   '/administration/users':'/settings/users',
   '/administration/settings':'/settings/general',
   '/administration/terminal':'/settings/terminal',
   '/administration/readiness':'/settings/readiness',
   '/security/posture':'/settings/security',
-  '/security/access':'/integrations',
-  '/infrastructure/overview':'/integrations',
-  '/infrastructure/compute':'/integrations',
-  '/infrastructure/containers':'/integrations',
-  '/infrastructure/storage':'/integrations',
-  '/infrastructure/network':'/integrations',
-  '/infrastructure/services':'/integrations',
-  '/infrastructure/health':'/integrations',
-  '/infrastructure/alerts':'/integrations',
-  '/infrastructure/activity':'/integrations',
-  '/infrastructure/automation':'/integrations',
-  '/infrastructure/apps':'/integrations',
+  '/security/access':'/tools/integrations',
+  '/infrastructure/overview':'/tools/integrations',
+  '/infrastructure/compute':'/tools/integrations',
+  '/infrastructure/containers':'/tools/integrations',
+  '/infrastructure/storage':'/tools/integrations',
+  '/infrastructure/network':'/tools/integrations',
+  '/infrastructure/services':'/tools/integrations',
+  '/infrastructure/health':'/tools/integrations',
+  '/infrastructure/alerts':'/tools/integrations',
+  '/infrastructure/activity':'/tools/integrations',
+  '/infrastructure/automation':'/tools/integrations',
+  '/infrastructure/apps':'/tools/integrations',
   '/operations/missions':'/projects',
   '/operations/missions/console':'/projects',
   '/operations/missions/history':'/projects',
@@ -570,17 +591,17 @@ const ROUTE_ALIAS={
   '/operations/missions/events':'/settings/system',
   '/operations/changes':'/chat',
   '/operations/approvals':'/chat',
-  '/operations/automation':'/objectives',
-  '/operations/automation/director':'/objectives',
-  '/operations/automation/objectives':'/objectives',
-  '/operations/automation/rules':'/integrations',
+  '/operations/automation':'/colony/automation',
+  '/operations/automation/director':'/colony/automation',
+  '/operations/automation/objectives':'/projects',
+  '/operations/automation/rules':'/tools/integrations',
   '/monitoring/activity':'/settings/system',
   '/monitoring/activity/events':'/settings/system',
   '/monitoring/activity/results':'/projects',
   '/monitoring/activity/changes':'/chat',
-  '/monitoring/activity/runs':'/objectives',
-  '/monitoring/activity/infra':'/integrations',
-  '/monitoring/alerts':'/integrations',
+  '/monitoring/activity/runs':'/colony/automation',
+  '/monitoring/activity/infra':'/tools/integrations',
+  '/monitoring/alerts':'/tools/integrations',
   '/scheduled':'/projects',
 };
 
@@ -617,11 +638,18 @@ function buildNav(){
     // relied on here: the label sits between an icon span and a `&#9656;` chevron, so a computed
     // name either fails or picks up the arrow. Six unnamed buttons in primary navigation, verified
     // in the browser's interactive accessibility tree before the fix.
-    head.setAttribute('role','button'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
+    head.setAttribute('role','link'); head.tabIndex=0; head.setAttribute('aria-expanded','false');
     head.setAttribute('aria-label',d.label);
     head.innerHTML='<span class="nav-icon">'+IAICON[d.id]+'</span><span class="nav-label">'+escapeHtml(d.label)+'</span><span class="nav-chev">&#9656;</span>';
-    const toggle=()=>{ const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
-    head.addEventListener('click',toggle); navKeyActivate(head,toggle);
+    // v0.4.0 (§8): a domain head is a first-class tab, not a dropdown toggle. Clicking it NAVIGATES
+    // to the domain's home (its first section) and reveals the children as context — the same
+    // behaviour Colony, Projects and Chat have. The chevron still expands/collapses for a user who
+    // only wants to browse the sub-sections; navigation is the primary action.
+    const home=sections[0].route;
+    const activate=()=>{ dom.classList.add('open'); head.setAttribute('aria-expanded','true'); go(home); };
+    const toggle=(e)=>{ e&&e.stopPropagation(); const open=dom.classList.toggle('open'); head.setAttribute('aria-expanded',open?'true':'false'); };
+    head.addEventListener('click',activate); navKeyActivate(head,activate);
+    head.querySelector('.nav-chev')?.addEventListener('click',toggle);
     dom.appendChild(head);
     const kids=document.createElement('div'); kids.className='nav-children';
     for(const s of sections){
@@ -5678,12 +5706,14 @@ function notifMarkAllRead(){
   notifRenderBadge(); notifRenderPanel();
 }
 function closeNotifPanel(){ document.getElementById('notif-panel')?.classList.remove('show'); }
+// v0.4.0 (§17): the top-right glyph is the Colony activity / idle view — an ambient glance at the
+// colony, NOT a notifications dropdown and NOT the old Dashboard. Clicking it opens the Colony view
+// and nothing else. Recent-activity remains readable there (the Overview is the colony at a glance).
 document.getElementById('notif-bell').addEventListener('click',e=>{
   e.stopPropagation();
-  const p=document.getElementById('notif-panel');
-  if(p.classList.contains('show')){ closeNotifPanel(); return; }
-  closePalette(); notifRenderPanel(); p.classList.add('show');
-  setTimeout(notifMarkAllRead,1200); // brief delay so "unread" highlights are visible before clearing
+  closeNotifPanel(); closePalette();
+  notifMarkAllRead();      // opening the colony view acknowledges the ambient activity badge
+  go('/colony');
 });
 document.getElementById('notif-clear').addEventListener('click',e=>{ e.stopPropagation(); notifMarkAllRead(); });
 document.addEventListener('click',e=>{
