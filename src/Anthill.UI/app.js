@@ -9513,16 +9513,24 @@ function gridMountTarget(bodyId, el, cls){
  */
 var DEFAULT_DASHBOARD_VIEW = {
   locked: true,
+  // v0.4.0 (§6): the default dashboard is COLONY-centric and free of Chat duplicates. The
+  // Mission Command composer and the Conversations list both belonged to Chat, which is now the
+  // authoritative mission-and-conversation surface (§1/§3) — on the dashboard they duplicated it,
+  // and the composer in particular rendered as a large empty panel. Both stay REGISTERED (one click
+  // away in the Widgets menu, and any saved layout that pins them still works); they are simply off
+  // by default. What opens now: the colony's vitals, the colony itself, its health smalls, and what
+  // needs the operator's attention.
   order: [
-    'mission-composer', 'conversations', 'colony-vitals', 'colony',
+    'colony-vitals', 'colony', 'operator-attention',
     'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
     // registered but off by default, in the order they appear in the Widgets menu
-    'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
+    'mission-composer', 'conversations', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
     'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs',
     'tools', 'workspaces', 'attempts',
   ],
   hidden: {
-    'operator-attention': true, 'missions': true, 'agent-inspector': true, 'live-telemetry': true,
+    'mission-composer': true, 'conversations': true,
+    'missions': true, 'agent-inspector': true, 'live-telemetry': true,
     'recent-events': true, 'recent-missions': true, 'approvals': true, 'patch-activity': true,
     'objectives': true, 'recent-jobs': true, 'tools': true, 'workspaces': true, 'attempts': true,
   },
