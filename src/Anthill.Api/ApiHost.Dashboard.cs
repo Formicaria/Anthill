@@ -217,6 +217,11 @@ public static partial class ApiHost
         app.MapGet("/shell/info", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "operator_shell"); if (auth is not null) return auth;
+            // v0.4.0 (§14): the platform is discovered on the host and the quick actions come WITH
+            // the info, so the console renders only what this environment can actually run — Windows
+            // gets Windows service commands, Linux gets systemd, and an unknown host gets none rather
+            // than Linux buttons that would fail.
+            var platform = ShellPlatform.Detect();
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["enabled"] = AnthillRuntime.EnableOperatorShell,
@@ -224,6 +229,8 @@ public static partial class ApiHost
                 ["timeout_seconds"] = OperatorShell.TimeoutSeconds,
                 ["host"] = Environment.MachineName,
                 ["os"] = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                ["platform"] = platform,
+                ["quick_actions"] = ShellPlatform.ActionsPayload(platform),
             });
         });
 
