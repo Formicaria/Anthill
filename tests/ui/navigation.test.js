@@ -36,7 +36,7 @@ function iaRoutes() {
 }
 
 test('the navigation has exactly the five destinations, in order', () => {
-  // v0.4.0 (UI/UX pass §20): Colony, Projects, Chat, Tools, Settings.
+  // v0.3.8.49 (UI/UX pass §20): Colony, Projects, Chat, Tools, Settings.
   const top = IA.map(d => d.label);
   assert.deepStrictEqual(top,
     ['Colony', 'Projects', 'Chat', 'Tools', 'Settings']);

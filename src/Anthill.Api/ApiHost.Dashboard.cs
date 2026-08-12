@@ -217,7 +217,7 @@ public static partial class ApiHost
         app.MapGet("/shell/info", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "operator_shell"); if (auth is not null) return auth;
-            // v0.4.0 (§14): the platform is discovered on the host and the quick actions come WITH
+            // v0.3.8.49 (§14): the platform is discovered on the host and the quick actions come WITH
             // the info, so the console renders only what this environment can actually run — Windows
             // gets Windows service commands, Linux gets systemd, and an unknown host gets none rather
             // than Linux buttons that would fail.
@@ -583,7 +583,7 @@ public static partial class ApiHost
             var routes = new Dictionary<string, object?>();
             foreach (var role in new[] { "researcher", "web", "file", "coder", "builder", "verifier", "planner", "strategist" })
             {
-                // v0.4.0 (§12): resolve through the AUTHORITATIVE router, not a second inline copy.
+                // v0.3.8.49 (§12): resolve through the AUTHORITATIVE router, not a second inline copy.
                 //
                 // This used to read `cfg?.GetValueOrDefault("model") ?? OllamaModel`, which handed
                 // the local Ollama tag to EVERY provider — so the Inspector showed every ant as
