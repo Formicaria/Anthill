@@ -124,6 +124,17 @@ public sealed record MissionWorkspace
     /// </summary>
     public string? MaterializedPatchSetId { get; init; }
 
+    /// <summary>
+    /// Structural repair §3 — the REVISION identity of a patched scope, so a check running here can
+    /// bind its evidence to the exact tree it judged. Null on unpatched workspaces, like the patch
+    /// set id above and for the same honest reason.
+    /// </summary>
+    public string? RevisionId { get; init; }
+    /// <summary>The materialized tree's content hash (<c>AppliedTreeHash</c>). Null when unpatched.</summary>
+    public string? TreeHash { get; init; }
+    /// <summary>The patch set's content hash. Null when unpatched.</summary>
+    public string? PatchSetHash { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 

@@ -521,7 +521,45 @@ public sealed class ExecutionService : IExecutionService
                 }
                 else
                 {
-                    execution = ant.Execute(taskSnapshot, missionSnapshot);
+                    // Structural repair §3: a deterministic check role runs INSIDE the mission's
+                    // current materialized revision when one exists — the patched tree, kept alive
+                    // by MissionRevisionRegistry — and the task is stamped with the revision it
+                    // actually judged. Without a revision (research missions, unpatched work) the
+                    // ambient behaviour is exactly as before and RanRevisionId stays null, which
+                    // MissionVerification reads as "evidence about the unpatched tree".
+                    var revision = ant.Name is "tester" or "soldier" or "builder"
+                        ? Workspaces.MissionRevisionRegistry.CurrentFor(mission.Id)
+                        : null;
+                    if (revision is not null && Directory.Exists(revision.Root))
+                    {
+                        using var revisionScope = Workspaces.MissionWorkspaceScope.Enter(new Workspaces.MissionWorkspace
+                        {
+                            Id = $"revision-{revision.RevisionId}",
+                            MissionId = mission.Id,
+                            Root = revision.Root,
+                            Mode = revision.Mode,
+                            SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
+                            BaseRevision = revision.BaseRevision,
+                            State = Workspaces.WorkspaceState.Active,
+                            MaterializedPatchSetId = revision.PatchSetId,
+                            RevisionId = revision.RevisionId,
+                            TreeHash = revision.TreeHash,
+                            PatchSetHash = revision.PatchSetHash,
+                        });
+                        execution = ant.Execute(taskSnapshot, missionSnapshot);
+                        task.RanRevisionId = revision.RevisionId;
+                        _memory.LogEvent(mission.Id, "task_ran_in_revision",
+                            $"{ant.Name} executed inside revision {revision.RevisionId} (patch set {revision.PatchSetId})",
+                            task.Id, ant.Name, new()
+                            {
+                                ["revision_id"] = revision.RevisionId, ["patch_set_id"] = revision.PatchSetId,
+                                ["tree_hash"] = revision.TreeHash,
+                            });
+                    }
+                    else
+                    {
+                        execution = ant.Execute(taskSnapshot, missionSnapshot);
+                    }
                 }
                 result = execution.Narrative ?? execution.Summary;
             }
@@ -918,6 +956,10 @@ public sealed class ExecutionService : IExecutionService
     {
         if (patchSet.Proposals.Count == 0) return;
 
+        // Owned until the registry takes it. On any exception before registration this is disposed
+        // here — the `using` that used to do that job had to go (§3: the tree must outlive this
+        // method), and an unregistered orphan sandbox must not outlive it too.
+        Verification.MaterializedPatchSet? unregistered = null;
         try
         {
             // v3.8.23: write the patch set into a disposable copy of the workspace and verify THAT.
@@ -944,7 +986,13 @@ public sealed class ExecutionService : IExecutionService
                 return;
             }
 
-            using var materialized = materialization.Materialized!;
+            // Structural repair §3: the materialized tree is NOT disposed here anymore. Ownership
+            // transfers to MissionRevisionRegistry below, which keeps it alive for the policy-
+            // inserted tester/soldier (they run as their own tasks, later) and disposes it when a
+            // newer revision replaces it or the mission finalizes. Before this, "Tester PASS" for a
+            // coding mission was a statement about the UNPATCHED tree.
+            var materialized = materialization.Materialized!;
+            unregistered = materialized;
 
             // The scope is load-bearing, not decoration. RunAllowlistedCheckTool resolves its working
             // directory and its check catalog from WorkspaceCapabilityManifest.ForCurrentMission()
@@ -1046,9 +1094,28 @@ public sealed class ExecutionService : IExecutionService
                 task.DeterministicBlock =
                     $"patch set {patchSet.Id}: {failed.Count} of {bundles.Count} proposal(s) not promotable — " +
                     string.Join("; ", failed.Take(3).Select(b => b.Explain()));
+
+            // Structural repair §3/§4: the patched tree becomes the mission's CURRENT REVISION and
+            // stays alive for the downstream tasks. Registering a second patch set replaces (and
+            // disposes) the first — from that instant, the old revision's evidence can no longer
+            // satisfy verification, which is the fresh-retest invariant made structural. The
+            // producing task carries the revision id so the evaluator can pair candidate and
+            // evidence without parsing anything.
+            var revision = Workspaces.MissionRevisionRegistry.Register(mission.Id, task.Id, materialized);
+            unregistered = null;   // the registry owns it now
+            task.ProducedRevisionId = revision.RevisionId;
+            _memory.LogEvent(mission.Id, "mission_revision_registered",
+                $"Revision {revision.RevisionId} registered: patch set {patchSet.Id} materialized at {revision.Root}",
+                task.Id, task.AssignedAnt, new()
+                {
+                    ["revision_id"] = revision.RevisionId, ["patch_set_id"] = patchSet.Id,
+                    ["patch_set_hash"] = revision.PatchSetHash, ["tree_hash"] = revision.TreeHash,
+                    ["base_revision"] = revision.BaseRevision, ["mode"] = revision.Mode,
+                });
         }
         catch (Exception error)
         {
+            try { unregistered?.Dispose(); } catch { }
             Console.Error.WriteLine($"Verification faulted for task {task.Id}: {error.Message}");
             _memory.LogEvent(mission.Id, "patch_set_verification_faulted",
                 $"Verification could not run: {error.Message}", task.Id, task.AssignedAnt,
@@ -1177,6 +1244,20 @@ public sealed class ExecutionService : IExecutionService
                     ["kind"] = e.Kind, ["value"] = e.Value, ["detail"] = e.Detail,
                 }).ToList(),
                 ["warnings"] = execution.Warnings,
+                // Structural repair §10 — fallback exposure, all derived from STRUCTURE. A role can
+                // do useful deterministic work while its routed model is down; what it may never do
+                // is look like model execution succeeded. These fields keep the two stories apart
+                // in the durable record: role_invoked is always true here (this event exists),
+                // model_executed only when calls were actually made AND generation was not the
+                // degraded fallback, fallback_used mirrors the provider_failure disclosure.
+                ["role_invoked"] = true,
+                ["model_requested_for_role"] = runtimeSelection.ExecutorRoleId,
+                ["model_calls_made"] = execution.Metrics.ModelCalls,
+                ["model_executed"] = execution.Metrics.ModelCalls > 0 && !task.GenerationDegraded,
+                ["fallback_used"] = task.GenerationDegraded,
+                ["generation_degraded"] = task.GenerationDegraded,
+                ["deterministic_work_completed"] = execution.Evidence.Any(e =>
+                    Anthill.SDK.Artifacts.EvidenceKinds.Reproducible.Contains(e.Kind) || e.Kind == "check"),
                 // v3.8.32: wire form, matching every other failure_class in the tree. An event
                 // stream that spells a class differently from the tables is a query that silently
                 // returns nothing.
@@ -1273,7 +1354,14 @@ public sealed class ExecutionService : IExecutionService
         // `MarkFailed` already returned the right answer ("true when terminally failed; false when a
         // bounded retry was scheduled") and this line threw it away. It is now the gate.
         if (decision.Action == TaskOutcomeAction.Fail && terminallyFailed)
+        {
+            // Structural repair §2: the typed failure record is produced HERE, at the boundary
+            // where the failure became terminal — BEFORE the handoffs are ingested, so the medic
+            // task that a failure handoff creates finds its failure_context already persisted.
+            // Recovery consumes this artifact; it never reconstructs failure state from prose.
+            RecordFailureContext(mission, task, execution, runtimeSelection);
             IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
+        }
 
         _memory.LogEvent(mission.Id, "task_outcome_applied",
             $"Task did not complete ({execution.StatusCode}): {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
@@ -1284,6 +1372,78 @@ public sealed class ExecutionService : IExecutionService
                 ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
             }));
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
+    }
+
+    /// <summary>
+    /// Structural repair §2 — the typed <c>failure_context</c> artifact, produced at the terminal
+    /// failure boundary from STRUCTURED state only: the ant's typed <see cref="AntFailure"/>, its
+    /// typed evidence rows, the ambient workspace scope's revision identity, and the runtime
+    /// selection. No prose is parsed here, and an execution that carried no typed failure is
+    /// recorded as <see cref="FailureClass.UnknownFailure"/> — unknown STAYS unknown; it is never
+    /// promoted into InternalDefect by absence of information.
+    ///
+    /// Failure to record the context must never mask the failure itself, so this catches and logs.
+    /// </summary>
+    internal void RecordFailureContext(Mission mission, Task task, AntExecutionResult execution,
+        AntRuntimeSelection runtimeSelection)
+    {
+        try
+        {
+            var cls = execution.Failure?.Class ?? FailureClass.UnknownFailure;
+            if (cls == FailureClass.None) cls = FailureClass.UnknownFailure;
+            var rawError = execution.Failure?.Reason ?? task.FailureReason ?? execution.Summary ?? "";
+
+            var failingChecks = execution.Evidence
+                .Where(e => e.Kind == "check" && (e.Detail?.Contains("success=False") ?? false))
+                .Select(e => e.Value).ToList();
+            var affectedPaths = execution.Evidence
+                .Where(e => e.Kind == "file_path").Select(e => e.Value).ToList();
+
+            var scope = Workspaces.MissionWorkspaceScope.Current;
+            var context = new Anthill.SDK.Artifacts.FailureContext
+            {
+                MissionId = mission.Id,
+                FailedTaskId = task.Id,
+                FailedRole = task.AssignedAnt,
+                TaskType = task.TaskType,
+                Attempt = Math.Max(1, task.AttemptCount),
+                FailureClass = FailureClassNames.Wire(cls),
+                FailureCode = task.FailureType,
+                Retryable = execution.Failure?.Retryable ?? FailureClassify.IsRetryable(cls),
+                RawError = TextUtil.Truncate(rawError, 2000),
+                NormalizedError = Anthill.SDK.Artifacts.FailureContext.NormalizeError(rawError),
+                Provider = runtimeSelection.RuntimeNodeId,
+                FailingChecks = failingChecks,
+                Tool = execution.Evidence.FirstOrDefault(e => e.Kind == "tool")?.Value,
+                ArtifactKinds = execution.Artifacts.Select(a => a.Kind).Distinct().ToList(),
+                AffectedPaths = affectedPaths,
+                PatchSetId = scope?.MaterializedPatchSetId,
+                BaseRevision = scope?.BaseRevision,
+                WorkspaceId = scope?.Id,
+                EnvironmentFingerprint = execution.Metrics.EnvironmentFingerprint,
+            };
+
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.FailureContext,
+                producerRole: task.AssignedAnt,
+                missionId: mission.Id,
+                payload: context.ToJson(),
+                taskId: task.Id));
+
+            _memory.LogEvent(mission.Id, "failure_context_recorded",
+                $"failure_context recorded for '{task.Title}': {context.FailureClass}, signature {context.FailureSignature}",
+                task.Id, task.AssignedAnt, new()
+                {
+                    ["failure_class"] = context.FailureClass,
+                    ["failure_signature"] = context.FailureSignature,
+                    ["retryable"] = context.Retryable,
+                    ["failing_checks"] = failingChecks,
+                });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[execution] could not record failure_context for {task.Id}: {error.Message}");
+        }
     }
 
     /// <summary>
@@ -1744,6 +1904,14 @@ public sealed class ExecutionService : IExecutionService
                 LogAdaptiveStop(mission, decision, "verification already present — a delta plan would duplicate it");
                 return true;
             }
+            // Structural repair §7: the delta verifier VERIFIES the mission's completed work, so
+            // that work is its lineage — parents and dependencies both. This was the one dynamic
+            // creation path that produced an orphan (no ParentTaskIds, no DependsOn), which is the
+            // historical reason the verifier stayed planner-selectable: the graph could not carry a
+            // policy-inserted one. It can now.
+            var verified = mission.Tasks
+                .Where(t => t.Status == TaskStatus.Complete && !MissionVerification.IsVerificationTask(t))
+                .Select(t => t.Id).ToList();
             var verify = new Task
             {
                 Title = "Verify mission outcome",
@@ -1752,6 +1920,8 @@ public sealed class ExecutionService : IExecutionService
                 AssignedAnt = "verifier",
                 TaskType = "verify",
                 Critical = true,
+                ParentTaskIds = verified,
+                DependsOn = verified,
             };
             return !RecordAdaptiveAdmission(mission, scheduler, verify, constraints, "adaptive_delta_plan", decision);
         }

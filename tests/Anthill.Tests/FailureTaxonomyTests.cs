@@ -4,108 +4,65 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// The plan's failure taxonomy, reconciled against the one the code actually has. v0.3.8.37.
+/// The plan's failure taxonomy, reconciled against the one the code actually has.
 ///
-/// `AUTONOMY-10.md` Phase 1 item 5 asks for one canonical taxonomy across providers, tools, ants,
-/// scheduler, evidence, memory, UI and telemetry, and lists thirteen minimum classes. The code has
-/// `FailureClass` — twelve real members plus `None` — reached through exactly one string converter
-/// since v3.8.32.
+/// v0.3.8.37 wrote this file as a map with four RECORDED GAPS — plan classes the code could not
+/// express (permanent_provider, tool_failure, cancellation, test_failure) and four it expressed
+/// only by collapsing onto a neighbour (policy_denial→AuthorizationFailure,
+/// invalid_artifact→ValidationFailure, patch_conflict→TargetRejection, security_failure→UnsafeState).
 ///
-/// The honest position, and the reason this is a reconciliation rather than a rename: **the code's
-/// taxonomy is already canonical and already enforced.** What it is not is IDENTICAL to the plan's
-/// list. Renaming twelve enum members to match a document would churn every switch, every persisted
-/// row and every wire value in exchange for vocabulary, and this repository has spent four releases
-/// learning what it costs when a stored string changes shape.
-///
-/// So the mapping is written down, and the three genuine gaps are named rather than papered over.
-/// A gap recorded is a decision; a gap unrecorded is the thing that shipped nine times.
+/// The structural-repair release closes them: the enum now carries every distinction the plan
+/// draws, the boundary produces a typed failure_context carrying the class, and UNKNOWN is a class
+/// of its own that never masquerades as InternalDefect. This file's job flips accordingly — from
+/// documenting the gaps to proving they stay closed.
 /// </summary>
 public class FailureTaxonomyTests
 {
-    /// <summary>
-    /// The plan's thirteen, mapped to what the runtime actually classifies with.
-    ///
-    /// `null` means the plan names a distinction the code does not draw — a real gap, listed so it
-    /// can be argued about instead of discovered.
-    /// </summary>
-    private static readonly Dictionary<string, FailureClass?> PlanToCode = new(StringComparer.Ordinal)
+    /// <summary>The plan's classes, each mapped to a DISTINCT code class. No nulls remain.</summary>
+    private static readonly Dictionary<string, FailureClass> PlanToCode = new(StringComparer.Ordinal)
     {
         ["transient_provider"] = FailureClass.TransientProviderFailure,
-        ["timeout"] = FailureClass.Timeout,
+        ["permanent_provider"] = FailureClass.PermanentProviderFailure,
+        ["missing_model"] = FailureClass.ModelRoutingFailure,
+        ["tool_failure"] = FailureClass.ToolFailure,
+        ["authorization_failure"] = FailureClass.AuthorizationFailure,
+        ["policy_denial"] = FailureClass.PolicyDenial,
+        ["validation_failure"] = FailureClass.ValidationFailure,
+        ["invalid_artifact"] = FailureClass.InvalidArtifact,
         ["dependency_failure"] = FailureClass.DependencyFailure,
+        ["patch_conflict"] = FailureClass.PatchConflict,
+        ["build_failure"] = FailureClass.BuildFailure,
+        ["test_failure"] = FailureClass.TestFailure,
+        ["security_failure"] = FailureClass.SecurityFailure,
         ["verification_failure"] = FailureClass.VerificationFailure,
+        ["timeout"] = FailureClass.Timeout,
+        ["cancellation"] = FailureClass.Cancellation,
         ["internal_runtime_failure"] = FailureClass.InternalDefect,
-        ["policy_denial"] = FailureClass.AuthorizationFailure,
-        ["invalid_artifact"] = FailureClass.ValidationFailure,
-        ["patch_conflict"] = FailureClass.TargetRejection,
-        ["security_failure"] = FailureClass.UnsafeState,
-
-        // --- GAPS. The plan draws a distinction the code does not. ------------------------------
-        //
-        // `permanent_provider` — the code has TransientProviderFailure and nothing for a provider
-        // that will never answer (a deleted model, a revoked key). Today both look retryable to
-        // FailureClassify, so the colony burns its whole attempt budget on a permanent condition.
-        ["permanent_provider"] = null,
-
-        // `tool_failure` — tools classify into the general set (ValidationFailure, Timeout,
-        // TransientProviderFailure...). That is arguably right: what failed matters more than that a
-        // tool was the thing failing. Recorded so the choice is visible.
-        ["tool_failure"] = null,
-
-        // `cancellation` — an operator stop is currently a task STATUS (Cancelled) rather than a
-        // failure class, so a cancelled task carries no class at all. Attribution already treats it
-        // as neutral, so nothing is mis-blamed; the gap is that reporting cannot count them.
-        ["cancellation"] = null,
-
-        // `test_failure` — found while writing this file, by counting. The plan lists thirteen and
-        // the first draft of this map had twelve.
-        //
-        // It cannot map: `TesterAnt` emits VerificationFailure for a failed check, and the verifier
-        // emits VerificationFailure for a failed verification. Two different events, one class, so
-        // nothing downstream can tell "the tests went red" from "the evidence did not support the
-        // claim" — and those want different responses. The medic is for the first; the second is a
-        // mission that should not promote.
-        //
-        // Mapping it onto VerificationFailure anyway would make this map non-injective and hide the
-        // collapse behind a tick.
-        ["test_failure"] = null,
+        ["unknown_failure"] = FailureClass.UnknownFailure,
     };
 
-    /// <summary>Every one of the plan's thirteen classes has a decision recorded against it.</summary>
+    /// <summary>Eighteen classes, every one expressible, no recorded gaps left.</summary>
     [Fact]
-    public void EveryPlanFailureClass_IsEitherMappedOrRecordedAsAGap()
+    public void EveryPlanFailureClass_IsExpressible()
     {
-        // THIRTEEN, as the plan states. Pinned by count because the first draft of this map had
-        // twelve and the missing one — test_failure — was only found by counting against the
-        // document. A map that silently omits a class looks complete and is not.
-        Assert.Equal(13, PlanToCode.Count);
-
-        var undecided = PlanToCode.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList();
-
-        // Gaps are allowed; SILENT gaps are not. Four are expected and each is argued above.
-        Assert.Equal(new[] { "cancellation", "permanent_provider", "test_failure", "tool_failure" },
-            undecided.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+        Assert.Equal(18, PlanToCode.Count);
+        Assert.All(PlanToCode.Values, c => Assert.True(Enum.IsDefined(c), $"{c} is not a FailureClass member"));
     }
 
     /// <summary>
-    /// Every mapped target is a real enum member, and no two plan classes collapse onto one code
-    /// class — a collapse would mean the runtime cannot tell them apart, which is the same as not
-    /// having the distinction at all.
+    /// No two plan classes collapse onto one code class — a collapse would mean the runtime cannot
+    /// tell them apart, which is the same as not having the distinction at all. This is exactly
+    /// the property the pre-repair map could not have (policy denials were authorization failures,
+    /// patch conflicts were target rejections).
     /// </summary>
     [Fact]
-    public void TheMappingIsInjective_AndPointsAtRealClasses()
+    public void TheMappingIsInjective()
     {
-        var mapped = PlanToCode.Where(kv => kv.Value is not null).Select(kv => kv.Value!.Value).ToList();
-
-        Assert.All(mapped, c => Assert.True(Enum.IsDefined(c), $"{c} is not a FailureClass member"));
+        var mapped = PlanToCode.Values.ToList();
         Assert.Equal(mapped.Count, mapped.Distinct().Count());
     }
 
-    /// <summary>
-    /// The retry set still matches the taxonomy's meaning. `permanent_provider` being unmapped is
-    /// exactly why this matters: everything provider-shaped that the code CAN express is retryable,
-    /// so a permanent provider condition consumes the whole attempt budget before it terminates.
-    /// </summary>
+    /// <summary>The retry set is transient conditions only — including none of the new classes.</summary>
     [Fact]
     public void TheRetrySet_IsTransientConditionsOnly()
     {
@@ -116,20 +73,51 @@ public class FailureTaxonomyTests
                  })
             Assert.True(FailureClassify.IsRetryable(retryable), $"{retryable} should be retryable");
 
-        // Retrying these cannot change the answer, so they must terminate immediately.
+        // Retrying these cannot change the answer, so they must terminate immediately — and the
+        // unknown class must not auto-retry either: it triggers evidence gathering, not a loop.
         foreach (var terminal in new[]
                  {
                      FailureClass.ValidationFailure, FailureClass.AuthorizationFailure,
                      FailureClass.TargetRejection, FailureClass.VerificationFailure,
                      FailureClass.UnsafeState, FailureClass.InternalDefect,
+                     FailureClass.PermanentProviderFailure, FailureClass.ModelRoutingFailure,
+                     FailureClass.ToolFailure, FailureClass.PolicyDenial, FailureClass.InvalidArtifact,
+                     FailureClass.PatchConflict, FailureClass.BuildFailure, FailureClass.TestFailure,
+                     FailureClass.SecurityFailure, FailureClass.Cancellation, FailureClass.UnknownFailure,
                  })
             Assert.False(FailureClassify.IsRetryable(terminal), $"{terminal} must not be retryable");
     }
 
     /// <summary>
-    /// Every code class round-trips through the one converter. This is the property that actually
-    /// makes the taxonomy canonical, and the one whose absence charged six releases of provider
-    /// outages to the wrong ant.
+    /// UNKNOWN STAYS UNKNOWN — the class exists precisely so "we could not classify this" never
+    /// becomes "internal defect". IsKnown is the gate recovery consults before diagnosing.
+    /// </summary>
+    [Fact]
+    public void UnknownIsItsOwnClass_AndIsNeverKnown()
+    {
+        Assert.NotEqual(FailureClass.InternalDefect, FailureClass.UnknownFailure);
+        Assert.False(FailureClassify.IsKnown(FailureClass.UnknownFailure));
+        Assert.False(FailureClassify.IsKnown(FailureClass.None));
+        Assert.True(FailureClassify.IsKnown(FailureClass.InternalDefect));
+        Assert.True(FailureClassify.IsKnown(FailureClass.TestFailure));
+    }
+
+    /// <summary>Policy, security and authorization denials must escalate — recovery never routes
+    /// around a deterministic "no".</summary>
+    [Fact]
+    public void PolicyShapedFailures_MustEscalate()
+    {
+        Assert.True(FailureClassify.MustEscalate(FailureClass.PolicyDenial));
+        Assert.True(FailureClassify.MustEscalate(FailureClass.SecurityFailure));
+        Assert.True(FailureClassify.MustEscalate(FailureClass.AuthorizationFailure));
+        Assert.False(FailureClassify.MustEscalate(FailureClass.TestFailure));
+        Assert.False(FailureClassify.MustEscalate(FailureClass.UnknownFailure));
+    }
+
+    /// <summary>
+    /// Every code class round-trips through the one converter — including the appended members.
+    /// This is the property that actually makes the taxonomy canonical, and the one whose absence
+    /// charged six releases of provider outages to the wrong ant.
     /// </summary>
     [Fact]
     public void EveryCodeClass_HasExactlyOneWireForm()
