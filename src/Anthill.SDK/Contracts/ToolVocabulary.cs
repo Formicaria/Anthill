@@ -51,14 +51,60 @@ public enum FailureClass
     TransientProviderFailure, RateLimit, Timeout, Conflict,
     DependencyFailure, VerificationFailure, UnsafeState,
     CompensationFailure, InternalDefect,
+
+    // Structural-repair release — the taxonomy the failure boundary actually needs. APPENDED,
+    // never reordered: the wire form is the snake_case NAME (FailureClassNames), but keeping
+    // numeric order stable costs nothing and protects any consumer that cached values.
+    /// <summary>The provider is reachable and answered "no" in a way retries will not change —
+    /// invalid key, model decommissioned, permanent 4xx.</summary>
+    PermanentProviderFailure,
+    /// <summary>No effective model could be resolved for the role — missing model, empty route,
+    /// or a route naming a model the provider does not serve.</summary>
+    ModelRoutingFailure,
+    /// <summary>A tool dispatch failed for reasons other than authorization — the tool errored,
+    /// not the gate.</summary>
+    ToolFailure,
+    /// <summary>A deterministic POLICY said no. Distinct from AuthorizationFailure (a capability
+    /// gate) because recovery must never route around policy.</summary>
+    PolicyDenial,
+    /// <summary>A typed artifact failed its schema or integrity check — the input was structurally
+    /// unusable, whoever produced it.</summary>
+    InvalidArtifact,
+    /// <summary>A patch could not apply: stale base hash, missing target, conflicting content.</summary>
+    PatchConflict,
+    /// <summary>The build check failed. A subtype of deterministic-check failure that names the
+    /// toolchain, because "build broke" and "tests broke" route differently.</summary>
+    BuildFailure,
+    /// <summary>The test check failed.</summary>
+    TestFailure,
+    /// <summary>A security review or scan produced a blocking finding.</summary>
+    SecurityFailure,
+    /// <summary>The work was cancelled — operator stop or linked-token cancellation. Not an error
+    /// and never a defect.</summary>
+    Cancellation,
+    /// <summary>The failure could not be classified at the boundary. UNKNOWN STAYS UNKNOWN — it is
+    /// never collapsed into InternalDefect, never auto-non-retryable-with-a-story. A consumer must
+    /// treat it as "insufficient evidence" and gather more or escalate, not diagnose it.</summary>
+    UnknownFailure,
 }
 
 public static class FailureClassify
 {
     /// <summary>Only these classes may be retried automatically; everything else needs a human
-    /// or a plan change. Unknown fails toward NOT retryable.</summary>
+    /// or a plan change. Unknown is NOT auto-retryable — but see <see cref="IsKnown"/>: unknown
+    /// is also not evidence of a permanent defect, and a consumer deciding recovery must
+    /// distinguish "retry will not help" from "we do not know what happened".</summary>
     public static bool IsRetryable(FailureClass c) => c is FailureClass.TransientProviderFailure
         or FailureClass.RateLimit or FailureClass.Timeout or FailureClass.Conflict;
+
+    /// <summary>False for None and UnknownFailure — the two states that mean "unclassified",
+    /// which no recovery decision may treat as a diagnosis.</summary>
+    public static bool IsKnown(FailureClass c) => c is not (FailureClass.None or FailureClass.UnknownFailure);
+
+    /// <summary>Classes where recovery must stop and escalate rather than repair or retry —
+    /// routing around a policy or security "no" is never a repair.</summary>
+    public static bool MustEscalate(FailureClass c) => c is FailureClass.PolicyDenial
+        or FailureClass.SecurityFailure or FailureClass.AuthorizationFailure;
 }
 
 /// <summary>

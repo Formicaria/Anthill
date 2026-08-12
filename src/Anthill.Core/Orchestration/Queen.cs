@@ -167,7 +167,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             // v3.8.25: the store, so the review reads the PATCH rather than prose about it.
             ["soldier"] = new SoldierAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["scribe"] = new ScribeAnt(Tools),
-            ["medic"] = new MedicAnt(),
+            // Structural repair §1B: the store, so the diagnosis consumes the typed failure_context
+            // recorded at the failure boundary instead of re-inferring a class from prose.
+            ["medic"] = new MedicAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["archivist"] = new ArchivistAnt(),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps

@@ -140,12 +140,20 @@ public static class ArtifactSchemas
     /// </summary>
     public const string WorkspaceSnapshot = "workspace_snapshot";
 
+    /// <summary>
+    /// The typed record of one task failure, produced AT the failure boundary. Structural-repair
+    /// release §2 — recovery consumes this, never re-inferring failure state from prose. See
+    /// <see cref="Artifacts.FailureContext"/> for the payload shape.
+    /// </summary>
+    public const string FailureContext = "failure_context";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
+            FailureContext,
         };
 
     /// <summary>
@@ -163,6 +171,7 @@ public static class ArtifactSchemas
     public static string? ForAntKind(string? antKind) => (antKind ?? "").ToLowerInvariant() switch
     {
         "failure_diagnosis" => FailureDiagnosis,
+        "failure_context" => FailureContext,
         "memory_candidate" => MemoryCandidate,
         "security_review" => SecurityReview,
         "test_report" => TestReport,

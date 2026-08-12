@@ -1273,7 +1273,14 @@ public sealed class ExecutionService : IExecutionService
         // `MarkFailed` already returned the right answer ("true when terminally failed; false when a
         // bounded retry was scheduled") and this line threw it away. It is now the gate.
         if (decision.Action == TaskOutcomeAction.Fail && terminallyFailed)
+        {
+            // Structural repair §2: the typed failure record is produced HERE, at the boundary
+            // where the failure became terminal — BEFORE the handoffs are ingested, so the medic
+            // task that a failure handoff creates finds its failure_context already persisted.
+            // Recovery consumes this artifact; it never reconstructs failure state from prose.
+            RecordFailureContext(mission, task, execution, runtimeSelection);
             IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
+        }
 
         _memory.LogEvent(mission.Id, "task_outcome_applied",
             $"Task did not complete ({execution.StatusCode}): {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
@@ -1284,6 +1291,78 @@ public sealed class ExecutionService : IExecutionService
                 ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
             }));
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
+    }
+
+    /// <summary>
+    /// Structural repair §2 — the typed <c>failure_context</c> artifact, produced at the terminal
+    /// failure boundary from STRUCTURED state only: the ant's typed <see cref="AntFailure"/>, its
+    /// typed evidence rows, the ambient workspace scope's revision identity, and the runtime
+    /// selection. No prose is parsed here, and an execution that carried no typed failure is
+    /// recorded as <see cref="FailureClass.UnknownFailure"/> — unknown STAYS unknown; it is never
+    /// promoted into InternalDefect by absence of information.
+    ///
+    /// Failure to record the context must never mask the failure itself, so this catches and logs.
+    /// </summary>
+    internal void RecordFailureContext(Mission mission, Task task, AntExecutionResult execution,
+        AntRuntimeSelection runtimeSelection)
+    {
+        try
+        {
+            var cls = execution.Failure?.Class ?? FailureClass.UnknownFailure;
+            if (cls == FailureClass.None) cls = FailureClass.UnknownFailure;
+            var rawError = execution.Failure?.Reason ?? task.FailureReason ?? execution.Summary ?? "";
+
+            var failingChecks = execution.Evidence
+                .Where(e => e.Kind == "check" && (e.Detail?.Contains("success=False") ?? false))
+                .Select(e => e.Value).ToList();
+            var affectedPaths = execution.Evidence
+                .Where(e => e.Kind == "file_path").Select(e => e.Value).ToList();
+
+            var scope = Workspaces.MissionWorkspaceScope.Current;
+            var context = new Anthill.SDK.Artifacts.FailureContext
+            {
+                MissionId = mission.Id,
+                FailedTaskId = task.Id,
+                FailedRole = task.AssignedAnt,
+                TaskType = task.TaskType,
+                Attempt = Math.Max(1, task.AttemptCount),
+                FailureClass = FailureClassNames.Wire(cls),
+                FailureCode = task.FailureType,
+                Retryable = execution.Failure?.Retryable ?? FailureClassify.IsRetryable(cls),
+                RawError = TextUtil.Truncate(rawError, 2000),
+                NormalizedError = Anthill.SDK.Artifacts.FailureContext.NormalizeError(rawError),
+                Provider = runtimeSelection.RuntimeNodeId,
+                FailingChecks = failingChecks,
+                Tool = execution.Evidence.FirstOrDefault(e => e.Kind == "tool")?.Value,
+                ArtifactKinds = execution.Artifacts.Select(a => a.Kind).Distinct().ToList(),
+                AffectedPaths = affectedPaths,
+                PatchSetId = scope?.MaterializedPatchSetId,
+                BaseRevision = scope?.BaseRevision,
+                WorkspaceId = scope?.Id,
+                EnvironmentFingerprint = execution.Metrics.EnvironmentFingerprint,
+            };
+
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.FailureContext,
+                producerRole: task.AssignedAnt,
+                missionId: mission.Id,
+                payload: context.ToJson(),
+                taskId: task.Id));
+
+            _memory.LogEvent(mission.Id, "failure_context_recorded",
+                $"failure_context recorded for '{task.Title}': {context.FailureClass}, signature {context.FailureSignature}",
+                task.Id, task.AssignedAnt, new()
+                {
+                    ["failure_class"] = context.FailureClass,
+                    ["failure_signature"] = context.FailureSignature,
+                    ["retryable"] = context.Retryable,
+                    ["failing_checks"] = failingChecks,
+                });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[execution] could not record failure_context for {task.Id}: {error.Message}");
+        }
     }
 
     /// <summary>
