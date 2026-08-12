@@ -19,6 +19,7 @@ namespace Anthill.Tests;
 /// composed flow: research end-to-end (A), cancellation leaving nothing running (K), and durable
 /// reload keeping the graph (L).
 /// </summary>
+[Collection("specialist-gates")]   // gate toggles are static; serialize with the other togglers
 public class ColonyAcceptanceTests : IDisposable
 {
     private readonly string _dir;
@@ -54,8 +55,22 @@ public class ColonyAcceptanceTests : IDisposable
     {
         var queen = NewQueen("a.db");
         string? missionId = null;
-        queen.RunMission("Summarize in one sentence what the ANTHILL framework does.",
-            onMissionCreated: id => missionId = id);
+        // The archivist is gate-controlled; the scenario asserts its candidates, so its gate is
+        // open for the run — the same pattern every specialist-gate test uses.
+        var specialistsWere = Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution;
+        var archivistWas = Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt;
+        try
+        {
+            Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution = true;
+            Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt = true;
+            queen.RunMission("Summarize in one sentence what the ANTHILL framework does.",
+                onMissionCreated: id => missionId = id);
+        }
+        finally
+        {
+            Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution = specialistsWere;
+            Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt = archivistWas;
+        }
         Assert.NotNull(missionId);
 
         // The mission row is terminal and complete.
