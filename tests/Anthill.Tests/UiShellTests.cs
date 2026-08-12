@@ -1281,9 +1281,11 @@ public class UiShellTests
         // The checkout report is still honestly named, one level down.
         Assert.Contains("Mission workspace checkouts", html);
 
-        // No top-level Scheduled entry; the objectives board stays reachable through Automation.
+        // No top-level Scheduled entry; and (UI/UX pass §5) no standalone Objectives destination —
+        // Objectives folded into Projects. The old /objectives bookmark resolves as an alias.
         Assert.DoesNotContain("label:'Scheduled'", js);
-        Assert.Contains("route:'/objectives'", js);
+        Assert.DoesNotContain("route:'/objectives',page:'objboard'", js.Replace(" ", ""));
+        Assert.Contains("'/objectives':'/projects'", js.Replace(" ", ""));
 
         // Navigation carries navigational labels.
         Assert.DoesNotContain("Patch Colony", html);
