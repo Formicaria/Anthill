@@ -89,7 +89,7 @@ internal sealed class ShellForm : Form
                 http.Timeout = TimeSpan.FromSeconds(10);
                 http.DefaultRequestHeaders.UserAgent.ParseAdd("AnthillDesktop/" + AnthillRuntime.Version);
                 var json = http.GetStringAsync(
-                    "https://api.github.com/repos/thexonexone/operation-anthill/releases/latest")
+                    "https://api.github.com/repos/Formicaria/Anthill/releases/latest")
                     .GetAwaiter().GetResult();
                 var tag = System.Text.Json.JsonDocument.Parse(json)
                     .RootElement.GetProperty("tag_name").GetString() ?? "";
@@ -104,7 +104,7 @@ internal sealed class ShellForm : Form
                     var item = new ToolStripMenuItem($"Update available: v{latest} — open release page");
                     item.Click += (_, _) => System.Diagnostics.Process.Start(
                         new System.Diagnostics.ProcessStartInfo(
-                            $"https://github.com/thexonexone/operation-anthill/releases/tag/{tag}")
+                            $"https://github.com/Formicaria/Anthill/releases/tag/{tag}")
                         { UseShellExecute = true });
                     _tray.ContextMenuStrip!.Items.Insert(0, item);
                     _tray.BalloonTipTitle = $"Anthill v{latest} is available";
