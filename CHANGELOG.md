@@ -1,5 +1,45 @@
 # ANTHILL Changelog
 
+## v0.3.8.49 - Formicaria: five doors, a chat that scrolls, and a colony that says what it's doing
+
+The big UI/UX and architecture pass. The console went from a wall of destinations to five —
+Colony, Projects, Chat, Tools, Settings — and the machinery each one hides got fixed underneath.
+
+Navigation. Consolidated to five destinations. Models, Roles, Model Routing, the Ant Inspector and
+Automation live under Colony now; Integrations folded into Tools; Objectives into Projects; the old
+standalone Dashboard became Colony → Overview. Tools and Settings are first-class tabs, not
+dropdowns. Every route the restructure removed still resolves through ROUTE_ALIAS, so no bookmark
+breaks. The collapsed sidebar shows the Formicaria mark instead of half a clipped word, and the
+top-right glyph opens the Colony view rather than the old dashboard.
+
+Chat. Fixed the scroll: the thread used justify-content:flex-end, which in a flex column drops
+top-overflowing content out of scrollHeight — every message above the last screenful of a long
+conversation was unreachable. It lays out top-down now with the first turn carrying margin-top:auto,
+so short threads still sit at the bottom and long ones scroll in full. Long colony responses collapse
+to a preview with "Show full response" instead of dumping raw mission state. Approvals are the one
+authoritative surface here: the gate is answered in the thread, and the bell takes you to the
+conversation waiting on you rather than a separate approvals screen.
+
+Colony. The map now says what each ant is doing — working, waiting, blocked, awaiting approval,
+communicating, completed, failed — derived from real /graph task state, not fabricated motion. A
+coloured state ring surrounds each ant, urgent states pulse, and a legend explains the colours.
+
+Model routing. The coder and medic both declare they need reasoning, but a fresh install routed
+every role to llama3.1:8b (completion-only), so they answered fluently from a model that can't
+reason. The router now reroutes a declared-reasoning role off a non-reasoning model the same way it
+already did for tool-calling — recorded in the reroute reason, honouring the role's own contract.
+
+Ants and providers. Ollama is no longer offered as a Chat voice — the conversation role picks a real
+provider (a keyed API or an installed agent), while every ant keeps Ollama as backend infrastructure.
+The Ant Inspector shows the model an ant actually runs instead of an agent CLI bolted to a phantom
+local tag.
+
+Terminal. Quick actions are platform-aware — systemd on Linux, service commands on Windows, launchd
+on macOS, nothing on an unknown host — so the console never offers a command the host can't run.
+
+Brand. The real Formicaria mark — a terminal spawning the colony — in the sidebar, as a favicon, and
+the quick-action buttons wear the app's own stroke-icon set instead of emoji.
+
 ## v0.3.8.48 - the project-centered restructure
 
 The directive release: Anthill reorganized around long-lived Projects, top to bottom.
