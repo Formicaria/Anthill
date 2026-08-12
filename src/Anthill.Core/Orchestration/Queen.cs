@@ -712,7 +712,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // served every downstream consumer it will ever have. AFTER FinalizeMission, because the
         // evaluation reads the revision-freshness pairing off the tasks; the tree itself is not
         // needed for that, but releasing before evaluation would be the wrong order to teach.
-        Workspaces.MissionRevisionRegistry.ReleaseMission(mission.Id);
+        // Fully qualified: the Queen's own `Workspaces` property (the workspace manager) shadows
+        // the namespace of the same name.
+        Anthill.Core.Workspaces.MissionRevisionRegistry.ReleaseMission(mission.Id);
         Memory.SaveMission(mission);
         // The evaluation is persisted AFTER the final SaveMission on purpose: SaveMission is an
         // INSERT OR REPLACE, and a row replacement erases columns it does not carry — writing the
