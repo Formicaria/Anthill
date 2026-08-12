@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ANTHILL</title>
-<!-- v0.4.0 (§19): the Formicaria mark as a data-URI SVG favicon — terminal + node legs, dark tile
+<!-- v0.3.8.49 (§19): the Formicaria mark as a data-URI SVG favicon — terminal + node legs, dark tile
      so it reads on both light and dark browser chrome. No extra asset request, scales crisply. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cg fill='none' stroke='%23eef2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6.25' y='5.25' width='19.5' height='15' rx='3.6'/%3E%3Cpolyline points='10.6,10 14.2,13 10.6,16'/%3E%3Cline x1='15.7' y1='16' x2='19.6' y2='16'/%3E%3Cpath d='M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6'/%3E%3C/g%3E%3Cg fill='%2393bdf2'%3E%3Ccircle cx='11' cy='25.7' r='2.05'/%3E%3Ccircle cx='16' cy='26.1' r='2.5'/%3E%3Ccircle cx='21' cy='25.7' r='2.05'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0b1220">
@@ -112,7 +112,7 @@
 .ov2-phase span.now{color:var(--anthill-text);border-color:var(--role-mission-control);box-shadow:var(--glow-purple);}
 .ov2-phase span.fail{color:var(--status-danger);border-color:rgba(255,65,108,.5);}
 .ov2-qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
-/* v0.4.0 (§7): quick-action buttons stack a consistent 16px stroke icon over the label — one icon
+/* v0.3.8.49 (§7): quick-action buttons stack a consistent 16px stroke icon over the label — one icon
    system, one size, one alignment, replacing the old mixed-weight emoji. */
 .ov2-qa button{background:rgba(255,255,255,.03);border:1px solid var(--anthill-border);border-radius:8px;color:var(--anthill-text);
   font-size:10px;padding:10px 6px;cursor:pointer;text-align:center;
@@ -249,7 +249,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
   padding:13px 14px 11px;display:flex;align-items:center;gap:9px;
   border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;white-space:nowrap;
 }
-/* v0.4.0 (§16): the mark is the load-bearing brand element. It never shrinks and never clips, so
+/* v0.3.8.49 (§16): the mark is the load-bearing brand element. It never shrinks and never clips, so
    the collapsed rail centres a whole logo rather than half a word. */
 .nav-logo-mark{width:24px;height:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .nav-logo-mark svg{width:24px;height:24px;display:block;}
@@ -476,7 +476,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .chud-caste{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);}
 .chud-caste .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .chud-caste.on{color:var(--text);}
-/* v0.4.0 (§18): the state-legend header separates caste colours from state-ring colours. */
+/* v0.3.8.49 (§18): the state-legend header separates caste colours from state-ring colours. */
 .chud-state-hd{font-size:8px;font-weight:700;letter-spacing:.1em;color:var(--dim);margin:6px 0 2px;padding-top:5px;border-top:1px solid rgba(255,255,255,.06);}
 .chud-caste.on .dot{box-shadow:0 0 7px currentColor;animation:chud-pulse 1.5s ease-in-out infinite;}
 .chud-phero{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:8px 10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
@@ -563,7 +563,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* v0.3.8.42 (§3/§20): the .mission-input / .send-btn rules retired with the composers they
    styled. The rows they sat in now hold one affordance each — the way into Chat. */
 .start-in-chat{font-size:12px;padding:8px 16px;border-radius:18px;}
-/* v0.4.0 (§6): the retired composer's body hugs its call-to-action instead of stretching to fill
+/* v0.3.8.49 (§6): the retired composer's body hugs its call-to-action instead of stretching to fill
    the widget — the old "Mission Command" panel rendered as a large empty amber block because its
    single button was allowed to grow to the card's full height. Now it is a compact CTA that starts
    the mission where missions live: Chat. */
@@ -1212,7 +1212,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
    retry sits beside the failure it retries. */
 .chud-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;margin-bottom:6px;
   max-width:220px;white-space:normal;}
-/* v0.4.0 (§2) — the scroll fix. `justify-content:flex-end` LOOKED right (newest message at the
+/* v0.3.8.49 (§2) — the scroll fix. `justify-content:flex-end` LOOKED right (newest message at the
    bottom) but silently broke scrolling: in a flex column, content that overflows the START (top)
    edge is not counted in scrollHeight and cannot be scrolled to, so every message above the last
    screenful of a long conversation was trapped off-screen and unreachable. Instead the thread lays
@@ -1251,7 +1251,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-code{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:6px;
   padding:9px 11px;margin:6px 0;overflow-x:auto;font-family:var(--mono);font-size:11px;
   line-height:1.5;white-space:pre;max-width:100%;}
-/* v0.4.0 (§3) — long colony responses are collapsed by default so Chat reads like an assistant,
+/* v0.3.8.49 (§3) — long colony responses are collapsed by default so Chat reads like an assistant,
    not a debug console. The compact view clamps to a few lines with a soft fade; the full text is
    one click away and never lost. Only colony turns collapse — the operator's own words never do. */
 .chat-body.clamp{max-height:212px;overflow:hidden;position:relative;
@@ -1532,11 +1532,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <!-- -- Nav Rail ------------------------------------------------------------ -->
   <nav id="nav-rail" aria-label="Primary">
     <div class="nav-logo">
-      <!-- v0.4.0 (§16,§19): the Formicaria mark — a hex colony-cell holding a stylised mound and
+      <!-- v0.3.8.49 (§16,§19): the Formicaria mark — a hex colony-cell holding a stylised mound and
            forager. Minimal, mono-stroke, recognisable at favicon size; it centres in collapsed mode
            so the brand is never clipped to a half-word. -->
       <span class="nav-logo-mark" aria-hidden="true">
-        <!-- v0.4.0 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
+        <!-- v0.3.8.49 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
              node legs, the colony branching out of the command line. Terminal in the foreground
              colour, nodes in the brand's light blue; both are CSS vars so the mark rides the theme
              and stays crisp at favicon size. -->
@@ -1702,7 +1702,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
         <!-- v1.8.25 UI Phase 10: notification center -->
         <button class="hdr-btn" id="notif-bell" title="Colony activity — open the Colony view" aria-label="Open Colony activity view">
-          <!-- v0.4.0 (§17): a colony/nodes glyph, not a bell. It opens the ambient Colony view. -->
+          <!-- v0.3.8.49 (§17): a colony/nodes glyph, not a bell. It opens the ambient Colony view. -->
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>
           <span id="notif-count"></span>
         </button>
@@ -1742,7 +1742,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <!-- v0.3.8.42: quick actions say what clicking does. The old patch/diagnose labels
                    were navigation dressed as mutations — clicking neither patched nor diagnosed
                    anything. Navigational labels for navigation. -->
-              <!-- v0.4.0 (§7): one coherent icon system — the app's Feather-style stroke SVGs,
+              <!-- v0.3.8.49 (§7): one coherent icon system — the app's Feather-style stroke SVGs,
                    replacing the emoji that read as mascot decoration on primary controls. -->
               <button data-onclick="ov2FocusMission()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>Create Mission</button>
               <!-- Both branches relabelled these independently — the old action verbs promised
@@ -3339,7 +3339,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-primary" id="sh-run" disabled>Run</button>
           </div>
         </div>
-        <!-- v0.4.0 (§14): quick actions are rendered from /shell/info's platform-aware list, not
+        <!-- v0.3.8.49 (§14): quick actions are rendered from /shell/info's platform-aware list, not
              hardcoded Linux buttons. Populated by initShell(); the label reflects the target OS. -->
         <div id="sh-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
           <span id="sh-quick-label" style="font-size:10px;color:var(--dim);align-self:center;">Quick:</span>
