@@ -379,6 +379,12 @@ public sealed partial class SqliteMemory : IDisposable
             filename TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0,
             content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_conversation_attachments ON conversation_attachments(turn_id)",
+        // v0.3.8.50 (field report): the operator's names and colors for their ants. An override
+        // table, not a rename of the registry — the role id stays the system's, the face is theirs.
+        @"CREATE TABLE IF NOT EXISTS ant_profiles (
+            ant_id TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL)",
         // Decisions are their own table: an operator asking "why was this allowed" is asking about
         // ACTIONS, not turns, and one turn can take several. Refusals are stored too — a refused
         // attempt is the one nobody saw happen.
