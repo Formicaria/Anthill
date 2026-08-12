@@ -6533,13 +6533,27 @@ function antcfgModelOptions(provider,curModel){
   return `<option value="">— default —</option>${opts}${extra}`;
 }
 
-function antcfgProviderOptions(curProvider){
-  const providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
-  return providers.map(p=>{
+function antcfgProviderOptions(curProvider, opts){
+  opts=opts||{};
+  let providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
+  // v0.4.0 (§4): Ollama is NOT a user-facing Chat provider. It stays fully available to ants — every
+  // other role below still lists it — but the `conversation` role that speaks in Chat must route to
+  // a real provider (a keyed API or an installed agent), so it is dropped from that one dropdown.
+  // Chat provider configuration and ant execution infrastructure are deliberately separated here.
+  if(opts.excludeOllama) providers=providers.filter(p=>p.provider!=='ollama');
+  const isOllamaNow=(curProvider||'ollama')==='ollama';
+  let html='';
+  // If the stored chat route is still Ollama (or unset), show a selected placeholder so the operator
+  // SEES they must pick a chat provider, rather than the select quietly showing something as active.
+  if(opts.excludeOllama && isOllamaNow)
+    html+=`<option value="" selected disabled>— choose a chat provider —</option>`;
+  html+=providers.map(p=>{
     const connected=p.provider==='ollama'||antcfgConfigured.has(p.provider);
     const label=connected?p.name:`${p.name} (not connected)`;
-    return `<option value="${p.provider}"${p.provider===(curProvider||'ollama')?' selected':''}>${label}</option>`;
+    const selected=(!(opts.excludeOllama&&isOllamaNow) && p.provider===(curProvider||'ollama'))?' selected':'';
+    return `<option value="${p.provider}"${selected}>${label}</option>`;
   }).join('');
+  return html;
 }
 
 /**
@@ -6558,9 +6572,9 @@ function antcfgProviderOptions(curProvider){
 var ORCHESTRATION_ROLES = [
   { id:'planner',    label:'Planner',    why:'Turns a goal into the task plan. If this model is missing the colony silently falls back to a static plan.' },
   { id:'strategist', label:'Strategist', why:'Adaptive mission control — decides whether to replan mid-mission.' },
-  // v0.3.8.42: who speaks for the colony in Chat. Any provider is a valid answer — local model,
-  // keyed API, or an installed agent CLI — which is the whole point of routing it.
-  { id:'conversation', label:'Conversation', why:'Answers chat turns. Route it to whichever provider should speak for the colony — Ollama, a keyed API, or an installed agent.' },
+  // v0.4.0 (§4): who speaks for the colony in Chat. A real provider only — a keyed API or an
+  // installed agent — NOT Ollama, which stays an ant-side backend rather than a chat voice.
+  { id:'conversation', label:'Conversation', why:'Answers chat turns. Route it to a keyed API or an installed agent — the colony’s voice in Chat. (Ollama stays available to ants, not here.)' },
   { id:'fallback',   label:'Fallback',   why:'Used by any role with no route of its own, and when a preferred route is unhealthy.' },
 ];
 
@@ -6598,13 +6612,16 @@ function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
     <div class="antcfg-grid" style="margin-bottom:14px">
       ${ORCHESTRATION_ROLES.map(r=>{
         const p=routes[r.id]?.provider||'ollama', m=routes[r.id]?.model||'';
+        // v0.4.0 (§4): the conversation (chat) role hides Ollama; every other orchestration role
+        // keeps it, because Ollama is legitimate ant-side infrastructure.
+        const chatRole=r.id==='conversation';
         return `<div class="antcfg-card">
           <div style="font-size:13px;font-weight:700">${escapeHtml(r.label)}</div>
           <div class="antcfg-role">orchestration · ${escapeHtml(r.id)}</div>
           <div style="font-size:10px;color:var(--muted);line-height:1.45;margin:6px 0 8px">${escapeHtml(r.why)}</div>
           <div class="antcfg-field">
             <label>Provider</label>
-            <select data-caste="${r.id}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(r.label)}">${antcfgProviderOptions(p)}</select>
+            <select data-caste="${r.id}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(r.label)}">${antcfgProviderOptions(p,{excludeOllama:chatRole})}</select>
           </div>
           <div class="antcfg-field">
             <label>Model (route)</label>
