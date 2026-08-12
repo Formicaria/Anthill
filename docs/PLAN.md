@@ -1,7 +1,15 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.48** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.49** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.49: Formicaria — the UI/UX and architecture pass. Navigation folded to five destinations
+> (Colony, Projects, Chat, Tools, Settings); Chat scrolls correctly and condenses mission
+> responses, and is the one authoritative approval surface; the colony map shows each ant's real
+> state (working, waiting, blocked, awaiting approval) from /graph rather than fabricated motion;
+> the router reroutes declared-reasoning roles off a model that cannot reason; the terminal's quick
+> actions are platform-aware; Ollama is no longer a Chat voice but stays ant infrastructure; and the
+> real Formicaria mark ships in the sidebar and as a favicon.
 
 > v0.3.8.48: the project-centered restructure — conversations choose their project, a real
 > restart-safe scheduler whose runs are conversations, approvals on the conversation itself
