@@ -4224,13 +4224,23 @@ async function chatOpen(id){
             // BUILT WHITESPACE-TIGHT on purpose (found live, "the bubbles look like shit"): the
             // bubble renders with pre-wrap, so any newline or indentation inside this template
             // becomes literal blank space in every message. One string, no stray characters.
+            // v0.4.0 (§3): a long colony turn is collapsed to a compact preview with a "Show full
+            // response" toggle — Chat should read like an assistant, not dump raw mission state. The
+            // operator's own messages are never collapsed. "Long" is measured on the raw text so
+            // the decision is stable regardless of how it renders.
+            const raw=String(t.content||'');
+            const isLong=!mine && (raw.length>900 || (raw.match(/\n/g)||[]).length>16);
+            const body=isLong
+              ? `<div class="chat-body clamp" data-body="${i}">${chatRenderContent(t.content)}</div>`
+                + `<button class="chat-expand" data-expand="${i}" aria-expanded="false">Show full response</button>`
+              : chatRenderContent(t.content);
             return `<div class="chat-turn ${mine?'user':'colony'}">`
               + `<span class="who"><span class="who-name">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>`
               + (when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:'')
               + tok
               + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
               + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
-              + chatRenderContent(t.content)
+              + body
               + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`📄 ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
               + `</div>`;
           }).join('')
@@ -4243,6 +4253,15 @@ async function chatOpen(id){
       thread.querySelectorAll('.chat-copy:not(.chat-edit)').forEach(b=>b.addEventListener('click',async ()=>{
         try{ await navigator.clipboard.writeText(chatTurnContents[+b.dataset.i]||''); b.textContent='✓'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
         catch{ b.textContent='✕'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
+      }));
+      // v0.4.0 (§3): expand/collapse a long colony response. CSP is script-src 'self', so the
+      // handler is bound here, never inlined.
+      thread.querySelectorAll('.chat-expand').forEach(b=>b.addEventListener('click',()=>{
+        const body=thread.querySelector('.chat-body[data-body="'+b.dataset.expand+'"]');
+        if(!body) return;
+        const clamped=body.classList.toggle('clamp');
+        b.setAttribute('aria-expanded',clamped?'false':'true');
+        b.textContent=clamped?'Show full response':'Show less';
       }));
       if(nearBottom) thread.scrollTop = thread.scrollHeight;
       else thread.scrollTop = keepTop;
@@ -5527,13 +5546,25 @@ function startPolling(){
 }
 
 // Bell ? navigate to colony and scroll to approvals card
-document.getElementById('approval-bell').addEventListener('click',()=>{
-  showPage('colony');
-  setTimeout(()=>{
-    const card=document.getElementById('approvals-card');
-    if(card&&card.style.display!=='none') card.scrollIntoView({behavior:'smooth'});
-  },120);
-  pollApprovals();
+// v0.4.0 (§1): approvals are decided IN Chat — that is the one authoritative approval surface.
+// The bell no longer opens a separate Colony approvals card (a competing surface §1 forbids); it
+// takes the operator to the conversation that is waiting on them and lets them approve/reject in
+// the thread, where the request, the decision and what follows all stay in context.
+document.getElementById('approval-bell').addEventListener('click',async ()=>{
+  go('/chat');
+  try{
+    const r=await api('/conversations');
+    const convs=(r&&r.data&&r.data.conversations)||[];
+    // Prefer a conversation the runtime has flagged as waiting; fall back to the newest.
+    let target=convs.find(c=>c.needs_operator||/await|waiting|approv/i.test(String(c.doing||'')));
+    if(!target){
+      for(const c of convs){
+        const d=await api('/conversations/'+encodeURIComponent(c.id));
+        if(d&&d.data&&d.data.needs_operator){ target=c; break; }
+      }
+    }
+    if(target){ chatComposingNew=false; chatOpen(target.id); }
+  }catch(e){ pollWarnOnce('approvalBell', e); }
 });
 
 // ============================================================================
