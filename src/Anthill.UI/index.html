@@ -563,6 +563,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* v0.3.8.42 (§3/§20): the .mission-input / .send-btn rules retired with the composers they
    styled. The rows they sat in now hold one affordance each — the way into Chat. */
 .start-in-chat{font-size:12px;padding:8px 16px;border-radius:18px;}
+/* v0.4.0 (§6): the retired composer's body hugs its call-to-action instead of stretching to fill
+   the widget — the old "Mission Command" panel rendered as a large empty amber block because its
+   single button was allowed to grow to the card's full height. Now it is a compact CTA that starts
+   the mission where missions live: Chat. */
+#ov-composer-body{display:flex;flex-direction:column;align-items:flex-start;gap:6px;align-self:start;}
+#ov-composer-body .mn-prompt{background:none;border:none;padding:0;}
+#ov-composer-body .start-in-chat{flex:0 0 auto;align-self:flex-start;}
 .bar-hint{font-size:9px;color:var(--dim);margin-top:3px;text-align:center;}
 
 /* -- Cards / Panels ---------------------------------------------------------- */
