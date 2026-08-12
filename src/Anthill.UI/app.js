@@ -880,6 +880,38 @@ const ANT_MAP={
 };
 const ANT_R=15, QUEEN_R=26;
 const colonyActivity={ researcher:0, web:0, file:0, coder:0, builder:0, verifier:0 };
+// v0.4.0 (§18) — discrete per-ant STATE, derived from the SAME real /graph task statuses that
+// already drive `colonyActivity`. The scalar answers "how busy"; this answers "doing what", which
+// is what the colony view has to communicate: idle, working, waiting, communicating, blocked,
+// awaiting approval, completed, failed. Keyed by ant id AND worker id; filled in pollGraph().
+const colonyAntState={};
+// Ants currently emitting an ant-to-ant signal this frame (a live handoff edge). Rebuilt each poll.
+let colonyCommunicating=new Set();
+// True when the colony is blocked on a human decision — a pending approval. Ties the map to the
+// Chat approval surface (§1): the ant that proposed the change reads as "awaiting approval".
+let colonyAwaitingApproval=false;
+// The colony state vocabulary and its colour, one source for the ring, the legend and the inspector.
+const STATE_COLORS={
+  working:'#34d399', waiting:'#fbbf24', communicating:'#22d3ee', blocked:'#fb923c',
+  awaiting_approval:'#f59e0b', completed:'#60a5fa', failed:'#f87171', idle:'#5b6b7f',
+};
+const STATE_LABEL={
+  working:'working', waiting:'waiting', communicating:'communicating', blocked:'blocked',
+  awaiting_approval:'awaiting approval', completed:'completed', failed:'failed', idle:'idle',
+};
+// Higher wins when an ant holds several tasks at once: a blockage or an approval must surface over
+// a concurrent running task, because those are the states an operator has to act on.
+const STATE_RANK={ idle:0, completed:1, waiting:2, failed:3, working:4, communicating:5, blocked:6, awaiting_approval:7 };
+function antTaskState(status){
+  switch(status){
+    case 'running': return 'working';
+    case 'ready': case 'pending': return 'waiting';
+    case 'blocked': return 'blocked';
+    case 'failed': return 'failed';
+    case 'complete': case 'completed': case 'succeeded': return 'completed';
+    default: return 'idle';
+  }
+}
 let totalModelCalls=0, modelCallRate=0, colonyRunning=false;
 let nodes=[], edges=[], dataFlowEdges=[], particles=[], selectedNode=null, hoveredNode=null;
 
@@ -1330,10 +1362,19 @@ function drawChambers(){
 }
 
 function updateNodeActivity(){
+  // v0.4.0 (§18): ants that are the SOURCE of a live data-flow edge this frame are communicating —
+  // an ant-to-ant handoff in progress. Computed from the real dependency edges buildDataFlowEdges
+  // derives from the task graph, so the signal is a real interaction, not decoration.
+  colonyCommunicating=new Set(dataFlowEdges.map(e=>e.from));
   nodes.forEach(n=>{
-    if(n.id==='queen'){n.activity=colonyRunning?1:.3;return;}
+    if(n.id==='queen'){n.activity=colonyRunning?1:.3;n.state=colonyRunning?'working':'idle';return;}
     const key=n.nodeType==='worker'?n.worker:n.ant;
     n.activity=Math.min(1,Math.max(0,colonyRunning?(colonyActivity[key]??colonyActivity[n.ant]??0):0));
+    // Discrete state: the ant's own state, lifted to 'communicating' when it is actively handing
+    // off AND not already in a more urgent state (blocked / awaiting approval outrank a handoff).
+    let st=colonyAntState[key]||colonyAntState[n.ant]||'idle';
+    if(colonyCommunicating.has(n.id) && (STATE_RANK[st]??0) < STATE_RANK.communicating) st='communicating';
+    n.state=st;
   });
 }
 
@@ -1465,6 +1506,24 @@ function drawNode(n,ts){
     }
   }
   if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
+  // v0.4.0 (§18): the discrete-state ring — a coloured arc around the ant in its state's colour, so
+  // blocked/awaiting-approval/failed/working read at a glance rather than being inferred from a
+  // glow. Idle draws nothing (a quiet colony stays quiet). The two states an operator must act on —
+  // blocked and awaiting approval — pulse; the rest are steady.
+  const st=n.state;
+  if(st && st!=='idle' && r>=4){
+    const [sr,sg,sb]=h2rgb(STATE_COLORS[st]||STATE_COLORS.idle);
+    const urgent=(st==='blocked'||st==='awaiting_approval'||st==='failed');
+    const ringPulse=urgent?(Math.sin(ts*.006+n.pp)*.28+.72):1;
+    ctx.beginPath();ctx.arc(sp.x,sp.y,r*1.42,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(${sr},${sg},${sb},${(urgent?.9:.7)*ringPulse})`;
+    ctx.lineWidth=Math.max(1.4,2.1*camZ);
+    if(st==='waiting'||st==='completed'){ctx.setLineDash([4*camZ,3*camZ]);}
+    ctx.stroke();ctx.setLineDash([]);
+    // A small filled state dot at 4 o'clock, so the state is legible even when rings overlap.
+    if(r>7){ctx.beginPath();ctx.arc(sp.x+r*1.0,sp.y+r*1.0,Math.max(2,2.6*camZ),0,Math.PI*2);
+      ctx.fillStyle=`rgba(${sr},${sg},${sb},.95)`;ctx.fill();}
+  }
 }
 
 // -- Mouse (all coords via getBoundingClientRect) ------------------------------
@@ -1841,7 +1900,9 @@ function showInspector(n){
   const tasks=n.nodeType==='worker'
     ? (lastGraphData?.worker_counts?.[n.worker]??0)
     : (lastGraphData?.ant_counts?.[n.ant]??0);
-  const statusLine=n.id==='queen'?'Commander':colonyRunning&&act>0?'Active':'Idle';
+  // v0.4.0 (§18): the inspector names the ant's discrete STATE, not just Active/Idle — the same
+  // word the ring shows, so hovering an amber ring and reading the panel agree.
+  const statusLine=n.id==='queen'?'Commander':(n.state&&n.state!=='idle'?STATE_LABEL[n.state]:(colonyRunning&&act>0?'Active':'Idle'));
   // Real live task load for this caste from the current mission graph.
   const antTasks=(lastGraphData?.nodes||[]).filter(t=>n.nodeType==='worker'?t.assigned_worker===n.worker:t.assigned_ant===n.ant);
   const tRunning=antTasks.filter(t=>t.status==='running').length;
@@ -2017,6 +2078,10 @@ async function pollStatus(){
     const bc=document.getElementById('bell-count');
     bc.style.display=pending>0?'block':'none';
     bc.textContent=pending;
+    // v0.4.0 (§18): a pending approval is a colony state, not just a badge — the map shows the
+    // change-proposing ants awaiting approval so the operator sees WHERE the decision sits.
+    colonyAwaitingApproval=pending>0;
+    if(colonyAwaitingApproval){ ['coder','builder'].forEach(k=>{ colonyAntState[k]='awaiting_approval'; }); updateNodeActivity(); }
   }catch{ setConnected(false); }
 }
 
@@ -2370,6 +2435,21 @@ async function pollGraph(){
     });
     Object.keys(colonyActivity).forEach(k=>delete colonyActivity[k]);
     Object.keys(live).forEach(k=>{const s=live[k];colonyActivity[k]=!s?0:(s.running>0?1:(s.queued>0?0.35:0));});
+    // v0.4.0 (§18): discrete state per ant/worker from the real task statuses — the highest-ranked
+    // state an ant currently holds. Rebuilt fresh each poll so a cleared mission reads idle again.
+    Object.keys(colonyAntState).forEach(k=>delete colonyAntState[k]);
+    (r.data?.nodes||[]).forEach(t=>{
+      const cand=antTaskState(t.status);
+      [t.assigned_ant,t.assigned_worker].filter(Boolean).forEach(k=>{
+        const cur=colonyAntState[k]||'idle';
+        if((STATE_RANK[cand]??0)>=(STATE_RANK[cur]??0)) colonyAntState[k]=cand;
+      });
+    });
+    // Awaiting approval (§1 tie-in): the change-proposing ants read as awaiting approval while a
+    // human decision is pending — the same signal the Chat gate shows, mirrored on the map.
+    if(colonyAwaitingApproval){
+      ['coder','builder'].forEach(k=>{ colonyAntState[k]='awaiting_approval'; });
+    }
     updateNodeActivity();
     if(selectedNode) showInspector(selectedNode);
     buildDataFlowEdges(r.data?.nodes||[]);
@@ -2438,11 +2518,20 @@ function renderColonyLegend(){
 
   // v2.14.15: no arbitrary cap. This used to .slice(0,15), which silently dropped all eight
   // homelab ants from the legend while they were still drawn on the canvas.
-  el.innerHTML = notice + roles.map(roleId).map(a=>{
+  const casteRows = roles.map(roleId).map(a=>{
     const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
     const on=(colonyActivity[a]||0)>0;
     return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${am.color};background:${am.color}"></span>${am.label}</div>`;
   }).join('');
+  // v0.4.0 (§18): a legend for the STATE ring colours — only the states currently present on the
+  // map, so a quiet colony shows a short list and a busy one explains every ring the operator sees.
+  const liveStates=[...new Set(nodes.map(n=>n.state).filter(s=>s&&s!=='idle'))]
+    .sort((a,b)=>(STATE_RANK[b]??0)-(STATE_RANK[a]??0));
+  const stateRows = liveStates.length
+    ? `<div class="chud-state-hd">STATES</div>`+liveStates.map(s=>
+        `<div class="chud-caste on"><span class="dot" style="color:${STATE_COLORS[s]};background:${STATE_COLORS[s]}"></span>${escapeHtml(STATE_LABEL[s]||s)}</div>`).join('')
+    : '';
+  el.innerHTML = notice + casteRows + stateRows;
   document.getElementById('chud-legend-retry')?.addEventListener('click', colonyRegistryRetry);
 }
 
