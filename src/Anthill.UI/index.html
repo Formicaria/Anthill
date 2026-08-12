@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ANTHILL</title>
+<!-- v0.4.0 (§19): the Formicaria mark as a data-URI SVG favicon — terminal + node legs, dark tile
+     so it reads on both light and dark browser chrome. No extra asset request, scales crisply. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cg fill='none' stroke='%23eef2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6.25' y='5.25' width='19.5' height='15' rx='3.6'/%3E%3Cpolyline points='10.6,10 14.2,13 10.6,16'/%3E%3Cline x1='15.7' y1='16' x2='19.6' y2='16'/%3E%3Cpath d='M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6'/%3E%3C/g%3E%3Cg fill='%2393bdf2'%3E%3Ccircle cx='11' cy='25.7' r='2.05'/%3E%3Ccircle cx='16' cy='26.1' r='2.5'/%3E%3Ccircle cx='21' cy='25.7' r='2.05'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="theme-color" content="#0b1220">
 <style id="anthill-tokens">
 /* V2.2 Pass A — ANTHILL global design system (Overview + Colony revision).
    Centralized theme tokens + shared component classes. Additive: existing styles untouched;
@@ -1518,10 +1522,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            forager. Minimal, mono-stroke, recognisable at favicon size; it centres in collapsed mode
            so the brand is never clipped to a half-word. -->
       <span class="nav-logo-mark" aria-hidden="true">
+        <!-- v0.4.0 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
+             node legs, the colony branching out of the command line. Terminal in the foreground
+             colour, nodes in the brand's light blue; both are CSS vars so the mark rides the theme
+             and stays crisp at favicon size. -->
         <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M16 2.5 27.7 9v13L16 28.5 4.3 22V9L16 2.5Z" stroke="var(--queen)" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M8.5 21h15l-4.7-8.2a3 3 0 0 0-5.2 0L8.5 21Z" fill="var(--queen)" fill-opacity=".14" stroke="var(--queen)" stroke-width="1.4" stroke-linejoin="round"/>
-          <circle cx="16" cy="10.6" r="1.7" fill="var(--queen)"/>
+          <rect x="6.25" y="5.25" width="19.5" height="15" rx="3.6"
+                stroke="var(--logo-fg,#eef2f7)" stroke-width="2"/>
+          <polyline points="10.6,10 14.2,13 10.6,16"
+                stroke="var(--logo-fg,#eef2f7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="15.7" y1="16" x2="19.6" y2="16"
+                stroke="var(--logo-fg,#eef2f7)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6"
+                stroke="var(--logo-fg,#eef2f7)" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="11" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
+          <circle cx="16" cy="26.1" r="2.5"  fill="var(--logo-node,#93bdf2)"/>
+          <circle cx="21" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
         </svg>
       </span>
       <span class="nav-logo-wordmark">
