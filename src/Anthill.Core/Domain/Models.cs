@@ -68,6 +68,18 @@ public sealed class Task
     /// </summary>
     public string? DeterministicBlock { get; set; }
 
+    /// <summary>
+    /// Structural repair §3/§4 — REVISION LINEAGE, transient like <see cref="GenerationDegraded"/>.
+    /// <c>ProducedRevisionId</c> is stamped on the task whose patch set was materialized into a
+    /// mission revision; <c>RanRevisionId</c> is stamped on a deterministic check task (tester/
+    /// soldier) that executed INSIDE that revision's tree. MissionVerification requires the latest
+    /// produced revision to have matching fresh check evidence — evidence from an earlier revision
+    /// (or from the unpatched mission workspace, where RanRevisionId stays null) does not satisfy a
+    /// later candidate. In-memory, consumed by the single live evaluation.
+    /// </summary>
+    public string? ProducedRevisionId { get; set; }
+    public string? RanRevisionId { get; set; }
+
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
@@ -94,6 +106,7 @@ public sealed class Task
         CompletedAt = CompletedAt, FailedAt = FailedAt, SkippedAt = SkippedAt, ElapsedSeconds = ElapsedSeconds,
         AttemptCount = AttemptCount, MaxAttempts = MaxAttempts, FailureReason = FailureReason, FailureType = FailureType,
         SkippedReason = SkippedReason, BlockedReason = BlockedReason,
+        ProducedRevisionId = ProducedRevisionId, RanRevisionId = RanRevisionId,
     };
 }
 

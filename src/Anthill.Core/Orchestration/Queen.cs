@@ -167,7 +167,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             // v3.8.25: the store, so the review reads the PATCH rather than prose about it.
             ["soldier"] = new SoldierAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["scribe"] = new ScribeAnt(Tools),
-            ["medic"] = new MedicAnt(),
+            // Structural repair §1B: the store, so the diagnosis consumes the typed failure_context
+            // recorded at the failure boundary instead of re-inferring a class from prose.
+            ["medic"] = new MedicAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["archivist"] = new ArchivistAnt(),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
@@ -706,6 +708,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         var stopReason = Execution.Execute(mission, context, missionCts.Token);
 
         var evaluation = FinalizeMission(mission, context, stopReason);
+        // Structural repair §3: the mission is terminal — its materialized revision (if any) has
+        // served every downstream consumer it will ever have. AFTER FinalizeMission, because the
+        // evaluation reads the revision-freshness pairing off the tasks; the tree itself is not
+        // needed for that, but releasing before evaluation would be the wrong order to teach.
+        // Fully qualified: the Queen's own `Workspaces` property (the workspace manager) shadows
+        // the namespace of the same name.
+        Anthill.Core.Workspaces.MissionRevisionRegistry.ReleaseMission(mission.Id);
         Memory.SaveMission(mission);
         // The evaluation is persisted AFTER the final SaveMission on purpose: SaveMission is an
         // INSERT OR REPLACE, and a row replacement erases columns it does not carry — writing the
