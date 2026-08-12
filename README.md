@@ -213,7 +213,7 @@ container networking.
 
 ```bash
 git clone https://github.com/Formicaria/Anthill.git
-cd operation-anthill
+cd Anthill
 docker compose up -d --build
 docker compose logs -f anthill
 ```
@@ -519,7 +519,7 @@ Clone and run:
 
 ```bash
 git clone https://github.com/Formicaria/Anthill.git
-cd operation-anthill
+cd Anthill
 dotnet run --project src/Anthill.Cli -- --api --host 127.0.0.1
 ```
 
