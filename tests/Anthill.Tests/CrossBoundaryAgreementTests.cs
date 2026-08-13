@@ -449,10 +449,256 @@ public class CrossBoundaryAgreementTests
         Assert.Equal(PatchApplyStatus.Overwrote,
             PatchApply.Compute(PatchApply.Add, null, "hello", currentContent: "was here").Status);
 
+    /// <summary>
+    /// v0.3.8.52 rewrote this test's subject. It used to assert that "delete" was refused as an
+    /// unsupported change type — true then, and the reason it is worth keeping a note here: the
+    /// assertion that PROVED the old restriction is the assertion that had to change when the
+    /// restriction lifted, and silently deleting it would have left nothing checking that an
+    /// genuinely unknown change type is still refused rather than defaulted to a modify.
+    /// </summary>
     [Fact]
     public void AnUnsupportedChangeType_IsRefusedRatherThanTreatedAsAModify() =>
         Assert.Equal(PatchApplyStatus.RefusedUnsupportedChangeType,
-            PatchApply.Compute("delete", "old", "new", "current").Status);
+            PatchApply.Compute("chmod", "old", "new", "current").Status);
+
+    // ---------------------------------------------------------------------------------------
+    // 2b. delete and rename (v0.3.8.52) — AUTONOMY-10 Phase 1 item 3.
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE restructure, asserted directly. The <c>new_content</c> non-empty guard used to sit ABOVE
+    /// the change-type branches, so a delete — which by definition carries no content — was refused
+    /// as malformed before any delete branch could run. This is the test that fails if that ordering
+    /// is ever restored.
+    /// </summary>
+    [Fact]
+    public void ADelete_ReachesItsBranchWithoutCarryingContent() =>
+        Assert.Equal(PatchApplyStatus.Deleted,
+            PatchApply.Compute(PatchApply.Delete, oldContent: null, newContent: null,
+                currentContent: "the file that is about to go").Status);
+
+    /// <summary>A delete produces no bytes, and a caller writing <c>Content!</c> on the strength of
+    /// <c>Ok</c> alone would dereference null. <c>WritesContent</c> is the predicate that tells the
+    /// three appliers apart from each other's mistakes.</summary>
+    [Fact]
+    public void ADelete_SucceedsWithNoContentToWrite()
+    {
+        var outcome = PatchApply.Compute(PatchApply.Delete, null, null, "gone soon");
+
+        Assert.True(outcome.Ok);
+        Assert.False(outcome.WritesContent);
+        Assert.Null(outcome.Content);
+    }
+
+    [Fact]
+    public void ADeleteOfAMissingFile_IsRefusedRatherThanTreatedAsAlreadyDone() =>
+        Assert.Equal(PatchApplyStatus.RefusedTargetMissing,
+            PatchApply.Compute(PatchApply.Delete, null, null, currentContent: null).Status);
+
+    /// <summary>A delete that arrives with content is a proposal whose author meant something else.
+    /// Refused rather than performed, because performing it destroys the file it disagreed about.</summary>
+    [Fact]
+    public void ADeleteCarryingNewContent_IsRefused() =>
+        Assert.Equal(PatchApplyStatus.RefusedUnexpectedNewContent,
+            PatchApply.Compute(PatchApply.Delete, null, "surprise", "current").Status);
+
+    /// <summary>Staleness bites for a delete exactly as for a modify — and matters more, since a
+    /// delete asserts nothing else about the file it removes.</summary>
+    [Fact]
+    public void AStaleDelete_IsRefused() =>
+        Assert.Equal(PatchApplyStatus.RefusedStaleBase,
+            PatchApply.Compute(PatchApply.Delete, null, null, "the file has moved on",
+                expectedBaseHash: PatchApply.HashOf("what the coder read")).Status);
+
+    [Fact]
+    public void ARename_MovesTheFileAndWritesNothing()
+    {
+        var outcome = PatchApply.Compute(PatchApply.Rename, null, null, "bytes that travel unchanged",
+            expectedBaseHash: null, destinationPath: "moved/here.txt", destinationExists: false);
+
+        Assert.Equal(PatchApplyStatus.Renamed, outcome.Status);
+        Assert.True(outcome.Ok);
+        Assert.False(outcome.WritesContent);
+        Assert.Null(outcome.Content);
+    }
+
+    /// <summary>
+    /// A rename is a PURE MOVE. One carrying <c>new_content</c> is asking for a move and a write at
+    /// once, and the applier will not pick which half the author meant.
+    /// </summary>
+    [Fact]
+    public void ARenameCarryingNewContent_IsRefused() =>
+        Assert.Equal(PatchApplyStatus.RefusedUnexpectedNewContent,
+            PatchApply.Compute(PatchApply.Rename, null, "rewritten", "current",
+                destinationPath: "moved/here.txt").Status);
+
+    [Fact]
+    public void ARenameWithNoDestination_IsRefused() =>
+        Assert.Equal(PatchApplyStatus.RefusedMissingDestination,
+            PatchApply.Compute(PatchApply.Rename, null, null, "current", destinationPath: "  ").Status);
+
+    [Fact]
+    public void ARenameOfAMissingSource_IsRefused() =>
+        Assert.Equal(PatchApplyStatus.RefusedTargetMissing,
+            PatchApply.Compute(PatchApply.Rename, null, null, currentContent: null,
+                destinationPath: "moved/here.txt").Status);
+
+    /// <summary>The failure mode a rename has that a modify does not: silently destroying an
+    /// unrelated file by moving onto it.</summary>
+    [Fact]
+    public void ARenameOntoAnOccupiedDestination_IsRefusedRatherThanOverwriting() =>
+        Assert.Equal(PatchApplyStatus.RefusedDestinationOccupied,
+            PatchApply.Compute(PatchApply.Rename, null, null, "current",
+                destinationPath: "taken.txt", destinationExists: true).Status);
+
+    /// <summary>
+    /// End-to-end through the VERIFIER's applier: a delete in a patch set must actually remove the
+    /// file from the sandbox, so the build that verifies the set compiles a tree without it.
+    /// </summary>
+    [Fact]
+    public void MaterializingADelete_RemovesTheFileFromTheSandbox()
+    {
+        var source = Path.Combine(Path.GetTempPath(), $"anthill-mat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        try
+        {
+            File.WriteAllText(Path.Combine(source, "doomed.txt"), "delete me");
+            File.WriteAllText(Path.Combine(source, "keeper.txt"), "leave me alone");
+
+            var set = new PatchSet
+            {
+                Proposals = { new PatchProposal { FilePath = "doomed.txt", ChangeType = PatchChangeType.Delete } },
+            };
+
+            var result = PatchSetMaterializer.Materialize(set, source);
+            Assert.True(result.Ok, result.Problem);
+            using var materialized = result.Materialized!;
+
+            Assert.False(File.Exists(Path.Combine(materialized.Root, "doomed.txt")));
+            Assert.True(File.Exists(Path.Combine(materialized.Root, "keeper.txt")));
+            // The ORIGINAL is untouched — the whole point of materialising into a sandbox.
+            Assert.True(File.Exists(Path.Combine(source, "doomed.txt")));
+        }
+        finally { try { Directory.Delete(source, true); } catch { } }
+    }
+
+    /// <summary>
+    /// The materializer's delete used to be a hand-rolled <c>if (File.Exists) File.Delete</c> that
+    /// no-opped when the file was absent, while the operator's applier refuses. Same class of
+    /// divergence as the v3.8.32 defect, and quieter: the set verified green and failed at apply.
+    /// </summary>
+    [Fact]
+    public void MaterializingADeleteOfAnAbsentFile_IsRefusedJustAsTheToolWouldRefuseIt()
+    {
+        var source = Path.Combine(Path.GetTempPath(), $"anthill-mat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        try
+        {
+            File.WriteAllText(Path.Combine(source, "present.txt"), "here");
+
+            var set = new PatchSet
+            {
+                Proposals = { new PatchProposal { FilePath = "never-existed.txt", ChangeType = PatchChangeType.Delete } },
+            };
+
+            var result = PatchSetMaterializer.Materialize(set, source);
+
+            Assert.False(result.Ok);
+            Assert.Contains("does not exist", result.Problem ?? "", StringComparison.OrdinalIgnoreCase);
+        }
+        finally { try { Directory.Delete(source, true); } catch { } }
+    }
+
+    /// <summary>A materialised rename leaves the bytes at the destination and nothing at the source.
+    /// Both halves are asserted: a move that only half-happened is the failure worth catching.</summary>
+    [Fact]
+    public void MaterializingARename_MovesTheBytesAndLeavesNothingBehind()
+    {
+        var source = Path.Combine(Path.GetTempPath(), $"anthill-mat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        try
+        {
+            File.WriteAllText(Path.Combine(source, "old-name.txt"), "unchanged bytes");
+
+            var set = new PatchSet
+            {
+                Proposals =
+                {
+                    new PatchProposal
+                    {
+                        FilePath = "old-name.txt", ChangeType = PatchChangeType.Rename,
+                        DestinationPath = Path.Combine("nested", "new-name.txt"),
+                    },
+                },
+            };
+
+            var result = PatchSetMaterializer.Materialize(set, source);
+            Assert.True(result.Ok, result.Problem);
+            using var materialized = result.Materialized!;
+
+            Assert.False(File.Exists(Path.Combine(materialized.Root, "old-name.txt")));
+            var moved = Path.Combine(materialized.Root, "nested", "new-name.txt");
+            Assert.True(File.Exists(moved));
+            Assert.Equal("unchanged bytes", File.ReadAllText(moved));
+        }
+        finally { try { Directory.Delete(source, true); } catch { } }
+    }
+
+    /// <summary>
+    /// A rename whose destination climbs out of the sandbox with <c>..</c> would write into the
+    /// operator's real tree from inside what is supposed to be isolated verification. The source path
+    /// has been guarded against this since v1.8.24; the destination is a write too.
+    /// </summary>
+    [Fact]
+    public void MaterializingARename_RefusesADestinationThatEscapesTheSandbox()
+    {
+        var source = Path.Combine(Path.GetTempPath(), $"anthill-mat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        try
+        {
+            File.WriteAllText(Path.Combine(source, "inside.txt"), "contained");
+
+            var set = new PatchSet
+            {
+                Proposals =
+                {
+                    new PatchProposal
+                    {
+                        FilePath = "inside.txt", ChangeType = PatchChangeType.Rename,
+                        DestinationPath = Path.Combine("..", "..", "escaped.txt"),
+                    },
+                },
+            };
+
+            var result = PatchSetMaterializer.Materialize(set, source);
+
+            Assert.False(result.Ok);
+            Assert.Contains("escapes the sandbox", result.Problem ?? "", StringComparison.OrdinalIgnoreCase);
+        }
+        finally { try { Directory.Delete(source, true); } catch { } }
+    }
+
+    /// <summary>The hash covers the destination for the same reason it covers old content: two
+    /// renames of one file to different places are different changes producing different trees.</summary>
+    [Fact]
+    public void ThePatchSetHash_DistinguishesDifferentRenameDestinations()
+    {
+        PatchSet Set(string destination) => new()
+        {
+            Proposals =
+            {
+                new PatchProposal
+                {
+                    Id = "fixed-id", FilePath = "a.txt", ChangeType = PatchChangeType.Rename,
+                    DestinationPath = destination,
+                },
+            },
+        };
+
+        Assert.NotEqual(
+            PatchSetMaterializer.HashPatchSet(Set("one/place.txt")),
+            PatchSetMaterializer.HashPatchSet(Set("another/place.txt")));
+    }
 
     /// <summary>
     /// Occurrence counting is NON-OVERLAPPING, and the uniqueness rule depends on it. "aa" occurs

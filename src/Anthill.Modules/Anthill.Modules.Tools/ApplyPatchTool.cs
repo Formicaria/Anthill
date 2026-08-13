@@ -24,7 +24,7 @@ namespace Anthill.Modules.Tools;
 public sealed class ApplyPatchTool : ITool
 {
     public string Name => "apply_patch";
-    public string Description => "Approval-gated tool that applies safe ADD or MODIFY patch proposals with backups.";
+    public string Description => "Approval-gated tool that applies safe ADD, MODIFY, DELETE or RENAME patch proposals with backups.";
     private readonly IWorkspacePathGuard _guard;
     private readonly IToolRuntimeOptions _options;
 
@@ -47,6 +47,8 @@ public sealed class ApplyPatchTool : ITool
         var newContent = patch.GetValueOrDefault("new_content") as string;
         // v0.3.8.37: null when the producer recorded no base (every proposal before this release).
         var baseHash = patch.GetValueOrDefault("base_hash") as string;
+        // v0.3.8.52: null for every change type but rename, and for every pre-release proposal.
+        var destination = (patch.GetValueOrDefault("destination_path")?.ToString() ?? "").Trim();
 
         string safePath;
         // v3.8.18 — _options is PASSED. It was held and not passed, so the suffix allow-list and
@@ -57,12 +59,31 @@ public sealed class ApplyPatchTool : ITool
         catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch path: {e.Message}", ToolFailure.Classify(e)); }
         if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to patch blocked internal/system path.", FailureClass.AuthorizationFailure);
 
+        // v0.3.8.52 — a rename's DESTINATION passes the identical gauntlet as its source: the same
+        // ValidateSafePatchPath with the same injected options, the same guard resolution, the same
+        // blocked-path check. A move is a write to the destination, and validating only the source
+        // would make `rename` the one way to put bytes at a path this tool would otherwise refuse.
+        string? safeDestination = null;
+        if (destination.Length > 0)
+        {
+            try { Validation.ValidateSafePatchPath(destination, _options); safeDestination = _guard.ResolveSafePath(destination); }
+            catch (Exception e) { return new ToolResult(Name, false, "", $"Unsafe patch destination: {e.Message}", ToolFailure.Classify(e)); }
+            if (_guard.IsBlockedPath(safeDestination))
+                return new ToolResult(Name, false, "", "Refusing to move a patched file to a blocked internal/system path.", FailureClass.AuthorizationFailure);
+        }
+
         try
         {
             // NULL means "does not exist" and is distinct from an existing empty file — PatchApply
             // refuses those two cases differently, so the distinction must survive the read.
             var current = File.Exists(safePath) ? File.ReadAllText(safePath) : null;
-            return ApplyComputed(safePath, PatchApply.Compute(changeType, oldContent, newContent, current, baseHash));
+            // Directory too, not just File: a rename onto a directory would fail at the move with an
+            // IO error rather than a refusal that names the problem.
+            var destinationTaken = safeDestination is not null
+                && (File.Exists(safeDestination) || Directory.Exists(safeDestination));
+            return ApplyComputed(safePath, safeDestination,
+                PatchApply.Compute(changeType, oldContent, newContent, current, baseHash,
+                    safeDestination is null ? null : destination, destinationTaken));
         }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}", ToolFailure.Classify(e)); }
     }
@@ -87,8 +108,12 @@ public sealed class ApplyPatchTool : ITool
     ///
     /// What stays here is what only this tool does: back the file up before overwriting it, create
     /// parent directories, and write UTF-8 without a BOM.
+    ///
+    /// v0.3.8.52 adds the two change types that do not write bytes. Both still take a backup FIRST,
+    /// for the same reason the overwrite arm does — it is the only thing that makes them reversible,
+    /// and a delete with no backup is the one patch outcome the revert path cannot undo.
     /// </summary>
-    private ToolResult ApplyComputed(string safePath, PatchApplyResult outcome)
+    private ToolResult ApplyComputed(string safePath, string? safeDestination, PatchApplyResult outcome)
     {
         // The class is named AT the construction, as two literals rather than through a mapping
         // helper. `EveryToolFailureInTheSource_NamesItsFailureClass` scans the statement text and a
@@ -103,9 +128,14 @@ public sealed class ApplyPatchTool : ITool
         // proposal was well-formed and the file moved on underneath it, so the remedy is to re-read
         // and propose again. Classifying it as ValidationFailure would tell the coder its arguments
         // were malformed and send it to fix a fragment that was never wrong.
+        // v0.3.8.52 adds RefusedDestinationOccupied to this arm on the same test: the proposal was
+        // well-formed and the TREE is what refuses it. A malformed rename — no destination, or one
+        // carrying new_content — is the caller's own construction being wrong and falls through to
+        // ValidationFailure below.
         if (outcome.Status is PatchApplyStatus.RefusedOldContentNotFound
                            or PatchApplyStatus.RefusedAmbiguous
-                           or PatchApplyStatus.RefusedStaleBase)
+                           or PatchApplyStatus.RefusedStaleBase
+                           or PatchApplyStatus.RefusedDestinationOccupied)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.TargetRejection);
         if (!outcome.Ok)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.ValidationFailure);
@@ -125,6 +155,29 @@ public sealed class ApplyPatchTool : ITool
                 File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
                 return new ToolResult(Name, true, Json.Dumps(
                     new { action = "add_overwrite", file_path = safePath, backup_path = existingBackup }, indented: true));
+            }
+
+            case PatchApplyStatus.Deleted:
+            {
+                // Backup THEN delete, in that order. Reversed, a failure between the two loses the
+                // file outright; this way the worst case is a backup with nothing removed.
+                var deleteBackup = BackupFile(safePath);
+                File.Delete(safePath);
+                return new ToolResult(Name, true, Json.Dumps(
+                    new { action = "delete", file_path = safePath, backup_path = deleteBackup }, indented: true));
+            }
+
+            case PatchApplyStatus.Renamed:
+            {
+                // Move, not copy-then-delete. File.Move preserves the bytes exactly and cannot leave
+                // both halves behind if it fails partway. The backup still comes first, because the
+                // revert path needs something to restore when the destination is later gone.
+                var renameBackup = BackupFile(safePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(safeDestination!)!);
+                File.Move(safePath, safeDestination!);
+                return new ToolResult(Name, true, Json.Dumps(
+                    new { action = "rename", file_path = safePath, destination_path = safeDestination,
+                          backup_path = renameBackup }, indented: true));
             }
 
             default:

@@ -1,0 +1,10 @@
+{
+  "_anthill": "materialized by Anthill from the conversation\u0027s approval policy \u2014 regenerated per run, safe to delete",
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write"
+    ],
+    "additionalDirectories": []
+  }
+}

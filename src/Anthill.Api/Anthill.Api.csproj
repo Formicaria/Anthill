@@ -49,6 +49,10 @@
     <EmbeddedResource Include="..\Anthill.UI\index.html" LogicalName="Anthill.Api.Ui.index.html" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\app.js" LogicalName="Anthill.Api.Ui.app.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\mission-thread.js" LogicalName="Anthill.Api.Ui.mission-thread.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <!-- v0.3.8.52: the app.js split. Each domain file needs its own pin — the single-file
+         self-contained binary serves these from embedded resources, so an unpinned asset 404s at
+         runtime while building and testing perfectly. -->
+    <EmbeddedResource Include="..\Anthill.UI\homelab.js" LogicalName="Anthill.Api.Ui.homelab.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" Condition="'$(AnthillNoUi)' != 'true'" />
