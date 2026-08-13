@@ -62,14 +62,37 @@ public static class RepoOps
             return new RepoState(false, null, 0, Array.Empty<(string, string)>(), null,
                 probe.Contains("unavailable") ? probe : null);
 
-        var (_, branch) = Git(root!, "rev-parse", "--abbrev-ref", "HEAD");
-        var (_, last) = Git(root!, "log", "-1", "--format=%h %s");
+        // v0.3.8.52 (fourth field round): these calls used to DISCARD their Ok flags, so a repo
+        // with no commits yet — where `rev-parse HEAD` and `log -1` both print a fatal — wore
+        // git's stderr as its BRANCH NAME in the files pane, a paragraph long, shoving every
+        // toolbar button off screen. symbolic-ref answers the branch even on an unborn HEAD;
+        // rev-parse remains the fallback for detached heads; and a failure anywhere is null,
+        // never stderr passed off as data.
+        var (brOk, branchOut) = Git(root!, "symbolic-ref", "--short", "HEAD");
+        if (!brOk) (brOk, branchOut) = Git(root!, "rev-parse", "--abbrev-ref", "HEAD");
+        var branch = brOk && branchOut.Length > 0 && branchOut.Length <= 200 && !branchOut.Contains('\n')
+            ? branchOut.Trim() : null;
+
+        var (lastOk, last) = Git(root!, "log", "-1", "--format=%h %s");
+        var lastCommit = lastOk && !string.IsNullOrWhiteSpace(last) ? last.Split('\n')[0].Trim() : null;
+
         var (stOk, status) = Git(root!, "status", "--porcelain");
         var dirty = new List<(string, string)>();
         if (stOk)
             foreach (var line in status.Split('\n', StringSplitOptions.RemoveEmptyEntries).Take(200))
                 if (line.Length > 3) dirty.Add((line[..2].Trim(), line[3..].Trim()));
-        return new RepoState(true, branch, dirty.Count, dirty, string.IsNullOrWhiteSpace(last) ? null : last, null);
+        return new RepoState(true, branch, dirty.Count, dirty, lastCommit, null);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (fourth field round): make the working directory a repository — the operator's
+    /// explicit act from the files pane, offered only when the directory is not one already.
+    /// Prefers an initial branch named main; falls back for gits that predate --initial-branch.
+    /// </summary>
+    public static (bool Ok, string Output) Init(string root)
+    {
+        var r = Git(root, "init", "-b", "main");
+        return r.Ok ? r : Git(root, "init");
     }
 
     /// <summary>The root of the repository that owns <paramref name="dir"/>, or null if none does.
@@ -88,6 +111,78 @@ public static class RepoOps
         => string.IsNullOrWhiteSpace(relativePath)
             ? Git(root, "diff", "HEAD")
             : Git(root, "diff", "HEAD", "--", relativePath);
+
+    // ---- the commit train (v0.3.8.52) ---------------------------------------------------------
+
+    public sealed record RepoCommit(string Hash, string Author, long Time, string Subject);
+
+    /// <summary>
+    /// A ref name that is safe to hand to git as an ARGUMENT: never option-shaped (no leading
+    /// dash) and drawn from the character set branch names actually use. Everything git runs
+    /// through here goes via ArgumentList — there is no shell — so this guard is specifically
+    /// against ref-lookalike OPTIONS, the one injection that survives argument vectors.
+    /// </summary>
+    public static bool SafeRef(string s) =>
+        !string.IsNullOrWhiteSpace(s) && s.Length <= 200 && s[0] != '-'
+        && s.All(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '/' or '-');
+
+    /// <summary>All branches (local and remote-tracking, HEAD pointers dropped) + the current one.</summary>
+    public static (string? Current, IReadOnlyList<string> Branches) Branches(string root)
+    {
+        // Same unborn-HEAD honesty as Describe: symbolic-ref first, and a failure is null.
+        var (curOk, current) = Git(root, "symbolic-ref", "--short", "HEAD");
+        if (!curOk) (curOk, current) = Git(root, "rev-parse", "--abbrev-ref", "HEAD");
+        if (!curOk || current.Contains('\n')) current = "";
+        var (ok, output) = Git(root, "branch", "--all", "--format=%(refname:short)");
+        var list = new List<string>();
+        if (ok)
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var b = line.Trim();
+                if (b.Length == 0 || b.EndsWith("/HEAD", StringComparison.Ordinal) || !SafeRef(b)) continue;
+                if (!list.Contains(b)) list.Add(b);
+            }
+        return (string.IsNullOrWhiteSpace(current) ? null : current.Trim(), list.Take(100).ToList());
+    }
+
+    /// <summary>
+    /// The commit train: recent commits touching <paramref name="relativePath"/> (or the whole
+    /// repo when empty) on <paramref name="branch"/> (or HEAD when null/unsafe — an unsafe ref is
+    /// silently treated as absent rather than passed through). Follows renames for a single file.
+    /// </summary>
+    public static IReadOnlyList<RepoCommit> Log(string root, string? branch, string? relativePath, int limit = 20)
+    {
+        var args = new List<string> { "log", "-n", Math.Clamp(limit, 1, 100).ToString(),
+            "--format=%h\u001f%an\u001f%ct\u001f%s" };
+        if (!string.IsNullOrWhiteSpace(branch) && SafeRef(branch!)) args.Insert(1, branch!);
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            args.Add("--follow");
+            args.Add("--");
+            args.Add(relativePath!);
+        }
+        var (ok, output) = Git(root, args.ToArray());
+        if (!ok) return Array.Empty<RepoCommit>();
+        var commits = new List<RepoCommit>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var f = line.Split('\u001f');
+            if (f.Length < 4) continue;
+            commits.Add(new RepoCommit(f[0], f[1], long.TryParse(f[2], out var t) ? t : 0, f[3]));
+        }
+        return commits;
+    }
+
+    /// <summary>One commit's change to one file (or the whole commit when no path) — the train's
+    /// on-click diff. The hash is validated to be hash-shaped before git ever sees it.</summary>
+    public static (bool Ok, string Output) ShowCommit(string root, string hash, string? relativePath)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(hash ?? "", "^[0-9a-fA-F]{4,40}$"))
+            return (false, "That is not a commit hash.");
+        return string.IsNullOrWhiteSpace(relativePath)
+            ? Git(root, "show", hash!)
+            : Git(root, "show", hash!, "--", relativePath!);
+    }
 
     /// <summary>
     /// Stage and commit. Empty <paramref name="paths"/> means stage everything (-A); otherwise

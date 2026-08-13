@@ -2849,6 +2849,21 @@ let lastSystemSummary=null, lastUpdateInfo=null;
 const LOCAL_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 const CLOUD_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
 
+// v0.3.8.52 — the last color emoji leave the console (the UI-alignment sweep's final open item:
+// "remaining emoji/symbol icons swept to the open-source set"). 📁📄🕘📎★☆☰⚖ rendered in the OS's
+// emoji palette, one island of color in a themed monochrome UI. Same 24-box stroke grammar as
+// IAICON above, sized for inline text; fill-mode glyphs (the pinned star) opt in per shape.
+const INLINE_ICON=(body,size)=>`<svg width="${size||12}" height="${size||12}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px">${body}</svg>`;
+const GLYPH={
+  folder: INLINE_ICON('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  file:   INLINE_ICON('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'),
+  clock:  INLINE_ICON('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>'),
+  list:   INLINE_ICON('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'),
+  scale:  INLINE_ICON('<path d="M12 3v18M8 21h8M4 7h16"/><path d="M6 7l-3 6a3.4 3.4 0 0 0 6 0z"/><path d="M18 7l-3 6a3.4 3.4 0 0 0 6 0z"/>'),
+  star:     INLINE_ICON('<polygon points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+  starFill: INLINE_ICON('<polygon fill="currentColor" points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+};
+
 async function pollModelInfo(){
   try{
     const r=await api('/system/summary'); if(!r.success) return;
@@ -3759,7 +3774,7 @@ async function onPatchToggle(det){
       ${orphanPending?`<button class="pc-act approve" data-onclick="pcApproveDirect('${pid}')" title="Creates the missing approval record, then approves">✓ Approve</button>`:''}
       ${canApprove?`<button class="pc-act reject" data-onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
       ${orphanPending?`<button class="pc-act reject" data-onclick="pcRejectDirect('${pid}')">✕ Reject</button>`:''}
-      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">⚖ Verify &amp; Auto-approve</button>`:''}
+      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">${GLYPH.scale} Verify &amp; Auto-approve</button>`:''}
       ${canEdit?`<button class="pc-act" data-onclick="pcOpenEdit('${pid}')" title="Edit this patch's content and offer it as an alternative proposal (goes through the same approval gate)">✎ Edit as alternative</button>`:''}
       ${canApply?`<button class="pc-act apply" data-onclick="pcApply('${pid}')">▶ Apply</button>`:''}
       ${canRevert?`<button class="pc-act reject" data-onclick="pcRevert('${pid}')" title="Undo this applied patch: deletes the created file (add) or restores the pre-apply backup (modify), then marks it reverted. Stays in the sandboxed workspace.">↺ Revert</button>`:''}
@@ -3901,7 +3916,9 @@ async function pcRejectDirect(patchId){
 async function pcVerify(patchId){
   const btn=document.getElementById('pc-verify-'+patchId);
   const out=document.getElementById('pc-verifyout-'+patchId);
-  if(btn){ btn.disabled=true; btn.textContent='⚖ Verifying… (build+test)'; }
+  // innerHTML, not textContent: the label carries the same inline scale icon as the button's
+  // template — constant markup, nothing operator-authored rides in.
+  if(btn){ btn.disabled=true; btn.innerHTML=`${GLYPH.scale} Verifying… (build+test)`; }
   if(out){ out.style.display='block'; out.innerHTML='<div style="color:var(--dim);font-size:11px;padding:6px 0;">Running unbiased verification — the patch is applied with a backup, the verify command runs, and the workspace is always restored. This can take a few minutes.</div>'; }
   try{
     const r=await api('/patches/'+encodeURIComponent(patchId)+'/verify','POST');
@@ -3920,7 +3937,7 @@ async function pcVerify(patchId){
     pcToast('Verify failed: '+e.message,false);
     if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;">Verify error: ${escapeHtml(e.message)}</div>`;
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent='⚖ Verify & Auto-approve'; }
+    if(btn){ btn.disabled=false; btn.innerHTML=`${GLYPH.scale} Verify &amp; Auto-approve`; }
   }
 }
 function pcOpenEdit(patchId){
@@ -4276,13 +4293,17 @@ async function loadChat(){
         : '<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
+      // v0.3.8.52 (field report: "cannot tell what conversations go where") — every row carries
+      // its project's name on a second line, dim and small, so the tracker reads as
+      // what-it-is-about over where-it-lives without stealing width from the title.
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
         <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
           title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
-          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?'★':'☆'}</button>
+          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?GLYPH.starFill:GLYPH.star}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
           :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
+        ${c.project_name?`<span class="conv-proj" title="Project: ${escapeHtml(c.project_name)}">${GLYPH.folder} ${escapeHtml(c.project_name)}</span>`:''}
       </div>`).join('');
       list.querySelectorAll('.chat-conv').forEach(el=>
         el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
@@ -4313,7 +4334,14 @@ function chatRenderContent(text){
   const parts=String(text||'').split('```');
   let html='';
   for(let i=0;i<parts.length;i++){
-    if(i%2===0){ html+=escapeHtml(parts[i]); continue; }
+    if(i%2===0){
+      // v0.3.8.52 — inline `code` and **bold** in the prose segments. Escape-first is preserved:
+      // both replacements run ON the escaped text and only wrap it, never widen what can render.
+      let seg=escapeHtml(parts[i]);
+      seg=seg.replace(/`([^`\n]+)`/g,'<code class="chat-inline">$1</code>');
+      seg=seg.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+      html+=seg; continue;
+    }
     // Odd segments are fenced. The first line may be a language tag; it names the highlighter.
     const nl=parts[i].indexOf('\n');
     const lang=nl>=0?parts[i].slice(0,nl).trim().toLowerCase():'';
@@ -4444,7 +4472,7 @@ async function chatOpen(id){
               + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
               + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
               + body
-              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`📄 ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
+              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`${GLYPH.file} ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
               + `</div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
@@ -4497,7 +4525,7 @@ async function chatOpen(id){
         + `<div class="chat-plan-preview" hidden></div>`
         + `<div class="chat-approve-actions">`
         + waiting.map(a=>`<button class="btn btn-primary chat-approve-yes" data-act="${escapeHtml(a)}">Allow ${escapeHtml(a)}</button>`).join('')
-        + (canPreview?`<button class="btn btn-ghost chat-plan-btn">☰ Preview the plan</button>`:'')
+        + (canPreview?`<button class="btn btn-ghost chat-plan-btn">${GLYPH.list} Preview the plan</button>`:'')
         + `<button class="btn chat-approve-no">Stop this</button></div>`;
       thread.appendChild(box);
       // Bound after render, never as an inline handler: the console's CSP is script-src 'self'
@@ -4512,6 +4540,18 @@ async function chatOpen(id){
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    // v0.3.8.52 (field report): with the files pane open nothing said WHICH project the work
+    // belongs to. The project wears the second line under the chat name, always visible while a
+    // conversation is open, and clicks through to its project page.
+    const projLine=document.getElementById('chat-title-proj');
+    if(projLine){
+      if(d.project_name){
+        projLine.hidden=false;
+        projLine.innerHTML=`${GLYPH.folder} ${escapeHtml(d.project_name)}`;
+        projLine.title='Project: '+d.project_name+' — open its page';
+        projLine.onclick=()=>go('/projects/'+encodeURIComponent(d.project_id||''));
+      }else projLine.hidden=true;
+    }
     // v0.3.8.48: the selector shows the conversation's EFFECTIVE policy, and says who set it.
     const polSel=document.getElementById('chat-policy');
     if(polSel){ polSel.value=d.policy||'ask'; polSel.dataset.current=d.policy||'ask'; }
@@ -4626,7 +4666,7 @@ async function chatConsumeStream(response){
 let chatStagedFiles=[];
 function chatRenderStaged(){
   const host=document.getElementById('chat-attach-chips'); if(!host) return;
-  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">📄 ${escapeHtml(f.filename)}`
+  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">${GLYPH.file} ${escapeHtml(f.filename)}`
     +` <span class="attach-size">${f.content.length>1024?Math.round(f.content.length/1024)+' KB':f.content.length+' B'}</span>`
     +`<button class="attach-x" data-x="${i}" title="Remove" aria-label="Remove attachment">✕</button></span>`).join('');
   host.querySelectorAll('.attach-x').forEach(b=>b.addEventListener('click',()=>{
@@ -4740,11 +4780,24 @@ async function chatSend(mode){
         if(outcome&&outcome.started===false) note=outcome.summary||'Refused';
       }else{
         const r=await response.json().catch(()=>null);
-        if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+        // v0.3.8.52 (third field round): a refused turn keeps the operator's message and NAMES
+        // the remedy — workdir_required additionally opens the files pane, where the set-root
+        // form is already waiting with the suggested path filled in.
+        if(r&&r.success===false){
+          note=r.message||'Refused';
+          if(el) el.value=msg;
+          if(r.error==='workdir_required') chatToggleFiles(true);
+        }
+        else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
     }else{
       const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
-      if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+      if(r&&r.success===false){
+        note=r.message||'Refused';
+        if(el) el.value=msg;
+        if(r.error==='workdir_required') chatToggleFiles(true);
+      }
+      else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
   }catch(e){
     note = (e&&e.name==='AbortError') ? 'Stopped.' : 'Could not send: '+(e.message||'');
@@ -4852,6 +4905,8 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   chatComposingNew=true;
   chatFingerprint='';   // the welcome screen replaced the thread outside chatOpen's knowledge
   setEl('chat-title','New conversation'); chatSetState('');
+  // No conversation, no project line — it returns with the next chatOpen.
+  const npl=document.getElementById('chat-title-proj'); if(npl) npl.hidden=true;
   const thread=document.getElementById('chat-thread');
   if(thread) thread.innerHTML='<div class="chat-welcome"><h2>What would you like done?</h2>'
     + '<p>Describe it in your own words. The colony plans the work, carries it out, and shows you '
@@ -4995,7 +5050,7 @@ async function chatRenderPatches(d, thread){
  * missions proposed/applied, diff on demand through the same endpoints the patch cards use.
  * Files and Colony are mutually exclusive panes: one split, one right-hand occupant. */
 let chatFilesOpen=false, chatFilesProjectId=null, chatFilesPath='', chatFilesChangesMode=false;
-let chatFilesRepo=null, chatEditorPath='', chatEditorDiffMode=false;
+let chatFilesRepo=null, chatEditorPath='', chatEditorDiffMode=false, chatFilesBranch=null;
 
 function chatToggleFiles(open){
   const layer=document.getElementById('chat-files-layer'); if(!layer) return;
@@ -5036,24 +5091,111 @@ async function chatFilesLoad(){
   body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path=');
   if(!(r&&r.success)){
-    // Field correction: "can't add a working tree." A project without one sets it right here.
-    body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>
-      <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
-        <input class="provider-input" id="cf-set-root" placeholder="/absolute/path/to/working/directory" style="flex:1;">
-        <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
-      </div>`;
-    document.getElementById('cf-set-root-go')?.addEventListener('click',async ()=>{
-      const p=(document.getElementById('cf-set-root').value||'').trim(); if(!p) return;
-      const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
-      chatSetState((pr&&pr.message)||'');
-      if(pr&&pr.success) chatFilesLoad();
-    });
+    // Field correction: "can't add a working tree." A project without one sets it right here —
+    // the same form the toolbar's Dir… button opens (fourth field round: one form, two doors).
+    body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>`;
+    await chatFilesShowRootForm();
     return;
   }
   setEl('chat-files-crumb', r.data.root||'');
   body.innerHTML='<div id="cf-tree"></div>';
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
   chatFilesRepoLoad();
+}
+
+/* v0.3.8.52 (fourth field round) — ONE set-root form, two doors: first-time setup (the files
+ * pane shows it when listing fails) and the toolbar's Dir… button (the working directory stays
+ * changeable after it is set). Prefilled with the current path, else the project's suggested
+ * tree; typing an absolute path from memory is the fallback, not the ask — Browse opens the
+ * picker (OS dialog in the desktop shell, the server-backed browser everywhere else, because
+ * the page cannot learn an absolute path from its own picker and in Docker/LXC the working
+ * directory lives on the SERVER anyway). Setting it CREATES the directory when new — the colony
+ * never creates one behind the operator's back. */
+async function chatFilesShowRootForm(){
+  const host=document.getElementById('chat-files-body'); if(!host||!chatFilesProjectId) return;
+  const existing=document.getElementById('cf-root-form');
+  if(existing){ existing.remove(); return; }   // the Dir… button toggles
+  const det=await api('/projects/'+encodeURIComponent(chatFilesProjectId));
+  const prefill=(det&&det.success&&det.data&&(det.data.path||det.data.suggested_path))||'';
+  host.insertAdjacentHTML('afterbegin',`<div id="cf-root-form">
+    <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
+      <input class="provider-input" id="cf-set-root" value="${escapeHtml(prefill)}" placeholder="/absolute/path/to/working/directory" style="flex:1;">
+      <button class="btn btn-ghost" id="cf-set-root-browse">Browse…</button>
+      <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
+    </div>
+    <div id="cf-dir-browser" hidden style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:280px;display:flex;flex-direction:column;"></div>
+  </div>`);
+  const setRoot=async p=>{
+    if(!p) return;
+    const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
+    chatSetState((pr&&pr.message)||'');
+    // Bust every cached GET under this project — tree, repo badge, detail — or the pane keeps
+    // showing the OLD directory (and its git state) for up to a TTL after the change.
+    if(pr&&pr.success){ apiCacheBust('/projects'); chatFilesLoad(); }
+  };
+  document.getElementById('cf-set-root-go')?.addEventListener('click',
+    ()=>setRoot((document.getElementById('cf-set-root').value||'').trim()));
+  document.getElementById('cf-set-root-browse')?.addEventListener('click',async ()=>{
+    const native=await cfPickFolderNative();
+    if(native===''){ return; }                       // the operator cancelled the OS dialog
+    if(native){ document.getElementById('cf-set-root').value=native; setRoot(native); return; }
+    cfDirBrowserOpen('', setRoot);                   // no native picker — the server-backed one
+  });
+}
+document.getElementById('chat-files-chroot')?.addEventListener('click',()=>chatFilesShowRootForm());
+
+/* v0.3.8.52 — the working-directory picker's two lanes.
+ *
+ * Native lane: inside the desktop shell, window.chrome.webview exists and the HOST owns a real
+ * FolderBrowserDialog (ShellForm's pick-folder bridge). Resolves to the absolute path, '' when
+ * the operator cancels, or null when there is no native picker to ask.
+ * Server lane: everywhere else, a small directory browser over /fs/dirs — the server's own tree,
+ * which in Docker/LXC is the only tree a working directory can live on. */
+function cfPickFolderNative(){
+  return new Promise(resolve=>{
+    const wv=window.chrome&&window.chrome.webview;
+    if(!wv){ resolve(null); return; }
+    const onMsg=ev=>{
+      const d=ev.data;
+      if(d&&d.type==='picked-folder'){ wv.removeEventListener('message',onMsg); resolve(d.path||''); }
+    };
+    wv.addEventListener('message',onMsg);
+    wv.postMessage('pick-folder');
+  });
+}
+
+async function cfDirBrowserOpen(startPath, onPick){
+  const host=document.getElementById('cf-dir-browser'); if(!host) return;
+  host.hidden=false;
+  host.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
+  const r=await api('/fs/dirs?path='+encodeURIComponent(startPath||''));
+  if(!(r&&r.success)){
+    host.innerHTML=`<div class="hud-state err" style="padding:8px;">${escapeHtml((r&&r.message)||'Could not browse this host.')}</div>`;
+    return;
+  }
+  const d=r.data||{}, dirs=d.dirs||[];
+  host.innerHTML=`
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(d.path||'')}">${escapeHtml(d.path||'')}</span>
+      <button class="btn btn-ghost" data-cfb-home style="padding:1px 8px;font-size:10px;">Home</button>
+      ${(d.roots||[]).map(rt=>`<button class="btn btn-ghost" data-cfb-go="${escapeHtml(rt)}" style="padding:1px 8px;font-size:10px;">${escapeHtml(rt)}</button>`).join('')}
+      <button class="btn btn-primary" data-cfb-pick style="padding:1px 8px;font-size:10px;">Use this folder</button>
+      <button class="btn btn-ghost" data-cfb-close style="padding:1px 8px;font-size:10px;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;">
+      ${d.parent?`<div class="cf-row" data-cfb-go="${escapeHtml(d.parent)}" style="padding:3px 10px;font-size:11px;cursor:pointer;color:var(--dim);">↩ ..</div>`:''}
+      ${dirs.length?dirs.map(e=>`<div class="cf-row" data-cfb-go="${escapeHtml(e.path)}" style="padding:3px 10px;font-size:11px;cursor:pointer;">${GLYPH.folder} ${escapeHtml(e.name)}</div>`).join('')
+                   :'<div class="hud-state" style="padding:8px;">No subfolders.</div>'}
+    </div>`;
+  host.querySelectorAll('[data-cfb-go]').forEach(el=>
+    el.addEventListener('click',()=>cfDirBrowserOpen(el.dataset.cfbGo, onPick)));
+  host.querySelector('[data-cfb-home]')?.addEventListener('click',()=>cfDirBrowserOpen(d.home||'', onPick));
+  host.querySelector('[data-cfb-pick]')?.addEventListener('click',()=>{
+    const input=document.getElementById('cf-set-root'); if(input) input.value=d.path||'';
+    host.hidden=true;
+    onPick(d.path||'');
+  });
+  host.querySelector('[data-cfb-close]')?.addEventListener('click',()=>{ host.hidden=true; });
 }
 
 /* v0.3.8.51 third round — GIT AWARENESS (operator: "make the colony aware (and show) whether
@@ -5065,19 +5207,105 @@ async function chatFilesRepoLoad(){
   if(!badge||!chatFilesProjectId) return;
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo');
   chatFilesRepo=(r&&r.success&&r.data)||null;
-  if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; return; }
+  chatFilesApplyGitMarks();   // the tree usually rendered before this answer arrived
+  const initBtn=document.getElementById('chat-files-gitinit');
+  if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; if(initBtn) initBtn.hidden=true; return; }
+  const branchSel=document.getElementById('chat-files-branch');
   if(chatFilesRepo.is_repo){
-    badge.textContent='⎇ '+(chatFilesRepo.branch||'?')
+    if(initBtn) initBtn.hidden=true;   // offered ONLY when it is not a repo already
+    // v0.3.8.52 (fourth field round): one line, bounded — the server no longer sends git's
+    // stderr as a branch name, and this guard means even a bad payload cannot eat the toolbar.
+    const branchText=String(chatFilesRepo.branch||'no commits yet').split('\n')[0].slice(0,40);
+    badge.textContent='⎇ '+branchText
       +(chatFilesRepo.dirty_count>0?' · '+chatFilesRepo.dirty_count+' dirty':' · clean');
     badge.style.color=chatFilesRepo.dirty_count>0?'var(--amber,#e5b567)':'var(--dim)';
     badge.title=(chatFilesRepo.last_commit?('last: '+chatFilesRepo.last_commit):'')||'git repository';
     if(commitBtn){ commitBtn.hidden=false; commitBtn.disabled=!chatFilesRepo.dirty_count; }
+    // v0.3.8.52 — the branch selector, GitHub-style: history is read from the chosen branch,
+    // nothing is ever checked out. Defaults to the branch the tree actually stands on.
+    if(branchSel){
+      const br=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/branches');
+      const list=(br&&br.success&&br.data&&br.data.branches)||[];
+      if(list.length){
+        const cur=(br.data.current&&list.includes(br.data.current))?br.data.current:list[0];
+        if(!chatFilesBranch||!list.includes(chatFilesBranch)) chatFilesBranch=cur;
+        branchSel.innerHTML=list.map(b=>`<option value="${escapeHtml(b)}"${b===chatFilesBranch?' selected':''}>${escapeHtml(b)}</option>`).join('');
+        branchSel.hidden=false;
+      }else branchSel.hidden=true;
+    }
   }else{
-    badge.textContent='plain folder — not a git repo';
-    badge.style.color='var(--dim)'; badge.title=chatFilesRepo.note||'';
+    // Field wording: "no git" — two words, the detail in the title, the remedy one button away.
+    badge.textContent='no git';
+    badge.style.color='var(--dim)';
+    badge.title=chatFilesRepo.note||'This directory is not a git repository.';
     if(commitBtn) commitBtn.hidden=true;
+    if(branchSel) branchSel.hidden=true;
+    if(initBtn) initBtn.hidden=false;
   }
 }
+
+// v0.3.8.52 (fourth field round): make the working directory a repository — offered only while
+// it is not one (chatFilesRepoLoad shows/hides the button), confirmed, then the badge goes live.
+document.getElementById('chat-files-gitinit')?.addEventListener('click',async ()=>{
+  if(!chatFilesProjectId) return;
+  if(!await uiConfirm('Create a git repository in this project\'s working directory?\n\n'
+    +'Runs git init there — no commits are made and nothing is sent anywhere.')) return;
+  const btn=document.getElementById('chat-files-gitinit');
+  if(btn) btn.disabled=true;
+  try{
+    const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/init','POST');
+    chatSetState((r&&r.message)||'');
+    // Bust the cached GETs (repo badge, tree, detail) — without this the badge re-read a stale
+    // "not a repo" answer for up to a TTL and Init git appeared to ignore the click.
+    if(r&&r.success){ apiCacheBust('/projects/'+encodeURIComponent(chatFilesProjectId)); chatFilesRepoLoad(); chatFilesLoad(); }
+  }finally{ if(btn) btn.disabled=false; }
+});
+
+/* v0.3.8.52 (fifth field round) — the splits are SIZABLE. Chat ↔ pane drags horizontally, tree ↔
+ * editor drags vertically; plain pointer math over the containing flex row/column, the chosen
+ * proportion written onto flex-basis and persisted in localStorage so it survives a reload.
+ * Pointer capture keeps the drag alive when the cursor outruns the 5px handle. */
+function wireSplit(handleId, horizontal, storeKey, apply){
+  const handle=document.getElementById(handleId); if(!handle) return;
+  const saved=parseFloat(localStorage.getItem(storeKey)||'');
+  if(!Number.isNaN(saved)) apply(saved);
+  handle.addEventListener('pointerdown',e=>{
+    e.preventDefault(); handle.classList.add('dragging');
+    // Capture keeps the drag when the cursor outruns the 5px handle; a pointer that cannot be
+    // captured (gone between down and here) must not kill the handler with it.
+    try{ handle.setPointerCapture(e.pointerId); }catch{ /* drag still works while over the handle */ }
+    const rect=handle.parentElement.getBoundingClientRect();
+    const move=ev=>{
+      const pct=horizontal ? (ev.clientX-rect.left)/rect.width*100
+                           : (ev.clientY-rect.top)/rect.height*100;
+      localStorage.setItem(storeKey, String(apply(pct)));
+    };
+    const up=()=>{ handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+    handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up);
+  });
+}
+wireSplit('chat-split-x', true, 'anthill_split_x', pct=>{
+  pct=Math.min(75,Math.max(25,pct));
+  const main=document.querySelector('#page-chat .chat-main');
+  if(main) main.style.flex=`1 1 ${pct}%`;
+  document.querySelectorAll('#page-chat .chat-colony-layer').forEach(l=>l.style.flex=`1 1 ${100-pct}%`);
+  return pct;
+});
+wireSplit('chat-split-y', false, 'anthill_split_y', pct=>{
+  pct=Math.min(80,Math.max(20,pct));
+  const body=document.getElementById('chat-files-body');
+  const editor=document.getElementById('chat-files-editor');
+  if(body) body.style.flex=`1 1 ${pct}%`;
+  if(editor) editor.style.flex=`1 1 ${100-pct}%`;
+  return pct;
+});
+
+document.getElementById('chat-files-branch')?.addEventListener('change',e=>{
+  chatFilesBranch=e.target.value;
+  // Open trains show the OLD branch's history — close them so nothing on screen lies.
+  document.querySelectorAll('.cf-train').forEach(el=>{ el.parentElement.hidden=true; el.remove(); });
+});
 
 document.getElementById('chat-files-commit')?.addEventListener('click',async ()=>{
   if(!chatFilesProjectId) return;
@@ -5088,14 +5316,21 @@ document.getElementById('chat-files-commit')?.addEventListener('click',async ()=
   chatFilesRepoLoad();
 });
 
+let chatFilesSelPath=null;
+
 function chatFilesRenderDir(host, base, entries, depth){
   host.innerHTML=(entries||[]).map(e=>{
     const p=(base?base+'/':'')+e.name;
     const open=chatFilesExpanded.has(p);
-    return `<div class="cf-row" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
+    // v0.3.8.52 — the WHOLE row is the click target (the listener always was on the row; now the
+    // hover/selected styling says so), the selected file stays lit, and a git-status letter sits
+    // in the dead space before the size.
+    return `<div class="cf-row${(!e.dir&&chatFilesSelPath===p)?' sel':''}" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
         <span style="width:12px;color:var(--dim);">${e.dir?(open?'▾':'▸'):''}</span>
-        <span>${e.dir?'📁':'📄'}</span>
+        <span style="display:flex;color:var(--dim);">${e.dir?GLYPH.folder:GLYPH.file}</span>
         <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
+        ${e.dir?'':`<span class="cf-hist" data-cf-h="${escapeHtml(p)}" title="Commit history for this file">${GLYPH.clock}</span>`}
+        <span class="cf-git" data-cf-g="${escapeHtml(p)}" data-cf-g-dir="${e.dir?'1':''}"></span>
         ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
       </div><div class="cf-kids" data-cf-kids="${escapeHtml(p)}" ${open?'':'hidden'}></div>`;
   }).join('')||`<div style="padding:4px 6px 4px ${8+depth*16}px;font-size:10px;color:var(--dim);">empty</div>`;
@@ -5109,19 +5344,144 @@ function chatFilesRenderDir(host, base, entries, depth){
     else kids.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open.')}</div>`;
   }));
   host.querySelectorAll(':scope > [data-cf-file]').forEach(el=>el.addEventListener('click',()=>chatFilesEdit(el.dataset.cfFile)));
+  // v0.3.8.52 — the commit train, on demand: the clock toggles this file's recent commits into
+  // the slot beneath its row. Its click must NOT also open the editor — the row owns that.
+  host.querySelectorAll(':scope .cf-hist').forEach(el=>el.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const p=el.dataset.cfH;
+    chatFilesTrain(p, host.querySelector(`:scope > [data-cf-kids="${CSS.escape(p)}"]`));
+  }));
+  chatFilesApplyGitMarks(host);
+}
+
+function cfAge(unixSeconds){
+  const s=Math.max(0,(Date.now()/1000)-unixSeconds);
+  if(s<3600) return Math.max(1,Math.round(s/60))+'m';
+  if(s<86400) return Math.round(s/3600)+'h';
+  if(s<86400*30) return Math.round(s/86400)+'d';
+  if(s<86400*365) return Math.round(s/(86400*30))+'mo';
+  return Math.round(s/(86400*365))+'y';
+}
+
+/* The train itself: hash · subject · author · age per stop, read from the SELECTED branch
+ * (GitHub-style — nothing is checked out). Clicking a stop toggles that commit's diff for this
+ * file, through the same colored renderer the uncommitted view uses. */
+async function chatFilesTrain(path, slot){
+  if(!slot) return;
+  const open=slot.querySelector(':scope > .cf-train');
+  if(open){ open.remove(); if(!slot.children.length) slot.hidden=true; return; }
+  slot.hidden=false;
+  const box=document.createElement('div');
+  box.className='cf-train';
+  box.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">loading history…</div>';
+  slot.prepend(box);
+  const q='/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/log?path='+encodeURIComponent(path)
+    +(chatFilesBranch?'&branch='+encodeURIComponent(chatFilesBranch):'')+'&limit=20';
+  const r=await api(q);
+  const commits=(r&&r.success&&r.data&&r.data.commits)||[];
+  if(!commits.length){
+    box.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">No commits touch this file'
+      +(chatFilesBranch?' on '+escapeHtml(chatFilesBranch):'')+'.</div>';
+    return;
+  }
+  box.innerHTML=commits.map(c=>`<div class="cf-stop" data-cf-hash="${escapeHtml(c.hash)}"
+      style="padding:2px 10px 2px 34px;display:flex;gap:8px;align-items:baseline;font-size:10.5px;cursor:pointer;border-radius:4px;">
+      <span style="color:var(--dim);">○</span>
+      <span style="font-family:var(--mono);color:#8ab4f8;">${escapeHtml(c.hash)}</span>
+      <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.subject)}</span>
+      <span style="color:var(--dim);font-size:9px;white-space:nowrap;">${escapeHtml(c.author)} · ${cfAge(c.time)}</span>
+    </div><div data-cf-stop-diff="${escapeHtml(c.hash)}" hidden></div>`).join('');
+  box.querySelectorAll('.cf-stop').forEach(el=>el.addEventListener('click',async ev=>{
+    ev.stopPropagation();
+    const h=el.dataset.cfHash;
+    const d=box.querySelector(`[data-cf-stop-diff="${CSS.escape(h)}"]`);
+    if(!d.hidden){ d.hidden=true; return; }
+    d.hidden=false;
+    if(!d.innerHTML){
+      d.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">loading…</div>';
+      const s=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/show?hash='
+        +encodeURIComponent(h)+'&path='+encodeURIComponent(path));
+      d.innerHTML=(s&&s.success&&s.data)?cfGitDiffHtml(s.data.diff||''):
+        `<div class="hud-state err">${escapeHtml((s&&s.message)||'Could not load the commit.')}</div>`;
+    }
+  }));
+}
+
+/* v0.3.8.52 — git status letters in the tree, from the dirty list the repo badge already fetched
+ * (zero extra calls): M modified, A added, D deleted, ? untracked; a dot on a folder that holds
+ * dirty files somewhere beneath it. Repo paths are repo-root-relative and tree paths are
+ * project-root-relative — suffix agreement bridges the two when the roots differ. */
+function chatFilesApplyGitMarks(scope){
+  const dirty=(chatFilesRepo&&chatFilesRepo.is_repo&&chatFilesRepo.dirty)||[];
+  (scope||document).querySelectorAll('.cf-git[data-cf-g]').forEach(el=>{
+    const p=el.dataset.cfG; let st=null;
+    if(el.dataset.cfGDir){
+      if(dirty.some(d=>d.path.startsWith(p+'/')||d.path.includes('/'+p+'/'))) st='•';
+    }else{
+      const hit=dirty.find(d=>d.path===p||d.path.endsWith('/'+p)||p.endsWith('/'+d.path));
+      if(hit) st=(hit.status||'M')[0];
+    }
+    if(!st){ el.textContent=''; el.className='cf-git'; return; }
+    const cls=st==='•'?'m':st==='?'?'u':st.toLowerCase()==='a'?'a':st.toLowerCase()==='d'?'d':'m';
+    el.textContent=st==='•'?'•':st.toUpperCase();
+    el.className='cf-git '+cls;
+    el.title=st==='•'?'contains uncommitted changes':'uncommitted: '+st;
+  });
 }
 
 // Create file / folder (field correction: "can't add a new file, can't add a folder").
-async function chatFilesCreate(isDir){
+// v0.3.8.52 (second field round): + File and + Folder BROWSE like the Browse button does — a
+// picker over the project's own jailed tree instead of a prompt() asking for a path from memory.
+// Navigate to where the new entry belongs (+ Folder walks folders only; + File also SHOWS the
+// files already at each stop, since seeing what exists is the point of browsing), name it,
+// create. The POST underneath is the same attributed, jailed call it always was.
+async function chatFilesCreate(isDir, at){
   if(!chatFilesProjectId) return;
-  const rel=prompt(isDir?'New folder path (relative to the working directory):':'New file path (relative to the working directory):');
-  if(!rel) return;
-  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files','POST',{path:rel, dir:!!isDir});
-  chatSetState((r&&r.message)||'');
-  if(r&&r.success){
-    rel.split('/').slice(0,-1).reduce((acc,part)=>{ const p=(acc?acc+'/':'')+part; chatFilesExpanded.add(p); return p; },'');
-    if(!isDir){ await chatFilesLoad(); chatFilesEdit(rel.replace(/^\/+/,'')); } else chatFilesLoad();
-  }
+  const body=document.getElementById('chat-files-body'); if(!body) return;
+  if(!document.getElementById('cf-create-panel'))
+    body.insertAdjacentHTML('afterbegin','<div id="cf-create-panel" style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:300px;display:flex;flex-direction:column;"></div>');
+  const panel=document.getElementById('cf-create-panel');
+  const rel=(at||'').replace(/^\/+/,'');
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path='+encodeURIComponent(rel));
+  if(!(r&&r.success)){ panel.innerHTML=`<div class="hud-state err" style="padding:8px;">${escapeHtml((r&&r.message)||'Could not list that folder.')}</div>`; return; }
+  const entries=r.data.entries||[];
+  const dirs=entries.filter(e=>e.dir), files=entries.filter(e=>!e.dir);
+  const parent=rel?rel.split('/').slice(0,-1).join('/'):null;
+  panel.innerHTML=`
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);">
+      <span style="font-size:10px;color:var(--muted);">New ${isDir?'folder':'file'} in</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/${escapeHtml(rel)}</span>
+      <button class="btn btn-ghost" data-cfc-close style="padding:1px 8px;font-size:10px;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;">
+      ${rel!==null&&rel!==''?`<div class="cf-row" data-cfc-go="${escapeHtml(parent)}" style="padding:3px 10px;font-size:11px;cursor:pointer;color:var(--dim);">↩ ..</div>`:''}
+      ${dirs.map(e=>`<div class="cf-row" data-cfc-go="${escapeHtml((rel?rel+'/':'')+e.name)}" style="padding:3px 10px;font-size:11px;cursor:pointer;">${GLYPH.folder} ${escapeHtml(e.name)}</div>`).join('')}
+      ${isDir?'':files.map(e=>`<div style="padding:3px 10px;font-size:11px;color:var(--dim);">${GLYPH.file} ${escapeHtml(e.name)}</div>`).join('')}
+      ${(dirs.length||(!isDir&&files.length))?'':'<div class="hud-state" style="padding:8px;">Empty folder.</div>'}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-top:1px solid var(--border);">
+      <input class="provider-input" data-cfc-name placeholder="${isDir?'folder-name':'file-name.ext'}" style="flex:1;font-size:11px;">
+      <button class="btn btn-primary" data-cfc-create style="padding:2px 10px;font-size:10px;">Create here</button>
+    </div>`;
+  panel.querySelectorAll('[data-cfc-go]').forEach(el=>
+    el.addEventListener('click',()=>chatFilesCreate(isDir, el.dataset.cfcGo)));
+  panel.querySelector('[data-cfc-close]')?.addEventListener('click',()=>panel.remove());
+  const nameInput=panel.querySelector('[data-cfc-name]');
+  const create=async ()=>{
+    const name=(nameInput.value||'').trim().replace(/^\/+|\/+$/g,'');
+    if(!name) return;
+    const full=(rel?rel+'/':'')+name;
+    const cr=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files','POST',{path:full, dir:!!isDir});
+    chatSetState((cr&&cr.message)||'');
+    if(cr&&cr.success){
+      panel.remove();
+      full.split('/').slice(0,-1).reduce((acc,part)=>{ const p=(acc?acc+'/':'')+part; chatFilesExpanded.add(p); return p; },'');
+      if(!isDir){ await chatFilesLoad(); chatFilesEdit(full); } else chatFilesLoad();
+    }
+  };
+  panel.querySelector('[data-cfc-create]')?.addEventListener('click',create);
+  nameInput?.addEventListener('keydown',e=>{ if(e.key==='Enter') create(); });
+  nameInput?.focus();
 }
 document.getElementById('chat-files-newfile')?.addEventListener('click',()=>chatFilesCreate(false));
 document.getElementById('chat-files-newdir')?.addEventListener('click',()=>chatFilesCreate(true));
@@ -5136,18 +5496,49 @@ async function chatFilesEdit(path){
   if(!(r&&r.success)){ chatSetState((r&&r.message)||'Could not open the file.'); return; }
   editor.hidden=false;
   chatEditorPath=r.data.path;
+  // v0.3.8.52 — the elected file stays LIT in the tree above.
+  chatFilesSelPath=path;
+  document.querySelectorAll('.cf-row[data-cf-file]').forEach(el=>
+    el.classList.toggle('sel', el.dataset.cfFile===path));
   chatEditorShowText();               // a fresh file always opens in EDIT mode, not a stale diff
   setEl('chat-editor-path',r.data.path);
   document.getElementById('chat-editor-text').value=r.data.content;
   document.getElementById('chat-editor-msg').textContent='';
+  chatEditorHl();
 }
 
 function chatEditorShowText(){
   chatEditorDiffMode=false;
-  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
-  if(t) t.hidden=false; if(d) d.hidden=true;
+  const w=document.getElementById('chat-editor-wrap'), d=document.getElementById('chat-editor-diff');
+  if(w) w.hidden=false; if(d) d.hidden=true;
   document.getElementById('chat-editor-changes')?.setAttribute('aria-pressed','false');
 }
+
+/* v0.3.8.52 — the editor's highlighted layer: the SAME escape-first chatHighlight the chat's
+ * fenced blocks use, keyed by file extension, re-run (debounced) on every edit and scroll-synced
+ * under the transparent textarea. Oversized files fall back to plain escaped text — visible,
+ * editable, just uncolored. */
+function chatEditorLang(p){
+  const ext=(p||'').split('.').pop().toLowerCase();
+  return ({js:'js',mjs:'js',cjs:'js',jsx:'js',ts:'js',tsx:'js',json:'js',
+    py:'py',cs:'cs',sh:'sh',bash:'sh',ps1:'sh',yml:'sh',yaml:'sh',sql:'sql'})[ext]||'';
+}
+let chatEditorHlTimer=null;
+function chatEditorHl(){
+  const pre=document.getElementById('chat-editor-hl'), t=document.getElementById('chat-editor-text');
+  if(!pre||!t) return;
+  const v=t.value;
+  // The trailing newline keeps the pre's scroll height matching the textarea's on the last line.
+  pre.innerHTML=(v.length>200000?escapeHtml(v):chatHighlight(v,chatEditorLang(chatEditorPath)))+'\n';
+  pre.scrollTop=t.scrollTop; pre.scrollLeft=t.scrollLeft;
+}
+document.getElementById('chat-editor-text')?.addEventListener('input',()=>{
+  clearTimeout(chatEditorHlTimer); chatEditorHlTimer=setTimeout(chatEditorHl,90);
+});
+document.getElementById('chat-editor-text')?.addEventListener('scroll',()=>{
+  const pre=document.getElementById('chat-editor-hl'), t=document.getElementById('chat-editor-text');
+  if(pre&&t){ pre.scrollTop=t.scrollTop; pre.scrollLeft=t.scrollLeft; }
+});
 
 document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>{
   const msg=document.getElementById('chat-editor-msg');
@@ -5183,7 +5574,7 @@ function cfGitDiffHtml(text){
 }
 
 document.getElementById('chat-editor-changes')?.addEventListener('click',async ()=>{
-  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
+  const t=document.getElementById('chat-editor-wrap'), d=document.getElementById('chat-editor-diff');
   if(chatEditorDiffMode){ chatEditorShowText(); return; }
   chatEditorDiffMode=true; t.hidden=true; d.hidden=false;
   document.getElementById('chat-editor-changes').setAttribute('aria-pressed','true');
@@ -5494,12 +5885,15 @@ async function loadProjectView(){
   if(!(r&&r.success&&r.data)){ setEl('pv-name','Project not found'); setEl('pv-sub',(r&&r.message)||''); return; }
   pvProject=r.data;
   setEl('pv-name', pvProject.name||'Untitled project');
-  setEl('pv-sub', [
-    pvProject.path?('📁 '+pvProject.path):null,
-    (pvProject.conversations||[]).length+' conversation(s)',
-    pvProject.schedule_count+' schedule(s)',
+  // innerHTML, not setEl: the folder GLYPH is inline SVG, and the E2E sweep caught setEl's
+  // textContent printing it as literal "<svg …>" prose. Operator data is escaped; the icon is not.
+  const pvSub=document.getElementById('pv-sub');
+  if(pvSub) pvSub.innerHTML=[
+    pvProject.path?`${GLYPH.folder} ${escapeHtml(pvProject.path)}`:null,
+    escapeHtml((pvProject.conversations||[]).length+' conversation(s)'),
+    escapeHtml(pvProject.schedule_count+' schedule(s)'),
     pvProject.archived?'archived':null,
-  ].filter(Boolean).join(' · '));
+  ].filter(Boolean).join(' · ');
   pvRenderChat(); pvRenderObjectives(); pvRenderSchedules(); pvRenderRules(); pvRenderHistory(); pvFillSettings();
 }
 
@@ -5509,9 +5903,19 @@ function pvTab(name){
 }
 document.querySelectorAll('.pv-tab').forEach(t=>t.addEventListener('click',()=>pvTab(t.dataset.tab)));
 document.getElementById('pv-back')?.addEventListener('click',()=>go('/projects'));
-document.getElementById('pv-new-conv')?.addEventListener('click',()=>{
-  chatPendingProjectId=projectViewId; chatActiveId=null; chatComposingNew=true; go('/chat');
-  document.getElementById('chat-input')?.focus();
+// v0.3.8.52 (field report): the button CREATES the conversation, immediately and in THIS
+// project — it used to only flip the chat page into composing mode, which looked like a plain
+// navigation ("just takes us back to the chat page"). The conversation is born untitled and
+// appears in the tracker at once; the server names it from the first thing said in it.
+document.getElementById('pv-new-conv')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-new-conv'); if(btn) btn.disabled=true;
+  try{
+    const c=await api('/conversations','POST',{ project_id: projectViewId });
+    if(!(c&&c.success&&c.data)){ chatSetState((c&&c.message)||'Could not start a conversation.'); return; }
+    chatPendingProjectId=null; chatComposingNew=false;
+    go('/chat'); chatOpen(c.data.id); loadChat();
+    document.getElementById('chat-input')?.focus();
+  }finally{ if(btn) btn.disabled=false; }
 });
 
 function pvRenderChat(){
@@ -5520,7 +5924,7 @@ function pvRenderChat(){
   host.innerHTML = convs.length
     ? convs.map(c=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-open="${escapeHtml(c.id)}">
         <div style="padding:10px 13px;display:flex;align-items:center;gap:9px;">
-          ${c.pinned?'<span title="Pinned">★</span>':''}
+          ${c.pinned?`<span title="Pinned">${GLYPH.starFill}</span>`:''}
           <b style="color:var(--text);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title||'Conversation')}</b>
           ${(c.mission_ids||[]).length?`<span class="sch-badge">${c.mission_ids.length} mission(s)</span>`:''}
           ${c.cancelled?'<span class="sch-badge">stopped</span>':''}
@@ -5711,7 +6115,7 @@ async function pvLoadGrants(){
   const grants=(r&&r.success&&r.data&&r.data.grants)||[];
   host.innerHTML=grants.length
     ? grants.map(gr=>`<div class="card" style="margin-bottom:4px;"><div style="padding:8px 12px;display:flex;align-items:center;gap:9px;">
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">📁 ${escapeHtml(gr.path)}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${GLYPH.folder} ${escapeHtml(gr.path)}</span>
         <span style="font-size:9px;color:var(--dim);">opened by ${escapeHtml(gr.granted_by||'?')}</span>
         <button class="btn btn-ghost" data-close-gate="${escapeHtml(gr.id)}" style="font-size:10px;">Close gate</button>
       </div></div>`).join('')
@@ -5777,7 +6181,7 @@ async function loadProjectCards(){
         <span style="font-size:10px;color:var(--dim)">${p.conversations} conversation(s) · ${p.missions} mission(s)</span>
       </div>
       ${p.description_md?`<div style="font-size:11px;color:var(--muted);margin-top:5px;white-space:pre-wrap;">${escapeHtml(String(p.description_md).slice(0,240))}</div>`:''}
-      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">📁 ${escapeHtml(p.path)}</div>`:''}
+      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">${GLYPH.folder} ${escapeHtml(p.path)}</div>`:''}
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button class="btn btn-ghost project-chat">＋ New conversation here</button>
         <button class="btn btn-ghost project-archive">${p.archived?'Unarchive':'Archive'}</button>
@@ -5906,6 +6310,51 @@ async function loadAgentCli(force){
         </div>
       </div>`;
     }).join('');
+
+    // v0.3.8.52 — the LOCAL runtime, first in the list: the no-account path is the first thing a
+    // fresh install reaches for, and it was the one path this page had no story for. Same card
+    // grammar as the agents; Install only renders where the server says end-to-end install is
+    // real (install_supported — Windows/winget), everywhere else the command is SHOWN instead,
+    // because a button that would only refuse is worse than a sentence.
+    const lo=d.local;
+    if(lo){
+      const loInstalled=!!lo.installed;
+      list.insertAdjacentHTML('afterbegin', `<div class="card agentcli-card">
+        <div class="agentcli-hd">
+          <span class="health-dot ${loInstalled?'ok':''}"></span>
+          <span class="agentcli-name">${escapeHtml(lo.name||'Local models')}</span>
+          <span class="agentcli-vendor">${escapeHtml(lo.vendor||'')}</span>
+          ${loInstalled?`<span class="hud-badge completed">Installed${lo.version?' · '+escapeHtml(lo.version):''}</span>`
+                       :`<span class="hud-badge">Not installed</span>`}
+        </div>
+        ${loInstalled
+          ? `<div class="agentcli-sub">Running locally — pull a model to route ants to it: <code>ollama pull llama3.1:8b</code></div>`
+          : `<div class="agentcli-sub">${escapeHtml(lo.unavailable_reason||'Not found on this machine.')}${
+               lo.install_supported?'':' Install it yourself: '}${
+               lo.install_supported?'':`<code>${escapeHtml(lo.install_command||'')}</code>`}</div>`}
+        <div class="agentcli-actions">
+          ${loInstalled?'':(d.install_enabled&&lo.install_supported
+            ? `<button class="btn btn-primary agentcli-install-local">Install</button>`
+            : (lo.install_supported
+                ? `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`
+                : ''))}
+          <a class="btn btn-ghost" href="${escapeHtml(lo.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+        </div>
+      </div>`);
+      list.querySelector('.agentcli-install-local')?.addEventListener('click', async function(){
+        const btn=this;
+        if(!await uiConfirm('Install Ollama on this machine?\n\nIt runs Windows’ own package manager '
+          + '(winget) here. Models you pull afterwards run entirely on this machine.')) return;
+        btn.disabled=true; btn.textContent='Installing…';
+        agentCliMsg('Installing — a download of this size can take a few minutes.', true);
+        try{
+          const r=await api('/agents/local/install','POST');
+          if(r&&r.success) agentCliMsg(r.message||'Installed.', true);
+          else agentCliMsg((r&&r.message)||'Install failed.', false);
+        }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
+        finally{ btn.disabled=false; btn.textContent='Install'; loadAgentCli(true); }
+      });
+    }
 
     // Bound after render, not inline: the console's CSP is script-src 'self' with no unsafe-inline,
     // so an onclick attribute here would be silently dropped by the browser.

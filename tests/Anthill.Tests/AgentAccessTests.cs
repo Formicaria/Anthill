@@ -298,4 +298,84 @@ public class AgentAccessTests : IDisposable
         Assert.Equal(Anthill.Core.Conversations.ConversationMode.Chat, outcome.Mode);
         Assert.True(outcome.Started);
     }
+
+    // ---- the direct-edit sweep (v0.3.8.52) --------------------------------------------------
+
+    private static bool GitAvailable =>
+        Anthill.Core.Projects.RepoOps.Git(Path.GetTempPath(), "--version").Ok;
+
+    private string NewRepo()
+    {
+        var root = Path.Combine(_dir, "repo-" + Guid.NewGuid().ToString("N")[..6]);
+        Directory.CreateDirectory(root);
+        Assert.True(Anthill.Core.Projects.RepoOps.Git(root, "init").Ok);
+        File.WriteAllText(Path.Combine(root, "seed.txt"), "seed");
+        Assert.True(Anthill.Core.Projects.RepoOps.Commit(root, new[] { "seed.txt" }, "seed", "t").Ok);
+        return root;
+    }
+
+    /// <summary>
+    /// The v0.3.8.52 field defect verbatim: "Did not auto commit" — because under Skip-all the
+    /// chat lane edits files DIRECTLY with its own tools, no patch exists, and the patch-apply
+    /// commit hook has nothing to fire on. The sweep commits what the run made newly dirty —
+    /// and ONLY that: the operator's own work-in-progress, dirty before the run, is untouchable.
+    /// </summary>
+    [Fact]
+    public void DirectEditsUnderBypass_AreCommitted_TheOperatorsOwnDirtIsNot()
+    {
+        if (!GitAvailable) return;
+        var root = NewRepo();
+        File.WriteAllText(Path.Combine(root, "operator-wip.txt"), "the operator's half-done thought");
+
+        _memory.SaveProject(new Anthill.Core.Projects.Project { Id = "p-sweep", Name = "sweep", Path = root });
+        var conversation = new Conversation
+        {
+            Id = "c-sweep", Role = "queen", ProjectId = "p-sweep",
+            Policy = EscalationPolicy.Bypass, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
+        };
+        _memory.SaveConversation(conversation);
+
+        var runner = new ConversationRunner(_memory, (_, _, _) => "unused",
+            ask: (_, _) =>
+            {
+                File.WriteAllText(Path.Combine(root, "colony.txt"), "written directly by the agent");
+                return new ConversationReply(true, "Done — colony.txt written.", "local", "llama", null);
+            });
+        var outcome = runner.Run(conversation, "add colony.txt with a note");
+        Assert.True(outcome.Started);
+
+        var state = Anthill.Core.Projects.RepoOps.Describe(root);
+        Assert.Equal(1, state.DirtyCount);                                    // only the wip remains
+        Assert.Contains(state.Dirty, d => d.Path.Contains("operator-wip"));
+        Assert.NotNull(state.LastCommit);
+        Assert.Contains("add colony.txt", state.LastCommit);                  // subject = the ask
+    }
+
+    /// <summary>Bypass only. Under Automatically approve a dirty tree is the operator's to
+    /// commit (the pane's Commit button) — the sweep must not fire.</summary>
+    [Fact]
+    public void TheSweep_DoesNotFire_UnderAutoApprove()
+    {
+        if (!GitAvailable) return;
+        var root = NewRepo();
+        _memory.SaveProject(new Anthill.Core.Projects.Project { Id = "p-noswp", Name = "noswp", Path = root });
+        var conversation = new Conversation
+        {
+            Id = "c-noswp", Role = "queen", ProjectId = "p-noswp",
+            Policy = EscalationPolicy.AutoApprove, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
+        };
+        _memory.SaveConversation(conversation);
+
+        var runner = new ConversationRunner(_memory, (_, _, _) => "unused",
+            ask: (_, _) =>
+            {
+                File.WriteAllText(Path.Combine(root, "colony.txt"), "auto-approve direct edit");
+                return new ConversationReply(true, "Edited.", "local", "llama", null);
+            });
+        Assert.True(runner.Run(conversation, "tweak something small").Started);
+
+        var state = Anthill.Core.Projects.RepoOps.Describe(root);
+        Assert.Contains(state.Dirty, d => d.Path.Contains("colony.txt"));    // left for the operator
+        Assert.Contains("seed", state.LastCommit ?? "");                     // no new commit landed
+    }
 }
