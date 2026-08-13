@@ -4313,7 +4313,14 @@ function chatRenderContent(text){
   const parts=String(text||'').split('```');
   let html='';
   for(let i=0;i<parts.length;i++){
-    if(i%2===0){ html+=escapeHtml(parts[i]); continue; }
+    if(i%2===0){
+      // v0.3.8.52 — inline `code` and **bold** in the prose segments. Escape-first is preserved:
+      // both replacements run ON the escaped text and only wrap it, never widen what can render.
+      let seg=escapeHtml(parts[i]);
+      seg=seg.replace(/`([^`\n]+)`/g,'<code class="chat-inline">$1</code>');
+      seg=seg.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+      html+=seg; continue;
+    }
     // Odd segments are fenced. The first line may be a language tag; it names the highlighter.
     const nl=parts[i].indexOf('\n');
     const lang=nl>=0?parts[i].slice(0,nl).trim().toLowerCase():'';
@@ -5065,6 +5072,7 @@ async function chatFilesRepoLoad(){
   if(!badge||!chatFilesProjectId) return;
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo');
   chatFilesRepo=(r&&r.success&&r.data)||null;
+  chatFilesApplyGitMarks();   // the tree usually rendered before this answer arrived
   if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; return; }
   if(chatFilesRepo.is_repo){
     badge.textContent='⎇ '+(chatFilesRepo.branch||'?')
@@ -5088,14 +5096,20 @@ document.getElementById('chat-files-commit')?.addEventListener('click',async ()=
   chatFilesRepoLoad();
 });
 
+let chatFilesSelPath=null;
+
 function chatFilesRenderDir(host, base, entries, depth){
   host.innerHTML=(entries||[]).map(e=>{
     const p=(base?base+'/':'')+e.name;
     const open=chatFilesExpanded.has(p);
-    return `<div class="cf-row" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
+    // v0.3.8.52 — the WHOLE row is the click target (the listener always was on the row; now the
+    // hover/selected styling says so), the selected file stays lit, and a git-status letter sits
+    // in the dead space before the size.
+    return `<div class="cf-row${(!e.dir&&chatFilesSelPath===p)?' sel':''}" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
         <span style="width:12px;color:var(--dim);">${e.dir?(open?'▾':'▸'):''}</span>
         <span>${e.dir?'📁':'📄'}</span>
         <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
+        <span class="cf-git" data-cf-g="${escapeHtml(p)}" data-cf-g-dir="${e.dir?'1':''}"></span>
         ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
       </div><div class="cf-kids" data-cf-kids="${escapeHtml(p)}" ${open?'':'hidden'}></div>`;
   }).join('')||`<div style="padding:4px 6px 4px ${8+depth*16}px;font-size:10px;color:var(--dim);">empty</div>`;
@@ -5109,6 +5123,29 @@ function chatFilesRenderDir(host, base, entries, depth){
     else kids.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open.')}</div>`;
   }));
   host.querySelectorAll(':scope > [data-cf-file]').forEach(el=>el.addEventListener('click',()=>chatFilesEdit(el.dataset.cfFile)));
+  chatFilesApplyGitMarks(host);
+}
+
+/* v0.3.8.52 — git status letters in the tree, from the dirty list the repo badge already fetched
+ * (zero extra calls): M modified, A added, D deleted, ? untracked; a dot on a folder that holds
+ * dirty files somewhere beneath it. Repo paths are repo-root-relative and tree paths are
+ * project-root-relative — suffix agreement bridges the two when the roots differ. */
+function chatFilesApplyGitMarks(scope){
+  const dirty=(chatFilesRepo&&chatFilesRepo.is_repo&&chatFilesRepo.dirty)||[];
+  (scope||document).querySelectorAll('.cf-git[data-cf-g]').forEach(el=>{
+    const p=el.dataset.cfG; let st=null;
+    if(el.dataset.cfGDir){
+      if(dirty.some(d=>d.path.startsWith(p+'/')||d.path.includes('/'+p+'/'))) st='•';
+    }else{
+      const hit=dirty.find(d=>d.path===p||d.path.endsWith('/'+p)||p.endsWith('/'+d.path));
+      if(hit) st=(hit.status||'M')[0];
+    }
+    if(!st){ el.textContent=''; el.className='cf-git'; return; }
+    const cls=st==='•'?'m':st==='?'?'u':st.toLowerCase()==='a'?'a':st.toLowerCase()==='d'?'d':'m';
+    el.textContent=st==='•'?'•':st.toUpperCase();
+    el.className='cf-git '+cls;
+    el.title=st==='•'?'contains uncommitted changes':'uncommitted: '+st;
+  });
 }
 
 // Create file / folder (field correction: "can't add a new file, can't add a folder").
@@ -5136,18 +5173,49 @@ async function chatFilesEdit(path){
   if(!(r&&r.success)){ chatSetState((r&&r.message)||'Could not open the file.'); return; }
   editor.hidden=false;
   chatEditorPath=r.data.path;
+  // v0.3.8.52 — the elected file stays LIT in the tree above.
+  chatFilesSelPath=path;
+  document.querySelectorAll('.cf-row[data-cf-file]').forEach(el=>
+    el.classList.toggle('sel', el.dataset.cfFile===path));
   chatEditorShowText();               // a fresh file always opens in EDIT mode, not a stale diff
   setEl('chat-editor-path',r.data.path);
   document.getElementById('chat-editor-text').value=r.data.content;
   document.getElementById('chat-editor-msg').textContent='';
+  chatEditorHl();
 }
 
 function chatEditorShowText(){
   chatEditorDiffMode=false;
-  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
-  if(t) t.hidden=false; if(d) d.hidden=true;
+  const w=document.getElementById('chat-editor-wrap'), d=document.getElementById('chat-editor-diff');
+  if(w) w.hidden=false; if(d) d.hidden=true;
   document.getElementById('chat-editor-changes')?.setAttribute('aria-pressed','false');
 }
+
+/* v0.3.8.52 — the editor's highlighted layer: the SAME escape-first chatHighlight the chat's
+ * fenced blocks use, keyed by file extension, re-run (debounced) on every edit and scroll-synced
+ * under the transparent textarea. Oversized files fall back to plain escaped text — visible,
+ * editable, just uncolored. */
+function chatEditorLang(p){
+  const ext=(p||'').split('.').pop().toLowerCase();
+  return ({js:'js',mjs:'js',cjs:'js',jsx:'js',ts:'js',tsx:'js',json:'js',
+    py:'py',cs:'cs',sh:'sh',bash:'sh',ps1:'sh',yml:'sh',yaml:'sh',sql:'sql'})[ext]||'';
+}
+let chatEditorHlTimer=null;
+function chatEditorHl(){
+  const pre=document.getElementById('chat-editor-hl'), t=document.getElementById('chat-editor-text');
+  if(!pre||!t) return;
+  const v=t.value;
+  // The trailing newline keeps the pre's scroll height matching the textarea's on the last line.
+  pre.innerHTML=(v.length>200000?escapeHtml(v):chatHighlight(v,chatEditorLang(chatEditorPath)))+'\n';
+  pre.scrollTop=t.scrollTop; pre.scrollLeft=t.scrollLeft;
+}
+document.getElementById('chat-editor-text')?.addEventListener('input',()=>{
+  clearTimeout(chatEditorHlTimer); chatEditorHlTimer=setTimeout(chatEditorHl,90);
+});
+document.getElementById('chat-editor-text')?.addEventListener('scroll',()=>{
+  const pre=document.getElementById('chat-editor-hl'), t=document.getElementById('chat-editor-text');
+  if(pre&&t){ pre.scrollTop=t.scrollTop; pre.scrollLeft=t.scrollLeft; }
+});
 
 document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>{
   const msg=document.getElementById('chat-editor-msg');
@@ -5183,7 +5251,7 @@ function cfGitDiffHtml(text){
 }
 
 document.getElementById('chat-editor-changes')?.addEventListener('click',async ()=>{
-  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
+  const t=document.getElementById('chat-editor-wrap'), d=document.getElementById('chat-editor-diff');
   if(chatEditorDiffMode){ chatEditorShowText(); return; }
   chatEditorDiffMode=true; t.hidden=true; d.hidden=false;
   document.getElementById('chat-editor-changes').setAttribute('aria-pressed','true');
