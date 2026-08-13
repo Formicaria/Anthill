@@ -4761,16 +4761,8 @@ document.getElementById('chat-send')?.addEventListener('click', ()=>{
 });
 // v0.3.8.51: the ⚒ button retired — one send path; the colony proposes missions itself and the
 // approval policy governs them. (Handler removed with the button, noted so its absence is a fact.)
-// The 📁 Gates button beside the policy selector is the filesystem twin: when the colony's reply
-// says it needs a directory, this opens the project's gates panel to grant exactly that path.
-document.getElementById('chat-gates')?.addEventListener('click',async ()=>{
-  if(!chatActiveId) return;
-  const r=await api('/conversations/'+encodeURIComponent(chatActiveId));
-  const pid=r&&r.success&&r.data&&r.data.project_id;
-  if(!pid) return;
-  go('/projects/'+pid);
-  setTimeout(()=>pvTab('settings'),600);   // land on the tab that holds the gates
-});
+// The selector wears a "Gates" LABEL (operator correction: the dropdown IS the gates — a sibling
+// button also named Gates was one gates too many). Directory gates live in the project Settings.
 let chatStopInFlight=false;
 document.getElementById('chat-stop')?.addEventListener('click', async ()=>{
   if(chatStopInFlight||!chatActiveId) return;

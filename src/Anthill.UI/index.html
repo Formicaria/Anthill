@@ -1353,6 +1353,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .route-assign label{min-width:130px;font-size:11px;color:var(--muted);}
 .route-assign select{flex:0 1 340px;font-size:11px;}
 /* v0.3.8.48: the approval selector and the inline change cards. */
+.chat-gates-label{font-size:10px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;margin-right:2px;}
 .chat-policy{font-size:10px;padding:4px 7px;width:auto;background:var(--bg);}
 .patch-card{align-self:stretch;max-width:min(760px,92%);border:1px solid var(--border);
   border-radius:9px;padding:11px 13px;background:rgba(2,6,23,.45);}
@@ -3458,14 +3459,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <!-- v0.3.8.48: the approval gate, on the conversation itself. Three modes, the
                      same three the backend has always had; changing one is attributed. -->
                 <label class="sr-only" for="chat-policy">Approval mode</label>
+                <!-- v0.3.8.51 (operator correction): the selector IS the gates, so it gets the
+                     label instead of a sibling button also named Gates. Directory gates live in
+                     the project's Settings; the label's title says so. -->
+                <span class="chat-gates-label" id="chat-gates-label"
+                      title="The approval gates for this conversation. Directory gates — the paths the colony may reach — are in the project's Settings.">Gates</span>
                 <select class="provider-input chat-policy" id="chat-policy" title="How this conversation handles side effects">
                   <option value="ask">Manual approval</option>
                   <option value="autoapprove">Automatically approve</option>
                   <option value="bypass">Skip all approvals</option>
                 </select>
-                <!-- v0.3.8.51: the filesystem twin of the selector above. When the colony says it
-                     needs a directory, this is where the operator opens that gate. -->
-                <button class="btn btn-ghost" id="chat-gates" title="Directory gates — the paths this project's colony may reach">📁 Gates</button>
                 <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"

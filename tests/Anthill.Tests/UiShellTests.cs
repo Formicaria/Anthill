@@ -1030,7 +1030,10 @@ public class UiShellTests
         // selector, and approvals still travel mode:'mission' through the same turn endpoint.
         Assert.DoesNotContain("id=\"chat-work\"", html);
         Assert.DoesNotContain("chatSend('mission')", js);
-        Assert.Contains("id=\"chat-gates\"", html);
+        // Operator correction: the policy SELECTOR is the gates, so it wears the label — a
+        // sibling button also named Gates was one gates too many.
+        Assert.Contains("id=\"chat-gates-label\"", html);
+        Assert.DoesNotContain("id=\"chat-gates\">", html);
         Assert.Contains("mode:'mission'", js);   // convApprove's re-send keeps the gated path
     }
 
