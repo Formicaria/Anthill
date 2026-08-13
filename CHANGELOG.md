@@ -1,6 +1,9 @@
 # ANTHILL Changelog
 
-## v0.3.8.53 - the Windows field report: first-run must actually work
+## v0.3.8.52 - the chat lane's edits reach git, the files pane learns manners, and Windows first-run actually works
+
+The Windows field report landed before this release was tagged, so its repairs ship IN it —
+first-run is the first thing people do, and it has to work end to end.
 
 **Agent installs become Windows-native.** On Windows, npm and every npm-installed agent is a
 .cmd shim — which CreateProcess cannot start, so every probe, install and run died at
@@ -30,7 +33,17 @@ And a target=_blank link opens the operator's REAL browser, not WebView2's unbra
 — which is what makes the new door honest: the Formicaria mark in the rail now links home to
 formicaria.us, in every shape the console ships in.
 
-## v0.3.8.52 - the chat lane's edits reach git, and the files pane learns manners
+**Browse for a working directory.** The files pane's "set it here" form asked the operator to
+type an absolute path from memory. A Browse button now opens a picker with two lanes: the
+desktop shell shows the real OS folder dialog (a WebView2 host bridge — a web page cannot learn
+an absolute path from the browser's own picker, but a native host can simply ask), and every
+browser shape gets a server-backed directory browser over the new run_mission-gated `/fs/dirs`,
+because in Docker and LXC the working directory lives on the SERVER and the server's tree is the
+only one worth browsing. Choosing a folder sets it; the typed path stays as the fallback.
+
+**The license is what the README always claimed to point at.** The LICENSE file said "All Rights
+Reserved" while the README called it MIT; both were wrong about the intent. The repository now
+carries the Apache License 2.0, verbatim, attribution preserved, and the README names it.
 
 **"Did not auto commit" — root cause and repair.** v0.3.8.51's commit hook rode the patch
 pipeline; under Skip all approvals the CHAT lane edits live files DIRECTLY with its own tools,

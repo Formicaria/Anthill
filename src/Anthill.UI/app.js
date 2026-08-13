@@ -2849,7 +2849,7 @@ let lastSystemSummary=null, lastUpdateInfo=null;
 const LOCAL_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 const CLOUD_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
 
-// v0.3.8.53 — the last color emoji leave the console (the UI-alignment sweep's final open item:
+// v0.3.8.52 — the last color emoji leave the console (the UI-alignment sweep's final open item:
 // "remaining emoji/symbol icons swept to the open-source set"). 📁📄🕘📎★☆☰⚖ rendered in the OS's
 // emoji palette, one island of color in a themed monochrome UI. Same 24-box stroke grammar as
 // IAICON above, sized for inline text; fill-mode glyphs (the pinned star) opt in per shape.
@@ -5061,16 +5061,31 @@ async function chatFilesLoad(){
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path=');
   if(!(r&&r.success)){
     // Field correction: "can't add a working tree." A project without one sets it right here.
+    // v0.3.8.52 (field report): typing an absolute path from memory is the fallback, not the
+    // ask — Browse opens a picker. Desktop shell: the real OS folder dialog, through the
+    // WebView2 host bridge. Browser shapes: the server-backed directory browser (/fs/dirs),
+    // because the page cannot learn an absolute path from its own picker and in Docker/LXC the
+    // working directory lives on the SERVER anyway.
     body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>
       <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
         <input class="provider-input" id="cf-set-root" placeholder="/absolute/path/to/working/directory" style="flex:1;">
+        <button class="btn btn-ghost" id="cf-set-root-browse">Browse…</button>
         <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
-      </div>`;
-    document.getElementById('cf-set-root-go')?.addEventListener('click',async ()=>{
-      const p=(document.getElementById('cf-set-root').value||'').trim(); if(!p) return;
+      </div>
+      <div id="cf-dir-browser" hidden style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:280px;display:flex;flex-direction:column;"></div>`;
+    const setRoot=async p=>{
+      if(!p) return;
       const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
       chatSetState((pr&&pr.message)||'');
       if(pr&&pr.success) chatFilesLoad();
+    };
+    document.getElementById('cf-set-root-go')?.addEventListener('click',
+      ()=>setRoot((document.getElementById('cf-set-root').value||'').trim()));
+    document.getElementById('cf-set-root-browse')?.addEventListener('click',async ()=>{
+      const native=await cfPickFolderNative();
+      if(native===''){ return; }                       // the operator cancelled the OS dialog
+      if(native){ document.getElementById('cf-set-root').value=native; setRoot(native); return; }
+      cfDirBrowserOpen('', setRoot);                   // no native picker — the server-backed one
     });
     return;
   }
@@ -5078,6 +5093,60 @@ async function chatFilesLoad(){
   body.innerHTML='<div id="cf-tree"></div>';
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
   chatFilesRepoLoad();
+}
+
+/* v0.3.8.52 — the working-directory picker's two lanes.
+ *
+ * Native lane: inside the desktop shell, window.chrome.webview exists and the HOST owns a real
+ * FolderBrowserDialog (ShellForm's pick-folder bridge). Resolves to the absolute path, '' when
+ * the operator cancels, or null when there is no native picker to ask.
+ * Server lane: everywhere else, a small directory browser over /fs/dirs — the server's own tree,
+ * which in Docker/LXC is the only tree a working directory can live on. */
+function cfPickFolderNative(){
+  return new Promise(resolve=>{
+    const wv=window.chrome&&window.chrome.webview;
+    if(!wv){ resolve(null); return; }
+    const onMsg=ev=>{
+      const d=ev.data;
+      if(d&&d.type==='picked-folder'){ wv.removeEventListener('message',onMsg); resolve(d.path||''); }
+    };
+    wv.addEventListener('message',onMsg);
+    wv.postMessage('pick-folder');
+  });
+}
+
+async function cfDirBrowserOpen(startPath, onPick){
+  const host=document.getElementById('cf-dir-browser'); if(!host) return;
+  host.hidden=false;
+  host.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
+  const r=await api('/fs/dirs?path='+encodeURIComponent(startPath||''));
+  if(!(r&&r.success)){
+    host.innerHTML=`<div class="hud-state err" style="padding:8px;">${escapeHtml((r&&r.message)||'Could not browse this host.')}</div>`;
+    return;
+  }
+  const d=r.data||{}, dirs=d.dirs||[];
+  host.innerHTML=`
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(d.path||'')}">${escapeHtml(d.path||'')}</span>
+      <button class="btn btn-ghost" data-cfb-home style="padding:1px 8px;font-size:10px;">Home</button>
+      ${(d.roots||[]).map(rt=>`<button class="btn btn-ghost" data-cfb-go="${escapeHtml(rt)}" style="padding:1px 8px;font-size:10px;">${escapeHtml(rt)}</button>`).join('')}
+      <button class="btn btn-primary" data-cfb-pick style="padding:1px 8px;font-size:10px;">Use this folder</button>
+      <button class="btn btn-ghost" data-cfb-close style="padding:1px 8px;font-size:10px;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;">
+      ${d.parent?`<div class="cf-row" data-cfb-go="${escapeHtml(d.parent)}" style="padding:3px 10px;font-size:11px;cursor:pointer;color:var(--dim);">↩ ..</div>`:''}
+      ${dirs.length?dirs.map(e=>`<div class="cf-row" data-cfb-go="${escapeHtml(e.path)}" style="padding:3px 10px;font-size:11px;cursor:pointer;">${GLYPH.folder} ${escapeHtml(e.name)}</div>`).join('')
+                   :'<div class="hud-state" style="padding:8px;">No subfolders.</div>'}
+    </div>`;
+  host.querySelectorAll('[data-cfb-go]').forEach(el=>
+    el.addEventListener('click',()=>cfDirBrowserOpen(el.dataset.cfbGo, onPick)));
+  host.querySelector('[data-cfb-home]')?.addEventListener('click',()=>cfDirBrowserOpen(d.home||'', onPick));
+  host.querySelector('[data-cfb-pick]')?.addEventListener('click',()=>{
+    const input=document.getElementById('cf-set-root'); if(input) input.value=d.path||'';
+    host.hidden=true;
+    onPick(d.path||'');
+  });
+  host.querySelector('[data-cfb-close]')?.addEventListener('click',()=>{ host.hidden=true; });
 }
 
 /* v0.3.8.51 third round — GIT AWARENESS (operator: "make the colony aware (and show) whether
@@ -6073,7 +6142,7 @@ async function loadAgentCli(force){
       </div>`;
     }).join('');
 
-    // v0.3.8.53 — the LOCAL runtime, first in the list: the no-account path is the first thing a
+    // v0.3.8.52 — the LOCAL runtime, first in the list: the no-account path is the first thing a
     // fresh install reaches for, and it was the one path this page had no story for. Same card
     // grammar as the agents; Install only renders where the server says end-to-end install is
     // real (install_supported — Windows/winget), everywhere else the command is SHOWN instead,
