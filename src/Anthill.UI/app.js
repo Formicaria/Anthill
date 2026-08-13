@@ -2849,6 +2849,21 @@ let lastSystemSummary=null, lastUpdateInfo=null;
 const LOCAL_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 const CLOUD_ICON='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
 
+// v0.3.8.53 — the last color emoji leave the console (the UI-alignment sweep's final open item:
+// "remaining emoji/symbol icons swept to the open-source set"). 📁📄🕘📎★☆☰⚖ rendered in the OS's
+// emoji palette, one island of color in a themed monochrome UI. Same 24-box stroke grammar as
+// IAICON above, sized for inline text; fill-mode glyphs (the pinned star) opt in per shape.
+const INLINE_ICON=(body,size)=>`<svg width="${size||12}" height="${size||12}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px">${body}</svg>`;
+const GLYPH={
+  folder: INLINE_ICON('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  file:   INLINE_ICON('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'),
+  clock:  INLINE_ICON('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>'),
+  list:   INLINE_ICON('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'),
+  scale:  INLINE_ICON('<path d="M12 3v18M8 21h8M4 7h16"/><path d="M6 7l-3 6a3.4 3.4 0 0 0 6 0z"/><path d="M18 7l-3 6a3.4 3.4 0 0 0 6 0z"/>'),
+  star:     INLINE_ICON('<polygon points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+  starFill: INLINE_ICON('<polygon fill="currentColor" points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+};
+
 async function pollModelInfo(){
   try{
     const r=await api('/system/summary'); if(!r.success) return;
@@ -3759,7 +3774,7 @@ async function onPatchToggle(det){
       ${orphanPending?`<button class="pc-act approve" data-onclick="pcApproveDirect('${pid}')" title="Creates the missing approval record, then approves">✓ Approve</button>`:''}
       ${canApprove?`<button class="pc-act reject" data-onclick="pcReject('${d.approval_id}','${pid}')">✕ Reject</button>`:''}
       ${orphanPending?`<button class="pc-act reject" data-onclick="pcRejectDirect('${pid}')">✕ Reject</button>`:''}
-      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">⚖ Verify &amp; Auto-approve</button>`:''}
+      ${canVerify?`<button class="pc-act" id="pc-verify-${pid}" data-onclick="pcVerify('${pid}')" title="Applies the patch with a backup, runs the verify command (build+test or your configured check), ALWAYS restores the workspace, and auto-approves only if green. Never auto-applies.">${GLYPH.scale} Verify &amp; Auto-approve</button>`:''}
       ${canEdit?`<button class="pc-act" data-onclick="pcOpenEdit('${pid}')" title="Edit this patch's content and offer it as an alternative proposal (goes through the same approval gate)">✎ Edit as alternative</button>`:''}
       ${canApply?`<button class="pc-act apply" data-onclick="pcApply('${pid}')">▶ Apply</button>`:''}
       ${canRevert?`<button class="pc-act reject" data-onclick="pcRevert('${pid}')" title="Undo this applied patch: deletes the created file (add) or restores the pre-apply backup (modify), then marks it reverted. Stays in the sandboxed workspace.">↺ Revert</button>`:''}
@@ -3901,7 +3916,9 @@ async function pcRejectDirect(patchId){
 async function pcVerify(patchId){
   const btn=document.getElementById('pc-verify-'+patchId);
   const out=document.getElementById('pc-verifyout-'+patchId);
-  if(btn){ btn.disabled=true; btn.textContent='⚖ Verifying… (build+test)'; }
+  // innerHTML, not textContent: the label carries the same inline scale icon as the button's
+  // template — constant markup, nothing operator-authored rides in.
+  if(btn){ btn.disabled=true; btn.innerHTML=`${GLYPH.scale} Verifying… (build+test)`; }
   if(out){ out.style.display='block'; out.innerHTML='<div style="color:var(--dim);font-size:11px;padding:6px 0;">Running unbiased verification — the patch is applied with a backup, the verify command runs, and the workspace is always restored. This can take a few minutes.</div>'; }
   try{
     const r=await api('/patches/'+encodeURIComponent(patchId)+'/verify','POST');
@@ -3920,7 +3937,7 @@ async function pcVerify(patchId){
     pcToast('Verify failed: '+e.message,false);
     if(out) out.innerHTML=`<div style="color:var(--red);font-size:11px;">Verify error: ${escapeHtml(e.message)}</div>`;
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent='⚖ Verify & Auto-approve'; }
+    if(btn){ btn.disabled=false; btn.innerHTML=`${GLYPH.scale} Verify &amp; Auto-approve`; }
   }
 }
 function pcOpenEdit(patchId){
@@ -4280,7 +4297,7 @@ async function loadChat(){
         ${escapeHtml(c.title||'Conversation')}
         <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
           title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
-          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?'★':'☆'}</button>
+          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?GLYPH.starFill:GLYPH.star}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
           :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
       </div>`).join('');
@@ -4451,7 +4468,7 @@ async function chatOpen(id){
               + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
               + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
               + body
-              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`📄 ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
+              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`${GLYPH.file} ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
               + `</div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
@@ -4504,7 +4521,7 @@ async function chatOpen(id){
         + `<div class="chat-plan-preview" hidden></div>`
         + `<div class="chat-approve-actions">`
         + waiting.map(a=>`<button class="btn btn-primary chat-approve-yes" data-act="${escapeHtml(a)}">Allow ${escapeHtml(a)}</button>`).join('')
-        + (canPreview?`<button class="btn btn-ghost chat-plan-btn">☰ Preview the plan</button>`:'')
+        + (canPreview?`<button class="btn btn-ghost chat-plan-btn">${GLYPH.list} Preview the plan</button>`:'')
         + `<button class="btn chat-approve-no">Stop this</button></div>`;
       thread.appendChild(box);
       // Bound after render, never as an inline handler: the console's CSP is script-src 'self'
@@ -4633,7 +4650,7 @@ async function chatConsumeStream(response){
 let chatStagedFiles=[];
 function chatRenderStaged(){
   const host=document.getElementById('chat-attach-chips'); if(!host) return;
-  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">📄 ${escapeHtml(f.filename)}`
+  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">${GLYPH.file} ${escapeHtml(f.filename)}`
     +` <span class="attach-size">${f.content.length>1024?Math.round(f.content.length/1024)+' KB':f.content.length+' B'}</span>`
     +`<button class="attach-x" data-x="${i}" title="Remove" aria-label="Remove attachment">✕</button></span>`).join('');
   host.querySelectorAll('.attach-x').forEach(b=>b.addEventListener('click',()=>{
@@ -5127,9 +5144,9 @@ function chatFilesRenderDir(host, base, entries, depth){
     // in the dead space before the size.
     return `<div class="cf-row${(!e.dir&&chatFilesSelPath===p)?' sel':''}" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
         <span style="width:12px;color:var(--dim);">${e.dir?(open?'▾':'▸'):''}</span>
-        <span>${e.dir?'📁':'📄'}</span>
+        <span style="display:flex;color:var(--dim);">${e.dir?GLYPH.folder:GLYPH.file}</span>
         <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
-        ${e.dir?'':`<span class="cf-hist" data-cf-h="${escapeHtml(p)}" title="Commit history for this file">🕘</span>`}
+        ${e.dir?'':`<span class="cf-hist" data-cf-h="${escapeHtml(p)}" title="Commit history for this file">${GLYPH.clock}</span>`}
         <span class="cf-git" data-cf-g="${escapeHtml(p)}" data-cf-g-dir="${e.dir?'1':''}"></span>
         ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
       </div><div class="cf-kids" data-cf-kids="${escapeHtml(p)}" ${open?'':'hidden'}></div>`;
@@ -5644,7 +5661,7 @@ async function loadProjectView(){
   pvProject=r.data;
   setEl('pv-name', pvProject.name||'Untitled project');
   setEl('pv-sub', [
-    pvProject.path?('📁 '+pvProject.path):null,
+    pvProject.path?(GLYPH.folder+' '+pvProject.path):null,
     (pvProject.conversations||[]).length+' conversation(s)',
     pvProject.schedule_count+' schedule(s)',
     pvProject.archived?'archived':null,
@@ -5669,7 +5686,7 @@ function pvRenderChat(){
   host.innerHTML = convs.length
     ? convs.map(c=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-open="${escapeHtml(c.id)}">
         <div style="padding:10px 13px;display:flex;align-items:center;gap:9px;">
-          ${c.pinned?'<span title="Pinned">★</span>':''}
+          ${c.pinned?`<span title="Pinned">${GLYPH.starFill}</span>`:''}
           <b style="color:var(--text);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title||'Conversation')}</b>
           ${(c.mission_ids||[]).length?`<span class="sch-badge">${c.mission_ids.length} mission(s)</span>`:''}
           ${c.cancelled?'<span class="sch-badge">stopped</span>':''}
@@ -5860,7 +5877,7 @@ async function pvLoadGrants(){
   const grants=(r&&r.success&&r.data&&r.data.grants)||[];
   host.innerHTML=grants.length
     ? grants.map(gr=>`<div class="card" style="margin-bottom:4px;"><div style="padding:8px 12px;display:flex;align-items:center;gap:9px;">
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">📁 ${escapeHtml(gr.path)}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${GLYPH.folder} ${escapeHtml(gr.path)}</span>
         <span style="font-size:9px;color:var(--dim);">opened by ${escapeHtml(gr.granted_by||'?')}</span>
         <button class="btn btn-ghost" data-close-gate="${escapeHtml(gr.id)}" style="font-size:10px;">Close gate</button>
       </div></div>`).join('')
@@ -5926,7 +5943,7 @@ async function loadProjectCards(){
         <span style="font-size:10px;color:var(--dim)">${p.conversations} conversation(s) · ${p.missions} mission(s)</span>
       </div>
       ${p.description_md?`<div style="font-size:11px;color:var(--muted);margin-top:5px;white-space:pre-wrap;">${escapeHtml(String(p.description_md).slice(0,240))}</div>`:''}
-      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">📁 ${escapeHtml(p.path)}</div>`:''}
+      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">${GLYPH.folder} ${escapeHtml(p.path)}</div>`:''}
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button class="btn btn-ghost project-chat">＋ New conversation here</button>
         <button class="btn btn-ghost project-archive">${p.archived?'Unarchive':'Archive'}</button>

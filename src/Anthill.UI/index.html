@@ -3559,9 +3559,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
 
             <div class="chat-composer">
-              <!-- v0.3.8.47: attachments — 📎 or drop files here; chips show what rides the next message. -->
+              <!-- v0.3.8.47: attachments — the paperclip, or drop files here; chips show what rides
+                   the next message. v0.3.8.53: the clip is an inline stroke SVG like every other
+                   icon — the OS color emoji was the last splash of foreign palette in the composer. -->
               <div id="chat-attach-chips" class="attach-chips"></div>
-              <button class="btn btn-ghost" id="chat-attach" title="Attach text files to your next message">📎</button>
+              <button class="btn btn-ghost" id="chat-attach" title="Attach text files to your next message"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l8.57-8.57a4 4 0 1 1 5.66 5.66l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
               <input type="file" id="chat-attach-file" multiple accept=".txt,.md,.json,.js,.cs,.py,.html,.css,.yml,.yaml,.xml,.csv,.log,.sh,.sql,text/*" hidden>
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"

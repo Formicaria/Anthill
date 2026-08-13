@@ -1042,7 +1042,7 @@ function hl3ArrPage(id){
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
     +'<button class="btn btn-primary" data-onclick="window.open(\''+jsArg(a.url)+'\',\'_blank\')">↗ Open '+escapeHtml(a.name)+'</button>'
     +'<button class="btn btn-ghost" data-onclick="hl3ArrSync();hl3PageClose()">⟳ Sync now</button>'
-    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+jsArg(a.id)+'\')">🗑 Remove</button></div>'
+    +'<button class="btn btn-ghost" data-onclick="hl3ArrRemove(\''+jsArg(a.id)+'\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Remove</button></div>'
     +'<div style="font-size:9px;color:var(--dim);margin-top:8px;">API key is stored write-only in the credential store (id '+escapeHtml(a.credential_id)+') and is never displayed. All requests are GET-only and allowlist-gated.</div></div>';
   hl3PageOpen('App — '+a.name,html);
 }
@@ -1412,7 +1412,9 @@ function renderHlTargets(){
       {icon:e=>e.enabled?'⏸':'▶',title:'Enable/disable',run:async e=>{
         await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{enabled:!e.enabled});
       }},
-      {icon:'🗑',title:'Remove entry',run:async e=>{
+      // v0.3.8.53: an inline stroke SVG, not 🗑 — the one COLOR emoji in a deliberately
+      // monochrome glyph row (its siblings ✎ ✔ ⛔ ⏸ ▶ are text-presentation and stay).
+      {icon:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',title:'Remove entry',run:async e=>{
         if(await uiConfirm('Remove target \''+e.target+'\'?')) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'DELETE');
       }},
     ],
