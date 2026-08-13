@@ -79,6 +79,12 @@ in the tooltip. Beside it: **Init git**, offered only while the directory is NOT
 set-root form (path + Browse) after first setup — the working directory stays changeable from
 the files tab.
 
+**The splits are sizable, and the badge goes live the instant it changes.** Chat ↔ files (or
+colony) drags horizontally; working tree ↔ docked editor drags vertically — real flex handles,
+proportions persisted, the vertical one existing only while the editor is open. And the cached
+GETs under a project are busted the moment `git init` or a directory change succeeds, because a
+TTL-stale "not a repo" answer made Init git look like it ignored the click.
+
 **The license is what the README always claimed to point at.** The LICENSE file said "All Rights
 Reserved" while the README called it MIT; both were wrong about the intent. The repository now
 carries the Apache License 2.0, verbatim, attribution preserved, and the README names it.
