@@ -860,6 +860,90 @@ public static partial class ApiHost
         });
 
         /*
+         * v0.3.8.51 third round — GIT AWARENESS ("we need to make the colony aware whether the
+         * project is a git repo or just a regular folder"). The files pane shows what the working
+         * directory IS — repo on a branch with dirty files, or plain folder — and the operator can
+         * commit from it. Colony-side commits ride the patch-apply path (Queen.CommitAppliedPatch)
+         * under the gates that permit them; these endpoints are the OPERATOR's half.
+         */
+        app.MapGet("/projects/{id}/repo", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var state = Anthill.Core.Projects.RepoOps.Describe(root);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["root"] = root,
+                ["is_repo"] = state.IsRepo,
+                ["branch"] = state.Branch,
+                ["dirty_count"] = state.DirtyCount,
+                ["dirty"] = state.Dirty.Take(100).Select(d => new Dictionary<string, object?>
+                    { ["status"] = d.Status, ["path"] = d.Path }).ToList(),
+                ["last_commit"] = state.LastCommit,
+                ["note"] = state.IsRepo ? null : (state.Error ?? "This directory is a plain folder, not a git repository."),
+            });
+        });
+
+        // The uncommitted diff for ONE file — what sits between HEAD and the working tree. The
+        // editor's "Changes" view leads with this when the project is a repo.
+        app.MapGet("/projects/{id}/repo/diff", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = ctx.Request.Query["path"].FirstOrDefault() ?? "";
+            var (_, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            var state = Anthill.Core.Projects.RepoOps.Describe(root);
+            if (!state.IsRepo) return ApiJson.Error("Not a git repository.", "bad_request");
+            var (ok, output) = Anthill.Core.Projects.RepoOps.DiffFile(root!,
+                rel.Replace('\\', '/').TrimStart('/'));
+            if (!ok) return ApiJson.Error($"git diff failed: {output}", "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = rel,
+                ["diff"] = output.Length > 200_000 ? output[..200_000] + "\n… (truncated)" : output,
+            });
+        });
+
+        app.MapPost("/projects/{id}/repo/commit", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, System.Text.Json.JsonElement>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var message = body?.GetValueOrDefault("message").GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(message)) return ApiJson.Error("A commit message is required.", "bad_request");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var paths = new List<string>();
+            if (body is not null && body.TryGetValue("paths", out var pv)
+                && pv.ValueKind == System.Text.Json.JsonValueKind.Array)
+                foreach (var el in pv.EnumerateArray())
+                    if (el.GetString() is { Length: > 0 } s)
+                    {
+                        var (_, jailErr) = JailedPath(root!, s);
+                        if (jailErr is not null) return ApiJson.Error(jailErr, "forbidden");
+                        paths.Add(s.Replace('\\', '/').TrimStart('/'));
+                    }
+            var who = CurrentUsername(ctx) ?? "operator";
+            var (ok, output) = Anthill.Core.Projects.RepoOps.Commit(root!, paths, message.Trim(), who);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, ok ? "operator_commit" : "operator_commit_failed",
+                ok ? $"Operator {who} committed in project '{project.Name}': {message.Split('\n')[0]}"
+                   : $"Operator {who} commit failed in project '{project.Name}': {output}", antName: who);
+            return ok
+                ? ApiJson.Ok(new Dictionary<string, object?> { ["result"] = output }, "Committed.")
+                : ApiJson.Error(output, "bad_request");
+        });
+
+        /*
          * v0.3.8.48 — project schedules. Real persistence, real execution (ProjectScheduler),
          * honest wording everywhere: schedules run while the Anthill host runs.
          */

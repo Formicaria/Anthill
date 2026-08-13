@@ -3445,25 +3445,37 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="chat-colony-bar">
               <span class="ccb-title">Files</span>
               <span class="ccb-mission" id="chat-files-crumb"></span>
+              <!-- v0.3.8.51 third round: git awareness — what IS this directory? A repo on a
+                   branch (with a dirty count) or a plain folder, stated up front like opencode. -->
+              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;"></span>
               <span class="ccb-spacer"></span>
+              <button class="btn btn-ghost" id="chat-files-commit" hidden
+                      title="Commit the working tree's uncommitted changes">Commit</button>
               <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">＋ File</button>
               <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">＋ Folder</button>
               <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
                       title="Show what this conversation's missions changed, commit-style">Changes</button>
               <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
             </div>
-            <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;">
+            <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;flex:1 1 45%;min-height:0;">
               <div class="hud-state">Loading…</div>
             </div>
-            <div id="chat-files-editor" hidden style="display:flex;flex-direction:column;flex:1;min-height:0;padding:8px 14px;">
+            <!-- v0.3.8.51 third round: the editor DOCKS BELOW the tree — click a file, it opens
+                 here while the working tree stays visible above (operator: "click on a file, and
+                 it open below the working tree"). Its own Changes toggle shows recent edits to
+                 THIS file: the uncommitted git diff first, then the colony's patch history. -->
+            <div id="chat-files-editor" hidden style="display:flex;flex-direction:column;flex:1 1 55%;min-height:0;padding:8px 14px;border-top:1px solid var(--border);">
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
                 <span id="chat-editor-path" style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;"></span>
+                <button class="btn btn-ghost" id="chat-editor-changes" aria-pressed="false"
+                        title="Recent edits to this file — uncommitted git diff and colony patches">Changes</button>
                 <button class="btn btn-primary" id="chat-editor-save">Save</button>
-                <button class="btn btn-ghost" id="chat-editor-back">← Files</button>
+                <button class="btn btn-ghost" id="chat-editor-back" title="Close the editor">✕</button>
                 <span class="save-msg" id="chat-editor-msg"></span>
               </div>
               <textarea id="chat-editor-text" spellcheck="false"
                         style="flex:1;min-height:0;resize:none;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></textarea>
+              <div id="chat-editor-diff" hidden style="flex:1;min-height:0;overflow:auto;background:var(--inner);border:1px solid var(--border);border-radius:6px;"></div>
             </div>
           </div>
           <aside class="chat-rail">

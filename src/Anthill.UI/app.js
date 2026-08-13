@@ -4995,6 +4995,7 @@ async function chatRenderPatches(d, thread){
  * missions proposed/applied, diff on demand through the same endpoints the patch cards use.
  * Files and Colony are mutually exclusive panes: one split, one right-hand occupant. */
 let chatFilesOpen=false, chatFilesProjectId=null, chatFilesPath='', chatFilesChangesMode=false;
+let chatFilesRepo=null, chatEditorPath='', chatEditorDiffMode=false;
 
 function chatToggleFiles(open){
   const layer=document.getElementById('chat-files-layer'); if(!layer) return;
@@ -5052,7 +5053,40 @@ async function chatFilesLoad(){
   setEl('chat-files-crumb', r.data.root||'');
   body.innerHTML='<div id="cf-tree"></div>';
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
+  chatFilesRepoLoad();
 }
+
+/* v0.3.8.51 third round — GIT AWARENESS (operator: "make the colony aware (and show) whether
+ * the project it is currently working on is a git repo or just a regular folder"). The badge
+ * states branch + dirty count, or "plain folder"; Commit appears only for a repo. */
+async function chatFilesRepoLoad(){
+  const badge=document.getElementById('chat-files-repo');
+  const commitBtn=document.getElementById('chat-files-commit');
+  if(!badge||!chatFilesProjectId) return;
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo');
+  chatFilesRepo=(r&&r.success&&r.data)||null;
+  if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; return; }
+  if(chatFilesRepo.is_repo){
+    badge.textContent='⎇ '+(chatFilesRepo.branch||'?')
+      +(chatFilesRepo.dirty_count>0?' · '+chatFilesRepo.dirty_count+' dirty':' · clean');
+    badge.style.color=chatFilesRepo.dirty_count>0?'var(--amber,#e5b567)':'var(--dim)';
+    badge.title=(chatFilesRepo.last_commit?('last: '+chatFilesRepo.last_commit):'')||'git repository';
+    if(commitBtn){ commitBtn.hidden=false; commitBtn.disabled=!chatFilesRepo.dirty_count; }
+  }else{
+    badge.textContent='plain folder — not a git repo';
+    badge.style.color='var(--dim)'; badge.title=chatFilesRepo.note||'';
+    if(commitBtn) commitBtn.hidden=true;
+  }
+}
+
+document.getElementById('chat-files-commit')?.addEventListener('click',async ()=>{
+  if(!chatFilesProjectId) return;
+  const msg=prompt('Commit message (commits all uncommitted changes):','anthill: operator commit from the files pane');
+  if(!msg) return;
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/commit','POST',{message:msg});
+  chatSetState((r&&r.message)||'');
+  chatFilesRepoLoad();
+});
 
 function chatFilesRenderDir(host, base, entries, depth){
   host.innerHTML=(entries||[]).map(e=>{
@@ -5092,15 +5126,27 @@ async function chatFilesCreate(isDir){
 document.getElementById('chat-files-newfile')?.addEventListener('click',()=>chatFilesCreate(false));
 document.getElementById('chat-files-newdir')?.addEventListener('click',()=>chatFilesCreate(true));
 
+/* v0.3.8.51 third round — the editor DOCKS BELOW the working tree (operator: "click on a file,
+ * and it open below the working tree"). The tree stays visible and clickable above; the editor
+ * fills the lower half; ✕ closes only the editor. The textarea is, and stays, EDITABLE — Save
+ * is the same attributed PUT it always was. */
 async function chatFilesEdit(path){
-  const body=document.getElementById('chat-files-body');
   const editor=document.getElementById('chat-files-editor');
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/file?path='+encodeURIComponent(path));
   if(!(r&&r.success)){ chatSetState((r&&r.message)||'Could not open the file.'); return; }
-  body.style.display='none'; editor.hidden=false;
+  editor.hidden=false;
+  chatEditorPath=r.data.path;
+  chatEditorShowText();               // a fresh file always opens in EDIT mode, not a stale diff
   setEl('chat-editor-path',r.data.path);
   document.getElementById('chat-editor-text').value=r.data.content;
   document.getElementById('chat-editor-msg').textContent='';
+}
+
+function chatEditorShowText(){
+  chatEditorDiffMode=false;
+  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
+  if(t) t.hidden=false; if(d) d.hidden=true;
+  document.getElementById('chat-editor-changes')?.setAttribute('aria-pressed','false');
 }
 
 document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>{
@@ -5112,8 +5158,77 @@ document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>
   msg.style.color=r&&r.success?'var(--green)':'var(--red)';
   msg.textContent=(r&&r.message)||'Save failed';
   setTimeout(()=>{ if(msg.textContent) msg.textContent=''; },4000);
+  if(r&&r.success) chatFilesRepoLoad();          // a save changes the dirty count
 });
-document.getElementById('chat-editor-back')?.addEventListener('click',()=>chatFilesLoad());
+document.getElementById('chat-editor-back')?.addEventListener('click',()=>{
+  document.getElementById('chat-files-editor').hidden=true;   // the tree above is untouched
+});
+
+/* Recent edits to THE OPEN FILE (operator: "view recent edits by clicking change in the text
+ * editor window"): the uncommitted git diff leads when the directory is a repo, then the
+ * colony's patch proposals against this file, newest mission last. Toggling back returns to
+ * the editable textarea with its content intact. */
+function cfGitDiffHtml(text){
+  if(!(text||'').trim()) return '<div style="padding:6px 10px;font-size:10px;color:var(--dim);">No uncommitted changes to this file.</div>';
+  return '<pre style="margin:0;font-size:10.5px;line-height:1.45;overflow-x:auto;">'
+    + text.split('\n').map(l=>{
+        const s=escapeHtml(l);
+        if(l.startsWith('+++')||l.startsWith('---')||l.startsWith('diff ')||l.startsWith('index '))
+          return `<span style="display:block;padding:0 10px;color:var(--dim);">${s}</span>`;
+        if(l.startsWith('@@')) return `<span style="display:block;padding:0 10px;color:#8ab4f8;">${s}</span>`;
+        if(l.startsWith('+')) return `<span style="display:block;padding:0 10px;background:rgba(52,211,153,.09);color:#7ee2b8;">${s}</span>`;
+        if(l.startsWith('-')) return `<span style="display:block;padding:0 10px;background:rgba(248,113,113,.09);color:#f3a0a0;">${s}</span>`;
+        return `<span style="display:block;padding:0 10px;color:var(--muted);">${s}</span>`;
+      }).join('')+'</pre>';
+}
+
+document.getElementById('chat-editor-changes')?.addEventListener('click',async ()=>{
+  const t=document.getElementById('chat-editor-text'), d=document.getElementById('chat-editor-diff');
+  if(chatEditorDiffMode){ chatEditorShowText(); return; }
+  chatEditorDiffMode=true; t.hidden=true; d.hidden=false;
+  document.getElementById('chat-editor-changes').setAttribute('aria-pressed','true');
+  d.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading recent edits…</div>';
+  const parts=[];
+
+  if(chatFilesRepo&&chatFilesRepo.is_repo){
+    const g=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/diff?path='+encodeURIComponent(chatEditorPath));
+    parts.push('<div style="padding:6px 10px 2px;font-size:10px;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;">Uncommitted (git)</div>'
+      + cfGitDiffHtml((g&&g.success&&g.data&&g.data.diff)||''));
+  }
+
+  const conv=await api('/conversations/'+encodeURIComponent(chatActiveId));
+  const missions=(conv&&conv.data&&conv.data.mission_ids)||[];
+  const hist=await api('/missions/json?limit=60');
+  const goals=Object.fromEntries(((hist&&hist.data)||[]).map(m=>[String(m.id),m.goal||'']));
+  let any=false;
+  for(const mid of missions.slice(-6)){
+    const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=30');
+    // Patch paths may be workspace-relative while the editor's are project-root-relative; when
+    // the two roots differ, suffix agreement is the honest match.
+    const mine=((r&&r.success&&Array.isArray(r.data))?r.data:[]).filter(p=>{
+      const f=p.file||p.path||'';
+      return f===chatEditorPath||f.endsWith('/'+chatEditorPath)||chatEditorPath.endsWith('/'+f);
+    });
+    if(!mine.length) continue;
+    any=true;
+    const first=await api('/patches/'+encodeURIComponent(mine[0].id)+'/detail');
+    const last=mine.length>1?await api('/patches/'+encodeURIComponent(mine[mine.length-1].id)+'/detail'):first;
+    const d1=(first&&first.success&&first.data)||{}, d2=(last&&last.success&&last.data)||{};
+    parts.push(`<div style="padding:8px 10px 2px;font-size:10px;color:var(--dim);">
+        <span style="letter-spacing:.05em;text-transform:uppercase;">Colony</span> ·
+        ${escapeHtml((goals[mid]||('mission '+mid.slice(0,8))).split('\n')[0].slice(0,90))}
+        <span class="sch-badge" style="margin-left:6px;">${escapeHtml(mine[mine.length-1].status||'')}</span>
+      </div>`
+      + ((d1.old_content!==undefined||d2.new_content!==undefined)
+          ? cfDiffHtml(cfLineDiff(d1.old_content||'',d2.new_content||''))
+          : `<pre style="margin:0;padding:4px 10px;font-size:10.5px;white-space:pre-wrap;color:var(--muted);">${escapeHtml(d2.diff||'No diff recorded.')}</pre>`));
+  }
+  if(!any&&!(chatFilesRepo&&chatFilesRepo.is_repo))
+    parts.push('<div class="hud-state">No recorded edits to this file.</div>');
+  else if(!any)
+    parts.push('<div style="padding:6px 10px;font-size:10px;color:var(--dim);">No colony proposals against this file in this conversation.</div>');
+  d.innerHTML=parts.join('');
+});
 
 /* CHANGES, commit-style (field correction: "changes should be displayed like Github changes in
  * Commits"). Grouped by MISSION — the mission's goal line is the commit message, its status the
