@@ -54,7 +54,8 @@ public class AgentAccessTests : IDisposable
         Assert.Contains("--permission-mode", args);
         Assert.Contains("--allowedTools", args);
         // Bounded: build/test tools, nothing network-shaped, no blanket bash.
-        var tools = args[args.IndexOf("--allowedTools") + 1];
+        var list = args.ToList();
+        var tools = list[list.IndexOf("--allowedTools") + 1];
         Assert.Contains("Bash(dotnet:*)", tools);
         Assert.DoesNotContain("Bash(*)", tools);
         Assert.DoesNotContain("curl", tools);
