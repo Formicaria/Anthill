@@ -999,6 +999,12 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 
 /* -- Buttons ----------------------------------------------------------------- */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;transition:opacity var(--t),background var(--t);border:1px solid transparent;}
+/* v0.3.8.52 (sixth field round): the hidden ATTRIBUTE must always win. Any author display rule
+   (.btn's inline-flex here) silently defeats the UA's [hidden]{display:none} — which is how an
+   Init git button with hidden=true stood on screen beside a repo badge saying master·clean.
+   The two per-element [hidden] patches above this line were this same bug, fixed twice locally;
+   this is the global fix, so no third element ever joins them. */
+[hidden]{display:none !important;}
 .btn-primary{background:var(--queen);color:#080808;border-color:var(--queen);}
 .btn-primary:hover{opacity:.88;}
 .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border);}

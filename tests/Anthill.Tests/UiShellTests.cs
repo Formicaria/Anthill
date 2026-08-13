@@ -1669,6 +1669,12 @@ public class UiShellTests
         Assert.Contains("id=\"chat-files-chroot\"", html);
         Assert.Contains("chatFilesShowRootForm", js);        // one form, two doors
 
+        // Sixth field round: hidden=true MUST mean invisible. .btn's display:inline-flex beat
+        // the UA's [hidden]{display:none}, so Init git stood on screen beside a repo badge
+        // saying master·clean with its hidden attribute correctly set. The global rule makes
+        // the attribute unbeatable; verified live before landing.
+        Assert.Contains("[hidden]{display:none !important;}", html);
+
         var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
         Assert.Contains("app.MapPost(\"/projects/{id}/repo/init\"", providers);
         Assert.Contains("already a git repository", providers);
