@@ -5077,38 +5077,10 @@ async function chatFilesLoad(){
   body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path=');
   if(!(r&&r.success)){
-    // Field correction: "can't add a working tree." A project without one sets it right here.
-    // v0.3.8.52 (field report): typing an absolute path from memory is the fallback, not the
-    // ask — Browse opens a picker. Desktop shell: the real OS folder dialog, through the
-    // WebView2 host bridge. Browser shapes: the server-backed directory browser (/fs/dirs),
-    // because the page cannot learn an absolute path from its own picker and in Docker/LXC the
-    // working directory lives on the SERVER anyway.
-    // Third field round: the input arrives PREFILLED with the project's suggested tree
-    // (<shared root>/projects/<slug-id>) — accepting the suggestion is one click, and setting
-    // it CREATES the directory. The colony never creates it behind the operator's back.
-    const det=await api('/projects/'+encodeURIComponent(chatFilesProjectId));
-    const prefill=(det&&det.success&&det.data&&(det.data.path||det.data.suggested_path))||'';
-    body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>
-      <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
-        <input class="provider-input" id="cf-set-root" value="${escapeHtml(prefill)}" placeholder="/absolute/path/to/working/directory" style="flex:1;">
-        <button class="btn btn-ghost" id="cf-set-root-browse">Browse…</button>
-        <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
-      </div>
-      <div id="cf-dir-browser" hidden style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:280px;display:flex;flex-direction:column;"></div>`;
-    const setRoot=async p=>{
-      if(!p) return;
-      const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
-      chatSetState((pr&&pr.message)||'');
-      if(pr&&pr.success) chatFilesLoad();
-    };
-    document.getElementById('cf-set-root-go')?.addEventListener('click',
-      ()=>setRoot((document.getElementById('cf-set-root').value||'').trim()));
-    document.getElementById('cf-set-root-browse')?.addEventListener('click',async ()=>{
-      const native=await cfPickFolderNative();
-      if(native===''){ return; }                       // the operator cancelled the OS dialog
-      if(native){ document.getElementById('cf-set-root').value=native; setRoot(native); return; }
-      cfDirBrowserOpen('', setRoot);                   // no native picker — the server-backed one
-    });
+    // Field correction: "can't add a working tree." A project without one sets it right here —
+    // the same form the toolbar's Dir… button opens (fourth field round: one form, two doors).
+    body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>`;
+    await chatFilesShowRootForm();
     return;
   }
   setEl('chat-files-crumb', r.data.root||'');
@@ -5116,6 +5088,45 @@ async function chatFilesLoad(){
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
   chatFilesRepoLoad();
 }
+
+/* v0.3.8.52 (fourth field round) — ONE set-root form, two doors: first-time setup (the files
+ * pane shows it when listing fails) and the toolbar's Dir… button (the working directory stays
+ * changeable after it is set). Prefilled with the current path, else the project's suggested
+ * tree; typing an absolute path from memory is the fallback, not the ask — Browse opens the
+ * picker (OS dialog in the desktop shell, the server-backed browser everywhere else, because
+ * the page cannot learn an absolute path from its own picker and in Docker/LXC the working
+ * directory lives on the SERVER anyway). Setting it CREATES the directory when new — the colony
+ * never creates one behind the operator's back. */
+async function chatFilesShowRootForm(){
+  const host=document.getElementById('chat-files-body'); if(!host||!chatFilesProjectId) return;
+  const existing=document.getElementById('cf-root-form');
+  if(existing){ existing.remove(); return; }   // the Dir… button toggles
+  const det=await api('/projects/'+encodeURIComponent(chatFilesProjectId));
+  const prefill=(det&&det.success&&det.data&&(det.data.path||det.data.suggested_path))||'';
+  host.insertAdjacentHTML('afterbegin',`<div id="cf-root-form">
+    <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
+      <input class="provider-input" id="cf-set-root" value="${escapeHtml(prefill)}" placeholder="/absolute/path/to/working/directory" style="flex:1;">
+      <button class="btn btn-ghost" id="cf-set-root-browse">Browse…</button>
+      <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
+    </div>
+    <div id="cf-dir-browser" hidden style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:280px;display:flex;flex-direction:column;"></div>
+  </div>`);
+  const setRoot=async p=>{
+    if(!p) return;
+    const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
+    chatSetState((pr&&pr.message)||'');
+    if(pr&&pr.success) chatFilesLoad();
+  };
+  document.getElementById('cf-set-root-go')?.addEventListener('click',
+    ()=>setRoot((document.getElementById('cf-set-root').value||'').trim()));
+  document.getElementById('cf-set-root-browse')?.addEventListener('click',async ()=>{
+    const native=await cfPickFolderNative();
+    if(native===''){ return; }                       // the operator cancelled the OS dialog
+    if(native){ document.getElementById('cf-set-root').value=native; setRoot(native); return; }
+    cfDirBrowserOpen('', setRoot);                   // no native picker — the server-backed one
+  });
+}
+document.getElementById('chat-files-chroot')?.addEventListener('click',()=>chatFilesShowRootForm());
 
 /* v0.3.8.52 — the working-directory picker's two lanes.
  *
@@ -5181,10 +5192,15 @@ async function chatFilesRepoLoad(){
   const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo');
   chatFilesRepo=(r&&r.success&&r.data)||null;
   chatFilesApplyGitMarks();   // the tree usually rendered before this answer arrived
-  if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; return; }
+  const initBtn=document.getElementById('chat-files-gitinit');
+  if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; if(initBtn) initBtn.hidden=true; return; }
   const branchSel=document.getElementById('chat-files-branch');
   if(chatFilesRepo.is_repo){
-    badge.textContent='⎇ '+(chatFilesRepo.branch||'?')
+    if(initBtn) initBtn.hidden=true;   // offered ONLY when it is not a repo already
+    // v0.3.8.52 (fourth field round): one line, bounded — the server no longer sends git's
+    // stderr as a branch name, and this guard means even a bad payload cannot eat the toolbar.
+    const branchText=String(chatFilesRepo.branch||'no commits yet').split('\n')[0].slice(0,40);
+    badge.textContent='⎇ '+branchText
       +(chatFilesRepo.dirty_count>0?' · '+chatFilesRepo.dirty_count+' dirty':' · clean');
     badge.style.color=chatFilesRepo.dirty_count>0?'var(--amber,#e5b567)':'var(--dim)';
     badge.title=(chatFilesRepo.last_commit?('last: '+chatFilesRepo.last_commit):'')||'git repository';
@@ -5202,12 +5218,30 @@ async function chatFilesRepoLoad(){
       }else branchSel.hidden=true;
     }
   }else{
-    badge.textContent='plain folder — not a git repo';
-    badge.style.color='var(--dim)'; badge.title=chatFilesRepo.note||'';
+    // Field wording: "no git" — two words, the detail in the title, the remedy one button away.
+    badge.textContent='no git';
+    badge.style.color='var(--dim)';
+    badge.title=chatFilesRepo.note||'This directory is not a git repository.';
     if(commitBtn) commitBtn.hidden=true;
     if(branchSel) branchSel.hidden=true;
+    if(initBtn) initBtn.hidden=false;
   }
 }
+
+// v0.3.8.52 (fourth field round): make the working directory a repository — offered only while
+// it is not one (chatFilesRepoLoad shows/hides the button), confirmed, then the badge goes live.
+document.getElementById('chat-files-gitinit')?.addEventListener('click',async ()=>{
+  if(!chatFilesProjectId) return;
+  if(!await uiConfirm('Create a git repository in this project\'s working directory?\n\n'
+    +'Runs git init there — no commits are made and nothing is sent anywhere.')) return;
+  const btn=document.getElementById('chat-files-gitinit');
+  if(btn) btn.disabled=true;
+  try{
+    const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/init','POST');
+    chatSetState((r&&r.message)||'');
+    if(r&&r.success){ chatFilesRepoLoad(); chatFilesLoad(); }
+  }finally{ if(btn) btn.disabled=false; }
+});
 
 document.getElementById('chat-files-branch')?.addEventListener('change',e=>{
   chatFilesBranch=e.target.value;

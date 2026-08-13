@@ -3480,7 +3480,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <span class="ccb-mission" id="chat-files-crumb"></span>
               <!-- v0.3.8.51 third round: git awareness — what IS this directory? A repo on a
                    branch (with a dirty count) or a plain folder, stated up front like opencode. -->
-              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;"></span>
+              <!-- v0.3.8.52 (fourth field round): the badge is SHORT — "no git", never git's own
+                   fatal paragraph (which once shoved every button off this bar); the detail rides
+                   the title. Overflow is clipped as a second guard: a bad string may never eat
+                   the toolbar again. -->
+              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;"></span>
+              <!-- Offered ONLY when the working directory is not already a repository. -->
+              <button class="btn btn-ghost" id="chat-files-gitinit" hidden
+                      title="Create a git repository in this project's working directory">Init git</button>
               <!-- v0.3.8.52: GitHub-style branch selector — the commit train reads history from
                    whichever branch is chosen here, without checking anything out. -->
               <select id="chat-files-branch" hidden aria-label="Branch for commit history"
@@ -3490,6 +3497,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                       title="Commit the working tree's uncommitted changes">Commit</button>
               <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">+ File</button>
               <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">+ Folder</button>
+              <!-- v0.3.8.52 (fourth field round): the working directory stays changeable from
+                   here — the same form (path + Browse) the first-time setup uses. -->
+              <button class="btn btn-ghost" id="chat-files-chroot" title="Change this project's working directory">Dir…</button>
               <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
                       title="Show what this conversation's missions changed, commit-style">Changes</button>
               <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>

@@ -1646,4 +1646,31 @@ public class UiShellTests
         Assert.Contains("cf-create-panel", create);
         Assert.DoesNotContain("prompt(", create);
     }
+
+    /// <summary>
+    /// v0.3.8.52 (fourth field round) — the files-pane toolbar survives every repo state. The
+    /// badge is SHORT ("no git", never git's stderr — RepoOpsTests pins the server half); Init
+    /// git is offered exactly while the directory is NOT a repository, through an apply_patch-
+    /// gated endpoint that refuses a directory which already is one; and the working directory
+    /// stays changeable after first setup — the Dir… button reopens the same set-root form.
+    /// </summary>
+    [Fact]
+    public void TheFilesToolbar_SurvivesEveryRepoState_AndTheDirStaysChangeable()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("badge.textContent='no git'", js);
+        var repoLoad = BodyOf(js, "async function chatFilesRepoLoad()");
+        Assert.Contains("initBtn.hidden=true", repoLoad);    // a repo never offers Init
+        Assert.Contains("initBtn.hidden=false", repoLoad);   // a non-repo always does
+        Assert.Contains("/repo/init", js);
+
+        var html = Ui("index.html");
+        Assert.Contains("id=\"chat-files-gitinit\"", html);
+        Assert.Contains("id=\"chat-files-chroot\"", html);
+        Assert.Contains("chatFilesShowRootForm", js);        // one form, two doors
+
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("app.MapPost(\"/projects/{id}/repo/init\"", providers);
+        Assert.Contains("already a git repository", providers);
+    }
 }
