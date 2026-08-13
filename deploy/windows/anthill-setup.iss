@@ -39,6 +39,10 @@ OutputBaseFilename=anthill-setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; The Formicaria mark on the setup exe itself — the same .ico the desktop shell embeds, so the
+; download, the wizard's taskbar entry and the installed app all wear one face. UninstallDisplayIcon
+; below stays pointed at AnthillDesktop.exe, whose ApplicationIcon is this same file.
+SetupIconFile={#SourcePath}\..\..\src\Anthill.Desktop\anthill.ico
 ; The app must not be running while its files are replaced; Windows' restart-manager asks nicely.
 CloseApplications=yes
 RestartApplications=no

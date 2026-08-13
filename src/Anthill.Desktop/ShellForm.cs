@@ -68,6 +68,19 @@ internal sealed class ShellForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = BrandBg;
 
+        // The Formicaria mark — the .ico the csproj embeds beside ApplicationIcon. ApplicationIcon
+        // brands only the FILE (Explorer, Add/Remove Programs); the window, taskbar and tray read
+        // Form.Icon, so the same .ico is loaded here, BEFORE the tray line below reads it. A failed
+        // load falls through to the same SystemIcons fallback as before — a missing icon must
+        // never keep the window from opening.
+        try
+        {
+            using var iconStream = typeof(ShellForm).Assembly
+                .GetManifestResourceStream("Anthill.Desktop.anthill.ico");
+            if (iconStream is not null) Icon = new Icon(iconStream);
+        }
+        catch { /* unbranded but alive */ }
+
         _loading.Controls.Add(_wordmark);
         _loading.Controls.Add(_version);
         _loading.Controls.Add(_status);
