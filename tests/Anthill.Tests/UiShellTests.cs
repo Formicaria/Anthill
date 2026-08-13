@@ -1574,4 +1574,59 @@ public class UiShellTests
         gate = gate[..gate.IndexOf("Directory.Exists", StringComparison.Ordinal)];
         Assert.Contains("RequireAuth(ctx, \"run_mission\")", gate);
     }
+
+    /// <summary>
+    /// v0.3.8.52 (second field round) — every project gets ITS OWN tree. The old fallback sent
+    /// every pathless project to the ONE shared workspace root: the files pane showed every
+    /// project the same directory, and the chat agent ran every project on the same branch. The
+    /// rule now lives in ProjectRoots and every consumer resolves through it — the files pane,
+    /// the chat lane's confinement (via AgentAccessScope.WorkingDirectory, which the provider
+    /// must prefer over its static default), and the prompt's own description of the tree.
+    /// Two copies of a boundary rule is one copy that eventually disagrees.
+    /// </summary>
+    [Fact]
+    public void EveryProject_OwnsItsOwnTree_ThroughOneResolution()
+    {
+        var roots = Src("src", "Anthill.Core", "Projects", "ProjectRoots.cs");
+        Assert.Contains("\"projects\"", roots);                       // the shared parent
+        Assert.Contains("{Slug(project.Name)}-{project.Id}", roots);  // unique per project
+
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("ProjectRoots.Resolve(project)", providers);
+        Assert.DoesNotContain("? AnthillRuntime.AllowedWorkspaceRoot : project.Path", providers);
+
+        var runner = Src("src", "Anthill.Core", "Conversations", "ConversationRunner.cs");
+        Assert.Contains("workingDirectory: ProjectDirectory(conversation)", runner);
+
+        var provider = Src("src", "Anthill.Modules", "Anthill.Modules.Reasoning", "AgentCliProvider.cs");
+        Assert.Contains("EffectiveWorkingDirectory", provider);
+        var sdk = Src("src", "Anthill.SDK", "Reasoning", "AgentAccessScope.cs");
+        Assert.Contains("WorkingDirectory", sdk);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (second field round) — the project page's New Conversation BUTTON creates the
+    /// conversation, immediately and in that project; it used to only flip the chat page into
+    /// composing mode, which read as a dead navigation. A conversation born untitled is then
+    /// named by the server from the first thing said in it, the tracker says which project every
+    /// row lives in, and + File / + Folder browse the project's own tree instead of prompt()ing
+    /// for a path from memory.
+    /// </summary>
+    [Fact]
+    public void ConversationsAreBornInTheirProject_AndTheTrackerSaysWhere()
+    {
+        var js = Ui("app.js");
+        var newConv = BodyOf(js, "document.getElementById('pv-new-conv')?.addEventListener('click',async ()=>");
+        Assert.Contains("api('/conversations','POST',{ project_id: projectViewId })", newConv);
+
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("string.IsNullOrWhiteSpace(conversation.Title)", providers);  // first message names it
+        Assert.Contains("project_name", providers);
+        Assert.Contains("conv-proj", js);
+
+        // + File / + Folder are pickers over the jailed project tree now — no prompt().
+        var create = BodyOf(js, "async function chatFilesCreate(isDir, at)");
+        Assert.Contains("cf-create-panel", create);
+        Assert.DoesNotContain("prompt(", create);
+    }
 }

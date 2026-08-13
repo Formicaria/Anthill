@@ -66,12 +66,15 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         // Second field round: AND as the agent's project-level settings file, because the colony's
         // own probe showed flags alone fall through to harness defaults without one.
         var access = Anthill.SDK.Reasoning.AgentAccessScope.Current;
-        AgentCliCatalog.MaterializeLocalSettings(_agent, _workingDirectory, access);
+        // v0.3.8.52: the flow's own directory (the conversation's project tree) wins over the
+        // static default — see EffectiveWorkingDirectory. One resolution, both transports.
+        var cwd = EffectiveWorkingDirectory(access);
+        AgentCliCatalog.MaterializeLocalSettings(_agent, cwd, access);
         var args = AgentCliCatalog.BuildArgs(_agent, prompt)
             .Concat(AgentCliCatalog.BuildAccessArgs(_agent, access))
             .ToList();
         var (started, stdout, stderr, exit) =
-            AgentCliDiscovery.Run(_agent.Binary, args, _timeout, _workingDirectory);
+            AgentCliDiscovery.Run(_agent.Binary, args, _timeout, cwd);
 
         if (!started)
             return Fail(ModelCallOutcome.NotAvailable,
@@ -119,7 +122,8 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         var hasStreamMode = _agent.StreamArgs is not null;
         // v0.3.8.51: same access translation as Send — one policy, both transports, both channels.
         var streamAccess = Anthill.SDK.Reasoning.AgentAccessScope.Current;
-        AgentCliCatalog.MaterializeLocalSettings(_agent, _workingDirectory, streamAccess);
+        var streamCwd = EffectiveWorkingDirectory(streamAccess);
+        AgentCliCatalog.MaterializeLocalSettings(_agent, streamCwd, streamAccess);
         var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt)
             .Concat(AgentCliCatalog.BuildAccessArgs(_agent, streamAccess))
             .ToList();
@@ -141,7 +145,7 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
             if (result is not null) resultText = result;
         };
         var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
-            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, _workingDirectory);
+            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, streamCwd);
         if (hasStreamMode && exit == 0)
             stdout = !string.IsNullOrWhiteSpace(resultText) ? resultText
                    : streamedText.Length > 0 ? streamedText.ToString() : stdout;
@@ -225,19 +229,30 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
     /// this provider maps that to "the agent is not installed" — an error naming the wrong problem
     /// and prescribing an install that would not fix it.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.52: the one working-directory resolution, both transports. The ambient flow's own
+    /// directory — the conversation's project tree, placed on <see cref="Anthill.SDK.Reasoning.AgentAccessScope"/>
+    /// by the runner that KNOWS the project — wins over the static shared workspace root this
+    /// provider was constructed with. Null stays null, and Confinement refuses a writing agent
+    /// exactly as before: a missing boundary is a refusal, never a fallback into Anthill's own cwd.
+    /// </summary>
+    private string? EffectiveWorkingDirectory(Anthill.SDK.Reasoning.AgentAccessScope.Context? access) =>
+        string.IsNullOrWhiteSpace(access?.WorkingDirectory) ? _workingDirectory : access!.WorkingDirectory;
+
     private ModelResponse? Confinement()
     {
         if (!_agent.Writes) return null;
 
-        if (string.IsNullOrWhiteSpace(_workingDirectory))
+        var cwd = EffectiveWorkingDirectory(Anthill.SDK.Reasoning.AgentAccessScope.Current);
+        if (string.IsNullOrWhiteSpace(cwd))
             return Fail(ModelCallOutcome.ConfigError,
                 $"{_agent.DisplayName} edits files and runs commands, so it will not be started without a "
                 + "workspace to be confined to — unconfined it would act in whatever directory Anthill "
                 + "itself was started from. Set an agent workspace in Configuration → Workspace.");
 
-        if (!Directory.Exists(_workingDirectory))
+        if (!Directory.Exists(cwd))
             return Fail(ModelCallOutcome.ConfigError,
-                $"{_agent.DisplayName} is confined to '{_workingDirectory}', which does not exist. "
+                $"{_agent.DisplayName} is confined to '{cwd}', which does not exist. "
                 + "Create it, or set an agent workspace in Configuration → Workspace.");
 
         return null;

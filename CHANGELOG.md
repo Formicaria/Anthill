@@ -41,6 +41,24 @@ browser shape gets a server-backed directory browser over the new run_mission-ga
 because in Docker and LXC the working directory lives on the SERVER and the server's tree is the
 only one worth browsing. Choosing a folder sets it; the typed path stays as the fallback.
 
+**Every project owns its own tree.** A project with no explicit path used to fall back to the
+ONE shared workspace root: the files pane showed every project the same directory, and the chat
+agent greeted a brand-new project by reporting a branch the operator never chose. Projects now
+share one PARENT — `<workspace root>/projects/` — and each gets its own tree beneath it
+(slug-id, created on first use), resolved through one rule (`ProjectRoots`) by every consumer:
+the files pane, the repo badge, the chat lane's agent confinement (the working directory now
+rides `AgentAccessScope` per conversation), the prompt's own description of the tree, and the
+direct-edit sweep. An explicit path still wins everywhere.
+
+**Conversations are born in their project, and the tracker says where.** The project page's New
+Conversation button CREATES the conversation immediately — it used to only flip the chat page
+into composing mode, which read as a dead navigation. A conversation born untitled is named by
+the server from the first thing said in it, and every tracker row now carries its project's name
+on a dim second line, because a list of first-sentences said nothing about where anything lived.
+And + File / + Folder stopped prompt()ing for a remembered path: both browse the project's own
+jailed tree like the Browse button does — + Folder walks folders, + File also shows the files
+already at each stop — pick the place, name the thing, create.
+
 **The license is what the README always claimed to point at.** The LICENSE file said "All Rights
 Reserved" while the README called it MIT; both were wrong about the intent. The repository now
 carries the Apache License 2.0, verbatim, attribution preserved, and the README names it.
