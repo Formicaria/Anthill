@@ -399,6 +399,20 @@ public static partial class ApiHost
             var message = (body?.Message ?? "").Trim();
             if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
 
+            // v0.3.8.52 (field report): a conversation born EMPTY — the project page's New
+            // Conversation button creates one before anything is said — takes its title from the
+            // first thing said in it. The console titles only at creation, so without this the
+            // tracker shows an unnamed row forever.
+            if (string.IsNullOrWhiteSpace(conversation.Title))
+            {
+                conversation = conversation with
+                {
+                    Title = message.Length <= 48 ? message : message[..48],
+                    UpdatedAt = AnthillTime.NowUtc(),
+                };
+                Queen.Memory.SaveConversation(conversation);
+            }
+
             var mode = string.Equals(body?.Mode, "mission", StringComparison.OrdinalIgnoreCase)
                 ? ConversationMode.Mission : ConversationMode.Chat;
             var answers = body?.Answers ?? new Dictionary<string, string>();
@@ -546,6 +560,11 @@ public static partial class ApiHost
                 ? Queen.Memory.LoadConversations()
                 : Queen.Memory.SearchConversations(q);
 
+            // v0.3.8.52 (field report: "cannot tell what conversations go where") — the project
+            // NAME rides every row. One load for the whole list, not one per conversation.
+            var projectNames = Queen.Memory.LoadProjects()
+                .ToDictionary(p => p.Id, p => p.Name, StringComparer.Ordinal);
+
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["conversations"] = list.Select(c =>
@@ -568,6 +587,7 @@ public static partial class ApiHost
                         // project link — the conversation→project chain the whole files pane and
                         // gates affordance stand on was invisible to every UI reader.
                         ["project_id"] = c.ProjectId,
+                        ["project_name"] = c.ProjectId is not null && projectNames.TryGetValue(c.ProjectId, out var pn) ? pn : null,
                         ["mission_ids"] = c.MissionIds,
                         ["doing"] = state.Doing,
                         ["waiting_on"] = state.WaitingOn,
@@ -797,10 +817,16 @@ public static partial class ApiHost
         // The files pane's jail helpers, local to this map so they cannot be reached around.
         static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
         {
-            var root = string.IsNullOrWhiteSpace(project.Path)
-                ? AnthillRuntime.AllowedWorkspaceRoot : project.Path!;
+            // v0.3.8.52 (field report: "all the projects have the same set working directory"):
+            // no more falling back to the ONE shared workspace root — every defaulted project
+            // resolves to ITS OWN tree under <workspace root>/projects/, created on first use.
+            // Same resolution the chat lane's agent confinement uses (ProjectRoots), because a
+            // files pane showing one tree while the agent stands in another is two boundaries
+            // that eventually disagree.
+            var root = Anthill.Core.Projects.ProjectRoots.Resolve(project);
             if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                return (null, "This project has no working directory — set one in its Settings.");
+                return (null, "This project has no working directory — set one in its Settings, "
+                            + "or configure a workspace root so the project can be given its own.");
             return (Path.GetFullPath(root), null);
         }
         static (string Full, string? Error) JailedPath(string root, string relative)

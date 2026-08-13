@@ -4293,6 +4293,9 @@ async function loadChat(){
         : '<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
+      // v0.3.8.52 (field report: "cannot tell what conversations go where") — every row carries
+      // its project's name on a second line, dim and small, so the tracker reads as
+      // what-it-is-about over where-it-lives without stealing width from the title.
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
         <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
@@ -4300,6 +4303,7 @@ async function loadChat(){
           aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?GLYPH.starFill:GLYPH.star}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
           :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
+        ${c.project_name?`<span class="conv-proj" title="Project: ${escapeHtml(c.project_name)}">${GLYPH.folder} ${escapeHtml(c.project_name)}</span>`:''}
       </div>`).join('');
       list.querySelectorAll('.chat-conv').forEach(el=>
         el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
@@ -5316,16 +5320,58 @@ function chatFilesApplyGitMarks(scope){
 }
 
 // Create file / folder (field correction: "can't add a new file, can't add a folder").
-async function chatFilesCreate(isDir){
+// v0.3.8.52 (second field round): + File and + Folder BROWSE like the Browse button does — a
+// picker over the project's own jailed tree instead of a prompt() asking for a path from memory.
+// Navigate to where the new entry belongs (+ Folder walks folders only; + File also SHOWS the
+// files already at each stop, since seeing what exists is the point of browsing), name it,
+// create. The POST underneath is the same attributed, jailed call it always was.
+async function chatFilesCreate(isDir, at){
   if(!chatFilesProjectId) return;
-  const rel=prompt(isDir?'New folder path (relative to the working directory):':'New file path (relative to the working directory):');
-  if(!rel) return;
-  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files','POST',{path:rel, dir:!!isDir});
-  chatSetState((r&&r.message)||'');
-  if(r&&r.success){
-    rel.split('/').slice(0,-1).reduce((acc,part)=>{ const p=(acc?acc+'/':'')+part; chatFilesExpanded.add(p); return p; },'');
-    if(!isDir){ await chatFilesLoad(); chatFilesEdit(rel.replace(/^\/+/,'')); } else chatFilesLoad();
-  }
+  const body=document.getElementById('chat-files-body'); if(!body) return;
+  if(!document.getElementById('cf-create-panel'))
+    body.insertAdjacentHTML('afterbegin','<div id="cf-create-panel" style="margin:4px;border:1px solid var(--border);border-radius:6px;max-height:300px;display:flex;flex-direction:column;"></div>');
+  const panel=document.getElementById('cf-create-panel');
+  const rel=(at||'').replace(/^\/+/,'');
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path='+encodeURIComponent(rel));
+  if(!(r&&r.success)){ panel.innerHTML=`<div class="hud-state err" style="padding:8px;">${escapeHtml((r&&r.message)||'Could not list that folder.')}</div>`; return; }
+  const entries=r.data.entries||[];
+  const dirs=entries.filter(e=>e.dir), files=entries.filter(e=>!e.dir);
+  const parent=rel?rel.split('/').slice(0,-1).join('/'):null;
+  panel.innerHTML=`
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);">
+      <span style="font-size:10px;color:var(--muted);">New ${isDir?'folder':'file'} in</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/${escapeHtml(rel)}</span>
+      <button class="btn btn-ghost" data-cfc-close style="padding:1px 8px;font-size:10px;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;">
+      ${rel!==null&&rel!==''?`<div class="cf-row" data-cfc-go="${escapeHtml(parent)}" style="padding:3px 10px;font-size:11px;cursor:pointer;color:var(--dim);">↩ ..</div>`:''}
+      ${dirs.map(e=>`<div class="cf-row" data-cfc-go="${escapeHtml((rel?rel+'/':'')+e.name)}" style="padding:3px 10px;font-size:11px;cursor:pointer;">${GLYPH.folder} ${escapeHtml(e.name)}</div>`).join('')}
+      ${isDir?'':files.map(e=>`<div style="padding:3px 10px;font-size:11px;color:var(--dim);">${GLYPH.file} ${escapeHtml(e.name)}</div>`).join('')}
+      ${(dirs.length||(!isDir&&files.length))?'':'<div class="hud-state" style="padding:8px;">Empty folder.</div>'}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;padding:6px 8px;border-top:1px solid var(--border);">
+      <input class="provider-input" data-cfc-name placeholder="${isDir?'folder-name':'file-name.ext'}" style="flex:1;font-size:11px;">
+      <button class="btn btn-primary" data-cfc-create style="padding:2px 10px;font-size:10px;">Create here</button>
+    </div>`;
+  panel.querySelectorAll('[data-cfc-go]').forEach(el=>
+    el.addEventListener('click',()=>chatFilesCreate(isDir, el.dataset.cfcGo)));
+  panel.querySelector('[data-cfc-close]')?.addEventListener('click',()=>panel.remove());
+  const nameInput=panel.querySelector('[data-cfc-name]');
+  const create=async ()=>{
+    const name=(nameInput.value||'').trim().replace(/^\/+|\/+$/g,'');
+    if(!name) return;
+    const full=(rel?rel+'/':'')+name;
+    const cr=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files','POST',{path:full, dir:!!isDir});
+    chatSetState((cr&&cr.message)||'');
+    if(cr&&cr.success){
+      panel.remove();
+      full.split('/').slice(0,-1).reduce((acc,part)=>{ const p=(acc?acc+'/':'')+part; chatFilesExpanded.add(p); return p; },'');
+      if(!isDir){ await chatFilesLoad(); chatFilesEdit(full); } else chatFilesLoad();
+    }
+  };
+  panel.querySelector('[data-cfc-create]')?.addEventListener('click',create);
+  nameInput?.addEventListener('keydown',e=>{ if(e.key==='Enter') create(); });
+  nameInput?.focus();
 }
 document.getElementById('chat-files-newfile')?.addEventListener('click',()=>chatFilesCreate(false));
 document.getElementById('chat-files-newdir')?.addEventListener('click',()=>chatFilesCreate(true));
@@ -5744,9 +5790,19 @@ function pvTab(name){
 }
 document.querySelectorAll('.pv-tab').forEach(t=>t.addEventListener('click',()=>pvTab(t.dataset.tab)));
 document.getElementById('pv-back')?.addEventListener('click',()=>go('/projects'));
-document.getElementById('pv-new-conv')?.addEventListener('click',()=>{
-  chatPendingProjectId=projectViewId; chatActiveId=null; chatComposingNew=true; go('/chat');
-  document.getElementById('chat-input')?.focus();
+// v0.3.8.52 (field report): the button CREATES the conversation, immediately and in THIS
+// project — it used to only flip the chat page into composing mode, which looked like a plain
+// navigation ("just takes us back to the chat page"). The conversation is born untitled and
+// appears in the tracker at once; the server names it from the first thing said in it.
+document.getElementById('pv-new-conv')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-new-conv'); if(btn) btn.disabled=true;
+  try{
+    const c=await api('/conversations','POST',{ project_id: projectViewId });
+    if(!(c&&c.success&&c.data)){ chatSetState((c&&c.message)||'Could not start a conversation.'); return; }
+    chatPendingProjectId=null; chatComposingNew=false;
+    go('/chat'); chatOpen(c.data.id); loadChat();
+    document.getElementById('chat-input')?.focus();
+  }finally{ if(btn) btn.disabled=false; }
 });
 
 function pvRenderChat(){
