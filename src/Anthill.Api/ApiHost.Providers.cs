@@ -795,6 +795,39 @@ public static partial class ApiHost
             });
         });
 
+        // v0.3.8.51 second round: CREATE — a new empty file or folder, jailed and audited. The
+        // pane must be able to grow a tree, not only read one.
+        app.MapPost("/projects/{id}/files", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, System.Text.Json.JsonElement>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var rel = body?.GetValueOrDefault("path").GetString() ?? "";
+            var isDir = body is not null && body.TryGetValue("dir", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (string.IsNullOrWhiteSpace(rel)) return ApiJson.Error("A path is required.", "bad_request");
+
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (File.Exists(full) || Directory.Exists(full))
+                return ApiJson.Error("Something already exists at that path.", "conflict");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            if (isDir) Directory.CreateDirectory(full);
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                File.WriteAllText(full, "");
+            }
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_file_created",
+                $"Operator {who} created {(isDir ? "folder" : "file")} {rel} in project '{project.Name}'.", antName: who);
+            return ApiJson.Ok(null, $"Created {rel}.");
+        });
+
         app.MapPut("/projects/{id}/file", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;

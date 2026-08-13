@@ -127,8 +127,15 @@ public static class AntRegistry
         // v3.8.26 built the insertion (`ExecutionService.InsertPolicyReviewTasks`, triggered by a
         // patch set existing), so the replacement is real and the rule can bind. The order matters
         // more than the rule: the path had to exist before the old one could be closed.
+        // v0.3.8.51 (field report): the rule narrowed to the two modes whose handlers can only
+        // refuse a planned invocation. A PLANNED tester/soldier step is a plan asking for MORE
+        // safety, not less — the operator's six-step plan opened with "run the baseline checks"
+        // and the gate threw the step away. PolicyInserted now means "the runtime guarantees this
+        // role runs when its trigger fires, whatever the plan says" — a floor, not a ceiling. The
+        // medic (diagnoses a failure that must exist) and the archivist (summarises a terminal
+        // mission) keep the refusal, because a planned invocation of either can only ever refuse.
         if (AntExecutionCatalog.ContractFor(role.RoleId) is { } contract
-            && contract.Scheduling != SchedulingMode.PlannerSelectable
+            && contract.Scheduling is SchedulingMode.FailureTriggered or SchedulingMode.PostFinalization
             && (task.ParentTaskIds is null || task.ParentTaskIds.Count == 0))
             return new(false,
                 $"Ant role '{task.AssignedAnt}' is {contract.Scheduling} and cannot be scheduled by the " +
