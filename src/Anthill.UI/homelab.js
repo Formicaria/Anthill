@@ -1412,7 +1412,7 @@ function renderHlTargets(){
       {icon:e=>e.enabled?'⏸':'▶',title:'Enable/disable',run:async e=>{
         await api('/homelab/allowlist/'+encodeURIComponent(e.id),'PUT',{enabled:!e.enabled});
       }},
-      // v0.3.8.53: an inline stroke SVG, not 🗑 — the one COLOR emoji in a deliberately
+      // v0.3.8.52: an inline stroke SVG, not 🗑 — the one COLOR emoji in a deliberately
       // monochrome glyph row (its siblings ✎ ✔ ⛔ ⏸ ▶ are text-presentation and stay).
       {icon:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',title:'Remove entry',run:async e=>{
         if(await uiConfirm('Remove target \''+e.target+'\'?')) await api('/homelab/allowlist/'+encodeURIComponent(e.id),'DELETE');

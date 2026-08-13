@@ -587,4 +587,4 @@ That is the only release summary kept in this README. Older release notes belong
 
 ## License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)

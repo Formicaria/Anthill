@@ -57,7 +57,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; Everything the publish step produced: the desktop shell, the server binary beside it, docs.
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; v0.3.8.53 (field report: "the desktop icon is blank") — the .ico ships beside the exe and the
+; v0.3.8.52 (field report: "the desktop icon is blank") — the .ico ships beside the exe and the
 ; shortcuts below NAME it, because a shortcut that merely points at the exe inherits whatever
 ; Explorer's icon cache last believed about that path; an explicit IconFilename cannot be stale.
 Source: "{#SourcePath}\..\..\src\Anthill.Desktop\anthill.ico"; DestDir: "{app}"

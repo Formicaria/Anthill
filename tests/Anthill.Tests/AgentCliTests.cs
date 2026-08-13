@@ -498,7 +498,7 @@ public class AgentCliTests
         }
     }
 
-    // ---- v0.3.8.53: the Windows path — .cmd shims, cmd.exe, and the injection rule -------------
+    // ---- v0.3.8.52: the Windows path — .cmd shims, cmd.exe, and the injection rule -------------
     //
     // On Windows npm and every npm-installed agent is a .cmd, which CreateProcess cannot start:
     // the field report's "all installers must work" was every probe, install and run failing at
