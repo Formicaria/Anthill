@@ -41,14 +41,23 @@ browser shape gets a server-backed directory browser over the new run_mission-ga
 because in Docker and LXC the working directory lives on the SERVER and the server's tree is the
 only one worth browsing. Choosing a folder sets it; the typed path stays as the fallback.
 
-**Every project owns its own tree.** A project with no explicit path used to fall back to the
-ONE shared workspace root: the files pane showed every project the same directory, and the chat
-agent greeted a brand-new project by reporting a branch the operator never chose. Projects now
-share one PARENT — `<workspace root>/projects/` — and each gets its own tree beneath it
-(slug-id, created on first use), resolved through one rule (`ProjectRoots`) by every consumer:
-the files pane, the repo badge, the chat lane's agent confinement (the working directory now
-rides `AgentAccessScope` per conversation), the prompt's own description of the tree, and the
-direct-edit sweep. An explicit path still wins everywhere.
+**Every project owns its own tree — set by the operator, before the first chat.** A project
+with no explicit path used to fall back to the ONE shared workspace root: the files pane showed
+every project the same directory, and the chat agent greeted a brand-new project by reporting a
+branch the operator never chose. Third field round settled the shape: the working directory is
+the operator's explicit act. The files pane's set-root form (path input + Browse) arrives
+PREFILLED with the project's suggested tree — `<workspace root>/projects/<slug-id>`, one shared
+parent, every tree distinct — setting it creates the directory, and a turn in a pathless
+project is refused with the remedy (the console keeps the message and opens the files pane).
+The working directory rides `AgentAccessScope` per conversation into the agent's confinement.
+
+**The git check speaks for the project's own tree.** A project directory nested inside a larger
+repository — a fresh tree under a workspace root that lives in the ANTHILL checkout, say — used
+to report the ENCLOSING repo's branch. Nested now reads as a plain folder with the enclosure
+named, the files-pane commit gate refuses to commit to a repo that merely encloses the project,
+and the direct-edit sweep holds to the same rule. And ANTHILL's own source checkout rides as
+reach (--add-dir) on every conversation — the colony can self-improve before, during or after
+any project's work — while never being the project's tracked tree: its git state is its own.
 
 **Conversations are born in their project, and the tracker says where.** The project page's New
 Conversation button CREATES the conversation immediately — it used to only flip the chat page
