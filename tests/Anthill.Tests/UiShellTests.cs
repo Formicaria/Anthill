@@ -1316,6 +1316,20 @@ public class UiShellTests
         // Per-file recent edits come from the same patch surfaces the cards use.
         Assert.Contains("chat-editor-changes", js);
         Assert.Contains("cfGitDiffHtml", js);
+
+        // v0.3.8.52 field round: the whole row selects and stays lit; git letters fill the dead
+        // space; the bar buttons keep to one line (the fullwidth ＋ wrapped them into two); the
+        // editor gained a highlighted layer and chat prose gained inline code — all escape-first.
+        Assert.Contains(">+ File<", html);
+        Assert.Contains(">+ Folder<", html);
+        Assert.DoesNotContain("＋ File", html);
+        Assert.Contains("id=\"chat-editor-hl\"", html);
+        Assert.Contains("id=\"chat-editor-wrap\"", html);
+        Assert.Contains("chatFilesSelPath", js);
+        Assert.Contains("chatFilesApplyGitMarks", js);
+        Assert.Contains("cf-git", js);
+        Assert.Contains("chat-inline", js);
+        Assert.Contains("chatEditorHl", js);
     }
 
     /// <summary>
