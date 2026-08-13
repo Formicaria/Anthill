@@ -112,9 +112,18 @@ public sealed class SandboxedCoderRunner
         // sbx.Dispose() here: worktree removed + pruned. The live checkout was never touched.
     }
 
-    /// <summary>Deterministic add/modify applier confined to the sandbox root. Delete/rename are
-    /// intentionally unsupported here (the sandbox validates additive/modify work; destructive
-    /// change types stay a human-reviewed live-apply concern).</summary>
+    /// <summary>
+    /// Deterministic applier confined to the sandbox root, covering all four change types.
+    ///
+    /// v0.3.8.52 corrected this comment and the behaviour under it together. It read "delete/rename
+    /// are intentionally unsupported here… destructive change types stay a human-reviewed live-apply
+    /// concern", which described a real decision from when <c>PatchApply</c> had no delete branch to
+    /// call. Once it did, the sentence was worse than out of date: a coder proposing a delete would
+    /// have had its sandbox run fail on a change the operator's applier accepts, and the run reports
+    /// red for work that would land fine. The human review it appeals to happens at the approval
+    /// gate either way — refusing here does not add a gate, it just makes the sandbox disagree with
+    /// the tool, which is the exact defect this shared-semantics path exists to prevent.
+    /// </summary>
     private static (bool Ok, string Error) ApplyIntoSandbox(WorkspacePathGuard guard, IEnumerable<PatchProposal> proposals)
     {
         foreach (var p in proposals)
@@ -124,6 +133,16 @@ public sealed class SandboxedCoderRunner
             catch (Exception e) { return (false, $"unsafe path '{p.FilePath}': {e.Message}"); }
             if (guard.IsBlockedPath(safe)) return (false, $"refusing blocked path '{p.FilePath}'");
 
+            // A rename's destination is resolved and blocked-checked exactly like its source: the
+            // move writes there, and a guard that only inspects where bytes come FROM is not a guard.
+            string? safeDestination = null;
+            if (!string.IsNullOrWhiteSpace(p.DestinationPath))
+            {
+                try { safeDestination = guard.ResolveSafePath(p.DestinationPath); }
+                catch (Exception e) { return (false, $"unsafe destination '{p.DestinationPath}': {e.Message}"); }
+                if (guard.IsBlockedPath(safeDestination)) return (false, $"refusing blocked destination '{p.DestinationPath}'");
+            }
+
             try
             {
                 // v3.8.32 — shared semantics. This block used to replace the FIRST occurrence with
@@ -132,12 +151,28 @@ public sealed class SandboxedCoderRunner
                 // applier would reject reports a green run for a change that can never land.
                 var current = File.Exists(safe) ? File.ReadAllText(safe) : null;
                 var outcome = PatchApply.Compute(ChangeTypeName(p.ChangeType), p.OldContent, p.NewContent,
-                    current, p.BaseHash);
+                    current, p.BaseHash, p.DestinationPath,
+                    safeDestination is not null
+                        && (File.Exists(safeDestination) || Directory.Exists(safeDestination)));
                 if (!outcome.Ok) return (false, $"{p.FilePath}: {outcome.Reason}");
 
-                if (outcome.Status == PatchApplyStatus.Created)
-                    Directory.CreateDirectory(Path.GetDirectoryName(safe)!);
-                File.WriteAllText(safe, outcome.Content!);
+                switch (outcome.Status)
+                {
+                    case PatchApplyStatus.Deleted:
+                        File.Delete(safe);
+                        break;
+
+                    case PatchApplyStatus.Renamed:
+                        Directory.CreateDirectory(Path.GetDirectoryName(safeDestination!)!);
+                        File.Move(safe, safeDestination!);
+                        break;
+
+                    default:
+                        if (outcome.Status == PatchApplyStatus.Created)
+                            Directory.CreateDirectory(Path.GetDirectoryName(safe)!);
+                        File.WriteAllText(safe, outcome.Content!);
+                        break;
+                }
             }
             catch (Exception e) { return (false, $"apply error on '{p.FilePath}': {e.Message}"); }
         }
@@ -150,6 +185,8 @@ public sealed class SandboxedCoderRunner
     {
         PatchChangeType.Add => PatchApply.Add,
         PatchChangeType.Modify => PatchApply.Modify,
+        PatchChangeType.Delete => PatchApply.Delete,
+        PatchChangeType.Rename => PatchApply.Rename,
         _ => kind.ToString().ToLowerInvariant(),
     };
 

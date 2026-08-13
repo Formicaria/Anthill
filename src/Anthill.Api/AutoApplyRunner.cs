@@ -85,6 +85,7 @@ public static class AutoApplyRunner
                 ChangeType = EnumExtensions.ParsePatchChangeType(full.GetValueOrDefault("change_type")?.ToString() ?? "modify"),
                 OldContent = full.GetValueOrDefault("old_content") as string,
                 BaseHash = full.GetValueOrDefault("base_hash") as string,
+                DestinationPath = full.GetValueOrDefault("destination_path") as string,
                 NewContent = full.GetValueOrDefault("new_content") as string,
             };
             var decision = AutoApplyPolicy.Evaluate(proposal);
@@ -265,7 +266,13 @@ public static class AutoApplyRunner
         note = "";
         var dir = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
             ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : Environment.CurrentDirectory;
-        var files = string.Join(" ", applied.Select(a => "\"" + (a.ResolvedPath ?? a.FilePath).Replace("\"", "") + "\""));
+        // v0.3.8.52: a rename touches TWO paths, and staging only the source would commit the
+        // deletion without the arrival. `git add` on a vanished path stages its removal, so the
+        // delete change type needs nothing extra here.
+        var files = string.Join(" ", applied
+            .SelectMany(a => new[] { a.ResolvedPath ?? a.FilePath, a.ResolvedDestination })
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => "\"" + p!.Replace("\"", "") + "\""));
         var msg = $"ANTHILL auto-applied {applied.Count} verified patch(es) [autonomy]";
         var branch = AnthillRuntime.AutonomyAutoApplyGitBranch; // "<username>-anthill" or ""
 

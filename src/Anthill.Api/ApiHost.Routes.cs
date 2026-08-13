@@ -75,6 +75,15 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiGridJs, "text/javascript; charset=utf-8");
         });
+        // v0.3.8.52: the homelab domain, split out of app.js. Same-origin and same no-store policy
+        // as every other asset, so the CSP stays script-src 'self' and a redeploy is never served a
+        // stale half of the console.
+        app.MapGet("/ui/homelab.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiHomelabJs, "text/javascript; charset=utf-8");
+        });
+
         app.MapGet("/ui/dashboard-grid.css", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";

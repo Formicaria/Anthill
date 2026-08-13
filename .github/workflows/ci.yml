@@ -215,8 +215,13 @@ jobs:
 
       # v2.17.1: behavioural coverage for the Missions conversation reconciler. node --test is
       # built into the Node 20 above; nothing is installed and no build pipeline is added.
+      #
+      # v0.3.8.52 — runs the DIRECTORY, not one named file. This step named mission-thread.test.js
+      # alone, so navigation.test.js sat in the tree from v0.3.8.48 without ever running in CI: a
+      # test file that is not enumerated is not a test, and nothing said so. Every tests/ui/*.test.js
+      # is now picked up by existing, and adding one requires no CI edit to make it count.
       - name: UI logic tests (node --test)
-        run: node --test tests/ui/mission-thread.test.js
+        run: node --test tests/ui/
 
       # Plan/version consistency (v1.8.27, extended v1.8.28, repointed v3.8.24): the canonical plan must exist,
       # and every version marker must agree — runtime const, Directory.Build.props assembly version,

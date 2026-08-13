@@ -640,7 +640,10 @@ public sealed partial class SqliteMemory : IDisposable
         // v0.3.8.37: base_hash — what the target hashed to when the patch was built. Additive and
         // nullable, so proposals written before this release keep applying; PatchApply only enforces
         // the check when the column holds a value.
-        AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT", ["base_hash"] = "TEXT" });
+        // v0.3.8.52: destination_path — where a rename moves the file to. Additive and nullable for
+        // the same reason as base_hash: it is meaningful for exactly one change type, and every row
+        // written before this release has none.
+        AddMissing("patch_proposals", new() { ["applied_at"] = "TEXT", ["backup_path"] = "TEXT", ["last_error"] = "TEXT", ["base_hash"] = "TEXT", ["destination_path"] = "TEXT" });
         // Phase 4 learning loop: per-objective success EMA (nullable — null until the first recorded run).
         AddMissing("objectives", new() { ["success_ema"] = "REAL" });
         AddMissing("source_records", new()
