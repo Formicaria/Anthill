@@ -124,7 +124,7 @@ public class DesktopShellTests
 
         var iss = Read("deploy", "windows", "anthill-setup.iss");
         Assert.Contains("SetupIconFile", iss);
-        // v0.3.8.53 (field report: "the desktop icon is blank") — the shortcuts NAME the .ico and
+        // v0.3.8.52 (field report: "the desktop icon is blank") — the shortcuts NAME the .ico and
         // the installer ships it, because a shortcut that merely points at the exe inherits
         // whatever Explorer's icon cache last believed about that path.
         Assert.Contains("IconFilename: \"{app}\\anthill.ico\"", iss);
@@ -133,7 +133,7 @@ public class DesktopShellTests
     }
 
     /// <summary>
-    /// v0.3.8.53, two field reports in one window. "The title bar is white": WinForms cannot paint
+    /// v0.3.8.52, two field reports in one window. "The title bar is white": WinForms cannot paint
     /// the non-client caption — DWM owns it — so the shell must ASK, via DwmSetWindowAttribute,
     /// for immersive dark (19/20, both spellings for both Windows 10 vintages) and Windows 11's
     /// caption color; failure must be discarded, never fatal. "Links open a popup shell": a

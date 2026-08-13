@@ -65,7 +65,7 @@ public static partial class ApiHost
                     ["docs_url"] = s.Agent.DocsUrl,
                     ["writes"] = s.Agent.Writes,
                 }).ToList(),
-                // v0.3.8.53 — the LOCAL runtime beside the vendor CLIs, because the no-account
+                // v0.3.8.52 — the LOCAL runtime beside the vendor CLIs, because the no-account
                 // path is the first thing a fresh install reaches for. Not a catalogue row: its
                 // id would collide with the `ollama` provider the router already has.
                 ["local"] = LocalRuntime(),

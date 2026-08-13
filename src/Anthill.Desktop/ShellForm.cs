@@ -59,7 +59,7 @@ internal sealed class ShellForm : Form
     private readonly NotifyIcon _tray = new();
     private bool _trayBalloonShown;
 
-    // v0.3.8.53 (field report: "the title bar is white") — the one part of the window WinForms
+    // v0.3.8.52 (field report: "the title bar is white") — the one part of the window WinForms
     // cannot paint is the non-client caption, and its default is light regardless of the form's
     // own colors. DWM owns it; these attributes ask DWM for the brand. 20 is
     // DWMWA_USE_IMMERSIVE_DARK_MODE (19 on pre-20H1 builds of Windows 10 — both are set, the
@@ -190,7 +190,7 @@ internal sealed class ShellForm : Form
         try
         {
             await web.EnsureCoreWebView2Async();
-            // v0.3.8.53 — a target=_blank link (the Formicaria mark, an agent's Docs button) must
+            // v0.3.8.52 — a target=_blank link (the Formicaria mark, an agent's Docs button) must
             // open in the operator's REAL browser. WebView2's default is an unbranded popup shell
             // with no tabs, no extensions and no password manager — a second UI, which the desktop
             // app exists to not be. Handled synchronously, so no popup ever flashes.
@@ -203,6 +203,30 @@ internal sealed class ShellForm : Form
                         new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true });
                 }
                 catch (Exception ex) { DesktopLog.Write("open external: " + ex.Message); }
+            };
+            // v0.3.8.52 — the REAL OS folder picker, for the console's Browse button. A web page
+            // cannot learn an absolute path from the browser's own picker (by design), but the
+            // desktop shell is a native app and can simply ask: the page posts "pick-folder",
+            // the host shows FolderBrowserDialog, and the chosen absolute path comes back as one
+            // JSON message. Browser shapes never send this — they fall back to the server-backed
+            // directory browser (/fs/dirs), which browses the machine the workdir actually lives on.
+            web.CoreWebView2.WebMessageReceived += (_, e) =>
+            {
+                try
+                {
+                    if (e.TryGetWebMessageAsString() != "pick-folder") return;
+                    using var dlg = new FolderBrowserDialog
+                    {
+                        Description = "Choose the project's working directory",
+                        UseDescriptionForTitle = true,
+                        ShowNewFolderButton = true,
+                    };
+                    var picked = dlg.ShowDialog(this) == DialogResult.OK ? dlg.SelectedPath : "";
+                    web.CoreWebView2.PostWebMessageAsJson(
+                        System.Text.Json.JsonSerializer.Serialize(
+                            new { type = "picked-folder", path = picked }));
+                }
+                catch (Exception ex) { DesktopLog.Write("pick-folder: " + ex.Message); }
             };
             web.CoreWebView2.Navigate(url);
             Controls.Remove(_loading);

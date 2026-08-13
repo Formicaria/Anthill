@@ -1,7 +1,7 @@
 namespace Anthill.Modules.Reasoning;
 
 /// <summary>
-/// The LOCAL runtime — Ollama — installable from the same page as the agent CLIs. v0.3.8.53.
+/// The LOCAL runtime — Ollama — installable from the same page as the agent CLIs. v0.3.8.52.
 ///
 /// The Windows field report's sentence was "this is the first thing people are going to do", and
 /// the first thing a fresh Windows install could actually do was nothing: the agents page offered

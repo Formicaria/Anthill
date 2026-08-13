@@ -136,7 +136,7 @@ public static class AgentCliDiscovery
             }
         }
 
-        // v0.3.8.53, the Windows field report ("all installers must work"): CreateProcess's own
+        // v0.3.8.52, the Windows field report ("all installers must work"): CreateProcess's own
         // PATH search only ever appends .exe — and on Windows npm IS npm.cmd, and so is every
         // npm-installed agent. Handing the bare name to the OS therefore reported "npm is not
         // installed" on a machine with a working Node, which is the exact wrong sentence. Walk
@@ -167,7 +167,7 @@ public static class AgentCliDiscovery
             ? new[] { binary + ".cmd", binary + ".exe", binary + ".bat", binary }
             : new[] { binary };
 
-    // ---- v0.3.8.53: starting what Resolve found, on Windows ------------------------------------
+    // ---- v0.3.8.52: starting what Resolve found, on Windows ------------------------------------
     //
     // CreateProcess cannot start a .cmd — cmd.exe has to interpret it. But putting cmd.exe in
     // front of OPERATOR TEXT would reopen the exact command-injection hole this file's Run()
@@ -293,7 +293,7 @@ public static class AgentCliDiscovery
         // Agents are installed into ~/.anthill/agents rather than a root-owned global prefix,
         // so they are deliberately NOT on the operator's PATH — without this they would install
         // successfully and then be reported as missing, which is the worst of both.
-        // v0.3.8.53: BuildPsi additionally translates Windows .cmd shims into something
+        // v0.3.8.52: BuildPsi additionally translates Windows .cmd shims into something
         // CreateProcess can start — see BuildInvocation for the two cases and the injection rule.
         var psi = BuildPsi(binary, args, workingDirectory, environment, out var refused);
         if (refused is not null)

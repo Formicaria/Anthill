@@ -63,7 +63,7 @@ public static class AgentCliInstaller
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"),
             };
 
-        // v0.3.8.53 (Windows field report): the same two halves, at Windows' actual locations.
+        // v0.3.8.52 (Windows field report): the same two halves, at Windows' actual locations.
         // `npm --prefix` on Windows writes its .cmd shims to the PREFIX ROOT, not prefix\bin —
         // so AgentHome itself is a bin directory here. pip --user puts its launchers under
         // %APPDATA%\Python\Python3XX\Scripts, one directory per interpreter version; every one
@@ -130,7 +130,7 @@ public static class AgentCliInstaller
     /// </summary>
     private static (bool Ok, string Why) PackageManagerAvailable(string manager)
     {
-        // v0.3.8.53: the remedy is for THIS machine. A Windows operator was being told
+        // v0.3.8.52: the remedy is for THIS machine. A Windows operator was being told
         // `sudo apt install nodejs npm` — a sentence with three words their OS has never heard.
         var (binary, args, install) = manager switch
         {
