@@ -650,7 +650,20 @@ public sealed class ConversationRunner
                 + "The operator describes its purpose as:");
             if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
             if (!string.IsNullOrWhiteSpace(project.Path))
+            {
                 sb.AppendLine($"The project's working directory is: {project.Path}");
+                // v0.3.8.51 third round — git awareness: the colony applied changes and the
+                // operator asked why nothing was committed. The colony now KNOWS what the
+                // directory is (repo on a branch, or plain folder) and states its commit rules
+                // instead of discovering them by surprise.
+                var repo = Projects.RepoOps.Describe(project.Path);
+                sb.AppendLine(repo.IsRepo
+                    ? $"That directory is a git repository on branch '{repo.Branch}'"
+                      + (repo.DirtyCount > 0 ? $" with {repo.DirtyCount} uncommitted change(s)." : " with a clean working tree.")
+                      + " Under Skip-all-approvals or Automatically-approve, patches you apply are committed"
+                      + " automatically; under Manual approval the operator commits from the files pane."
+                    : "That directory is a plain folder, not a git repository — applied changes are not version-controlled.");
+            }
             sb.AppendLine();
         }
         foreach (var t in recent)

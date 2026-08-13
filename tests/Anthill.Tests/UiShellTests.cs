@@ -1286,6 +1286,39 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.51 third round — the files pane's editor DOCKS BELOW the working tree: click a file
+    /// and it opens underneath while the tree stays visible and clickable (the operator asked for
+    /// exactly this after the replace-the-tree version). The editor carries its own Changes toggle
+    /// (recent edits to THAT file: uncommitted git diff + colony patch history), stays an editable
+    /// textarea with Save, and the pane states what the directory IS — git repo with branch and
+    /// dirty count, or plain folder — with an operator Commit button only a repo shows.
+    /// </summary>
+    [Fact]
+    public void FilesPane_EditorDocksBelowTheTree_AndGitIsStated()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // The docked editor: its own bar ids, a border seam, and NO tree-hiding on open.
+        Assert.Contains("id=\"chat-editor-changes\"", html);
+        Assert.Contains("id=\"chat-editor-diff\"", html);
+        Assert.Contains("id=\"chat-editor-text\"", html);
+        Assert.DoesNotContain("body.style.display='none'", js);   // the tree survives a file click
+
+        // Git awareness, stated in the bar; Commit is the operator's half of the commit story.
+        Assert.Contains("id=\"chat-files-repo\"", html);
+        Assert.Contains("id=\"chat-files-commit\"", html);
+        Assert.Contains("chatFilesRepoLoad", js);
+        Assert.Contains("/repo/diff?path=", js);
+        Assert.Contains("'/repo/commit'", js);
+        Assert.Contains("plain folder", js);
+
+        // Per-file recent edits come from the same patch surfaces the cards use.
+        Assert.Contains("chat-editor-changes", js);
+        Assert.Contains("cfGitDiffHtml", js);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces, so the label was
     /// corrected to "Mission Workspaces". v0.3.8.47 BUILT the project concept — a projects table,
