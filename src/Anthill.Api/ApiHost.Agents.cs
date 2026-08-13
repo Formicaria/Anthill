@@ -65,7 +65,50 @@ public static partial class ApiHost
                     ["docs_url"] = s.Agent.DocsUrl,
                     ["writes"] = s.Agent.Writes,
                 }).ToList(),
+                // v0.3.8.53 — the LOCAL runtime beside the vendor CLIs, because the no-account
+                // path is the first thing a fresh install reaches for. Not a catalogue row: its
+                // id would collide with the `ollama` provider the router already has.
+                ["local"] = LocalRuntime(),
             });
+        });
+
+        /*
+         * Install the local runtime (Ollama) — Windows end-to-end via winget; elsewhere an honest
+         * refusal naming the exact command, because the vendor's Linux script needs root and
+         * Anthill never sudos. Same operator-shell gate and same audit shape as an agent install:
+         * this too runs a command on the host.
+         */
+        app.MapPost("/agents/local/install", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "operator_shell"); if (auth is not null) return auth;
+            if (!AnthillRuntime.EnableOperatorShell)
+                return ApiJson.Error(
+                    "Installing from the console runs a command on this host and needs the operator "
+                    + "shell. Enable it in Configuration → Security, or run the install command yourself.",
+                    "shell_disabled");
+
+            var who = ResolveIdentity(ctx)?.Username ?? "admin";
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "agent_install_started",
+                $"Operator {who} started installing {LocalRuntimeInstaller.DisplayName}.", antName: "operator",
+                metadata: new() { ["operator"] = who, ["agent"] = "local:ollama", ["command"] = LocalRuntimeInstaller.InstallHint });
+
+            var result = LocalRuntimeInstaller.Install();
+
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId,
+                result.Ok ? "agent_install_succeeded" : "agent_install_failed",
+                result.Ok
+                    ? $"{LocalRuntimeInstaller.DisplayName} installed."
+                    : $"{LocalRuntimeInstaller.DisplayName} failed to install: {result.Message}",
+                antName: "operator",
+                metadata: new() { ["operator"] = who, ["agent"] = "local:ollama", ["exit_code"] = result.ExitCode });
+
+            return result.Ok
+                ? ApiJson.Ok(new Dictionary<string, object?>
+                  {
+                      ["installed"] = LocalRuntimeInstaller.Probe().Installed,
+                      ["output"] = result.Output,
+                  }, result.Message)
+                : ApiJson.Error(result.Message, "install_failed");
         });
 
         /*
@@ -128,5 +171,30 @@ public static partial class ApiHost
                 ["output"] = result.Output,
             }, $"{agent.DisplayName} installed.");
         });
+    }
+
+    /// <summary>The local runtime's row for /agents — same vocabulary as an agent row, so the
+    /// console renders one card grammar for both.</summary>
+    private static Dictionary<string, object?> LocalRuntime()
+    {
+        var (installed, version) = LocalRuntimeInstaller.Probe();
+        return new Dictionary<string, object?>
+        {
+            ["id"] = "local:ollama",
+            ["name"] = LocalRuntimeInstaller.DisplayName,
+            ["vendor"] = "Ollama (open source)",
+            ["installed"] = installed,
+            ["version"] = version,
+            ["unavailable_reason"] = installed ? null
+                : "Not installed. Runs models on this machine — no account, no API key; "
+                + "the colony's local provider routes to it.",
+            ["install_command"] = LocalRuntimeInstaller.InstallHint,
+            // Only Windows installs end-to-end from the console (winget). Elsewhere the deploy
+            // shapes provision it, and a bare host needs the vendor's root-owned script.
+            ["install_supported"] = OperatingSystem.IsWindows(),
+            ["auth_command"] = null,
+            ["docs_url"] = LocalRuntimeInstaller.DocsUrl,
+            ["writes"] = false,
+        };
     }
 }

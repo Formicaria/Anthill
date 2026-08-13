@@ -1,5 +1,35 @@
 # ANTHILL Changelog
 
+## v0.3.8.53 - the Windows field report: first-run must actually work
+
+**Agent installs become Windows-native.** On Windows, npm and every npm-installed agent is a
+.cmd shim — which CreateProcess cannot start, so every probe, install and run died at
+Process.Start and the console prescribed `sudo apt install nodejs npm` to an OS with none of
+those words. Now: PATH is walked with the Windows candidate extensions so a .cmd is FOUND, and
+starting one has two lanes — an npm shim is READ and its .js target handed to node directly
+(discrete argv, so the prompt path stays shell-free on every OS), and anything else may ride
+cmd.exe only when every argument passes a deny-list cmd cannot interpret; an argument that fails
+is refused, never escaped. npm's Windows prefix layout (shims at the prefix ROOT) and pip's
+`%APPDATA%\Python\*\Scripts` join the searched directories, and every prerequisite hint speaks
+the operator's actual platform (winget, not apt). The lane logic is pure and pinned by tests
+that run on every OS — the platform the suite runs on is not the platform the defect shipped on.
+
+**An installer for local.** The no-account path is the first thing a fresh install reaches for,
+and it was the one path the agents page had no story for. Ollama now leads the page: probed like
+any agent (including the just-installed-but-PATH-is-stale location), installed end-to-end on
+Windows through winget — silent, user-scope, audited through the same operator-shell gate as
+every agent install — and everywhere else the exact command is SHOWN instead of a button that
+could only refuse, because Docker and LXC already provision it and a bare host's installer needs
+the root Anthill never uses.
+
+**The desktop wears the brand all the way out.** The title bar goes dark (DWM immersive dark on
+Windows 10, the exact console colors on Windows 11 — asked for, never required, so a light bar
+can never block a working colony). The installer ships anthill.ico beside the exe and the
+shortcuts NAME it, so the desktop icon cannot inherit a stale Explorer cache's idea of the exe.
+And a target=_blank link opens the operator's REAL browser, not WebView2's unbranded popup shell
+— which is what makes the new door honest: the Formicaria mark in the rail now links home to
+formicaria.us, in every shape the console ships in.
+
 ## v0.3.8.52 - the chat lane's edits reach git, and the files pane learns manners
 
 **"Did not auto commit" — root cause and repair.** v0.3.8.51's commit hook rode the patch
