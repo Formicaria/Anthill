@@ -1705,5 +1705,13 @@ public class UiShellTests
         Assert.Contains(":has(#chat-files-editor[hidden])", html);
         Assert.Contains("cursor:col-resize", html);
         Assert.Contains("cursor:row-resize", html);
+
+        // Seventh field round: a narrow pane may never push the controls off screen. The bar's
+        // yield order is explicit — the PATH collapses first (10× shrink), controls never shrink
+        // (buttons and the branch select are flex-shrink:0), wrap is the last resort. Verified
+        // live at the drag clamp's narrowest before landing.
+        Assert.Contains("flex-wrap:wrap", html);
+        Assert.Contains(".chat-colony-bar .btn,.chat-colony-bar select{flex-shrink:0;}", html);
+        Assert.Contains("flex:0 10 auto", html);
     }
 }
