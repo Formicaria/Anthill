@@ -1318,6 +1318,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* While the split is open the rail yields its space to the two working halves. */
 #page-chat.colony-open .chat-rail{display:none;}
 #page-chat.colony-open .chat-main{flex:1 1 48%;order:1;min-width:380px;}
+/* v0.3.8.52 (fifth field round) — SIZABLE splits. The handles are real flex items: the vertical
+   one sits between .chat-main (order:1) and the open layer (order:2); the horizontal one sits
+   between the working tree and the docked editor, and disappears with the editor (:has), so a
+   handle never floats beside one lone pane. Drag logic in app.js persists the chosen split. */
+.split-x{display:none;order:1;flex:0 0 5px;cursor:col-resize;background:var(--border);}
+.split-x:hover,.split-x.dragging{background:var(--logo-node,#93bdf2);}
+#page-chat.colony-open .split-x{display:block;}
+.split-y{flex:0 0 5px;cursor:row-resize;background:var(--border);}
+.split-y:hover,.split-y.dragging{background:var(--logo-node,#93bdf2);}
+#chat-files-layer:has(#chat-files-editor[hidden]) .split-y{display:none;}
 /* Narrow: a split is unreadable. Colony mode becomes a clean full-screen switch — the pane's
    own ✕ (and Escape) returns to the conversation with draft and scroll intact. */
 @media (max-width:900px){ .chat-rail{display:none;} }
@@ -3507,6 +3517,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;flex:1 1 45%;min-height:0;">
               <div class="hud-state">Loading…</div>
             </div>
+            <!-- v0.3.8.52 (fifth field round): the tree ↔ editor split is SIZABLE — drag up/down.
+                 CSS hides the handle whenever the editor itself is hidden, so it exists exactly
+                 when there are two halves to size. -->
+            <div id="chat-split-y" class="split-y" title="Drag to resize"></div>
             <!-- v0.3.8.51 third round: the editor DOCKS BELOW the tree — click a file, it opens
                  here while the working tree stays visible above (operator: "click on a file, and
                  it open below the working tree"). Its own Changes toggle shows recent edits to
@@ -3603,6 +3617,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div class="chat-hint">Enter sends a message · real work becomes a mission under your approval policy</div>
           </main>
+
+          <!-- v0.3.8.52 (fifth field round): the chat ↔ pane split is SIZABLE — drag left/right.
+               order:1 beside .chat-main keeps it between the conversation and whichever layer
+               (files or colony) is open; hidden entirely when no layer is. -->
+          <div id="chat-split-x" class="split-x" title="Drag to resize"></div>
 
         </div>
       </div>

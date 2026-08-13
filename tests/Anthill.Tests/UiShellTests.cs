@@ -1672,5 +1672,32 @@ public class UiShellTests
         var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
         Assert.Contains("app.MapPost(\"/projects/{id}/repo/init\"", providers);
         Assert.Contains("already a git repository", providers);
+
+        // Fifth field round: the badge must go LIVE the moment init or a directory change
+        // succeeds — the cached GETs are busted, or 'Init git' appears to ignore the click
+        // for a TTL while the stale "not a repo" answer replays.
+        Assert.Contains("apiCacheBust('/projects/'+encodeURIComponent(chatFilesProjectId))", js);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (fifth field round) — the splits are SIZABLE: chat ↔ pane horizontally, tree ↔
+    /// editor vertically. One wiring function, two handles, proportions persisted; the vertical
+    /// handle exists only while the editor is open (:has), so a handle never floats beside one
+    /// lone pane.
+    /// </summary>
+    [Fact]
+    public void TheSplits_AreSizable_AndRememberTheirProportions()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("wireSplit('chat-split-x', true, 'anthill_split_x'", js);
+        Assert.Contains("wireSplit('chat-split-y', false, 'anthill_split_y'", js);
+        Assert.Contains("setPointerCapture", js);
+
+        var html = Ui("index.html");
+        Assert.Contains("id=\"chat-split-x\"", html);
+        Assert.Contains("id=\"chat-split-y\"", html);
+        Assert.Contains(":has(#chat-files-editor[hidden])", html);
+        Assert.Contains("cursor:col-resize", html);
+        Assert.Contains("cursor:row-resize", html);
     }
 }
