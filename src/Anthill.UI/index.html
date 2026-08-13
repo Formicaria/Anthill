@@ -1261,6 +1261,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .cf-row.sel{background:rgba(56,97,251,.18);}
 .cf-git{font-family:var(--mono);font-size:9px;min-width:12px;text-align:center;flex:0 0 auto;}
 .cf-git.m{color:#e5b567;}.cf-git.a{color:#7ee2b8;}.cf-git.u{color:#8ab4f8;}.cf-git.d{color:#f3a0a0;}
+/* v0.3.8.52 — the commit train: a quiet clock per file until the row is hovered; stops light up. */
+.cf-hist{opacity:.35;cursor:pointer;font-size:10px;flex:0 0 auto;}
+.cf-row:hover .cf-hist{opacity:1;}
+.cf-stop:hover{background:rgba(56,97,251,.08);}
+.cf-train{border-left:1px solid var(--border);margin-left:14px;padding:2px 0;}
 #chat-editor-text::selection{background:rgba(56,97,251,.35);color:transparent;}
 /* v0.3.8.49 (§3) — long colony responses are collapsed by default so Chat reads like an assistant,
    not a debug console. The compact view clamps to a few lines with a soft fade; the full text is
@@ -3459,6 +3464,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <!-- v0.3.8.51 third round: git awareness — what IS this directory? A repo on a
                    branch (with a dirty count) or a plain folder, stated up front like opencode. -->
               <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;"></span>
+              <!-- v0.3.8.52: GitHub-style branch selector — the commit train reads history from
+                   whichever branch is chosen here, without checking anything out. -->
+              <select id="chat-files-branch" hidden aria-label="Branch for commit history"
+                      style="font-size:9.5px;font-family:var(--mono);background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 4px;max-width:170px;"></select>
               <span class="ccb-spacer"></span>
               <button class="btn btn-ghost" id="chat-files-commit" hidden
                       title="Commit the working tree's uncommitted changes">Commit</button>
