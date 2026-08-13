@@ -12,17 +12,14 @@ namespace Anthill.Core.Projects;
 /// project and said nothing but hello. Which is exactly backwards: projects should share one
 /// PARENT, and each own its own tree beneath it.
 ///
-/// The rule, one place:
-///   • An explicit <see cref="Project.Path"/> wins — the operator pointed at a real tree.
-///   • Otherwise the project gets ITS OWN directory under &lt;workspace root&gt;/projects/,
-///     named slug-id (the slug for the operator's eyes, the id for uniqueness — two projects
-///     named "Website" must not share a tree), created lazily on first use.
-///   • No resolvable workspace root at all → null, and the caller says so; a null root is a
+/// The rule, one place (third field round — the operator's correction of the second):
+///   • The working directory is the OPERATOR'S explicit act, made in the files pane BEFORE the
+///     first chat. The colony only SUGGESTS — <see cref="DefaultFor"/> names each project its
+///     own tree under &lt;workspace root&gt;/projects/, slug-id (the slug for the operator's
+///     eyes, the id for uniqueness — two projects named "Website" must not share a tree) — and
+///     nothing is created until the operator accepts.
+///   • No resolvable workspace root → null suggestion, and the caller says so; a null root is a
 ///     refusal to invent one, not a licence to roam (the AgentWorkspaceRoot rule).
-///
-/// Every consumer — the files pane, the repo badge, the chat lane's agent confinement, the
-/// direct-edit sweep — resolves through here. Two copies of a boundary rule is one copy that
-/// eventually disagrees.
 /// </summary>
 public static class ProjectRoots
 {
@@ -43,22 +40,16 @@ public static class ProjectRoots
         SharedRoot is null ? null : Path.Combine(SharedRoot, $"{Slug(project.Name)}-{project.Id}");
 
     /// <summary>
-    /// The directory this project's work happens in: its explicit path, else its own default
-    /// tree, created on first use when <paramref name="create"/> is set. Null only when nothing
-    /// is resolvable — which the caller must surface, never paper over with a shared root.
+    /// v0.3.8.52 (third field round): the colony's OWN source tree — the ANTHILL checkout this
+    /// server runs from, when it runs from one. It "lives alongside the project directory no
+    /// matter what" (operator's rule): granted as reach on every conversation so the colony can
+    /// self-improve before, during or after any project's work. Null on an installed binary with
+    /// no checkout — a colony without source simply has nothing extra to reach.
     /// </summary>
-    public static string? Resolve(Project project, bool create = true)
+    public static string? ColonySource()
     {
-        if (!string.IsNullOrWhiteSpace(project.Path)) return project.Path;
-        var fallback = DefaultFor(project);
-        if (fallback is null) return null;
-        if (!Directory.Exists(fallback))
-        {
-            if (!create) return fallback;   // callers that only NAME the tree need not create it
-            try { Directory.CreateDirectory(fallback); }
-            catch { return null; }          // an uncreatable default is no default
-        }
-        return fallback;
+        try { return RepoOps.TopLevel(AppContext.BaseDirectory); }
+        catch { return null; }
     }
 
     /// <summary>Filesystem-safe, human-readable: lowercase alphanumerics and dashes, bounded.</summary>

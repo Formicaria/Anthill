@@ -4768,11 +4768,24 @@ async function chatSend(mode){
         if(outcome&&outcome.started===false) note=outcome.summary||'Refused';
       }else{
         const r=await response.json().catch(()=>null);
-        if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+        // v0.3.8.52 (third field round): a refused turn keeps the operator's message and NAMES
+        // the remedy — workdir_required additionally opens the files pane, where the set-root
+        // form is already waiting with the suggested path filled in.
+        if(r&&r.success===false){
+          note=r.message||'Refused';
+          if(el) el.value=msg;
+          if(r.error==='workdir_required') chatToggleFiles(true);
+        }
+        else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
     }else{
       const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
-      if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
+      if(r&&r.success===false){
+        note=r.message||'Refused';
+        if(el) el.value=msg;
+        if(r.error==='workdir_required') chatToggleFiles(true);
+      }
+      else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
   }catch(e){
     note = (e&&e.name==='AbortError') ? 'Stopped.' : 'Could not send: '+(e.message||'');
@@ -5070,9 +5083,14 @@ async function chatFilesLoad(){
     // WebView2 host bridge. Browser shapes: the server-backed directory browser (/fs/dirs),
     // because the page cannot learn an absolute path from its own picker and in Docker/LXC the
     // working directory lives on the SERVER anyway.
+    // Third field round: the input arrives PREFILLED with the project's suggested tree
+    // (<shared root>/projects/<slug-id>) — accepting the suggestion is one click, and setting
+    // it CREATES the directory. The colony never creates it behind the operator's back.
+    const det=await api('/projects/'+encodeURIComponent(chatFilesProjectId));
+    const prefill=(det&&det.success&&det.data&&(det.data.path||det.data.suggested_path))||'';
     body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>
       <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
-        <input class="provider-input" id="cf-set-root" placeholder="/absolute/path/to/working/directory" style="flex:1;">
+        <input class="provider-input" id="cf-set-root" value="${escapeHtml(prefill)}" placeholder="/absolute/path/to/working/directory" style="flex:1;">
         <button class="btn btn-ghost" id="cf-set-root-browse">Browse…</button>
         <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
       </div>
