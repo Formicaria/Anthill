@@ -466,9 +466,27 @@ public sealed class ConversationRunner
     /// <summary>The project's open directory gates, as paths — the chat lane's grant set.</summary>
     private IReadOnlyList<string> ProjectGrantPaths(Conversation conversation)
     {
-        if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return Array.Empty<string>();
-        try { return _memory.LoadProjectGrants(conversation.ProjectId!).Select(g => g.Path).ToList(); }
-        catch { return Array.Empty<string>(); }
+        var paths = new List<string>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(conversation.ProjectId))
+                paths.AddRange(_memory.LoadProjectGrants(conversation.ProjectId!).Select(g => g.Path));
+        }
+        catch { /* no grants is a normal project, not an error */ }
+
+        // v0.3.8.52 (third field round, operator's rule): "ANTHILL's working directory lives
+        // alongside the project directory no matter what" — the colony's own source tree rides
+        // as reach (--add-dir) on every conversation, so self-improvement stays possible
+        // before, during and after any project's work. Reach only: the project's git badge and
+        // the direct-edit sweep track the PROJECT's tree, never this one.
+        try
+        {
+            if (Projects.ProjectRoots.ColonySource() is { } self
+                && !paths.Contains(self, StringComparer.Ordinal))
+                paths.Add(self);
+        }
+        catch { /* a colony without a source checkout simply grants nothing extra */ }
+        return paths;
     }
 
     /// <summary>
@@ -644,9 +662,12 @@ public sealed class ConversationRunner
     {
         try
         {
+            // Third field round: the working directory is the operator's EXPLICIT choice — the
+            // turns endpoint refuses a pathless project before any of this runs, so there is no
+            // silent default to resolve into. Explicit path or nothing.
             if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return null;
             return _memory.LoadProject(conversation.ProjectId!) is { } project
-                ? Projects.ProjectRoots.Resolve(project) : null;
+                && !string.IsNullOrWhiteSpace(project.Path) ? project.Path : null;
         }
         catch { return null; }
     }
@@ -656,10 +677,16 @@ public sealed class ConversationRunner
         try
         {
             if (conversation.EffectivePolicy != EscalationPolicy.Bypass) return null;
-            // The sweep watches the tree the agent actually stands in — the resolved project
-            // directory, not only an explicitly set one (v0.3.8.52).
             if (ProjectDirectory(conversation) is not { } dir) return null;
             var root = Projects.RepoOps.TopLevel(dir);
+            // Third field round: the sweep commits to the project's OWN repo only. A project
+            // directory nested inside a larger repository (the ANTHILL checkout, say) must never
+            // have the colony committing to the ENCLOSING tree on the operator's behalf.
+            if (root is not null && !string.Equals(
+                    Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                return null;
             if (root is null) return null;
             var state = Projects.RepoOps.Describe(root);
             if (!state.IsRepo) return null;
@@ -737,10 +764,12 @@ public sealed class ConversationRunner
         if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
             && _memory.LoadProject(conversation.ProjectId!) is { } project)
         {
-            // v0.3.8.52: the directory described is the one the agent actually STANDS in — the
-            // resolved per-project tree, not only an explicitly set path. Describing a different
-            // tree than the cwd is how the operator got told about a branch they never chose.
-            var projectDir = Projects.ProjectRoots.Resolve(project);
+            // v0.3.8.52 (third field round): the directory described is the operator's EXPLICIT
+            // choice — the turns gate refuses a pathless project before this ever runs — and the
+            // git description speaks only for the project's OWN tree: a directory nested inside
+            // a larger repository is a plain folder here, because reporting the enclosing
+            // repo's branch is how the operator got told about a branch they never chose.
+            var projectDir = ProjectDirectory(conversation);
             sb.AppendLine($"This conversation belongs to the project \"{project.Name}\"."
                 + (string.IsNullOrWhiteSpace(project.DescriptionMd) ? "" : " The operator describes its purpose as:"));
             if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
@@ -751,14 +780,25 @@ public sealed class ConversationRunner
                 // operator asked why nothing was committed. The colony now KNOWS what the
                 // directory is (repo on a branch, or plain folder) and states its commit rules
                 // instead of discovering them by surprise.
-                var repo = Projects.RepoOps.Describe(projectDir);
-                sb.AppendLine(repo.IsRepo
+                var top = Projects.RepoOps.TopLevel(projectDir);
+                var ownRepo = top is not null && string.Equals(
+                    Path.GetFullPath(top).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(projectDir).TrimEnd(Path.DirectorySeparatorChar),
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+                var repo = ownRepo ? Projects.RepoOps.Describe(projectDir) : null;
+                sb.AppendLine(repo is { IsRepo: true }
                     ? $"That directory is a git repository on branch '{repo.Branch}'"
                       + (repo.DirtyCount > 0 ? $" with {repo.DirtyCount} uncommitted change(s)." : " with a clean working tree.")
                       + " Under Skip-all-approvals or Automatically-approve, patches you apply are committed"
                       + " automatically; under Manual approval the operator commits from the files pane."
-                    : "That directory is a plain folder, not a git repository — applied changes are not version-controlled.");
+                    : "That directory is a plain folder, not a git repository — applied changes are not version-controlled."
+                      + (top is not null && !ownRepo
+                          ? $" (It sits inside the repository at {top}; the project tracks only its own tree.)" : ""));
             }
+            if (Projects.ProjectRoots.ColonySource() is { } colonySelf)
+                sb.AppendLine("Separately, ANTHILL's own source checkout is reachable at "
+                    + colonySelf + " for colony self-improvement work — it is not this project's "
+                    + "tree and its git state is not this project's git state.");
             sb.AppendLine();
         }
         foreach (var t in recent)
