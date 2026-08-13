@@ -42,8 +42,77 @@ public class AgentAccessTests : IDisposable
     public void Ask_GrantsEditsInTheConfinedWorkspace_AndNothingElse()
     {
         var args = AgentCliCatalog.BuildAccessArgs(ClaudeCode(),
-            new AgentAccessScope.Context("ask", Array.Empty<string>()));
+            new AgentAccessScope.Context("ask", Array.Empty<string>(), ConfinedWorkspace: true));
         Assert.Equal(new[] { "--permission-mode", "acceptEdits" }, args);
+    }
+
+    /// <summary>Second field round: the CHAT lane stands in LIVE files. Manual approval grants it
+    /// nothing — per-edit prompts are unanswerable headless, and un-asked edits to a real tree are
+    /// exactly what the policy refuses. The agent proposes a mission instead.</summary>
+    [Fact]
+    public void Ask_InALiveDirectory_GrantsNothing()
+    {
+        Assert.Empty(AgentCliCatalog.BuildAccessArgs(ClaudeCode(),
+            new AgentAccessScope.Context("ask", Array.Empty<string>(), ConfinedWorkspace: false)));
+        Assert.Null(AgentCliCatalog.BuildLocalSettingsJson(
+            new AgentAccessScope.Context("ask", Array.Empty<string>(), ConfinedWorkspace: false)));
+    }
+
+    /// <summary>
+    /// The colony's own probe named the real wall: no project-level settings file, so headless
+    /// runs fall to harness defaults flags don't fully override. The materialized settings are
+    /// the second channel of the SAME policy — marker present, allow list matching the flags,
+    /// grants as additionalDirectories, and nothing at all when nothing is granted.
+    /// </summary>
+    [Fact]
+    public void MaterializedSettings_MirrorThePolicy_BothChannelsOneAnswer()
+    {
+        var auto = AgentCliCatalog.BuildLocalSettingsJson(
+            new AgentAccessScope.Context("autoapprove", new[] { "/srv/data" }));
+        Assert.NotNull(auto);
+        Assert.Contains(AgentCliCatalog.SettingsMarkerKey, auto);
+        Assert.Contains("\"Edit\"", auto);
+        Assert.Contains("Bash(dotnet:*)", auto);
+        Assert.DoesNotContain("Bash(*)", auto);
+        Assert.Contains("/srv/data", auto);
+
+        var askConfined = AgentCliCatalog.BuildLocalSettingsJson(
+            new AgentAccessScope.Context("ask", Array.Empty<string>(), ConfinedWorkspace: true));
+        Assert.NotNull(askConfined);
+        Assert.Contains("\"Write\"", askConfined);
+        Assert.DoesNotContain("Bash(dotnet:*)", askConfined);
+
+        Assert.Null(AgentCliCatalog.BuildLocalSettingsJson(null));
+    }
+
+    /// <summary>Materialization respects ownership and downgrades: it never touches an operator's
+    /// own file, and a policy granting nothing DELETES the file Anthill previously wrote.</summary>
+    [Fact]
+    public void MaterializeLocalSettings_RespectsOwnership_AndClosesGatesOnDowngrade()
+    {
+        var work = Path.Combine(_dir, "ws");
+        Directory.CreateDirectory(work);
+        var agent = ClaudeCode();
+        var settingsPath = Path.Combine(work, agent.LocalSettingsRelativePath!);
+
+        // Grant → the file exists, marked as Anthill's.
+        AgentCliCatalog.MaterializeLocalSettings(agent, work,
+            new AgentAccessScope.Context("autoapprove", Array.Empty<string>()));
+        Assert.True(File.Exists(settingsPath));
+        Assert.Contains(AgentCliCatalog.SettingsMarkerKey, File.ReadAllText(settingsPath));
+
+        // Downgrade to ask-in-live-tree → the gate closes: the file is REMOVED.
+        AgentCliCatalog.MaterializeLocalSettings(agent, work,
+            new AgentAccessScope.Context("ask", Array.Empty<string>(), ConfinedWorkspace: false));
+        Assert.False(File.Exists(settingsPath));
+
+        // An operator's own settings file (no marker) is never touched, in either direction.
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        File.WriteAllText(settingsPath, "{\"permissions\":{\"allow\":[\"WebFetch\"]}}");
+        AgentCliCatalog.MaterializeLocalSettings(agent, work,
+            new AgentAccessScope.Context("autoapprove", Array.Empty<string>()));
+        Assert.Contains("WebFetch", File.ReadAllText(settingsPath));
+        Assert.DoesNotContain(AgentCliCatalog.SettingsMarkerKey, File.ReadAllText(settingsPath));
     }
 
     [Fact]

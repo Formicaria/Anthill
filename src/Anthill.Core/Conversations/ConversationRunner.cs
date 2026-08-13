@@ -194,7 +194,20 @@ public sealed class ConversationRunner
                     "no reasoning provider is composed — the message is recorded, and nothing can answer it");
 
             ConversationReply reply;
-            try { reply = _ask(ChatPrompt(conversation), onDelta); }
+            try
+            {
+                // v0.3.8.51, second field round: the CHAT LANE is a working agent too — Claude
+                // Code with a real directory — and it ran with nothing while only missions got
+                // the operator's answer. The same policy + grants now ride this call, marked
+                // UNCONFINED because this lane stands in live files: Manual approval grants no
+                // writes here (the agent proposes a mission instead, where the sandbox is);
+                // Automatically approve and Skip-all act as the operator chose.
+                using var access = Anthill.SDK.Reasoning.AgentAccessScope.Enter(
+                    conversation.EffectivePolicy.ToString().ToLowerInvariant(),
+                    ProjectGrantPaths(conversation),
+                    confinedWorkspace: false);
+                reply = _ask(ChatPrompt(conversation), onDelta);
+            }
             catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
 
             if (!reply.Ok)
@@ -432,6 +445,14 @@ public sealed class ConversationRunner
         return signalled;
     }
 
+    /// <summary>The project's open directory gates, as paths — the chat lane's grant set.</summary>
+    private IReadOnlyList<string> ProjectGrantPaths(Conversation conversation)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return Array.Empty<string>();
+        try { return _memory.LoadProjectGrants(conversation.ProjectId!).Select(g => g.Path).ToList(); }
+        catch { return Array.Empty<string>(); }
+    }
+
     /// <summary>
     /// The mission goal a CONVERSATION escalates with: the operator's message, plus the bounded
     /// recent transcript so pronouns resolve. v0.3.8.51, from mission 46f1acb7 — the operator said
@@ -594,14 +615,29 @@ public sealed class ConversationRunner
         var turns = _memory.LoadConversationTurns(conversation.Id);
         var recent = turns.Skip(Math.Max(0, turns.Count - ChatContextTurns));
         var sb = new System.Text.StringBuilder();
+        // v0.3.8.51, second field round: the prompt used to say "you have no tools", which is a
+        // LIE when the routed provider is a working agent — it then hit its own permission walls
+        // and reported them to a confused operator. The prompt now states the access the operator
+        // actually chose, so the agent acts within it or proposes a mission, never mystery-fails.
+        var access = conversation.EffectivePolicy switch
+        {
+            EscalationPolicy.Bypass =>
+                "The operator has set Skip all approvals for this conversation: you may read, edit "
+                + "and run your available tools directly for small, contained work.",
+            EscalationPolicy.AutoApprove =>
+                "The operator has set Automatically approve for this conversation: you may edit "
+                + "files and run bounded build/test commands directly for small, contained work.",
+            _ =>
+                "This conversation is under Manual approval: your access is READ-ONLY here. Do not "
+                + "attempt writes or commands — they will be refused.",
+        };
         sb.AppendLine("You are the ANTHILL colony's conversational assistant. Answer the operator's "
-            + "last message concisely and truthfully. You have no tools in this conversation, so "
-            + "never claim work you did not do. If the operator is asking for REAL WORK — building, "
-            + "testing, changing files, multi-step research — say briefly what the mission will do "
-            + "and end your reply with the exact marker " + EscalateMarker + " on its own line. The "
-            + "colony then runs it as a mission under the operator's approval policy; under Manual "
-            + "approval the operator is asked first. Never use the marker for a question you can "
-            + "simply answer.");
+            + "last message concisely and truthfully, and never claim work you did not do. "
+            + access + " For REAL multi-step work — builds, file changes, larger research — say "
+            + "briefly what the mission will do and end your reply with the exact marker "
+            + EscalateMarker + " on its own line. The colony then runs it as a mission under the "
+            + "operator's approval policy; under Manual approval the operator is asked first. "
+            + "Never use the marker for a question you can simply answer.");
         sb.AppendLine();
         // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
         // shape as Claude's project instructions: it travels with every turn, clearly labelled as
