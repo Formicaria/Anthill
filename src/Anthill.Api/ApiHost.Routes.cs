@@ -694,6 +694,15 @@ public static partial class ApiHost
         // first, then the normal approve/reject transition runs — never a direct status write).
         app.MapPost("/patches/{id}/approve", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "approve") ?? Results.Text(Queen.ApprovePatchDirect(id, CurrentUsername(ctx) ?? "operator"), "text/plain"));
+        // v0.3.8.51 (field report): the chat card's single action, as JSON. Approve-then-apply
+        // through the same audited transitions, one structured answer — the two text/plain
+        // endpoints above stay for their existing callers.
+        app.MapPost("/patches/{id}/approve-apply", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var (ok, message) = Queen.ApproveAndApplyPatch(id, CurrentUsername(ctx) ?? "operator");
+            return ok ? ApiJson.Ok(null, message) : ApiJson.Error(message, "approve_apply_failed");
+        });
         app.MapPost("/patches/{id}/reject", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "reject"); if (auth is not null) return auth;
