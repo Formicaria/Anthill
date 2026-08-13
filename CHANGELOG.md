@@ -1,5 +1,32 @@
 # ANTHILL Changelog
 
+## v0.3.8.51 - open the gates: the colony asks, the operator answers, the worker works
+
+Born from one transcript: the colony's own Claude Code worker sat behind "requires approval"
+prompts that a headless run can never answer — so every Edit, Write and build command died, and
+the colony told its operator to "ask for it as a mission explicitly." Three repairs.
+
+**The approval gate reaches the worker.** The conversation's effective policy — the same Manual
+approval / Automatically approve / Skip all approvals the operator already chose in chat — now
+rides to the agent CLI as its own flags, resolved through the mission's owning conversation.
+Manual approval lets the agent edit inside its confined disposable workspace (the mission itself
+was the approval; the real tree still changes only through the patch pipeline); Automatically
+approve adds a BOUNDED build/test tool set; Skip all approvals maps to the agent's own skip flag,
+which the operator confirmed in words. An unmapped agent, or a mission no conversation started,
+gets nothing — absence is not consent.
+
+**Directory gates.** The filesystem twin of the approval gate: the operator opens a specific
+absolute path for a project's colony — attributed, revocable, listed in the project's Settings
+beside a 📁 Gates button in the chat header — and each open gate becomes exactly that directory
+of agent reach (--add-dir) and nothing else. The colony asks in chat when it needs one; the
+operator opens precisely what was asked for.
+
+**One send path.** The ⚒ "Do the work" button is retired. A normal prompt reaches the colony,
+which proposes the mission ITSELF when the request is real work — a structured marker, stripped
+from the record, feeding the same deterministic start_mission gate the button used. Under Manual
+approval the in-chat card asks first; under the other two policies the work simply begins. No
+magic words, no second send button.
+
 ## v0.3.8.50 - the colony's claims become true, and the desktop grows up
 
 Three batches in one release: the mission-execution structural repair, a real Windows

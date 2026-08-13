@@ -66,6 +66,15 @@ public sealed class ConversationRunner
     /// </summary>
     public const string StartMissionAction = "start_mission";
 
+    /// <summary>
+    /// v0.3.8.51 — the chat model's escalation PROPOSAL: a reply ending with this exact marker
+    /// asks the colony to run the operator's request as a mission. Stripped from the record and
+    /// converted into the same deterministic start_mission gate the old button used — the model
+    /// can request, only the gate (and under Ask, only the operator) can allow. Double-bracketed
+    /// so ordinary prose can never trip it.
+    /// </summary>
+    public const string EscalateMarker = "[[START_MISSION]]";
+
     /// <summary>How long to wait for the mission ROW to exist before giving up on linking it.</summary>
     public const int MissionIdTimeoutSeconds = 15;
 
@@ -200,8 +209,21 @@ public sealed class ConversationRunner
                 return new ConversationOutcome(ConversationMode.Chat, false, null,
                     "cancelled while answering — the reply was discarded");
 
+            // v0.3.8.51 (field report): THE COLONY PROPOSES THE MISSION ITSELF. The transcript's
+            // worst sentence was the colony telling its operator to "ask for it as a mission
+            // explicitly" — a magic word. The chat prompt now invites the model to end its reply
+            // with the escalation marker when the request is real work; the marker is stripped
+            // from the record and the SAME deterministic gate the mission button used takes over:
+            // Manual approval shows the in-chat card, Automatically approve and Skip-all just run.
+            // The marker is a PROPOSAL, exactly as trusted as a handoff — the model can request,
+            // only the gate can allow.
+            var wantsMission = reply.Content.Contains(EscalateMarker, StringComparison.Ordinal);
+            var content = wantsMission
+                ? reply.Content.Replace(EscalateMarker, "", StringComparison.Ordinal).TrimEnd()
+                : reply.Content;
+
             _memory.SaveConversationTurn(new ConversationTurn(
-                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", reply.Content)
+                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", content)
             {
                 Provider = reply.Provider,
                 Model = reply.Model,
@@ -209,6 +231,16 @@ public sealed class ConversationRunner
                 PromptTokens = reply.PromptTokens,
                 CompletionTokens = reply.CompletionTokens,
             });
+
+            if (wantsMission)
+                // Re-enter as a MISSION with the operator's own message as the goal. The recursion
+                // is bounded — the mission path never re-enters chat — and the gate downstream is
+                // the one authority: Ask records the refusal and waits visibly; Auto/Bypass run.
+                // RecordTurn's identical-pending reuse links the mission to the operator's turn
+                // instead of duplicating it.
+                return Run(conversation, message, ConversationMode.Mission, answers,
+                    cancel: cancel, onDelta: null, attachments: null);
+
             return new ConversationOutcome(ConversationMode.Chat, true, null,
                 $"answered by {reply.Provider}/{reply.Model}");
         }
@@ -448,9 +480,12 @@ public sealed class ConversationRunner
         // already started work keeps its mission link, so it is never collapsed.
         if (reuseIdenticalPending)
         {
-            var last = _memory.LoadConversationTurns(conversation.Id).LastOrDefault();
+            // The last USER turn, not the last turn: v0.3.8.51's escalation proposal records the
+            // model's reply between the operator's message and the mission re-run, and that
+            // intervening assistant turn must not turn one operator message into two.
+            var last = _memory.LoadConversationTurns(conversation.Id)
+                .LastOrDefault(t => string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase));
             if (last is not null
-                && string.Equals(last.Role, "user", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(last.Content, message ?? "", StringComparison.Ordinal)
                 && last.MissionId is null)
             {
@@ -486,9 +521,13 @@ public sealed class ConversationRunner
         var recent = turns.Skip(Math.Max(0, turns.Count - ChatContextTurns));
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("You are the ANTHILL colony's conversational assistant. Answer the operator's "
-            + "last message concisely and truthfully. You have no tools in this conversation: if the "
-            + "operator is asking for real multi-step work, say that missions are started by asking "
-            + "for the work explicitly — never claim work you did not do.");
+            + "last message concisely and truthfully. You have no tools in this conversation, so "
+            + "never claim work you did not do. If the operator is asking for REAL WORK — building, "
+            + "testing, changing files, multi-step research — say briefly what the mission will do "
+            + "and end your reply with the exact marker " + EscalateMarker + " on its own line. The "
+            + "colony then runs it as a mission under the operator's approval policy; under Manual "
+            + "approval the operator is asked first. Never use the marker for a question you can "
+            + "simply answer.");
         sb.AppendLine();
         // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
         // shape as Claude's project instructions: it travels with every turn, clearly labelled as

@@ -2375,6 +2375,19 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="btn btn-ghost" id="pv-archive">Archive</button>
               <span class="save-msg" id="pv-save-msg"></span>
             </div>
+
+            <!-- v0.3.8.51 (field report): DIRECTORY GATES — the filesystem twin of the approval
+                 gate. Each open gate is a path this project's colony may reach; the agent worker
+                 gets exactly these directories and nothing else. Attributed, revocable. -->
+            <div class="section-head" style="margin-top:18px;">Directory gates</div>
+            <div class="sub" style="margin-bottom:8px;">Paths this project's colony may reach. The colony asks in chat when it needs one; opening a gate here grants exactly that directory.</div>
+            <div id="pv-grants"><div class="hud-state">Loading…</div></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+              <label class="sr-only" for="pv-grant-path">Directory to grant</label>
+              <input class="provider-input" id="pv-grant-path" placeholder="/absolute/path/to/directory" style="flex:1;min-width:240px;">
+              <button class="btn btn-primary" id="pv-grant-open">Open gate</button>
+              <span class="save-msg" id="pv-grant-msg"></span>
+            </div>
           </div></div>
         </div>
       </div><!-- /page-projectview -->
@@ -3450,6 +3463,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                   <option value="autoapprove">Automatically approve</option>
                   <option value="bypass">Skip all approvals</option>
                 </select>
+                <!-- v0.3.8.51: the filesystem twin of the selector above. When the colony says it
+                     needs a directory, this is where the operator opens that gate. -->
+                <button class="btn btn-ghost" id="chat-gates" title="Directory gates — the paths this project's colony may reach">📁 Gates</button>
                 <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"
@@ -3475,15 +3491,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
                         placeholder="Describe what you want done…"></textarea>
-              <!-- v0.3.8.42 (§3): chat is the one mission entry, so the MISSION request lives here
-                   too — the same escalation-gated path the retired widget carried. Send asks;
-                   Do the work asks for real multi-task execution, and under the Ask policy the
-                   gate appears in the thread before anything runs. -->
-              <button class="mn-send chat-work" id="chat-work"
-                      title="Do the work — asks for real, multi-task execution, gated by your approval policy">⚒</button>
+              <!-- v0.3.8.51 (field report): the ⚒ "Do the work" button is GONE — there is one send.
+                   A normal prompt reaches the colony, which proposes a mission itself when the
+                   request is real work; the approval selector above decides what happens next
+                   (Manual approval shows the gate card in the thread, the other two just run). -->
               <button class="mn-send" id="chat-send" title="Send (Enter)">▶</button>
             </div>
-            <div class="chat-hint">Enter sends a message · ⚒ asks the colony to do the work (your approval policy applies)</div>
+            <div class="chat-hint">Enter sends a message · real work becomes a mission under your approval policy</div>
           </main>
 
         </div>
