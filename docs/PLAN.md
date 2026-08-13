@@ -1,7 +1,17 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.52** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.53** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.53: the backend answers for itself — `anthill --qualification` (SelfTest plus lifecycle
+> checks over a temp workspace, exit nonzero when missions are impossible; audit Phase 11); the
+> direct-agent lane is NAMED (every writing chat run captured as one canonical, explicitly
+> unverified `direct_change` artifact, structurally excluded from learning; Phase 7, fail-closed);
+> the twenty-scenario audit matrix gets its ledger and its one unpinned proof (a partially
+> inapplicable PatchSet materializes nothing; Phase 10 — the composed scripted-provider lifecycle
+> and all-twelve-through-triggers remain §6's open job); consoles stop flashing from the desktop
+> shell (CreateNoWindow everywhere); the approval gate answers before a conversation exists; and
+> QA gets its checklist (docs/QA-CHECKLIST.md).
 
 > v0.3.8.52: the chat lane's direct edits reach git — the sweep commits what a Skip-all run
 > newly dirtied and never the operator's own WIP; the files pane grows manners (whole-row
