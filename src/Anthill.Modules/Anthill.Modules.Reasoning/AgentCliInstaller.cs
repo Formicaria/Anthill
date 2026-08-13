@@ -54,11 +54,33 @@ public static class AgentCliInstaller
     /// `~/.local/bin` is included because pip --user puts scripts there, and it is frequently absent
     /// from PATH on a fresh account, which is its own quiet source of "installed but not found".
     /// </summary>
-    public static IReadOnlyList<string> BinDirectories() => new[]
+    public static IReadOnlyList<string> BinDirectories()
     {
-        Path.Combine(AgentHome, "bin"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"),
-    };
+        if (!OperatingSystem.IsWindows())
+            return new[]
+            {
+                Path.Combine(AgentHome, "bin"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"),
+            };
+
+        // v0.3.8.52 (Windows field report): the same two halves, at Windows' actual locations.
+        // `npm --prefix` on Windows writes its .cmd shims to the PREFIX ROOT, not prefix\bin —
+        // so AgentHome itself is a bin directory here. pip --user puts its launchers under
+        // %APPDATA%\Python\Python3XX\Scripts, one directory per interpreter version; every one
+        // that exists is searched, because "installed by a Python you upgraded past" is still
+        // installed.
+        var dirs = new List<string> { AgentHome, Path.Combine(AgentHome, "bin") };
+        try
+        {
+            var py = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Python");
+            if (Directory.Exists(py))
+                dirs.AddRange(Directory.GetDirectories(py)
+                    .Select(d => Path.Combine(d, "Scripts")).Where(Directory.Exists));
+        }
+        catch { /* no user pip dirs is a normal machine, not an error */ }
+        return dirs;
+    }
 
     public static AgentInstallResult Install(AgentCli agent)
     {
@@ -108,13 +130,23 @@ public static class AgentCliInstaller
     /// </summary>
     private static (bool Ok, string Why) PackageManagerAvailable(string manager)
     {
+        // v0.3.8.52: the remedy is for THIS machine. A Windows operator was being told
+        // `sudo apt install nodejs npm` — a sentence with three words their OS has never heard.
         var (binary, args, install) = manager switch
         {
             "npm" => ("npm", new[] { "--version" },
-                      "Install Node.js (which includes npm) from https://nodejs.org, or your package "
-                    + "manager — for example: sudo apt install nodejs npm"),
+                      OperatingSystem.IsWindows()
+                        ? "Install Node.js (which includes npm) from https://nodejs.org — or in a "
+                        + "terminal: winget install OpenJS.NodeJS.LTS — then restart Anthill so it "
+                        + "sees the new PATH."
+                        : "Install Node.js (which includes npm) from https://nodejs.org, or your package "
+                        + "manager — for example: sudo apt install nodejs npm"),
             "pip" => (PythonBinary(), new[] { "-m", "pip", "--version" },
-                      "Install Python 3 and pip — for example: sudo apt install python3 python3-pip"),
+                      OperatingSystem.IsWindows()
+                        ? "Install Python 3 (which includes pip) from https://python.org — or in a "
+                        + "terminal: winget install Python.Python.3.12 — then restart Anthill so it "
+                        + "sees the new PATH."
+                        : "Install Python 3 and pip — for example: sudo apt install python3 python3-pip"),
             _ => ("", Array.Empty<string>(), ""),
         };
 

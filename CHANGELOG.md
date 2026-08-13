@@ -1,5 +1,126 @@
 # ANTHILL Changelog
 
+## v0.3.8.52 - the chat lane's edits reach git, the files pane learns manners, and Windows first-run actually works
+
+The Windows field report landed before this release was tagged, so its repairs ship IN it —
+first-run is the first thing people do, and it has to work end to end.
+
+**Agent installs become Windows-native.** On Windows, npm and every npm-installed agent is a
+.cmd shim — which CreateProcess cannot start, so every probe, install and run died at
+Process.Start and the console prescribed `sudo apt install nodejs npm` to an OS with none of
+those words. Now: PATH is walked with the Windows candidate extensions so a .cmd is FOUND, and
+starting one has two lanes — an npm shim is READ and its .js target handed to node directly
+(discrete argv, so the prompt path stays shell-free on every OS), and anything else may ride
+cmd.exe only when every argument passes a deny-list cmd cannot interpret; an argument that fails
+is refused, never escaped. npm's Windows prefix layout (shims at the prefix ROOT) and pip's
+`%APPDATA%\Python\*\Scripts` join the searched directories, and every prerequisite hint speaks
+the operator's actual platform (winget, not apt). The lane logic is pure and pinned by tests
+that run on every OS — the platform the suite runs on is not the platform the defect shipped on.
+
+**An installer for local.** The no-account path is the first thing a fresh install reaches for,
+and it was the one path the agents page had no story for. Ollama now leads the page: probed like
+any agent (including the just-installed-but-PATH-is-stale location), installed end-to-end on
+Windows through winget — silent, user-scope, audited through the same operator-shell gate as
+every agent install — and everywhere else the exact command is SHOWN instead of a button that
+could only refuse, because Docker and LXC already provision it and a bare host's installer needs
+the root Anthill never uses.
+
+**The desktop wears the brand all the way out.** The title bar goes dark (DWM immersive dark on
+Windows 10, the exact console colors on Windows 11 — asked for, never required, so a light bar
+can never block a working colony). The installer ships anthill.ico beside the exe and the
+shortcuts NAME it, so the desktop icon cannot inherit a stale Explorer cache's idea of the exe.
+And a target=_blank link opens the operator's REAL browser, not WebView2's unbranded popup shell
+— which is what makes the new door honest: the Formicaria mark in the rail now links home to
+formicaria.us, in every shape the console ships in.
+
+**Browse for a working directory.** The files pane's "set it here" form asked the operator to
+type an absolute path from memory. A Browse button now opens a picker with two lanes: the
+desktop shell shows the real OS folder dialog (a WebView2 host bridge — a web page cannot learn
+an absolute path from the browser's own picker, but a native host can simply ask), and every
+browser shape gets a server-backed directory browser over the new run_mission-gated `/fs/dirs`,
+because in Docker and LXC the working directory lives on the SERVER and the server's tree is the
+only one worth browsing. Choosing a folder sets it; the typed path stays as the fallback.
+
+**Every project owns its own tree — set by the operator, before the first chat.** A project
+with no explicit path used to fall back to the ONE shared workspace root: the files pane showed
+every project the same directory, and the chat agent greeted a brand-new project by reporting a
+branch the operator never chose. Third field round settled the shape: the working directory is
+the operator's explicit act. The files pane's set-root form (path input + Browse) arrives
+PREFILLED with the project's suggested tree — `<workspace root>/projects/<slug-id>`, one shared
+parent, every tree distinct — setting it creates the directory, and a turn in a pathless
+project is refused with the remedy (the console keeps the message and opens the files pane).
+The working directory rides `AgentAccessScope` per conversation into the agent's confinement.
+
+**The git check speaks for the project's own tree.** A project directory nested inside a larger
+repository — a fresh tree under a workspace root that lives in the ANTHILL checkout, say — used
+to report the ENCLOSING repo's branch. Nested now reads as a plain folder with the enclosure
+named, the files-pane commit gate refuses to commit to a repo that merely encloses the project,
+and the direct-edit sweep holds to the same rule. And ANTHILL's own source checkout rides as
+reach (--add-dir) on every conversation — the colony can self-improve before, during or after
+any project's work — while never being the project's tracked tree: its git state is its own.
+
+**Conversations are born in their project, and the tracker says where.** The project page's New
+Conversation button CREATES the conversation immediately — it used to only flip the chat page
+into composing mode, which read as a dead navigation. A conversation born untitled is named by
+the server from the first thing said in it, and every tracker row now carries its project's name
+on a dim second line, because a list of first-sentences said nothing about where anything lived.
+And + File / + Folder stopped prompt()ing for a remembered path: both browse the project's own
+jailed tree like the Browse button does — + Folder walks folders, + File also shows the files
+already at each stop — pick the place, name the thing, create.
+
+**The git badge stops quoting git's stderr, and the toolbar grows two honest controls.** An
+empty repository — initialized, no commits yet — wore `fatal: ambiguous argument 'HEAD'…` as its
+BRANCH NAME in the files pane, a paragraph long, shoving every toolbar button off screen:
+RepoOps discarded the Ok flags of its branch and last-commit queries, and stderr walked out as
+data. The branch now comes from `symbolic-ref` (which answers on an unborn HEAD), failures are
+null, the badge is bounded either way, and a non-repo reads as exactly "no git" with the detail
+in the tooltip. Beside it: **Init git**, offered only while the directory is NOT a repository
+(apply_patch-gated, refused when it already is one), and **Dir…**, which reopens the same
+set-root form (path + Browse) after first setup — the working directory stays changeable from
+the files tab.
+
+And the pre-release end-to-end drive of the live console — every page, tab and control — caught
+two more: the project subtitle printing a literal `<svg…>` where its folder icon should be (an
+inline glyph fed to a textContent sink), and the split-drag handler dying outright on a pointer
+it could not capture. Both fixed, both pinned.
+
+**The splits are sizable, and the badge goes live the instant it changes.** Chat ↔ files (or
+colony) drags horizontally; working tree ↔ docked editor drags vertically — real flex handles,
+proportions persisted, the vertical one existing only while the editor is open. And the cached
+GETs under a project are busted the moment `git init` or a directory change succeeds, because a
+TTL-stale "not a repo" answer made Init git look like it ignored the click.
+
+**The license is what the README always claimed to point at.** The LICENSE file said "All Rights
+Reserved" while the README called it MIT; both were wrong about the intent. The repository now
+carries the Apache License 2.0, verbatim, attribution preserved, and the README names it.
+
+**"Did not auto commit" — root cause and repair.** v0.3.8.51's commit hook rode the patch
+pipeline; under Skip all approvals the CHAT lane edits live files DIRECTLY with its own tools,
+so no patch ever existed and the hook had nothing to fire on. The direct-edit sweep closes that
+lane: before the agent runs, remember which paths are already dirty; afterwards commit only what
+the run made NEWLY dirty, subject = the operator's own ask. The operator's work-in-progress
+sitting in the same tree is never swept into the colony's commit. Bypass only — under
+Automatically approve and Manual the dirty tree is the operator's to commit, by design.
+
+**Files pane manners.** The whole row now SAYS it is the click target (hover + a lit selected
+row, so you can see which file you elected); + File / + Folder stop wrapping into two-line
+buttons (the fullwidth ＋ was the culprit); and git status letters fill the dead space before
+the size — M/A/D/? per file, a dot on folders holding uncommitted changes beneath them, all fed
+by the dirty list the repo badge already fetched.
+
+**The commit train.** Every file row carries a quiet clock; click it and the file's recent
+commits unfold beneath the row — hash, subject, author, age — read from whichever branch the new
+GitHub-style selector in the bar has chosen, without ever checking anything out. Click a stop
+and that commit's diff for the file opens inline, through the same colored renderer the
+uncommitted view uses. Refs are validated ref-shaped and hashes hash-shaped before git sees
+them, and every path rides the pane's existing jail.
+
+**Syntax highlighting, both places.** Chat prose gains inline `code` and **bold** through the
+same escape-first pipeline the fenced blocks already used. The files editor gains a highlighted
+layer: the identical tokenizer, keyed by file extension, rendered in a pre behind a transparent-
+text textarea — what the eye reads is colored, what the fingers edit is real, and Save is the
+same attributed PUT it always was.
+
 ## v0.3.8.51 - open the gates: the colony asks, the operator answers, the worker works
 
 Born from one transcript: the colony's own Claude Code worker sat behind "requires approval"
