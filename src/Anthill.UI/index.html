@@ -253,6 +253,12 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
    the collapsed rail centres a whole logo rather than half a word. */
 .nav-logo-mark{width:24px;height:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .nav-logo-mark svg{width:24px;height:24px;display:block;}
+/* v0.3.8.53: the mark links home (formicaria.us) in every shape — web UI and the desktop
+   WebView, which routes target=_blank to the operator's real browser. The anchor inherits the
+   mark's layout so the brand row does not move; the hover says it became a door. */
+a.nav-logo-link{display:flex;align-items:center;flex-shrink:0;border-radius:6px;text-decoration:none;}
+a.nav-logo-link:hover{background:var(--panel-2,rgba(147,189,242,.12));}
+a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline-offset:2px;}
 .nav-logo-wordmark{display:flex;align-items:baseline;gap:8px;min-width:0;overflow:hidden;
   transition:opacity var(--t),max-width var(--t);opacity:1;max-width:160px;}
 .nav-logo-text{font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);}
@@ -1552,6 +1558,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- v0.3.8.49 (§16,§19): the Formicaria mark — a hex colony-cell holding a stylised mound and
            forager. Minimal, mono-stroke, recognisable at favicon size; it centres in collapsed mode
            so the brand is never clipped to a half-word. -->
+      <!-- v0.3.8.53: the mark is a link home. In the desktop shell target=_blank is routed to the
+           operator's real browser (ShellForm's NewWindowRequested handler); in a plain browser it
+           is just a link. The wordmark stays plain text — the DOOR is the mark, not the row. -->
+      <a class="nav-logo-link" href="https://formicaria.us" target="_blank" rel="noopener noreferrer"
+         title="formicaria.us" aria-label="Formicaria — formicaria.us">
       <span class="nav-logo-mark" aria-hidden="true">
         <!-- v0.3.8.49 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
              node legs, the colony branching out of the command line. Terminal in the foreground
@@ -1571,6 +1582,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <circle cx="21" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
         </svg>
       </span>
+      </a>
       <span class="nav-logo-wordmark">
         <span class="nav-logo-text">ANTHILL</span>
         <span class="nav-logo-ver" id="nav-ver"></span>

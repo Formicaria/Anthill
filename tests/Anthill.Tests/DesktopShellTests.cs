@@ -122,7 +122,36 @@ public class DesktopShellTests
         Assert.Contains("<RootNamespace>Anthill.Desktop</RootNamespace>", csproj);
         Assert.Contains("Icon ?? SystemIcons.Application", shell);
 
-        Assert.Contains("SetupIconFile", Read("deploy", "windows", "anthill-setup.iss"));
+        var iss = Read("deploy", "windows", "anthill-setup.iss");
+        Assert.Contains("SetupIconFile", iss);
+        // v0.3.8.53 (field report: "the desktop icon is blank") — the shortcuts NAME the .ico and
+        // the installer ships it, because a shortcut that merely points at the exe inherits
+        // whatever Explorer's icon cache last believed about that path.
+        Assert.Contains("IconFilename: \"{app}\\anthill.ico\"", iss);
+        Assert.Contains("anthill.ico\"; DestDir: \"{app}\"", iss);
+        Assert.Contains("UninstallDisplayIcon={app}\\anthill.ico", iss);
+    }
+
+    /// <summary>
+    /// v0.3.8.53, two field reports in one window. "The title bar is white": WinForms cannot paint
+    /// the non-client caption — DWM owns it — so the shell must ASK, via DwmSetWindowAttribute,
+    /// for immersive dark (19/20, both spellings for both Windows 10 vintages) and Windows 11's
+    /// caption color; failure must be discarded, never fatal. "Links open a popup shell": a
+    /// target=_blank link (the Formicaria mark, a Docs button) must reach the operator's REAL
+    /// browser, not WebView2's unbranded popup — NewWindowRequested, handled, ShellExecute.
+    /// </summary>
+    [Fact]
+    public void TheWindow_WearsTheBrandChrome_AndLinksLeaveForTheRealBrowser()
+    {
+        var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
+
+        Assert.Contains("DwmSetWindowAttribute", shell);
+        Assert.Contains("0x00170E09", shell);   // BrandBg #090E17 in COLORREF byte order
+        Assert.Contains("OnHandleCreated", shell);
+
+        Assert.Contains("NewWindowRequested", shell);
+        Assert.Contains("e.Handled = true", shell);
+        Assert.Contains("UseShellExecute = true", shell);
     }
 
     /// <summary>

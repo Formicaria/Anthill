@@ -40,8 +40,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ; The Formicaria mark on the setup exe itself — the same .ico the desktop shell embeds, so the
-; download, the wizard's taskbar entry and the installed app all wear one face. UninstallDisplayIcon
-; below stays pointed at AnthillDesktop.exe, whose ApplicationIcon is this same file.
+; download, the wizard's taskbar entry and the installed app all wear one face.
 SetupIconFile={#SourcePath}\..\..\src\Anthill.Desktop\anthill.ico
 ; The app must not be running while its files are replaced; Windows' restart-manager asks nicely.
 CloseApplications=yes
@@ -49,7 +48,7 @@ RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=Anthill v{#AppVersion}
-UninstallDisplayIcon={app}\AnthillDesktop.exe
+UninstallDisplayIcon={app}\anthill.ico
 
 [Tasks]
 ; Desktop icon: default ON (no 'unchecked' flag), with the standard opt-out in the wizard.
@@ -58,11 +57,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; Everything the publish step produced: the desktop shell, the server binary beside it, docs.
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; v0.3.8.53 (field report: "the desktop icon is blank") — the .ico ships beside the exe and the
+; shortcuts below NAME it, because a shortcut that merely points at the exe inherits whatever
+; Explorer's icon cache last believed about that path; an explicit IconFilename cannot be stale.
+Source: "{#SourcePath}\..\..\src\Anthill.Desktop\anthill.ico"; DestDir: "{app}"
 ; NOTE: no entry writes to {localappdata} — the colony's memory is the operator's, not the installer's.
 
 [Icons]
-Name: "{autoprograms}\Anthill"; Filename: "{app}\AnthillDesktop.exe"
-Name: "{autodesktop}\Anthill"; Filename: "{app}\AnthillDesktop.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Anthill"; Filename: "{app}\AnthillDesktop.exe"; IconFilename: "{app}\anthill.ico"
+Name: "{autodesktop}\Anthill"; Filename: "{app}\AnthillDesktop.exe"; IconFilename: "{app}\anthill.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\AnthillDesktop.exe"; Description: "{cm:LaunchProgram,Anthill}"; Flags: nowait postinstall skipifsilent
