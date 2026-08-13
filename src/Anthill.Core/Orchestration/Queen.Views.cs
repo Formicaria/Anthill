@@ -401,8 +401,10 @@ public sealed partial class Queen
             if (patch is null) return;
             var missionId = Str(patch, "mission_id");
             var conversation = Memory.FindConversationForMission(missionId);
-            if (conversation?.EffectivePolicy is not (Conversations.EscalationPolicy.Bypass
-                                                   or Conversations.EscalationPolicy.AutoApprove)) return;
+            // Fully qualified: the Queen's own `Conversations` property (the runner) shadows the
+            // namespace — the same trap `Workspaces` sprang in v0.3.8.50.
+            if (conversation?.EffectivePolicy is not (Anthill.Core.Conversations.EscalationPolicy.Bypass
+                                                   or Anthill.Core.Conversations.EscalationPolicy.AutoApprove)) return;
 
             // Resolve the file the way the apply tool did: relative paths are workspace-rooted.
             var filePath = Str(patch, "file_path");
