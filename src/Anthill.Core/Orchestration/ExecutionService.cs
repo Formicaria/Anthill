@@ -1408,7 +1408,8 @@ public sealed class ExecutionService : IExecutionService
             // A failed lookup must degrade toward LESS access, never more — and must not fail the task.
             Console.Error.WriteLine($"[execution] agent access lookup failed for {mission.Id}: {error.Message}");
         }
-        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(policy, grants);
+        // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
+        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(policy, grants, confinedWorkspace: true);
     }
 
     /// <summary>
