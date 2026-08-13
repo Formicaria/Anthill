@@ -133,17 +133,16 @@ public class AntRegistryTests
     }, specialists: false, tester: false);
 
     /// <summary>
-    /// And with the gate OPEN the tester is no longer visible-only — it is refused for the other
-    /// reason, because a policy-inserted role carries no parent when the planner produces it.
-    ///
-    /// This is the half the old test could never reach, and it is the half the full roster makes
-    /// normal: under the default profile every refusal here is a scheduling-mode refusal.
+    /// v0.3.8.51 (field report): with the gate open, a PLANNED tester resolves — the operator's
+    /// baseline-checks step is a plan asking for more safety, and the old refusal threw it away.
+    /// The scheduling-mode wall now guards only medic and archivist, whose handlers can only
+    /// refuse a planned invocation.
     /// </summary>
     [Fact]
-    public void Runtime_RejectsAPlannedPolicyInsertedRole() => RosterGates.With(() =>
+    public void Runtime_AdmitsAPlannedTester_TheFloorIsNotACeiling() => RosterGates.With(() =>
     {
         var task = new Task { AssignedAnt = "tester", AssignedWorker = "tester.dotnet_tester", TaskType = "verification", Description = "Run checks." };
-        var error = Assert.Throws<InvalidOperationException>(() => AntRuntime.Resolve(task, MissionConstraints.None));
-        Assert.Contains("PolicyInserted", error.Message);
+        var selection = AntRuntime.Resolve(task, MissionConstraints.None);
+        Assert.Equal("tester", selection.ExecutorRoleId);
     }, specialists: true, tier: ActivationTier.Full, tester: true);
 }
