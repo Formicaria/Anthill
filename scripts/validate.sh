@@ -33,6 +33,11 @@ if command -v node >/dev/null 2>&1; then
   awk 'BEGIN{RS="</script>"} /<script[^>]*>[^<]/{sub(/.*<script[^>]*>/,""); print; print "\n;\n"}' \
     src/Anthill.UI/index.html > /tmp/anthill_ui_validate.js
   node --check /tmp/anthill_ui_validate.js
+  # v0.3.8.52: run the console's own test suite here too. It was CI-only, which meant the local
+  # "full validation" could pass green while a UI logic test was red — the exact gap between a
+  # developer's evidence and CI's that this script exists to close.
+  echo "==> node --test on the console test suite"
+  node --test tests/ui/
 else
   echo "==> SKIP node --check (node not installed; CI ui-integrity job still enforces it)"
 fi

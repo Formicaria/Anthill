@@ -26,9 +26,21 @@ public class ConsoleRouteCoverageTests
 {
     private static string Root() => SourceText.RepoRoot();
 
+    /// <summary>
+    /// Every served console asset, concatenated.
+    ///
+    /// v0.3.8.52 replaced a hardcoded four-name list with an enumeration of the directory, because
+    /// the list was wrong the moment app.js was split: ~1,600 lines of homelab moved to homelab.js
+    /// and every route those lines call instantly looked unreferenced, failing this test for a
+    /// change that touched no routes at all. A test whose input is a manually maintained file list
+    /// reports on the list, not on the console — and the same shape of staleness had already let
+    /// navigation.test.js sit unrun in CI.
+    /// </summary>
     private static string ConsoleSource() =>
-        string.Concat(new[] { "app.js", "index.html", "dashboard-grid.js", "mission-thread.js" }
-            .Select(f => File.ReadAllText(Path.Combine(Root(), "src", "Anthill.UI", f))));
+        string.Concat(Directory.GetFiles(Path.Combine(Root(), "src", "Anthill.UI"))
+            .Where(f => f.EndsWith(".js", StringComparison.Ordinal) || f.EndsWith(".html", StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .Select(File.ReadAllText));
 
     /// <summary>
     /// Routes with no console surface, and why. Triaged individually at v0.3.8.35.

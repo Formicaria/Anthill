@@ -107,9 +107,17 @@ public sealed partial class Queen
         return $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied";
     }
 
-    /// <summary>Structured outcome of an automated patch apply, carrying what rollback needs.</summary>
+    /// <summary>
+    /// Structured outcome of an automated patch apply, carrying what rollback needs.
+    ///
+    /// <paramref name="ResolvedDestination"/> (v0.3.8.52) is where a RENAME put the file, and is null
+    /// for every other change type. Rollback needs it as much as it needs the backup: restoring the
+    /// backup alone would recreate the source and leave the moved copy in place, turning a failed
+    /// rename into a duplicated file rather than an undone one.
+    /// </summary>
     public sealed record AutoApplyOutcome(bool Success, string PatchId, string? Error,
-        string? ResolvedPath, string? BackupPath, string ChangeType, string FilePath);
+        string? ResolvedPath, string? BackupPath, string ChangeType, string FilePath,
+        string? ResolvedDestination = null);
 
     /// <summary>
     /// Phase 5: applies a patch directly for the auto-apply runner (no separate approval step) and
@@ -132,25 +140,35 @@ public sealed partial class Queen
             return new AutoApplyOutcome(false, patchId, result.Error, null, null, changeType, filePath);
         }
 
-        string? backupPath = null, resolvedPath = null;
+        string? backupPath = null, resolvedPath = null, resolvedDestination = null;
         try
         {
             var root = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement;
             backupPath = root.TryGetProperty("backup_path", out var bp) ? bp.GetString() : null;
             resolvedPath = root.TryGetProperty("file_path", out var fp) ? fp.GetString() : null;
+            // v0.3.8.52: present only on a rename. Absent for everything else, which is why the
+            // rollback treats a missing one as "nothing was moved" rather than as an error.
+            resolvedDestination = root.TryGetProperty("destination_path", out var dp) ? dp.GetString() : null;
         }
         catch { /* tolerate — rollback for a modify still needs the backup, handled by caller */ }
 
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
         Memory.LogEvent(missionId, "autonomy_autoapply_applied", $"Director auto-applied patch: {filePath}", taskId, "director",
-            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["verified"] = false });
-        return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath);
+            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["verified"] = false });
+        return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath, resolvedDestination);
     }
 
     /// <summary>
     /// Reverts a patch applied by <see cref="ApplyPatchForAutomation"/>: restores the pre-apply
-    /// backup for a modify, deletes the created file for an add. Marks the patch Failed and logs
-    /// the rollback. Used when the post-apply verify (build+test) comes back red.
+    /// backup for a modify or a delete, deletes the created file for an add, moves the file back for
+    /// a rename. Marks the patch Failed and logs the rollback. Used when the post-apply verify
+    /// (build+test) comes back red.
+    ///
+    /// v0.3.8.52 made rename explicit. It previously fell through to the backup-restore arm, which
+    /// is wrong in a way that looks right: the backup is a copy of the SOURCE, so restoring it
+    /// recreated the source while the moved file sat at the destination untouched. A rolled-back
+    /// rename left the tree holding both, which is a state neither applying nor not applying the
+    /// patch produces.
     /// </summary>
     public bool RollbackAutoApplied(AutoApplyOutcome applied, string missionId, string? taskId, string reason)
     {
@@ -161,9 +179,33 @@ public sealed partial class Queen
             {
                 if (applied.ResolvedPath is { Length: > 0 } addPath && File.Exists(addPath)) { File.Delete(addPath); ok = true; }
             }
+            else if (applied.ChangeType.Equals("rename", StringComparison.OrdinalIgnoreCase))
+            {
+                // Move back, rather than restore-from-backup, so the destination is emptied by the
+                // same operation that refills the source. Falls through to the backup arm only if
+                // the destination is already gone — something else moved it and a copy is the best
+                // remaining answer.
+                if (applied.ResolvedDestination is { Length: > 0 } dest && File.Exists(dest)
+                    && applied.ResolvedPath is { Length: > 0 } source)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+                    File.Move(dest, source, overwrite: true);
+                    ok = true;
+                }
+                else if (applied.BackupPath is { Length: > 0 } renameBackup
+                         && applied.ResolvedPath is { Length: > 0 } renameSource && File.Exists(renameBackup))
+                {
+                    File.Copy(renameBackup, renameSource, overwrite: true);
+                    ok = true;
+                }
+            }
             else if (applied.BackupPath is { Length: > 0 } backup && applied.ResolvedPath is { Length: > 0 } target
                      && File.Exists(backup))
             {
+                // Covers modify AND delete: both are undone by putting the pre-apply bytes back at
+                // the original path, and the delete arm of the apply tool takes that backup first
+                // precisely so this line works for it.
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Copy(backup, target, overwrite: true);
                 ok = true;
             }
@@ -186,7 +228,8 @@ public sealed partial class Queen
 
     /// <summary>
     /// v2.7.0: manually reverts an APPLIED patch on operator request — for an "add" it deletes the
-    /// created file, for a "modify" it restores the pre-apply backup. Marks the patch Reverted and
+    /// created file, for a "modify" or a "delete" it restores the pre-apply backup, and for a
+    /// "rename" (v0.3.8.52) it moves the file back. Marks the patch Reverted and
     /// logs the action. Mirrors the automation rollback (<see cref="RollbackAutoApplied"/>) but is
     /// operator-initiated and keyed by patch id, resolving the on-disk path exactly as the apply tool
     /// did (through the same <see cref="WorkspacePathGuard"/>), so a revert can never escape the
@@ -203,12 +246,24 @@ public sealed partial class Queen
         var changeType = Str(patch, "change_type");
         var filePath = Str(patch, "file_path");
         var backupPath = Str(patch, "backup_path");
+        var destinationPath = Str(patch, "destination_path");
         var missionId = Str(patch, "mission_id");
         var taskId = Str(patch, "task_id");
 
+        var guard = new WorkspacePathGuard();
         string resolved;
-        try { resolved = new WorkspacePathGuard().ResolveSafePath(filePath); }
+        try { resolved = guard.ResolveSafePath(filePath); }
         catch (Exception e) { return $"Cannot revert: path '{filePath}' is unsafe or unresolvable ({e.Message})."; }
+
+        // The destination is resolved through the SAME guard as the source, for the same reason the
+        // method comment gives for resolving the source at all: a revert must not be able to move a
+        // file out of the sandboxed workspace any more than an apply can.
+        string? resolvedDestination = null;
+        if (destinationPath.Length > 0)
+        {
+            try { resolvedDestination = guard.ResolveSafePath(destinationPath); }
+            catch (Exception e) { return $"Cannot revert: destination '{destinationPath}' is unsafe or unresolvable ({e.Message})."; }
+        }
 
         bool restored; string detail;
         try
@@ -218,8 +273,32 @@ public sealed partial class Queen
                 if (File.Exists(resolved)) { File.Delete(resolved); restored = true; detail = "created file deleted"; }
                 else { restored = false; detail = "created file was already absent"; }
             }
+            else if (changeType.Equals("rename", StringComparison.OrdinalIgnoreCase))
+            {
+                // Explicit move-back. The generic backup-restore below would recreate the source and
+                // leave the moved file at the destination — the tree would hold both copies, which
+                // is not what "reverted" means to the operator who clicked it.
+                if (resolvedDestination is { Length: > 0 } dest && File.Exists(dest))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(resolved)!);
+                    File.Move(dest, resolved, overwrite: true);
+                    restored = true; detail = "moved back from the rename destination";
+                }
+                else if (!string.IsNullOrEmpty(backupPath) && File.Exists(backupPath))
+                {
+                    File.Copy(backupPath, resolved, overwrite: true);
+                    restored = true; detail = "destination was already gone — source restored from pre-apply backup";
+                }
+                else
+                {
+                    restored = false; detail = "renamed file is no longer at its destination and no pre-apply backup is on record";
+                }
+            }
             else if (!string.IsNullOrEmpty(backupPath) && File.Exists(backupPath))
             {
+                // modify and delete alike: the pre-apply bytes go back where they were. For a delete
+                // the parent directory may have been pruned since, so it is recreated first.
+                Directory.CreateDirectory(Path.GetDirectoryName(resolved)!);
                 File.Copy(backupPath, resolved, overwrite: true); restored = true; detail = "restored from pre-apply backup";
             }
             else
@@ -338,6 +417,7 @@ public sealed partial class Queen
             Risk = Str(orig, "risk", "unknown"),
             OldContent = orig.GetValueOrDefault("old_content") as string,
             BaseHash = orig.GetValueOrDefault("base_hash") as string,
+            DestinationPath = orig.GetValueOrDefault("destination_path") as string,
             NewContent = newContent,
             RequiresApproval = true,
             Status = PatchStatus.Proposed,
