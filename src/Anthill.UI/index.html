@@ -1251,6 +1251,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-code{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:6px;
   padding:9px 11px;margin:6px 0;overflow-x:auto;font-family:var(--mono);font-size:11px;
   line-height:1.5;white-space:pre;max-width:100%;}
+/* v0.3.8.52 — inline `code` spans in chat: same escape-first pipeline, just a smaller frame. */
+.chat-inline{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:4px;
+  padding:0 4px;font-family:var(--mono);font-size:.92em;}
+/* v0.3.8.52 — files pane: the whole row is the target and SAYS so; the selected file stays lit.
+   Git status letters sit where dead space was; bar buttons never wrap into two lines. */
+.chat-colony-bar .btn{white-space:nowrap;flex:0 0 auto;}
+.cf-row:hover{background:rgba(56,97,251,.10);}
+.cf-row.sel{background:rgba(56,97,251,.18);}
+.cf-git{font-family:var(--mono);font-size:9px;min-width:12px;text-align:center;flex:0 0 auto;}
+.cf-git.m{color:#e5b567;}.cf-git.a{color:#7ee2b8;}.cf-git.u{color:#8ab4f8;}.cf-git.d{color:#f3a0a0;}
+#chat-editor-text::selection{background:rgba(56,97,251,.35);color:transparent;}
 /* v0.3.8.49 (§3) — long colony responses are collapsed by default so Chat reads like an assistant,
    not a debug console. The compact view clamps to a few lines with a soft fade; the full text is
    one click away and never lost. Only colony turns collapse — the operator's own words never do. */
@@ -1382,10 +1393,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-composer.dragging{outline:2px dashed rgba(34,211,238,.5);outline-offset:-4px;border-radius:8px;}
 .turn-attach{margin-top:6px;font-size:10px;color:var(--dim);border-top:1px dashed var(--border);padding-top:5px;}
 /* v0.3.8.46: syntax highlighting — four token classes, tuned quiet against the dark panel. */
-.chat-code .hl-k{color:#c084fc;}
-.chat-code .hl-s{color:#86efac;}
-.chat-code .hl-c{color:var(--dim);font-style:italic;}
-.chat-code .hl-n{color:#fbbf24;}
+.chat-code .hl-k,#chat-editor-hl .hl-k{color:#c084fc;}
+.chat-code .hl-s,#chat-editor-hl .hl-s{color:#86efac;}
+.chat-code .hl-c,#chat-editor-hl .hl-c{color:var(--dim);font-style:italic;}
+.chat-code .hl-n,#chat-editor-hl .hl-n{color:#fbbf24;}
 
 /* v3.8.39: installable coding agents */
 .agentcli-card{padding:12px 14px;margin-bottom:10px;}
@@ -3451,8 +3462,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <span class="ccb-spacer"></span>
               <button class="btn btn-ghost" id="chat-files-commit" hidden
                       title="Commit the working tree's uncommitted changes">Commit</button>
-              <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">＋ File</button>
-              <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">＋ Folder</button>
+              <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">+ File</button>
+              <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">+ Folder</button>
               <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
                       title="Show what this conversation's missions changed, commit-style">Changes</button>
               <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
@@ -3473,8 +3484,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <button class="btn btn-ghost" id="chat-editor-back" title="Close the editor">✕</button>
                 <span class="save-msg" id="chat-editor-msg"></span>
               </div>
-              <textarea id="chat-editor-text" spellcheck="false"
-                        style="flex:1;min-height:0;resize:none;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></textarea>
+              <!-- v0.3.8.52: syntax highlighting IN the editor. The textarea stays the editable
+                   truth; a pre with the same font metrics sits behind it carrying the highlighted
+                   copy, scroll-synced. Textarea text is transparent (caret stays visible), so
+                   what the eye reads is the highlighted layer and what the fingers edit is real. -->
+              <div id="chat-editor-wrap" style="position:relative;flex:1;min-height:0;">
+                <pre id="chat-editor-hl" aria-hidden="true"
+                     style="position:absolute;inset:0;margin:0;overflow:auto;white-space:pre;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></pre>
+                <textarea id="chat-editor-text" spellcheck="false" wrap="off"
+                          style="position:absolute;inset:0;resize:none;background:transparent;color:transparent;caret-color:var(--text);border:1px solid transparent;border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;white-space:pre;overflow:auto;"></textarea>
+              </div>
               <div id="chat-editor-diff" hidden style="flex:1;min-height:0;overflow:auto;background:var(--inner);border:1px solid var(--border);border-radius:6px;"></div>
             </div>
           </div>
