@@ -1253,11 +1253,13 @@ public class UiShellTests
         // The policy endpoint is called attributed; the selector reflects the EFFECTIVE policy.
         Assert.Contains("'/policy','POST'", js);
 
-        // Inline change cards: in the thread, both transitions, no navigation.
+        // Inline change cards: in the thread, no navigation. v0.3.8.51: the card's action is ONE
+        // JSON endpoint doing approve-then-apply — the old two-call flow parsed text/plain
+        // responses as JSON and reported "Approval failed" over approvals that had landed.
         Assert.Contains("chatRenderPatches", js);
         Assert.Contains("data-p-approve", js);
-        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve'", js);
-        Assert.Contains("'/apply/'+encodeURIComponent(approvalId)", js);
+        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve-apply'", js);
+        Assert.DoesNotContain("'/apply/'+encodeURIComponent(approvalId)", js);
         Assert.Contains("'/revert/'+encodeURIComponent(pid)", js);
     }
 
