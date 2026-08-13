@@ -5270,7 +5270,10 @@ function wireSplit(handleId, horizontal, storeKey, apply){
   const saved=parseFloat(localStorage.getItem(storeKey)||'');
   if(!Number.isNaN(saved)) apply(saved);
   handle.addEventListener('pointerdown',e=>{
-    e.preventDefault(); handle.classList.add('dragging'); handle.setPointerCapture(e.pointerId);
+    e.preventDefault(); handle.classList.add('dragging');
+    // Capture keeps the drag when the cursor outruns the 5px handle; a pointer that cannot be
+    // captured (gone between down and here) must not kill the handler with it.
+    try{ handle.setPointerCapture(e.pointerId); }catch{ /* drag still works while over the handle */ }
     const rect=handle.parentElement.getBoundingClientRect();
     const move=ev=>{
       const pct=horizontal ? (ev.clientX-rect.left)/rect.width*100
@@ -5882,12 +5885,15 @@ async function loadProjectView(){
   if(!(r&&r.success&&r.data)){ setEl('pv-name','Project not found'); setEl('pv-sub',(r&&r.message)||''); return; }
   pvProject=r.data;
   setEl('pv-name', pvProject.name||'Untitled project');
-  setEl('pv-sub', [
-    pvProject.path?(GLYPH.folder+' '+pvProject.path):null,
-    (pvProject.conversations||[]).length+' conversation(s)',
-    pvProject.schedule_count+' schedule(s)',
+  // innerHTML, not setEl: the folder GLYPH is inline SVG, and the E2E sweep caught setEl's
+  // textContent printing it as literal "<svg …>" prose. Operator data is escaped; the icon is not.
+  const pvSub=document.getElementById('pv-sub');
+  if(pvSub) pvSub.innerHTML=[
+    pvProject.path?`${GLYPH.folder} ${escapeHtml(pvProject.path)}`:null,
+    escapeHtml((pvProject.conversations||[]).length+' conversation(s)'),
+    escapeHtml(pvProject.schedule_count+' schedule(s)'),
     pvProject.archived?'archived':null,
-  ].filter(Boolean).join(' · '));
+  ].filter(Boolean).join(' · ');
   pvRenderChat(); pvRenderObjectives(); pvRenderSchedules(); pvRenderRules(); pvRenderHistory(); pvFillSettings();
 }
 

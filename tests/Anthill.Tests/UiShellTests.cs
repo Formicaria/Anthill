@@ -1707,7 +1707,15 @@ public class UiShellTests
         var js = Ui("app.js");
         Assert.Contains("wireSplit('chat-split-x', true, 'anthill_split_x'", js);
         Assert.Contains("wireSplit('chat-split-y', false, 'anthill_split_y'", js);
-        Assert.Contains("setPointerCapture", js);
+        // Guarded: a pointer that cannot be captured must not kill the drag handler (E2E sweep).
+        Assert.Contains("try{ handle.setPointerCapture(e.pointerId); }catch", js);
+
+        // And from the same sweep: inline-SVG glyphs may never ride a textContent sink — the
+        // project subtitle printed literal "<svg …>" prose. Icons go through innerHTML with the
+        // operator's data escaped around them; no setEl/textContent call may carry a GLYPH.
+        Assert.DoesNotMatch(@"setEl\([^)]*GLYPH", js);
+        Assert.DoesNotMatch(@"textContent\s*=[^;\n]*GLYPH", js);
+        Assert.Contains("pvSub.innerHTML", js);
 
         var html = Ui("index.html");
         Assert.Contains("id=\"chat-split-x\"", html);

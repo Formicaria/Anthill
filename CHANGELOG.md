@@ -79,6 +79,11 @@ in the tooltip. Beside it: **Init git**, offered only while the directory is NOT
 set-root form (path + Browse) after first setup — the working directory stays changeable from
 the files tab.
 
+And the pre-release end-to-end drive of the live console — every page, tab and control — caught
+two more: the project subtitle printing a literal `<svg…>` where its folder icon should be (an
+inline glyph fed to a textContent sink), and the split-drag handler dying outright on a pointer
+it could not capture. Both fixed, both pinned.
+
 **The splits are sizable, and the badge goes live the instant it changes.** Chat ↔ files (or
 colony) drags horizontally; working tree ↔ docked editor drags vertically — real flex handles,
 proportions persisted, the vertical one existing only while the editor is open. And the cached
