@@ -1,5 +1,41 @@
 # ANTHILL Changelog
 
+## v0.3.8.53 - the backend answers for itself: qualification, the direct lane named, and quiet windows
+
+**No more flashing consoles.** The desktop shell is a WinExe, and four process-spawn sites —
+RepoOps' git calls (polled by the files pane, hence the cascade), the auto-apply runner, the
+operator shell and the shell tool — never set `CreateNoWindow`, so every probe opened its own
+CMD box. All hidden; a sweep confirms every remaining spawn site already was.
+
+**The approval gate answers before the conversation exists.** Choosing a gate with nothing open
+used to be refused with "open a conversation first" — backwards. The choice is now held and
+becomes the policy of the conversation the next message creates, attributed at creation as the
+server always required; Skip-all still demands its typed confirmation, and opening any existing
+conversation expires the held choice.
+
+**The direct-agent lane is named (audit Phase 7, fail-closed).** A writing chat run — Bypass or
+Automatically approve — now produces one canonical `direct_change` artifact: base revision,
+files, bounded diffs, commit state, and the load-bearing sentence in the payload itself: this is
+direct-agent output, not colony-verified work. Bypass still commits (operator WIP never swept);
+Automatically approve captures without committing. Structurally pinned: the conversation lane
+has no path into learning, and learning has no consumer of `direct_change` — unverified work can
+never buy reputation.
+
+**The installation answers for itself (audit Phase 11).** `anthill --qualification`: the full
+self-test battery plus lifecycle checks — patch-engine semantics (clean modify applies, stale
+base refused, ghost delete refused), artifact/evidence round-trips, finalization idempotency
+(first claim wins, replay refused), reasoning availability (agent CLIs or Ollama), role
+contracts — all against a temporary workspace and database, the operator's colony never opened,
+exit nonzero when the core lifecycle is impossible. `docs/QA-CHECKLIST.md` now leads with it,
+and gives independent testers a fillable, per-environment procedure for everything else.
+
+**The scenario matrix gets its ledger (audit Phase 10).** `AuditScenarioTests` maps the audit's
+twenty scenarios to the production tests that already prove them, proves the one that was
+unpinned — a partially inapplicable PatchSet materializes NOTHING and leaves the source tree
+byte-identical — and states the remaining open ground plainly: the composed
+scripted-provider code-patch lifecycle and the all-twelve-roles-through-real-triggers set,
+which docs/PLAN.md §6 already names as the next release's whole job.
+
 ## v0.3.8.52 - the chat lane's edits reach git, the files pane learns manners, and Windows first-run actually works
 
 The Windows field report landed before this release was tagged, so its repairs ship IN it —

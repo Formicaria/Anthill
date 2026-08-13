@@ -20,6 +20,23 @@
 
 ---
 
+## 0.5 Qualification — run this FIRST
+
+Before anything else, ask the installation whether it can run missions at all:
+
+```
+anthill --qualification
+```
+
+Safe by construction: it uses a temporary workspace and database and never opens your colony,
+projects or repositories. Exit code 0 means qualified.
+
+| # | Step | Expected | Result | Notes |
+|---|---|---|---|---|
+| 0.5.1 | Run `anthill --qualification` | Every check `PASS` (warnings acceptable when named optional, e.g. git missing); final line `QUALIFIED`; exit code 0 | | |
+| 0.5.2 | If NOT QUALIFIED: follow the remediation in each FAIL line, re-run | Turns into QUALIFIED, or file the FAIL lines verbatim in your report | | |
+| 0.5.3 | Paste the full qualification output into your report | (It contains no secrets — versions, check names and availability facts only) | | |
+
 ## 1. Installation & first run
 
 | # | Step | Expected | Result | Notes |

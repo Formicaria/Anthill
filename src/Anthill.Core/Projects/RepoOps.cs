@@ -98,6 +98,15 @@ public static class RepoOps
         return r.Ok ? r : Git(root, "init");
     }
 
+    /// <summary>The commit hash HEAD resolves to, or null (unborn HEAD, not a repo, no git).
+    /// v0.3.8.53 (audit Phase 7): the direct-agent lane records the BASE revision its changes
+    /// were made against, and a base that cannot be named is recorded as exactly that.</summary>
+    public static string? Head(string root)
+    {
+        var (ok, output) = Git(root, "rev-parse", "HEAD");
+        return ok && output.Length >= 7 && !output.Contains('\n') ? output.Trim() : null;
+    }
+
     /// <summary>The root of the repository that owns <paramref name="dir"/>, or null if none does.
     /// This is how the commit hook finds the right repo for an applied file instead of assuming
     /// the project root and the repo root coincide.</summary>
