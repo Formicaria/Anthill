@@ -1330,6 +1330,16 @@ public class UiShellTests
         Assert.Contains("cf-git", js);
         Assert.Contains("chat-inline", js);
         Assert.Contains("chatEditorHl", js);
+
+        // v0.3.8.52 — the commit train: per-file history on demand from a GitHub-style branch
+        // selector (view-only; nothing is checked out), each stop's diff one click deeper.
+        Assert.Contains("id=\"chat-files-branch\"", html);
+        Assert.Contains("cf-hist", js);
+        Assert.Contains("chatFilesTrain", js);
+        Assert.Contains("/repo/log?path=", js);
+        Assert.Contains("/repo/branches", js);
+        Assert.Contains("/repo/show?hash=", js);
+        Assert.Contains("ev.stopPropagation()", js);   // the clock must not also open the editor
     }
 
     /// <summary>
