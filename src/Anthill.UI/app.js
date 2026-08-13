@@ -6073,6 +6073,51 @@ async function loadAgentCli(force){
       </div>`;
     }).join('');
 
+    // v0.3.8.53 — the LOCAL runtime, first in the list: the no-account path is the first thing a
+    // fresh install reaches for, and it was the one path this page had no story for. Same card
+    // grammar as the agents; Install only renders where the server says end-to-end install is
+    // real (install_supported — Windows/winget), everywhere else the command is SHOWN instead,
+    // because a button that would only refuse is worse than a sentence.
+    const lo=d.local;
+    if(lo){
+      const loInstalled=!!lo.installed;
+      list.insertAdjacentHTML('afterbegin', `<div class="card agentcli-card">
+        <div class="agentcli-hd">
+          <span class="health-dot ${loInstalled?'ok':''}"></span>
+          <span class="agentcli-name">${escapeHtml(lo.name||'Local models')}</span>
+          <span class="agentcli-vendor">${escapeHtml(lo.vendor||'')}</span>
+          ${loInstalled?`<span class="hud-badge completed">Installed${lo.version?' · '+escapeHtml(lo.version):''}</span>`
+                       :`<span class="hud-badge">Not installed</span>`}
+        </div>
+        ${loInstalled
+          ? `<div class="agentcli-sub">Running locally — pull a model to route ants to it: <code>ollama pull llama3.1:8b</code></div>`
+          : `<div class="agentcli-sub">${escapeHtml(lo.unavailable_reason||'Not found on this machine.')}${
+               lo.install_supported?'':' Install it yourself: '}${
+               lo.install_supported?'':`<code>${escapeHtml(lo.install_command||'')}</code>`}</div>`}
+        <div class="agentcli-actions">
+          ${loInstalled?'':(d.install_enabled&&lo.install_supported
+            ? `<button class="btn btn-primary agentcli-install-local">Install</button>`
+            : (lo.install_supported
+                ? `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`
+                : ''))}
+          <a class="btn btn-ghost" href="${escapeHtml(lo.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+        </div>
+      </div>`);
+      list.querySelector('.agentcli-install-local')?.addEventListener('click', async function(){
+        const btn=this;
+        if(!await uiConfirm('Install Ollama on this machine?\n\nIt runs Windows’ own package manager '
+          + '(winget) here. Models you pull afterwards run entirely on this machine.')) return;
+        btn.disabled=true; btn.textContent='Installing…';
+        agentCliMsg('Installing — a download of this size can take a few minutes.', true);
+        try{
+          const r=await api('/agents/local/install','POST');
+          if(r&&r.success) agentCliMsg(r.message||'Installed.', true);
+          else agentCliMsg((r&&r.message)||'Install failed.', false);
+        }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
+        finally{ btn.disabled=false; btn.textContent='Install'; loadAgentCli(true); }
+      });
+    }
+
     // Bound after render, not inline: the console's CSP is script-src 'self' with no unsafe-inline,
     // so an onclick attribute here would be silently dropped by the browser.
     list.querySelectorAll('.agentcli-install').forEach(btn=>{
