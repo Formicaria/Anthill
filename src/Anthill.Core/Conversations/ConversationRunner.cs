@@ -305,11 +305,18 @@ public sealed class ConversationRunner
         // is persisted. Waiting for THAT is bounded and quick; waiting for the work is neither.
         var idReady = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // v0.3.8.51, found live in mission 46f1acb7: the goal was the operator's bare words —
+        // "Make all of these changes" — and the coder honestly refused, because "these changes"
+        // referred to a plan that lived in the CONVERSATION and the mission never saw it. The
+        // goal now carries the operator's message plus the bounded recent transcript, so what
+        // "this" and "these" point at travels with the work.
+        var missionGoal = ComposeMissionGoal(conversation, message);
+
         _ = ThreadingTask.Run(() =>
         {
             try
             {
-                _startMission(message, id => idReady.TrySetResult(id), cts.Token);
+                _startMission(missionGoal, id => idReady.TrySetResult(id), cts.Token);
                 // v0.3.8.48, found live: the mission finished, its answer sat in mission history,
                 // and the conversation that started it showed nothing — an operator watching the
                 // chat never saw the result of the work they approved. The pipeline call above is
@@ -426,6 +433,42 @@ public sealed class ConversationRunner
     }
 
     /// <summary>
+    /// The mission goal a CONVERSATION escalates with: the operator's message, plus the bounded
+    /// recent transcript so pronouns resolve. v0.3.8.51, from mission 46f1acb7 — the operator said
+    /// "Make all of these changes", the colony's own reply held the list of changes, and the
+    /// mission got five words and no list. The coder's refusal was correct; the goal was wrong.
+    /// A conversation with no prior turns escalates with the plain message, unchanged.
+    /// </summary>
+    internal string ComposeMissionGoal(Conversation conversation, string message)
+    {
+        const int MaxContextChars = 4000;
+        List<ConversationTurn> turns;
+        try { turns = _memory.LoadConversationTurns(conversation.Id).ToList(); }
+        catch { return message; }
+
+        var prior = turns
+            .Where(t => !string.Equals(t.Content, message, StringComparison.Ordinal))
+            .TakeLast(6).ToList();
+        if (prior.Count == 0) return message;
+
+        var sb = new System.Text.StringBuilder(message);
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("--- conversation context (what the request above refers to) ---");
+        var budget = MaxContextChars;
+        foreach (var t in prior)
+        {
+            var who = string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator" : "Colony";
+            var text = t.Content ?? "";
+            if (text.Length > budget) text = text[..budget];
+            sb.AppendLine($"{who}: {text}");
+            budget -= text.Length;
+            if (budget <= 0) break;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// After an escalated mission SETTLES, its result becomes the conversation's next turn — the
     /// operator asked in chat, so chat is where the answer belongs. Runs on the background thread
     /// that just finished the pipeline. A cancelled conversation gets nothing (the operator moved
@@ -448,6 +491,15 @@ public sealed class ConversationRunner
             var answer = mission.GetValueOrDefault("user_result")?.ToString();
             if (string.IsNullOrWhiteSpace(answer))
                 answer = mission.GetValueOrDefault("final_result")?.ToString();
+
+            // v0.3.8.51, found live: a FAILED mission's user_result was the medic's escalation
+            // prose — "Semantic duplicate: failure signature fsig:…" landed in chat as the
+            // colony's answer. An operator asked a question; machine bookkeeping is not the
+            // reply. A non-complete mission now answers with what actually failed, in words,
+            // built from the structured task rows.
+            if (!string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase))
+                answer = ComposeFailureAnswer(missionId, status) ?? answer;
+
             var content = !string.IsNullOrWhiteSpace(answer)
                 ? answer!
                 : $"The mission finished with status \"{status}\" and recorded no result text — "
@@ -466,6 +518,28 @@ public sealed class ConversationRunner
             // A failure to ANNOUNCE the answer must not fail the mission that produced it; the
             // result still exists in mission history either way.
         }
+    }
+
+    /// <summary>The operator-readable account of a mission that did not complete: which task
+    /// failed and its own stated reason — structured rows, no medic bookkeeping.</summary>
+    private string? ComposeFailureAnswer(string missionId, string status)
+    {
+        try
+        {
+            var failed = _memory.GetTasksForMission(missionId)
+                .FirstOrDefault(t => string.Equals(t.GetValueOrDefault("status")?.ToString(), "failed",
+                    StringComparison.OrdinalIgnoreCase));
+            var title = failed?.GetValueOrDefault("title")?.ToString();
+            var reason = failed?.GetValueOrDefault("result")?.ToString();
+            if (string.IsNullOrWhiteSpace(reason)) reason = failed?.GetValueOrDefault("result_summary")?.ToString();
+
+            return failed is null
+                ? $"The mission ended \"{status}\" without completing. The task trail is in the mission history."
+                : $"The mission could not finish. \"{title}\" failed: "
+                  + (string.IsNullOrWhiteSpace(reason) ? "no reason was recorded." : reason!.Trim())
+                  + "\n\nThe full task trail is in the mission history.";
+        }
+        catch { return null; }
     }
 
     private string RecordTurn(Conversation conversation, int ordinal, string message, string? missionId,
