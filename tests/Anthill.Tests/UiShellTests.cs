@@ -377,13 +377,35 @@ public class UiShellTests
             "mission-thread.js must load before app.js, which consumes it at parse time.");
     }
 
-    /// <summary>The node --test suite must actually run in CI, or it proves nothing.</summary>
+    /// <summary>
+    /// The node --test suite must actually run in CI, or it proves nothing.
+    ///
+    /// v0.3.8.52 strengthened this from a substring match on one filename to a check that the whole
+    /// DIRECTORY is run, because the original form is what let the gap happen: it pinned
+    /// `node --test tests/ui/mission-thread.test.js`, that exact line was what CI ran, and
+    /// navigation.test.js — added in v0.3.8.48 and passing — never executed anywhere. The guard was
+    /// satisfied while the thing it exists to guarantee was false for half the suite.
+    ///
+    /// Asserting the directory form makes the property hold for every file, including ones not
+    /// written yet, which is the only version of this check that stays true.
+    /// </summary>
     [Fact]
-    public void MissionThreadTests_RunInCiAndValidate()
+    public void EveryUiTestFile_RunsInCiAndInBothValidateScripts()
     {
-        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src(".github", "workflows", "ci.yml"));
-        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src("scripts", "validate.ps1"));
-        Assert.True(File.Exists(Path.Combine(Root(), "tests", "ui", "mission-thread.test.js")));
+        const string runsTheDirectory = "node --test tests/ui/";
+
+        Assert.Contains(runsTheDirectory, Src(".github", "workflows", "ci.yml"));
+        Assert.Contains(runsTheDirectory, Src("scripts", "validate.ps1"));
+        // v0.3.8.52: validate.sh ran no UI tests at all, so a local "full validation" could pass
+        // green with a red console suite. Both scripts are asserted so they cannot drift apart.
+        Assert.Contains(runsTheDirectory, Src("scripts", "validate.sh"));
+
+        var uiTests = Directory.GetFiles(Path.Combine(Root(), "tests", "ui"), "*.test.js");
+        Assert.True(uiTests.Length >= 5,
+            $"expected the console suite to cover more than the original two files; found {uiTests.Length}");
+        // The named file the old assertion pinned still has to exist — it is the reconciler's only
+        // behavioural coverage, and the directory form would happily pass if someone deleted it.
+        Assert.Contains(uiTests, f => Path.GetFileName(f) == "mission-thread.test.js");
     }
 
     /// <summary>
@@ -1023,11 +1045,18 @@ public class UiShellTests
         // The jobs list keeps the durable per-run Cancel.
         Assert.Contains("cancelJob", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
 
-        // And the MISSION request itself lives in chat — mode:'mission' through the same
-        // escalation-gated turn endpoint, so "chat is the one mission entry" is literally true.
-        Assert.Contains("id=\"chat-work\"", html);
-        Assert.Contains("chatSend('mission')", js);
-        Assert.Contains("mode:mode", BodyOf(js, "async function chatSend(mode)"));
+        // v0.3.8.51 (field report): the ⚒ "Do the work" button is RETIRED — one send path. The
+        // colony proposes missions itself (EscalateMarker in ConversationRunner) and the approval
+        // selector governs them; a second send button was a magic word with a tooltip. What must
+        // hold instead: the button is gone, the gates affordance exists beside the policy
+        // selector, and approvals still travel mode:'mission' through the same turn endpoint.
+        Assert.DoesNotContain("id=\"chat-work\"", html);
+        Assert.DoesNotContain("chatSend('mission')", js);
+        // Operator correction: the policy SELECTOR is the gates, so it wears the label — a
+        // sibling button also named Gates was one gates too many.
+        Assert.Contains("id=\"chat-gates-label\"", html);
+        Assert.DoesNotContain("id=\"chat-gates\">", html);
+        Assert.Contains("mode:'mission'", js);   // convApprove's re-send keeps the gated path
     }
 
     /// <summary>
@@ -1246,12 +1275,47 @@ public class UiShellTests
         // The policy endpoint is called attributed; the selector reflects the EFFECTIVE policy.
         Assert.Contains("'/policy','POST'", js);
 
-        // Inline change cards: in the thread, both transitions, no navigation.
+        // Inline change cards: in the thread, no navigation. v0.3.8.51: the card's action is ONE
+        // JSON endpoint doing approve-then-apply — the old two-call flow parsed text/plain
+        // responses as JSON and reported "Approval failed" over approvals that had landed.
         Assert.Contains("chatRenderPatches", js);
         Assert.Contains("data-p-approve", js);
-        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve'", js);
-        Assert.Contains("'/apply/'+encodeURIComponent(approvalId)", js);
+        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve-apply'", js);
+        Assert.DoesNotContain("'/apply/'+encodeURIComponent(approvalId)", js);
         Assert.Contains("'/revert/'+encodeURIComponent(pid)", js);
+    }
+
+    /// <summary>
+    /// v0.3.8.51 third round — the files pane's editor DOCKS BELOW the working tree: click a file
+    /// and it opens underneath while the tree stays visible and clickable (the operator asked for
+    /// exactly this after the replace-the-tree version). The editor carries its own Changes toggle
+    /// (recent edits to THAT file: uncommitted git diff + colony patch history), stays an editable
+    /// textarea with Save, and the pane states what the directory IS — git repo with branch and
+    /// dirty count, or plain folder — with an operator Commit button only a repo shows.
+    /// </summary>
+    [Fact]
+    public void FilesPane_EditorDocksBelowTheTree_AndGitIsStated()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // The docked editor: its own bar ids, a border seam, and NO tree-hiding on open.
+        Assert.Contains("id=\"chat-editor-changes\"", html);
+        Assert.Contains("id=\"chat-editor-diff\"", html);
+        Assert.Contains("id=\"chat-editor-text\"", html);
+        Assert.DoesNotContain("body.style.display='none'", js);   // the tree survives a file click
+
+        // Git awareness, stated in the bar; Commit is the operator's half of the commit story.
+        Assert.Contains("id=\"chat-files-repo\"", html);
+        Assert.Contains("id=\"chat-files-commit\"", html);
+        Assert.Contains("chatFilesRepoLoad", js);
+        Assert.Contains("/repo/diff?path=", js);
+        Assert.Contains("'/repo/commit'", js);
+        Assert.Contains("plain folder", js);
+
+        // Per-file recent edits come from the same patch surfaces the cards use.
+        Assert.Contains("chat-editor-changes", js);
+        Assert.Contains("cfGitDiffHtml", js);
     }
 
     /// <summary>

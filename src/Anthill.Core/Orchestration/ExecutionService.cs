@@ -117,13 +117,23 @@ public sealed class ExecutionService : IExecutionService
     /// do not read.
     /// </summary>
     public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants,
-        Tools.ToolRegistry? tools = null, Models.ModelRouter? router = null)
+        Tools.ToolRegistry? tools = null, Models.ModelRouter? router = null,
+        Func<string, string, (bool Ok, string Message)>? approveApplyPatch = null)
     {
         _memory = memory;
         _ants = ants;
         _tools = tools;
         _router = router;
+        _approveApplyPatch = approveApplyPatch;
     }
+
+    /// <summary>
+    /// v0.3.8.51 (field report): the audited approve-and-apply transition, injected by the Queen —
+    /// how "Skip all approvals" applies a verified patch without asking. Null (tests, CLI shapes
+    /// without a Queen) means bypass conversations keep the manual card, which is the safe
+    /// direction to degrade.
+    /// </summary>
+    private readonly Func<string, string, (bool Ok, string Message)>? _approveApplyPatch;
 
     private readonly Tools.ToolRegistry? _tools;
 
@@ -521,6 +531,14 @@ public sealed class ExecutionService : IExecutionService
                 }
                 else
                 {
+                    // v0.3.8.51 (field report): the operator's approval gate REACHES THE WORKER.
+                    // The mission's owning conversation carries the effective policy the operator
+                    // chose in chat, and the project's directory gates carry the paths they opened;
+                    // both ride to the reasoning provider as ambient scope, where an agent CLI
+                    // translates them into its own flags. A mission no conversation started runs
+                    // with "ask" and no grants — absence is not consent.
+                    using var access = EnterAgentAccess(mission);
+
                     // Structural repair §3: a deterministic check role runs INSIDE the mission's
                     // current materialized revision when one exists — the patched tree, kept alive
                     // by MissionRevisionRegistry — and the task is stamped with the revision it
@@ -1145,6 +1163,15 @@ public sealed class ExecutionService : IExecutionService
             InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler);
             _memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
                 new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
+
+            // v0.3.8.51 (field report): "Skip all approvals" means WHAT IT SAYS — the operator set
+            // Bypass in words, so a verified patch applies WITHOUT a card. Prompts are skipped,
+            // security is not: a DeterministicBlock (failed build verifier, policy finding, scope
+            // escape) leaves the patch unapplied exactly as it would refuse anyone else, and the
+            // apply below runs the same audited transitions the operator's own button does.
+            // Automatically approve deliberately keeps the manual apply card — that policy means
+            // "act freely, but ask me before changing real files."
+            ApplyUnderBypass(mission, task, patchSet);
             if (patchSet.Proposals.Count == 0)
             {
                 _memory.LogEvent(mission.Id, "patch_set_empty", "CoderAnt returned a valid patch set with no proposals.", task.Id, task.AssignedAnt,
@@ -1372,6 +1399,70 @@ public sealed class ExecutionService : IExecutionService
                 ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
             }));
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
+    }
+
+    /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a delegate, without
+    /// a Bypass conversation, or with a deterministic block standing; logs every outcome.</summary>
+    private void ApplyUnderBypass(Mission mission, Task task, PatchSet patchSet)
+    {
+        if (_approveApplyPatch is null || patchSet.Proposals.Count == 0) return;
+        try
+        {
+            if (task.DeterministicBlock is not null)
+            {
+                _memory.LogEvent(mission.Id, "patch_bypass_blocked",
+                    $"Skip-all-approvals did NOT apply patch set {patchSet.Id}: {task.DeterministicBlock}",
+                    task.Id, task.AssignedAnt, new() { ["patch_set_id"] = patchSet.Id });
+                return;
+            }
+            var conversation = _memory.FindConversationForMission(mission.Id);
+            if (conversation?.EffectivePolicy != Conversations.EscalationPolicy.Bypass) return;
+
+            var who = $"bypass-policy({conversation.PolicySetBy ?? "operator"})";
+            foreach (var proposal in patchSet.Proposals)
+            {
+                var (ok, message) = _approveApplyPatch(proposal.Id, who);
+                _memory.LogEvent(mission.Id, ok ? "patch_bypass_applied" : "patch_bypass_apply_refused",
+                    $"Skip-all-approvals {(ok ? "applied" : "did not apply")} {proposal.FilePath}: {message}",
+                    task.Id, task.AssignedAnt,
+                    new() { ["patch_id"] = proposal.Id, ["file"] = proposal.FilePath, ["ok"] = ok });
+            }
+        }
+        catch (Exception error)
+        {
+            // Refusing to apply is always a safe failure; the card remains for the operator.
+            Console.Error.WriteLine($"[execution] bypass apply failed for {patchSet.Id}: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// v0.3.8.51 — resolve what the operator ALLOWED for this mission's work: the owning
+    /// conversation's effective policy (wire form) and the project's granted directories. Cached
+    /// per call rather than per mission on purpose: a policy change mid-mission should govern the
+    /// tasks dispatched after it, exactly as the escalation gate already behaves.
+    /// </summary>
+    private IDisposable EnterAgentAccess(Mission mission)
+    {
+        var policy = "ask";
+        IReadOnlyList<string> grants = Array.Empty<string>();
+        try
+        {
+            var conversation = _memory.FindConversationForMission(mission.Id);
+            if (conversation is not null)
+            {
+                policy = conversation.EffectivePolicy.ToString().ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(conversation.ProjectId))
+                    grants = _memory.LoadProjectGrants(conversation.ProjectId!)
+                        .Select(g => g.Path).ToList();
+            }
+        }
+        catch (Exception error)
+        {
+            // A failed lookup must degrade toward LESS access, never more — and must not fail the task.
+            Console.Error.WriteLine($"[execution] agent access lookup failed for {mission.Id}: {error.Message}");
+        }
+        // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
+        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(policy, grants, confinedWorkspace: true);
     }
 
     /// <summary>

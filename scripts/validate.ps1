@@ -50,8 +50,9 @@ if ($node) {
     # v2.17.1: behavioural tests for the Missions conversation reconciler. Uses node's built-in
     # test runner (Node 18+) — no framework, no package.json, no build step. The logic under test
     # is deliberately DOM-free so it can be proven without a browser harness.
+    # v0.3.8.52: the DIRECTORY, not one named file — see the note in ci.yml.
     Write-Host "==> node --test on UI logic" -ForegroundColor Cyan
-    node --test tests/ui/mission-thread.test.js
+    node --test tests/ui/
     if ($LASTEXITCODE -ne 0) { exit 1 }
 } else {
     Write-Host "==> SKIP node --check (node not installed; CI ui-integrity job still enforces it)" -ForegroundColor Yellow

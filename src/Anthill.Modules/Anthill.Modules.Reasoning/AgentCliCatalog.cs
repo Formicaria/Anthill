@@ -84,6 +84,41 @@ public sealed record AgentCli
     /// scratchpad does not stop applying because the writer came from another vendor.
     /// </summary>
     public bool Writes { get; init; }
+
+    // ---- v0.3.8.51: the operator's approval gate, translated into THIS agent's own flags -------
+    //
+    // Field report: a headless agent run has nobody at the terminal, so its own permission prompts
+    // are unanswerable and every mutating call dies. The operator already answered once — in chat,
+    // at the approval selector — and these per-agent arg fragments are how that answer reaches the
+    // spawned process. Null/empty means the agent has no such flag and gets NOTHING extra: an
+    // unmapped agent stays exactly as locked down as before, which is the honest default.
+
+    /// <summary>Flags that let the agent EDIT within its confined workspace without prompting.
+    /// Applied for every approved mission — the workspace is a disposable sandbox, and the real
+    /// tree still only changes through Anthill's own patch-approval pipeline.</summary>
+    public IReadOnlyList<string>? AcceptEditsArgs { get; init; }
+
+    /// <summary>Flags granting a BOUNDED tool set (build/test commands) under Automatically
+    /// approve. Never network-wide, never arbitrary shell.</summary>
+    public IReadOnlyList<string>? AutoApproveToolArgs { get; init; }
+
+    /// <summary>Flags that skip the agent's own prompts entirely — the mapping of "Skip all
+    /// approvals", which the operator confirms in spoken words before it can be set.</summary>
+    public IReadOnlyList<string>? BypassArgs { get; init; }
+
+    /// <summary>Per-directory reach, with <c>{dir}</c> replaced by one granted absolute path.
+    /// Repeated for each directory gate the operator opened.</summary>
+    public IReadOnlyList<string>? AddDirArgs { get; init; }
+
+    /// <summary>
+    /// v0.3.8.51, second field round: where this agent reads PROJECT-LEVEL permissions from,
+    /// relative to its working directory. The colony's own probe found the real wall — with no
+    /// project settings file, a headless run falls through to harness defaults that flags do not
+    /// fully override. Anthill materializes this file from the operator's policy before each run
+    /// (see <see cref="AgentCliCatalog.MaterializeLocalSettings"/>). Null = the agent has no such
+    /// mechanism and gets flags only.
+    /// </summary>
+    public string? LocalSettingsRelativePath { get; init; }
 }
 
 /// <summary>
@@ -117,6 +152,17 @@ public static class AgentCliCatalog
             AuthCommand = "claude",           // first run walks the operator through sign-in
             DocsUrl = "https://docs.claude.com/en/docs/claude-code/overview",
             Writes = true,
+            // v0.3.8.51: the approval gate's translation for Claude Code specifically. acceptEdits
+            // lets it edit inside its confined workspace; the bounded tool list covers the build
+            // and test commands a coding mission needs and nothing network-shaped; bypass maps
+            // Skip-all-approvals onto the CLI's own equivalent; add-dir is a directory gate.
+            AcceptEditsArgs = new[] { "--permission-mode", "acceptEdits" },
+            AutoApproveToolArgs = new[] { "--allowedTools", "Edit,Write,Bash(dotnet:*),Bash(node:*),Bash(npm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)" },
+            BypassArgs = new[] { "--dangerously-skip-permissions" },
+            AddDirArgs = new[] { "--add-dir", "{dir}" },
+            // settings.local.json is Claude Code's own not-checked-in local layer — the right
+            // file for machine-materialized permissions that must never reach the operator's VCS.
+            LocalSettingsRelativePath = ".claude/settings.local.json",
         },
         new()
         {
@@ -210,4 +256,134 @@ public static class AgentCliCatalog
     public static IReadOnlyList<string> BuildStreamArgs(AgentCli agent, string prompt) =>
         (agent.StreamArgs ?? agent.PromptArgs)
         .Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
+
+    /// <summary>
+    /// v0.3.8.51 — the operator's approval gate, as THIS agent's flags. Pure function of the
+    /// ambient access context so it is testable without a process:
+    ///
+    /// <list type="bullet">
+    /// <item>ask — the mission itself was operator-approved, so the agent may EDIT inside its
+    ///   confined disposable workspace (<see cref="AgentCli.AcceptEditsArgs"/>); its own command
+    ///   prompts stay in force, honestly refused rather than fake-approved.</item>
+    /// <item>autoapprove — edits plus the BOUNDED tool set (build/test commands).</item>
+    /// <item>bypass — the agent's own skip flag; the operator confirmed this in words.</item>
+    /// <item>every granted directory — one <see cref="AgentCli.AddDirArgs"/> expansion each.</item>
+    /// </list>
+    ///
+    /// A null context grants nothing. An agent without mapped flags gets nothing. Absence is not
+    /// consent, in either direction.
+    /// </summary>
+    public static IReadOnlyList<string> BuildAccessArgs(AgentCli agent, Anthill.SDK.Reasoning.AgentAccessScope.Context? access)
+    {
+        if (access is null) return Array.Empty<string>();
+        var args = new List<string>();
+
+        switch (access.PolicyWire)
+        {
+            case "bypass" when agent.BypassArgs is { Count: > 0 }:
+                args.AddRange(agent.BypassArgs);
+                break;
+            case "autoapprove":
+                if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
+                if (agent.AutoApproveToolArgs is { Count: > 0 }) args.AddRange(agent.AutoApproveToolArgs);
+                break;
+            case "ask" when access.ConfinedWorkspace:
+                // In a DISPOSABLE mission sandbox the approved mission is the approved work; in a
+                // live directory (the chat lane) Manual approval grants nothing — per-edit prompts
+                // are unanswerable headless, so the honest move is to propose a mission instead.
+                if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
+                break;
+        }
+
+        if (agent.AddDirArgs is { Count: > 0 })
+            foreach (var dir in access.GrantedDirectories.Where(d => !string.IsNullOrWhiteSpace(d)))
+                args.AddRange(agent.AddDirArgs.Select(a => a.Replace("{dir}", dir, StringComparison.Ordinal)));
+
+        return args;
+    }
+
+    /// <summary>A marker key so Anthill can tell ITS materialized settings from an operator's own
+    /// file. Anthill only ever overwrites or deletes a file carrying this key.</summary>
+    public const string SettingsMarkerKey = "_anthill";
+
+    /// <summary>
+    /// v0.3.8.51, second field round — the permission payload the colony's own probe identified as
+    /// the real unblock: "The repo has no .claude/ directory — everything falls through to harness
+    /// defaults." Pure function of the access context; null means NOTHING is granted and any
+    /// previously materialized file must be REMOVED (a downgrade to Manual approval has to close
+    /// the gate it once opened).
+    ///
+    /// The allow list mirrors <see cref="BuildAccessArgs"/> exactly — flags and settings are one
+    /// policy expressed through two channels, because the field showed one channel is not enough.
+    /// </summary>
+    public static string? BuildLocalSettingsJson(Anthill.SDK.Reasoning.AgentAccessScope.Context? access)
+    {
+        if (access is null) return null;
+
+        var allow = access.PolicyWire switch
+        {
+            "bypass" or "autoapprove" => new List<string>
+            {
+                "Edit", "Write",
+                "Bash(dotnet:*)", "Bash(node:*)", "Bash(npm:*)",
+                "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+                "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(find:*)",
+            },
+            "ask" when access.ConfinedWorkspace => new List<string> { "Edit", "Write" },
+            _ => new List<string>(),
+        };
+        if (allow.Count == 0 && access.GrantedDirectories.Count == 0) return null;
+
+        return System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            [SettingsMarkerKey] = "materialized by Anthill from the conversation's approval policy — "
+                                + "regenerated per run, safe to delete",
+            ["permissions"] = new Dictionary<string, object?>
+            {
+                ["allow"] = allow,
+                ["additionalDirectories"] = access.GrantedDirectories,
+            },
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    }
+
+    /// <summary>
+    /// Write (or remove) the agent's project-level permission file in <paramref name="workingDirectory"/>
+    /// to match the operator's current policy. Three rules, all fail-safe:
+    ///
+    /// <list type="bullet">
+    /// <item>An existing file WITHOUT Anthill's marker is the operator's own — never touched.</item>
+    /// <item>A policy granting nothing deletes a marker-carrying file: downgrades close gates.</item>
+    /// <item>Any IO failure degrades toward LESS access and never fails the run — the agent then
+    ///   refuses honestly, which is the pre-existing behaviour.</item>
+    /// </list>
+    /// </summary>
+    public static void MaterializeLocalSettings(AgentCli agent, string? workingDirectory,
+        Anthill.SDK.Reasoning.AgentAccessScope.Context? access)
+    {
+        if (agent.LocalSettingsRelativePath is null || string.IsNullOrWhiteSpace(workingDirectory)) return;
+        try
+        {
+            if (!Directory.Exists(workingDirectory)) return;
+            var path = Path.Combine(workingDirectory, agent.LocalSettingsRelativePath);
+
+            if (File.Exists(path)
+                && !File.ReadAllText(path).Contains($"\"{SettingsMarkerKey}\"", StringComparison.Ordinal))
+                return;   // the operator's own settings — theirs, not ours
+
+            var json = BuildLocalSettingsJson(access);
+            if (json is null)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, json);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[agent-cli] could not materialize {agent.LocalSettingsRelativePath} "
+                + $"in {workingDirectory}: {error.Message}");
+        }
+    }
 }
