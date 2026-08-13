@@ -4540,6 +4540,18 @@ async function chatOpen(id){
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    // v0.3.8.52 (field report): with the files pane open nothing said WHICH project the work
+    // belongs to. The project wears the second line under the chat name, always visible while a
+    // conversation is open, and clicks through to its project page.
+    const projLine=document.getElementById('chat-title-proj');
+    if(projLine){
+      if(d.project_name){
+        projLine.hidden=false;
+        projLine.innerHTML=`${GLYPH.folder} ${escapeHtml(d.project_name)}`;
+        projLine.title='Project: '+d.project_name+' — open its page';
+        projLine.onclick=()=>go('/projects/'+encodeURIComponent(d.project_id||''));
+      }else projLine.hidden=true;
+    }
     // v0.3.8.48: the selector shows the conversation's EFFECTIVE policy, and says who set it.
     const polSel=document.getElementById('chat-policy');
     if(polSel){ polSel.value=d.policy||'ask'; polSel.dataset.current=d.policy||'ask'; }
@@ -4893,6 +4905,8 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   chatComposingNew=true;
   chatFingerprint='';   // the welcome screen replaced the thread outside chatOpen's knowledge
   setEl('chat-title','New conversation'); chatSetState('');
+  // No conversation, no project line — it returns with the next chatOpen.
+  const npl=document.getElementById('chat-title-proj'); if(npl) npl.hidden=true;
   const thread=document.getElementById('chat-thread');
   if(thread) thread.innerHTML='<div class="chat-welcome"><h2>What would you like done?</h2>'
     + '<p>Describe it in your own words. The colony plans the work, carries it out, and shows you '

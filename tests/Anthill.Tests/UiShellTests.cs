@@ -1641,6 +1641,16 @@ public class UiShellTests
         Assert.Contains("project_name", providers);
         Assert.Contains("conv-proj", js);
 
+        // Eighth field round: the chat header itself says which project the work belongs to —
+        // the DETAIL carries the name, the second line under the title wears it and clicks
+        // through to the project page. With the files pane open, the tree is never anonymous.
+        var detailAt = providers.IndexOf("MapGet(\"/conversations/{id}\"", StringComparison.Ordinal);
+        Assert.True(detailAt >= 0);
+        Assert.Contains("project_name", providers[detailAt..(detailAt + 2500)]);
+        Assert.Contains("id=\"chat-title-proj\"", Ui("index.html"));
+        Assert.Contains("chat-title-proj", js);
+        Assert.Contains("go('/projects/'+encodeURIComponent(d.project_id||''))", js);
+
         // + File / + Folder are pickers over the jailed project tree now — no prompt().
         var create = BodyOf(js, "async function chatFilesCreate(isDir, at)");
         Assert.Contains("cf-create-panel", create);
