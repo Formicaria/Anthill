@@ -21,6 +21,22 @@ beside a 📁 Gates button in the chat header — and each open gate becomes exa
 of agent reach (--add-dir) and nothing else. The colony asks in chat when it needs one; the
 operator opens precisely what was asked for.
 
+**The gates mean what they say.** Skip all approvals now APPLIES a verified patch without a
+card — through the same audited approve-and-apply transitions the operator's own button runs,
+and never past a deterministic block: a failed build verifier or a policy finding still refuses,
+because Bypass skips prompts, not security. Automatically approve keeps the apply card on
+purpose — act freely, ask before changing real files. And the card itself works again: it ran
+approve-then-apply against two text/plain endpoints through a JSON parser, reported "Approval
+failed" over an approval that had actually landed, and never applied. One JSON endpoint now does
+both steps and says exactly what happened.
+
+**The colony narrates, and the files sit beside the chat.** "Colony is thinking…" from the first
+instant of a turn, "Colony is working…" while a mission runs, "Colony is building…" while the
+coder or builder holds the running task. And a Files button opens the working directory in the
+colony view's split real estate: browse the project tree, open a file in a text editor, save it
+as an attributed operator edit, or flip to Changes — everything the conversation's missions
+proposed or applied, diffs inline.
+
 **One send path.** The ⚒ "Do the work" button is retired. A normal prompt reaches the colony,
 which proposes the mission ITSELF when the request is real work — a structured marker, stripped
 from the record, feeding the same deterministic start_mission gate the button used. Under Manual
