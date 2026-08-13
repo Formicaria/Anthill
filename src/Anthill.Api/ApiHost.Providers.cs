@@ -1030,6 +1030,35 @@ public static partial class ApiHost
             });
         });
 
+        /*
+         * v0.3.8.52 (fourth field round) — MAKE it a repo: the operator's explicit act from the
+         * files pane, offered only when the working directory is not one already. apply_patch
+         * gate, same as commit: both mutate the repository state of the operator's tree.
+         */
+        app.MapPost("/projects/{id}/repo/init", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+
+            var existingTop = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (existingTop is not null && PathsEqual(existingTop, root!))
+                return ApiJson.Error("This directory is already a git repository.", "bad_request");
+
+            var (ok, output) = Anthill.Core.Projects.RepoOps.Init(root!);
+            var who = CurrentUsername(ctx) ?? "operator";
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId,
+                ok ? "repo_initialized" : "repo_init_failed",
+                ok ? $"Operator {who} initialized a git repository in {root} (project '{project.Name}')."
+                   : $"git init failed in {root}: {output}",
+                antName: who);
+            return ok
+                ? ApiJson.Ok(null, "Repository created — the badge and commit controls are live now.")
+                : ApiJson.Error($"git init failed: {output}", "bad_request");
+        });
+
         // The uncommitted diff for ONE file — what sits between HEAD and the working tree. The
         // editor's "Changes" view leads with this when the project is a repo.
         app.MapGet("/projects/{id}/repo/diff", (HttpContext ctx, string id) =>
