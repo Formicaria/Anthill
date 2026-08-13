@@ -380,7 +380,58 @@ public sealed partial class Queen
         var applyResult = ApplyApprovedPatch(approvalId);
         var applied = applyResult.Contains("applied", StringComparison.OrdinalIgnoreCase)
                    && !applyResult.Contains("not applied", StringComparison.OrdinalIgnoreCase);
+        if (applied) CommitAppliedPatch(patchId, requestedBy);
         return (applied, applyResult);
+    }
+
+    /// <summary>
+    /// v0.3.8.51 (field report): "changes applied but nothing hit git commit." Under the
+    /// full-control gates (Skip all approvals, Automatically approve) a landed patch is COMMITTED
+    /// to the repository that owns its file — git itself is asked which repo that is. Under
+    /// Manual approval the tree is deliberately left dirty: the operator approved one apply, not
+    /// a commit, and the files pane gives them a Commit button. A plain folder (no repo, or no
+    /// git on the machine) degrades to exactly the old behavior. Never throws, never masks the
+    /// apply that succeeded.
+    /// </summary>
+    private void CommitAppliedPatch(string patchId, string requestedBy)
+    {
+        try
+        {
+            var patch = Memory.GetPatchProposal(patchId);
+            if (patch is null) return;
+            var missionId = Str(patch, "mission_id");
+            var conversation = Memory.FindConversationForMission(missionId);
+            if (conversation?.EffectivePolicy is not (Conversations.EscalationPolicy.Bypass
+                                                   or Conversations.EscalationPolicy.AutoApprove)) return;
+
+            // Resolve the file the way the apply tool did: relative paths are workspace-rooted.
+            var filePath = Str(patch, "file_path");
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+            var full = Path.IsPathRooted(filePath)
+                ? Path.GetFullPath(filePath)
+                : Path.GetFullPath(Path.Combine(AnthillRuntime.AllowedWorkspaceRoot, filePath));
+            var dir = Path.GetDirectoryName(full);
+            var repoRoot = dir is null ? null : Anthill.Core.Projects.RepoOps.TopLevel(dir);
+            if (repoRoot is null) return;   // plain folder — the operator's git story ends here, honestly
+            var rel = Path.GetRelativePath(repoRoot, full).Replace('\\', '/');
+
+            var goal = (Str(Memory.GetMission(missionId) ?? new(), "goal").Split('\n')[0]).Trim();
+            var subject = TextUtil.Truncate(string.IsNullOrWhiteSpace(goal) ? $"anthill: apply {rel}" : goal, 72);
+            var shortMission = missionId.Length >= 8 ? missionId[..8] : missionId;
+            var shortPatch = patchId.Length >= 8 ? patchId[..8] : patchId;
+            var message = $"{subject}\n\nanthill mission {shortMission}, patch {shortPatch} — {rel}";
+
+            var (ok, output) = Anthill.Core.Projects.RepoOps.Commit(repoRoot, new[] { rel }, message, requestedBy);
+            Memory.LogEvent(missionId, ok ? "patch_committed" : "patch_commit_failed",
+                ok ? $"Committed {rel} to {repoRoot}: {TextUtil.Truncate(output.Split('\n')[0], 160)}"
+                   : $"Commit of {rel} failed: {TextUtil.Truncate(output, 200)}",
+                Str(patch, "task_id"), "queen",
+                new() { ["patch_id"] = patchId, ["file"] = rel, ["repo"] = repoRoot, ["ok"] = ok });
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[queen] commit after apply failed for {patchId}: {e.Message}");
+        }
     }
 
     /// <summary>Reject a patch by patch id — ensures the approval record exists, then runs the normal reject transition.</summary>
