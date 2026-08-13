@@ -228,7 +228,9 @@ public static class AgentCliCatalog
     public static string InstallHint(AgentCli agent) => agent.PackageManager switch
     {
         "npm" => $"npm install -g {agent.Package}",
-        "pip" => $"python3 -m pip install --user {agent.Package}",
+        // v0.3.8.53: `python3` is a name stock Windows does not have — its launcher is `python`.
+        // A copy-pasteable hint that cannot be pasted is worse than none.
+        "pip" => $"{(OperatingSystem.IsWindows() ? "python" : "python3")} -m pip install --user {agent.Package}",
         _ => $"see {agent.DocsUrl}",
     };
 

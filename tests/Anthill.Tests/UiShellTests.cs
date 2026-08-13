@@ -1503,4 +1503,43 @@ public class UiShellTests
         // …and retry busts the cache, or it would re-read the same failure for 30 seconds.
         Assert.Contains("apiCacheBust('/colony/registry')", BodyOf(js, "function colonyRegistryRetry()"));
     }
+
+    /// <summary>
+    /// v0.3.8.53 — the Formicaria mark is a door home, in every shape the console ships in. The
+    /// link must be target=_blank (the desktop shell routes those to the operator's real browser;
+    /// see ShellForm's NewWindowRequested handler and DesktopShellTests' pin of it) and noopener,
+    /// because a page the colony links to must never get a handle back into the console.
+    /// </summary>
+    [Fact]
+    public void TheMark_LinksHome_InEveryShape()
+    {
+        var page = Ui("index.html");
+        Assert.Contains("href=\"https://formicaria.us\"", page);
+        var anchor = page[page.IndexOf("class=\"nav-logo-link\"", StringComparison.Ordinal)..];
+        anchor = anchor[..anchor.IndexOf('>')];
+        Assert.Contains("target=\"_blank\"", anchor);
+        Assert.Contains("rel=\"noopener noreferrer\"", anchor);
+    }
+
+    /// <summary>
+    /// v0.3.8.53 — the LOCAL runtime card. The agents page's first offer must be the no-account
+    /// path, and its Install button may only render where the server says an end-to-end install is
+    /// real (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// </summary>
+    [Fact]
+    public void TheAgentsPage_OffersTheLocalRuntime_HonestlyPerPlatform()
+    {
+        var js = Ui("app.js");
+        var body = BodyOf(js, "async function loadAgentCli(force)");
+        Assert.Contains("d.local", body);
+        Assert.Contains("agentcli-install-local", body);
+        Assert.Contains("install_supported", body);
+        Assert.Contains("/agents/local/install", body);
+
+        var api = Src("src", "Anthill.Api", "ApiHost.Agents.cs");
+        Assert.Contains("/agents/local/install", api);
+        Assert.Contains("LocalRuntimeInstaller.Install()", api);
+        // The same operator-shell gate as an agent install: this too runs a command on the host.
+        Assert.Contains("RequireAuth(ctx, \"operator_shell\")", api);
+    }
 }

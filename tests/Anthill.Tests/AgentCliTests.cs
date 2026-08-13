@@ -497,4 +497,89 @@ public class AgentCliTests
             else Assert.Null(s.Unavailable);
         }
     }
+
+    // ---- v0.3.8.53: the Windows path — .cmd shims, cmd.exe, and the injection rule -------------
+    //
+    // On Windows npm and every npm-installed agent is a .cmd, which CreateProcess cannot start:
+    // the field report's "all installers must work" was every probe, install and run failing at
+    // Process.Start. The repair has two lanes — npm shims rewritten to node + discrete argv, and
+    // everything else through cmd.exe only with arguments cmd cannot interpret. Each lane's
+    // decision logic is pure, so it is pinned here on every OS: the platform this suite mostly
+    // runs on is NOT the platform the defect shipped on.
+
+    /// <summary>The cmd lane refuses what it cannot make safe: escaping cmd is a losing game
+    /// (%expansion% survives quoting), and the arguments that legitimately ride this lane are
+    /// repository constants — so anything cmd would interpret is refused, never escaped.</summary>
+    [Theory]
+    [InlineData("install", true)]
+    [InlineData("--prefix", true)]
+    [InlineData(@"C:\Users\Mína O'Brien\.anthill\agents", true)]  // spaces, accents, apostrophes: normal homes
+    [InlineData("@anthropic-ai/claude-code", true)]
+    [InlineData("%PATH%", false)]                                  // cmd expands inside quotes
+    [InlineData("a\"b", false)]                                    // escapes the quoting
+    [InlineData("x & del *", false)]
+    [InlineData("line\nbreak", false)]
+    [InlineData("pipe|through", false)]
+    [InlineData("caret^", false)]
+    public void CmdLane_RefusesWhatCmdWouldInterpret(string arg, bool safe) =>
+        Assert.Equal(safe, AgentCliDiscovery.ShellSafeArg(arg));
+
+    /// <summary>
+    /// The npm-shim parser recognises the real cmd-shim shape — `"%_prog%" "%dp0%\<target>.js" %*`
+    /// and the older `%~dp0` spelling — and nothing else. The fixture text is the PRODUCER's own
+    /// output format (cmd-shim's, structure verbatim), per the cross-boundary rule: a hand-invented
+    /// shim format would test agreement with an assumption.
+    /// </summary>
+    [Fact]
+    public void NpmShimParser_ExtractsTheNodeTarget_FromBothShimSpellings()
+    {
+        // cmd-shim ≥5 (what current npm writes): SET dp0=%~dp0, then the target via "%dp0%\...".
+        const string modern = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n"
+            + ":start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n"
+            + "  SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  SET \"_prog=node\"\r\n)\r\n\r\n"
+            + "endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "
+            + "\"%_prog%\"  \"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js\" %*\r\n";
+        Assert.Equal(@"node_modules\@anthropic-ai\claude-code\cli.js",
+            AgentCliDiscovery.NpmShimRelativeTarget(modern));
+
+        // The older direct spelling.
+        const string older = "@\"node\"  \"%~dp0\\node_modules\\opencode-ai\\bin\\opencode.js\" %*\r\n";
+        Assert.Equal(@"node_modules\opencode-ai\bin\opencode.js",
+            AgentCliDiscovery.NpmShimRelativeTarget(older));
+
+        // A .cmd an operator wrote is NOT a shim and must not be misread as one.
+        Assert.Null(AgentCliDiscovery.NpmShimRelativeTarget("@echo off\r\nformat C: /y\r\n"));
+        Assert.Null(AgentCliDiscovery.NpmShimRelativeTarget(""));
+    }
+
+    /// <summary>Off Windows the invocation is exactly what it always was — the resolved binary and
+    /// an untouched argv. The Windows translation must be unreachable dead weight everywhere else.</summary>
+    [Fact]
+    public void OffWindows_TheInvocationIsUntouched()
+    {
+        if (OperatingSystem.IsWindows()) return; // the pure lane tests above cover the logic
+
+        var inv = AgentCliDiscovery.BuildInvocation("definitely-not-installed-xyz", new[] { "-p", "a % b & c" });
+        Assert.Equal("definitely-not-installed-xyz", inv.FileName);
+        Assert.Equal(new[] { "-p", "a % b & c" }, inv.Args);
+        Assert.Null(inv.RawCmdLine);
+    }
+
+    /// <summary>The remedy names THIS machine's tools. `sudo apt install nodejs npm` reached a
+    /// Windows operator in the field; the hints are platform-forked now, and this pins the fork
+    /// actually reaching the strings an operator is shown.</summary>
+    [Fact]
+    public void InstallGuidance_SpeaksThisPlatformsLanguage()
+    {
+        var pipHint = AgentCliCatalog.InstallHint(AgentCliCatalog.All.First(a => a.PackageManager == "pip"));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.StartsWith("python ", pipHint);
+            Assert.DoesNotContain("sudo", pipHint);
+        }
+        else
+        {
+            Assert.StartsWith("python3 ", pipHint);
+        }
+    }
 }
