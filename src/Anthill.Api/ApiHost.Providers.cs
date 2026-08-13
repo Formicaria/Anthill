@@ -1500,6 +1500,10 @@ public static partial class ApiHost
                 // so the files pane and the gates affordance dead-ended on a field that did not
                 // exist and told the operator to "open a conversation" they were sitting in.
                 ["project_id"] = conversation.ProjectId,
+                // v0.3.8.52 (field report: with the files pane open "you have no way to see what
+                // the project is") — the NAME rides the detail so the chat header can wear it.
+                ["project_name"] = conversation.ProjectId is { } cpid
+                    ? Queen.Memory.LoadProject(cpid)?.Name : null,
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>
                 {
