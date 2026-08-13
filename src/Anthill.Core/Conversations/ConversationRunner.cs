@@ -647,11 +647,12 @@ public sealed class ConversationRunner
     /// transport (a prompt on argv) sets the contract for all of them.
     /// </summary>
     /// <summary>
-    /// v0.3.8.52 — the pre-run half of the direct-edit sweep: under Skip all approvals, with a
-    /// project working directory that a git repository owns, remember which paths were ALREADY
-    /// dirty. Returns null (sweep disabled) for every other policy — under Automatically approve
-    /// and Manual approval a dirty tree is the operator's to commit, by design — and for plain
-    /// folders, missing projects, or any lookup failure. Never throws.
+    /// The pre-run half of the direct-edit sweep: with a project working directory that a git
+    /// repository owns, remember which paths were ALREADY dirty and which revision HEAD names.
+    /// v0.3.8.53 (audit Phase 7): watches Bypass AND Automatically approve — both lanes can
+    /// write, so both runs are captured as a canonical unverified direct_change artifact; only
+    /// Bypass commits. Null for Manual approval (read-only here), plain folders, missing
+    /// projects, or any lookup failure. Never throws.
     /// </summary>
     /// <summary>
     /// v0.3.8.52 — this conversation's working tree: the project's explicit path, else its own
@@ -672,11 +673,17 @@ public sealed class ConversationRunner
         catch { return null; }
     }
 
-    private (string Root, HashSet<string> PreDirty)? BeginDirectEditSweep(Conversation conversation)
+    private (string Root, string? BaseHead, HashSet<string> PreDirty)? BeginDirectEditSweep(Conversation conversation)
     {
         try
         {
-            if (conversation.EffectivePolicy != EscalationPolicy.Bypass) return null;
+            // v0.3.8.53 (audit Phase 7): the sweep watches BOTH writing policies now. Bypass
+            // still commits; Automatically approve captures only — but in EITHER case the run's
+            // fresh changes become one canonical direct_change artifact (unverified, and marked
+            // so), because a lane whose work the colony cannot even NAME is a second source of
+            // truth. Manual approval grants no writes here, so there is nothing to watch.
+            if (conversation.EffectivePolicy is not (EscalationPolicy.Bypass or EscalationPolicy.AutoApprove))
+                return null;
             if (ProjectDirectory(conversation) is not { } dir) return null;
             var root = Projects.RepoOps.TopLevel(dir);
             // Third field round: the sweep commits to the project's OWN repo only. A project
@@ -690,7 +697,9 @@ public sealed class ConversationRunner
             if (root is null) return null;
             var state = Projects.RepoOps.Describe(root);
             if (!state.IsRepo) return null;
-            return (root, state.Dirty.Select(d => d.Path).ToHashSet(StringComparer.Ordinal));
+            // The base the coming changes are made AGAINST — named now, while it is still true.
+            return (root, Projects.RepoOps.Head(root),
+                state.Dirty.Select(d => d.Path).ToHashSet(StringComparer.Ordinal));
         }
         catch { return null; }
     }
@@ -702,31 +711,82 @@ public sealed class ConversationRunner
     /// touch. A failure is logged and swallowed: the reply must land even when git refuses.
     /// </summary>
     private void CommitDirectEdits(Conversation conversation,
-        (string Root, HashSet<string> PreDirty)? sweep, string operatorMessage)
+        (string Root, string? BaseHead, HashSet<string> PreDirty)? sweep, string operatorMessage)
     {
         if (sweep is null) return;
         try
         {
-            var (root, preDirty) = sweep.Value;
+            var (root, baseHead, preDirty) = sweep.Value;
             var after = Projects.RepoOps.Describe(root);
             if (!after.IsRepo) return;
             var fresh = after.Dirty.Where(d => !preDirty.Contains(d.Path)).Select(d => d.Path).ToList();
             if (fresh.Count == 0) return;
 
-            var subject = TextUtil.Truncate((operatorMessage ?? "").Split('\n')[0].Trim(), 72);
-            if (string.IsNullOrWhiteSpace(subject)) subject = "anthill: direct edits from chat";
-            var commitMessage = subject + "\n\nanthill chat " + conversation.Id
-                + " — direct edits under Skip all approvals";
-            var (ok, output) = Projects.RepoOps.Commit(root, fresh, commitMessage,
-                $"bypass-policy({conversation.PolicySetBy ?? "operator"})");
-            _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId,
-                ok ? "chat_direct_edits_committed" : "chat_direct_edits_commit_failed",
-                ok ? $"Committed {fresh.Count} file(s) the chat agent edited directly in {root}."
-                   : $"Commit of the chat agent's direct edits failed: {TextUtil.Truncate(output, 200)}",
+            // v0.3.8.53 (audit Phase 7) — CAPTURE BEFORE COMMIT, while HEAD→worktree still shows
+            // the run's own diff. The direct lane's output becomes one canonical direct_change
+            // artifact: base revision, files, bounded diffs, and an explicit unverified marking.
+            // This is the audit's sanctioned fail-closed shape — the change is NAMED and
+            // operator-visible, it is never described as verified colony work, and (structurally,
+            // pinned by test) it never feeds positive memory: learning consumes canonical mission
+            // evaluations, which a conversation is not.
+            var diffs = new List<Dictionary<string, object?>>();
+            var diffBudget = 60_000;
+            foreach (var p in fresh.Take(50))
+            {
+                var (dOk, diff) = Projects.RepoOps.DiffFile(root, p);
+                var text = dOk ? TextUtil.Truncate(diff, Math.Min(4000, Math.Max(0, diffBudget))) : "(diff unavailable)";
+                diffBudget -= text.Length;
+                diffs.Add(new() { ["path"] = p, ["diff"] = text });
+            }
+
+            var committed = false; string commitOutput = ""; string? finalHead = null;
+            if (conversation.EffectivePolicy == EscalationPolicy.Bypass)
+            {
+                var subject = TextUtil.Truncate((operatorMessage ?? "").Split('\n')[0].Trim(), 72);
+                if (string.IsNullOrWhiteSpace(subject)) subject = "anthill: direct edits from chat";
+                var commitMessage = subject + "\n\nanthill chat " + conversation.Id
+                    + " — direct edits under Skip all approvals";
+                (committed, commitOutput) = Projects.RepoOps.Commit(root, fresh, commitMessage,
+                    $"bypass-policy({conversation.PolicySetBy ?? "operator"})");
+                if (committed) finalHead = Projects.RepoOps.Head(root);
+                _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId,
+                    committed ? "chat_direct_edits_committed" : "chat_direct_edits_commit_failed",
+                    committed ? $"Committed {fresh.Count} file(s) the chat agent edited directly in {root}."
+                       : $"Commit of the chat agent's direct edits failed: {TextUtil.Truncate(commitOutput, 200)}",
+                    null, "queen",
+                    new() { ["conversation_id"] = conversation.Id, ["files"] = string.Join(",", fresh.Take(20)), ["ok"] = committed });
+            }
+
+            var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["conversation_id"] = conversation.Id,
+                ["project_id"] = conversation.ProjectId,
+                ["policy"] = conversation.EffectivePolicy.ToString().ToLowerInvariant(),
+                ["repo_root"] = root,
+                ["base_revision"] = baseHead,          // null = unborn HEAD, stated rather than invented
+                ["final_revision"] = finalHead,        // null = not committed (Automatically approve, or commit refused)
+                ["committed"] = committed,
+                ["files"] = fresh,
+                ["diffs"] = diffs,
+                // The load-bearing sentence, in the artifact itself: this is DIRECT-AGENT OUTPUT.
+                // No builder, tester, soldier or verifier has judged it, and it must never be
+                // presented — or learned from — as verified colony work.
+                ["verification"] = "none — direct-agent output; not colony-verified work",
+            });
+            var artifact = Anthill.SDK.Artifacts.Artifact.Create(
+                schema: "direct_change",
+                producerRole: "operator-agent",
+                missionId: Configuration.AnthillRuntime.SystemApiMissionId,
+                payload: payload,
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Operator);
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(artifact);
+            _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId, "direct_change_recorded",
+                $"Direct-agent change recorded as unverified artifact {artifact.Id}: {fresh.Count} file(s) in {root}"
+                + (committed ? " (committed)." : " (left uncommitted for the operator)."),
                 null, "queen",
-                new() { ["conversation_id"] = conversation.Id, ["files"] = string.Join(",", fresh.Take(20)), ["ok"] = ok });
+                new() { ["conversation_id"] = conversation.Id, ["artifact_id"] = artifact.Id, ["committed"] = committed });
         }
-        catch (Exception e) { Console.Error.WriteLine($"[conversation] direct-edit commit failed: {e.Message}"); }
+        catch (Exception e) { Console.Error.WriteLine($"[conversation] direct-edit capture failed: {e.Message}"); }
     }
 
     private string ChatPrompt(Conversation conversation)
