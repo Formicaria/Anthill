@@ -3436,6 +3436,34 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div id="chat-colony-mount" class="chat-colony-mount"></div>
           </div>
+
+          <!-- v0.3.8.51 (field report): the FILES pane — side-by-side cowork. Same split real
+               estate as the colony view: browse the working directory, open a file in a text
+               editor, save (an attributed operator edit), and toggle to the CHANGES the
+               conversation's missions proposed or applied, diffs on demand. -->
+          <div class="chat-colony-layer" id="chat-files-layer" hidden aria-label="Project files">
+            <div class="chat-colony-bar">
+              <span class="ccb-title">Files</span>
+              <span class="ccb-mission" id="chat-files-crumb"></span>
+              <span class="ccb-spacer"></span>
+              <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
+                      title="Show what this conversation's missions changed">Changes</button>
+              <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
+            </div>
+            <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;">
+              <div class="hud-state">Loading…</div>
+            </div>
+            <div id="chat-files-editor" hidden style="display:flex;flex-direction:column;flex:1;min-height:0;padding:8px 14px;">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                <span id="chat-editor-path" style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;"></span>
+                <button class="btn btn-primary" id="chat-editor-save">Save</button>
+                <button class="btn btn-ghost" id="chat-editor-back">← Files</button>
+                <span class="save-msg" id="chat-editor-msg"></span>
+              </div>
+              <textarea id="chat-editor-text" spellcheck="false"
+                        style="flex:1;min-height:0;resize:none;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></textarea>
+            </div>
+          </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
             <!-- v0.3.8.47: import — the inverse of export. A JSON file of {title, turns:[{role,content}]}. -->
@@ -3473,6 +3501,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"
                         title="Download this conversation as a markdown file">⇩ Export</button>
+                <button class="btn btn-ghost" id="chat-files-toggle" aria-pressed="false"
+                        title="Browse and edit the project's working directory beside the chat">Files</button>
                 <button class="btn btn-ghost" id="chat-colony-toggle" aria-pressed="false"
                         title="Watch the colony work beside the conversation">◧ Colony</button>
               </div>
