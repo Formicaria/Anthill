@@ -23,6 +23,17 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
+  <!-- The Formicaria mark (terminal prompt over the three node legs) as the exe's icon: what
+       Explorer, the taskbar and Add/Remove Programs show. The SAME .ico rides again as an
+       embedded resource because ApplicationIcon only brands the FILE — a WinForms window and its
+       tray icon read Form.Icon, which ShellForm loads from this resource at construction. -->
+  <PropertyGroup>
+    <ApplicationIcon>anthill.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="anthill.ico" />
+  </ItemGroup>
+
   <!-- The API host runs IN-PROCESS (boot-or-attach; see Program.cs), so the shell needs the same
        shared framework the CLI's -api path needs. -->
   <ItemGroup>
