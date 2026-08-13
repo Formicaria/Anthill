@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v0.3.8.52 - the chat lane's edits reach git, and the files pane learns manners
+
+**"Did not auto commit" — root cause and repair.** v0.3.8.51's commit hook rode the patch
+pipeline; under Skip all approvals the CHAT lane edits live files DIRECTLY with its own tools,
+so no patch ever existed and the hook had nothing to fire on. The direct-edit sweep closes that
+lane: before the agent runs, remember which paths are already dirty; afterwards commit only what
+the run made NEWLY dirty, subject = the operator's own ask. The operator's work-in-progress
+sitting in the same tree is never swept into the colony's commit. Bypass only — under
+Automatically approve and Manual the dirty tree is the operator's to commit, by design.
+
+**Files pane manners.** The whole row now SAYS it is the click target (hover + a lit selected
+row, so you can see which file you elected); + File / + Folder stop wrapping into two-line
+buttons (the fullwidth ＋ was the culprit); and git status letters fill the dead space before
+the size — M/A/D/? per file, a dot on folders holding uncommitted changes beneath them, all fed
+by the dirty list the repo badge already fetched.
+
+**Syntax highlighting, both places.** Chat prose gains inline `code` and **bold** through the
+same escape-first pipeline the fenced blocks already used. The files editor gains a highlighted
+layer: the identical tokenizer, keyed by file extension, rendered in a pre behind a transparent-
+text textarea — what the eye reads is colored, what the fingers edit is real, and Save is the
+same attributed PUT it always was.
+
 ## v0.3.8.51 - open the gates: the colony asks, the operator answers, the worker works
 
 Born from one transcript: the colony's own Claude Code worker sat behind "requires approval"

@@ -193,6 +193,14 @@ public sealed class ConversationRunner
                 return new ConversationOutcome(ConversationMode.Chat, false, null,
                     "no reasoning provider is composed — the message is recorded, and nothing can answer it");
 
+            // v0.3.8.52 (field report): "did not auto commit." The v0.3.8.51 commit hook rode the
+            // patch pipeline — but under Skip-all the CHAT LANE edits live files DIRECTLY with its
+            // own tools, so no patch ever exists and the hook has nothing to fire on. The sweep
+            // closes that lane: snapshot which paths are already dirty before the agent runs, and
+            // afterwards commit only what the run made NEWLY dirty — the operator's own
+            // work-in-progress sitting in the same tree is never swept into the colony's commit.
+            var sweep = BeginDirectEditSweep(conversation);
+
             ConversationReply reply;
             try
             {
@@ -209,6 +217,10 @@ public sealed class ConversationRunner
                 reply = _ask(ChatPrompt(conversation), onDelta);
             }
             catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
+
+            // The writes happened whether or not the reply landed — commit them either way,
+            // BEFORE any early return below can walk past them.
+            CommitDirectEdits(conversation, sweep, message);
 
             if (!reply.Ok)
                 return new ConversationOutcome(ConversationMode.Chat, false, null,
@@ -610,6 +622,64 @@ public sealed class ConversationRunner
     /// backed by anything from a local model to an installed agent CLI, and the least capable
     /// transport (a prompt on argv) sets the contract for all of them.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.52 — the pre-run half of the direct-edit sweep: under Skip all approvals, with a
+    /// project working directory that a git repository owns, remember which paths were ALREADY
+    /// dirty. Returns null (sweep disabled) for every other policy — under Automatically approve
+    /// and Manual approval a dirty tree is the operator's to commit, by design — and for plain
+    /// folders, missing projects, or any lookup failure. Never throws.
+    /// </summary>
+    private (string Root, HashSet<string> PreDirty)? BeginDirectEditSweep(Conversation conversation)
+    {
+        try
+        {
+            if (conversation.EffectivePolicy != EscalationPolicy.Bypass) return null;
+            if (string.IsNullOrWhiteSpace(conversation.ProjectId)
+                || _memory.LoadProject(conversation.ProjectId!) is not { } project
+                || string.IsNullOrWhiteSpace(project.Path)) return null;
+            var root = Projects.RepoOps.TopLevel(project.Path!);
+            if (root is null) return null;
+            var state = Projects.RepoOps.Describe(root);
+            if (!state.IsRepo) return null;
+            return (root, state.Dirty.Select(d => d.Path).ToHashSet(StringComparer.Ordinal));
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// The post-run half: commit exactly the paths the agent's run made NEWLY dirty, with the
+    /// operator's message as the subject. Paths that were dirty before the run are left alone —
+    /// they are the operator's, and sweeping them would commit work nobody asked the colony to
+    /// touch. A failure is logged and swallowed: the reply must land even when git refuses.
+    /// </summary>
+    private void CommitDirectEdits(Conversation conversation,
+        (string Root, HashSet<string> PreDirty)? sweep, string operatorMessage)
+    {
+        if (sweep is null) return;
+        try
+        {
+            var (root, preDirty) = sweep.Value;
+            var after = Projects.RepoOps.Describe(root);
+            if (!after.IsRepo) return;
+            var fresh = after.Dirty.Where(d => !preDirty.Contains(d.Path)).Select(d => d.Path).ToList();
+            if (fresh.Count == 0) return;
+
+            var subject = TextUtil.Truncate((operatorMessage ?? "").Split('\n')[0].Trim(), 72);
+            if (string.IsNullOrWhiteSpace(subject)) subject = "anthill: direct edits from chat";
+            var commitMessage = subject + "\n\nanthill chat " + conversation.Id
+                + " — direct edits under Skip all approvals";
+            var (ok, output) = Projects.RepoOps.Commit(root, fresh, commitMessage,
+                $"bypass-policy({conversation.PolicySetBy ?? "operator"})");
+            _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId,
+                ok ? "chat_direct_edits_committed" : "chat_direct_edits_commit_failed",
+                ok ? $"Committed {fresh.Count} file(s) the chat agent edited directly in {root}."
+                   : $"Commit of the chat agent's direct edits failed: {TextUtil.Truncate(output, 200)}",
+                null, "queen",
+                new() { ["conversation_id"] = conversation.Id, ["files"] = string.Join(",", fresh.Take(20)), ["ok"] = ok });
+        }
+        catch (Exception e) { Console.Error.WriteLine($"[conversation] direct-edit commit failed: {e.Message}"); }
+    }
+
     private string ChatPrompt(Conversation conversation)
     {
         var turns = _memory.LoadConversationTurns(conversation.Id);
