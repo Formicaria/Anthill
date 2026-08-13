@@ -135,6 +135,29 @@ public static class AgentCliDiscovery
                 catch { /* an unreadable directory is not a reason to fail the lookup */ }
             }
         }
+
+        // v0.3.8.52, the Windows field report ("all installers must work"): CreateProcess's own
+        // PATH search only ever appends .exe — and on Windows npm IS npm.cmd, and so is every
+        // npm-installed agent. Handing the bare name to the OS therefore reported "npm is not
+        // installed" on a machine with a working Node, which is the exact wrong sentence. Walk
+        // PATH ourselves with the Windows candidate extensions so a .cmd is FOUND; how a .cmd is
+        // then STARTED is Invocation()'s problem, one mechanism below.
+        if (OperatingSystem.IsWindows())
+        {
+            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                foreach (var candidate in Candidates(binary))
+                {
+                    try
+                    {
+                        var full = Path.Combine(dir.Trim(), candidate);
+                        if (File.Exists(full)) return full;
+                    }
+                    catch { /* an unreadable PATH entry is not a reason to fail the lookup */ }
+                }
+            }
+        }
         return binary;
     }
 
@@ -143,6 +166,113 @@ public static class AgentCliDiscovery
         OperatingSystem.IsWindows()
             ? new[] { binary + ".cmd", binary + ".exe", binary + ".bat", binary }
             : new[] { binary };
+
+    // ---- v0.3.8.52: starting what Resolve found, on Windows ------------------------------------
+    //
+    // CreateProcess cannot start a .cmd — cmd.exe has to interpret it. But putting cmd.exe in
+    // front of OPERATOR TEXT would reopen the exact command-injection hole this file's Run()
+    // comment forbids: inside a cmd line, %VAR% expands and ^ & | " all mean things, even inside
+    // quotes. So the two cases are split by what the arguments ARE:
+    //
+    //   • An npm cmd-shim (claude.cmd, codex.cmd…) is one known line of batch whose only job is
+    //     `node <its .js> %*`. The shim is READ and the .js target extracted, and node runs it
+    //     directly with a discrete argv — the prompt path stays shell-free on every OS.
+    //   • Anything else (npm.cmd itself, driven only by this repository's constant install/probe
+    //     vectors) may ride through cmd.exe, but only after every argument passes ShellSafeArg —
+    //     an argument cmd would interpret is REFUSED, not escaped, because the callers that could
+    //     ever carry operator text are the ones the shim rewrite already diverted.
+
+    /// <summary>The file name and argv to actually start, plus the raw cmd line when cmd.exe must
+    /// interpret (ArgumentList's backslash-escaping of quotes is C runtime grammar, not cmd's, so
+    /// the cmd.exe form has to bypass it).</summary>
+    internal sealed record Invocation(string FileName, IReadOnlyList<string> Args, string? RawCmdLine = null);
+
+    internal static Invocation BuildInvocation(string binary, IReadOnlyList<string> args)
+    {
+        var resolved = Resolve(binary);
+        if (!OperatingSystem.IsWindows()) return new Invocation(resolved, args);
+
+        var ext = Path.GetExtension(resolved);
+        var isBatch = ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+                   || ext.Equals(".bat", StringComparison.OrdinalIgnoreCase);
+        if (!isBatch) return new Invocation(resolved, args);
+
+        var script = NpmShimTarget(resolved);
+        if (script is not null)
+            return new Invocation(Resolve("node"), new[] { script }.Concat(args).ToList());
+
+        foreach (var a in args)
+            if (!ShellSafeArg(a))
+                return new Invocation("", Array.Empty<string>(),
+                    RawCmdLine: $"REFUSED:{Path.GetFileName(resolved)}");  // sentinel; Run reports honestly
+
+        var line = string.Join(' ',
+            new[] { Quote(resolved) }.Concat(args.Select(Quote)));
+        return new Invocation("cmd.exe", Array.Empty<string>(), RawCmdLine: "/d /s /c \"" + line + "\"");
+
+        static string Quote(string s) => s.Length > 0 && !s.Any(char.IsWhiteSpace) ? s : "\"" + s + "\"";
+    }
+
+    /// <summary>
+    /// True when cmd.exe cannot possibly interpret the argument: no quotes to escape from, no
+    /// %expansion%, no metacharacters, no line breaks. Deliberately a DENY of the dangerous set
+    /// rather than an allow-list of ASCII — install prefixes live under the operator's profile,
+    /// and home directories carry accents and spaces as a matter of course.
+    /// </summary>
+    internal static bool ShellSafeArg(string a) =>
+        !a.Any(c => c is '"' or '%' or '^' or '&' or '|' or '<' or '>' or '!' or '`' or '\r' or '\n');
+
+    /// <summary>
+    /// The .js a Windows npm cmd-shim runs, or null when the file is not one. Every npm shim since
+    /// cmd-shim@3 contains a `"%dp0%\<relative>.js"` (or `%~dp0`) token pointing into node_modules;
+    /// the extraction is anchored to that shape plus the target actually existing on disk, so an
+    /// arbitrary .cmd an operator wrote can never be misread as one.
+    /// </summary>
+    internal static string? NpmShimTarget(string cmdPath)
+    {
+        try
+        {
+            var rel = NpmShimRelativeTarget(File.ReadAllText(cmdPath));
+            if (rel is null) return null;
+            var full = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(cmdPath) ?? ".", rel));
+            return File.Exists(full) ? full : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>The parsing half of <see cref="NpmShimTarget"/>, pure so the suite can check the
+    /// extraction on every OS — the file-existence half is Windows-shaped by nature.</summary>
+    internal static string? NpmShimRelativeTarget(string shimText)
+    {
+        if (!shimText.Contains("node", StringComparison.OrdinalIgnoreCase)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(shimText,
+            @"%~?dp0%?\\(?<rel>[^""\r\n]+?\.(?:js|cjs|mjs))""");
+        return m.Success ? m.Groups["rel"].Value : null;
+    }
+
+    private static ProcessStartInfo BuildPsi(
+        string binary, IReadOnlyList<string> args, string? workingDirectory,
+        IReadOnlyDictionary<string, string>? environment, out string? refused)
+    {
+        var inv = BuildInvocation(binary, args);
+        refused = inv.RawCmdLine?.StartsWith("REFUSED:", StringComparison.Ordinal) == true
+            ? inv.RawCmdLine["REFUSED:".Length..] : null;
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = inv.FileName,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        if (inv.RawCmdLine is not null && refused is null) psi.Arguments = inv.RawCmdLine;
+        else foreach (var a in inv.Args) psi.ArgumentList.Add(a);
+        if (!string.IsNullOrWhiteSpace(workingDirectory)) psi.WorkingDirectory = workingDirectory;
+        if (environment is not null)
+            foreach (var (k, v) in environment) psi.Environment[k] = v;
+        return psi;
+    }
 
     private static string Trim(string s) =>
         s.Replace("\r", "", StringComparison.Ordinal).Split('\n').FirstOrDefault()?.Trim() ?? "";
@@ -159,22 +289,15 @@ public static class AgentCliDiscovery
         string binary, IReadOnlyList<string> args, TimeSpan timeout, string? workingDirectory = null,
         IReadOnlyDictionary<string, string>? environment = null)
     {
-        var psi = new ProcessStartInfo
-        {
-            // v0.3.8.41: resolve against Anthill's own bin directories before falling back to PATH.
-            // Agents are installed into ~/.anthill/agents rather than a root-owned global prefix,
-            // so they are deliberately NOT on the operator's PATH — without this they would install
-            // successfully and then be reported as missing, which is the worst of both.
-            FileName = Resolve(binary),
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-        if (!string.IsNullOrWhiteSpace(workingDirectory)) psi.WorkingDirectory = workingDirectory;
-        if (environment is not null)
-            foreach (var (k, v) in environment) psi.Environment[k] = v;
+        // v0.3.8.41: resolve against Anthill's own bin directories before falling back to PATH.
+        // Agents are installed into ~/.anthill/agents rather than a root-owned global prefix,
+        // so they are deliberately NOT on the operator's PATH — without this they would install
+        // successfully and then be reported as missing, which is the worst of both.
+        // v0.3.8.52: BuildPsi additionally translates Windows .cmd shims into something
+        // CreateProcess can start — see BuildInvocation for the two cases and the injection rule.
+        var psi = BuildPsi(binary, args, workingDirectory, environment, out var refused);
+        if (refused is not null)
+            return (false, "", $"Refusing to run {refused} through cmd.exe with an argument cmd would interpret.", -1);
 
         using var p = new Process { StartInfo = psi };
 
@@ -209,16 +332,11 @@ public static class AgentCliDiscovery
         string binary, IReadOnlyList<string> args, TimeSpan timeout, Action<string> onLine,
         CancellationToken cancel, string? workingDirectory = null)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = Resolve(binary),
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-        if (!string.IsNullOrWhiteSpace(workingDirectory)) psi.WorkingDirectory = workingDirectory;
+        // Same Windows .cmd translation as Run — the streaming path carries the PROMPT, so it is
+        // precisely the path the npm-shim rewrite exists for (node + argv, never cmd.exe).
+        var psi = BuildPsi(binary, args, workingDirectory, environment: null, out var refused);
+        if (refused is not null)
+            return (false, "", $"Refusing to run {refused} through cmd.exe with an argument cmd would interpret.", -1);
 
         using var p = new Process { StartInfo = psi };
 

@@ -97,6 +97,64 @@ public class DesktopShellTests
     }
 
     /// <summary>
+    /// The Formicaria mark rides three vehicles that can each rot alone: ApplicationIcon brands
+    /// the FILE, the embedded resource is what Form.Icon loads at runtime (window, taskbar, tray),
+    /// and SetupIconFile brands the installer download. One .ico feeds all three; this pins that
+    /// each vehicle still names it, that the resource name ShellForm asks for is the one the
+    /// default EmbeddedResource naming actually produces, and that the file itself exists —
+    /// a csproj entry over a deleted icon fails the BUILD only on the win-x64 publish leg,
+    /// which is exactly the invisible-rot gap this suite exists to close.
+    /// </summary>
+    [Fact]
+    public void TheMark_ReachesTheExe_TheWindow_AndTheInstaller()
+    {
+        Assert.True(File.Exists(Path.Combine(Root(), "src", "Anthill.Desktop", "anthill.ico")),
+            "src/Anthill.Desktop/anthill.ico is gone — every branded surface just went generic");
+
+        var csproj = Read("src", "Anthill.Desktop", "Anthill.Desktop.csproj");
+        Assert.Contains("<ApplicationIcon>anthill.ico</ApplicationIcon>", csproj);
+        Assert.Contains("<EmbeddedResource Include=\"anthill.ico\" />", csproj);
+
+        // The runtime half must ask for the resource by the name the build actually gives it
+        // (RootNamespace + filename), and must be fallback-guarded, not load-or-die.
+        var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
+        Assert.Contains("GetManifestResourceStream(\"Anthill.Desktop.anthill.ico\")", shell);
+        Assert.Contains("<RootNamespace>Anthill.Desktop</RootNamespace>", csproj);
+        Assert.Contains("Icon ?? SystemIcons.Application", shell);
+
+        var iss = Read("deploy", "windows", "anthill-setup.iss");
+        Assert.Contains("SetupIconFile", iss);
+        // v0.3.8.52 (field report: "the desktop icon is blank") — the shortcuts NAME the .ico and
+        // the installer ships it, because a shortcut that merely points at the exe inherits
+        // whatever Explorer's icon cache last believed about that path.
+        Assert.Contains("IconFilename: \"{app}\\anthill.ico\"", iss);
+        Assert.Contains("anthill.ico\"; DestDir: \"{app}\"", iss);
+        Assert.Contains("UninstallDisplayIcon={app}\\anthill.ico", iss);
+    }
+
+    /// <summary>
+    /// v0.3.8.52, two field reports in one window. "The title bar is white": WinForms cannot paint
+    /// the non-client caption — DWM owns it — so the shell must ASK, via DwmSetWindowAttribute,
+    /// for immersive dark (19/20, both spellings for both Windows 10 vintages) and Windows 11's
+    /// caption color; failure must be discarded, never fatal. "Links open a popup shell": a
+    /// target=_blank link (the Formicaria mark, a Docs button) must reach the operator's REAL
+    /// browser, not WebView2's unbranded popup — NewWindowRequested, handled, ShellExecute.
+    /// </summary>
+    [Fact]
+    public void TheWindow_WearsTheBrandChrome_AndLinksLeaveForTheRealBrowser()
+    {
+        var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
+
+        Assert.Contains("DwmSetWindowAttribute", shell);
+        Assert.Contains("0x00170E09", shell);   // BrandBg #090E17 in COLORREF byte order
+        Assert.Contains("OnHandleCreated", shell);
+
+        Assert.Contains("NewWindowRequested", shell);
+        Assert.Contains("e.Handled = true", shell);
+        Assert.Contains("UseShellExecute = true", shell);
+    }
+
+    /// <summary>
     /// Outside the solution, so ONLY these call sites keep it building. Delete either and the
     /// shell can break with every suite green — which is the exact rot this test exists to stop.
     /// </summary>

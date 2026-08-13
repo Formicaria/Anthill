@@ -59,6 +59,33 @@ internal sealed class ShellForm : Form
     private readonly NotifyIcon _tray = new();
     private bool _trayBalloonShown;
 
+    // v0.3.8.52 (field report: "the title bar is white") — the one part of the window WinForms
+    // cannot paint is the non-client caption, and its default is light regardless of the form's
+    // own colors. DWM owns it; these attributes ask DWM for the brand. 20 is
+    // DWMWA_USE_IMMERSIVE_DARK_MODE (19 on pre-20H1 builds of Windows 10 — both are set, the
+    // wrong one is ignored); 35/36 are Windows 11's caption/text color, COLORREF byte order
+    // (0x00BBGGRR), which on Windows 10 return E_INVALIDARG and leave dark mode's dark gray —
+    // still dark, still fine. Failure anywhere leaves a light title bar over a working colony,
+    // which is why every call's result is deliberately discarded.
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        try
+        {
+            var on = 1;
+            _ = DwmSetWindowAttribute(Handle, 20, ref on, sizeof(int));
+            _ = DwmSetWindowAttribute(Handle, 19, ref on, sizeof(int));
+            var caption = 0x00170E09;   // BrandBg   #090E17 as 0x00BBGGRR
+            var text    = 0x00FFF2EA;   // BrandText #EAF2FF as 0x00BBGGRR
+            _ = DwmSetWindowAttribute(Handle, 35, ref caption, sizeof(int));
+            _ = DwmSetWindowAttribute(Handle, 36, ref text, sizeof(int));
+        }
+        catch { /* a light title bar must never keep the window from opening */ }
+    }
+
     public ShellForm()
     {
         Text = $"Anthill v{AnthillRuntime.Version}";
@@ -67,6 +94,19 @@ internal sealed class ShellForm : Form
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = BrandBg;
+
+        // The Formicaria mark — the .ico the csproj embeds beside ApplicationIcon. ApplicationIcon
+        // brands only the FILE (Explorer, Add/Remove Programs); the window, taskbar and tray read
+        // Form.Icon, so the same .ico is loaded here, BEFORE the tray line below reads it. A failed
+        // load falls through to the same SystemIcons fallback as before — a missing icon must
+        // never keep the window from opening.
+        try
+        {
+            using var iconStream = typeof(ShellForm).Assembly
+                .GetManifestResourceStream("Anthill.Desktop.anthill.ico");
+            if (iconStream is not null) Icon = new Icon(iconStream);
+        }
+        catch { /* unbranded but alive */ }
 
         _loading.Controls.Add(_wordmark);
         _loading.Controls.Add(_version);
@@ -150,6 +190,44 @@ internal sealed class ShellForm : Form
         try
         {
             await web.EnsureCoreWebView2Async();
+            // v0.3.8.52 — a target=_blank link (the Formicaria mark, an agent's Docs button) must
+            // open in the operator's REAL browser. WebView2's default is an unbranded popup shell
+            // with no tabs, no extensions and no password manager — a second UI, which the desktop
+            // app exists to not be. Handled synchronously, so no popup ever flashes.
+            web.CoreWebView2.NewWindowRequested += (_, e) =>
+            {
+                e.Handled = true;
+                try
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true });
+                }
+                catch (Exception ex) { DesktopLog.Write("open external: " + ex.Message); }
+            };
+            // v0.3.8.52 — the REAL OS folder picker, for the console's Browse button. A web page
+            // cannot learn an absolute path from the browser's own picker (by design), but the
+            // desktop shell is a native app and can simply ask: the page posts "pick-folder",
+            // the host shows FolderBrowserDialog, and the chosen absolute path comes back as one
+            // JSON message. Browser shapes never send this — they fall back to the server-backed
+            // directory browser (/fs/dirs), which browses the machine the workdir actually lives on.
+            web.CoreWebView2.WebMessageReceived += (_, e) =>
+            {
+                try
+                {
+                    if (e.TryGetWebMessageAsString() != "pick-folder") return;
+                    using var dlg = new FolderBrowserDialog
+                    {
+                        Description = "Choose the project's working directory",
+                        UseDescriptionForTitle = true,
+                        ShowNewFolderButton = true,
+                    };
+                    var picked = dlg.ShowDialog(this) == DialogResult.OK ? dlg.SelectedPath : "";
+                    web.CoreWebView2.PostWebMessageAsJson(
+                        System.Text.Json.JsonSerializer.Serialize(
+                            new { type = "picked-folder", path = picked }));
+                }
+                catch (Exception ex) { DesktopLog.Write("pick-folder: " + ex.Message); }
+            };
             web.CoreWebView2.Navigate(url);
             Controls.Remove(_loading);
             Controls.Add(web);

@@ -253,6 +253,12 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
    the collapsed rail centres a whole logo rather than half a word. */
 .nav-logo-mark{width:24px;height:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .nav-logo-mark svg{width:24px;height:24px;display:block;}
+/* v0.3.8.52: the mark links home (formicaria.us) in every shape — web UI and the desktop
+   WebView, which routes target=_blank to the operator's real browser. The anchor inherits the
+   mark's layout so the brand row does not move; the hover says it became a door. */
+a.nav-logo-link{display:flex;align-items:center;flex-shrink:0;border-radius:6px;text-decoration:none;}
+a.nav-logo-link:hover{background:var(--panel-2,rgba(147,189,242,.12));}
+a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline-offset:2px;}
 .nav-logo-wordmark{display:flex;align-items:baseline;gap:8px;min-width:0;overflow:hidden;
   transition:opacity var(--t),max-width var(--t);opacity:1;max-width:160px;}
 .nav-logo-text{font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);}
@@ -993,6 +999,12 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 
 /* -- Buttons ----------------------------------------------------------------- */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;transition:opacity var(--t),background var(--t);border:1px solid transparent;}
+/* v0.3.8.52 (sixth field round): the hidden ATTRIBUTE must always win. Any author display rule
+   (.btn's inline-flex here) silently defeats the UA's [hidden]{display:none} — which is how an
+   Init git button with hidden=true stood on screen beside a repo badge saying master·clean.
+   The two per-element [hidden] patches above this line were this same bug, fixed twice locally;
+   this is the global fix, so no third element ever joins them. */
+[hidden]{display:none !important;}
 .btn-primary{background:var(--queen);color:#080808;border-color:var(--queen);}
 .btn-primary:hover{opacity:.88;}
 .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border);}
@@ -1184,6 +1196,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-conv:hover{background:rgba(255,255,255,.04);}
 .chat-conv.active{background:rgba(34,211,238,.09);border-color:rgba(34,211,238,.3);color:var(--text);}
 .chat-conv .attn{color:var(--amber,#f59e0b);font-size:9px;display:block;margin-top:3px;}
+/* v0.3.8.52 (field report): which project a conversation belongs to, on its own dim second
+   line — the tracker showed only first-message titles and nothing said where anything lived. */
+.chat-conv .conv-proj{display:block;margin-top:2px;font-size:9px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chat-conv .conv-proj svg{vertical-align:-1px;opacity:.7;}
 /* v0.3.8.46: search, pins. The pin is a per-row affordance that appears on hover (always shown
    when set), and the search box filters SERVER-SIDE over titles and transcript content. */
 .chat-search{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
@@ -1196,6 +1213,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-conv .conv-pin:hover{opacity:1;color:var(--text);}
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
 .chat-hd{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);}
+/* v0.3.8.52: the project under the chat name — dim, one line, clickable through to its project
+   page, so the files pane never leaves the operator guessing whose tree they are in. */
+.chat-title-proj{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;cursor:pointer;margin-top:1px;}
+.chat-title-proj:hover{color:var(--muted);text-decoration:underline;}
+.chat-title-proj svg{vertical-align:-1px;opacity:.7;}
 .chat-title{font-weight:700;color:var(--text);font-size:13px;flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chat-hd-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -1251,6 +1274,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-code{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:6px;
   padding:9px 11px;margin:6px 0;overflow-x:auto;font-family:var(--mono);font-size:11px;
   line-height:1.5;white-space:pre;max-width:100%;}
+/* v0.3.8.52 — inline `code` spans in chat: same escape-first pipeline, just a smaller frame. */
+.chat-inline{background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:4px;
+  padding:0 4px;font-family:var(--mono);font-size:.92em;}
+/* v0.3.8.52 — files pane: the whole row is the target and SAYS so; the selected file stays lit.
+   Git status letters sit where dead space was; bar buttons never wrap into two lines. */
+.chat-colony-bar .btn{white-space:nowrap;flex:0 0 auto;}
+.cf-row:hover{background:rgba(56,97,251,.10);}
+.cf-row.sel{background:rgba(56,97,251,.18);}
+.cf-git{font-family:var(--mono);font-size:9px;min-width:12px;text-align:center;flex:0 0 auto;}
+.cf-git.m{color:#e5b567;}.cf-git.a{color:#7ee2b8;}.cf-git.u{color:#8ab4f8;}.cf-git.d{color:#f3a0a0;}
+/* v0.3.8.52 — the commit train: a quiet clock per file until the row is hovered; stops light up. */
+.cf-hist{opacity:.35;cursor:pointer;font-size:10px;flex:0 0 auto;}
+.cf-row:hover .cf-hist{opacity:1;}
+.cf-stop:hover{background:rgba(56,97,251,.08);}
+.cf-train{border-left:1px solid var(--border);margin-left:14px;padding:2px 0;}
+#chat-editor-text::selection{background:rgba(56,97,251,.35);color:transparent;}
 /* v0.3.8.49 (§3) — long colony responses are collapsed by default so Chat reads like an assistant,
    not a debug console. The compact view clamps to a few lines with a soft fade; the full text is
    one click away and never lost. Only colony turns collapse — the operator's own words never do. */
@@ -1282,15 +1321,33 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   order:2;border-left:1px solid var(--border);background:var(--bg);}
 .chat-colony-layer[hidden]{display:none;}
 .chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;flex-shrink:0;
-  border-bottom:1px solid var(--border);background:var(--panel);}
+  border-bottom:1px solid var(--border);background:var(--panel);
+  /* v0.3.8.52 (seventh field round): dragging the split narrow pushed the buttons off screen.
+     The bar's yield order is now explicit — the PATH collapses first (it is the one element
+     whose tail the operator can live without), the controls never shrink and never leave, and
+     if the pane is narrower than the controls themselves they WRAP to a second row rather than
+     exit stage right. Button sizes never change. */
+  flex-wrap:wrap;row-gap:4px;min-width:0;}
+.chat-colony-bar .btn,.chat-colony-bar select{flex-shrink:0;}
 .ccb-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);flex-shrink:0;}
-.ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  min-width:0;flex:0 10 auto;}
 .ccb-spacer{flex:1;}
 .chat-colony-mount{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;}
 .chat-colony-mount #mission-bar{display:none;}
 /* While the split is open the rail yields its space to the two working halves. */
 #page-chat.colony-open .chat-rail{display:none;}
 #page-chat.colony-open .chat-main{flex:1 1 48%;order:1;min-width:380px;}
+/* v0.3.8.52 (fifth field round) — SIZABLE splits. The handles are real flex items: the vertical
+   one sits between .chat-main (order:1) and the open layer (order:2); the horizontal one sits
+   between the working tree and the docked editor, and disappears with the editor (:has), so a
+   handle never floats beside one lone pane. Drag logic in app.js persists the chosen split. */
+.split-x{display:none;order:1;flex:0 0 5px;cursor:col-resize;background:var(--border);}
+.split-x:hover,.split-x.dragging{background:var(--logo-node,#93bdf2);}
+#page-chat.colony-open .split-x{display:block;}
+.split-y{flex:0 0 5px;cursor:row-resize;background:var(--border);}
+.split-y:hover,.split-y.dragging{background:var(--logo-node,#93bdf2);}
+#chat-files-layer:has(#chat-files-editor[hidden]) .split-y{display:none;}
 /* Narrow: a split is unreadable. Colony mode becomes a clean full-screen switch — the pane's
    own ✕ (and Escape) returns to the conversation with draft and scroll intact. */
 @media (max-width:900px){ .chat-rail{display:none;} }
@@ -1382,10 +1439,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-composer.dragging{outline:2px dashed rgba(34,211,238,.5);outline-offset:-4px;border-radius:8px;}
 .turn-attach{margin-top:6px;font-size:10px;color:var(--dim);border-top:1px dashed var(--border);padding-top:5px;}
 /* v0.3.8.46: syntax highlighting — four token classes, tuned quiet against the dark panel. */
-.chat-code .hl-k{color:#c084fc;}
-.chat-code .hl-s{color:#86efac;}
-.chat-code .hl-c{color:var(--dim);font-style:italic;}
-.chat-code .hl-n{color:#fbbf24;}
+.chat-code .hl-k,#chat-editor-hl .hl-k{color:#c084fc;}
+.chat-code .hl-s,#chat-editor-hl .hl-s{color:#86efac;}
+.chat-code .hl-c,#chat-editor-hl .hl-c{color:var(--dim);font-style:italic;}
+.chat-code .hl-n,#chat-editor-hl .hl-n{color:#fbbf24;}
 
 /* v3.8.39: installable coding agents */
 .agentcli-card{padding:12px 14px;margin-bottom:10px;}
@@ -1536,6 +1593,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- v0.3.8.49 (§16,§19): the Formicaria mark — a hex colony-cell holding a stylised mound and
            forager. Minimal, mono-stroke, recognisable at favicon size; it centres in collapsed mode
            so the brand is never clipped to a half-word. -->
+      <!-- v0.3.8.52: the mark is a link home. In the desktop shell target=_blank is routed to the
+           operator's real browser (ShellForm's NewWindowRequested handler); in a plain browser it
+           is just a link. The wordmark stays plain text — the DOOR is the mark, not the row. -->
+      <a class="nav-logo-link" href="https://formicaria.us" target="_blank" rel="noopener noreferrer"
+         title="formicaria.us" aria-label="Formicaria — formicaria.us">
       <span class="nav-logo-mark" aria-hidden="true">
         <!-- v0.3.8.49 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
              node legs, the colony branching out of the command line. Terminal in the foreground
@@ -1555,6 +1617,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <circle cx="21" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
         </svg>
       </span>
+      </a>
       <span class="nav-logo-wordmark">
         <span class="nav-logo-text">ANTHILL</span>
         <span class="nav-logo-ver" id="nav-ver"></span>
@@ -3447,12 +3510,26 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <span class="ccb-mission" id="chat-files-crumb"></span>
               <!-- v0.3.8.51 third round: git awareness — what IS this directory? A repo on a
                    branch (with a dirty count) or a plain folder, stated up front like opencode. -->
-              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;"></span>
+              <!-- v0.3.8.52 (fourth field round): the badge is SHORT — "no git", never git's own
+                   fatal paragraph (which once shoved every button off this bar); the detail rides
+                   the title. Overflow is clipped as a second guard: a bad string may never eat
+                   the toolbar again. -->
+              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;"></span>
+              <!-- Offered ONLY when the working directory is not already a repository. -->
+              <button class="btn btn-ghost" id="chat-files-gitinit" hidden
+                      title="Create a git repository in this project's working directory">Init git</button>
+              <!-- v0.3.8.52: GitHub-style branch selector — the commit train reads history from
+                   whichever branch is chosen here, without checking anything out. -->
+              <select id="chat-files-branch" hidden aria-label="Branch for commit history"
+                      style="font-size:9.5px;font-family:var(--mono);background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 4px;max-width:170px;"></select>
               <span class="ccb-spacer"></span>
               <button class="btn btn-ghost" id="chat-files-commit" hidden
                       title="Commit the working tree's uncommitted changes">Commit</button>
-              <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">＋ File</button>
-              <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">＋ Folder</button>
+              <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">+ File</button>
+              <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">+ Folder</button>
+              <!-- v0.3.8.52 (fourth field round): the working directory stays changeable from
+                   here — the same form (path + Browse) the first-time setup uses. -->
+              <button class="btn btn-ghost" id="chat-files-chroot" title="Change this project's working directory">Dir</button>
               <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
                       title="Show what this conversation's missions changed, commit-style">Changes</button>
               <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
@@ -3460,6 +3537,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;flex:1 1 45%;min-height:0;">
               <div class="hud-state">Loading…</div>
             </div>
+            <!-- v0.3.8.52 (fifth field round): the tree ↔ editor split is SIZABLE — drag up/down.
+                 CSS hides the handle whenever the editor itself is hidden, so it exists exactly
+                 when there are two halves to size. -->
+            <div id="chat-split-y" class="split-y" title="Drag to resize"></div>
             <!-- v0.3.8.51 third round: the editor DOCKS BELOW the tree — click a file, it opens
                  here while the working tree stays visible above (operator: "click on a file, and
                  it open below the working tree"). Its own Changes toggle shows recent edits to
@@ -3473,8 +3554,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <button class="btn btn-ghost" id="chat-editor-back" title="Close the editor">✕</button>
                 <span class="save-msg" id="chat-editor-msg"></span>
               </div>
-              <textarea id="chat-editor-text" spellcheck="false"
-                        style="flex:1;min-height:0;resize:none;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></textarea>
+              <!-- v0.3.8.52: syntax highlighting IN the editor. The textarea stays the editable
+                   truth; a pre with the same font metrics sits behind it carrying the highlighted
+                   copy, scroll-synced. Textarea text is transparent (caret stays visible), so
+                   what the eye reads is the highlighted layer and what the fingers edit is real. -->
+              <div id="chat-editor-wrap" style="position:relative;flex:1;min-height:0;">
+                <pre id="chat-editor-hl" aria-hidden="true"
+                     style="position:absolute;inset:0;margin:0;overflow:auto;white-space:pre;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></pre>
+                <textarea id="chat-editor-text" spellcheck="false" wrap="off"
+                          style="position:absolute;inset:0;resize:none;background:transparent;color:transparent;caret-color:var(--text);border:1px solid transparent;border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;white-space:pre;overflow:auto;"></textarea>
+              </div>
               <div id="chat-editor-diff" hidden style="flex:1;min-height:0;overflow:auto;background:var(--inner);border:1px solid var(--border);border-radius:6px;"></div>
             </div>
           </div>
@@ -3492,7 +3581,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
           <main class="chat-main">
             <header class="chat-hd">
-              <div class="chat-title" id="chat-title">New conversation</div>
+              <!-- v0.3.8.52 (field report): with the files pane open nothing on screen said WHICH
+                   project the work belongs to. The project wears the second line, always — click
+                   it to open the project page. -->
+              <div class="chat-title-wrap" style="flex:1;min-width:0;">
+                <div class="chat-title" id="chat-title">New conversation</div>
+                <div class="chat-title-proj" id="chat-title-proj" hidden></div>
+              </div>
               <div class="chat-hd-actions">
                 <span id="chat-state" class="chat-state"></span>
                 <!-- v0.3.8.42 (§3): Chat is the one mission entry, so the stop affordance lives
@@ -3531,9 +3626,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
 
             <div class="chat-composer">
-              <!-- v0.3.8.47: attachments — 📎 or drop files here; chips show what rides the next message. -->
+              <!-- v0.3.8.47: attachments — the paperclip, or drop files here; chips show what rides
+                   the next message. v0.3.8.52: the clip is an inline stroke SVG like every other
+                   icon — the OS color emoji was the last splash of foreign palette in the composer. -->
               <div id="chat-attach-chips" class="attach-chips"></div>
-              <button class="btn btn-ghost" id="chat-attach" title="Attach text files to your next message">📎</button>
+              <button class="btn btn-ghost" id="chat-attach" title="Attach text files to your next message"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l8.57-8.57a4 4 0 1 1 5.66 5.66l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
               <input type="file" id="chat-attach-file" multiple accept=".txt,.md,.json,.js,.cs,.py,.html,.css,.yml,.yaml,.xml,.csv,.log,.sh,.sql,text/*" hidden>
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
@@ -3546,6 +3643,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div class="chat-hint">Enter sends a message · real work becomes a mission under your approval policy</div>
           </main>
+
+          <!-- v0.3.8.52 (fifth field round): the chat ↔ pane split is SIZABLE — drag left/right.
+               order:1 beside .chat-main keeps it between the conversation and whichever layer
+               (files or colony) is open; hidden entirely when no layer is. -->
+          <div id="chat-split-x" class="split-x" title="Drag to resize"></div>
 
         </div>
       </div>
