@@ -399,6 +399,18 @@ public static partial class ApiHost
             var message = (body?.Message ?? "").Trim();
             if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
 
+            // v0.3.8.52 (third field round, operator's rule): the working directory is set BEFORE
+            // the first chat, full stop. Every turn's agent stands in the project's tree, so a
+            // turn without one has nowhere honest to stand — refused with the remedy, not
+            // defaulted into a tree the operator never chose.
+            if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+                && Queen.Memory.LoadProject(conversation.ProjectId!) is { } turnProject
+                && string.IsNullOrWhiteSpace(turnProject.Path))
+                return ApiJson.Error(
+                    $"\"{turnProject.Name}\" has no working directory yet. Open the Files tab and "
+                    + "set one (the suggested path is ready to accept) before the first chat.",
+                    "workdir_required");
+
             // v0.3.8.52 (field report): a conversation born EMPTY — the project page's New
             // Conversation button creates one before anything is said — takes its title from the
             // first thing said in it. The console titles only at creation, so without this the
@@ -660,6 +672,19 @@ public static partial class ApiHost
             // caller's name and the moment. Unchanged fields keep their existing attribution.
             var who = CurrentUsername(ctx) ?? "operator";
             var policyChanged = Enum.TryParse<EscalationPolicy>(body?.DefaultPolicy, ignoreCase: true, out var newPolicy);
+
+            // v0.3.8.52 (third field round): setting the working directory is the operator's own
+            // explicit act, and the directory is CREATED for them when new — the suggested
+            // per-project tree is new by definition, and "set it, then be told it does not
+            // exist" would be the form arguing with itself.
+            var newPath = string.IsNullOrWhiteSpace(body?.Path) ? null : body!.Path!.Trim();
+            if (newPath is not null && !Directory.Exists(newPath))
+            {
+                try { Directory.CreateDirectory(newPath); }
+                catch (Exception ex)
+                { return ApiJson.Error($"Could not create {newPath}: {ex.Message}", "bad_request"); }
+            }
+
             Queen.Memory.SaveProject(project with
             {
                 Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
@@ -817,17 +842,18 @@ public static partial class ApiHost
         // The files pane's jail helpers, local to this map so they cannot be reached around.
         static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
         {
-            // v0.3.8.52 (field report: "all the projects have the same set working directory"):
-            // no more falling back to the ONE shared workspace root — every defaulted project
-            // resolves to ITS OWN tree under <workspace root>/projects/, created on first use.
-            // Same resolution the chat lane's agent confinement uses (ProjectRoots), because a
-            // files pane showing one tree while the agent stands in another is two boundaries
-            // that eventually disagree.
-            var root = Anthill.Core.Projects.ProjectRoots.Resolve(project);
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                return (null, "This project has no working directory — set one in its Settings, "
-                            + "or configure a workspace root so the project can be given its own.");
-            return (Path.GetFullPath(root), null);
+            // v0.3.8.52 (third field round): the working directory is the OPERATOR'S decision,
+            // made explicitly and before the first chat — no silent auto-provision (the second
+            // round's lazily-created default made the set-directory form vanish and left a new
+            // project staring at an unexplained empty tree). A pathless project errors here,
+            // which is exactly what makes the files pane show the set-root form, prefilled with
+            // the per-project suggestion (suggested_path on the project detail).
+            if (string.IsNullOrWhiteSpace(project.Path))
+                return (null, "This project has no working directory yet — set one below. Every "
+                            + "project needs its own; the suggested path keeps them under one shared root.");
+            if (!Directory.Exists(project.Path))
+                return (null, $"The working directory {project.Path} does not exist — re-set or correct it below.");
+            return (Path.GetFullPath(project.Path), null);
         }
         static (string Full, string? Error) JailedPath(string root, string relative)
         {
@@ -836,6 +862,13 @@ public static partial class ApiHost
                 ? (full, null)
                 : (root, "That path escapes the project's directory.");
         }
+        // v0.3.8.52 (third field round): "is this directory ITSELF the repo toplevel" — the
+        // question the git badge and the commit gate both ask, so it is answered once.
+        static bool PathsEqual(string a, string b) =>
+            string.Equals(
+                Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
         app.MapGet("/projects/{id}/files", (HttpContext ctx, string id) =>
         {
@@ -963,6 +996,26 @@ public static partial class ApiHost
             if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
             var (root, error) = ProjectFileRoot(project);
             if (error is not null) return ApiJson.Error(error, "bad_request");
+
+            // v0.3.8.52 (third field round): the git check speaks for THE PROJECT'S OWN TREE.
+            // A project directory nested inside a larger repository (a fresh tree under a
+            // workspace root that lives in the ANTHILL checkout, say) used to report the
+            // ENCLOSING repo's branch — a branch the operator never chose, on a tree the
+            // project does not track. Nested ⇒ plain folder, with the enclosure named.
+            var top = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (top is not null && !PathsEqual(top, root!))
+                return ApiJson.Ok(new Dictionary<string, object?>
+                {
+                    ["root"] = root,
+                    ["is_repo"] = false,
+                    ["branch"] = null,
+                    ["dirty_count"] = 0,
+                    ["dirty"] = new List<Dictionary<string, object?>>(),
+                    ["last_commit"] = null,
+                    ["note"] = $"This directory sits inside the repository at {top} — the project "
+                             + "tracks only its own tree, so git operations here are disabled.",
+                });
+
             var state = Anthill.Core.Projects.RepoOps.Describe(root);
             return ApiJson.Ok(new Dictionary<string, object?>
             {
@@ -1085,6 +1138,14 @@ public static partial class ApiHost
             if (string.IsNullOrWhiteSpace(message)) return ApiJson.Error("A commit message is required.", "bad_request");
             var (root, error) = ProjectFileRoot(project);
             if (error is not null) return ApiJson.Error(error, "bad_request");
+            // Same scoping as the badge (third field round): commits go to the project's OWN
+            // repo only — never to a repository that merely encloses the project directory.
+            var commitTop = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (commitTop is null || !PathsEqual(commitTop, root!))
+                return ApiJson.Error(commitTop is null
+                    ? "This project's directory is not a git repository."
+                    : $"This directory sits inside the repository at {commitTop} — the project tracks "
+                    + "only its own tree, so committing from here is disabled.", "bad_request");
             var paths = new List<string>();
             if (body is not null && body.TryGetValue("paths", out var pv)
                 && pv.ValueKind == System.Text.Json.JsonValueKind.Array)
@@ -1265,6 +1326,11 @@ public static partial class ApiHost
             {
                 ["id"] = project.Id, ["name"] = project.Name,
                 ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
+                // v0.3.8.52 (third field round): the operator SETS the working directory — the
+                // colony only suggests. The suggestion keeps every project under one shared root
+                // with its own tree; the files pane prefills it, and nothing is created until
+                // the operator says so.
+                ["suggested_path"] = Anthill.Core.Projects.ProjectRoots.DefaultFor(project),
                 ["archived"] = project.Archived,
                 ["default_policy"] = project.EffectiveDefaultPolicy.ToString().ToLowerInvariant(),
                 ["default_policy_by"] = project.DefaultPolicyBy,

@@ -1585,23 +1585,40 @@ public class UiShellTests
     /// Two copies of a boundary rule is one copy that eventually disagrees.
     /// </summary>
     [Fact]
-    public void EveryProject_OwnsItsOwnTree_ThroughOneResolution()
+    public void EveryProject_OwnsItsOwnTree_SetByTheOperator_BeforeTheFirstChat()
     {
         var roots = Src("src", "Anthill.Core", "Projects", "ProjectRoots.cs");
         Assert.Contains("\"projects\"", roots);                       // the shared parent
         Assert.Contains("{Slug(project.Name)}-{project.Id}", roots);  // unique per project
 
+        // Third field round: the directory is the OPERATOR'S explicit act — suggested, never
+        // silently provisioned; created when they set it; required before the first chat.
         var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
-        Assert.Contains("ProjectRoots.Resolve(project)", providers);
+        Assert.Contains("suggested_path", providers);
+        Assert.Contains("ProjectRoots.DefaultFor(project)", providers);
+        Assert.Contains("workdir_required", providers);
         Assert.DoesNotContain("? AnthillRuntime.AllowedWorkspaceRoot : project.Path", providers);
+
+        // And the git story speaks only for the project's OWN tree: nested inside a larger
+        // repository ⇒ plain folder with the enclosure named, commit gate included.
+        Assert.Contains("sits inside the repository at", providers);
+        Assert.Contains("PathsEqual", providers);
 
         var runner = Src("src", "Anthill.Core", "Conversations", "ConversationRunner.cs");
         Assert.Contains("workingDirectory: ProjectDirectory(conversation)", runner);
+        // The colony's own checkout rides alongside every project — reach, never the tracked tree.
+        Assert.Contains("ColonySource()", runner);
 
         var provider = Src("src", "Anthill.Modules", "Anthill.Modules.Reasoning", "AgentCliProvider.cs");
         Assert.Contains("EffectiveWorkingDirectory", provider);
         var sdk = Src("src", "Anthill.SDK", "Reasoning", "AgentAccessScope.cs");
         Assert.Contains("WorkingDirectory", sdk);
+
+        // The console's half of the gate: refusal keeps the message and opens the files pane,
+        // whose set-root form arrives prefilled with the suggestion.
+        var js = Ui("app.js");
+        Assert.Contains("workdir_required", js);
+        Assert.Contains("suggested_path", js);
     }
 
     /// <summary>
