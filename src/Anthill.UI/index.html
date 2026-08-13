@@ -1213,6 +1213,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-conv .conv-pin:hover{opacity:1;color:var(--text);}
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
 .chat-hd{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);}
+/* v0.3.8.52: the project under the chat name — dim, one line, clickable through to its project
+   page, so the files pane never leaves the operator guessing whose tree they are in. */
+.chat-title-proj{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;cursor:pointer;margin-top:1px;}
+.chat-title-proj:hover{color:var(--muted);text-decoration:underline;}
+.chat-title-proj svg{vertical-align:-1px;opacity:.7;}
 .chat-title{font-weight:700;color:var(--text);font-size:13px;flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chat-hd-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -3575,7 +3581,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
           <main class="chat-main">
             <header class="chat-hd">
-              <div class="chat-title" id="chat-title">New conversation</div>
+              <!-- v0.3.8.52 (field report): with the files pane open nothing on screen said WHICH
+                   project the work belongs to. The project wears the second line, always — click
+                   it to open the project page. -->
+              <div class="chat-title-wrap" style="flex:1;min-width:0;">
+                <div class="chat-title" id="chat-title">New conversation</div>
+                <div class="chat-title-proj" id="chat-title-proj" hidden></div>
+              </div>
               <div class="chat-hd-actions">
                 <span id="chat-state" class="chat-state"></span>
                 <!-- v0.3.8.42 (§3): Chat is the one mission entry, so the stop affordance lives
