@@ -724,6 +724,70 @@ public static partial class ApiHost
         });
 
         /*
+         * v0.3.8.52 (field report) — BROWSE for a working directory. The files pane's "set it
+         * here" form asked the operator to TYPE an absolute path from memory; the Browse button
+         * needs to open a picker. Two shapes, one endpoint: the desktop shell opens the real OS
+         * folder dialog (a WebView2 host bridge — see ShellForm), and every browser shape uses
+         * this HOST-side directory listing, because (a) a web page can never learn an absolute
+         * path from the browser's own picker, by design, and (b) in Docker/LXC the working
+         * directory lives on the SERVER, so the server's tree is the only one worth browsing.
+         *
+         * Gated on run_mission — exactly the permission that may PATCH the path this browser
+         * exists to find; an operator who can set any path can already see anything this lists.
+         * Directories only, hidden and system entries skipped, unreadable branches refused with
+         * the reason rather than rendered empty.
+         */
+        app.MapGet("/fs/dirs", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var q = ctx.Request.Query["path"].FirstOrDefault() ?? "";
+            string path;
+            try
+            {
+                path = string.IsNullOrWhiteSpace(q)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    : Path.GetFullPath(q.Trim());
+            }
+            catch { return ApiJson.Error("Not a valid path.", "bad_request"); }
+            if (!Directory.Exists(path)) return ApiJson.Error("Not a directory on this host.", "not_found");
+
+            var dirs = new List<Dictionary<string, object?>>();
+            try
+            {
+                foreach (var d in Directory.EnumerateDirectories(path))
+                {
+                    var name = Path.GetFileName(d);
+                    if (name.StartsWith('.')) continue;
+                    try
+                    {
+                        if ((File.GetAttributes(d) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+                            continue;
+                    }
+                    catch { continue; }   // an unreadable entry is skipped, not fatal
+                    dirs.Add(new() { ["name"] = name, ["path"] = d });
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return ApiJson.Error("Anthill's user cannot read that directory.", "forbidden");
+            }
+            dirs.Sort((a, b) => string.Compare(
+                (string?)a["name"], (string?)b["name"], StringComparison.OrdinalIgnoreCase));
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["parent"] = Path.GetDirectoryName(path),
+                ["home"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                // Windows offers its ready drives; elsewhere the one root there is.
+                ["roots"] = OperatingSystem.IsWindows()
+                    ? DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => d.Name).Cast<object?>().ToList()
+                    : new List<object?> { "/" },
+                ["dirs"] = dirs,
+            });
+        });
+
+        /*
          * v0.3.8.51 (field report) — THE FILES PANE: browse, read, and edit the project's working
          * tree from chat, side by side with the conversation. Every path is JAILED to the
          * project's own root (its Path, else the colony workspace root): resolved fully, then

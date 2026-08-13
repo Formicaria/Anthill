@@ -1505,7 +1505,7 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.53 — the Formicaria mark is a door home, in every shape the console ships in. The
+    /// v0.3.8.52 — the Formicaria mark is a door home, in every shape the console ships in. The
     /// link must be target=_blank (the desktop shell routes those to the operator's real browser;
     /// see ShellForm's NewWindowRequested handler and DesktopShellTests' pin of it) and noopener,
     /// because a page the colony links to must never get a handle back into the console.
@@ -1522,7 +1522,7 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.53 — the LOCAL runtime card. The agents page's first offer must be the no-account
+    /// v0.3.8.52 — the LOCAL runtime card. The agents page's first offer must be the no-account
     /// path, and its Install button may only render where the server says an end-to-end install is
     /// real (install_supported) — a button that could only refuse is a lie in primary-button blue.
     /// </summary>
@@ -1541,5 +1541,37 @@ public class UiShellTests
         Assert.Contains("LocalRuntimeInstaller.Install()", api);
         // The same operator-shell gate as an agent install: this too runs a command on the host.
         Assert.Contains("RequireAuth(ctx, \"operator_shell\")", api);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (field report) — Browse for a working directory, both lanes wired end to end.
+    /// The desktop shell asks its host for the REAL OS folder dialog (the pick-folder bridge);
+    /// every browser shape falls back to the server-backed directory browser, whose endpoint is
+    /// gated on exactly the permission that may PATCH the path it exists to find. Each half is
+    /// pinned to its consumer, because a bridge without a caller and a caller without a bridge
+    /// both leave a Browse button that does nothing.
+    /// </summary>
+    [Fact]
+    public void BrowseForWorkingDirectory_HasBothLanes_WiredEndToEnd()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("cf-set-root-browse", js);
+
+        // The native lane's message contract, both ends of the bridge.
+        Assert.Contains("postMessage('pick-folder')", BodyOf(js, "function cfPickFolderNative()"));
+        var shell = Src("src", "Anthill.Desktop", "ShellForm.cs");
+        Assert.Contains("\"pick-folder\"", shell);
+        Assert.Contains("FolderBrowserDialog", shell);
+        Assert.Contains("picked-folder", shell);
+        Assert.Contains("picked-folder", js);
+
+        // The server lane: the browser panel over /fs/dirs, run_mission-gated before any listing.
+        Assert.Contains("/fs/dirs", BodyOf(js, "async function cfDirBrowserOpen(startPath, onPick)"));
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        var at = providers.IndexOf("app.MapGet(\"/fs/dirs\"", StringComparison.Ordinal);
+        Assert.True(at >= 0, "/fs/dirs endpoint is gone");
+        var gate = providers[at..];
+        gate = gate[..gate.IndexOf("Directory.Exists", StringComparison.Ordinal)];
+        Assert.Contains("RequireAuth(ctx, \"run_mission\")", gate);
     }
 }
