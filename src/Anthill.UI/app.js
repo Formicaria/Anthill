@@ -5002,7 +5002,7 @@ async function chatRenderPatches(d, thread){
  * missions proposed/applied, diff on demand through the same endpoints the patch cards use.
  * Files and Colony are mutually exclusive panes: one split, one right-hand occupant. */
 let chatFilesOpen=false, chatFilesProjectId=null, chatFilesPath='', chatFilesChangesMode=false;
-let chatFilesRepo=null, chatEditorPath='', chatEditorDiffMode=false;
+let chatFilesRepo=null, chatEditorPath='', chatEditorDiffMode=false, chatFilesBranch=null;
 
 function chatToggleFiles(open){
   const layer=document.getElementById('chat-files-layer'); if(!layer) return;
@@ -5074,18 +5074,38 @@ async function chatFilesRepoLoad(){
   chatFilesRepo=(r&&r.success&&r.data)||null;
   chatFilesApplyGitMarks();   // the tree usually rendered before this answer arrived
   if(!chatFilesRepo){ badge.textContent=''; if(commitBtn) commitBtn.hidden=true; return; }
+  const branchSel=document.getElementById('chat-files-branch');
   if(chatFilesRepo.is_repo){
     badge.textContent='⎇ '+(chatFilesRepo.branch||'?')
       +(chatFilesRepo.dirty_count>0?' · '+chatFilesRepo.dirty_count+' dirty':' · clean');
     badge.style.color=chatFilesRepo.dirty_count>0?'var(--amber,#e5b567)':'var(--dim)';
     badge.title=(chatFilesRepo.last_commit?('last: '+chatFilesRepo.last_commit):'')||'git repository';
     if(commitBtn){ commitBtn.hidden=false; commitBtn.disabled=!chatFilesRepo.dirty_count; }
+    // v0.3.8.52 — the branch selector, GitHub-style: history is read from the chosen branch,
+    // nothing is ever checked out. Defaults to the branch the tree actually stands on.
+    if(branchSel){
+      const br=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/branches');
+      const list=(br&&br.success&&br.data&&br.data.branches)||[];
+      if(list.length){
+        const cur=(br.data.current&&list.includes(br.data.current))?br.data.current:list[0];
+        if(!chatFilesBranch||!list.includes(chatFilesBranch)) chatFilesBranch=cur;
+        branchSel.innerHTML=list.map(b=>`<option value="${escapeHtml(b)}"${b===chatFilesBranch?' selected':''}>${escapeHtml(b)}</option>`).join('');
+        branchSel.hidden=false;
+      }else branchSel.hidden=true;
+    }
   }else{
     badge.textContent='plain folder — not a git repo';
     badge.style.color='var(--dim)'; badge.title=chatFilesRepo.note||'';
     if(commitBtn) commitBtn.hidden=true;
+    if(branchSel) branchSel.hidden=true;
   }
 }
+
+document.getElementById('chat-files-branch')?.addEventListener('change',e=>{
+  chatFilesBranch=e.target.value;
+  // Open trains show the OLD branch's history — close them so nothing on screen lies.
+  document.querySelectorAll('.cf-train').forEach(el=>{ el.parentElement.hidden=true; el.remove(); });
+});
 
 document.getElementById('chat-files-commit')?.addEventListener('click',async ()=>{
   if(!chatFilesProjectId) return;
@@ -5109,6 +5129,7 @@ function chatFilesRenderDir(host, base, entries, depth){
         <span style="width:12px;color:var(--dim);">${e.dir?(open?'▾':'▸'):''}</span>
         <span>${e.dir?'📁':'📄'}</span>
         <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
+        ${e.dir?'':`<span class="cf-hist" data-cf-h="${escapeHtml(p)}" title="Commit history for this file">🕘</span>`}
         <span class="cf-git" data-cf-g="${escapeHtml(p)}" data-cf-g-dir="${e.dir?'1':''}"></span>
         ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
       </div><div class="cf-kids" data-cf-kids="${escapeHtml(p)}" ${open?'':'hidden'}></div>`;
@@ -5123,7 +5144,67 @@ function chatFilesRenderDir(host, base, entries, depth){
     else kids.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open.')}</div>`;
   }));
   host.querySelectorAll(':scope > [data-cf-file]').forEach(el=>el.addEventListener('click',()=>chatFilesEdit(el.dataset.cfFile)));
+  // v0.3.8.52 — the commit train, on demand: the clock toggles this file's recent commits into
+  // the slot beneath its row. Its click must NOT also open the editor — the row owns that.
+  host.querySelectorAll(':scope .cf-hist').forEach(el=>el.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const p=el.dataset.cfH;
+    chatFilesTrain(p, host.querySelector(`:scope > [data-cf-kids="${CSS.escape(p)}"]`));
+  }));
   chatFilesApplyGitMarks(host);
+}
+
+function cfAge(unixSeconds){
+  const s=Math.max(0,(Date.now()/1000)-unixSeconds);
+  if(s<3600) return Math.max(1,Math.round(s/60))+'m';
+  if(s<86400) return Math.round(s/3600)+'h';
+  if(s<86400*30) return Math.round(s/86400)+'d';
+  if(s<86400*365) return Math.round(s/(86400*30))+'mo';
+  return Math.round(s/(86400*365))+'y';
+}
+
+/* The train itself: hash · subject · author · age per stop, read from the SELECTED branch
+ * (GitHub-style — nothing is checked out). Clicking a stop toggles that commit's diff for this
+ * file, through the same colored renderer the uncommitted view uses. */
+async function chatFilesTrain(path, slot){
+  if(!slot) return;
+  const open=slot.querySelector(':scope > .cf-train');
+  if(open){ open.remove(); if(!slot.children.length) slot.hidden=true; return; }
+  slot.hidden=false;
+  const box=document.createElement('div');
+  box.className='cf-train';
+  box.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">loading history…</div>';
+  slot.prepend(box);
+  const q='/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/log?path='+encodeURIComponent(path)
+    +(chatFilesBranch?'&branch='+encodeURIComponent(chatFilesBranch):'')+'&limit=20';
+  const r=await api(q);
+  const commits=(r&&r.success&&r.data&&r.data.commits)||[];
+  if(!commits.length){
+    box.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">No commits touch this file'
+      +(chatFilesBranch?' on '+escapeHtml(chatFilesBranch):'')+'.</div>';
+    return;
+  }
+  box.innerHTML=commits.map(c=>`<div class="cf-stop" data-cf-hash="${escapeHtml(c.hash)}"
+      style="padding:2px 10px 2px 34px;display:flex;gap:8px;align-items:baseline;font-size:10.5px;cursor:pointer;border-radius:4px;">
+      <span style="color:var(--dim);">○</span>
+      <span style="font-family:var(--mono);color:#8ab4f8;">${escapeHtml(c.hash)}</span>
+      <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.subject)}</span>
+      <span style="color:var(--dim);font-size:9px;white-space:nowrap;">${escapeHtml(c.author)} · ${cfAge(c.time)}</span>
+    </div><div data-cf-stop-diff="${escapeHtml(c.hash)}" hidden></div>`).join('');
+  box.querySelectorAll('.cf-stop').forEach(el=>el.addEventListener('click',async ev=>{
+    ev.stopPropagation();
+    const h=el.dataset.cfHash;
+    const d=box.querySelector(`[data-cf-stop-diff="${CSS.escape(h)}"]`);
+    if(!d.hidden){ d.hidden=true; return; }
+    d.hidden=false;
+    if(!d.innerHTML){
+      d.innerHTML='<div style="padding:4px 10px;font-size:10px;color:var(--dim);">loading…</div>';
+      const s=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/show?hash='
+        +encodeURIComponent(h)+'&path='+encodeURIComponent(path));
+      d.innerHTML=(s&&s.success&&s.data)?cfGitDiffHtml(s.data.diff||''):
+        `<div class="hud-state err">${escapeHtml((s&&s.message)||'Could not load the commit.')}</div>`;
+    }
+  }));
 }
 
 /* v0.3.8.52 — git status letters in the tree, from the dirty list the repo badge already fetched

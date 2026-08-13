@@ -911,6 +911,78 @@ public static partial class ApiHost
             });
         });
 
+        /*
+         * v0.3.8.52 — THE COMMIT TRAIN, GitHub-style: every branch is selectable and every file's
+         * recent commits are one click away, without ever checking anything out. Branch and hash
+         * inputs are validated ref-shaped/hash-shaped before git sees them; paths ride the same
+         * jail as everything else in this pane.
+         */
+        app.MapGet("/projects/{id}/repo/branches", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (current, branches) = Anthill.Core.Projects.RepoOps.Branches(root!);
+            if (current is null && branches.Count == 0)
+                return ApiJson.Error("Not a git repository.", "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["current"] = current, ["branches"] = branches });
+        });
+
+        app.MapGet("/projects/{id}/repo/log", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = (ctx.Request.Query["path"].FirstOrDefault() ?? "").Replace('\\', '/').TrimStart('/');
+            if (rel.Length > 0)
+            {
+                var (_, jailError) = JailedPath(root!, rel);
+                if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            }
+            var branch = ctx.Request.Query["branch"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(branch) && !Anthill.Core.Projects.RepoOps.SafeRef(branch!))
+                return ApiJson.Error("That is not a branch name.", "bad_request");
+            var limit = int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var n) ? n : 20;
+            var commits = Anthill.Core.Projects.RepoOps.Log(root!, branch, rel, limit);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = rel, ["branch"] = branch,
+                ["commits"] = commits.Select(c => new Dictionary<string, object?>
+                {
+                    ["hash"] = c.Hash, ["author"] = c.Author,
+                    ["time"] = c.Time, ["subject"] = c.Subject,
+                }).ToList(),
+            });
+        });
+
+        app.MapGet("/projects/{id}/repo/show", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = (ctx.Request.Query["path"].FirstOrDefault() ?? "").Replace('\\', '/').TrimStart('/');
+            if (rel.Length > 0)
+            {
+                var (_, jailError) = JailedPath(root!, rel);
+                if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            }
+            var hash = ctx.Request.Query["hash"].FirstOrDefault() ?? "";
+            var (ok, output) = Anthill.Core.Projects.RepoOps.ShowCommit(root!, hash, rel);
+            if (!ok) return ApiJson.Error(output, "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["hash"] = hash, ["path"] = rel,
+                ["diff"] = output.Length > 200_000 ? output[..200_000] + "\n… (truncated)" : output,
+            });
+        });
+
         app.MapPost("/projects/{id}/repo/commit", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
