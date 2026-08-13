@@ -36,3 +36,6 @@ FETCH_HEAD
 
 # local SDK bootstrap helper (downloaded Microsoft installer; not project source)
 dotnet-install.sh
+
+# Materialized per-run by the colony (AgentCliCatalog.MaterializeLocalSettings) — machine state, not source.
+.claude/settings.local.json
