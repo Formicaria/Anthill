@@ -189,6 +189,33 @@ public class AgentAccessTests : IDisposable
         Assert.Equal(missionId, userTurn.MissionId);
     }
 
+    /// <summary>
+    /// Mission 46f1acb7's defect verbatim: the operator said "Make all of these changes", the
+    /// list of changes lived in the colony's own prior reply, and the mission goal carried five
+    /// words. The goal now carries the bounded transcript, so the coder can see what "these" is.
+    /// </summary>
+    [Fact]
+    public void TheMissionGoal_CarriesTheConversation_SoPronounsResolve()
+    {
+        var conversation = new Conversation { Id = "c-goal", Role = "queen" };
+        _memory.SaveConversation(conversation);
+        _memory.SaveConversationTurn(new ConversationTurn("t1", "c-goal", 1, "user", "self check please"));
+        _memory.SaveConversationTurn(new ConversationTurn("t2", "c-goal", 2, "assistant",
+            "Two improvements: implement patch delete in PatchApply.cs, and add escaping tests."));
+
+        var runner = new ConversationRunner(_memory, (_, _, _) => "unused");
+        var goal = runner.ComposeMissionGoal(conversation, "Make all of these changes");
+
+        Assert.StartsWith("Make all of these changes", goal);
+        Assert.Contains("patch delete in PatchApply.cs", goal);      // the referent travels
+        Assert.Contains("conversation context", goal);
+
+        // And a conversation with no prior turns escalates with the plain message, unchanged.
+        var fresh = new Conversation { Id = "c-fresh", Role = "queen" };
+        _memory.SaveConversation(fresh);
+        Assert.Equal("do the thing", runner.ComposeMissionGoal(fresh, "do the thing"));
+    }
+
     [Fact]
     public void AChatReplyWithoutTheMarker_StaysAChatAnswer()
     {
