@@ -4952,7 +4952,7 @@ function chatToggleFiles(open){
   document.getElementById('page-chat')?.classList.toggle('colony-open', chatFilesOpen||chatColonyOpen);
   const btn=document.getElementById('chat-files-toggle');
   if(btn) btn.setAttribute('aria-pressed', chatFilesOpen?'true':'false');
-  if(chatFilesOpen){ chatFilesProjectId=null; chatFilesLoad(''); }   // re-resolve per open — conversations move
+  if(chatFilesOpen){ chatFilesProjectId=null; chatFilesLoad(); }   // re-resolve per open — conversations move
 }
 
 async function chatFilesProject(){
@@ -4961,7 +4961,12 @@ async function chatFilesProject(){
   return (r&&r.success&&r.data&&r.data.project_id)||null;
 }
 
-async function chatFilesLoad(path){
+/* The WORKING TREE (field correction: "can't see a working tree"): directories expand in place,
+ * children fetched lazily, expansion state kept across refreshes. A project with no working
+ * directory gets an inline "set it here" form instead of a dead end. */
+let chatFilesExpanded=new Set();
+
+async function chatFilesLoad(){
   const body=document.getElementById('chat-files-body');
   const editor=document.getElementById('chat-files-editor');
   if(!body) return;
@@ -4971,23 +4976,64 @@ async function chatFilesLoad(path){
   chatFilesProjectId=chatFilesProjectId||await chatFilesProject();
   if(!chatFilesProjectId){ body.innerHTML='<div class="hud-state">Open a conversation first — the files pane shows its project\'s directory.</div>'; return; }
   body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
-  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path='+encodeURIComponent(path||''));
-  if(!(r&&r.success)){ body.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not list files.')}</div>`; return; }
-  chatFilesPath=r.data.path==='.'?'':r.data.path;
-  setEl('chat-files-crumb','/'+(chatFilesPath||''));
-  const up=chatFilesPath?`<div class="card" style="margin-bottom:3px;cursor:pointer;" data-f-dir=".."><div style="padding:6px 11px;font-size:11px;color:var(--muted);">↩ ..</div></div>`:'';
-  body.innerHTML=up+(r.data.entries||[]).map(e=>`<div class="card" style="margin-bottom:3px;cursor:pointer;" data-f-${e.dir?'dir':'file'}="${escapeHtml(e.name)}">
-      <div style="padding:6px 11px;display:flex;gap:8px;align-items:center;font-size:11px;">
-        <span>${e.dir?'📁':'📄'}</span><span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
-        ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
-      </div></div>`).join('')||'<div class="hud-state">Empty directory.</div>';
-  body.querySelectorAll('[data-f-dir]').forEach(el=>el.addEventListener('click',()=>{
-    const name=el.dataset.fDir;
-    chatFilesLoad(name==='..'?chatFilesPath.split('/').slice(0,-1).join('/'):(chatFilesPath?chatFilesPath+'/':'')+name);
-  }));
-  body.querySelectorAll('[data-f-file]').forEach(el=>el.addEventListener('click',()=>
-    chatFilesEdit((chatFilesPath?chatFilesPath+'/':'')+el.dataset.fFile)));
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path=');
+  if(!(r&&r.success)){
+    // Field correction: "can't add a working tree." A project without one sets it right here.
+    body.innerHTML=`<div class="hud-state">${escapeHtml((r&&r.message)||'Could not list files.')}</div>
+      <div style="display:flex;gap:8px;align-items:center;padding:8px 4px;">
+        <input class="provider-input" id="cf-set-root" placeholder="/absolute/path/to/working/directory" style="flex:1;">
+        <button class="btn btn-primary" id="cf-set-root-go">Set working directory</button>
+      </div>`;
+    document.getElementById('cf-set-root-go')?.addEventListener('click',async ()=>{
+      const p=(document.getElementById('cf-set-root').value||'').trim(); if(!p) return;
+      const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
+      chatSetState((pr&&pr.message)||'');
+      if(pr&&pr.success) chatFilesLoad();
+    });
+    return;
+  }
+  setEl('chat-files-crumb', r.data.root||'');
+  body.innerHTML='<div id="cf-tree"></div>';
+  chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
 }
+
+function chatFilesRenderDir(host, base, entries, depth){
+  host.innerHTML=(entries||[]).map(e=>{
+    const p=(base?base+'/':'')+e.name;
+    const open=chatFilesExpanded.has(p);
+    return `<div class="cf-row" data-cf-${e.dir?'dir':'file'}="${escapeHtml(p)}" style="padding:3px 6px 3px ${8+depth*16}px;display:flex;gap:7px;align-items:center;font-size:11px;cursor:pointer;border-radius:4px;">
+        <span style="width:12px;color:var(--dim);">${e.dir?(open?'▾':'▸'):''}</span>
+        <span>${e.dir?'📁':'📄'}</span>
+        <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
+        ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
+      </div><div class="cf-kids" data-cf-kids="${escapeHtml(p)}" ${open?'':'hidden'}></div>`;
+  }).join('')||`<div style="padding:4px 6px 4px ${8+depth*16}px;font-size:10px;color:var(--dim);">empty</div>`;
+  host.querySelectorAll(':scope > [data-cf-dir]').forEach(el=>el.addEventListener('click',async ()=>{
+    const p=el.dataset.cfDir;
+    const kids=host.querySelector(`:scope > [data-cf-kids="${CSS.escape(p)}"]`);
+    if(chatFilesExpanded.has(p)){ chatFilesExpanded.delete(p); kids.hidden=true; el.firstElementChild.textContent='▸'; return; }
+    chatFilesExpanded.add(p); el.firstElementChild.textContent='▾'; kids.hidden=false;
+    const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path='+encodeURIComponent(p));
+    if(r&&r.success) chatFilesRenderDir(kids, p, r.data.entries||[], p.split('/').length);
+    else kids.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open.')}</div>`;
+  }));
+  host.querySelectorAll(':scope > [data-cf-file]').forEach(el=>el.addEventListener('click',()=>chatFilesEdit(el.dataset.cfFile)));
+}
+
+// Create file / folder (field correction: "can't add a new file, can't add a folder").
+async function chatFilesCreate(isDir){
+  if(!chatFilesProjectId) return;
+  const rel=prompt(isDir?'New folder path (relative to the working directory):':'New file path (relative to the working directory):');
+  if(!rel) return;
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files','POST',{path:rel, dir:!!isDir});
+  chatSetState((r&&r.message)||'');
+  if(r&&r.success){
+    rel.split('/').slice(0,-1).reduce((acc,part)=>{ const p=(acc?acc+'/':'')+part; chatFilesExpanded.add(p); return p; },'');
+    if(!isDir){ await chatFilesLoad(); chatFilesEdit(rel.replace(/^\/+/,'')); } else chatFilesLoad();
+  }
+}
+document.getElementById('chat-files-newfile')?.addEventListener('click',()=>chatFilesCreate(false));
+document.getElementById('chat-files-newdir')?.addEventListener('click',()=>chatFilesCreate(true));
 
 async function chatFilesEdit(path){
   const body=document.getElementById('chat-files-body');
@@ -5010,37 +5056,78 @@ document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>
   msg.textContent=(r&&r.message)||'Save failed';
   setTimeout(()=>{ if(msg.textContent) msg.textContent=''; },4000);
 });
-document.getElementById('chat-editor-back')?.addEventListener('click',()=>chatFilesLoad(chatFilesPath));
+document.getElementById('chat-editor-back')?.addEventListener('click',()=>chatFilesLoad());
 
-// CHANGES mode: everything this conversation's missions proposed or applied, diffs inline.
+/* CHANGES, commit-style (field correction: "changes should be displayed like Github changes in
+ * Commits"). Grouped by MISSION — the mission's goal line is the commit message, its status the
+ * badge — with every file's colored diff rendered OPEN, +/- lines and context, no extra click. */
+function cfLineDiff(oldText, newText){
+  const a=(oldText||'').split('\n'), b=(newText||'').split('\n');
+  let start=0; while(start<a.length&&start<b.length&&a[start]===b[start]) start++;
+  let endA=a.length, endB=b.length;
+  while(endA>start&&endB>start&&a[endA-1]===b[endB-1]){ endA--; endB--; }
+  const rows=[];
+  const CTX=3;
+  for(let i=Math.max(0,start-CTX);i<start;i++) rows.push({t:' ',s:a[i]});
+  for(let i=start;i<endA;i++) rows.push({t:'-',s:a[i]});
+  for(let i=start;i<endB;i++) rows.push({t:'+',s:b[i]});
+  for(let i=endA;i<Math.min(a.length,endA+CTX);i++) rows.push({t:' ',s:a[i]});
+  return rows;
+}
+function cfDiffHtml(rows){
+  if(!rows.length) return '<div style="padding:6px 10px;font-size:10px;color:var(--dim);">No line changes.</div>';
+  return '<pre style="margin:0;font-size:10.5px;line-height:1.45;overflow-x:auto;">'
+    + rows.map(r=>`<span style="display:block;padding:0 10px;${
+        r.t==='+'?'background:rgba(52,211,153,.09);color:#7ee2b8;':
+        r.t==='-'?'background:rgba(248,113,113,.09);color:#f3a0a0;':'color:var(--muted);'
+      }">${escapeHtml(r.t+' '+r.s)}</span>`).join('')+'</pre>';
+}
+
 document.getElementById('chat-files-changes')?.addEventListener('click',async ()=>{
   const body=document.getElementById('chat-files-body');
   const editor=document.getElementById('chat-files-editor');
-  if(chatFilesChangesMode){ chatFilesLoad(chatFilesPath); return; }
+  if(chatFilesChangesMode){ chatFilesLoad(); return; }
   chatFilesChangesMode=true; editor.hidden=true; body.style.display='';
   document.getElementById('chat-files-changes').setAttribute('aria-pressed','true');
   body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading changes…</div>';
+
   const conv=await api('/conversations/'+encodeURIComponent(chatActiveId));
   const missions=(conv&&conv.data&&conv.data.mission_ids)||[];
-  const rows=[];
-  for(const mid of missions.slice(-5)){
+  const hist=await api('/missions/json?limit=60');
+  const goals=Object.fromEntries(((hist&&hist.data)||[]).map(m=>[String(m.id),m.goal||'']));
+
+  const groups=[];
+  for(const mid of missions.slice(-6)){
     const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=30');
-    if(r&&r.success&&Array.isArray(r.data)) rows.push(...r.data);
+    const rows=(r&&r.success&&Array.isArray(r.data))?r.data:[];
+    if(rows.length) groups.push({mid, rows});
   }
-  body.innerHTML=rows.length?rows.map(p=>`<div class="card" style="margin-bottom:4px;">
-      <div style="padding:7px 11px;display:flex;gap:8px;align-items:center;font-size:11px;">
-        <span class="sch-badge">${escapeHtml(p.status||'')}</span>
-        <span style="font-family:var(--mono);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.file||p.path||'')}</span>
-        <button class="btn btn-ghost" data-c-diff="${escapeHtml(p.id)}" style="font-size:10px;">Diff</button>
-      </div><pre class="patch-diff" data-c-box="${escapeHtml(p.id)}" hidden style="margin:0 11px 9px;white-space:pre-wrap;"></pre></div>`).join('')
-    :'<div class="hud-state">No changes yet — this conversation\'s missions have proposed nothing.</div>';
-  body.querySelectorAll('[data-c-diff]').forEach(b=>b.addEventListener('click',async ()=>{
-    const box=body.querySelector(`[data-c-box="${CSS.escape(b.dataset.cDiff)}"]`);
-    if(!box.hidden){ box.hidden=true; return; }
-    const det=await api('/patches/'+encodeURIComponent(b.dataset.cDiff)+'/detail');
-    box.hidden=false;
-    box.textContent=(det&&det.success&&det.data&&(det.data.diff||det.data.new_content))||(det&&det.message)||'No diff available.';
-  }));
+  if(!groups.length){ body.innerHTML='<div class="hud-state">No changes yet — this conversation\'s missions have proposed nothing.</div>'; return; }
+
+  body.innerHTML=groups.map(g=>`<div class="card" style="margin-bottom:10px;">
+      <div style="padding:9px 12px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11.5px;color:var(--text);font-weight:600;">${escapeHtml((goals[g.mid]||'mission '+g.mid.slice(0,8)).split('\n')[0].slice(0,110))}</div>
+        <div style="font-size:9px;color:var(--dim);margin-top:2px;">mission ${escapeHtml(g.mid.slice(0,8))} · ${g.rows.length} file(s)</div>
+      </div>
+      ${g.rows.map(p=>`<div style="border-bottom:1px solid rgba(30,51,84,.4);">
+        <div style="padding:6px 12px;display:flex;gap:8px;align-items:center;font-size:11px;">
+          <span class="sch-badge">${escapeHtml(p.status||'')}</span>
+          <span style="font-family:var(--mono);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.file||p.path||'')}</span>
+        </div>
+        <div data-cf-diff="${escapeHtml(p.id)}"><div style="padding:4px 12px;font-size:10px;color:var(--dim);">loading diff…</div></div>
+      </div>`).join('')}
+    </div>`).join('');
+
+  // Diffs render OPEN, GitHub-style, from each patch's real old/new content.
+  for(const g of groups) for(const p of g.rows){
+    const box=body.querySelector(`[data-cf-diff="${CSS.escape(p.id)}"]`);
+    if(!box) continue;
+    const det=await api('/patches/'+encodeURIComponent(p.id)+'/detail');
+    const d=(det&&det.success&&det.data)||{};
+    box.innerHTML=(d.old_content!==undefined||d.new_content!==undefined)
+      ? cfDiffHtml(cfLineDiff(d.old_content||'', d.new_content||''))
+      : `<pre style="margin:0;padding:4px 12px;font-size:10.5px;white-space:pre-wrap;color:var(--muted);">${escapeHtml(d.diff||det&&det.message||'No diff available.')}</pre>`;
+  }
 });
 
 document.getElementById('chat-files-toggle')?.addEventListener('click',()=>chatToggleFiles());
