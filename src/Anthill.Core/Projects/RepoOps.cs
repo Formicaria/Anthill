@@ -62,14 +62,37 @@ public static class RepoOps
             return new RepoState(false, null, 0, Array.Empty<(string, string)>(), null,
                 probe.Contains("unavailable") ? probe : null);
 
-        var (_, branch) = Git(root!, "rev-parse", "--abbrev-ref", "HEAD");
-        var (_, last) = Git(root!, "log", "-1", "--format=%h %s");
+        // v0.3.8.52 (fourth field round): these calls used to DISCARD their Ok flags, so a repo
+        // with no commits yet — where `rev-parse HEAD` and `log -1` both print a fatal — wore
+        // git's stderr as its BRANCH NAME in the files pane, a paragraph long, shoving every
+        // toolbar button off screen. symbolic-ref answers the branch even on an unborn HEAD;
+        // rev-parse remains the fallback for detached heads; and a failure anywhere is null,
+        // never stderr passed off as data.
+        var (brOk, branchOut) = Git(root!, "symbolic-ref", "--short", "HEAD");
+        if (!brOk) (brOk, branchOut) = Git(root!, "rev-parse", "--abbrev-ref", "HEAD");
+        var branch = brOk && branchOut.Length > 0 && branchOut.Length <= 200 && !branchOut.Contains('\n')
+            ? branchOut.Trim() : null;
+
+        var (lastOk, last) = Git(root!, "log", "-1", "--format=%h %s");
+        var lastCommit = lastOk && !string.IsNullOrWhiteSpace(last) ? last.Split('\n')[0].Trim() : null;
+
         var (stOk, status) = Git(root!, "status", "--porcelain");
         var dirty = new List<(string, string)>();
         if (stOk)
             foreach (var line in status.Split('\n', StringSplitOptions.RemoveEmptyEntries).Take(200))
                 if (line.Length > 3) dirty.Add((line[..2].Trim(), line[3..].Trim()));
-        return new RepoState(true, branch, dirty.Count, dirty, string.IsNullOrWhiteSpace(last) ? null : last, null);
+        return new RepoState(true, branch, dirty.Count, dirty, lastCommit, null);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (fourth field round): make the working directory a repository — the operator's
+    /// explicit act from the files pane, offered only when the directory is not one already.
+    /// Prefers an initial branch named main; falls back for gits that predate --initial-branch.
+    /// </summary>
+    public static (bool Ok, string Output) Init(string root)
+    {
+        var r = Git(root, "init", "-b", "main");
+        return r.Ok ? r : Git(root, "init");
     }
 
     /// <summary>The root of the repository that owns <paramref name="dir"/>, or null if none does.
@@ -106,7 +129,10 @@ public static class RepoOps
     /// <summary>All branches (local and remote-tracking, HEAD pointers dropped) + the current one.</summary>
     public static (string? Current, IReadOnlyList<string> Branches) Branches(string root)
     {
-        var (_, current) = Git(root, "rev-parse", "--abbrev-ref", "HEAD");
+        // Same unborn-HEAD honesty as Describe: symbolic-ref first, and a failure is null.
+        var (curOk, current) = Git(root, "symbolic-ref", "--short", "HEAD");
+        if (!curOk) (curOk, current) = Git(root, "rev-parse", "--abbrev-ref", "HEAD");
+        if (!curOk || current.Contains('\n')) current = "";
         var (ok, output) = Git(root, "branch", "--all", "--format=%(refname:short)");
         var list = new List<string>();
         if (ok)

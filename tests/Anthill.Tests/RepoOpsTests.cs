@@ -81,6 +81,45 @@ public class RepoOpsTests : IDisposable
         Assert.Equal(Path.GetFullPath(_root), RepoOps.TopLevel(sub));
     }
 
+    /// <summary>
+    /// v0.3.8.52 (fourth field round) — the operator initialized an empty repo and the files
+    /// pane wore git's stderr as a BRANCH NAME: "fatal: ambiguous argument 'HEAD'…", a paragraph
+    /// long, shoving every toolbar button off screen. Describe discarded the Ok flags of its
+    /// branch and last-commit queries. On an unborn HEAD the branch must be the real branch name
+    /// (symbolic-ref answers it before any commit exists), the last commit must be null, and
+    /// NOTHING in the state may carry a fatal.
+    /// </summary>
+    [Fact]
+    public void EmptyRepo_ReportsItsBranch_NeverGitsStderr()
+    {
+        if (!GitAvailable) return;
+        Assert.True(RepoOps.Init(_root).Ok);
+
+        var state = RepoOps.Describe(_root);
+        Assert.True(state.IsRepo);
+        Assert.NotNull(state.Branch);
+        Assert.DoesNotContain("fatal", state.Branch, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\n", state.Branch);
+        Assert.Null(state.LastCommit);
+
+        var (current, _) = RepoOps.Branches(_root);
+        if (current is not null)
+            Assert.DoesNotContain("fatal", current, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The fourth field round's other half: Init makes a fresh folder a describable
+    /// repository whose toplevel is itself. (Refusing an ALREADY-repo directory is the API
+    /// gate's job — Init is the mechanism, the endpoint is the policy.)</summary>
+    [Fact]
+    public void Init_MakesAFreshFolder_ADescribableRepo()
+    {
+        if (!GitAvailable) return;
+        var (ok, output) = RepoOps.Init(_root);
+        Assert.True(ok, output);
+        Assert.True(RepoOps.Describe(_root).IsRepo);
+        Assert.Equal(Path.GetFullPath(_root), RepoOps.TopLevel(_root));
+    }
+
     [Fact]
     public void Commit_WithNothingToCommit_SaysSoInsteadOfSucceeding()
     {
