@@ -44,6 +44,7 @@ public sealed class ShellCommandTool : ITool
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
                 WorkingDirectory = _guard.Root,
+                CreateNoWindow = true,   // v0.3.8.53: never flash a console from the desktop shell
             };
             foreach (var arg in parts.Skip(1)) psi.ArgumentList.Add(arg);
             using var proc = Process.Start(psi)!;
