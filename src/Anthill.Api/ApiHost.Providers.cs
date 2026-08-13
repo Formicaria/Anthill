@@ -654,6 +654,72 @@ public static partial class ApiHost
         });
 
         /*
+         * v0.3.8.51 (field report) — DIRECTORY GATES. The operator opens a path for a project's
+         * colony the same way they open the approval gate: explicitly, attributed, revocable.
+         * Each grant becomes agent-CLI reach (--add-dir) for that project's missions and nothing
+         * else does. Mirrors the shape of Anthill's approval gates on purpose.
+         */
+        app.MapGet("/projects/{id}/grants", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["grants"] = Queen.Memory.LoadProjectGrants(id).Select(g => new Dictionary<string, object?>
+                {
+                    ["id"] = g.Id, ["path"] = g.Path,
+                    ["granted_by"] = g.GrantedBy, ["granted_at"] = g.GrantedAt.ToIso(),
+                }).ToList(),
+                ["note"] = "Each grant is a directory gate: the project's colony may reach this path. Revoking closes it.",
+            });
+        });
+
+        app.MapPost("/projects/{id}/grants", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var raw = (body?.GetValueOrDefault("path") ?? "").Trim();
+            if (raw.Length == 0) return ApiJson.Error("A directory path is required.", "bad_request");
+
+            // The gate opens onto something REAL and NAMED EXACTLY: an absolute, existing
+            // directory. A relative path would silently mean "relative to wherever the host
+            // happens to run", which is not what anyone approved.
+            string full;
+            try { full = System.IO.Path.GetFullPath(raw); }
+            catch { return ApiJson.Error("That is not a usable path.", "bad_request"); }
+            if (!System.IO.Path.IsPathRooted(raw))
+                return ApiJson.Error("Directory gates take absolute paths — say exactly which directory opens.", "bad_request");
+            if (!Directory.Exists(full))
+                return ApiJson.Error($"'{full}' does not exist or is not a directory.", "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            var grant = new Anthill.Core.Memory.ProjectGrant(
+                Guid.NewGuid().ToString("N")[..12], id, full) { GrantedBy = who };
+            Queen.Memory.SaveProjectGrant(grant);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "directory_gate_opened",
+                $"Directory gate opened for project '{id}': {full} (by {who}).", antName: who);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = grant.Id, ["path"] = full,
+            }, $"The colony may now reach {full} for this project.");
+        });
+
+        app.MapDelete("/projects/{id}/grants/{grantId}", (HttpContext ctx, string id, string grantId) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var existing = Queen.Memory.LoadProjectGrants(id).FirstOrDefault(g => g.Id == grantId);
+            if (existing is null) return ApiJson.Error("No such grant.", "not_found");
+            Queen.Memory.DeleteProjectGrant(grantId);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "directory_gate_closed",
+                $"Directory gate closed for project '{id}': {existing.Path} (by {CurrentUsername(ctx) ?? "operator"}).",
+                antName: CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(null, $"The gate to {existing.Path} is closed.");
+        });
+
+        /*
          * v0.3.8.48 — project schedules. Real persistence, real execution (ProjectScheduler),
          * honest wording everywhere: schedules run while the Anthill host runs.
          */
