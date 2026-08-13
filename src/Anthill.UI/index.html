@@ -1315,9 +1315,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   order:2;border-left:1px solid var(--border);background:var(--bg);}
 .chat-colony-layer[hidden]{display:none;}
 .chat-colony-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;flex-shrink:0;
-  border-bottom:1px solid var(--border);background:var(--panel);}
+  border-bottom:1px solid var(--border);background:var(--panel);
+  /* v0.3.8.52 (seventh field round): dragging the split narrow pushed the buttons off screen.
+     The bar's yield order is now explicit — the PATH collapses first (it is the one element
+     whose tail the operator can live without), the controls never shrink and never leave, and
+     if the pane is narrower than the controls themselves they WRAP to a second row rather than
+     exit stage right. Button sizes never change. */
+  flex-wrap:wrap;row-gap:4px;min-width:0;}
+.chat-colony-bar .btn,.chat-colony-bar select{flex-shrink:0;}
 .ccb-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);flex-shrink:0;}
-.ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.ccb-mission{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  min-width:0;flex:0 10 auto;}
 .ccb-spacer{flex:1;}
 .chat-colony-mount{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;}
 .chat-colony-mount #mission-bar{display:none;}
@@ -3515,7 +3523,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">+ Folder</button>
               <!-- v0.3.8.52 (fourth field round): the working directory stays changeable from
                    here — the same form (path + Browse) the first-time setup uses. -->
-              <button class="btn btn-ghost" id="chat-files-chroot" title="Change this project's working directory">Dir…</button>
+              <button class="btn btn-ghost" id="chat-files-chroot" title="Change this project's working directory">Dir</button>
               <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
                       title="Show what this conversation's missions changed, commit-style">Changes</button>
               <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
