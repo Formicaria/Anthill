@@ -720,6 +720,109 @@ public static partial class ApiHost
         });
 
         /*
+         * v0.3.8.51 (field report) — THE FILES PANE: browse, read, and edit the project's working
+         * tree from chat, side by side with the conversation. Every path is JAILED to the
+         * project's own root (its Path, else the colony workspace root): resolved fully, then
+         * required to stay inside. Reads are capped and text-only; writes are operator actions —
+         * attributed, audited, and refused on binary or oversize content.
+         */
+        // The files pane's jail helpers, local to this map so they cannot be reached around.
+        static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
+        {
+            var root = string.IsNullOrWhiteSpace(project.Path)
+                ? AnthillRuntime.AllowedWorkspaceRoot : project.Path!;
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                return (null, "This project has no working directory — set one in its Settings.");
+            return (Path.GetFullPath(root), null);
+        }
+        static (string Full, string? Error) JailedPath(string root, string relative)
+        {
+            var full = Path.GetFullPath(Path.Combine(root, relative.Replace('\\', '/').TrimStart('/')));
+            return full.StartsWith(root, StringComparison.Ordinal)
+                ? (full, null)
+                : (root, "That path escapes the project's directory.");
+        }
+
+        app.MapGet("/projects/{id}/files", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, ctx.Request.Query["path"].FirstOrDefault() ?? "");
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!Directory.Exists(full)) return ApiJson.Error("Not a directory.", "not_found");
+
+            var entries = new DirectoryInfo(full).EnumerateFileSystemInfos()
+                .Where(e => e.Name != ".git")
+                .OrderBy(e => e is FileInfo)                       // directories first
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(500)
+                .Select(e => new Dictionary<string, object?>
+                {
+                    ["name"] = e.Name,
+                    ["dir"] = e is DirectoryInfo,
+                    ["size"] = e is FileInfo f ? f.Length : 0,
+                }).ToList();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["root"] = root, ["path"] = Path.GetRelativePath(root!, full).Replace('\\', '/'),
+                ["entries"] = entries,
+            });
+        });
+
+        app.MapGet("/projects/{id}/file", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, ctx.Request.Query["path"].FirstOrDefault() ?? "");
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!File.Exists(full)) return ApiJson.Error("No such file.", "not_found");
+            var info = new FileInfo(full);
+            if (info.Length > 512 * 1024)
+                return ApiJson.Error($"File is {info.Length / 1024} KB — the editor caps at 512 KB.", "too_large");
+            var content = File.ReadAllText(full);
+            if (content.Contains('\0'))
+                return ApiJson.Error("Binary file — the editor is text-only.", "binary");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = Path.GetRelativePath(root!, full).Replace('\\', '/'),
+                ["content"] = content,
+            });
+        });
+
+        app.MapPut("/projects/{id}/file", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var rel = body?.GetValueOrDefault("path") ?? "";
+            var content = body?.GetValueOrDefault("content");
+            if (content is null) return ApiJson.Error("content is required.", "bad_request");
+            if (content.Length > 512 * 1024) return ApiJson.Error("The editor caps at 512 KB.", "too_large");
+            if (content.Contains('\0')) return ApiJson.Error("Binary content is refused.", "bad_request");
+
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!File.Exists(full)) return ApiJson.Error("No such file — the editor edits existing files.", "not_found");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            File.WriteAllText(full, content);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_file_edited",
+                $"Operator {who} edited {rel} in project '{project.Name}' via the files pane.", antName: who);
+            return ApiJson.Ok(null, $"Saved {rel}.");
+        });
+
+        /*
          * v0.3.8.48 — project schedules. Real persistence, real execution (ProjectScheduler),
          * honest wording everywhere: schedules run while the Anthill host runs.
          */

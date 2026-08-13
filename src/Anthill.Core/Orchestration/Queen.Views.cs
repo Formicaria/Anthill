@@ -281,6 +281,29 @@ public sealed partial class Queen
         return ok ? ApproveRequest(approvalId) : message;
     }
 
+    /// <summary>
+    /// v0.3.8.51 (field report): approve AND apply one patch as ONE operator action with a
+    /// STRUCTURED result. The chat card ran approve-then-apply against two text/plain endpoints
+    /// through a JSON parser — the parse threw, the card said "Approve failed" over an approval
+    /// that had actually landed, and the apply never ran. One call, one truth, both step results.
+    /// </summary>
+    public (bool Ok, string Message) ApproveAndApplyPatch(string patchId, string requestedBy = "operator")
+    {
+        var (ok, approvalId, message) = EnsurePatchApproval(patchId, requestedBy);
+        if (!ok) return (false, message);
+
+        var approveResult = ApproveRequest(approvalId);
+        // The transition helpers speak prose; every success sentence contains "approved" and no
+        // refusal does. Checked once here rather than re-parsed at every caller.
+        if (!approveResult.Contains("approved", StringComparison.OrdinalIgnoreCase))
+            return (false, approveResult);
+
+        var applyResult = ApplyApprovedPatch(approvalId);
+        var applied = applyResult.Contains("applied", StringComparison.OrdinalIgnoreCase)
+                   && !applyResult.Contains("not applied", StringComparison.OrdinalIgnoreCase);
+        return (applied, applyResult);
+    }
+
     /// <summary>Reject a patch by patch id — ensures the approval record exists, then runs the normal reject transition.</summary>
     public string RejectPatchDirect(string patchId, string? reason = null, string requestedBy = "operator")
     {

@@ -4194,6 +4194,19 @@ const chatTitles = {};
 
 function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
 
+/* v0.3.8.51 (field report) — the colony narrates its own activity. "Colony is building…" while a
+ * coder/builder task runs, "Colony is working…" for everything else in flight. One small report
+ * fetch per poll while a mission runs; failure keeps the previous line rather than inventing one. */
+async function chatActivityLine(missionId){
+  if(!missionId) return;
+  try{
+    const r=await api('/missions/'+encodeURIComponent(missionId)+'/report');
+    const running=(r&&r.success&&r.data&&r.data.tasks||[]).find(t=>t.status==='running');
+    const building=running&&(running.ant==='coder'||running.ant==='builder');
+    chatSetState(building?'Colony is building…':'Colony is working…');
+  }catch{ /* keep whatever the line already says */ }
+}
+
 // v0.3.8.46: the rail search — server-side over titles AND transcript content (GET
 // /conversations?q=), so the box finds what the store actually holds, not what happens to be
 // rendered. Kept as module state so the poll's refresh respects an in-progress search.
@@ -4487,12 +4500,15 @@ async function chatPlanPreview(box, turns){
 
 function chatOpenAfterRender(d){
   const id=chatActiveId;
-    // v0.3.8.42: `cancelled` is a field, and `doing` is now a truthful present-tense vocabulary
-    // ("running mission …", "unanswered — …", "" for idle) rather than a permanent "conversational
-    // work" — so the state line SHOWS it instead of translating everything into "Working…".
+    // v0.3.8.42: `cancelled` is a field, and `doing` is now a truthful present-tense vocabulary.
+    // v0.3.8.51 (field report): a running mission reads as the COLONY'S OWN WORDS — "Colony is
+    // working…" (and "Colony is building…" while the coder/builder holds the running task),
+    // resolved from the mission report rather than shown as a raw id.
     chatSetState(d.needs_operator ? 'Waiting on you'
                : d.cancelled ? 'Stopped — start a new conversation to continue'
                : (d.doing||''));
+    if(!d.needs_operator && !d.cancelled && (d.doing||'').startsWith('running mission'))
+      chatActivityLine((d.doing.match(/running mission (\S+)/)||[])[1]);
     // The Stop control exists exactly while there is something stoppable — a running mission.
     // Chat replies are synchronous inside the send; "unanswered" is a failure state, not work.
     const stopBtn=document.getElementById('chat-stop');
@@ -4657,7 +4673,10 @@ async function chatSend(mode){
       // into ModelCallScope) — cancellation reaches the provider, not merely the animation.
       chatStreamAbort=new AbortController();
       chatSetComposerStreaming(true);
-      chatSetState('Answering…');
+      // v0.3.8.51 (field report): the 40-second silence that made the operator resend. The state
+      // line now SAYS the colony is thinking from the first instant; the first streamed token
+      // flips it, and mission activity has its own words (see chatActivityLine).
+      chatSetState('Colony is thinking…');
       const response=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/turns'),{
         method:'POST',
         headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
@@ -4710,7 +4729,8 @@ function chatToggleColony(open){
   const layer=document.getElementById('chat-colony-layer'); if(!layer) return;
   chatColonyOpen = open===undefined ? !chatColonyOpen : !!open;
   layer.hidden = !chatColonyOpen;
-  document.getElementById('page-chat')?.classList.toggle('colony-open', chatColonyOpen);
+  // v0.3.8.51: the split stays while EITHER right-hand pane (colony or files) is open.
+  document.getElementById('page-chat')?.classList.toggle('colony-open', chatColonyOpen||chatFilesOpen);
   const btn=document.getElementById('chat-colony-toggle');
   if(btn) btn.setAttribute('aria-pressed', chatColonyOpen?'true':'false');
   if(typeof topologyMountTo==='function') topologyMountTo(chatColonyOpen?'chat':'home');
@@ -4890,14 +4910,14 @@ async function chatRenderPatches(d, thread){
         (det&&det.message)||'No diff available.';
     });
     card.querySelector('[data-p-approve]')?.addEventListener('click', async e2=>{
+      // v0.3.8.51 (field report): this ran approve-then-apply against two text/plain endpoints
+      // through .json() — the parse threw, the card said "Approve failed" over an approval that
+      // had LANDED, and the apply never ran. One JSON endpoint now does both steps and says
+      // exactly what happened.
       const b=e2.target; b.disabled=true; b.textContent='Applying…';
-      const ap=await fetch(url('/patches/'+encodeURIComponent(pid)+'/approve'),
-        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
-      if(!(ap&&ap.success!==false)){ chatSetState((ap&&ap.message)||'Approve failed.'); b.disabled=false; b.textContent='Approve & apply'; return; }
-      const approvalId=ap&&ap.data&&(ap.data.approval_id||ap.data.id);
-      const done=approvalId?await fetch(url('/apply/'+encodeURIComponent(approvalId)),
-        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null):null;
-      chatSetState((done&&done.message)||(ap&&ap.message)||'Approved.');
+      const r2=await api('/patches/'+encodeURIComponent(pid)+'/approve-apply','POST',{});
+      chatSetState((r2&&r2.message)||'The apply did not answer.');
+      if(!(r2&&r2.success)){ b.disabled=false; b.textContent='Approve & apply'; return; }
       apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
     });
     card.querySelector('[data-p-reject]')?.addEventListener('click', async e2=>{
@@ -4917,7 +4937,119 @@ async function chatRenderPatches(d, thread){
   }
 }
 
-document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
+/* v0.3.8.51 (field report) — the FILES pane: side-by-side cowork in the colony view's real
+ * estate. Browse the project's working tree, open a file in the editor, save (an attributed
+ * operator action through PUT /projects/{id}/file), or flip to CHANGES — what this conversation's
+ * missions proposed/applied, diff on demand through the same endpoints the patch cards use.
+ * Files and Colony are mutually exclusive panes: one split, one right-hand occupant. */
+let chatFilesOpen=false, chatFilesProjectId=null, chatFilesPath='', chatFilesChangesMode=false;
+
+function chatToggleFiles(open){
+  const layer=document.getElementById('chat-files-layer'); if(!layer) return;
+  chatFilesOpen = open===undefined ? !chatFilesOpen : !!open;
+  if(chatFilesOpen && chatColonyOpen) chatToggleColony(false);
+  layer.hidden=!chatFilesOpen;
+  document.getElementById('page-chat')?.classList.toggle('colony-open', chatFilesOpen||chatColonyOpen);
+  const btn=document.getElementById('chat-files-toggle');
+  if(btn) btn.setAttribute('aria-pressed', chatFilesOpen?'true':'false');
+  if(chatFilesOpen){ chatFilesProjectId=null; chatFilesLoad(''); }   // re-resolve per open — conversations move
+}
+
+async function chatFilesProject(){
+  if(!chatActiveId) return null;
+  const r=await api('/conversations/'+encodeURIComponent(chatActiveId));
+  return (r&&r.success&&r.data&&r.data.project_id)||null;
+}
+
+async function chatFilesLoad(path){
+  const body=document.getElementById('chat-files-body');
+  const editor=document.getElementById('chat-files-editor');
+  if(!body) return;
+  editor.hidden=true; body.style.display='';
+  chatFilesChangesMode=false;
+  document.getElementById('chat-files-changes')?.setAttribute('aria-pressed','false');
+  chatFilesProjectId=chatFilesProjectId||await chatFilesProject();
+  if(!chatFilesProjectId){ body.innerHTML='<div class="hud-state">Open a conversation first — the files pane shows its project\'s directory.</div>'; return; }
+  body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading…</div>';
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/files?path='+encodeURIComponent(path||''));
+  if(!(r&&r.success)){ body.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not list files.')}</div>`; return; }
+  chatFilesPath=r.data.path==='.'?'':r.data.path;
+  setEl('chat-files-crumb','/'+(chatFilesPath||''));
+  const up=chatFilesPath?`<div class="card" style="margin-bottom:3px;cursor:pointer;" data-f-dir=".."><div style="padding:6px 11px;font-size:11px;color:var(--muted);">↩ ..</div></div>`:'';
+  body.innerHTML=up+(r.data.entries||[]).map(e=>`<div class="card" style="margin-bottom:3px;cursor:pointer;" data-f-${e.dir?'dir':'file'}="${escapeHtml(e.name)}">
+      <div style="padding:6px 11px;display:flex;gap:8px;align-items:center;font-size:11px;">
+        <span>${e.dir?'📁':'📄'}</span><span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(e.name)}</span>
+        ${e.dir?'':`<span style="color:var(--dim);font-size:9px;">${e.size<1024?e.size+' B':Math.round(e.size/1024)+' KB'}</span>`}
+      </div></div>`).join('')||'<div class="hud-state">Empty directory.</div>';
+  body.querySelectorAll('[data-f-dir]').forEach(el=>el.addEventListener('click',()=>{
+    const name=el.dataset.fDir;
+    chatFilesLoad(name==='..'?chatFilesPath.split('/').slice(0,-1).join('/'):(chatFilesPath?chatFilesPath+'/':'')+name);
+  }));
+  body.querySelectorAll('[data-f-file]').forEach(el=>el.addEventListener('click',()=>
+    chatFilesEdit((chatFilesPath?chatFilesPath+'/':'')+el.dataset.fFile)));
+}
+
+async function chatFilesEdit(path){
+  const body=document.getElementById('chat-files-body');
+  const editor=document.getElementById('chat-files-editor');
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/file?path='+encodeURIComponent(path));
+  if(!(r&&r.success)){ chatSetState((r&&r.message)||'Could not open the file.'); return; }
+  body.style.display='none'; editor.hidden=false;
+  setEl('chat-editor-path',r.data.path);
+  document.getElementById('chat-editor-text').value=r.data.content;
+  document.getElementById('chat-editor-msg').textContent='';
+}
+
+document.getElementById('chat-editor-save')?.addEventListener('click',async ()=>{
+  const msg=document.getElementById('chat-editor-msg');
+  const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/file','PUT',{
+    path:document.getElementById('chat-editor-path').textContent,
+    content:document.getElementById('chat-editor-text').value,
+  });
+  msg.style.color=r&&r.success?'var(--green)':'var(--red)';
+  msg.textContent=(r&&r.message)||'Save failed';
+  setTimeout(()=>{ if(msg.textContent) msg.textContent=''; },4000);
+});
+document.getElementById('chat-editor-back')?.addEventListener('click',()=>chatFilesLoad(chatFilesPath));
+
+// CHANGES mode: everything this conversation's missions proposed or applied, diffs inline.
+document.getElementById('chat-files-changes')?.addEventListener('click',async ()=>{
+  const body=document.getElementById('chat-files-body');
+  const editor=document.getElementById('chat-files-editor');
+  if(chatFilesChangesMode){ chatFilesLoad(chatFilesPath); return; }
+  chatFilesChangesMode=true; editor.hidden=true; body.style.display='';
+  document.getElementById('chat-files-changes').setAttribute('aria-pressed','true');
+  body.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading changes…</div>';
+  const conv=await api('/conversations/'+encodeURIComponent(chatActiveId));
+  const missions=(conv&&conv.data&&conv.data.mission_ids)||[];
+  const rows=[];
+  for(const mid of missions.slice(-5)){
+    const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=30');
+    if(r&&r.success&&Array.isArray(r.data)) rows.push(...r.data);
+  }
+  body.innerHTML=rows.length?rows.map(p=>`<div class="card" style="margin-bottom:4px;">
+      <div style="padding:7px 11px;display:flex;gap:8px;align-items:center;font-size:11px;">
+        <span class="sch-badge">${escapeHtml(p.status||'')}</span>
+        <span style="font-family:var(--mono);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.file||p.path||'')}</span>
+        <button class="btn btn-ghost" data-c-diff="${escapeHtml(p.id)}" style="font-size:10px;">Diff</button>
+      </div><pre class="patch-diff" data-c-box="${escapeHtml(p.id)}" hidden style="margin:0 11px 9px;white-space:pre-wrap;"></pre></div>`).join('')
+    :'<div class="hud-state">No changes yet — this conversation\'s missions have proposed nothing.</div>';
+  body.querySelectorAll('[data-c-diff]').forEach(b=>b.addEventListener('click',async ()=>{
+    const box=body.querySelector(`[data-c-box="${CSS.escape(b.dataset.cDiff)}"]`);
+    if(!box.hidden){ box.hidden=true; return; }
+    const det=await api('/patches/'+encodeURIComponent(b.dataset.cDiff)+'/detail');
+    box.hidden=false;
+    box.textContent=(det&&det.success&&det.data&&(det.data.diff||det.data.new_content))||(det&&det.message)||'No diff available.';
+  }));
+});
+
+document.getElementById('chat-files-toggle')?.addEventListener('click',()=>chatToggleFiles());
+document.getElementById('chat-files-close')?.addEventListener('click',()=>chatToggleFiles(false));
+
+document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>{
+  if(chatFilesOpen) chatToggleFiles(false);   // one split, one right-hand occupant
+  chatToggleColony();
+});
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
 // Secondary action for operators who want the dedicated page. Close first so the canvas is home
 // before the Colony route claims it — the same hand-off order navigation itself performs.
