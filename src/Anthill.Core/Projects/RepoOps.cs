@@ -35,6 +35,9 @@ public static class RepoOps
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
+                // v0.3.8.53: the desktop shell is a WinExe — without this every git call the files
+                // pane polls opened its own console window, a cascade of flashing CMD boxes.
+                CreateNoWindow = true,
             };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi);
