@@ -4759,7 +4759,18 @@ document.getElementById('chat-send')?.addEventListener('click', ()=>{
   if(chatStreamAbort){ chatStreamAbort.abort(); return; }   // ■ while streaming: abort is the action
   chatSend();
 });
-document.getElementById('chat-work')?.addEventListener('click', ()=>chatSend('mission'));
+// v0.3.8.51: the ⚒ button retired — one send path; the colony proposes missions itself and the
+// approval policy governs them. (Handler removed with the button, noted so its absence is a fact.)
+// The 📁 Gates button beside the policy selector is the filesystem twin: when the colony's reply
+// says it needs a directory, this opens the project's gates panel to grant exactly that path.
+document.getElementById('chat-gates')?.addEventListener('click',async ()=>{
+  if(!chatActiveId) return;
+  const r=await api('/conversations/'+encodeURIComponent(chatActiveId));
+  const pid=r&&r.success&&r.data&&r.data.project_id;
+  if(!pid) return;
+  go('/projects/'+pid);
+  setTimeout(()=>pvTab('settings'),600);   // land on the tab that holds the gates
+});
 let chatStopInFlight=false;
 document.getElementById('chat-stop')?.addEventListener('click', async ()=>{
   if(chatStopInFlight||!chatActiveId) return;
@@ -5289,7 +5300,37 @@ function pvFillSettings(){
   if(g('pv-edit-path')) g('pv-edit-path').value=pvProject.path||'';
   if(g('pv-edit-policy')) g('pv-edit-policy').value=pvProject.default_policy||'ask';
   if(g('pv-archive')) g('pv-archive').textContent=pvProject.archived?'Unarchive':'Archive';
+  pvLoadGrants();
 }
+
+/* v0.3.8.51 (field report) — directory gates: list, open, close. Every row says who opened it
+ * and when, because a standing grant without a name on it is the pattern this product refuses. */
+async function pvLoadGrants(){
+  const host=document.getElementById('pv-grants'); if(!host||!projectViewId) return;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/grants');
+  const grants=(r&&r.success&&r.data&&r.data.grants)||[];
+  host.innerHTML=grants.length
+    ? grants.map(gr=>`<div class="card" style="margin-bottom:4px;"><div style="padding:8px 12px;display:flex;align-items:center;gap:9px;">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;">📁 ${escapeHtml(gr.path)}</span>
+        <span style="font-size:9px;color:var(--dim);">opened by ${escapeHtml(gr.granted_by||'?')}</span>
+        <button class="btn btn-ghost" data-close-gate="${escapeHtml(gr.id)}" style="font-size:10px;">Close gate</button>
+      </div></div>`).join('')
+    : '<div class="hud-state">No gates open — this project\'s colony reaches only its own workspace.</div>';
+  host.querySelectorAll('[data-close-gate]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true;
+    await api('/projects/'+encodeURIComponent(projectViewId)+'/grants/'+encodeURIComponent(b.dataset.closeGate),'DELETE');
+    pvLoadGrants();
+  }));
+}
+document.getElementById('pv-grant-open')?.addEventListener('click',async ()=>{
+  const inp=document.getElementById('pv-grant-path'), msg=document.getElementById('pv-grant-msg');
+  const path=(inp.value||'').trim(); if(!path) return;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/grants','POST',{path});
+  msg.style.color=r&&r.success?'var(--green)':'var(--red)';
+  msg.textContent=(r&&r.message)||'Failed';
+  setTimeout(()=>{ if(msg.textContent) msg.textContent=''; },5000);
+  if(r&&r.success){ inp.value=''; pvLoadGrants(); }
+});
 document.getElementById('pv-save')?.addEventListener('click',async ()=>{
   const btn=document.getElementById('pv-save'); btn.disabled=true;
   const pol=document.getElementById('pv-edit-policy').value;

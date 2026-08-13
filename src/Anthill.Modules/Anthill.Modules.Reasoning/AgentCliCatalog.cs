@@ -84,6 +84,31 @@ public sealed record AgentCli
     /// scratchpad does not stop applying because the writer came from another vendor.
     /// </summary>
     public bool Writes { get; init; }
+
+    // ---- v0.3.8.51: the operator's approval gate, translated into THIS agent's own flags -------
+    //
+    // Field report: a headless agent run has nobody at the terminal, so its own permission prompts
+    // are unanswerable and every mutating call dies. The operator already answered once — in chat,
+    // at the approval selector — and these per-agent arg fragments are how that answer reaches the
+    // spawned process. Null/empty means the agent has no such flag and gets NOTHING extra: an
+    // unmapped agent stays exactly as locked down as before, which is the honest default.
+
+    /// <summary>Flags that let the agent EDIT within its confined workspace without prompting.
+    /// Applied for every approved mission — the workspace is a disposable sandbox, and the real
+    /// tree still only changes through Anthill's own patch-approval pipeline.</summary>
+    public IReadOnlyList<string>? AcceptEditsArgs { get; init; }
+
+    /// <summary>Flags granting a BOUNDED tool set (build/test commands) under Automatically
+    /// approve. Never network-wide, never arbitrary shell.</summary>
+    public IReadOnlyList<string>? AutoApproveToolArgs { get; init; }
+
+    /// <summary>Flags that skip the agent's own prompts entirely — the mapping of "Skip all
+    /// approvals", which the operator confirms in spoken words before it can be set.</summary>
+    public IReadOnlyList<string>? BypassArgs { get; init; }
+
+    /// <summary>Per-directory reach, with <c>{dir}</c> replaced by one granted absolute path.
+    /// Repeated for each directory gate the operator opened.</summary>
+    public IReadOnlyList<string>? AddDirArgs { get; init; }
 }
 
 /// <summary>
@@ -117,6 +142,14 @@ public static class AgentCliCatalog
             AuthCommand = "claude",           // first run walks the operator through sign-in
             DocsUrl = "https://docs.claude.com/en/docs/claude-code/overview",
             Writes = true,
+            // v0.3.8.51: the approval gate's translation for Claude Code specifically. acceptEdits
+            // lets it edit inside its confined workspace; the bounded tool list covers the build
+            // and test commands a coding mission needs and nothing network-shaped; bypass maps
+            // Skip-all-approvals onto the CLI's own equivalent; add-dir is a directory gate.
+            AcceptEditsArgs = new[] { "--permission-mode", "acceptEdits" },
+            AutoApproveToolArgs = new[] { "--allowedTools", "Edit,Write,Bash(dotnet:*),Bash(node:*),Bash(npm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)" },
+            BypassArgs = new[] { "--dangerously-skip-permissions" },
+            AddDirArgs = new[] { "--add-dir", "{dir}" },
         },
         new()
         {
@@ -210,4 +243,46 @@ public static class AgentCliCatalog
     public static IReadOnlyList<string> BuildStreamArgs(AgentCli agent, string prompt) =>
         (agent.StreamArgs ?? agent.PromptArgs)
         .Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
+
+    /// <summary>
+    /// v0.3.8.51 — the operator's approval gate, as THIS agent's flags. Pure function of the
+    /// ambient access context so it is testable without a process:
+    ///
+    /// <list type="bullet">
+    /// <item>ask — the mission itself was operator-approved, so the agent may EDIT inside its
+    ///   confined disposable workspace (<see cref="AgentCli.AcceptEditsArgs"/>); its own command
+    ///   prompts stay in force, honestly refused rather than fake-approved.</item>
+    /// <item>autoapprove — edits plus the BOUNDED tool set (build/test commands).</item>
+    /// <item>bypass — the agent's own skip flag; the operator confirmed this in words.</item>
+    /// <item>every granted directory — one <see cref="AgentCli.AddDirArgs"/> expansion each.</item>
+    /// </list>
+    ///
+    /// A null context grants nothing. An agent without mapped flags gets nothing. Absence is not
+    /// consent, in either direction.
+    /// </summary>
+    public static IReadOnlyList<string> BuildAccessArgs(AgentCli agent, Anthill.SDK.Reasoning.AgentAccessScope.Context? access)
+    {
+        if (access is null) return Array.Empty<string>();
+        var args = new List<string>();
+
+        switch (access.PolicyWire)
+        {
+            case "bypass" when agent.BypassArgs is { Count: > 0 }:
+                args.AddRange(agent.BypassArgs);
+                break;
+            case "autoapprove":
+                if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
+                if (agent.AutoApproveToolArgs is { Count: > 0 }) args.AddRange(agent.AutoApproveToolArgs);
+                break;
+            case "ask":
+                if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
+                break;
+        }
+
+        if (agent.AddDirArgs is { Count: > 0 })
+            foreach (var dir in access.GrantedDirectories.Where(d => !string.IsNullOrWhiteSpace(d)))
+                args.AddRange(agent.AddDirArgs.Select(a => a.Replace("{dir}", dir, StringComparison.Ordinal)));
+
+        return args;
+    }
 }

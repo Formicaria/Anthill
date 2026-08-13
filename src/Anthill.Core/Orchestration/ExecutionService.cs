@@ -521,6 +521,14 @@ public sealed class ExecutionService : IExecutionService
                 }
                 else
                 {
+                    // v0.3.8.51 (field report): the operator's approval gate REACHES THE WORKER.
+                    // The mission's owning conversation carries the effective policy the operator
+                    // chose in chat, and the project's directory gates carry the paths they opened;
+                    // both ride to the reasoning provider as ambient scope, where an agent CLI
+                    // translates them into its own flags. A mission no conversation started runs
+                    // with "ask" and no grants — absence is not consent.
+                    using var access = EnterAgentAccess(mission);
+
                     // Structural repair §3: a deterministic check role runs INSIDE the mission's
                     // current materialized revision when one exists — the patched tree, kept alive
                     // by MissionRevisionRegistry — and the task is stamped with the revision it
@@ -1372,6 +1380,35 @@ public sealed class ExecutionService : IExecutionService
                 ["reason"] = TextUtil.Truncate(decision.Reason, 500), ["elapsed_seconds"] = elapsed,
             }));
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
+    }
+
+    /// <summary>
+    /// v0.3.8.51 — resolve what the operator ALLOWED for this mission's work: the owning
+    /// conversation's effective policy (wire form) and the project's granted directories. Cached
+    /// per call rather than per mission on purpose: a policy change mid-mission should govern the
+    /// tasks dispatched after it, exactly as the escalation gate already behaves.
+    /// </summary>
+    private IDisposable EnterAgentAccess(Mission mission)
+    {
+        var policy = "ask";
+        IReadOnlyList<string> grants = Array.Empty<string>();
+        try
+        {
+            var conversation = _memory.FindConversationForMission(mission.Id);
+            if (conversation is not null)
+            {
+                policy = conversation.EffectivePolicy.ToString().ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(conversation.ProjectId))
+                    grants = _memory.LoadProjectGrants(conversation.ProjectId!)
+                        .Select(g => g.Path).ToList();
+            }
+        }
+        catch (Exception error)
+        {
+            // A failed lookup must degrade toward LESS access, never more — and must not fail the task.
+            Console.Error.WriteLine($"[execution] agent access lookup failed for {mission.Id}: {error.Message}");
+        }
+        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(policy, grants);
     }
 
     /// <summary>

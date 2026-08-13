@@ -1023,11 +1023,15 @@ public class UiShellTests
         // The jobs list keeps the durable per-run Cancel.
         Assert.Contains("cancelJob", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
 
-        // And the MISSION request itself lives in chat — mode:'mission' through the same
-        // escalation-gated turn endpoint, so "chat is the one mission entry" is literally true.
-        Assert.Contains("id=\"chat-work\"", html);
-        Assert.Contains("chatSend('mission')", js);
-        Assert.Contains("mode:mode", BodyOf(js, "async function chatSend(mode)"));
+        // v0.3.8.51 (field report): the ⚒ "Do the work" button is RETIRED — one send path. The
+        // colony proposes missions itself (EscalateMarker in ConversationRunner) and the approval
+        // selector governs them; a second send button was a magic word with a tooltip. What must
+        // hold instead: the button is gone, the gates affordance exists beside the policy
+        // selector, and approvals still travel mode:'mission' through the same turn endpoint.
+        Assert.DoesNotContain("id=\"chat-work\"", html);
+        Assert.DoesNotContain("chatSend('mission')", js);
+        Assert.Contains("id=\"chat-gates\"", html);
+        Assert.Contains("mode:'mission'", js);   // convApprove's re-send keeps the gated path
     }
 
     /// <summary>

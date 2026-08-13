@@ -385,6 +385,13 @@ public sealed partial class SqliteMemory : IDisposable
             ant_id TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
             color TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL)",
+        // v0.3.8.51 (field report): DIRECTORY GATES — the operator opened this path for this
+        // project's colony. Attributed and revocable; each grant becomes the agent CLI's reach
+        // (--add-dir) and nothing else does. Absence of a row is absence of access.
+        @"CREATE TABLE IF NOT EXISTS project_grants (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL,
+            granted_by TEXT NOT NULL DEFAULT '', granted_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_project_grants ON project_grants(project_id)",
         // Decisions are their own table: an operator asking "why was this allowed" is asking about
         // ACTIONS, not turns, and one turn can take several. Refusals are stored too — a refused
         // attempt is the one nobody saw happen.
