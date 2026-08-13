@@ -81,6 +81,12 @@ switch (command)
         return report.Ok ? 0 : 1;
     }
 
+    case "--qualification":
+        // v0.3.8.53 (audit Phase 11): CAN this installation run its core mission lifecycle?
+        // Runs entirely against a temporary workspace and database — the operator's colony is
+        // never opened — and exits nonzero when the answer is no. QA's first command.
+        return Anthill.Cli.QualificationCommand.Run();
+
     case "--status":
     {
         using var queen = NewQueen();
@@ -182,6 +188,7 @@ Usage:
   anthill --add-user <u> <p> [role]   Create an operator account (role: admin|coordinator).
   anthill --set-password <u> <p>      Reset an operator's password (lock-out recovery).
   anthill --selftest             Run the framework self-test harness.
+  anthill --qualification        Can this install run missions? Temp-workspace-only; exit 0 = yes.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.
   anthill --routes               Print model routing table.
