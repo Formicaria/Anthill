@@ -5115,7 +5115,9 @@ async function chatFilesShowRootForm(){
     if(!p) return;
     const pr=await api('/projects/'+encodeURIComponent(chatFilesProjectId),'PATCH',{path:p});
     chatSetState((pr&&pr.message)||'');
-    if(pr&&pr.success) chatFilesLoad();
+    // Bust every cached GET under this project — tree, repo badge, detail — or the pane keeps
+    // showing the OLD directory (and its git state) for up to a TTL after the change.
+    if(pr&&pr.success){ apiCacheBust('/projects'); chatFilesLoad(); }
   };
   document.getElementById('cf-set-root-go')?.addEventListener('click',
     ()=>setRoot((document.getElementById('cf-set-root').value||'').trim()));
@@ -5239,8 +5241,47 @@ document.getElementById('chat-files-gitinit')?.addEventListener('click',async ()
   try{
     const r=await api('/projects/'+encodeURIComponent(chatFilesProjectId)+'/repo/init','POST');
     chatSetState((r&&r.message)||'');
-    if(r&&r.success){ chatFilesRepoLoad(); chatFilesLoad(); }
+    // Bust the cached GETs (repo badge, tree, detail) — without this the badge re-read a stale
+    // "not a repo" answer for up to a TTL and Init git appeared to ignore the click.
+    if(r&&r.success){ apiCacheBust('/projects/'+encodeURIComponent(chatFilesProjectId)); chatFilesRepoLoad(); chatFilesLoad(); }
   }finally{ if(btn) btn.disabled=false; }
+});
+
+/* v0.3.8.52 (fifth field round) — the splits are SIZABLE. Chat ↔ pane drags horizontally, tree ↔
+ * editor drags vertically; plain pointer math over the containing flex row/column, the chosen
+ * proportion written onto flex-basis and persisted in localStorage so it survives a reload.
+ * Pointer capture keeps the drag alive when the cursor outruns the 5px handle. */
+function wireSplit(handleId, horizontal, storeKey, apply){
+  const handle=document.getElementById(handleId); if(!handle) return;
+  const saved=parseFloat(localStorage.getItem(storeKey)||'');
+  if(!Number.isNaN(saved)) apply(saved);
+  handle.addEventListener('pointerdown',e=>{
+    e.preventDefault(); handle.classList.add('dragging'); handle.setPointerCapture(e.pointerId);
+    const rect=handle.parentElement.getBoundingClientRect();
+    const move=ev=>{
+      const pct=horizontal ? (ev.clientX-rect.left)/rect.width*100
+                           : (ev.clientY-rect.top)/rect.height*100;
+      localStorage.setItem(storeKey, String(apply(pct)));
+    };
+    const up=()=>{ handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+    handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up);
+  });
+}
+wireSplit('chat-split-x', true, 'anthill_split_x', pct=>{
+  pct=Math.min(75,Math.max(25,pct));
+  const main=document.querySelector('#page-chat .chat-main');
+  if(main) main.style.flex=`1 1 ${pct}%`;
+  document.querySelectorAll('#page-chat .chat-colony-layer').forEach(l=>l.style.flex=`1 1 ${100-pct}%`);
+  return pct;
+});
+wireSplit('chat-split-y', false, 'anthill_split_y', pct=>{
+  pct=Math.min(80,Math.max(20,pct));
+  const body=document.getElementById('chat-files-body');
+  const editor=document.getElementById('chat-files-editor');
+  if(body) body.style.flex=`1 1 ${pct}%`;
+  if(editor) editor.style.flex=`1 1 ${100-pct}%`;
+  return pct;
 });
 
 document.getElementById('chat-files-branch')?.addEventListener('change',e=>{
