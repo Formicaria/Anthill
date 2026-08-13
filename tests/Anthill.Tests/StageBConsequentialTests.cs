@@ -196,16 +196,24 @@ public class SchedulingModeEnforcementTests : IDisposable
     /// can bind. This assertion is the inversion that release predicted, with the reasoning moved
     /// across rather than deleted.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.51 (field report) — INVERTED, deliberately. The operator's six-step plan opened
+    /// with "run the baseline checks" and the gate threw the step away: "tester is PolicyInserted
+    /// and cannot be scheduled by the planner." A planned tester/soldier step is a plan asking
+    /// for MORE safety; PolicyInserted now means the runtime GUARANTEES the role runs when its
+    /// trigger fires — a floor, not a ceiling. Only the two modes whose handlers can only refuse
+    /// a planned invocation (medic, archivist) keep the refusal, pinned above.
+    /// </summary>
     [Theory]
     [InlineData("tester", "test_execution")]
     [InlineData("soldier", "security_review")]
-    public void PolicyInsertedRoles_CannotBeScheduledByThePlanner(string role, string taskType)
+    public void PolicyInsertedRoles_MayAlsoBePlanned_TheFloorIsNotACeiling(string role, string taskType)
     {
         Assert.Equal(SchedulingMode.PolicyInserted, AntExecutionCatalog.ContractFor(role)!.Scheduling);
 
         var result = AntRegistry.ValidateTask(Planned(role, taskType), NoConstraints());
 
-        Assert.False(result.Allowed);
+        Assert.DoesNotContain("cannot be scheduled by the planner", result.Reason ?? "");
     }
 
     /// <summary>

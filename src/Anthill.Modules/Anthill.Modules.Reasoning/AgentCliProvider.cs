@@ -61,7 +61,15 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         // than silently doing the dangerous thing.
         _ = retries;
 
-        var args = AgentCliCatalog.BuildArgs(_agent, prompt);
+        // v0.3.8.51: the operator's approval gate rides along as this agent's own flags — the fix
+        // for a headless worker whose every mutating call died at prompts nobody could answer.
+        // Second field round: AND as the agent's project-level settings file, because the colony's
+        // own probe showed flags alone fall through to harness defaults without one.
+        var access = Anthill.SDK.Reasoning.AgentAccessScope.Current;
+        AgentCliCatalog.MaterializeLocalSettings(_agent, _workingDirectory, access);
+        var args = AgentCliCatalog.BuildArgs(_agent, prompt)
+            .Concat(AgentCliCatalog.BuildAccessArgs(_agent, access))
+            .ToList();
         var (started, stdout, stderr, exit) =
             AgentCliDiscovery.Run(_agent.Binary, args, _timeout, _workingDirectory);
 
@@ -109,7 +117,12 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         // without one keep honest line streaming. The final content comes from the result event
         // when there is one, because raw NDJSON is transport, not answer.
         var hasStreamMode = _agent.StreamArgs is not null;
-        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt);
+        // v0.3.8.51: same access translation as Send — one policy, both transports, both channels.
+        var streamAccess = Anthill.SDK.Reasoning.AgentAccessScope.Current;
+        AgentCliCatalog.MaterializeLocalSettings(_agent, _workingDirectory, streamAccess);
+        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt)
+            .Concat(AgentCliCatalog.BuildAccessArgs(_agent, streamAccess))
+            .ToList();
         var streamedText = new System.Text.StringBuilder();
         string? resultText = null;
         var sawTokenDelta = false;

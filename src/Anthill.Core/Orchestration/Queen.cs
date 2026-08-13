@@ -222,7 +222,10 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // v3.8.26: Tools is passed so the execution path can read the per-task dispatch count and
         // fill in AntMetrics.ToolCalls — a counter that has been zero for every role since it was
         // declared, because it was self-reported and two of twelve ants report anything at all.
-        Execution = new ExecutionService(Memory, _ants, Tools, Router);
+        // v0.3.8.51: the approve-and-apply transition rides in so "Skip all approvals" can apply a
+        // verified patch without a prompt — through the same audited path the chat card uses.
+        Execution = new ExecutionService(Memory, _ants, Tools, Router,
+            approveApplyPatch: (patchId, who) => ApproveAndApplyPatch(patchId, who));
 
         // v3.8.0: this process registers as a worker, and startup reconciles what the last one left
         // behind. Both halves are needed for the phase's first gate — "no accepted task is silently

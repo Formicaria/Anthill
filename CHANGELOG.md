@@ -1,5 +1,66 @@
 # ANTHILL Changelog
 
+## v0.3.8.51 - open the gates: the colony asks, the operator answers, the worker works
+
+Born from one transcript: the colony's own Claude Code worker sat behind "requires approval"
+prompts that a headless run can never answer — so every Edit, Write and build command died, and
+the colony told its operator to "ask for it as a mission explicitly." Three repairs.
+
+**The approval gate reaches the worker.** The conversation's effective policy — the same Manual
+approval / Automatically approve / Skip all approvals the operator already chose in chat — now
+rides to the agent CLI as its own flags, resolved through the mission's owning conversation.
+Manual approval lets the agent edit inside its confined disposable workspace (the mission itself
+was the approval; the real tree still changes only through the patch pipeline); Automatically
+approve adds a BOUNDED build/test tool set; Skip all approvals maps to the agent's own skip flag,
+which the operator confirmed in words. An unmapped agent, or a mission no conversation started,
+gets nothing — absence is not consent.
+
+**Directory gates.** The filesystem twin of the approval gate: the operator opens a specific
+absolute path for a project's colony — attributed, revocable, listed in the project's Settings
+beside a 📁 Gates button in the chat header — and each open gate becomes exactly that directory
+of agent reach (--add-dir) and nothing else. The colony asks in chat when it needs one; the
+operator opens precisely what was asked for.
+
+**The gates mean what they say.** Skip all approvals now APPLIES a verified patch without a
+card — through the same audited approve-and-apply transitions the operator's own button runs,
+and never past a deterministic block: a failed build verifier or a policy finding still refuses,
+because Bypass skips prompts, not security. Automatically approve keeps the apply card on
+purpose — act freely, ask before changing real files. And the card itself works again: it ran
+approve-then-apply against two text/plain endpoints through a JSON parser, reported "Approval
+failed" over an approval that had actually landed, and never applied. One JSON endpoint now does
+both steps and says exactly what happened.
+
+**The colony narrates, and the files sit beside the chat.** "Colony is thinking…" from the first
+instant of a turn, "Colony is working…" while a mission runs, "Colony is building…" while the
+coder or builder holds the running task. And a Files button opens the working directory in the
+colony view's split real estate: browse the project tree, open a file in a text editor, save it
+as an attributed operator edit, or flip to Changes — everything the conversation's missions
+proposed or applied, diffs inline.
+
+**Git awareness — repo or plain folder, stated and used.** The field question was blunt:
+changes applied, so why did nothing hit git commit? Because Anthill treated every working
+directory as an anonymous folder. `RepoOps` is now the one place the platform asks a directory
+what it is — repo on a branch with a dirty count, or plain folder — and the one gate anything
+commits through (deterministic anthill identity, gpg signing forced off, never throws, survives
+a machine without git). The files pane states it in the bar like opencode does; the chat prompt
+tells the colony outright, with its commit rules. And commits follow the gates: under Skip all
+approvals and Automatically approve, a landed patch is committed to the repository that OWNS its
+file (git itself is asked which repo that is) with the mission goal as the subject — under
+Manual approval the tree is deliberately left dirty and the operator commits from the pane's
+Commit button, which stages exactly what it says.
+
+**The editor docks below the tree.** Click a file and it opens UNDERNEATH the working tree,
+which stays visible and clickable — side-by-side cowork in one pane, not a view swap. The
+editor keeps its editable textarea and attributed Save, and gains its own Changes toggle:
+recent edits to THAT file, the uncommitted git diff leading and the colony's patch history
+under it, mission by mission.
+
+**One send path.** The ⚒ "Do the work" button is retired. A normal prompt reaches the colony,
+which proposes the mission ITSELF when the request is real work — a structured marker, stripped
+from the record, feeding the same deterministic start_mission gate the button used. Under Manual
+approval the in-chat card asks first; under the other two policies the work simply begins. No
+magic words, no second send button.
+
 ## v0.3.8.50 - the colony's claims become true, and the desktop grows up
 
 Three batches in one release: the mission-execution structural repair, a real Windows

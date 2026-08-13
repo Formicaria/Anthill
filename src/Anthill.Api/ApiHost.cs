@@ -62,6 +62,8 @@ public static partial class ApiHost
 
     private static string UiMissionThreadJs = "";
     private static string UiGridJs = "";
+    // v0.3.8.52: the app.js split — one field per domain asset.
+    private static string UiHomelabJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
@@ -174,6 +176,7 @@ public static partial class ApiHost
         UiAppJs = LoadUiAsset("app.js");
         UiMissionThreadJs = LoadUiAsset("mission-thread.js");
         UiGridJs = LoadUiAsset("dashboard-grid.js");
+        UiHomelabJs = LoadUiAsset("homelab.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
