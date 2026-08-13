@@ -68,6 +68,17 @@ And + File / + Folder stopped prompt()ing for a remembered path: both browse the
 jailed tree like the Browse button does — + Folder walks folders, + File also shows the files
 already at each stop — pick the place, name the thing, create.
 
+**The git badge stops quoting git's stderr, and the toolbar grows two honest controls.** An
+empty repository — initialized, no commits yet — wore `fatal: ambiguous argument 'HEAD'…` as its
+BRANCH NAME in the files pane, a paragraph long, shoving every toolbar button off screen:
+RepoOps discarded the Ok flags of its branch and last-commit queries, and stderr walked out as
+data. The branch now comes from `symbolic-ref` (which answers on an unborn HEAD), failures are
+null, the badge is bounded either way, and a non-repo reads as exactly "no git" with the detail
+in the tooltip. Beside it: **Init git**, offered only while the directory is NOT a repository
+(apply_patch-gated, refused when it already is one), and **Dir…**, which reopens the same
+set-root form (path + Browse) after first setup — the working directory stays changeable from
+the files tab.
+
 **The license is what the README always claimed to point at.** The LICENSE file said "All Rights
 Reserved" while the README called it MIT; both were wrong about the intent. The repository now
 carries the Apache License 2.0, verbatim, attribution preserved, and the README names it.
