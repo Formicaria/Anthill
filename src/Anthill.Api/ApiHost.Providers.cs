@@ -564,6 +564,10 @@ public static partial class ApiHost
                         ["policy_attributed"] = c.PolicyIsAttributed,
                         ["cancelled"] = c.Cancelled,
                         ["pinned"] = c.Pinned,
+                        // v0.3.8.51, found live: neither the list nor the detail carried the
+                        // project link — the conversation→project chain the whole files pane and
+                        // gates affordance stand on was invisible to every UI reader.
+                        ["project_id"] = c.ProjectId,
                         ["mission_ids"] = c.MissionIds,
                         ["doing"] = state.Doing,
                         ["waiting_on"] = state.WaitingOn,
@@ -651,6 +655,292 @@ public static partial class ApiHost
                 UpdatedAt = AnthillTime.NowUtc(),
             });
             return ApiJson.Ok(null, "Project updated.");
+        });
+
+        /*
+         * v0.3.8.51 (field report) — DIRECTORY GATES. The operator opens a path for a project's
+         * colony the same way they open the approval gate: explicitly, attributed, revocable.
+         * Each grant becomes agent-CLI reach (--add-dir) for that project's missions and nothing
+         * else does. Mirrors the shape of Anthill's approval gates on purpose.
+         */
+        app.MapGet("/projects/{id}/grants", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["grants"] = Queen.Memory.LoadProjectGrants(id).Select(g => new Dictionary<string, object?>
+                {
+                    ["id"] = g.Id, ["path"] = g.Path,
+                    ["granted_by"] = g.GrantedBy, ["granted_at"] = g.GrantedAt.ToIso(),
+                }).ToList(),
+                ["note"] = "Each grant is a directory gate: the project's colony may reach this path. Revoking closes it.",
+            });
+        });
+
+        app.MapPost("/projects/{id}/grants", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var raw = (body?.GetValueOrDefault("path") ?? "").Trim();
+            if (raw.Length == 0) return ApiJson.Error("A directory path is required.", "bad_request");
+
+            // The gate opens onto something REAL and NAMED EXACTLY: an absolute, existing
+            // directory. A relative path would silently mean "relative to wherever the host
+            // happens to run", which is not what anyone approved.
+            string full;
+            try { full = System.IO.Path.GetFullPath(raw); }
+            catch { return ApiJson.Error("That is not a usable path.", "bad_request"); }
+            if (!System.IO.Path.IsPathRooted(raw))
+                return ApiJson.Error("Directory gates take absolute paths — say exactly which directory opens.", "bad_request");
+            if (!Directory.Exists(full))
+                return ApiJson.Error($"'{full}' does not exist or is not a directory.", "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            var grant = new Anthill.Core.Memory.ProjectGrant(
+                Guid.NewGuid().ToString("N")[..12], id, full) { GrantedBy = who };
+            Queen.Memory.SaveProjectGrant(grant);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "directory_gate_opened",
+                $"Directory gate opened for project '{id}': {full} (by {who}).", antName: who);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = grant.Id, ["path"] = full,
+            }, $"The colony may now reach {full} for this project.");
+        });
+
+        app.MapDelete("/projects/{id}/grants/{grantId}", (HttpContext ctx, string id, string grantId) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var existing = Queen.Memory.LoadProjectGrants(id).FirstOrDefault(g => g.Id == grantId);
+            if (existing is null) return ApiJson.Error("No such grant.", "not_found");
+            Queen.Memory.DeleteProjectGrant(grantId);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "directory_gate_closed",
+                $"Directory gate closed for project '{id}': {existing.Path} (by {CurrentUsername(ctx) ?? "operator"}).",
+                antName: CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(null, $"The gate to {existing.Path} is closed.");
+        });
+
+        /*
+         * v0.3.8.51 (field report) — THE FILES PANE: browse, read, and edit the project's working
+         * tree from chat, side by side with the conversation. Every path is JAILED to the
+         * project's own root (its Path, else the colony workspace root): resolved fully, then
+         * required to stay inside. Reads are capped and text-only; writes are operator actions —
+         * attributed, audited, and refused on binary or oversize content.
+         */
+        // The files pane's jail helpers, local to this map so they cannot be reached around.
+        static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
+        {
+            var root = string.IsNullOrWhiteSpace(project.Path)
+                ? AnthillRuntime.AllowedWorkspaceRoot : project.Path!;
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                return (null, "This project has no working directory — set one in its Settings.");
+            return (Path.GetFullPath(root), null);
+        }
+        static (string Full, string? Error) JailedPath(string root, string relative)
+        {
+            var full = Path.GetFullPath(Path.Combine(root, relative.Replace('\\', '/').TrimStart('/')));
+            return full.StartsWith(root, StringComparison.Ordinal)
+                ? (full, null)
+                : (root, "That path escapes the project's directory.");
+        }
+
+        app.MapGet("/projects/{id}/files", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, ctx.Request.Query["path"].FirstOrDefault() ?? "");
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!Directory.Exists(full)) return ApiJson.Error("Not a directory.", "not_found");
+
+            var entries = new DirectoryInfo(full).EnumerateFileSystemInfos()
+                .Where(e => e.Name != ".git")
+                .OrderBy(e => e is FileInfo)                       // directories first
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(500)
+                .Select(e => new Dictionary<string, object?>
+                {
+                    ["name"] = e.Name,
+                    ["dir"] = e is DirectoryInfo,
+                    ["size"] = e is FileInfo f ? f.Length : 0,
+                }).ToList();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["root"] = root, ["path"] = Path.GetRelativePath(root!, full).Replace('\\', '/'),
+                ["entries"] = entries,
+            });
+        });
+
+        app.MapGet("/projects/{id}/file", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, ctx.Request.Query["path"].FirstOrDefault() ?? "");
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!File.Exists(full)) return ApiJson.Error("No such file.", "not_found");
+            var info = new FileInfo(full);
+            if (info.Length > 512 * 1024)
+                return ApiJson.Error($"File is {info.Length / 1024} KB — the editor caps at 512 KB.", "too_large");
+            var content = File.ReadAllText(full);
+            if (content.Contains('\0'))
+                return ApiJson.Error("Binary file — the editor is text-only.", "binary");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = Path.GetRelativePath(root!, full).Replace('\\', '/'),
+                ["content"] = content,
+            });
+        });
+
+        // v0.3.8.51 second round: CREATE — a new empty file or folder, jailed and audited. The
+        // pane must be able to grow a tree, not only read one.
+        app.MapPost("/projects/{id}/files", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, System.Text.Json.JsonElement>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var rel = body?.GetValueOrDefault("path").GetString() ?? "";
+            var isDir = body is not null && body.TryGetValue("dir", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (string.IsNullOrWhiteSpace(rel)) return ApiJson.Error("A path is required.", "bad_request");
+
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (File.Exists(full) || Directory.Exists(full))
+                return ApiJson.Error("Something already exists at that path.", "conflict");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            if (isDir) Directory.CreateDirectory(full);
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                File.WriteAllText(full, "");
+            }
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_file_created",
+                $"Operator {who} created {(isDir ? "folder" : "file")} {rel} in project '{project.Name}'.", antName: who);
+            return ApiJson.Ok(null, $"Created {rel}.");
+        });
+
+        app.MapPut("/projects/{id}/file", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var rel = body?.GetValueOrDefault("path") ?? "";
+            var content = body?.GetValueOrDefault("content");
+            if (content is null) return ApiJson.Error("content is required.", "bad_request");
+            if (content.Length > 512 * 1024) return ApiJson.Error("The editor caps at 512 KB.", "too_large");
+            if (content.Contains('\0')) return ApiJson.Error("Binary content is refused.", "bad_request");
+
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (full, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            if (!File.Exists(full)) return ApiJson.Error("No such file — the editor edits existing files.", "not_found");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            File.WriteAllText(full, content);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "operator_file_edited",
+                $"Operator {who} edited {rel} in project '{project.Name}' via the files pane.", antName: who);
+            return ApiJson.Ok(null, $"Saved {rel}.");
+        });
+
+        /*
+         * v0.3.8.51 third round — GIT AWARENESS ("we need to make the colony aware whether the
+         * project is a git repo or just a regular folder"). The files pane shows what the working
+         * directory IS — repo on a branch with dirty files, or plain folder — and the operator can
+         * commit from it. Colony-side commits ride the patch-apply path (Queen.CommitAppliedPatch)
+         * under the gates that permit them; these endpoints are the OPERATOR's half.
+         */
+        app.MapGet("/projects/{id}/repo", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var state = Anthill.Core.Projects.RepoOps.Describe(root);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["root"] = root,
+                ["is_repo"] = state.IsRepo,
+                ["branch"] = state.Branch,
+                ["dirty_count"] = state.DirtyCount,
+                ["dirty"] = state.Dirty.Take(100).Select(d => new Dictionary<string, object?>
+                    { ["status"] = d.Status, ["path"] = d.Path }).ToList(),
+                ["last_commit"] = state.LastCommit,
+                ["note"] = state.IsRepo ? null : (state.Error ?? "This directory is a plain folder, not a git repository."),
+            });
+        });
+
+        // The uncommitted diff for ONE file — what sits between HEAD and the working tree. The
+        // editor's "Changes" view leads with this when the project is a repo.
+        app.MapGet("/projects/{id}/repo/diff", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = ctx.Request.Query["path"].FirstOrDefault() ?? "";
+            var (_, jailError) = JailedPath(root!, rel);
+            if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            var state = Anthill.Core.Projects.RepoOps.Describe(root);
+            if (!state.IsRepo) return ApiJson.Error("Not a git repository.", "bad_request");
+            var (ok, output) = Anthill.Core.Projects.RepoOps.DiffFile(root!,
+                rel.Replace('\\', '/').TrimStart('/'));
+            if (!ok) return ApiJson.Error($"git diff failed: {output}", "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = rel,
+                ["diff"] = output.Length > 200_000 ? output[..200_000] + "\n… (truncated)" : output,
+            });
+        });
+
+        app.MapPost("/projects/{id}/repo/commit", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            Dictionary<string, System.Text.Json.JsonElement>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var message = body?.GetValueOrDefault("message").GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(message)) return ApiJson.Error("A commit message is required.", "bad_request");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var paths = new List<string>();
+            if (body is not null && body.TryGetValue("paths", out var pv)
+                && pv.ValueKind == System.Text.Json.JsonValueKind.Array)
+                foreach (var el in pv.EnumerateArray())
+                    if (el.GetString() is { Length: > 0 } s)
+                    {
+                        var (_, jailErr) = JailedPath(root!, s);
+                        if (jailErr is not null) return ApiJson.Error(jailErr, "forbidden");
+                        paths.Add(s.Replace('\\', '/').TrimStart('/'));
+                    }
+            var who = CurrentUsername(ctx) ?? "operator";
+            var (ok, output) = Anthill.Core.Projects.RepoOps.Commit(root!, paths, message.Trim(), who);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, ok ? "operator_commit" : "operator_commit_failed",
+                ok ? $"Operator {who} committed in project '{project.Name}': {message.Split('\n')[0]}"
+                   : $"Operator {who} commit failed in project '{project.Name}': {output}", antName: who);
+            return ok
+                ? ApiJson.Ok(new Dictionary<string, object?> { ["result"] = output }, "Committed.")
+                : ApiJson.Error(output, "bad_request");
         });
 
         /*
@@ -949,6 +1239,10 @@ public static partial class ApiHost
                 // conversation, and overwrites refusal summaries. State travels as state.
                 ["cancelled"] = state.Cancelled,
                 ["policy"] = state.Policy.ToString().ToLowerInvariant(),
+                // v0.3.8.51, found live: the DETAIL never carried project_id — only the list did —
+                // so the files pane and the gates affordance dead-ended on a field that did not
+                // exist and told the operator to "open a conversation" they were sitting in.
+                ["project_id"] = conversation.ProjectId,
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>
                 {

@@ -1353,6 +1353,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .route-assign label{min-width:130px;font-size:11px;color:var(--muted);}
 .route-assign select{flex:0 1 340px;font-size:11px;}
 /* v0.3.8.48: the approval selector and the inline change cards. */
+.chat-gates-label{font-size:10px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;margin-right:2px;}
 .chat-policy{font-size:10px;padding:4px 7px;width:auto;background:var(--bg);}
 .patch-card{align-self:stretch;max-width:min(760px,92%);border:1px solid var(--border);
   border-radius:9px;padding:11px 13px;background:rgba(2,6,23,.45);}
@@ -2374,6 +2375,19 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="btn btn-primary" id="pv-save">Save</button>
               <button class="btn btn-ghost" id="pv-archive">Archive</button>
               <span class="save-msg" id="pv-save-msg"></span>
+            </div>
+
+            <!-- v0.3.8.51 (field report): DIRECTORY GATES — the filesystem twin of the approval
+                 gate. Each open gate is a path this project's colony may reach; the agent worker
+                 gets exactly these directories and nothing else. Attributed, revocable. -->
+            <div class="section-head" style="margin-top:18px;">Directory gates</div>
+            <div class="sub" style="margin-bottom:8px;">Paths this project's colony may reach. The colony asks in chat when it needs one; opening a gate here grants exactly that directory.</div>
+            <div id="pv-grants"><div class="hud-state">Loading…</div></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+              <label class="sr-only" for="pv-grant-path">Directory to grant</label>
+              <input class="provider-input" id="pv-grant-path" placeholder="/absolute/path/to/directory" style="flex:1;min-width:240px;">
+              <button class="btn btn-primary" id="pv-grant-open">Open gate</button>
+              <span class="save-msg" id="pv-grant-msg"></span>
             </div>
           </div></div>
         </div>
@@ -3422,6 +3436,48 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </div>
             <div id="chat-colony-mount" class="chat-colony-mount"></div>
           </div>
+
+          <!-- v0.3.8.51 (field report): the FILES pane — side-by-side cowork. Same split real
+               estate as the colony view: browse the working directory, open a file in a text
+               editor, save (an attributed operator edit), and toggle to the CHANGES the
+               conversation's missions proposed or applied, diffs on demand. -->
+          <div class="chat-colony-layer" id="chat-files-layer" hidden aria-label="Project files">
+            <div class="chat-colony-bar">
+              <span class="ccb-title">Files</span>
+              <span class="ccb-mission" id="chat-files-crumb"></span>
+              <!-- v0.3.8.51 third round: git awareness — what IS this directory? A repo on a
+                   branch (with a dirty count) or a plain folder, stated up front like opencode. -->
+              <span id="chat-files-repo" style="font-size:9.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap;"></span>
+              <span class="ccb-spacer"></span>
+              <button class="btn btn-ghost" id="chat-files-commit" hidden
+                      title="Commit the working tree's uncommitted changes">Commit</button>
+              <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">＋ File</button>
+              <button class="btn btn-ghost" id="chat-files-newdir" title="Create a new folder">＋ Folder</button>
+              <button class="btn btn-ghost" id="chat-files-changes" aria-pressed="false"
+                      title="Show what this conversation's missions changed, commit-style">Changes</button>
+              <button class="btn btn-ghost" id="chat-files-close" aria-label="Hide the files pane">✕</button>
+            </div>
+            <div id="chat-files-body" class="chat-colony-mount" style="overflow:auto;padding:10px 14px;flex:1 1 45%;min-height:0;">
+              <div class="hud-state">Loading…</div>
+            </div>
+            <!-- v0.3.8.51 third round: the editor DOCKS BELOW the tree — click a file, it opens
+                 here while the working tree stays visible above (operator: "click on a file, and
+                 it open below the working tree"). Its own Changes toggle shows recent edits to
+                 THIS file: the uncommitted git diff first, then the colony's patch history. -->
+            <div id="chat-files-editor" hidden style="display:flex;flex-direction:column;flex:1 1 55%;min-height:0;padding:8px 14px;border-top:1px solid var(--border);">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                <span id="chat-editor-path" style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;"></span>
+                <button class="btn btn-ghost" id="chat-editor-changes" aria-pressed="false"
+                        title="Recent edits to this file — uncommitted git diff and colony patches">Changes</button>
+                <button class="btn btn-primary" id="chat-editor-save">Save</button>
+                <button class="btn btn-ghost" id="chat-editor-back" title="Close the editor">✕</button>
+                <span class="save-msg" id="chat-editor-msg"></span>
+              </div>
+              <textarea id="chat-editor-text" spellcheck="false"
+                        style="flex:1;min-height:0;resize:none;background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px;line-height:1.5;padding:10px;"></textarea>
+              <div id="chat-editor-diff" hidden style="flex:1;min-height:0;overflow:auto;background:var(--inner);border:1px solid var(--border);border-radius:6px;"></div>
+            </div>
+          </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
             <!-- v0.3.8.47: import — the inverse of export. A JSON file of {title, turns:[{role,content}]}. -->
@@ -3445,6 +3501,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <!-- v0.3.8.48: the approval gate, on the conversation itself. Three modes, the
                      same three the backend has always had; changing one is attributed. -->
                 <label class="sr-only" for="chat-policy">Approval mode</label>
+                <!-- v0.3.8.51 (operator correction): the selector IS the gates, so it gets the
+                     label instead of a sibling button also named Gates. Directory gates live in
+                     the project's Settings; the label's title says so. -->
+                <span class="chat-gates-label" id="chat-gates-label"
+                      title="The approval gates for this conversation. Directory gates — the paths the colony may reach — are in the project's Settings.">Gates</span>
                 <select class="provider-input chat-policy" id="chat-policy" title="How this conversation handles side effects">
                   <option value="ask">Manual approval</option>
                   <option value="autoapprove">Automatically approve</option>
@@ -3454,6 +3515,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"
                         title="Download this conversation as a markdown file">⇩ Export</button>
+                <button class="btn btn-ghost" id="chat-files-toggle" aria-pressed="false"
+                        title="Browse and edit the project's working directory beside the chat">Files</button>
                 <button class="btn btn-ghost" id="chat-colony-toggle" aria-pressed="false"
                         title="Watch the colony work beside the conversation">◧ Colony</button>
               </div>
@@ -3475,15 +3538,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
                         placeholder="Describe what you want done…"></textarea>
-              <!-- v0.3.8.42 (§3): chat is the one mission entry, so the MISSION request lives here
-                   too — the same escalation-gated path the retired widget carried. Send asks;
-                   Do the work asks for real multi-task execution, and under the Ask policy the
-                   gate appears in the thread before anything runs. -->
-              <button class="mn-send chat-work" id="chat-work"
-                      title="Do the work — asks for real, multi-task execution, gated by your approval policy">⚒</button>
+              <!-- v0.3.8.51 (field report): the ⚒ "Do the work" button is GONE — there is one send.
+                   A normal prompt reaches the colony, which proposes a mission itself when the
+                   request is real work; the approval selector above decides what happens next
+                   (Manual approval shows the gate card in the thread, the other two just run). -->
               <button class="mn-send" id="chat-send" title="Send (Enter)">▶</button>
             </div>
-            <div class="chat-hint">Enter sends a message · ⚒ asks the colony to do the work (your approval policy applies)</div>
+            <div class="chat-hint">Enter sends a message · real work becomes a mission under your approval policy</div>
           </main>
 
         </div>
@@ -3720,5 +3781,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/mission-thread.js" defer></script>
 <script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
+<!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
+     PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
+     guarantees the order (deferred scripts execute in document order), and
+     ConsoleAssetSplitTests asserts it. -->
+<script src="/ui/homelab.js" defer></script>
 </body>
 </html>

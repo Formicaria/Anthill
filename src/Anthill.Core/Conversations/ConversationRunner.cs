@@ -66,6 +66,15 @@ public sealed class ConversationRunner
     /// </summary>
     public const string StartMissionAction = "start_mission";
 
+    /// <summary>
+    /// v0.3.8.51 — the chat model's escalation PROPOSAL: a reply ending with this exact marker
+    /// asks the colony to run the operator's request as a mission. Stripped from the record and
+    /// converted into the same deterministic start_mission gate the old button used — the model
+    /// can request, only the gate (and under Ask, only the operator) can allow. Double-bracketed
+    /// so ordinary prose can never trip it.
+    /// </summary>
+    public const string EscalateMarker = "[[START_MISSION]]";
+
     /// <summary>How long to wait for the mission ROW to exist before giving up on linking it.</summary>
     public const int MissionIdTimeoutSeconds = 15;
 
@@ -185,7 +194,20 @@ public sealed class ConversationRunner
                     "no reasoning provider is composed — the message is recorded, and nothing can answer it");
 
             ConversationReply reply;
-            try { reply = _ask(ChatPrompt(conversation), onDelta); }
+            try
+            {
+                // v0.3.8.51, second field round: the CHAT LANE is a working agent too — Claude
+                // Code with a real directory — and it ran with nothing while only missions got
+                // the operator's answer. The same policy + grants now ride this call, marked
+                // UNCONFINED because this lane stands in live files: Manual approval grants no
+                // writes here (the agent proposes a mission instead, where the sandbox is);
+                // Automatically approve and Skip-all act as the operator chose.
+                using var access = Anthill.SDK.Reasoning.AgentAccessScope.Enter(
+                    conversation.EffectivePolicy.ToString().ToLowerInvariant(),
+                    ProjectGrantPaths(conversation),
+                    confinedWorkspace: false);
+                reply = _ask(ChatPrompt(conversation), onDelta);
+            }
             catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
 
             if (!reply.Ok)
@@ -200,8 +222,21 @@ public sealed class ConversationRunner
                 return new ConversationOutcome(ConversationMode.Chat, false, null,
                     "cancelled while answering — the reply was discarded");
 
+            // v0.3.8.51 (field report): THE COLONY PROPOSES THE MISSION ITSELF. The transcript's
+            // worst sentence was the colony telling its operator to "ask for it as a mission
+            // explicitly" — a magic word. The chat prompt now invites the model to end its reply
+            // with the escalation marker when the request is real work; the marker is stripped
+            // from the record and the SAME deterministic gate the mission button used takes over:
+            // Manual approval shows the in-chat card, Automatically approve and Skip-all just run.
+            // The marker is a PROPOSAL, exactly as trusted as a handoff — the model can request,
+            // only the gate can allow.
+            var wantsMission = reply.Content.Contains(EscalateMarker, StringComparison.Ordinal);
+            var content = wantsMission
+                ? reply.Content.Replace(EscalateMarker, "", StringComparison.Ordinal).TrimEnd()
+                : reply.Content;
+
             _memory.SaveConversationTurn(new ConversationTurn(
-                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", reply.Content)
+                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", content)
             {
                 Provider = reply.Provider,
                 Model = reply.Model,
@@ -209,6 +244,16 @@ public sealed class ConversationRunner
                 PromptTokens = reply.PromptTokens,
                 CompletionTokens = reply.CompletionTokens,
             });
+
+            if (wantsMission)
+                // Re-enter as a MISSION with the operator's own message as the goal. The recursion
+                // is bounded — the mission path never re-enters chat — and the gate downstream is
+                // the one authority: Ask records the refusal and waits visibly; Auto/Bypass run.
+                // RecordTurn's identical-pending reuse links the mission to the operator's turn
+                // instead of duplicating it.
+                return Run(conversation, message, ConversationMode.Mission, answers,
+                    cancel: cancel, onDelta: null, attachments: null);
+
             return new ConversationOutcome(ConversationMode.Chat, true, null,
                 $"answered by {reply.Provider}/{reply.Model}");
         }
@@ -273,11 +318,18 @@ public sealed class ConversationRunner
         // is persisted. Waiting for THAT is bounded and quick; waiting for the work is neither.
         var idReady = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // v0.3.8.51, found live in mission 46f1acb7: the goal was the operator's bare words —
+        // "Make all of these changes" — and the coder honestly refused, because "these changes"
+        // referred to a plan that lived in the CONVERSATION and the mission never saw it. The
+        // goal now carries the operator's message plus the bounded recent transcript, so what
+        // "this" and "these" point at travels with the work.
+        var missionGoal = ComposeMissionGoal(conversation, message);
+
         _ = ThreadingTask.Run(() =>
         {
             try
             {
-                _startMission(message, id => idReady.TrySetResult(id), cts.Token);
+                _startMission(missionGoal, id => idReady.TrySetResult(id), cts.Token);
                 // v0.3.8.48, found live: the mission finished, its answer sat in mission history,
                 // and the conversation that started it showed nothing — an operator watching the
                 // chat never saw the result of the work they approved. The pipeline call above is
@@ -393,6 +445,50 @@ public sealed class ConversationRunner
         return signalled;
     }
 
+    /// <summary>The project's open directory gates, as paths — the chat lane's grant set.</summary>
+    private IReadOnlyList<string> ProjectGrantPaths(Conversation conversation)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return Array.Empty<string>();
+        try { return _memory.LoadProjectGrants(conversation.ProjectId!).Select(g => g.Path).ToList(); }
+        catch { return Array.Empty<string>(); }
+    }
+
+    /// <summary>
+    /// The mission goal a CONVERSATION escalates with: the operator's message, plus the bounded
+    /// recent transcript so pronouns resolve. v0.3.8.51, from mission 46f1acb7 — the operator said
+    /// "Make all of these changes", the colony's own reply held the list of changes, and the
+    /// mission got five words and no list. The coder's refusal was correct; the goal was wrong.
+    /// A conversation with no prior turns escalates with the plain message, unchanged.
+    /// </summary>
+    internal string ComposeMissionGoal(Conversation conversation, string message)
+    {
+        const int MaxContextChars = 4000;
+        List<ConversationTurn> turns;
+        try { turns = _memory.LoadConversationTurns(conversation.Id).ToList(); }
+        catch { return message; }
+
+        var prior = turns
+            .Where(t => !string.Equals(t.Content, message, StringComparison.Ordinal))
+            .TakeLast(6).ToList();
+        if (prior.Count == 0) return message;
+
+        var sb = new System.Text.StringBuilder(message);
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("--- conversation context (what the request above refers to) ---");
+        var budget = MaxContextChars;
+        foreach (var t in prior)
+        {
+            var who = string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator" : "Colony";
+            var text = t.Content ?? "";
+            if (text.Length > budget) text = text[..budget];
+            sb.AppendLine($"{who}: {text}");
+            budget -= text.Length;
+            if (budget <= 0) break;
+        }
+        return sb.ToString();
+    }
+
     /// <summary>
     /// After an escalated mission SETTLES, its result becomes the conversation's next turn — the
     /// operator asked in chat, so chat is where the answer belongs. Runs on the background thread
@@ -416,6 +512,15 @@ public sealed class ConversationRunner
             var answer = mission.GetValueOrDefault("user_result")?.ToString();
             if (string.IsNullOrWhiteSpace(answer))
                 answer = mission.GetValueOrDefault("final_result")?.ToString();
+
+            // v0.3.8.51, found live: a FAILED mission's user_result was the medic's escalation
+            // prose — "Semantic duplicate: failure signature fsig:…" landed in chat as the
+            // colony's answer. An operator asked a question; machine bookkeeping is not the
+            // reply. A non-complete mission now answers with what actually failed, in words,
+            // built from the structured task rows.
+            if (!string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase))
+                answer = ComposeFailureAnswer(missionId, status) ?? answer;
+
             var content = !string.IsNullOrWhiteSpace(answer)
                 ? answer!
                 : $"The mission finished with status \"{status}\" and recorded no result text — "
@@ -436,6 +541,28 @@ public sealed class ConversationRunner
         }
     }
 
+    /// <summary>The operator-readable account of a mission that did not complete: which task
+    /// failed and its own stated reason — structured rows, no medic bookkeeping.</summary>
+    private string? ComposeFailureAnswer(string missionId, string status)
+    {
+        try
+        {
+            var failed = _memory.GetTasksForMission(missionId)
+                .FirstOrDefault(t => string.Equals(t.GetValueOrDefault("status")?.ToString(), "failed",
+                    StringComparison.OrdinalIgnoreCase));
+            var title = failed?.GetValueOrDefault("title")?.ToString();
+            var reason = failed?.GetValueOrDefault("result")?.ToString();
+            if (string.IsNullOrWhiteSpace(reason)) reason = failed?.GetValueOrDefault("result_summary")?.ToString();
+
+            return failed is null
+                ? $"The mission ended \"{status}\" without completing. The task trail is in the mission history."
+                : $"The mission could not finish. \"{title}\" failed: "
+                  + (string.IsNullOrWhiteSpace(reason) ? "no reason was recorded." : reason!.Trim())
+                  + "\n\nThe full task trail is in the mission history.";
+        }
+        catch { return null; }
+    }
+
     private string RecordTurn(Conversation conversation, int ordinal, string message, string? missionId,
         IReadOnlyList<(string Filename, string Content)>? attachments = null,
         bool reuseIdenticalPending = false)
@@ -448,9 +575,12 @@ public sealed class ConversationRunner
         // already started work keeps its mission link, so it is never collapsed.
         if (reuseIdenticalPending)
         {
-            var last = _memory.LoadConversationTurns(conversation.Id).LastOrDefault();
+            // The last USER turn, not the last turn: v0.3.8.51's escalation proposal records the
+            // model's reply between the operator's message and the mission re-run, and that
+            // intervening assistant turn must not turn one operator message into two.
+            var last = _memory.LoadConversationTurns(conversation.Id)
+                .LastOrDefault(t => string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase));
             if (last is not null
-                && string.Equals(last.Role, "user", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(last.Content, message ?? "", StringComparison.Ordinal)
                 && last.MissionId is null)
             {
@@ -485,10 +615,29 @@ public sealed class ConversationRunner
         var turns = _memory.LoadConversationTurns(conversation.Id);
         var recent = turns.Skip(Math.Max(0, turns.Count - ChatContextTurns));
         var sb = new System.Text.StringBuilder();
+        // v0.3.8.51, second field round: the prompt used to say "you have no tools", which is a
+        // LIE when the routed provider is a working agent — it then hit its own permission walls
+        // and reported them to a confused operator. The prompt now states the access the operator
+        // actually chose, so the agent acts within it or proposes a mission, never mystery-fails.
+        var access = conversation.EffectivePolicy switch
+        {
+            EscalationPolicy.Bypass =>
+                "The operator has set Skip all approvals for this conversation: you may read, edit "
+                + "and run your available tools directly for small, contained work.",
+            EscalationPolicy.AutoApprove =>
+                "The operator has set Automatically approve for this conversation: you may edit "
+                + "files and run bounded build/test commands directly for small, contained work.",
+            _ =>
+                "This conversation is under Manual approval: your access is READ-ONLY here. Do not "
+                + "attempt writes or commands — they will be refused.",
+        };
         sb.AppendLine("You are the ANTHILL colony's conversational assistant. Answer the operator's "
-            + "last message concisely and truthfully. You have no tools in this conversation: if the "
-            + "operator is asking for real multi-step work, say that missions are started by asking "
-            + "for the work explicitly — never claim work you did not do.");
+            + "last message concisely and truthfully, and never claim work you did not do. "
+            + access + " For REAL multi-step work — builds, file changes, larger research — say "
+            + "briefly what the mission will do and end your reply with the exact marker "
+            + EscalateMarker + " on its own line. The colony then runs it as a mission under the "
+            + "operator's approval policy; under Manual approval the operator is asked first. "
+            + "Never use the marker for a question you can simply answer.");
         sb.AppendLine();
         // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
         // shape as Claude's project instructions: it travels with every turn, clearly labelled as
@@ -501,7 +650,20 @@ public sealed class ConversationRunner
                 + "The operator describes its purpose as:");
             if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
             if (!string.IsNullOrWhiteSpace(project.Path))
+            {
                 sb.AppendLine($"The project's working directory is: {project.Path}");
+                // v0.3.8.51 third round — git awareness: the colony applied changes and the
+                // operator asked why nothing was committed. The colony now KNOWS what the
+                // directory is (repo on a branch, or plain folder) and states its commit rules
+                // instead of discovering them by surprise.
+                var repo = Projects.RepoOps.Describe(project.Path);
+                sb.AppendLine(repo.IsRepo
+                    ? $"That directory is a git repository on branch '{repo.Branch}'"
+                      + (repo.DirtyCount > 0 ? $" with {repo.DirtyCount} uncommitted change(s)." : " with a clean working tree.")
+                      + " Under Skip-all-approvals or Automatically-approve, patches you apply are committed"
+                      + " automatically; under Manual approval the operator commits from the files pane."
+                    : "That directory is a plain folder, not a git repository — applied changes are not version-controlled.");
+            }
             sb.AppendLine();
         }
         foreach (var t in recent)

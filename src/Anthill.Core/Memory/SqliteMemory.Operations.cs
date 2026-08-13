@@ -170,8 +170,9 @@ public sealed partial class SqliteMemory
             foreach (var p in patchSet.Proposals)
                 NonQuery(conn, tx,
                     @"INSERT OR REPLACE INTO patch_proposals (id, patch_set_id, mission_id, task_id, file_path,
-                        change_type, reason, risk, old_content, new_content, base_hash, requires_approval, status, created_at)
-                      VALUES (@id, @pid, @mid, @tid, @fp, @ct, @reason, @risk, @old, @new, @bh, @ra, @status, @created)",
+                        change_type, reason, risk, old_content, new_content, base_hash, destination_path,
+                        requires_approval, status, created_at)
+                      VALUES (@id, @pid, @mid, @tid, @fp, @ct, @reason, @risk, @old, @new, @bh, @dp, @ra, @status, @created)",
                     ("@id", p.Id), ("@pid", patchSet.Id), ("@mid", patchSet.MissionId), ("@tid", patchSet.TaskId),
                     ("@fp", p.FilePath), ("@ct", p.ChangeType.Value()), ("@reason", p.Reason), ("@risk", p.Risk),
                     // Patch bodies may contain proprietary source — sealed at rest with AES-GCM.
@@ -179,6 +180,10 @@ public sealed partial class SqliteMemory
                     // v0.3.8.37: NOT encrypted. A hash of content is not content, and the apply path
                     // needs to compare it without holding the decryption key.
                     ("@bh", (object?)p.BaseHash ?? DBNull.Value),
+                    // v0.3.8.52: NOT encrypted either. A destination path is a path, the same class
+                    // of thing as file_path in the column beside it, and the apply path compares it
+                    // against the workspace guard without holding the key.
+                    ("@dp", (object?)p.DestinationPath ?? DBNull.Value),
                     ("@ra", p.RequiresApproval ? 1 : 0), ("@status", p.Status.Value()), ("@created", p.CreatedAt.ToIso()));
             tx.Commit();
         }
@@ -394,7 +399,7 @@ public sealed partial class SqliteMemory
     {
         const string baseSql = @"SELECT pp.id, pp.patch_set_id, pp.mission_id, pp.task_id, pp.file_path, pp.change_type,
             pp.reason, pp.risk, pp.requires_approval, pp.status, pp.created_at, pp.applied_at, pp.backup_path,
-            pp.last_error, ps.summary AS patch_set_summary
+            pp.last_error, pp.destination_path, ps.summary AS patch_set_summary
             FROM patch_proposals pp LEFT JOIN patch_sets ps ON pp.patch_set_id = ps.id";
         return status is null
             ? Query(baseSql + " ORDER BY pp.created_at DESC LIMIT @lim", ("@lim", limit))
