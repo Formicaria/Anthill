@@ -564,6 +564,10 @@ public static partial class ApiHost
                         ["policy_attributed"] = c.PolicyIsAttributed,
                         ["cancelled"] = c.Cancelled,
                         ["pinned"] = c.Pinned,
+                        // v0.3.8.51, found live: neither the list nor the detail carried the
+                        // project link — the conversation→project chain the whole files pane and
+                        // gates affordance stand on was invisible to every UI reader.
+                        ["project_id"] = c.ProjectId,
                         ["mission_ids"] = c.MissionIds,
                         ["doing"] = state.Doing,
                         ["waiting_on"] = state.WaitingOn,
@@ -1151,6 +1155,10 @@ public static partial class ApiHost
                 // conversation, and overwrites refusal summaries. State travels as state.
                 ["cancelled"] = state.Cancelled,
                 ["policy"] = state.Policy.ToString().ToLowerInvariant(),
+                // v0.3.8.51, found live: the DETAIL never carried project_id — only the list did —
+                // so the files pane and the gates affordance dead-ended on a field that did not
+                // exist and told the operator to "open a conversation" they were sitting in.
+                ["project_id"] = conversation.ProjectId,
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>
                 {

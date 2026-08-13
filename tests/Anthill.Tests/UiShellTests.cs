@@ -377,13 +377,35 @@ public class UiShellTests
             "mission-thread.js must load before app.js, which consumes it at parse time.");
     }
 
-    /// <summary>The node --test suite must actually run in CI, or it proves nothing.</summary>
+    /// <summary>
+    /// The node --test suite must actually run in CI, or it proves nothing.
+    ///
+    /// v0.3.8.52 strengthened this from a substring match on one filename to a check that the whole
+    /// DIRECTORY is run, because the original form is what let the gap happen: it pinned
+    /// `node --test tests/ui/mission-thread.test.js`, that exact line was what CI ran, and
+    /// navigation.test.js — added in v0.3.8.48 and passing — never executed anywhere. The guard was
+    /// satisfied while the thing it exists to guarantee was false for half the suite.
+    ///
+    /// Asserting the directory form makes the property hold for every file, including ones not
+    /// written yet, which is the only version of this check that stays true.
+    /// </summary>
     [Fact]
-    public void MissionThreadTests_RunInCiAndValidate()
+    public void EveryUiTestFile_RunsInCiAndInBothValidateScripts()
     {
-        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src(".github", "workflows", "ci.yml"));
-        Assert.Contains("node --test tests/ui/mission-thread.test.js", Src("scripts", "validate.ps1"));
-        Assert.True(File.Exists(Path.Combine(Root(), "tests", "ui", "mission-thread.test.js")));
+        const string runsTheDirectory = "node --test tests/ui/";
+
+        Assert.Contains(runsTheDirectory, Src(".github", "workflows", "ci.yml"));
+        Assert.Contains(runsTheDirectory, Src("scripts", "validate.ps1"));
+        // v0.3.8.52: validate.sh ran no UI tests at all, so a local "full validation" could pass
+        // green with a red console suite. Both scripts are asserted so they cannot drift apart.
+        Assert.Contains(runsTheDirectory, Src("scripts", "validate.sh"));
+
+        var uiTests = Directory.GetFiles(Path.Combine(Root(), "tests", "ui"), "*.test.js");
+        Assert.True(uiTests.Length >= 5,
+            $"expected the console suite to cover more than the original two files; found {uiTests.Length}");
+        // The named file the old assertion pinned still has to exist — it is the reconciler's only
+        // behavioural coverage, and the directory form would happily pass if someone deleted it.
+        Assert.Contains(uiTests, f => Path.GetFileName(f) == "mission-thread.test.js");
     }
 
     /// <summary>

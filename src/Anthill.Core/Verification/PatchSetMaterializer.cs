@@ -130,11 +130,25 @@ public static class PatchSetMaterializer
                     throw new InvalidOperationException(
                         $"proposal {proposal.Id} path escapes the sandbox: {proposal.FilePath}");
 
-                if (proposal.ChangeType == PatchChangeType.Delete)
+                // v0.3.8.52 — the delete arm that used to sit here is gone.
+                //
+                // It was `if (File.Exists(target)) File.Delete(target);` — a silent no-op when the
+                // file was absent, where the operator's applier refuses (RefusedTargetMissing). That
+                // is the same class of divergence as the v3.8.32 defect below, just quieter: a patch
+                // set containing a delete of something already gone materialised clean and verified
+                // green, and then failed at apply time. Delete and rename now go through Compute
+                // with everything else, and the sandbox refuses exactly where the tool would.
+                //
+                // The destination of a rename gets the sandbox-containment check the source got, for
+                // the reason the source has one: a `..`-laden destination writes into the operator's
+                // real tree from inside what is supposed to be isolated verification.
+                string? destinationTarget = null;
+                if (!string.IsNullOrWhiteSpace(proposal.DestinationPath))
                 {
-                    if (File.Exists(target)) File.Delete(target);
-                    applied.Add(proposal.FilePath);
-                    continue;
+                    destinationTarget = Path.GetFullPath(Path.Combine(sandboxRoot, proposal.DestinationPath));
+                    if (!destinationTarget.StartsWith(sandboxRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException(
+                            $"proposal {proposal.Id} destination escapes the sandbox: {proposal.DestinationPath}");
                 }
 
                 // v3.8.32 — THE defect this file shipped with.
@@ -154,13 +168,35 @@ public static class PatchSetMaterializer
                     ChangeTypeName(proposal.ChangeType), proposal.OldContent, proposal.NewContent, current,
                     // v0.3.8.37: verify against the base the patch was BUILT on. A sandbox that
                     // accepts a stale patch attests to a tree the operator's applier would refuse.
-                    proposal.BaseHash);
+                    proposal.BaseHash,
+                    proposal.DestinationPath,
+                    destinationTarget is not null
+                        && (File.Exists(destinationTarget) || Directory.Exists(destinationTarget)));
                 if (!outcome.Ok)
                     throw new InvalidOperationException($"proposal {proposal.Id} ({proposal.FilePath}): {outcome.Reason}");
 
-                if (outcome.Status == PatchApplyStatus.Created)
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.WriteAllText(target, outcome.Content!);
+                switch (outcome.Status)
+                {
+                    case PatchApplyStatus.Deleted:
+                        File.Delete(target);
+                        break;
+
+                    case PatchApplyStatus.Renamed:
+                        Directory.CreateDirectory(Path.GetDirectoryName(destinationTarget!)!);
+                        File.Move(target, destinationTarget!);
+                        // Both ends are recorded as applied. The source is now absent and the
+                        // destination present, and AppliedTreeHash reads each back from disk — a
+                        // materialisation that moved the file only halfway has to be visible in the
+                        // hash the verdict is bound to.
+                        applied.Add(proposal.DestinationPath!);
+                        break;
+
+                    default:
+                        if (outcome.Status == PatchApplyStatus.Created)
+                            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                        File.WriteAllText(target, outcome.Content!);
+                        break;
+                }
                 applied.Add(proposal.FilePath);
             }
 
@@ -179,12 +215,15 @@ public static class PatchSetMaterializer
         }
     }
 
-    /// <summary>The wire spelling <see cref="PatchApply"/> expects. Delete is handled before this is
-    /// reached; anything else is refused there rather than defaulting to a modify.</summary>
+    /// <summary>The wire spelling <see cref="PatchApply"/> expects. v0.3.8.52: all four change types
+    /// route through it now — nothing is handled ahead of it — and an unknown one is refused there
+    /// rather than defaulting to a modify.</summary>
     private static string ChangeTypeName(PatchChangeType kind) => kind switch
     {
         PatchChangeType.Add => PatchApply.Add,
         PatchChangeType.Modify => PatchApply.Modify,
+        PatchChangeType.Delete => PatchApply.Delete,
+        PatchChangeType.Rename => PatchApply.Rename,
         _ => kind.ToString().ToLowerInvariant(),
     };
 
@@ -208,6 +247,11 @@ public static class PatchSetMaterializer
             sb.Append(p.FilePath).Append('\n')
               .Append(p.ChangeType).Append('\n')
               .Append(p.OldContent ?? "").Append('\n')
+              // v0.3.8.52 added DestinationPath for the reason v3.8.32 added OldContent: two renames
+              // of the same file to DIFFERENT destinations are different changes that produce
+              // different trees, and hashing them identically would let a verdict for one stand in
+              // for the other.
+              .Append(p.DestinationPath ?? "").Append('\n')
               .Append(p.NewContent ?? "").Append('\n');
         return Sha(sb.ToString());
     }

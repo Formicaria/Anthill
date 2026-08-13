@@ -3769,5 +3769,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/mission-thread.js" defer></script>
 <script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
+<!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
+     PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
+     guarantees the order (deferred scripts execute in document order), and
+     ConsoleAssetSplitTests asserts it. -->
+<script src="/ui/homelab.js" defer></script>
 </body>
 </html>

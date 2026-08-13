@@ -213,6 +213,16 @@ public sealed class PatchProposal
     /// </summary>
     public string? BaseHash { get; set; }
 
+    /// <summary>
+    /// Where a RENAME moves the file to, workspace-relative like <see cref="FilePath"/>. v0.3.8.52.
+    ///
+    /// Null for every other change type, and null for every proposal written before this release —
+    /// which is why the column is additive and nullable rather than required. A rename that reaches
+    /// the applier without one is refused there (<c>PatchApply.RefusedMissingDestination</c>) rather
+    /// than defaulted to anything: there is no safe guess about where a file was meant to go.
+    /// </summary>
+    public string? DestinationPath { get; set; }
+
     public bool RequiresApproval { get; set; } = true;
     public PatchStatus Status { get; set; } = PatchStatus.Proposed;
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();
