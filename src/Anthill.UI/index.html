@@ -1190,6 +1190,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-conv:hover{background:rgba(255,255,255,.04);}
 .chat-conv.active{background:rgba(34,211,238,.09);border-color:rgba(34,211,238,.3);color:var(--text);}
 .chat-conv .attn{color:var(--amber,#f59e0b);font-size:9px;display:block;margin-top:3px;}
+/* v0.3.8.52 (field report): which project a conversation belongs to, on its own dim second
+   line — the tracker showed only first-message titles and nothing said where anything lived. */
+.chat-conv .conv-proj{display:block;margin-top:2px;font-size:9px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chat-conv .conv-proj svg{vertical-align:-1px;opacity:.7;}
 /* v0.3.8.46: search, pins. The pin is a per-row affordance that appears on hover (always shown
    when set), and the search box filters SERVER-SIDE over titles and transcript content. */
 .chat-search{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;

@@ -210,10 +210,16 @@ public sealed class ConversationRunner
                 // UNCONFINED because this lane stands in live files: Manual approval grants no
                 // writes here (the agent proposes a mission instead, where the sandbox is);
                 // Automatically approve and Skip-all act as the operator chose.
+                // v0.3.8.52 (field report: every project's chat ran in the same tree): the agent
+                // stands in THIS conversation's project directory — the explicit path, else the
+                // project's own tree under <workspace root>/projects/, created on first use
+                // (ProjectRoots). Null only when nothing resolves, which keeps the provider's
+                // refuse-not-roam confinement rule in force.
                 using var access = Anthill.SDK.Reasoning.AgentAccessScope.Enter(
                     conversation.EffectivePolicy.ToString().ToLowerInvariant(),
                     ProjectGrantPaths(conversation),
-                    confinedWorkspace: false);
+                    confinedWorkspace: false,
+                    workingDirectory: ProjectDirectory(conversation));
                 reply = _ask(ChatPrompt(conversation), onDelta);
             }
             catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
@@ -629,15 +635,31 @@ public sealed class ConversationRunner
     /// and Manual approval a dirty tree is the operator's to commit, by design — and for plain
     /// folders, missing projects, or any lookup failure. Never throws.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.52 — this conversation's working tree: the project's explicit path, else its own
+    /// default directory under the shared projects root (ProjectRoots), created on first use.
+    /// One resolution for the agent's cwd, the prompt's description, and the direct-edit sweep.
+    /// </summary>
+    private string? ProjectDirectory(Conversation conversation)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return null;
+            return _memory.LoadProject(conversation.ProjectId!) is { } project
+                ? Projects.ProjectRoots.Resolve(project) : null;
+        }
+        catch { return null; }
+    }
+
     private (string Root, HashSet<string> PreDirty)? BeginDirectEditSweep(Conversation conversation)
     {
         try
         {
             if (conversation.EffectivePolicy != EscalationPolicy.Bypass) return null;
-            if (string.IsNullOrWhiteSpace(conversation.ProjectId)
-                || _memory.LoadProject(conversation.ProjectId!) is not { } project
-                || string.IsNullOrWhiteSpace(project.Path)) return null;
-            var root = Projects.RepoOps.TopLevel(project.Path!);
+            // The sweep watches the tree the agent actually stands in — the resolved project
+            // directory, not only an explicitly set one (v0.3.8.52).
+            if (ProjectDirectory(conversation) is not { } dir) return null;
+            var root = Projects.RepoOps.TopLevel(dir);
             if (root is null) return null;
             var state = Projects.RepoOps.Describe(root);
             if (!state.IsRepo) return null;
@@ -713,20 +735,23 @@ public sealed class ConversationRunner
         // shape as Claude's project instructions: it travels with every turn, clearly labelled as
         // the operator's own framing, not the colony's conclusion.
         if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
-            && _memory.LoadProject(conversation.ProjectId!) is { } project
-            && (!string.IsNullOrWhiteSpace(project.DescriptionMd) || !string.IsNullOrWhiteSpace(project.Path)))
+            && _memory.LoadProject(conversation.ProjectId!) is { } project)
         {
-            sb.AppendLine($"This conversation belongs to the project \"{project.Name}\". "
-                + "The operator describes its purpose as:");
+            // v0.3.8.52: the directory described is the one the agent actually STANDS in — the
+            // resolved per-project tree, not only an explicitly set path. Describing a different
+            // tree than the cwd is how the operator got told about a branch they never chose.
+            var projectDir = Projects.ProjectRoots.Resolve(project);
+            sb.AppendLine($"This conversation belongs to the project \"{project.Name}\"."
+                + (string.IsNullOrWhiteSpace(project.DescriptionMd) ? "" : " The operator describes its purpose as:"));
             if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
-            if (!string.IsNullOrWhiteSpace(project.Path))
+            if (projectDir is not null)
             {
-                sb.AppendLine($"The project's working directory is: {project.Path}");
+                sb.AppendLine($"The project's working directory is: {projectDir}");
                 // v0.3.8.51 third round — git awareness: the colony applied changes and the
                 // operator asked why nothing was committed. The colony now KNOWS what the
                 // directory is (repo on a branch, or plain folder) and states its commit rules
                 // instead of discovering them by surprise.
-                var repo = Projects.RepoOps.Describe(project.Path);
+                var repo = Projects.RepoOps.Describe(projectDir);
                 sb.AppendLine(repo.IsRepo
                     ? $"That directory is a git repository on branch '{repo.Branch}'"
                       + (repo.DirtyCount > 0 ? $" with {repo.DirtyCount} uncommitted change(s)." : " with a clean working tree.")
