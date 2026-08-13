@@ -1316,6 +1316,30 @@ public class UiShellTests
         // Per-file recent edits come from the same patch surfaces the cards use.
         Assert.Contains("chat-editor-changes", js);
         Assert.Contains("cfGitDiffHtml", js);
+
+        // v0.3.8.52 field round: the whole row selects and stays lit; git letters fill the dead
+        // space; the bar buttons keep to one line (the fullwidth ＋ wrapped them into two); the
+        // editor gained a highlighted layer and chat prose gained inline code — all escape-first.
+        Assert.Contains(">+ File<", html);
+        Assert.Contains(">+ Folder<", html);
+        Assert.DoesNotContain("＋ File", html);
+        Assert.Contains("id=\"chat-editor-hl\"", html);
+        Assert.Contains("id=\"chat-editor-wrap\"", html);
+        Assert.Contains("chatFilesSelPath", js);
+        Assert.Contains("chatFilesApplyGitMarks", js);
+        Assert.Contains("cf-git", js);
+        Assert.Contains("chat-inline", js);
+        Assert.Contains("chatEditorHl", js);
+
+        // v0.3.8.52 — the commit train: per-file history on demand from a GitHub-style branch
+        // selector (view-only; nothing is checked out), each stop's diff one click deeper.
+        Assert.Contains("id=\"chat-files-branch\"", html);
+        Assert.Contains("cf-hist", js);
+        Assert.Contains("chatFilesTrain", js);
+        Assert.Contains("/repo/log?path=", js);
+        Assert.Contains("/repo/branches", js);
+        Assert.Contains("/repo/show?hash=", js);
+        Assert.Contains("ev.stopPropagation()", js);   // the clock must not also open the editor
     }
 
     /// <summary>
@@ -1478,5 +1502,234 @@ public class UiShellTests
         Assert.Contains("chud-legend-retry", legend);
         // …and retry busts the cache, or it would re-read the same failure for 30 seconds.
         Assert.Contains("apiCacheBust('/colony/registry')", BodyOf(js, "function colonyRegistryRetry()"));
+    }
+
+    /// <summary>
+    /// v0.3.8.52 — the Formicaria mark is a door home, in every shape the console ships in. The
+    /// link must be target=_blank (the desktop shell routes those to the operator's real browser;
+    /// see ShellForm's NewWindowRequested handler and DesktopShellTests' pin of it) and noopener,
+    /// because a page the colony links to must never get a handle back into the console.
+    /// </summary>
+    [Fact]
+    public void TheMark_LinksHome_InEveryShape()
+    {
+        var page = Ui("index.html");
+        Assert.Contains("href=\"https://formicaria.us\"", page);
+        var anchor = page[page.IndexOf("class=\"nav-logo-link\"", StringComparison.Ordinal)..];
+        anchor = anchor[..anchor.IndexOf('>')];
+        Assert.Contains("target=\"_blank\"", anchor);
+        Assert.Contains("rel=\"noopener noreferrer\"", anchor);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 — the LOCAL runtime card. The agents page's first offer must be the no-account
+    /// path, and its Install button may only render where the server says an end-to-end install is
+    /// real (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// </summary>
+    [Fact]
+    public void TheAgentsPage_OffersTheLocalRuntime_HonestlyPerPlatform()
+    {
+        var js = Ui("app.js");
+        var body = BodyOf(js, "async function loadAgentCli(force)");
+        Assert.Contains("d.local", body);
+        Assert.Contains("agentcli-install-local", body);
+        Assert.Contains("install_supported", body);
+        Assert.Contains("/agents/local/install", body);
+
+        var api = Src("src", "Anthill.Api", "ApiHost.Agents.cs");
+        Assert.Contains("/agents/local/install", api);
+        Assert.Contains("LocalRuntimeInstaller.Install()", api);
+        // The same operator-shell gate as an agent install: this too runs a command on the host.
+        Assert.Contains("RequireAuth(ctx, \"operator_shell\")", api);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (field report) — Browse for a working directory, both lanes wired end to end.
+    /// The desktop shell asks its host for the REAL OS folder dialog (the pick-folder bridge);
+    /// every browser shape falls back to the server-backed directory browser, whose endpoint is
+    /// gated on exactly the permission that may PATCH the path it exists to find. Each half is
+    /// pinned to its consumer, because a bridge without a caller and a caller without a bridge
+    /// both leave a Browse button that does nothing.
+    /// </summary>
+    [Fact]
+    public void BrowseForWorkingDirectory_HasBothLanes_WiredEndToEnd()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("cf-set-root-browse", js);
+
+        // The native lane's message contract, both ends of the bridge.
+        Assert.Contains("postMessage('pick-folder')", BodyOf(js, "function cfPickFolderNative()"));
+        var shell = Src("src", "Anthill.Desktop", "ShellForm.cs");
+        Assert.Contains("\"pick-folder\"", shell);
+        Assert.Contains("FolderBrowserDialog", shell);
+        Assert.Contains("picked-folder", shell);
+        Assert.Contains("picked-folder", js);
+
+        // The server lane: the browser panel over /fs/dirs, run_mission-gated before any listing.
+        Assert.Contains("/fs/dirs", BodyOf(js, "async function cfDirBrowserOpen(startPath, onPick)"));
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        var at = providers.IndexOf("app.MapGet(\"/fs/dirs\"", StringComparison.Ordinal);
+        Assert.True(at >= 0, "/fs/dirs endpoint is gone");
+        var gate = providers[at..];
+        gate = gate[..gate.IndexOf("Directory.Exists", StringComparison.Ordinal)];
+        Assert.Contains("RequireAuth(ctx, \"run_mission\")", gate);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (second field round) — every project gets ITS OWN tree. The old fallback sent
+    /// every pathless project to the ONE shared workspace root: the files pane showed every
+    /// project the same directory, and the chat agent ran every project on the same branch. The
+    /// rule now lives in ProjectRoots and every consumer resolves through it — the files pane,
+    /// the chat lane's confinement (via AgentAccessScope.WorkingDirectory, which the provider
+    /// must prefer over its static default), and the prompt's own description of the tree.
+    /// Two copies of a boundary rule is one copy that eventually disagrees.
+    /// </summary>
+    [Fact]
+    public void EveryProject_OwnsItsOwnTree_SetByTheOperator_BeforeTheFirstChat()
+    {
+        var roots = Src("src", "Anthill.Core", "Projects", "ProjectRoots.cs");
+        Assert.Contains("\"projects\"", roots);                       // the shared parent
+        Assert.Contains("{Slug(project.Name)}-{project.Id}", roots);  // unique per project
+
+        // Third field round: the directory is the OPERATOR'S explicit act — suggested, never
+        // silently provisioned; created when they set it; required before the first chat.
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("suggested_path", providers);
+        Assert.Contains("ProjectRoots.DefaultFor(project)", providers);
+        Assert.Contains("workdir_required", providers);
+        Assert.DoesNotContain("? AnthillRuntime.AllowedWorkspaceRoot : project.Path", providers);
+
+        // And the git story speaks only for the project's OWN tree: nested inside a larger
+        // repository ⇒ plain folder with the enclosure named, commit gate included.
+        Assert.Contains("sits inside the repository at", providers);
+        Assert.Contains("PathsEqual", providers);
+
+        var runner = Src("src", "Anthill.Core", "Conversations", "ConversationRunner.cs");
+        Assert.Contains("workingDirectory: ProjectDirectory(conversation)", runner);
+        // The colony's own checkout rides alongside every project — reach, never the tracked tree.
+        Assert.Contains("ColonySource()", runner);
+
+        var provider = Src("src", "Anthill.Modules", "Anthill.Modules.Reasoning", "AgentCliProvider.cs");
+        Assert.Contains("EffectiveWorkingDirectory", provider);
+        var sdk = Src("src", "Anthill.SDK", "Reasoning", "AgentAccessScope.cs");
+        Assert.Contains("WorkingDirectory", sdk);
+
+        // The console's half of the gate: refusal keeps the message and opens the files pane,
+        // whose set-root form arrives prefilled with the suggestion.
+        var js = Ui("app.js");
+        Assert.Contains("workdir_required", js);
+        Assert.Contains("suggested_path", js);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (second field round) — the project page's New Conversation BUTTON creates the
+    /// conversation, immediately and in that project; it used to only flip the chat page into
+    /// composing mode, which read as a dead navigation. A conversation born untitled is then
+    /// named by the server from the first thing said in it, the tracker says which project every
+    /// row lives in, and + File / + Folder browse the project's own tree instead of prompt()ing
+    /// for a path from memory.
+    /// </summary>
+    [Fact]
+    public void ConversationsAreBornInTheirProject_AndTheTrackerSaysWhere()
+    {
+        var js = Ui("app.js");
+        var newConv = BodyOf(js, "document.getElementById('pv-new-conv')?.addEventListener('click',async ()=>");
+        Assert.Contains("api('/conversations','POST',{ project_id: projectViewId })", newConv);
+
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("string.IsNullOrWhiteSpace(conversation.Title)", providers);  // first message names it
+        Assert.Contains("project_name", providers);
+        Assert.Contains("conv-proj", js);
+
+        // Eighth field round: the chat header itself says which project the work belongs to —
+        // the DETAIL carries the name, the second line under the title wears it and clicks
+        // through to the project page. With the files pane open, the tree is never anonymous.
+        var detailAt = providers.IndexOf("MapGet(\"/conversations/{id}\"", StringComparison.Ordinal);
+        Assert.True(detailAt >= 0);
+        Assert.Contains("project_name", providers[detailAt..(detailAt + 2500)]);
+        Assert.Contains("id=\"chat-title-proj\"", Ui("index.html"));
+        Assert.Contains("chat-title-proj", js);
+        Assert.Contains("go('/projects/'+encodeURIComponent(d.project_id||''))", js);
+
+        // + File / + Folder are pickers over the jailed project tree now — no prompt().
+        var create = BodyOf(js, "async function chatFilesCreate(isDir, at)");
+        Assert.Contains("cf-create-panel", create);
+        Assert.DoesNotContain("prompt(", create);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (fourth field round) — the files-pane toolbar survives every repo state. The
+    /// badge is SHORT ("no git", never git's stderr — RepoOpsTests pins the server half); Init
+    /// git is offered exactly while the directory is NOT a repository, through an apply_patch-
+    /// gated endpoint that refuses a directory which already is one; and the working directory
+    /// stays changeable after first setup — the Dir… button reopens the same set-root form.
+    /// </summary>
+    [Fact]
+    public void TheFilesToolbar_SurvivesEveryRepoState_AndTheDirStaysChangeable()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("badge.textContent='no git'", js);
+        var repoLoad = BodyOf(js, "async function chatFilesRepoLoad()");
+        Assert.Contains("initBtn.hidden=true", repoLoad);    // a repo never offers Init
+        Assert.Contains("initBtn.hidden=false", repoLoad);   // a non-repo always does
+        Assert.Contains("/repo/init", js);
+
+        var html = Ui("index.html");
+        Assert.Contains("id=\"chat-files-gitinit\"", html);
+        Assert.Contains("id=\"chat-files-chroot\"", html);
+        Assert.Contains("chatFilesShowRootForm", js);        // one form, two doors
+
+        // Sixth field round: hidden=true MUST mean invisible. .btn's display:inline-flex beat
+        // the UA's [hidden]{display:none}, so Init git stood on screen beside a repo badge
+        // saying master·clean with its hidden attribute correctly set. The global rule makes
+        // the attribute unbeatable; verified live before landing.
+        Assert.Contains("[hidden]{display:none !important;}", html);
+
+        var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
+        Assert.Contains("app.MapPost(\"/projects/{id}/repo/init\"", providers);
+        Assert.Contains("already a git repository", providers);
+
+        // Fifth field round: the badge must go LIVE the moment init or a directory change
+        // succeeds — the cached GETs are busted, or 'Init git' appears to ignore the click
+        // for a TTL while the stale "not a repo" answer replays.
+        Assert.Contains("apiCacheBust('/projects/'+encodeURIComponent(chatFilesProjectId))", js);
+    }
+
+    /// <summary>
+    /// v0.3.8.52 (fifth field round) — the splits are SIZABLE: chat ↔ pane horizontally, tree ↔
+    /// editor vertically. One wiring function, two handles, proportions persisted; the vertical
+    /// handle exists only while the editor is open (:has), so a handle never floats beside one
+    /// lone pane.
+    /// </summary>
+    [Fact]
+    public void TheSplits_AreSizable_AndRememberTheirProportions()
+    {
+        var js = Ui("app.js");
+        Assert.Contains("wireSplit('chat-split-x', true, 'anthill_split_x'", js);
+        Assert.Contains("wireSplit('chat-split-y', false, 'anthill_split_y'", js);
+        // Guarded: a pointer that cannot be captured must not kill the drag handler (E2E sweep).
+        Assert.Contains("try{ handle.setPointerCapture(e.pointerId); }catch", js);
+
+        // And from the same sweep: inline-SVG glyphs may never ride a textContent sink — the
+        // project subtitle printed literal "<svg …>" prose. Icons go through innerHTML with the
+        // operator's data escaped around them; no setEl/textContent call may carry a GLYPH.
+        Assert.DoesNotMatch(@"setEl\([^)]*GLYPH", js);
+        Assert.DoesNotMatch(@"textContent\s*=[^;\n]*GLYPH", js);
+        Assert.Contains("pvSub.innerHTML", js);
+
+        var html = Ui("index.html");
+        Assert.Contains("id=\"chat-split-x\"", html);
+        Assert.Contains("id=\"chat-split-y\"", html);
+        Assert.Contains(":has(#chat-files-editor[hidden])", html);
+        Assert.Contains("cursor:col-resize", html);
+        Assert.Contains("cursor:row-resize", html);
+
+        // Seventh field round: a narrow pane may never push the controls off screen. The bar's
+        // yield order is explicit — the PATH collapses first (10× shrink), controls never shrink
+        // (buttons and the branch select are flex-shrink:0), wrap is the last resort. Verified
+        // live at the drag clamp's narrowest before landing.
+        Assert.Contains("flex-wrap:wrap", html);
+        Assert.Contains(".chat-colony-bar .btn,.chat-colony-bar select{flex-shrink:0;}", html);
+        Assert.Contains("flex:0 10 auto", html);
     }
 }

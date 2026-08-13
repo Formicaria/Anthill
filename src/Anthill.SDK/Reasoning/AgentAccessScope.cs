@@ -29,23 +29,32 @@ public static class AgentAccessScope
     /// would be un-asked side effects on live files, so it gets nothing and proposes a mission
     /// instead — which is where the sandbox and the patch pipeline live.
     /// </summary>
+    /// <summary>
+    /// <paramref name="WorkingDirectory"/> — v0.3.8.52 (field report: every project's chat ran in
+    /// the same tree): the directory this flow's agent should STAND IN, when the caller knows one
+    /// (the conversation's own project directory, resolved through ProjectRoots). Null keeps the
+    /// provider's static default — the shared agent workspace root — which is the old behaviour
+    /// and still right for callers with no project in hand.
+    /// </summary>
     public sealed record Context(
         string PolicyWire,
         IReadOnlyList<string> GrantedDirectories,
-        bool ConfinedWorkspace = false);
+        bool ConfinedWorkspace = false,
+        string? WorkingDirectory = null);
 
     private static readonly AsyncLocal<Context?> Ambient = new();
 
     public static Context? Current => Ambient.Value;
 
     public static IDisposable Enter(string policyWire, IReadOnlyList<string>? grantedDirectories = null,
-        bool confinedWorkspace = false)
+        bool confinedWorkspace = false, string? workingDirectory = null)
     {
         var previous = Ambient.Value;
         Ambient.Value = new Context(
             string.IsNullOrWhiteSpace(policyWire) ? "ask" : policyWire.ToLowerInvariant(),
             grantedDirectories ?? Array.Empty<string>(),
-            confinedWorkspace);
+            confinedWorkspace,
+            string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory);
         return new Scope(previous);
     }
 

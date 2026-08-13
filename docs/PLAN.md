@@ -1,7 +1,21 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.51** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.52** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.52: the chat lane's direct edits reach git — the sweep commits what a Skip-all run
+> newly dirtied and never the operator's own WIP; the files pane grows manners (whole-row
+> selection that stays lit, git status letters, one-line bar buttons) and a commit train per
+> file with a GitHub-style branch selector that never checks anything out; syntax highlighting
+> lands in chat prose (inline code, bold) and in the editor via a highlighted layer under a
+> transparent textarea.
+
+> v0.3.8.51: open the gates — the conversation's approval policy rides to the agent CLI as
+> flags AND a materialized settings.local.json; directory gates per project (--add-dir);
+> Skip-all applies verified patches unprompted through the audited transitions and commits
+> them; one JSON approve-apply endpoint replaces the card's broken two-call flow; the colony
+> proposes missions itself (no Do-the-work button); Files beside the chat with a docked
+> editor; RepoOps git awareness with the repo badge and operator Commit.
 
 > v0.3.8.49: Formicaria — the UI/UX and architecture pass. Navigation folded to five destinations
 > (Colony, Projects, Chat, Tools, Settings); Chat scrolls correctly and condenses mission

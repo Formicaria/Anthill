@@ -399,6 +399,32 @@ public static partial class ApiHost
             var message = (body?.Message ?? "").Trim();
             if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
 
+            // v0.3.8.52 (third field round, operator's rule): the working directory is set BEFORE
+            // the first chat, full stop. Every turn's agent stands in the project's tree, so a
+            // turn without one has nowhere honest to stand — refused with the remedy, not
+            // defaulted into a tree the operator never chose.
+            if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+                && Queen.Memory.LoadProject(conversation.ProjectId!) is { } turnProject
+                && string.IsNullOrWhiteSpace(turnProject.Path))
+                return ApiJson.Error(
+                    $"\"{turnProject.Name}\" has no working directory yet. Open the Files tab and "
+                    + "set one (the suggested path is ready to accept) before the first chat.",
+                    "workdir_required");
+
+            // v0.3.8.52 (field report): a conversation born EMPTY — the project page's New
+            // Conversation button creates one before anything is said — takes its title from the
+            // first thing said in it. The console titles only at creation, so without this the
+            // tracker shows an unnamed row forever.
+            if (string.IsNullOrWhiteSpace(conversation.Title))
+            {
+                conversation = conversation with
+                {
+                    Title = message.Length <= 48 ? message : message[..48],
+                    UpdatedAt = AnthillTime.NowUtc(),
+                };
+                Queen.Memory.SaveConversation(conversation);
+            }
+
             var mode = string.Equals(body?.Mode, "mission", StringComparison.OrdinalIgnoreCase)
                 ? ConversationMode.Mission : ConversationMode.Chat;
             var answers = body?.Answers ?? new Dictionary<string, string>();
@@ -546,6 +572,11 @@ public static partial class ApiHost
                 ? Queen.Memory.LoadConversations()
                 : Queen.Memory.SearchConversations(q);
 
+            // v0.3.8.52 (field report: "cannot tell what conversations go where") — the project
+            // NAME rides every row. One load for the whole list, not one per conversation.
+            var projectNames = Queen.Memory.LoadProjects()
+                .ToDictionary(p => p.Id, p => p.Name, StringComparer.Ordinal);
+
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["conversations"] = list.Select(c =>
@@ -568,6 +599,7 @@ public static partial class ApiHost
                         // project link — the conversation→project chain the whole files pane and
                         // gates affordance stand on was invisible to every UI reader.
                         ["project_id"] = c.ProjectId,
+                        ["project_name"] = c.ProjectId is not null && projectNames.TryGetValue(c.ProjectId, out var pn) ? pn : null,
                         ["mission_ids"] = c.MissionIds,
                         ["doing"] = state.Doing,
                         ["waiting_on"] = state.WaitingOn,
@@ -640,6 +672,19 @@ public static partial class ApiHost
             // caller's name and the moment. Unchanged fields keep their existing attribution.
             var who = CurrentUsername(ctx) ?? "operator";
             var policyChanged = Enum.TryParse<EscalationPolicy>(body?.DefaultPolicy, ignoreCase: true, out var newPolicy);
+
+            // v0.3.8.52 (third field round): setting the working directory is the operator's own
+            // explicit act, and the directory is CREATED for them when new — the suggested
+            // per-project tree is new by definition, and "set it, then be told it does not
+            // exist" would be the form arguing with itself.
+            var newPath = string.IsNullOrWhiteSpace(body?.Path) ? null : body!.Path!.Trim();
+            if (newPath is not null && !Directory.Exists(newPath))
+            {
+                try { Directory.CreateDirectory(newPath); }
+                catch (Exception ex)
+                { return ApiJson.Error($"Could not create {newPath}: {ex.Message}", "bad_request"); }
+            }
+
             Queen.Memory.SaveProject(project with
             {
                 Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
@@ -724,6 +769,70 @@ public static partial class ApiHost
         });
 
         /*
+         * v0.3.8.52 (field report) — BROWSE for a working directory. The files pane's "set it
+         * here" form asked the operator to TYPE an absolute path from memory; the Browse button
+         * needs to open a picker. Two shapes, one endpoint: the desktop shell opens the real OS
+         * folder dialog (a WebView2 host bridge — see ShellForm), and every browser shape uses
+         * this HOST-side directory listing, because (a) a web page can never learn an absolute
+         * path from the browser's own picker, by design, and (b) in Docker/LXC the working
+         * directory lives on the SERVER, so the server's tree is the only one worth browsing.
+         *
+         * Gated on run_mission — exactly the permission that may PATCH the path this browser
+         * exists to find; an operator who can set any path can already see anything this lists.
+         * Directories only, hidden and system entries skipped, unreadable branches refused with
+         * the reason rather than rendered empty.
+         */
+        app.MapGet("/fs/dirs", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var q = ctx.Request.Query["path"].FirstOrDefault() ?? "";
+            string path;
+            try
+            {
+                path = string.IsNullOrWhiteSpace(q)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    : Path.GetFullPath(q.Trim());
+            }
+            catch { return ApiJson.Error("Not a valid path.", "bad_request"); }
+            if (!Directory.Exists(path)) return ApiJson.Error("Not a directory on this host.", "not_found");
+
+            var dirs = new List<Dictionary<string, object?>>();
+            try
+            {
+                foreach (var d in Directory.EnumerateDirectories(path))
+                {
+                    var name = Path.GetFileName(d);
+                    if (name.StartsWith('.')) continue;
+                    try
+                    {
+                        if ((File.GetAttributes(d) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+                            continue;
+                    }
+                    catch { continue; }   // an unreadable entry is skipped, not fatal
+                    dirs.Add(new() { ["name"] = name, ["path"] = d });
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return ApiJson.Error("Anthill's user cannot read that directory.", "forbidden");
+            }
+            dirs.Sort((a, b) => string.Compare(
+                (string?)a["name"], (string?)b["name"], StringComparison.OrdinalIgnoreCase));
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["parent"] = Path.GetDirectoryName(path),
+                ["home"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                // Windows offers its ready drives; elsewhere the one root there is.
+                ["roots"] = OperatingSystem.IsWindows()
+                    ? DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => d.Name).Cast<object?>().ToList()
+                    : new List<object?> { "/" },
+                ["dirs"] = dirs,
+            });
+        });
+
+        /*
          * v0.3.8.51 (field report) — THE FILES PANE: browse, read, and edit the project's working
          * tree from chat, side by side with the conversation. Every path is JAILED to the
          * project's own root (its Path, else the colony workspace root): resolved fully, then
@@ -733,11 +842,18 @@ public static partial class ApiHost
         // The files pane's jail helpers, local to this map so they cannot be reached around.
         static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
         {
-            var root = string.IsNullOrWhiteSpace(project.Path)
-                ? AnthillRuntime.AllowedWorkspaceRoot : project.Path!;
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                return (null, "This project has no working directory — set one in its Settings.");
-            return (Path.GetFullPath(root), null);
+            // v0.3.8.52 (third field round): the working directory is the OPERATOR'S decision,
+            // made explicitly and before the first chat — no silent auto-provision (the second
+            // round's lazily-created default made the set-directory form vanish and left a new
+            // project staring at an unexplained empty tree). A pathless project errors here,
+            // which is exactly what makes the files pane show the set-root form, prefilled with
+            // the per-project suggestion (suggested_path on the project detail).
+            if (string.IsNullOrWhiteSpace(project.Path))
+                return (null, "This project has no working directory yet — set one below. Every "
+                            + "project needs its own; the suggested path keeps them under one shared root.");
+            if (!Directory.Exists(project.Path))
+                return (null, $"The working directory {project.Path} does not exist — re-set or correct it below.");
+            return (Path.GetFullPath(project.Path), null);
         }
         static (string Full, string? Error) JailedPath(string root, string relative)
         {
@@ -746,6 +862,13 @@ public static partial class ApiHost
                 ? (full, null)
                 : (root, "That path escapes the project's directory.");
         }
+        // v0.3.8.52 (third field round): "is this directory ITSELF the repo toplevel" — the
+        // question the git badge and the commit gate both ask, so it is answered once.
+        static bool PathsEqual(string a, string b) =>
+            string.Equals(
+                Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
         app.MapGet("/projects/{id}/files", (HttpContext ctx, string id) =>
         {
@@ -873,6 +996,26 @@ public static partial class ApiHost
             if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
             var (root, error) = ProjectFileRoot(project);
             if (error is not null) return ApiJson.Error(error, "bad_request");
+
+            // v0.3.8.52 (third field round): the git check speaks for THE PROJECT'S OWN TREE.
+            // A project directory nested inside a larger repository (a fresh tree under a
+            // workspace root that lives in the ANTHILL checkout, say) used to report the
+            // ENCLOSING repo's branch — a branch the operator never chose, on a tree the
+            // project does not track. Nested ⇒ plain folder, with the enclosure named.
+            var top = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (top is not null && !PathsEqual(top, root!))
+                return ApiJson.Ok(new Dictionary<string, object?>
+                {
+                    ["root"] = root,
+                    ["is_repo"] = false,
+                    ["branch"] = null,
+                    ["dirty_count"] = 0,
+                    ["dirty"] = new List<Dictionary<string, object?>>(),
+                    ["last_commit"] = null,
+                    ["note"] = $"This directory sits inside the repository at {top} — the project "
+                             + "tracks only its own tree, so git operations here are disabled.",
+                });
+
             var state = Anthill.Core.Projects.RepoOps.Describe(root);
             return ApiJson.Ok(new Dictionary<string, object?>
             {
@@ -885,6 +1028,35 @@ public static partial class ApiHost
                 ["last_commit"] = state.LastCommit,
                 ["note"] = state.IsRepo ? null : (state.Error ?? "This directory is a plain folder, not a git repository."),
             });
+        });
+
+        /*
+         * v0.3.8.52 (fourth field round) — MAKE it a repo: the operator's explicit act from the
+         * files pane, offered only when the working directory is not one already. apply_patch
+         * gate, same as commit: both mutate the repository state of the operator's tree.
+         */
+        app.MapPost("/projects/{id}/repo/init", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+
+            var existingTop = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (existingTop is not null && PathsEqual(existingTop, root!))
+                return ApiJson.Error("This directory is already a git repository.", "bad_request");
+
+            var (ok, output) = Anthill.Core.Projects.RepoOps.Init(root!);
+            var who = CurrentUsername(ctx) ?? "operator";
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId,
+                ok ? "repo_initialized" : "repo_init_failed",
+                ok ? $"Operator {who} initialized a git repository in {root} (project '{project.Name}')."
+                   : $"git init failed in {root}: {output}",
+                antName: who);
+            return ok
+                ? ApiJson.Ok(null, "Repository created — the badge and commit controls are live now.")
+                : ApiJson.Error($"git init failed: {output}", "bad_request");
         });
 
         // The uncommitted diff for ONE file — what sits between HEAD and the working tree. The
@@ -911,6 +1083,78 @@ public static partial class ApiHost
             });
         });
 
+        /*
+         * v0.3.8.52 — THE COMMIT TRAIN, GitHub-style: every branch is selectable and every file's
+         * recent commits are one click away, without ever checking anything out. Branch and hash
+         * inputs are validated ref-shaped/hash-shaped before git sees them; paths ride the same
+         * jail as everything else in this pane.
+         */
+        app.MapGet("/projects/{id}/repo/branches", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var (current, branches) = Anthill.Core.Projects.RepoOps.Branches(root!);
+            if (current is null && branches.Count == 0)
+                return ApiJson.Error("Not a git repository.", "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["current"] = current, ["branches"] = branches });
+        });
+
+        app.MapGet("/projects/{id}/repo/log", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = (ctx.Request.Query["path"].FirstOrDefault() ?? "").Replace('\\', '/').TrimStart('/');
+            if (rel.Length > 0)
+            {
+                var (_, jailError) = JailedPath(root!, rel);
+                if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            }
+            var branch = ctx.Request.Query["branch"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(branch) && !Anthill.Core.Projects.RepoOps.SafeRef(branch!))
+                return ApiJson.Error("That is not a branch name.", "bad_request");
+            var limit = int.TryParse(ctx.Request.Query["limit"].FirstOrDefault(), out var n) ? n : 20;
+            var commits = Anthill.Core.Projects.RepoOps.Log(root!, branch, rel, limit);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["path"] = rel, ["branch"] = branch,
+                ["commits"] = commits.Select(c => new Dictionary<string, object?>
+                {
+                    ["hash"] = c.Hash, ["author"] = c.Author,
+                    ["time"] = c.Time, ["subject"] = c.Subject,
+                }).ToList(),
+            });
+        });
+
+        app.MapGet("/projects/{id}/repo/show", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            var (root, error) = ProjectFileRoot(project);
+            if (error is not null) return ApiJson.Error(error, "bad_request");
+            var rel = (ctx.Request.Query["path"].FirstOrDefault() ?? "").Replace('\\', '/').TrimStart('/');
+            if (rel.Length > 0)
+            {
+                var (_, jailError) = JailedPath(root!, rel);
+                if (jailError is not null) return ApiJson.Error(jailError, "forbidden");
+            }
+            var hash = ctx.Request.Query["hash"].FirstOrDefault() ?? "";
+            var (ok, output) = Anthill.Core.Projects.RepoOps.ShowCommit(root!, hash, rel);
+            if (!ok) return ApiJson.Error(output, "bad_request");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["hash"] = hash, ["path"] = rel,
+                ["diff"] = output.Length > 200_000 ? output[..200_000] + "\n… (truncated)" : output,
+            });
+        });
+
         app.MapPost("/projects/{id}/repo/commit", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, "apply_patch"); if (auth is not null) return auth;
@@ -923,6 +1167,14 @@ public static partial class ApiHost
             if (string.IsNullOrWhiteSpace(message)) return ApiJson.Error("A commit message is required.", "bad_request");
             var (root, error) = ProjectFileRoot(project);
             if (error is not null) return ApiJson.Error(error, "bad_request");
+            // Same scoping as the badge (third field round): commits go to the project's OWN
+            // repo only — never to a repository that merely encloses the project directory.
+            var commitTop = Anthill.Core.Projects.RepoOps.TopLevel(root!);
+            if (commitTop is null || !PathsEqual(commitTop, root!))
+                return ApiJson.Error(commitTop is null
+                    ? "This project's directory is not a git repository."
+                    : $"This directory sits inside the repository at {commitTop} — the project tracks "
+                    + "only its own tree, so committing from here is disabled.", "bad_request");
             var paths = new List<string>();
             if (body is not null && body.TryGetValue("paths", out var pv)
                 && pv.ValueKind == System.Text.Json.JsonValueKind.Array)
@@ -1103,6 +1355,11 @@ public static partial class ApiHost
             {
                 ["id"] = project.Id, ["name"] = project.Name,
                 ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
+                // v0.3.8.52 (third field round): the operator SETS the working directory — the
+                // colony only suggests. The suggestion keeps every project under one shared root
+                // with its own tree; the files pane prefills it, and nothing is created until
+                // the operator says so.
+                ["suggested_path"] = Anthill.Core.Projects.ProjectRoots.DefaultFor(project),
                 ["archived"] = project.Archived,
                 ["default_policy"] = project.EffectiveDefaultPolicy.ToString().ToLowerInvariant(),
                 ["default_policy_by"] = project.DefaultPolicyBy,
@@ -1243,6 +1500,10 @@ public static partial class ApiHost
                 // so the files pane and the gates affordance dead-ended on a field that did not
                 // exist and told the operator to "open a conversation" they were sitting in.
                 ["project_id"] = conversation.ProjectId,
+                // v0.3.8.52 (field report: with the files pane open "you have no way to see what
+                // the project is") — the NAME rides the detail so the chat header can wear it.
+                ["project_name"] = conversation.ProjectId is { } cpid
+                    ? Queen.Memory.LoadProject(cpid)?.Name : null,
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>
                 {
