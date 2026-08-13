@@ -16,6 +16,13 @@ buttons (the fullwidth ＋ was the culprit); and git status letters fill the dea
 the size — M/A/D/? per file, a dot on folders holding uncommitted changes beneath them, all fed
 by the dirty list the repo badge already fetched.
 
+**The commit train.** Every file row carries a quiet clock; click it and the file's recent
+commits unfold beneath the row — hash, subject, author, age — read from whichever branch the new
+GitHub-style selector in the bar has chosen, without ever checking anything out. Click a stop
+and that commit's diff for the file opens inline, through the same colored renderer the
+uncommitted view uses. Refs are validated ref-shaped and hashes hash-shaped before git sees
+them, and every path rides the pane's existing jail.
+
 **Syntax highlighting, both places.** Chat prose gains inline `code` and **bold** through the
 same escape-first pipeline the fenced blocks already used. The files editor gains a highlighted
 layer: the identical tokenizer, keyed by file extension, rendered in a pre behind a transparent-

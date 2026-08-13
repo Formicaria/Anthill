@@ -102,6 +102,59 @@ public class RepoOpsTests : IDisposable
         Assert.Contains("message", message, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// v0.3.8.52 — the commit train's data: per-file log with hash/author/time/subject, branch
+    /// selectable without a checkout, one commit's diff on demand. And the guards that keep git
+    /// arguments arguments: option-shaped refs are refused, non-hashes never reach `git show`.
+    /// </summary>
+    [Fact]
+    public void CommitTrain_LogBranchesAndShow_ReadHistoryTruthfully()
+    {
+        if (!GitAvailable) return;
+        Assert.True(RepoOps.Git(_root, "init").Ok);
+        File.WriteAllText(Path.Combine(_root, "story.txt"), "first\n");
+        Assert.True(RepoOps.Commit(_root, new[] { "story.txt" }, "chapter one", "tester").Ok);
+        File.WriteAllText(Path.Combine(_root, "story.txt"), "first\nsecond\n");
+        Assert.True(RepoOps.Commit(_root, new[] { "story.txt" }, "chapter two", "tester").Ok);
+        File.WriteAllText(Path.Combine(_root, "unrelated.txt"), "noise");
+        Assert.True(RepoOps.Commit(_root, new[] { "unrelated.txt" }, "noise lands", "tester").Ok);
+
+        // The file's train carries ITS two stops, newest first — not the whole repo's three.
+        var train = RepoOps.Log(_root, null, "story.txt");
+        Assert.Equal(2, train.Count);
+        Assert.Equal("chapter two", train[0].Subject);
+        Assert.Equal("chapter one", train[1].Subject);
+        Assert.All(train, c => Assert.False(string.IsNullOrWhiteSpace(c.Hash)));
+        Assert.All(train, c => Assert.True(c.Time > 0));
+
+        // No path = the repo's full train.
+        Assert.Equal(3, RepoOps.Log(_root, null, null).Count);
+
+        // Branch selection reads the OTHER branch's history without checking it out.
+        var (current, branches) = RepoOps.Branches(_root);
+        Assert.NotNull(current);
+        Assert.Contains(current!, branches);
+        Assert.True(RepoOps.Git(_root, "branch", "siding").Ok);
+        File.WriteAllText(Path.Combine(_root, "story.txt"), "first\nsecond\nthird\n");
+        Assert.True(RepoOps.Commit(_root, new[] { "story.txt" }, "chapter three", "tester").Ok);
+        Assert.Equal(3, RepoOps.Log(_root, current, "story.txt").Count);       // current moved on
+        Assert.Equal(2, RepoOps.Log(_root, "siding", "story.txt").Count);      // the siding did not
+        Assert.Equal(current, RepoOps.Branches(_root).Current);                // and nothing was checked out
+
+        // One stop's diff, on demand.
+        var (ok, diff) = RepoOps.ShowCommit(_root, train[0].Hash, "story.txt");
+        Assert.True(ok, diff);
+        Assert.Contains("+second", diff);
+
+        // The guards: option-shaped refs and non-hashes never reach git. An unsafe ref is
+        // treated as ABSENT (HEAD history), never passed through as an argument.
+        Assert.False(RepoOps.SafeRef("--exec=evil"));
+        Assert.False(RepoOps.SafeRef("-D"));
+        Assert.True(RepoOps.SafeRef("feat/v0.3.8.52"));
+        Assert.Equal(3, RepoOps.Log(_root, "--all --not-a-ref", "story.txt").Count);
+        Assert.False(RepoOps.ShowCommit(_root, "--patch", null).Ok);
+    }
+
     [Fact]
     public void StagedScope_IsOnlyTheNamedPaths_NotTheWholeTree()
     {
