@@ -340,6 +340,7 @@ public static class AutoApplyRunner
         {
             FileName = isWindows ? "cmd.exe" : "/bin/sh",
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = dir,
+            CreateNoWindow = true,   // v0.3.8.53: never flash a console from the desktop shell
         };
         if (isWindows) { psi.ArgumentList.Add("/c"); psi.ArgumentList.Add(command); }
         else { psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(command); }
