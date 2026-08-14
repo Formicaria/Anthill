@@ -39,7 +39,10 @@
     // different width at every breakpoint — half the dashboard at 12 columns is a quarter of it at
     // 24 — and the operator arranged a proportion, not a number of tracks. Heights are px, because
     // a height means the same thing at any width.
-    layout: { hidden: {}, order: null, locked: true, spans: {}, heights: {} },
+    // v0.3.8.56 (operator's third correction — FREE PLACEMENT): `pos` is each widget's own
+    // cell rect origin {x:0..5, y:0..}. A widget lives WHERE THE OPERATOR PUT IT; order[] keeps
+    // tab order, stacking on narrow screens, and the auto-placement of anything unplaced.
+    layout: { hidden: {}, order: null, locked: true, spans: {}, heights: {}, pos: {} },
     defaults: null,     // the host's first-run view; also what "Reset layout" restores
     _menuOpen: false,   // view state, not layout: never persisted
     _frames: {},        // id -> {widget, head, body}; built once, moved thereafter
@@ -221,6 +224,95 @@
 
   // At or below this column count the grid is a single stack and operator widths do not apply.
   var STACK_BELOW_COLS = 4;
+  // ---- FREE PLACEMENT (v0.3.8.56, operator's third correction) --------------------------------
+  // Order-based flow could never say "put it THERE": every insertion repacked the whole board,
+  // and the live DOM re-insertion on dragover made widgets churn under a mere click. Placement is
+  // explicit now: each widget owns a cell rect (x, y, w, h); a drag targets a cell; widgets are
+  // pushed DOWN only when actually overlapped; a hole the operator makes is a hole that stays.
+  // Nothing in the DOM moves during a drag — only inline grid positions change.
+  G._hCells = {};   // auto-measured heights in cells (markQuiet writes; user heights outrank)
+
+  function widthCellsOf(id) {
+    var f = G.layout.spans[id];
+    if (typeof f === 'number' && f > 0 && f <= 1) return Math.max(1, Math.min(6, Math.round(f * 6)));
+    var size = (G.widgets[id] || {}).size;
+    return size === 'small' ? 1 : size === 'large' ? 3 : size === 'colony' ? 6 : 2;
+  }
+  function heightCellsOf(id) {
+    var h = G.layout.heights[id];
+    if (typeof h === 'number' && h > 0) {
+      var cell = cellHeight();
+      var gap = parseFloat(getComputedStyle(G.root).rowGap) || 0;
+      return Math.max(1, Math.min(6, Math.round((h + gap) / (cell + gap))));
+    }
+    return G._hCells[id] || ((G.widgets[id] || {}).size === 'colony' ? COLONY_CELLS : 1);
+  }
+  function overlapsRect(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+  function rectsFor(draftPos) {
+    var pos = draftPos || G.layout.pos;
+    return effectiveOrder().filter(function (id) { return !G.isHidden(id) && G.widgets[id]; })
+      .map(function (id) {
+        var p = pos[id];
+        var w = widthCellsOf(id);
+        // A widget widened after it was placed must not hang off the board's right edge.
+        return { id: id, x: p ? Math.min(p.x, 6 - w) : -1, y: p ? p.y : -1, w: w, h: heightCellsOf(id) };
+      });
+  }
+  /** First-fit top-left for anything unplaced, in reading order; placed rects are respected. */
+  function autoPlace(rects) {
+    var fixed = rects.filter(function (r) { return r.x >= 0 && r.y >= 0; });
+    rects.forEach(function (r) {
+      if (r.x >= 0 && r.y >= 0) return;
+      for (var y = 0; y < 500; y++) {
+        for (var x = 0; x + r.w <= 6; x++) {
+          var probe = { x: x, y: y, w: r.w, h: r.h };
+          var clash = fixed.some(function (f) { return overlapsRect(probe, f); });
+          if (!clash) { r.x = x; r.y = y; fixed.push(r); return; }
+        }
+      }
+    });
+    return rects;
+  }
+  /** The pinned rect (a live drag) stays put; anything it lands on is pushed DOWN past it, in
+   * reading order. No upward compaction: gaps are the operator's to keep. */
+  function resolveCollisions(rects, pinnedId) {
+    var fixed = [];
+    rects.forEach(function (r) { if (r.id === pinnedId) fixed.push(r); });
+    rects.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (r) {
+      if (r.id === pinnedId) return;
+      var guard = 0;
+      while (guard++ < 300 && fixed.some(function (f) { return overlapsRect(r, f); })) r.y++;
+      fixed.push(r);
+    });
+    return rects;
+  }
+  /** Write every widget's inline grid position from its cell rect. Stack mode (narrow) clears
+   * inline placement and lets the breakpoint's own single-column flow apply. */
+  function placeAll(draftPos, pinnedId) {
+    if (!G.root) return;
+    var cols = columnCount();
+    var widgets = G.root.querySelectorAll('.dg-widget');
+    if (cols <= STACK_BELOW_COLS) {
+      Array.prototype.forEach.call(widgets, function (w) { w.style.gridColumn = ''; w.style.gridRow = ''; });
+      return;
+    }
+    var per = Math.max(1, Math.round(cols / 6));
+    var rects = resolveCollisions(autoPlace(rectsFor(draftPos)), pinnedId);
+    var byId = {};
+    rects.forEach(function (r) { byId[r.id] = r; });
+    // Outside a drag preview, the resolved arrangement IS the model — first-run auto-placement
+    // and collision pushes are adopted so the next render starts from what is on screen.
+    if (!draftPos) rects.forEach(function (r) { G.layout.pos[r.id] = { x: r.x, y: r.y }; });
+    Array.prototype.forEach.call(widgets, function (w) {
+      var r = byId[w.getAttribute('data-widget-id')];
+      if (!r) return;
+      w.style.gridColumn = (r.x * per + 1) + ' / span ' + (r.w * per);
+      w.style.gridRow = (r.y + 1) + ' / span ' + r.h;
+    });
+  }
+
   /* v0.3.8.56 (operator's second correction) — THE CELL GRID.
    * Free-height masonry made every widget a different height and the board read as clunky. The
    * unit is a CELL now: rows are 6 cells wide, --dg-cell-h tall, and every widget occupies
@@ -255,8 +347,7 @@
         if (w.hasAttribute('data-user-h')) {
           // An operator-set height is not a measurement to be improved on. Without this the 4s
           // remeasure would quietly undo every resize a few seconds after it was made.
-          var stored = id ? G.layout.heights[id] : 0;
-          cells = cellsForPx(typeof stored === 'number' && stored > 0 ? stored : w.offsetHeight, rowGap);
+          return;   // heightCellsOf reads the stored height directly
         } else if (w.getAttribute('data-size') === 'colony') {
           cells = COLONY_CELLS;   // the map is never "quiet" and owns a two-cell home
         } else {
@@ -283,8 +374,9 @@
           }
         }
 
-        w.style.gridRow = 'span ' + cells;
+        if (id) G._hCells[id] = cells;
       });
+      placeAll();   // heights feed the rects; collisions resolve; positions land
     });
   }
 
@@ -349,45 +441,20 @@
 
   var dragId = null;
 
-  /**
-   * The insertion point for a pointer position — EVERY position, not just those over a widget.
-   *
-   * v0.3.8.56 (operator's correction): the old hit-test answered only when the pointer sat on
-   * another widget, so gaps, row ends and the space below the last row were dead — a drag into
-   * an "empty spot" did nothing, which read as the whole feature being broken. This scans the
-   * flow order in row bands instead: the pointer is BEFORE the first widget whose row starts
-   * below it, or before the first widget in its own band whose centre it has not passed;
-   * anywhere past everything means "append at the end". Null is a real answer (append), never a
-   * dead zone. The dragged widget is excluded — its rect is the hole being moved.
-   */
-  function insertionRefAt(x, y, dragged) {
-    var ws = Array.prototype.filter.call(G.root.querySelectorAll('.dg-widget'),
-      function (w) { return w !== dragged; });
-    for (var i = 0; i < ws.length; i++) {
-      var r = ws[i].getBoundingClientRect();
-      if (y < r.top - 4) return ws[i];                                 // a row below the pointer
-      if (y <= r.bottom + 4 && x < r.left + r.width / 2) return ws[i]; // same band, centre not passed
-    }
-    return null;                                                       // past everything: the end
-  }
-
-  /**
-   * Adopt the on-screen arrangement as the saved one.
-   *
-   * Hidden widgets are not in the DOM, so a straight read of it would drop them from the order and
-   * they would reappear at the end when shown again. They are pinned to the slots they already
-   * occupied and the visible ids are threaded through the gaps between them.
-   */
-  function commitDomOrder() {
-    var domVisible = Array.prototype.map.call(G.root.querySelectorAll('.dg-widget'),
-      function (w) { return w.getAttribute('data-widget-id'); });
-    var i = 0;
-    var merged = effectiveOrder().map(function (id) {
-      return G.isHidden(id) ? id : (domVisible[i++] || id);
-    });
-    G.layout.order = merged;
-    G.persist();
-    G.render();          // re-apply spans/heights and re-fit; the DOM order is already correct
+  /** The cell under a pointer, for a widget of the given cell width. */
+  function cellAt(x, y, wCells) {
+    var rect = G.root.getBoundingClientRect();
+    var cs = getComputedStyle(G.root);
+    var padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
+    var rowGap = parseFloat(cs.rowGap) || 0;
+    var innerW = rect.width - padL - (parseFloat(cs.paddingRight) || 0);
+    var cellW = innerW / 6;
+    var cx = Math.floor((x - rect.left - padL) / cellW);
+    var cy = Math.floor((y - rect.top - padT) / (cellHeight() + rowGap));
+    return {
+      x: Math.max(0, Math.min(6 - wCells, cx)),
+      y: Math.max(0, cy),
+    };
   }
 
   /**
@@ -437,61 +504,62 @@
       Array.prototype.forEach.call(rootEl.querySelectorAll('.dg-widget'), function (w) { w.draggable = true; });
     });
 
+    var dragDraft = null;   // live preview positions; committed on drop, discarded on cancel
+
     rootEl.addEventListener('dragstart', function (e) {
       if (G.layout.locked) return;
       var w = e.target.closest && e.target.closest('.dg-widget');
       if (!w) return;
       dragId = w.getAttribute('data-widget-id');
       w.classList.add('dg-dragging');
+      // The preview works on a COPY: the saved layout is untouched until the drop commits, so a
+      // cancelled drag costs nothing and a mere click moves nothing at all.
+      dragDraft = {};
+      Object.keys(G.layout.pos).forEach(function (k) {
+        dragDraft[k] = { x: G.layout.pos[k].x, y: G.layout.pos[k].y };
+      });
       // The end-zone: the grid ends at its content, so "below the last row" was OUTSIDE the
-      // container and dragover stopped firing there. Padding opens while a drag is live so the
-      // append-at-the-end slot is a place the pointer can actually reach.
+      // container and dragover stopped firing there. Padding opens while a drag is live.
       rootEl.classList.add('dg-drag-live');
       try { e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed = 'move'; } catch (err) { /* older engines */ }
     });
 
     /**
-     * Live reflow: the grid parts to make room WHILE the drag is happening.
-     *
-     * The dragged widget is physically moved in the DOM on each dragover, so the layout the
-     * operator is looking at IS the layout they will get — the widgets around it shift into their
-     * new places before release, and dropping just commits what is already on screen. This is only
-     * affordable because frames are cached and moved rather than rebuilt: relocating a widget costs
-     * an appendChild and never touches the adopted content inside it.
-     *
-     * An edge marker was the first attempt. It draws a line where the widget WILL go and leaves the
-     * operator to imagine the result, which is precisely the guesswork this replaces.
+     * Live preview, free placement: the pointer names a CELL, the dragged widget claims it, and
+     * only the widgets it actually lands on are pushed down to make room — everything else stays
+     * exactly where the operator put it. Nothing in the DOM moves; only grid positions restyle.
      */
     rootEl.addEventListener('dragover', function (e) {
-      if (G.layout.locked || !dragId) return;
+      if (G.layout.locked || !dragId || !dragDraft) return;
       e.preventDefault();                       // required, or the browser refuses the drop
       e.dataTransfer.dropEffect = 'move';
 
-      var dragged = rootEl.querySelector('[data-widget-id="' + dragId + '"]');
-      if (!dragged) return;
-      // Every pointer position resolves to a slot — occupied, gap, row end, or past the last
-      // row. Re-checked against the CURRENT DOM every time, so a slow drag does not thrash: if
-      // the widget already sits there, nothing moves.
-      var ref = insertionRefAt(e.clientX, e.clientY, dragged);
-      if (ref === dragged) return;
-      if (ref === null ? rootEl.lastElementChild === dragged : dragged.nextSibling === ref) return;
-      rootEl.insertBefore(dragged, ref);
+      var target = cellAt(e.clientX, e.clientY, widthCellsOf(dragId));
+      var cur = dragDraft[dragId];
+      if (cur && cur.x === target.x && cur.y === target.y) return;   // same cell: nothing to do
+      dragDraft[dragId] = target;
+      placeAll(dragDraft, dragId);
     });
 
     rootEl.addEventListener('drop', function (e) {
-      if (G.layout.locked || !dragId) return;
+      if (G.layout.locked || !dragId || !dragDraft) return;
       e.preventDefault();
-      commitDomOrder();                                 // what is on screen is what was asked for
-      dragId = null;
+      // Commit what is on screen: the dragged widget at its chosen cell, and the pushes the
+      // preview already resolved around it.
+      var rects = resolveCollisions(autoPlace(rectsFor(dragDraft)), dragId);
+      rects.forEach(function (r) { G.layout.pos[r.id] = { x: r.x, y: r.y }; });
+      dragId = null; dragDraft = null;
+      G.persist();
+      placeAll();
     });
 
     rootEl.addEventListener('dragend', function () {
       rootEl.classList.remove('dg-drag-live');
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-dragging'),
         function (w) { w.classList.remove('dg-dragging'); });
-      // A cancelled drag (Escape, or a drop outside the grid) never reaches `drop`, and the DOM has
-      // already been rearranged by the live preview. Re-render from the model to put it back.
-      if (dragId) { dragId = null; G.render(); }
+      // A cancelled drag (Escape, or a drop outside the grid) never reaches `drop`; the preview
+      // was a draft, so putting things back is just re-placing from the saved positions.
+      if (dragId) { dragId = null; dragDraft = null; placeAll(); }
     });
   }
 
@@ -739,15 +807,20 @@
   };
 
   G.move = function (id, delta) {
-    var order = effectiveOrder();
-    var i = order.indexOf(id);
+    // v0.3.8.56 (free placement): the arrows swap CELL RECT ORIGINS with the neighbour in
+    // reading order (y, then x) — the keyboard path to the same "put it there" the drag has.
+    var rects = resolveCollisions(autoPlace(rectsFor()), null)
+      .sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+    var i = -1;
+    rects.forEach(function (r, k) { if (r.id === id) i = k; });
     if (i < 0) return;
     var j = i + delta;
-    if (j < 0 || j >= order.length) return;
-    order.splice(j, 0, order.splice(i, 1)[0]);
-    G.layout.order = order;
+    if (j < 0 || j >= rects.length) return;
+    var a = rects[i], b = rects[j];
+    G.layout.pos[a.id] = { x: b.x, y: b.y };
+    G.layout.pos[b.id] = { x: a.x, y: a.y };
     G.persist(); G.render();
-  };
+  }
 
   G.setLocked = function (locked) { G.layout.locked = !!locked; G.persist(); G.render(); };
 
@@ -845,13 +918,26 @@
     G.layout.locked = saved.locked !== false;
     G.layout.spans = sanitizeSizes(saved.spans, function (v) { return v > 0 && v <= 1; });
     G.layout.heights = sanitizeSizes(saved.heights, function (v) { return v >= MIN_H && v <= MAX_H; });
+    // v0.3.8.56 (free placement): positions arrive from a document that could be old or
+    // hand-edited; an off-board or non-numeric rect origin is dropped, and autoPlace re-homes
+    // that widget rather than letting it break the board.
+    G.layout.pos = {};
+    if (saved.pos && typeof saved.pos === 'object') {
+      Object.keys(saved.pos).forEach(function (k) {
+        var v = saved.pos[k];
+        if (v && typeof v.x === 'number' && isFinite(v.x) && v.x >= 0 && v.x < 6
+              && typeof v.y === 'number' && isFinite(v.y) && v.y >= 0 && v.y < 500) {
+          G.layout.pos[k] = { x: Math.round(v.x), y: Math.round(v.y) };
+        }
+      });
+    }
     if (G.mounted) G.render();
   };
 
   G.persist = function () {
     if (typeof G.onLayoutChange === 'function') {
       G.onLayoutChange({ hidden: G.layout.hidden, order: effectiveOrder(), locked: G.layout.locked,
-                         spans: G.layout.spans, heights: G.layout.heights });
+                         spans: G.layout.spans, heights: G.layout.heights, pos: G.layout.pos });
     }
   };
 
