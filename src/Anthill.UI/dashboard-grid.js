@@ -884,12 +884,17 @@
       locked: true,
       spans: d.spans ? JSON.parse(JSON.stringify(d.spans)) : {},
       heights: d.heights ? JSON.parse(JSON.stringify(d.heights)) : {},
+      // v0.3.8.56 (free placement): reset forgets every position too — auto-place re-seats the
+      // board from reading order, which IS the shipped arrangement.
+      pos: {},
     };
     // Inline overrides live on the element, so clearing the model is not enough to clear the view.
     Object.keys(G._frames).forEach(function (id) {
       var w = G._frames[id].widget;
       w.style.removeProperty('--dg-span');
       w.style.minHeight = '';
+      w.style.gridColumn = '';
+      w.style.gridRow = '';
       w.removeAttribute('data-user-h');
     });
     G.persist(); G.render();
