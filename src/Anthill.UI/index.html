@@ -3741,6 +3741,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div><h2 style="font-size:14px;margin:0 0 2px;">Automation</h2><div class="sub">24/7 Colony Director &mdash; objective backlog and runs. Status, budgets and the kill switch live on the Colony Overview.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="auto-msg"></span>
+            <!-- v0.3.8.55 (operator's rule): the backlog page keeps a Start of its own — the
+                 status card lives on the overview, but starting work belongs where work is
+                 queued. Adding an objective also auto-starts an idle Director. -->
+            <button class="btn btn-primary" id="proj-auto-start" style="font-size:11px;">▶ Start Director</button>
             <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
             <button class="btn btn-ghost" id="auto-dump" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Dump Directives</button>
           </div>

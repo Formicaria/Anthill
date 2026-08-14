@@ -7933,14 +7933,37 @@ document.getElementById('obj-add').addEventListener('click',async()=>{
   try{
     const r=await api('/objectives','POST',{title,charter,priority,max_runs:maxRuns});
     if(r.success){
-      autoMsg('Objective added.',true);
       document.getElementById('obj-title').value='';
       document.getElementById('obj-charter').value='';
       document.getElementById('obj-priority').value='0';
       document.getElementById('obj-maxruns').value='0';
       await reloadObjectives();
+      // v0.3.8.55 (operator's rule): an objective is a request for WORK — adding one starts the
+      // Director if it is enabled and idle, so the backlog never sits behind a button on another
+      // page. A refused start (kill switch, disabled) is REPORTED, never silent.
+      apiCacheBust('/autonomy');
+      const st=await api('/autonomy/status');
+      const s=(st&&st.success&&st.data)||{};
+      if(s.running){ autoMsg('Objective added — Director already running.',true); }
+      else if(!s.enabled){ autoMsg('Objective added. Autonomy is disabled in config — enable it in Settings to run the backlog.',true); }
+      else{
+        const go=await api('/autonomy/start','POST');
+        apiCacheBust('/autonomy');
+        if(go&&go.success) autoMsg('Objective added — Director started.',true);
+        else autoMsg('Objective added, but the Director did not start: '+((go&&go.message)||'refused')+'. Start it from the Colony Overview.',false);
+      }
     } else autoMsg(r.message||'Failed',false);
   }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+// v0.3.8.55 (operator's rule): the Projects backlog keeps its own Start. Same endpoint as the
+// overview card's button; the answer — started, already running, disabled, kill switch — is
+// always said out loud in auto-msg.
+document.getElementById('proj-auto-start')?.addEventListener('click',async()=>{
+  const r=await api('/autonomy/start','POST');
+  apiCacheBust('/autonomy');
+  autoMsg((r&&r.success)?'Director started.':((r&&r.message)||'The Director did not start.'),!!(r&&r.success));
+  if(typeof reloadAutonomyStatus==='function') reloadAutonomyStatus();
 });
 
 async function objToggleStatus(id,status){
