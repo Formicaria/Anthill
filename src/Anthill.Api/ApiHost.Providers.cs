@@ -399,17 +399,11 @@ public static partial class ApiHost
             var message = (body?.Message ?? "").Trim();
             if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
 
-            // v0.3.8.52 (third field round, operator's rule): the working directory is set BEFORE
-            // the first chat, full stop. Every turn's agent stands in the project's tree, so a
-            // turn without one has nowhere honest to stand — refused with the remedy, not
-            // defaulted into a tree the operator never chose.
-            if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
-                && Queen.Memory.LoadProject(conversation.ProjectId!) is { } turnProject
-                && string.IsNullOrWhiteSpace(turnProject.Path))
-                return ApiJson.Error(
-                    $"\"{turnProject.Name}\" has no working directory yet. Open the Files tab and "
-                    + "set one (the suggested path is ready to accept) before the first chat.",
-                    "workdir_required");
+            // v0.3.8.55 (fourth field round): the workdir_required gate is GONE, by the same
+            // operator who asked for it in the third. A pathless project no longer refuses the
+            // turn — it stands in ANTHILL's own source checkout by default (direct source
+            // access; ConversationRunner.ProjectDirectory is the one resolution), and the
+            // operator's explicit choice takes over the moment one is set from the Files tab.
 
             // v0.3.8.52 (field report): a conversation born EMPTY — the project page's New
             // Conversation button creates one before anything is said — takes its title from the
@@ -842,15 +836,17 @@ public static partial class ApiHost
         // The files pane's jail helpers, local to this map so they cannot be reached around.
         static (string? Root, string? Error) ProjectFileRoot(Anthill.Core.Projects.Project project)
         {
-            // v0.3.8.52 (third field round): the working directory is the OPERATOR'S decision,
-            // made explicitly and before the first chat — no silent auto-provision (the second
-            // round's lazily-created default made the set-directory form vanish and left a new
-            // project staring at an unexplained empty tree). A pathless project errors here,
-            // which is exactly what makes the files pane show the set-root form, prefilled with
-            // the per-project suggestion (suggested_path on the project detail).
+            // v0.3.8.55 (fourth field round): a pathless project no longer errors — it shows
+            // ANTHILL's own source checkout, the same default the chat lane now stands in
+            // (direct source access, primary until the operator sets a directory; the Dir
+            // button changes it any time). Only a colony with NO source checkout — an installed
+            // binary — still has nothing to show and says so.
             if (string.IsNullOrWhiteSpace(project.Path))
-                return (null, "This project has no working directory yet — set one below. Every "
-                            + "project needs its own; the suggested path keeps them under one shared root.");
+                return Anthill.Core.Projects.ProjectRoots.ColonySource() is { } source
+                    ? (Path.GetFullPath(source), null)
+                    : (null, "This project has no working directory yet, and this ANTHILL runs "
+                           + "from an installed binary with no source checkout to default to — "
+                           + "set a directory below.");
             if (!Directory.Exists(project.Path))
                 return (null, $"The working directory {project.Path} does not exist — re-set or correct it below.");
             return (Path.GetFullPath(project.Path), null);
@@ -895,6 +891,10 @@ public static partial class ApiHost
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["root"] = root, ["path"] = Path.GetRelativePath(root!, full).Replace('\\', '/'),
+                // v0.3.8.55: true when this root is the ANTHILL-source DEFAULT rather than the
+                // operator's own choice — the crumb labels it so nobody mistakes the colony's
+                // checkout for a directory they picked.
+                ["default_root"] = string.IsNullOrWhiteSpace(project.Path),
                 ["entries"] = entries,
             });
         });

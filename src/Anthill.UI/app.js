@@ -4785,12 +4785,11 @@ async function chatSend(mode){
       }else{
         const r=await response.json().catch(()=>null);
         // v0.3.8.52 (third field round): a refused turn keeps the operator's message and NAMES
-        // the remedy — workdir_required additionally opens the files pane, where the set-root
-        // form is already waiting with the suggested path filled in.
+        // the remedy. (v0.3.8.55: the workdir_required refusal is gone — a pathless project
+        // stands in the ANTHILL source by default now.)
         if(r&&r.success===false){
           note=r.message||'Refused';
           if(el) el.value=msg;
-          if(r.error==='workdir_required') chatToggleFiles(true);
         }
         else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
@@ -4799,7 +4798,6 @@ async function chatSend(mode){
       if(r&&r.success===false){
         note=r.message||'Refused';
         if(el) el.value=msg;
-        if(r.error==='workdir_required') chatToggleFiles(true);
       }
       else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
@@ -5108,7 +5106,9 @@ async function chatFilesLoad(){
     await chatFilesShowRootForm();
     return;
   }
-  setEl('chat-files-crumb', r.data.root||'');
+  // v0.3.8.55: the ANTHILL-source default is LABELLED as one — the crumb must never let the
+  // colony's own checkout pass for a directory the operator picked.
+  setEl('chat-files-crumb', (r.data.root||'') + (r.data.default_root?'  (ANTHILL source — default until you set one)':''));
   body.innerHTML='<div id="cf-tree"></div>';
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
   chatFilesRepoLoad();
