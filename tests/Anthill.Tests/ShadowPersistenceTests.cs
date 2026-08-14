@@ -60,6 +60,28 @@ public class ShadowPersistenceTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.53, found live: the backlog query shipped in v0.3.8.46 selecting and ordering by
+    /// r.created_at — a column shadow_recommendations never had — and nothing ever EXECUTED it,
+    /// so an operator's dashboard poll was its first run, and a 500 its first result. The class
+    /// of defect this repository keeps naming: present, wired wrong, green. This drives the real
+    /// query over a seeded store and reads the wire field the judge panel actually consumes.
+    /// </summary>
+    [Fact]
+    public void TheUnresolvedBacklogQuery_ActuallyExecutes_AndCarriesItsTimestamp()
+    {
+        Memory().SaveShadowRecommendation(Rec("inc-pending"));
+        Memory().SaveShadowRecommendation(Rec("inc-judged"));
+        Memory().SaveShadowOutcome(Outcome("inc-judged"));
+
+        var pending = Memory().LoadUnresolvedShadowRecommendations();
+
+        var row = Assert.Single(pending);                       // judged ones leave the backlog
+        Assert.Equal("inc-pending", row["incident_id"]?.ToString());
+        // The wire name the judge panel reads, fed by the column that exists (observed_at).
+        Assert.False(string.IsNullOrWhiteSpace(row["created_at"]?.ToString()));
+    }
+
+    /// <summary>
     /// A recommendation with no operator judgment proves nothing. Including it would let an
     /// unresolved backlog move the score in either direction without any evidence behind it.
     /// </summary>
