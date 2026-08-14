@@ -54,6 +54,8 @@ public static class OperatorShell
             UseShellExecute = false,
             WorkingDirectory = dir,
             CreateNoWindow = true,   // v0.3.8.53: never flash a console from the desktop shell
+            StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+            StandardErrorEncoding = Encoding.UTF8,
         };
         if (isWindows) { psi.ArgumentList.Add("/c"); psi.ArgumentList.Add(command); }
         else { psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(command); }

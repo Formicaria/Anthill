@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Anthill.Core.Sandbox;
 
@@ -102,6 +103,8 @@ public sealed class SandboxWorkspace : IDisposable
             {
                 WorkingDirectory = workdir, RedirectStandardOutput = true,
                 RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+                StandardErrorEncoding = Encoding.UTF8,
             })!;
             var stdout = p.StandardOutput.ReadToEnd();
             var stderr = p.StandardError.ReadToEnd();
