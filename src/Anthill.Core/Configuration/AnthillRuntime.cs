@@ -44,7 +44,12 @@ public static class AnthillRuntime
     public static string WorkspaceRootPath { get; private set; } = "";
     public static string DbPath { get; private set; } = "";
     public static string BackupDir { get; private set; } = "data/backups";
-    public static string AllowedWorkspaceRoot { get; private set; } = ".";
+    // v0.3.8.54: internal set, for exactly one consumer class — the composed lifecycle scenarios
+    // (CodePatchLifecycleTests), which must point patch materialization at a TEMPORARY tree to
+    // drive coder→materialize→tester through Queen.RunMission. Production still writes this only
+    // from config in Initialize; a test that sets it holds the specialist-gates collection and
+    // restores it, the same contract every static toggle in this file already lives under.
+    public static string AllowedWorkspaceRoot { get; internal set; } = ".";
 
     // ---- API constants ----------------------------------------------------
     public const int ApiDefaultLimit = 50;
