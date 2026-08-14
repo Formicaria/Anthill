@@ -1,7 +1,15 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.54** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.55** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.55: the fifth field round — the workdir gate reversed (a pathless project stands in the
+> colony's own source, primary until the operator chooses), the Windows mojibake fixed at all
+> twelve spawn sites with a source-scan guard (UTF-8 pipes, structurally), Models & Routing
+> merged into the Ant Inspector (one box per role), Automation folded into Projects, the colony
+> view's legends folding / transfer dashes marching / pheromones polling where the canvas is /
+> wheel zoom on the dedicated page, themes (default, Light, Hermes, High contrast), and a files
+> pane refresh button.
 
 > v0.3.8.54: the scripted colony — a reasoning provider whose answers are known in advance,
 > registered and resolved through the production plumbing (AUTONOMY-10 Phase 2's keystone),
