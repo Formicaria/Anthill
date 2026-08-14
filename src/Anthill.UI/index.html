@@ -3034,20 +3034,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: ANT CONFIG
       --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-antconfig">
-        <!-- v0.3.8.48: model assignment lives with the roles (defect 18: one surface, not two).
-             One selector per role, available models only, merge-safe saves. -->
-        <div class="card" style="margin-bottom:12px;"><div style="padding:12px;">
-          <h2 style="font-size:12px;margin:0 0 4px;">Model routing</h2>
-          <div class="sub" style="margin-bottom:8px;">Which model serves each role. Only models that can actually run are offered; an unavailable current selection is flagged, not hidden.</div>
-          <div id="role-routing"><div class="hud-state">Loading…</div></div>
-        </div></div>
+      <!-- v0.3.8.55 (field report): Models & Routing merged INTO the Ant Inspector — one box
+           per role holds its route, gates, telemetry and profile. The colony-wide priority and
+           orchestration roles (planner, conversation — roles with routes but no inspector card)
+           moved with it, below. Route /colony/model-routing aliases to /colony/inspector. -->
+
+      <!-- --------------------------------------------------------------------
+           PAGE: ANT INSPECTOR + PERFORMANCE OBSERVATORY (v1.8.23, UI Phase 8)
+      --------------------------------------------------------------------- -->
+      <div class="page page-scroll" id="page-antobs">
         <div class="page-hdr">
-          <div><h1>Agent Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
+          <div><h1>Ant Inspector</h1><div class="sub">One box per role: model route, capability gates, lifetime performance, name &amp; colour. Colony-wide routing sits above the roles.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="antcfg-msg"></span>
             <button class="btn btn-ghost" id="antcfg-reset">↺ Reset Defaults</button>
             <button class="btn btn-primary" id="antcfg-save">Save Changes</button>
+            <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
           </div>
         </div>
         <!-- v3.8.1: colony-wide priority, then the roles that are NOT ants.
@@ -3055,20 +3057,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
              ant roster, and so it had no control anywhere in the console — a colony whose planner
              model went missing fell back to a static plan with no way to repoint it. -->
         <div id="antcfg-global"></div>
-
-        <div class="antcfg-grid" id="antcfg-grid">
-          <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
-        </div>
-      </div><!-- /page-antconfig -->
-
-      <!-- --------------------------------------------------------------------
-           PAGE: ANT INSPECTOR + PERFORMANCE OBSERVATORY (v1.8.23, UI Phase 8)
-      --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-antobs">
-        <div class="page-hdr">
-          <div><h1>Agent Inspector</h1><div class="sub">Per-caste model route, capability gates, and lifetime performance — expand a card for recent activity.</div></div>
-          <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
-        </div>
         <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div></div>
       </div><!-- /page-antobs -->
 

@@ -513,10 +513,9 @@ const IA = [
     // The living colony — topology, ant activity, pheromone signals, mission state. This is the
     // page the old standalone Dashboard became: one place for the colony at a glance.
     { label:'Overview', route:'/colony', page:'overview', vis:'all' },
-    // v0.3.8.49 redo: the standalone "Ants & Roles" tab is gone. Its per-role model routing IS this
-    // "Models & Routing" tab (page antconfig owns the provider/model selectors); the rest of it —
-    // seeing and editing ants — belongs to the Ant Inspector, which now reflects live colony state.
-    { label:'Models & Routing', route:'/colony/model-routing', page:'antconfig', vis:'admin' },
+    // v0.3.8.55 (field report): Models & Routing merged INTO the Ant Inspector — one box per
+    // role carries route, gates, telemetry and profile; the colony-wide priority and the
+    // orchestration roles (planner, conversation) sit above the grid on the same page.
     { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
     // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
     // project work, and it now lives beside the projects it feeds (right-hand column there).
@@ -573,7 +572,7 @@ Object.assign(PAGE_HOME,{
   results:'/projects', events:'/settings/system',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
+  antconfig:'/colony/inspector', antobs:'/colony/inspector',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
@@ -593,7 +592,7 @@ const LEGACY_REDIRECT={
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
+  antconfig:'/colony/inspector', antobs:'/colony/inspector',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
@@ -608,13 +607,15 @@ const ROUTE_ALIAS={
   '/integrations':'/tools/integrations',
   '/tools-view':'/tools',
   // v0.3.8.49: the standalone Ants & Roles tab folded into Models & Routing.
-  '/colony/roles':'/colony/model-routing',
+  '/colony/roles':'/colony/inspector',
+  // v0.3.8.55: Models & Routing merged into the Ant Inspector.
+  '/colony/model-routing':'/colony/inspector',
   '/colony/model-routing/providers':'/tools/integrations',
   // Roles / Inspector / Automation moved from Settings into Colony.
-  '/settings/roles':'/colony/model-routing',
+  '/settings/roles':'/colony/inspector',
   '/colony/topology':'/colony',
-  '/colony/agents':'/colony/model-routing',
-  '/colony/agents/configure':'/colony/model-routing',
+  '/colony/agents':'/colony/inspector',
+  '/colony/agents/configure':'/colony/inspector',
   '/colony/agents/inspect':'/colony/inspector',
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
@@ -740,6 +741,11 @@ function showPage(id,o){
   if(id==='autonomy'){
     id='projects';
     o=Object.assign({},o,{route:'/projects'});
+  }
+  // v0.3.8.55: Models & Routing merged into the Ant Inspector — same remap for old callers.
+  if(id==='antconfig'){
+    id='antobs';
+    o=Object.assign({},o,{route:'/colony/inspector'});
   }
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1203,7 +1209,8 @@ async function loadColonyRegistry(){
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
       buildNodes();renderColonyLegend();
-      if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
+      // v0.3.8.55: the config panel lives inside the merged inspector page now.
+      if(document.getElementById('page-antobs')?.classList.contains('active')) openAntConfig();
       return;
     }
     // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
@@ -4125,12 +4132,26 @@ const ANTOBS_CASTES=[
   ['verifier','Verifier',['model']],
 ];
 const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'file write',patch_application:'apply',model:'model only'};
-PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin') loadAntObs(); };
+// v0.3.8.55: the merged page loads BOTH halves — the colony-wide/orchestration routing panel
+// (openAntConfig, which now renders only into #antcfg-global) and the per-role inspector grid.
+PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin'){ if(typeof openAntConfig==='function') openAntConfig(); loadAntObs(); } };
 async function loadAntObs(){
   const grid=document.getElementById('antobs-grid'); if(!grid) return;
   grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
   try{
-    const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
+    // v0.3.8.55 (field report, Models & Routing merged in): the same fetch that feeds the cards
+    // also fetches what can actually RUN — /routes/json lists installed local models, configured
+    // catalogs and installed agents — so each card's route selectors offer only real choices.
+    const [r,rj]=await Promise.all([api('/ants/stats'),api('/routes/json')]);
+    if(!r.success) throw new Error(r.message);
+    obsProvModels=new Map(); obsRoutes={};
+    if(rj&&rj.success&&rj.data){
+      for(const m of (rj.data.available_models||[])){
+        if(!obsProvModels.has(m.provider)) obsProvModels.set(m.provider,[]);
+        obsProvModels.get(m.provider).push({model:m.model,label:m.label});
+      }
+      for(const x of (rj.data.roles||[])) obsRoutes[x.role]={provider:x.provider,model:x.model,available:x.available};
+    }
     const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
     // v0.3.8.50 (field report §20): the operator's names and colors, applied wherever the ant is
     // drawn on this page. The registry id stays visible in the role line — an override is a face,
@@ -4156,7 +4177,9 @@ async function loadAntObs(){
           <span class="ac-name">${escapeHtml(label)}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span>
           <button class="chat-copy ant-edit" data-ant-edit="${escapeHtml(ant)}" title="Edit this ant's name and color" aria-label="Edit ant profile">✎</button></div>
         <div class="ant-edit-slot" data-ant-slot="${escapeHtml(ant)}" hidden></div>
-        <div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
+        ${obsRoutes[ant]
+          ? obsRouteControls(ant, obsRoutes[ant])
+          : `<div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>`}
         <div class="ac-gates">${gateBadges}</div>
         <div class="ac-stats">
           <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
@@ -4172,8 +4195,66 @@ async function loadAntObs(){
       </div>`;
     }).join('');
     wireAntProfileEditors(grid);
+    wireObsRouting(grid);
     loadAntObsDirectory(grid);
   }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
+}
+
+/* v0.3.8.55 — the Models & Routing page folded into these cards: one box per role.
+ *
+ * Provider is ONE dropdown. A second dropdown appears only when the chosen provider offers more
+ * than one usable model — which in practice means Ollama, whose installed models /routes/json
+ * queries live; the agent CLIs each present a single entry and need no second choice. A current
+ * route pointing at something unavailable is shown flagged, never silently offered to others.
+ * Every change saves immediately through the merge-safe /routes/{role} endpoint — nothing else
+ * in model_routes moves. */
+let obsProvModels=new Map(), obsRoutes={};
+function obsProviderLabel(p){
+  if(p==='ollama') return 'Ollama (local)';
+  const a=AGENT_LABEL(p); if(a) return a+' (agent)';
+  return p;
+}
+function obsRouteControls(role, rr){
+  const provs=[...obsProvModels.keys()];
+  const curP=rr.provider||'ollama';
+  const provList=provs.includes(curP)?provs:[curP,...provs];
+  const provOpts=provList.map(p=>
+    `<option value="${escapeHtml(p)}"${p===curP?' selected':''}>${escapeHtml(obsProviderLabel(p))}${provs.includes(p)?'':' ⚠'}</option>`).join('');
+  const models=obsProvModels.get(curP)||[];
+  const multi=models.length>1;
+  const curM=rr.model||'';
+  const known=models.some(m=>m.model===curM);
+  const modelOpts=(known||!curM?[]:[`<option value="${escapeHtml(curM)}" selected>⚠ ${escapeHtml(curM)} (unavailable)</option>`])
+    .concat(models.map(m=>`<option value="${escapeHtml(m.model)}"${m.model===curM?' selected':''}>${escapeHtml(m.model)}</option>`)).join('');
+  return `<div class="ac-route" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <select class="provider-input obs-provider" data-role="${escapeHtml(role)}" aria-label="Provider for ${escapeHtml(role)}" style="font-size:10px;max-width:150px;">${provOpts}</select>
+    <select class="provider-input obs-model" data-role="${escapeHtml(role)}" aria-label="Model for ${escapeHtml(role)}" style="font-size:10px;max-width:170px;" ${multi?'':'hidden'}>${modelOpts}</select>
+    <span class="save-msg" data-obs-msg="${escapeHtml(role)}"></span>
+  </div>`;
+}
+function wireObsRouting(grid){
+  const save=async(role,provider,model,msgEl)=>{
+    const res=await api('/routes/'+encodeURIComponent(role),'POST',{provider,model});
+    if(msgEl){ msgEl.textContent=(res&&res.success)?'Saved':((res&&res.message)||'Save failed.');
+               msgEl.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
+    // The next stats read must see the new route, not a TTL'd copy of the old one.
+    apiCacheBust('/ants/stats'); apiCacheBust('/routes');
+  };
+  grid.querySelectorAll('.obs-provider').forEach(sel=>sel.addEventListener('change',()=>{
+    const role=sel.dataset.role, p=sel.value;
+    const models=obsProvModels.get(p)||[];
+    const mSel=grid.querySelector(`.obs-model[data-role="${CSS.escape(role)}"]`);
+    if(mSel){
+      mSel.hidden=models.length<=1;
+      mSel.innerHTML=models.map((m,i)=>`<option value="${escapeHtml(m.model)}"${i===0?' selected':''}>${escapeHtml(m.model)}</option>`).join('');
+    }
+    save(role,p,models.length?models[0].model:'',grid.querySelector(`[data-obs-msg="${CSS.escape(role)}"]`));
+  }));
+  grid.querySelectorAll('.obs-model').forEach(sel=>sel.addEventListener('change',()=>{
+    const role=sel.dataset.role;
+    const p=grid.querySelector(`.obs-provider[data-role="${CSS.escape(role)}"]`)?.value||'ollama';
+    save(role,p,sel.value,grid.querySelector(`[data-obs-msg="${CSS.escape(role)}"]`));
+  }));
 }
 
 // v0.3.8.50 (field report §20): the profile editor — a name and a color, saved to the real
@@ -7752,10 +7833,10 @@ function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
 }
 
 async function openAntConfig(){
-  // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
-  // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
-  // from the "Reset" button below (where the page is already active). Calling showPage from in
-  // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
+  // Data-loader only — do NOT call showPage from here. Invoked from PAGE_ENTER['antobs']
+  // (v0.3.8.55: the merged inspector page; showPage() calls it *after* switching) and from the
+  // "Reset" button below (where the page is already active). Calling showPage from in here used
+  // to re-fire the page-enter hook -> openAntConfig() -> showPage() in an unbounded
   // mutual-recursion loop, blowing the call stack every single time this page was opened.
   await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
   await ensureAntRouteCatalog();
@@ -7769,7 +7850,12 @@ async function openAntConfig(){
   }catch{}
   renderAntConfigGlobals(routes, prioProvider, prioModel);
 
+  // v0.3.8.55: the per-caste configuration grid is GONE — its name/colour lives in the
+  // inspector's ✎ profile editor and its provider/model pair lives in each inspector card's
+  // route selectors. This function now renders only the colony-wide priority and the
+  // orchestration roles above the grid.
   const grid=document.getElementById('antcfg-grid');
+  if(!grid) return;
   const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
   const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
   grid.innerHTML=castes.map(c=>{
@@ -7843,39 +7929,10 @@ async function openAntConfig(){
   });
 }
 
-/* v0.3.8.48 — the Roles page's model assignment (defects 16–18). ONE selector per role, listing
- * only models that can actually run: installed local models, configured providers' catalogs,
- * installed agents. The stored selection keeps provider and model separate underneath; a current
- * route pointing at something unavailable is shown as a warning, never offered to others. Each
- * change saves through the merge-safe single-role endpoint — nothing else in model_routes moves. */
-async function loadRoleRouting(){
-  const host=document.getElementById('role-routing'); if(!host) return;
-  const r=await api('/routes/json');
-  if(!(r&&r.success&&r.data)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Routes unavailable.')}</div>`; return; }
-  const models=r.data.available_models||[];
-  host.innerHTML=(r.data.roles||[]).map(x=>{
-    const cur=`${x.provider}|${x.model}`;
-    const opts=models.map(m=>{
-      const v=`${m.provider}|${m.model}`;
-      return `<option value="${escapeHtml(v)}"${v===cur?' selected':''}>${escapeHtml(m.label)}</option>`;
-    }).join('');
-    const warn=x.available?'':`<option value="${escapeHtml(cur)}" selected>⚠ ${escapeHtml(x.model)} · ${escapeHtml(x.provider)} (unavailable)</option>`;
-    return `<div class="route-assign"><label for="rr-${escapeHtml(x.role)}">${escapeHtml(x.role)}</label>
-      <select class="provider-input" id="rr-${escapeHtml(x.role)}" data-role="${escapeHtml(x.role)}">${warn}${opts}</select>
-      <span class="save-msg" data-rr-msg="${escapeHtml(x.role)}"></span></div>`;
-  }).join('');
-  host.querySelectorAll('select[data-role]').forEach(sel=>sel.addEventListener('change', async ()=>{
-    const [provider,model]=sel.value.split('|');
-    sel.disabled=true;
-    const res=await api('/routes/'+encodeURIComponent(sel.dataset.role),'POST',{provider,model});
-    sel.disabled=false;
-    const msg=host.querySelector(`[data-rr-msg="${sel.dataset.role}"]`);
-    if(msg){ msg.textContent=(res&&res.message)||'Save failed.';
-             msg.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
-  }));
-}
-
-PAGE_ENTER['antconfig']=()=>{ openAntConfig(); loadRoleRouting(); };
+// v0.3.8.55: loadRoleRouting (the Models & Routing page's flat per-role selector list) is gone —
+// its merge-safe /routes/{role} saves now live in each Ant Inspector card's own route selectors
+// (wireObsRouting), and there is no PAGE_ENTER['antconfig']: showPage remaps 'antconfig' to
+// 'antobs' before the hook lookup.
 
 document.getElementById('antcfg-save').addEventListener('click',async()=>{
   const msg=document.getElementById('antcfg-msg'); msg.textContent='';
