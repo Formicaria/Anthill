@@ -1,7 +1,12 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.53** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.54** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.54: the scripted colony — a reasoning provider whose answers are known in advance,
+> registered and resolved through the production plumbing (AUTONOMY-10 Phase 2's keystone),
+> proven composed through Queen.RunMission. The §6 endgame — the code-patch lifecycle and
+> all-twelve-through-real-triggers — now has its foundation.
 
 > v0.3.8.53: the backend answers for itself — `anthill --qualification` (SelfTest plus lifecycle
 > checks over a temp workspace, exit nonzero when missions are impossible; audit Phase 11); the

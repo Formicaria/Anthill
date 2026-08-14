@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v0.3.8.54 - the scripted colony: deterministic answers through the real plumbing
+
+**The Scripted Reasoning Provider (AUTONOMY-10 Phase 2's keystone).** A provider whose answers
+are known in advance, reached through everything real: registration via
+`ReasoningProviders.Register` — the exact call a module's composition root makes — resolution
+through the real factory walk, routing through the real `ModelRouting` table, capabilities
+through the real probe interface. The only fake thing is the answer. Role dispatch reads the
+`| role: name |` header every ant and the planner already stamp on their prompts — the
+producers' own convention, not an assumption. Inert everywhere else by construction: the
+factory serves only provider id `scripted`, which no production route names, and the probe
+answers null for every other provider (bit-identical to no probe at all).
+
+Proven composed: a mission through `Queen.RunMission` — the operator's public path — lands the
+script's sentences in the persisted task record (impossible unless router → factory → provider
+held end to end), and an UNSCRIPTED role surfaces as the ant's own disclosed provider failure,
+never an invented answer. This is the foundation the code-patch lifecycle scenarios and
+all-twelve-through-real-triggers now build on.
+
 ## v0.3.8.53 - the backend answers for itself: qualification, the direct lane named, and quiet windows
 
 **No more flashing consoles.** The desktop shell is a WinExe, and four process-spawn sites —
