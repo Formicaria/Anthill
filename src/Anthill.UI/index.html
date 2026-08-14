@@ -8,9 +8,10 @@
      so it reads on both light and dark browser chrome. No extra asset request, scales crisply. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cg fill='none' stroke='%23eef2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6.25' y='5.25' width='19.5' height='15' rx='3.6'/%3E%3Cpolyline points='10.6,10 14.2,13 10.6,16'/%3E%3Cline x1='15.7' y1='16' x2='19.6' y2='16'/%3E%3Cpath d='M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6'/%3E%3C/g%3E%3Cg fill='%2393bdf2'%3E%3Ccircle cx='11' cy='25.7' r='2.05'/%3E%3Ccircle cx='16' cy='26.1' r='2.5'/%3E%3Ccircle cx='21' cy='25.7' r='2.05'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0b1220">
-<!-- v0.3.8.55: apply the saved theme BEFORE first paint — a theme that arrives after CSS parses
-     flashes the default palette on every load. Reads localStorage only; default sets nothing. -->
-<script>try{var _t=localStorage.getItem('anthill-theme');if(_t&&_t!=='default')document.documentElement.dataset.theme=_t;}catch(e){}</script>
+<!-- v0.3.8.55: the saved theme is applied by themes.js at PARSE time (deferred scripts all run
+     before DOMContentLoaded, so before first meaningful paint in practice). NOT an inline script
+     here: the console's CSP is script-src 'self' with no unsafe-inline, and an inline snippet
+     would be silently blocked — a theme feature that works only from a source checkout. -->
 <style id="anthill-tokens">
 /* V2.2 Pass A — ANTHILL global design system (Overview + Colony revision).
    Centralized theme tokens + shared component classes. Additive: existing styles untouched;
@@ -3947,6 +3948,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/mission-thread.js" defer></script>
 <script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
+<!-- v0.3.8.55: inspector routing + themes, split out of app.js (the size guard). Classic deferred
+     scripts like the rest: everything in them is reached at call time, never at parse time. -->
+<script src="/ui/inspector-routing.js" defer></script>
+<script src="/ui/themes.js" defer></script>
 <!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and

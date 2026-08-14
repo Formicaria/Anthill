@@ -890,28 +890,6 @@ function openSettings(){
   loadSettingsInfo();
 }
 
-/* v0.3.8.55 — THEMES. The palette is a set of CSS variables and a theme re-states them on
- * html[data-theme]; nothing else changes, because components name variables, never raw colors.
- * Saved per device (localStorage), applied instantly here and before first paint by the head
- * script. 'default' is the website's own palette and sets no attribute at all. */
-const THEME_IDS=['default','light','hermes','contrast'];
-function applyTheme(t){
-  if(THEME_IDS.indexOf(t)<0) t='default';
-  if(t==='default') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme=t;
-}
-(function(){
-  const sel=document.getElementById('settings-theme'); if(!sel) return;
-  let cur='default';
-  try{ cur=localStorage.getItem('anthill-theme')||'default'; }catch{}
-  if(THEME_IDS.indexOf(cur)<0) cur='default';
-  sel.value=cur;
-  sel.addEventListener('change',()=>{
-    applyTheme(sel.value);
-    try{ localStorage.setItem('anthill-theme',sel.value); }catch{}
-  });
-})();
-
 document.getElementById('settings-save').addEventListener('click', saveSettings);
 async function saveSettings(){
   const base=document.getElementById('settings-apibase').value.trim();
@@ -4271,95 +4249,6 @@ async function loadAntObs(){
   }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
 }
 
-/* v0.3.8.55 — the Models & Routing page folded into these cards: one box per role.
- *
- * Provider is ONE dropdown. A second dropdown appears only when the chosen provider offers more
- * than one usable model — which in practice means Ollama, whose installed models /routes/json
- * queries live; the agent CLIs each present a single entry and need no second choice. A current
- * route pointing at something unavailable is shown flagged, never silently offered to others.
- * Every change saves immediately through the merge-safe /routes/{role} endpoint — nothing else
- * in model_routes moves. */
-let obsProvModels=new Map(), obsRoutes={};
-function obsProviderLabel(p){
-  if(p==='ollama') return 'Ollama (local)';
-  const a=AGENT_LABEL(p); if(a) return a+' (agent)';
-  return p;
-}
-function obsRouteControls(role, rr){
-  const provs=[...obsProvModels.keys()];
-  const curP=rr.provider||'ollama';
-  const provList=provs.includes(curP)?provs:[curP,...provs];
-  const provOpts=provList.map(p=>
-    `<option value="${escapeHtml(p)}"${p===curP?' selected':''}>${escapeHtml(obsProviderLabel(p))}${provs.includes(p)?'':' ⚠'}</option>`).join('');
-  const models=obsProvModels.get(curP)||[];
-  const multi=models.length>1;
-  const curM=rr.model||'';
-  const known=models.some(m=>m.model===curM);
-  const modelOpts=(known||!curM?[]:[`<option value="${escapeHtml(curM)}" selected>⚠ ${escapeHtml(curM)} (unavailable)</option>`])
-    .concat(models.map(m=>`<option value="${escapeHtml(m.model)}"${m.model===curM?' selected':''}>${escapeHtml(m.model)}</option>`)).join('');
-  return `<div class="ac-route" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-    <select class="provider-input obs-provider" data-role="${escapeHtml(role)}" aria-label="Provider for ${escapeHtml(role)}" style="font-size:10px;max-width:150px;">${provOpts}</select>
-    <select class="provider-input obs-model" data-role="${escapeHtml(role)}" aria-label="Model for ${escapeHtml(role)}" style="font-size:10px;max-width:170px;" ${multi?'':'hidden'}>${modelOpts}</select>
-    <span class="save-msg" data-obs-msg="${escapeHtml(role)}"></span>
-  </div>`;
-}
-function wireObsRouting(grid){
-  const save=async(role,provider,model,msgEl)=>{
-    const res=await api('/routes/'+encodeURIComponent(role),'POST',{provider,model});
-    if(msgEl){ msgEl.textContent=(res&&res.success)?'Saved':((res&&res.message)||'Save failed.');
-               msgEl.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
-    // The next stats read must see the new route, not a TTL'd copy of the old one.
-    apiCacheBust('/ants/stats'); apiCacheBust('/routes');
-  };
-  grid.querySelectorAll('.obs-provider').forEach(sel=>sel.addEventListener('change',()=>{
-    const role=sel.dataset.role, p=sel.value;
-    const models=obsProvModels.get(p)||[];
-    const mSel=grid.querySelector(`.obs-model[data-role="${CSS.escape(role)}"]`);
-    if(mSel){
-      mSel.hidden=models.length<=1;
-      mSel.innerHTML=models.map((m,i)=>`<option value="${escapeHtml(m.model)}"${i===0?' selected':''}>${escapeHtml(m.model)}</option>`).join('');
-    }
-    save(role,p,models.length?models[0].model:'',grid.querySelector(`[data-obs-msg="${CSS.escape(role)}"]`));
-  }));
-  grid.querySelectorAll('.obs-model').forEach(sel=>sel.addEventListener('change',()=>{
-    const role=sel.dataset.role;
-    const p=grid.querySelector(`.obs-provider[data-role="${CSS.escape(role)}"]`)?.value||'ollama';
-    save(role,p,sel.value,grid.querySelector(`[data-obs-msg="${CSS.escape(role)}"]`));
-  }));
-}
-
-// v0.3.8.50 (field report §20): the profile editor — a name and a color, saved to the real
-// /ants/{id}/profile endpoint, applied on the next render of every surface that draws the ant.
-// "Reset" clears the override; the registry identity was never touched.
-let antProfiles={};
-function wireAntProfileEditors(scope){
-  scope.querySelectorAll('[data-ant-edit]').forEach(b=>b.addEventListener('click',()=>{
-    const ant=b.dataset.antEdit;
-    const slot=scope.querySelector(`[data-ant-slot="${CSS.escape(ant)}"]`);
-    if(!slot) return;
-    if(!slot.hidden){ slot.hidden=true; slot.innerHTML=''; return; }
-    const prof=antProfiles[ant]||{};
-    slot.innerHTML=`<div style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
-      <input class="provider-input ap-name" maxlength="40" placeholder="Display name" value="${escapeHtml(prof.display_name||'')}" style="width:150px;font-size:10px;">
-      <input class="ap-color" type="color" value="${/^#[0-9a-fA-F]{6}$/.test(prof.color||'')?prof.color:'#7fa0bc'}" title="Ant color" style="width:34px;height:26px;padding:0;border:1px solid var(--border);background:var(--inner);border-radius:4px;">
-      <button class="btn btn-primary ap-save" style="font-size:10px;">Save</button>
-      <button class="btn btn-ghost ap-reset" style="font-size:10px;" title="Back to the registry name and color">Reset</button>
-      <span class="save-msg ap-msg" style="font-size:10px;"></span></div>`;
-    slot.hidden=false;
-    const msg=slot.querySelector('.ap-msg');
-    const done=async(r)=>{ if(r&&r.success){ await loadAntObs(); } else { msg.textContent=(r&&r.message)||'Failed'; msg.style.color='var(--red)'; } };
-    slot.querySelector('.ap-save').addEventListener('click',async ()=>{
-      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{
-        display_name:slot.querySelector('.ap-name').value.trim(),
-        color:slot.querySelector('.ap-color').value,
-      }));
-    });
-    slot.querySelector('.ap-reset').addEventListener('click',async ()=>{
-      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{display_name:'',color:''}));
-    });
-  }));
-}
-
 // v2.2.4: full colony directory — the six cards above are the legacy executable castes with task
 // telemetry; this section lists EVERY registry ant (roles + workers) with its purpose so any ant
 // can be inspected here, matching the colony map inspector.
@@ -4948,7 +4837,7 @@ async function chatSend(mode){
       }else{
         const r=await response.json().catch(()=>null);
         // v0.3.8.52 (third field round): a refused turn keeps the operator's message and NAMES
-        // the remedy. (v0.3.8.55: the workdir_required refusal is gone — a pathless project
+        // the remedy. (v0.3.8.55: the working-directory refusal is gone — a pathless project
         // stands in the ANTHILL source by default now.)
         if(r&&r.success===false){
           note=r.message||'Refused';
@@ -7922,82 +7811,8 @@ async function openAntConfig(){
   renderAntConfigGlobals(routes, prioProvider, prioModel);
 
   // v0.3.8.55: the per-caste configuration grid is GONE — its name/colour lives in the
-  // inspector's ✎ profile editor and its provider/model pair lives in each inspector card's
-  // route selectors. This function now renders only the colony-wide priority and the
-  // orchestration roles above the grid.
-  const grid=document.getElementById('antcfg-grid');
-  if(!grid) return;
-  const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
-  const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
-  grid.innerHTML=castes.map(c=>{
-    const reg=registryRoleById(c)||{RoleId:c,DisplayName:c,Colony:ANT_DEFAULTS[c]?.role||'Legacy',Purpose:'Legacy ant role',Workers:[]};
-    const d=ANT_DEFAULTS[c]||{role:roleColony(reg)},name=casteName(c),color=casteColor(c);
-    const curProvider=uiState.castes[c]?.provider||routes[c]?.provider||'ollama';
-    const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
-    // v3.8.1: a role gets model controls when it HAS A ROUTE — not when it happens to be executable
-    // right now.
-    //
-    // The old rule hid the provider/model pair for any role whose Executable flag was false, which
-    // is computed from live specialist canary gates. archivist, medic, scribe, soldier, tester and
-    // ui_cartographer therefore rendered as cards with no way to set a model, and stayed pinned to
-    // whatever the seed default was — in this colony, a model the Ollama host does not even serve.
-    // Executability decides whether a role DISPATCHES today; it has nothing to do with whether an
-    // operator may say which model it should call when it does.
-    //
-    // Queen and director keep no controls because they hold no route: they are control-plane
-    // identities that make no model calls, and offering a selector for a route that does not exist
-    // would be a control that silently does nothing.
-    const hasRoute=Object.prototype.hasOwnProperty.call(routes,c);
-    const modelField=(c==='queen'||c==='director'||!hasRoute)?'':`
-      <div class="antcfg-field">
-        <label>Provider</label>
-        <select data-caste="${c}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(name)}">${antcfgProviderOptions(curProvider)}</select>
-      </div>
-      <div class="antcfg-field">
-        <label>Model (route)</label>
-        <select data-caste="${c}" class="antcfg-model antcfg-modelname" data-provider="${curProvider}" aria-label="Model route for ${escapeHtml(name)}">
-          ${antcfgModelOptions(curProvider,curModel)}
-        </select>
-      </div>`;
-    // Stated on the card rather than expressed by hiding the control. "Not dispatching today" and
-    // "you may not configure this" are different facts, and the old UI conflated them — an operator
-    // saw a card with no model selector and reasonably concluded the role had no model to set.
-    const dormant=(hasRoute && roleExecutable(reg)===false)
-      ? `<div style="font-size:10px;color:var(--dim);line-height:1.45;margin-bottom:6px">Not dispatching in this build — its route is still used when it is enabled.</div>`
-      : '';
-    const perms=permList(rolePerms(reg)).join(', ')||'none';
-    const workerList=roleWorkers(reg).map(w=>{
-      const wid=workerId(w),tele=workerTelemetryById(wid),u=tele.usage||{},a=tele.audit||{};
-      const taskCount=u.task_count??u.taskCount??u.TaskCount??0;
-      const completeCount=u.complete_count??u.completeCount??u.CompleteCount??0;
-      const failedCount=u.failed_count??u.failedCount??u.FailedCount??0;
-      const auditCount=a.audit_count??a.auditCount??a.AuditCount??0;
-      return `<div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px"><span style="color:var(--text)">${escapeHtml(workerName(w))}</span><br><span style="font-family:var(--mono);font-size:9px">${escapeHtml(wid)}</span><br><span>${taskCount} task(s) · ${completeCount} complete · ${failedCount} failed · ${auditCount} audit(s)</span></div>`;
-    }).join('');
-    return `<div class="antcfg-card">
-      <div class="antcfg-top">
-        <span class="antcfg-dot" style="background:${color}"></span>
-        <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} · ${escapeHtml(c)}${roleExecutable(reg)?'':' · visible'}</div></div>
-      </div>
-      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">${escapeHtml(rolePurpose(reg))}</div>
-      ${dormant}
-      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" aria-label="Display name for ${escapeHtml(name)}" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
-      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" aria-label="Accent colour for ${escapeHtml(name)}" data-caste="${c}" type="color" value="${color}"></div>
-      ${modelField}
-      <div class="antcfg-field"><label>Permissions</label><div style="font-size:10px;color:var(--muted);line-height:1.45">${escapeHtml(perms)}</div></div>
-      ${workerList?`<div class="antcfg-field"><label>Specialized Workers</label>${workerList}</div>`:''}
-    </div>`;
-  }).join('');
-
-  // Switching provider repopulates the model list for that caste from the right catalog.
-  grid.querySelectorAll('.antcfg-provider').forEach(sel=>{
-    sel.addEventListener('change',()=>{
-      const c=sel.dataset.caste,provider=sel.value;
-      const modelSel=grid.querySelector(`.antcfg-modelname[data-caste="${c}"]`);
-      modelSel.dataset.provider=provider;
-      modelSel.innerHTML=antcfgModelOptions(provider,'');
-    });
-  });
+  // inspector's ✎ profile editor and its provider/model pair in each inspector card's route
+  // selectors (inspector-routing.js). This renders only what sits ABOVE the inspector grid.
 }
 
 // v0.3.8.55: loadRoleRouting (the Models & Routing page's flat per-role selector list) is gone —

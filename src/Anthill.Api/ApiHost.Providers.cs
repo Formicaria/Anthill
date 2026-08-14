@@ -399,7 +399,7 @@ public static partial class ApiHost
             var message = (body?.Message ?? "").Trim();
             if (message.Length == 0) return ApiJson.Error("A message is required.", "bad_request");
 
-            // v0.3.8.55 (fourth field round): the workdir_required gate is GONE, by the same
+            // v0.3.8.55 (fourth field round): the working-directory gate is GONE, by the same
             // operator who asked for it in the third. A pathless project no longer refuses the
             // turn — it stands in ANTHILL's own source checkout by default (direct source
             // access; ConversationRunner.ProjectDirectory is the one resolution), and the
