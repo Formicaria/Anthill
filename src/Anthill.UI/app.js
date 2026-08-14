@@ -436,7 +436,7 @@ function applyRoleVisibility(){
     const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
     avatarEl.textContent=initials;
     avatarEl.style.background=admin
-      ?'linear-gradient(135deg,#fbbf24,#f59e0b)'
+      ?'linear-gradient(135deg,var(--queen),var(--queen-deep))'
       :'linear-gradient(135deg,#3b82f6,#6366f1)';
   }
 }
@@ -2524,7 +2524,7 @@ function renderJobList(jobs, listId, badgeId, limit){
     const canCancel=isRunning||j.status==='queued';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
-    const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
+    const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'var(--amber)':'var(--muted)';
     let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
@@ -3226,7 +3226,7 @@ const msActivity = MT.ActivityStore();
 let msLastAnnounced = '';
 let msLastSettledCount = -1;
 
-const MS_CHIP={complete:['done','var(--green)'],partial:['partial','#d9a441'],
+const MS_CHIP={complete:['done','var(--green)'],partial:['partial','var(--amber)'],
                failed:['failed','var(--red)'],running:['working','var(--hud-cyan,#22d3ee)'],
                queued:['queued','var(--muted)']};
 
@@ -7864,9 +7864,9 @@ async function reloadObjectives(){
 const OBJ_END_BADGE={
   completed_successfully:['Completed','rgba(16,185,129,.14)','var(--green)'],
   stopped_no_followup_required:['Stopped','rgba(59,130,246,.14)','var(--blue)'],
-  retired_looping:['Retired · Looping','rgba(251,191,36,.14)','var(--queen)'],
+  retired_looping:['Retired · Looping','rgba(var(--queen-rgb),.14)','var(--queen)'],
   failed:['Failed','rgba(239,68,68,.14)','var(--red)'],
-  manually_paused:['Paused','rgba(251,191,36,.14)','var(--queen)'],
+  manually_paused:['Paused','rgba(var(--queen-rgb),.14)','var(--queen)'],
   manually_stopped:['Stopped','rgba(255,255,255,.06)','var(--dim)'],
 };
 async function reloadCompletedObjectives(){

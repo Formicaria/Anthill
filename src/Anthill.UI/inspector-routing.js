@@ -186,7 +186,7 @@ function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
           ${antcfgModelOptions(priorityProvider||'ollama', priorityModel||'')}
         </select>
       </div>
-      <div style="font-size:10px;margin-top:4px;color:${active?'var(--accent,#d9a441)':'var(--dim)'}">
+      <div style="font-size:10px;margin-top:4px;color:${active?'var(--queen)':'var(--dim)'}">
         ${active
           ? 'Active — every ant tries '+escapeHtml(priorityModel)+' first.'
           : 'Not set — each ant uses its own route below. Choose a model and Save to promote it.'}
