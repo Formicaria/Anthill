@@ -4255,6 +4255,7 @@ async function loadAntObsDirectory(grid){
  */
 let chatActiveId = null;
 let chatComposingNew = false;   // v0.3.8.42 (§13): an explicit "New conversation" wins over auto-open
+let chatPendingPolicy = null;   // v0.3.8.53: a gate chosen BEFORE any conversation exists — rides creation
 let chatColonyOpen = false;
 // v0.3.8.40: /conversations/{id} does NOT return a title — only the list does. Without this the
 // header read "Conversation" for every thread, including the one whose title was right there in
@@ -4555,6 +4556,7 @@ async function chatOpen(id){
     // v0.3.8.48: the selector shows the conversation's EFFECTIVE policy, and says who set it.
     const polSel=document.getElementById('chat-policy');
     if(polSel){ polSel.value=d.policy||'ask'; polSel.dataset.current=d.policy||'ask'; }
+    chatPendingPolicy=null;   // an OPEN conversation's own gate governs; the held choice expires
     // Inline change cards: this conversation's proposed patches, reviewed where the work happened.
     chatRenderPatches(d, thread);
     chatOpenAfterRender(d);
@@ -4755,9 +4757,11 @@ async function chatSend(mode){
       const pid=chatPendingProjectId||await chatPickProject();
       if(!pid){ if(el) el.value=msg; chatSetState('Pick a project to start this conversation in.'); return; }
       chatPendingProjectId=null;
-      const c=await api('/conversations','POST',{ title: msg.slice(0,48), project_id: pid });
+      const c=await api('/conversations','POST',{ title: msg.slice(0,48), project_id: pid,
+        // v0.3.8.53: the gate chosen before this conversation existed rides its creation.
+        policy: chatPendingPolicy||undefined });
       if(!c||!c.success){ if(el) el.value=msg; chatSetState((c&&c.message)||'Could not start.'); return; }
-      chatActiveId=c.data.id;
+      chatActiveId=c.data.id; chatPendingPolicy=null;
       chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
     if(mode==='chat'){
@@ -4958,13 +4962,20 @@ document.getElementById('chat-export')?.addEventListener('click', async ()=>{
 
 // v0.3.8.48 — the approval gate on the conversation. Skip-all is a real decision: confirmed in
 // words. The refusal path snaps the selector back; nothing changes silently.
+// v0.3.8.53 (field report): the gate is settable BEFORE any conversation exists — the choice is
+// HELD and becomes the policy of the conversation the next message creates, attributed at
+// creation exactly as the server has always required. No more "open a conversation first".
 document.getElementById('chat-policy')?.addEventListener('change', async e=>{
   const sel=e.target, want=sel.value, was=sel.dataset.current||'ask';
-  if(!chatActiveId){ sel.value=was; chatSetState('Open a conversation first.'); return; }
   if(want==='bypass' && !confirm('Skip all approvals for this conversation?\n\nThe colony will act '
       +'without asking you first. Authentication, workspace boundaries, capability gates and '
       +'verification requirements still apply — this skips prompts, not security.')){
     sel.value=was; return;
+  }
+  if(!chatActiveId){
+    chatPendingPolicy=want; sel.dataset.current=want;
+    chatSetState('Approval mode set — it will apply to the conversation your next message starts.');
+    return;
   }
   sel.disabled=true;
   const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/policy','POST',{policy:want});
