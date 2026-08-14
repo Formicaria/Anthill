@@ -5109,15 +5109,32 @@ let chatPatchFingerprint='';
 async function chatRenderPatches(d, thread){
   const missions=d.mission_ids||[];
   if(!missions.length){ chatPatchFingerprint=''; return; }
-  const rows=[];
+  let rows=[];
   for(const mid of missions.slice(-3)){
     const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=20');
     if(r&&r.success&&Array.isArray(r.data)) rows.push(...r.data);
   }
-  const print=rows.map(p=>p.id+':'+p.status).join('|');
+  // v0.3.8.56 (field report): under Skip-all, the chat asks NOTHING. Bypass is the operator
+  // saying "don't prompt me" — verified patches auto-apply, and a proposal still pending is one
+  // the pipeline has not verified yet (or refused), which is a status, not a question. Pending
+  // cards collapse to one status line; applied/rejected/reverted cards still render as record.
+  const policy=document.getElementById('chat-policy')?.dataset.current||'ask';
+  let pendingHeldBack=0;
+  if(policy==='bypass'){
+    pendingHeldBack=rows.filter(p=>p.status==='proposed').length;
+    rows=rows.filter(p=>p.status!=='proposed');
+  }
+  const print=policy+'|'+rows.map(p=>p.id+':'+p.status).join('|')+'|held:'+pendingHeldBack;
   if(print===chatPatchFingerprint) return;
   chatPatchFingerprint=print;
   thread.querySelectorAll('.patch-card').forEach(el=>el.remove());
+  if(pendingHeldBack>0){
+    const note=document.createElement('div');
+    note.className='patch-card';
+    note.innerHTML=`<div class="patch-hd"><b>${pendingHeldBack} proposal(s) awaiting colony verification</b></div>
+      <div class="patch-path" style="color:var(--dim);">Skip-all applies changes once they verify — nothing to answer here. Full detail lives in Changes.</div>`;
+    thread.appendChild(note);
+  }
   for(const p of rows){
     const card=document.createElement('div');
     card.className='patch-card'+(p.status==='applied'?' applied':p.status==='rejected'?' rejected':'');
