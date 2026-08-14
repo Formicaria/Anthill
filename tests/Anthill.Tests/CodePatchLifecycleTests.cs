@@ -387,7 +387,8 @@ public class CodePatchLifecycleTests : IDisposable
     /// v0.3.8.55 (operator's E2E ask) — THE MEMORY TRAIL, end to end, deterministic: the same
     /// composed twelve-role mission, asserted this time on what the colony REMEMBERS rather than
     /// on who ran. Four claims, each against a persisted record:
-    ///   1. the scribe's words survive — its scripted changelog line is in the task record;
+    ///   1. the scribe's record survives — its deterministic release notes, assembled from the
+    ///      mission's own results (never from a model answer), naming the mission they document;
     ///   2. the archivist's finalization claim is USED UP — both ledger claims (learning,
     ///      archivist) refuse a second caller, so one mission can never buy double memory;
     ///   3. the memory candidates the archivist recorded are real events with content;
@@ -412,7 +413,6 @@ public class CodePatchLifecycleTests : IDisposable
             AnthillRuntime.UseOllama = true;
             AnthillRuntime.AllowedWorkspaceRoot = _workspace;
 
-            const string scribeMarker = "SCRIPTED-SCRIBE: docs: add the colony note.";
             var book = new ScriptBook()
                 .Role("planner", TwelveRolePlan)
                 .Role("researcher", "SCRIPTED: the note should describe the colony.")
@@ -421,7 +421,7 @@ public class CodePatchLifecycleTests : IDisposable
                 .Role("ui_cartographer", "SCRIPTED: no UI surface is touched.")
                 .Role("coder", ScriptedProposals)
                 .Role("builder", "SCRIPTED: the note was proposed and awaits review.")
-                .Role("scribe", scribeMarker)
+                .Role("scribe", "SCRIPTED: unused — the scribe is deterministic (see claim 1).")
                 .Role("verifier", "SCRIPTED: the record addresses the request.")
                 .Role("tester", "SCRIPTED: checks recorded.")
                 .Role("soldier", "SCRIPTED: no security concern.")
@@ -443,11 +443,18 @@ public class CodePatchLifecycleTests : IDisposable
                 onMissionCreated: id => missionId = id);
             Assert.NotNull(missionId);
 
-            // 1. The scribe's words are IN the persisted record, verbatim.
+            // 1. The scribe's record survives — and this test's first run taught what it IS.
+            //    The scribe is a DETERMINISTIC ant: it never consumes a model answer (the scripted
+            //    line above is deliberately unused), it assembles release notes from the mission's
+            //    own prior results — evidence over prose, in one role. Its persisted narrative
+            //    therefore opens with the mission it documents, and that is the memory asserted.
             var tasks = queen.Memory.GetTasksForMission(missionId!);
-            var allResults = string.Join("\n",
-                tasks.Select(t => t.GetValueOrDefault("result")?.ToString() ?? ""));
-            Assert.Contains(scribeMarker, allResults);
+            var scribeTask = tasks.FirstOrDefault(t =>
+                (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == "scribe");
+            Assert.NotNull(scribeTask);
+            Assert.Equal("complete", scribeTask!.GetValueOrDefault("status")?.ToString());
+            Assert.Contains("Mission: Add a short colony note to the documentation.",
+                scribeTask.GetValueOrDefault("result")?.ToString() ?? "");
 
             // 2. Finalization happened EXACTLY once: both ledger claims are spent. A second
             //    caller — a crash-retry, a duplicated finalizer — is refused by the store itself.

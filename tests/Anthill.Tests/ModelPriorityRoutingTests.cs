@@ -169,7 +169,9 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void EveryRoleThatIsNotAnAnt_HasAConsoleControl()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
+        // v0.3.8.55: the ant-config globals live in inspector-routing.js — the inspector/routing
+        // domain's own console asset (the app.js size guard's split rule).
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
 
         // The full ROSTER, not ExecutableRoleIds. The latter is computed from live specialist gates,
         // so it shrinks and grows with configuration — a role whose canary gate happens to be closed
@@ -239,7 +241,8 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void ThePriority_CanBeClearedFromTheConsole()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
+        // v0.3.8.55: the priority panel and its save handler live in inspector-routing.js now.
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
 
         Assert.Contains("model_priority_provider", app);
         Assert.Contains("m.value ? p.value : ''", app);

@@ -67,6 +67,7 @@ public static partial class ApiHost
     // v0.3.8.55: two more split assets — inspector routing and themes (the app.js size guard).
     private static string UiInspectorRoutingJs = "";
     private static string UiThemesJs = "";
+    private static string UiConsoleExtrasJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
@@ -182,6 +183,7 @@ public static partial class ApiHost
         UiHomelabJs = LoadUiAsset("homelab.js");
         UiInspectorRoutingJs = LoadUiAsset("inspector-routing.js");
         UiThemesJs = LoadUiAsset("themes.js");
+        UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 

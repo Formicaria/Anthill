@@ -54,7 +54,9 @@ public static partial class ApiHost
         foreach (var (role, cfg) in routes)
         {
             string provider, model;
-            if (Queen?.Router is { } router)
+            // No `?.` on Queen: it is initialized before any route serves, and the conditional
+            // access taught the compiler doubt it then carried to every later dereference (CS8602).
+            if (Queen.Router is { } router)
                 (provider, model) = router.GetRoute(role);
             else
             {

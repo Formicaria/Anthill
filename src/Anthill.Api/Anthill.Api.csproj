@@ -55,6 +55,7 @@
     <EmbeddedResource Include="..\Anthill.UI\homelab.js" LogicalName="Anthill.Api.Ui.homelab.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\inspector-routing.js" LogicalName="Anthill.Api.Ui.inspector-routing.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\themes.js" LogicalName="Anthill.Api.Ui.themes.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\console-extras.js" LogicalName="Anthill.Api.Ui.console-extras.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" Condition="'$(AnthillNoUi)' != 'true'" />

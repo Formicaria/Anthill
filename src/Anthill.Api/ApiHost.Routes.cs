@@ -96,6 +96,11 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiThemesJs, "text/javascript; charset=utf-8");
         });
+        app.MapGet("/ui/console-extras.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiConsoleExtrasJs, "text/javascript; charset=utf-8");
+        });
 
         app.MapGet("/ui/dashboard-grid.css", (HttpContext ctx) =>
         {
