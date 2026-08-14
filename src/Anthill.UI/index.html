@@ -580,9 +580,14 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
   width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
   border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
 }
+/* v0.3.8.56 (field report: a stray "name" under the legends): the hint kept its ORIGINAL
+   bottom-centre positioning (left:50%; translateX(-50%)) after v2.14.14 re-parented it into the
+   overlay slots — so in any slot but bottom-centre it shifted half its width off the canvas and
+   only the last word ("…rename") peeked past the edge. The SLOT owns position now; the hint is
+   just text. */
 #zoom-hint{
-  position:absolute;bottom:56px;left:50%;transform:translateX(-50%);
   font-size:9px;color:rgba(255,255,255,.18);pointer-events:none;white-space:nowrap;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;
 }
 
 /* -- Mission Bar ------------------------------------------------------------- */
