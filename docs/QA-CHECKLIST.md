@@ -66,8 +66,8 @@ projects or repositories. Exit code 0 means qualified.
 |---|---|---|---|---|
 | 3.1 | Create a new project | Appears in Projects; opening it shows the workspace (Chat/Objectives/Schedules/History/Settings tabs) | | |
 | 3.2 | + New Conversation from the project page | A conversation is created immediately, opens in Chat, appears in the left tracker labeled with the project name | | |
-| 3.3 | Send a message BEFORE setting a working directory | Refused with a clear remedy; your message stays in the composer; the Files pane opens | | |
-| 3.4 | Files tab on the new project | Set-directory form shown, **prefilled** with `<workspace root>/projects/<name>-<id>` | | |
+| 3.3 | Send a message BEFORE setting a working directory | Answered — the chat stands in ANTHILL's own source checkout by default; the Files crumb says `(ANTHILL source — default until you set one)` | | |
+| 3.4 | Dir button on the pathless project | Set-directory form opens, **prefilled** with `<workspace root>/projects/<name>-<id>`; setting it takes over from the default immediately | | |
 | 3.5 | Click Browse | Desktop app: real OS folder dialog. Browser: inline server-side directory browser (Home/roots/navigate/Use this folder) | | |
 | 3.6 | Accept the suggested path | Directory is created; empty tree renders; badge reads `no git` (two words, no error wall) | | |
 | 3.7 | First chat message after setting the directory | Answered; conversation title becomes your first message; header shows the project name under the title | | |
@@ -108,23 +108,25 @@ Mark any page that errors, renders empty when it shouldn't, or shows obviously w
 
 | Page | Result | Notes |
 |---|---|---|
-| Colony → Overview (map draws, ants reflect real state) | | |
-| Colony → Models & Routing | | |
-| Colony → Ant Inspector (click an ant; edit name/color) | | |
-| Colony → Automation | | |
-| Projects list | | |
-| Chat (+ Files pane, + Colony pane, splits drag & persist) | | |
+| Colony → Overview (map draws without a manual refresh; ants reflect real state; legends fold on their headers; transfer dashes MOVE during a mission; Automation Director widget shows state + budgets by default) | | |
+| Colony → Ant Inspector (one box per role: provider dropdown saves a route; second model dropdown appears for Ollama; ✎ edits name/color; colony-wide priority + planner above the grid; all 12 roles show as executable, not "visible") | | |
+| Projects (project list left, Automation panel right — Director start/stop, objectives, runs; workspace checkouts named by mission goal, not GUID) | | |
+| Chat (+ Files pane with refresh button, + Colony pane; splits drag & persist; split bar is themed, never white — even after a cancelled drag) | | |
 | Tools → Capabilities | | |
 | Tools → Integrations (Configure opens inline; Test connection answers) | | |
+| Tools → Providers (moved here from Settings) | | |
 | Tools → Memory & Signals | | |
-| Settings → General | | |
+| Settings → General/Connection (theme picker: Formicaria default, Classic, Light, Hermes, High contrast — applies instantly, survives reload; Report an Issue composes a mail to info@formicaria.us) | | |
+| Settings → Models (Active Routes MATCH the status popover's routes exactly) | | |
 | Settings → Security & Gates | | |
 | Settings → Users | | |
 | Settings → System (event log populated) | | |
 | Settings → Readiness | | |
 | Settings → Terminal (a safe command like `git status` runs; **no console window flashes**) | | |
+| Status light (top right) → popover reads `● Online`/`● Offline` — no `?` anywhere | | |
 | Homelab deck (if configured) | | |
 | Sidebar mark → opens formicaria.us in your real browser | | |
+| (Windows) Agent chat output | Em dashes, quotes and accents render correctly — no `â€”` mojibake | | |
 
 ## 7. Ugly-input hardening (try to break it)
 

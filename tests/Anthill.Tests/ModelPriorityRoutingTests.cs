@@ -169,7 +169,9 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void EveryRoleThatIsNotAnAnt_HasAConsoleControl()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
+        // v0.3.8.55: the ant-config globals live in inspector-routing.js — the inspector/routing
+        // domain's own console asset (the app.js size guard's split rule).
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
 
         // The full ROSTER, not ExecutableRoleIds. The latter is computed from live specialist gates,
         // so it shrinks and grows with configuration — a role whose canary gate happens to be closed
@@ -195,30 +197,40 @@ public class ModelPriorityRoutingTests : IDisposable
     /// v3.8.1 — a role gets model controls because it HAS A ROUTE, never because it happens to be
     /// executable right now.
     ///
-    /// The caste grid hid the provider/model pair whenever a role's Executable flag was false, and
-    /// that flag is computed from live specialist canary gates. So archivist, medic, scribe,
+    /// The old caste grid hid the provider/model pair whenever a role's Executable flag was false,
+    /// and that flag is computed from live specialist canary gates. So archivist, medic, scribe,
     /// soldier, tester and ui_cartographer rendered as cards with no way to set a model and stayed
     /// pinned to the seed default — in the reporting operator's colony, a model their Ollama host
     /// did not even serve. Executability decides whether a role DISPATCHES today; it says nothing
     /// about whether an operator may choose the model it calls when it does.
     ///
-    /// Asserted on the condition itself rather than on rendered output, because the bug was the
-    /// condition: any rule that consults executability here reintroduces it exactly.
+    /// v0.3.8.55: the caste grid folded into the Ant Inspector, and the RULE moved with it — the
+    /// card's route selectors render when the role appears in obsRoutes, which is filled from
+    /// /routes/json's roles list: the ROUTE MAP, so every role the server routes gets a control
+    /// automatically as new ones are added. Asserted on the condition itself rather than on
+    /// rendered output, because the original bug was the condition: any rule that consults
+    /// executability here reintroduces it exactly.
     /// </summary>
     [Fact]
     public void ModelControls_AreGatedOnHavingARoute_NotOnExecutability()
     {
         var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
+        var routing = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
 
-        var condition = Regex.Match(app, @"const modelField=\([^)]*\)").Value;
+        // The card renders controls iff the role is IN THE ROUTE MAP — nothing else.
+        var condition = Regex.Match(app, @"obsRoutes\[ant\]\s*\r?\n?\s*\?\s*obsRouteControls").Value;
         Assert.NotEqual("", condition);
 
-        Assert.Contains("hasRoute", condition);
-        Assert.DoesNotContain("roleExecutable", condition);
+        // The map is filled from /routes/json's roles list — the server's own routing table.
+        Assert.Contains("rj.data.roles", app);
+        Assert.Contains("obsRoutes[x.role]", app);
 
-        // And the route check must come from the ROUTE MAP, so every role the server routes gets a
-        // control automatically as new ones are added.
-        Assert.Contains("hasOwnProperty.call(routes,c)", app.Replace(" ", ""));
+        // And neither the gate nor the control builder consults executability.
+        Assert.DoesNotContain("roleExecutable", routing);
+        var obsBlock = Regex.Match(app, @"obsProvModels=new Map\(\); obsRoutes=\{\};.*?const d=r\.data",
+            RegexOptions.Singleline).Value;
+        Assert.NotEqual("", obsBlock);
+        Assert.DoesNotContain("roleExecutable", obsBlock);
     }
 
     /// <summary>
@@ -229,7 +241,8 @@ public class ModelPriorityRoutingTests : IDisposable
     [Fact]
     public void ThePriority_CanBeClearedFromTheConsole()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
+        // v0.3.8.55: the priority panel and its save handler live in inspector-routing.js now.
+        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
 
         Assert.Contains("model_priority_provider", app);
         Assert.Contains("m.value ? p.value : ''", app);

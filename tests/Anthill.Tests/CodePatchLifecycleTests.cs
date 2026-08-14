@@ -383,6 +383,108 @@ public class CodePatchLifecycleTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// v0.3.8.55 (operator's E2E ask) — THE MEMORY TRAIL, end to end, deterministic: the same
+    /// composed twelve-role mission, asserted this time on what the colony REMEMBERS rather than
+    /// on who ran. Four claims, each against a persisted record:
+    ///   1. the scribe's record survives — its deterministic release notes, assembled from the
+    ///      mission's own results (never from a model answer), naming the mission they document;
+    ///   2. the archivist's finalization claim is USED UP — both ledger claims (learning,
+    ///      archivist) refuse a second caller, so one mission can never buy double memory;
+    ///   3. the memory candidates the archivist recorded are real events with content;
+    ///   4. the mission left pheromone trails in the persisted store.
+    /// The scenario's outcome is an honest adaptive_stop (the tester legitimately fails against
+    /// the materialized tree), which is exactly the point: even a mission that did NOT verify
+    /// leaves an auditable memory trail — recorded, never strengthened into false reputation.
+    /// </summary>
+    [Fact]
+    public void TheMemoryTrail_ScribeWritesArchivistClaims_AndTheLedgerRefusesSeconds()
+    {
+        var specialistsWas = AnthillRuntime.EnableSpecialistAntExecution;
+        var cartographerWas = AnthillRuntime.EnableUiCartographerAnt;
+        var scribeWas = AnthillRuntime.EnableScribeAnt;
+        var archivistWas = AnthillRuntime.EnableArchivistAnt;
+        try
+        {
+            AnthillRuntime.EnableSpecialistAntExecution = true;
+            AnthillRuntime.EnableUiCartographerAnt = true;
+            AnthillRuntime.EnableScribeAnt = true;
+            AnthillRuntime.EnableArchivistAnt = true;
+            AnthillRuntime.UseOllama = true;
+            AnthillRuntime.AllowedWorkspaceRoot = _workspace;
+
+            var book = new ScriptBook()
+                .Role("planner", TwelveRolePlan)
+                .Role("researcher", "SCRIPTED: the note should describe the colony.")
+                .Role("web", "SCRIPTED: no external sources are needed.")
+                .Role("file", "SCRIPTED: the workspace holds README.txt.")
+                .Role("ui_cartographer", "SCRIPTED: no UI surface is touched.")
+                .Role("coder", ScriptedProposals)
+                .Role("builder", "SCRIPTED: the note was proposed and awaits review.")
+                .Role("scribe", "SCRIPTED: unused — the scribe is deterministic (see claim 1).")
+                .Role("verifier", "SCRIPTED: the record addresses the request.")
+                .Role("tester", "SCRIPTED: checks recorded.")
+                .Role("soldier", "SCRIPTED: no security concern.")
+                .Role("medic", "SCRIPTED: environmental to this tree.")
+                .Role("archivist", "SCRIPTED: recorded.");
+
+            using var scripted = ScriptedColony.Begin(book,
+                "planner", "researcher", "web", "file", "ui_cartographer", "coder", "builder",
+                "scribe", "verifier", "tester", "soldier", "medic", "archivist", "fallback");
+
+            using var memory = new SqliteMemory(Path.Combine(_dir, "memory-trail.db"));
+            var host = new ModuleHost(memory, NullEventBus.Instance);
+            host.Load(new ToolsModule(new WorkspacePathGuard(), new ScenarioToolGates()));
+            var queen = new Queen(memory);
+            queen.AdoptModuleTools(host.ContributedTools);
+
+            string? missionId = null;
+            queen.RunMission("Add a short colony note to the documentation.",
+                onMissionCreated: id => missionId = id);
+            Assert.NotNull(missionId);
+
+            // 1. The scribe's record survives — and this test's first run taught what it IS.
+            //    The scribe is a DETERMINISTIC ant: it never consumes a model answer (the scripted
+            //    line above is deliberately unused), it assembles release notes from the mission's
+            //    own prior results — evidence over prose, in one role. Its persisted narrative
+            //    therefore opens with the mission it documents, and that is the memory asserted.
+            var tasks = queen.Memory.GetTasksForMission(missionId!);
+            var scribeTask = tasks.FirstOrDefault(t =>
+                (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == "scribe");
+            Assert.NotNull(scribeTask);
+            Assert.Equal("complete", scribeTask!.GetValueOrDefault("status")?.ToString());
+            Assert.Contains("Mission: Add a short colony note to the documentation.",
+                scribeTask.GetValueOrDefault("result")?.ToString() ?? "");
+
+            // 2. Finalization happened EXACTLY once: both ledger claims are spent. A second
+            //    caller — a crash-retry, a duplicated finalizer — is refused by the store itself.
+            var evaluation = queen.Memory.LoadMissionEvaluation(missionId!);
+            Assert.NotNull(evaluation);
+            Assert.False(MissionFinalizationLedger.TryClaimLearning(queen.Memory, missionId!, evaluation!),
+                "the learning claim was still open after finalization — double-learning is possible");
+            Assert.False(MissionFinalizationLedger.TryClaimArchivist(queen.Memory, missionId!, evaluation!),
+                "the archivist claim was still open after finalization — double-archiving is possible");
+
+            // 3. The archivist's memory candidates are real recorded events with content.
+            var candidates = queen.Memory.GetRecentEvents(100, "memory_candidate", missionId);
+            Assert.True(candidates.Count > 0, "no memory candidates were recorded");
+            Assert.All(candidates, c =>
+                Assert.False(string.IsNullOrWhiteSpace(c.GetValueOrDefault("message")?.ToString()),
+                    "a memory candidate with no content is not a memory"));
+
+            // 4. The mission left pheromone trails in the persisted store.
+            Assert.True(queen.Memory.ListPheromoneTrails(300).Count > 0,
+                "the mission left no pheromone trails");
+        }
+        finally
+        {
+            AnthillRuntime.EnableSpecialistAntExecution = specialistsWas;
+            AnthillRuntime.EnableUiCartographerAnt = cartographerWas;
+            AnthillRuntime.EnableScribeAnt = scribeWas;
+            AnthillRuntime.EnableArchivistAnt = archivistWas;
+        }
+    }
+
     /// <summary>File tools on (local, deterministic); web, shell, writes and auto-apply off.</summary>
     private sealed class ScenarioToolGates : IToolRuntimeOptions
     {

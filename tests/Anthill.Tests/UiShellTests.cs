@@ -1358,7 +1358,9 @@ public class UiShellTests
         var html = Ui("index.html");
 
         Assert.Contains("label:'Projects'", js);
-        Assert.Contains("<h1>Projects</h1>", html);
+        // v0.3.8.55 (operator's layout rule): the Projects title is its COLUMN's header now — the
+        // page splits into Projects | Automation and each column heads itself in the same shape.
+        Assert.Contains(">Projects</h2>", html);
         // The claim is backed: the console actually calls the project endpoints.
         Assert.Contains("'/projects'", js);
         Assert.Contains("project_id", js);
@@ -1583,20 +1585,27 @@ public class UiShellTests
     /// the chat lane's confinement (via AgentAccessScope.WorkingDirectory, which the provider
     /// must prefer over its static default), and the prompt's own description of the tree.
     /// Two copies of a boundary rule is one copy that eventually disagrees.
+    ///
+    /// v0.3.8.55 (fourth field round) REVERSED the third round's gate: a pathless project no
+    /// longer refuses the chat. It stands in ANTHILL's own source checkout — direct source
+    /// access, primary until the operator sets a directory, which then takes over. The old
+    /// fallback stays forbidden: the default is the COLONY'S OWN TREE, never the shared
+    /// workspace root that made every project identical.
     /// </summary>
     [Fact]
-    public void EveryProject_OwnsItsOwnTree_SetByTheOperator_BeforeTheFirstChat()
+    public void EveryProject_OwnsItsOwnTree_AndAPathlessOne_StandsInTheColonySource()
     {
         var roots = Src("src", "Anthill.Core", "Projects", "ProjectRoots.cs");
         Assert.Contains("\"projects\"", roots);                       // the shared parent
         Assert.Contains("{Slug(project.Name)}-{project.Id}", roots);  // unique per project
 
-        // Third field round: the directory is the OPERATOR'S explicit act — suggested, never
-        // silently provisioned; created when they set it; required before the first chat.
         var providers = Src("src", "Anthill.Api", "ApiHost.Providers.cs");
         Assert.Contains("suggested_path", providers);
         Assert.Contains("ProjectRoots.DefaultFor(project)", providers);
-        Assert.Contains("workdir_required", providers);
+        // Fourth round: the gate is gone — no turn is refused for a missing working directory —
+        // and the files pane resolves a pathless project to the colony's own source checkout.
+        Assert.DoesNotContain("workdir_required", providers);
+        Assert.Contains("ProjectRoots.ColonySource()", providers);
         Assert.DoesNotContain("? AnthillRuntime.AllowedWorkspaceRoot : project.Path", providers);
 
         // And the git story speaks only for the project's OWN tree: nested inside a larger
@@ -1606,18 +1615,20 @@ public class UiShellTests
 
         var runner = Src("src", "Anthill.Core", "Conversations", "ConversationRunner.cs");
         Assert.Contains("workingDirectory: ProjectDirectory(conversation)", runner);
-        // The colony's own checkout rides alongside every project — reach, never the tracked tree.
-        Assert.Contains("ColonySource()", runner);
+        // One resolution: explicit path first, colony source as the default — and the prompt
+        // names the default as a default instead of claiming a choice the operator never made.
+        Assert.Contains("return Projects.ProjectRoots.ColonySource();", runner);
+        Assert.Contains("defaultedToSource", runner);
 
         var provider = Src("src", "Anthill.Modules", "Anthill.Modules.Reasoning", "AgentCliProvider.cs");
         Assert.Contains("EffectiveWorkingDirectory", provider);
         var sdk = Src("src", "Anthill.SDK", "Reasoning", "AgentAccessScope.cs");
         Assert.Contains("WorkingDirectory", sdk);
 
-        // The console's half of the gate: refusal keeps the message and opens the files pane,
-        // whose set-root form arrives prefilled with the suggestion.
+        // The console's half: no dead remedy for a gate that no longer exists, and the set-root
+        // form still arrives prefilled with the suggestion for when the operator DOES choose.
         var js = Ui("app.js");
-        Assert.Contains("workdir_required", js);
+        Assert.DoesNotContain("workdir_required", js);
         Assert.Contains("suggested_path", js);
     }
 
