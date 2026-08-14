@@ -8778,28 +8778,48 @@ function gridMountTarget(bodyId, el, cls){
  */
 var DEFAULT_DASHBOARD_VIEW = {
   locked: true,
-  // v0.3.8.49 (§6): the default dashboard is COLONY-centric and free of Chat duplicates. The
-  // Mission Command composer and the Conversations list both belonged to Chat, which is now the
-  // authoritative mission-and-conversation surface (§1/§3) — on the dashboard they duplicated it,
-  // and the composer in particular rendered as a large empty panel. Both stay REGISTERED (one click
-  // away in the Widgets menu, and any saved layout that pins them still works); they are simply off
-  // by default. What opens now: the colony's vitals, the colony itself, its health smalls, and what
-  // needs the operator's attention.
+  // v0.3.8.56: this is not a hand-guessed arrangement — it is the operators' own board, captured
+  // from a live console after the free-placement engine settled and read back cell by cell. The
+  // colony spans the top; command surfaces (composer, system, health, director) sit on the row
+  // beneath it; vitals and the working set (tools, conversations, jobs, workspaces, attempts)
+  // fill in below. Order is the board's reading order (top-left to bottom-right), which is also
+  // what the narrow-viewport stack and the Widgets menu present.
+  //
+  // Everything hidden stays REGISTERED (one click away in the Widgets menu, and any saved layout
+  // that pins it still works); a saved layout always wins over this view, and "Reset layout"
+  // restores exactly this — positions included.
   order: [
-    'colony-vitals', 'director', 'colony', 'operator-attention',
-    'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
+    'colony', 'mission-composer', 'system-core', 'colony-health', 'director',
+    'colony-vitals', 'tools', 'conversations', 'colony-jobs', 'workspaces', 'attempts',
     // registered but off by default, in the order they appear in the Widgets menu
-    'mission-composer', 'conversations', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
-    'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs',
-    'tools', 'workspaces', 'attempts',
+    'operator-attention', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
+    'recent-missions', 'approvals', 'patch-activity', 'objectives', 'recent-jobs', 'resource-usage',
   ],
   hidden: {
-    'mission-composer': true, 'conversations': true,
-    'missions': true, 'agent-inspector': true, 'live-telemetry': true,
+    'operator-attention': true, 'missions': true, 'agent-inspector': true, 'live-telemetry': true,
     'recent-events': true, 'recent-missions': true, 'approvals': true, 'patch-activity': true,
-    'objectives': true, 'recent-jobs': true, 'tools': true, 'workspaces': true, 'attempts': true,
+    'objectives': true, 'recent-jobs': true, 'resource-usage': true,
   },
-  spans: {}, heights: {},
+  // Widths are fractions of the six-cell row (sixths); heights are canonical px chosen so they
+  // quantize to the intended CELL count at every wide breakpoint (250 -> 1 cell, 516 -> 2,
+  // 1350 -> 5, for cell heights 236/250/280 with the 16px row gap).
+  spans: {
+    'mission-composer': 1 / 6, 'colony-vitals': 0.5, 'director': 0.5,
+    'conversations': 0.5, 'workspaces': 1 / 3, 'tools': 0.5,
+  },
+  heights: {
+    'mission-composer': 250, 'colony-vitals': 250, 'director': 516,
+    'conversations': 1350, 'workspaces': 516, 'tools': 250,
+  },
+  pos: {
+    'colony': { x: 0, y: 0 },
+    'mission-composer': { x: 0, y: 2 }, 'system-core': { x: 1, y: 2 },
+    'colony-health': { x: 2, y: 2 }, 'director': { x: 3, y: 2 },
+    'colony-vitals': { x: 0, y: 3 },
+    'tools': { x: 0, y: 4 }, 'conversations': { x: 3, y: 4 },
+    'colony-jobs': { x: 0, y: 5 }, 'workspaces': { x: 1, y: 5 },
+    'attempts': { x: 0, y: 7 },
+  },
 };
 
 /** Mount the responsive grid as the dashboard. */
