@@ -221,15 +221,22 @@
 
   // At or below this column count the grid is a single stack and operator widths do not apply.
   var STACK_BELOW_COLS = 4;
-  /* v0.3.8.56 (field report: "widgets snap to the largest widget next to them") — MASONRY.
-   * The grid's implicit rows sized every widget to its tallest row-mate: one tall card stretched
-   * its neighbours, which is exactly the clunk the operator named. The grid now runs on 8px
-   * auto-rows and every widget SPANS exactly the rows its own height needs, so heights are fully
-   * independent — vertically and horizontally. Reading order is untouched: auto-flow stays row
-   * (never dense), so nothing jumps above the Colony and tab order still matches the eye. */
-  var ROW_UNIT = 8;
-  function rowSpanFor(px, rowGap) {
-    return Math.max(1, Math.ceil((px + rowGap) / (ROW_UNIT + rowGap)));
+  /* v0.3.8.56 (operator's second correction) — THE CELL GRID.
+   * Free-height masonry made every widget a different height and the board read as clunky. The
+   * unit is a CELL now: rows are 6 cells wide, --dg-cell-h tall, and every widget occupies
+   * (a)x(b) whole cells — every combination available to every widget. markQuiet still measures
+   * content, but the answer it writes is CELLS: enough to hold the content (capped at
+   * AUTO_MAX_CELLS so a long list scrolls instead of growing the page), one for the quiet.
+   * Operator sizes are cells too, quantized on resize. Content fills its cell and scrolls. */
+  var WIDTH_CELLS = 6;        // a row of the board, whatever the column count underneath
+  var AUTO_MAX_CELLS = 2;     // auto-fit ceiling; the operator may size taller by hand
+  var COLONY_CELLS = 2;       // the map's default home
+  function cellHeight() {
+    return parseFloat(getComputedStyle(G.root).getPropertyValue('--dg-cell-h')) || 236;
+  }
+  function cellsForPx(px, rowGap) {
+    var cell = cellHeight();
+    return Math.max(1, Math.min(WIDTH_CELLS, Math.ceil((px + rowGap) / (cell + rowGap))));
   }
 
   function markQuiet() {
@@ -238,66 +245,45 @@
       var rootCs = getComputedStyle(G.root);
       var rowGap = parseFloat(rootCs.rowGap) || 0;
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-widget'), function (w) {
-        var h = 0;
+        var id = w.getAttribute('data-widget-id');
+        var cells = 1;
 
-        if (w.getAttribute('data-size') === 'colony') {
-          // The map is never "quiet"; it keeps its CSS-clamped height, and computed style
-          // resolves the clamp to the pixels this viewport gives it. (offsetHeight fallback, not
-          // a rect: the natural-height guard requires every rect measurement to follow the
-          // floor-clear below, and these branches measure settled heights, not content.)
-          h = parseFloat(getComputedStyle(w).minHeight) || w.offsetHeight;
-        } else if (w.hasAttribute('data-user-h')) {
+        // Clear any legacy inline floor BEFORE measuring — earlier builds wrote exact-content
+        // min-heights, and a floor left in place would be part of its own measurement.
+        w.style.minHeight = '';
+
+        if (w.hasAttribute('data-user-h')) {
           // An operator-set height is not a measurement to be improved on. Without this the 4s
           // remeasure would quietly undo every resize a few seconds after it was made.
-          h = parseFloat(w.style.minHeight) || w.offsetHeight;
+          var stored = id ? G.layout.heights[id] : 0;
+          cells = cellsForPx(typeof stored === 'number' && stored > 0 ? stored : w.offsetHeight, rowGap);
+        } else if (w.getAttribute('data-size') === 'colony') {
+          cells = COLONY_CELLS;   // the map is never "quiet" and owns a two-cell home
         } else {
           var body = w.querySelector('.dg-body');
+          var content = 0;
           if (body) {
-            // Measure at the NATURAL height. A floor left over from the previous pass would be
-            // included in this pass's measurement, and the card would grow a little every cycle.
-            w.style.minHeight = '';
-
             var only = body.children.length === 1 ? body.firstElementChild : null;
             var placeholder = only && only.classList && only.classList.contains('dg-state');
-            var content = 0;
             if (placeholder) {
-              // A placeholder is stretched (`height: 100%`) to centre itself in a full card, so
-              // its box reports the card's height, not its own. Its intrinsic minimum is honest.
               content = parseFloat(getComputedStyle(only).minHeight) || 0;
             } else {
               Array.prototype.forEach.call(body.children, function (n) {
                 content += n.getBoundingClientRect().height;
               });
             }
-
-            if (content > 0) {
-              w.classList.toggle('dg-quiet', content < QUIET_BELOW_PX);
-              var head = w.querySelector('.dg-head');
-              var cs = getComputedStyle(body);
-              var pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-              var borders = w.offsetHeight - w.clientHeight;
-              var headH = head ? head.getBoundingClientRect().height : 0;
-              var desired = headH + content + pad + borders;
-
-              // The standard height is a CEILING, not a target. Below it, the card fits its
-              // content — which is what makes the pack tight. At or above it, the CSS floor
-              // applies and the body scrolls: a widget must never grow the page to fit a list.
-              var cap = parseFloat(getComputedStyle(w).getPropertyValue('--dg-widget-h')) || 0;
-              if (cap && desired < cap) {
-                w.style.minHeight = Math.ceil(desired) + 'px';
-                h = desired;
-              } else {
-                h = cap || desired;
-              }
-            } else {
-              h = parseFloat(getComputedStyle(w).minHeight) || w.offsetHeight;
-            }
-          } else {
-            h = w.offsetHeight;
+          }
+          if (content > 0) {
+            w.classList.toggle('dg-quiet', content < QUIET_BELOW_PX);
+            var head = w.querySelector('.dg-head');
+            var headH = head ? head.getBoundingClientRect().height : 0;
+            // Enough cells to hold the content, never more than the auto ceiling — past it the
+            // body scrolls, because a widget must never grow the page to fit a long list.
+            cells = Math.min(AUTO_MAX_CELLS, cellsForPx(headH + content + 24, rowGap));
           }
         }
 
-        if (h > 0) w.style.gridRow = 'span ' + rowSpanFor(Math.ceil(h), rowGap);
+        w.style.gridRow = 'span ' + cells;
       });
     });
   }
@@ -354,7 +340,7 @@
         if (cols === last) return;      // same grid shape: nothing to re-resolve
         last = cols;
         Object.keys(G._frames).forEach(function (id) { applySize(id, G._frames[id].widget); });
-        markQuiet();                    // --dg-widget-h changes with the breakpoint too
+        markQuiet();                    // --dg-cell-h changes with the breakpoint too
       }, 120);
     });
   }
@@ -637,14 +623,17 @@
     // override is REMOVED rather than clamped, so the breakpoint's own rule applies and the saved
     // proportion is waiting unchanged when the window widens again.
     if (typeof f === 'number' && f > 0 && f <= 1 && cols > STACK_BELOW_COLS) {
-      widget.style.setProperty('--dg-span', String(Math.max(1, Math.min(cols, Math.round(f * cols)))));
+      // v0.3.8.56 (cell grid): the fraction resolves through CELLS — round to sixths first, then
+      // to this breakpoint's columns — so a layout saved before the cell grid (quarters, raw
+      // column counts) lands on a cell boundary instead of straddling one.
+      var cells = Math.max(1, Math.min(6, Math.round(f * 6)));
+      widget.style.setProperty('--dg-span', String(Math.max(1, Math.round(cells * cols / 6))));
     } else {
       widget.style.removeProperty('--dg-span');
     }
 
     var h = G.layout.heights[id];
     if (typeof h === 'number' && h > 0) {
-      widget.style.minHeight = Math.round(h) + 'px';
       widget.setAttribute('data-user-h', '1');   // markQuiet must not fight the operator
     } else {
       widget.removeAttribute('data-user-h');
@@ -771,20 +760,23 @@
   /** Set a widget's width as a fraction of the row. Clamped to something usable. */
   G.setSpanFraction = function (id, fraction) {
     if (!G.widgets[id] || typeof fraction !== 'number' || !isFinite(fraction)) return;
-    var cols = columnCount();
-    // Snap to whole columns, then store the snapped value back as a fraction so the width means
-    // the same proportion at every breakpoint rather than the pixel width of this one.
-    var snapped = Math.max(1, Math.min(cols, Math.round(fraction * cols)));
-    G.layout.spans[id] = snapped / cols;
+    // v0.3.8.56 (cell grid): snap to whole CELLS — sixths of a row — and store the fraction, so
+    // the width means the same cells at every breakpoint rather than the pixels of this one.
+    var cells = Math.max(1, Math.min(6, Math.round(fraction * 6)));
+    G.layout.spans[id] = cells / 6;
     if (G._frames[id]) applySize(id, G._frames[id].widget);
     markQuiet();   // v0.3.8.56: a width change rewraps content — the masonry span re-measures
     G.persist();
   };
 
-  /** Set a widget's height in pixels. */
+  /** Set a widget's height. v0.3.8.56: quantized to whole cells at the store, so what persists
+   * is a cell count in pixel clothing and every reader rounds the same way. */
   G.setHeight = function (id, px) {
     if (!G.widgets[id] || typeof px !== 'number' || !isFinite(px)) return;
-    G.layout.heights[id] = Math.max(MIN_H, Math.min(MAX_H, Math.round(px)));
+    var cell = cellHeight();
+    var gap = parseFloat(getComputedStyle(G.root).rowGap) || 0;
+    var cells = Math.max(1, Math.min(6, Math.round((px + gap) / (cell + gap))));
+    G.layout.heights[id] = Math.round(cells * cell + (cells - 1) * gap);
     if (G._frames[id]) applySize(id, G._frames[id].widget);
     markQuiet();   // v0.3.8.56: the masonry span must follow the new height immediately
     G.persist();
