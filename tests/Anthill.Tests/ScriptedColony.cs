@@ -166,17 +166,27 @@ internal sealed class ScriptedProvider : IReasoningProvider
     }
 }
 
-/// <summary>Full capabilities for the scripted provider; null for everything else, which the
-/// router reads as "fall back to the name table" — bit-identical to having no probe at all.</summary>
+/// <summary>Full capabilities for the scripted provider; null/empty for everything else, which
+/// the router reads as "fall back to the name table" — bit-identical to having no probe at all.</summary>
 internal sealed class ScriptedCapabilityProbe : IModelCapabilityProbe
 {
-    public ModelCapabilities? For(string provider, string model) =>
-        string.Equals(provider, ScriptedColony.ProviderId, StringComparison.OrdinalIgnoreCase)
-            ? new ModelCapabilities
-            {
-                ToolCalling = true, StructuredOutput = true, Streaming = false,
-                Vision = false, Embeddings = false, Reasoning = true,
-                ContextWindowTokens = 1_000_000,
-            }
-            : null;
+    private static readonly ModelCapabilities Full = new()
+    {
+        ToolCalling = true, StructuredOutput = true, Streaming = false,
+        Vision = false, Embeddings = false, Reasoning = true,
+        ContextWindowTokens = 1_000_000,
+    };
+
+    public ModelCapabilities? For(string providerId, string model) =>
+        string.Equals(providerId, ScriptedColony.ProviderId, StringComparison.OrdinalIgnoreCase)
+            ? Full : null;
+
+    public IReadOnlyDictionary<string, ModelCapabilities> Snapshot(string providerId) =>
+        string.Equals(providerId, ScriptedColony.ProviderId, StringComparison.OrdinalIgnoreCase)
+            ? new Dictionary<string, ModelCapabilities> { [ScriptedColony.ModelId] = Full }
+            : new Dictionary<string, ModelCapabilities>();
+
+    // Nothing to fetch: the script IS the cache. Present because v3.8.2's ordering defect makes
+    // Warm part of the contract, and a probe that raced it would repeat that release's bug.
+    public void Warm() { }
 }
