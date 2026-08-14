@@ -9597,8 +9597,18 @@ function renderToolsPanel(d, targetId, opts){
       <select id="tp-method" class="conv-select">
         <option value="GET">GET</option><option value="POST">POST</option>
       </select>
-      <button class="conv-btn primary" data-onclick="toolAdd()">Add</button>
-      <div class="tp-hosts">Allow-listed hosts: ${escapeHtml((d.user_tool_allowed_hosts||[]).join(', ')||'none configured — every definition will be rejected')}</div>
+      <button class="conv-btn primary" data-onclick="toolAdd()">Add / Update</button>
+      <!-- v0.3.8.56 (field report: "no way to edit, change, add, or remove"): the allow-list is
+           EDITABLE here — a form whose every submission is rejected by an allow-list only
+           config.json could change was an add button in name only. Same name = update: the Edit
+           button on each row loads its stored definition into this form. -->
+      <div class="tp-hosts" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span>Allow-listed hosts:</span>
+        <input id="tp-hosts-input" class="conv-input" style="flex:1;min-width:200px;"
+               placeholder="api.example.com, hooks.internal — empty rejects every definition"
+               value="${escapeHtml((d.user_tool_allowed_hosts||[]).join(', '))}">
+        <button class="conv-btn" data-onclick="toolHostsSave()">Save hosts</button>
+      </div>
     </div>`;
 
   const utHtml = !d.user_tools_enabled
@@ -9615,6 +9625,7 @@ function renderToolsPanel(d, targetId, opts){
              <span class="tp-name">${escapeHtml(u.name)}</span>
              <span class="tp-status">${escapeHtml(u.kind)} · ${escapeHtml(TOOL_STATUS_LABEL[u.status]||u.status)}</span>
              <span class="tp-why">${escapeHtml((u.problems||[]).join('; ')||u.description||'')}</span>
+             <button class="conv-btn" data-onclick="toolEdit('${jsArg(u.name)}')">Edit</button>
              ${actions}
              <button class="conv-btn" data-onclick="toolDelete('${jsArg(u.name)}')">Delete</button>
            </div>`;
@@ -9632,7 +9643,7 @@ function renderToolsPanel(d, targetId, opts){
 
   // The whole panel re-renders, so anything half-typed is carried across explicitly. A twenty-second
   // poll that erases a URL mid-entry makes the form unusable in a way that looks like a browser bug.
-  const keep=['tp-name','tp-desc','tp-url','tp-method']
+  const keep=['tp-name','tp-desc','tp-url','tp-method','tp-hosts-input']
     .map(id=>[id, document.getElementById(id)?.value]);
 
   // The destination page owes the full inventory the widget deliberately omits (the widget's rule
@@ -9686,6 +9697,35 @@ async function toolAdd(){
     const problems=(r&&r.data&&r.data.problems)||[];
     convSay(problems.length?problems.join('; '):((r&&r.message)||'Rejected'), false);
   }
+  apiCacheBust('/tools'); pollToolsPanel();
+}
+
+/**
+ * v0.3.8.56 — EDIT: load a stored definition back into the form. POST /tools/user upserts by
+ * name, so Add / Update with the same name IS the save; nothing has to be retyped but the change.
+ */
+async function toolEdit(name){
+  const listing=await api('/tools');
+  const d=((listing&&listing.data&&listing.data.user_tools)||[])
+    .find(u=>String(u.name).toLowerCase()===String(name).toLowerCase());
+  if(!d){ convSay('No stored definition for '+name, false); return; }
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
+  set('tp-name', d.name); set('tp-desc', d.description);
+  set('tp-url', (d.config&&d.config.url)||''); set('tp-method', (d.config&&d.config.method)||'GET');
+  document.getElementById('tp-name')?.scrollIntoView({block:'center'});
+  convSay('Definition loaded — change what you need and press Add / Update.', true);
+}
+
+/**
+ * v0.3.8.56 — the allow-list, editable where it gates. user_tool_allowed_hosts is an editable
+ * setting; only config.json could change it before, which made the add form a button that could
+ * only ever be refused on a fresh install.
+ */
+async function toolHostsSave(){
+  const raw=(document.getElementById('tp-hosts-input')?.value||'');
+  const hosts=raw.split(',').map(s=>s.trim()).filter(Boolean);
+  const r=await api('/settings','POST',{user_tool_allowed_hosts:hosts});
+  convSay((r&&r.message)||(r&&r.success?'Allow-list saved.':'Save failed.'), !!(r&&r.success));
   apiCacheBust('/tools'); pollToolsPanel();
 }
 
