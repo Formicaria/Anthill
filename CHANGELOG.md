@@ -15,8 +15,27 @@ answers null for every other provider (bit-identical to no probe at all).
 Proven composed: a mission through `Queen.RunMission` — the operator's public path — lands the
 script's sentences in the persisted task record (impossible unless router → factory → provider
 held end to end), and an UNSCRIPTED role surfaces as the ant's own disclosed provider failure,
-never an invented answer. This is the foundation the code-patch lifecycle scenarios and
-all-twelve-through-real-triggers now build on.
+never an invented answer.
+
+**The code-patch lifecycle, composed and deterministic (audit scenarios 3, 4, 20).** On that
+foundation, three scenarios that could never exist before. A scripted coder's proposals travel
+the whole production spine — parse, persist, materialize against the allowed workspace root,
+policy-insert tester and soldier, raise the approval card — with the live tree untouched
+throughout. The repair loop runs to its bound and is pinned from its own first run: fresh
+evidence per generation (a new patch set and a new tester per cycle, never reused), the medic on
+its real failure trigger, `adaptive_stop` when the bound is spent, and an evaluation that
+refuses to call the mission verified.
+
+**All twelve roles through their real triggers, one mission (§6's endgame).** A single scripted
+mission drives every contracted role through its own production trigger: planner-selected
+sources, ui_cartographer and scribe under their contract task types, the coder's patch pulling
+tester and soldier in by policy, tester failure pulling the medic, verifier bound to the
+evidence, archivist claiming finalization. The web ant runs gated and refuses honestly — and the
+scenario's first run taught the fix now encoded in it: `AutoWireDependencies` chains the coder
+behind EVERY source task, so one blocked source cascades unless the plan states its dependencies
+explicitly. Tester and soldier are asserted OUT of the plan — they arrive only by policy. The
+deterministic half of "no Queen-driven acceptance suite" is closed; the live-model half remains
+3.9.0's first job.
 
 ## v0.3.8.53 - the backend answers for itself: qualification, the direct lane named, and quiet windows
 
