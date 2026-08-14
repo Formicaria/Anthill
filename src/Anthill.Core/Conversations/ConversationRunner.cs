@@ -655,20 +655,25 @@ public sealed class ConversationRunner
     /// projects, or any lookup failure. Never throws.
     /// </summary>
     /// <summary>
-    /// v0.3.8.52 — this conversation's working tree: the project's explicit path, else its own
-    /// default directory under the shared projects root (ProjectRoots), created on first use.
+    /// v0.3.8.52 — this conversation's working tree.
     /// One resolution for the agent's cwd, the prompt's description, and the direct-edit sweep.
     /// </summary>
     private string? ProjectDirectory(Conversation conversation)
     {
         try
         {
-            // Third field round: the working directory is the operator's EXPLICIT choice — the
-            // turns endpoint refuses a pathless project before any of this runs, so there is no
-            // silent default to resolve into. Explicit path or nothing.
-            if (string.IsNullOrWhiteSpace(conversation.ProjectId)) return null;
-            return _memory.LoadProject(conversation.ProjectId!) is { } project
-                && !string.IsNullOrWhiteSpace(project.Path) ? project.Path : null;
+            // v0.3.8.55 (fourth field round, REVERSING the third): a missing working directory
+            // no longer blocks the chat. The default is ANTHILL's own source checkout — direct
+            // source access, the colony standing in its own tree — and it stays PRIMARY until
+            // the operator sets a directory, whose choice then takes over completely. The
+            // source tree never leaves the conversation either way: it rides as reach on every
+            // grant set (ProjectGrantPaths), so self-improvement stays possible even after the
+            // operator points the project somewhere else.
+            if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+                && _memory.LoadProject(conversation.ProjectId!) is { } project
+                && !string.IsNullOrWhiteSpace(project.Path))
+                return project.Path;
+            return Projects.ProjectRoots.ColonySource();
         }
         catch { return null; }
     }
@@ -830,12 +835,18 @@ public sealed class ConversationRunner
             // a larger repository is a plain folder here, because reporting the enclosing
             // repo's branch is how the operator got told about a branch they never chose.
             var projectDir = ProjectDirectory(conversation);
+            // v0.3.8.55 (fourth field round): a pathless project now stands in ANTHILL's own
+            // source by default — and the prompt SAYS so, because "the project's working
+            // directory" would claim a choice the operator never made.
+            var defaultedToSource = string.IsNullOrWhiteSpace(project.Path) && projectDir is not null;
             sb.AppendLine($"This conversation belongs to the project \"{project.Name}\"."
                 + (string.IsNullOrWhiteSpace(project.DescriptionMd) ? "" : " The operator describes its purpose as:"));
             if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
             if (projectDir is not null)
             {
-                sb.AppendLine($"The project's working directory is: {projectDir}");
+                sb.AppendLine(defaultedToSource
+                    ? $"The project has no working directory set yet, so you are standing in ANTHILL's own source checkout: {projectDir} — direct source access, the default until the operator sets a directory in the Files tab."
+                    : $"The project's working directory is: {projectDir}");
                 // v0.3.8.51 third round — git awareness: the colony applied changes and the
                 // operator asked why nothing was committed. The colony now KNOWS what the
                 // directory is (repo on a branch, or plain folder) and states its commit rules
@@ -855,7 +866,10 @@ public sealed class ConversationRunner
                       + (top is not null && !ownRepo
                           ? $" (It sits inside the repository at {top}; the project tracks only its own tree.)" : ""));
             }
-            if (Projects.ProjectRoots.ColonySource() is { } colonySelf)
+            // The "separately reachable" sentence only when the source ISN'T already the tree
+            // being described — telling the model the same directory is two places is worse
+            // than saying nothing.
+            if (!defaultedToSource && Projects.ProjectRoots.ColonySource() is { } colonySelf)
                 sb.AppendLine("Separately, ANTHILL's own source checkout is reachable at "
                     + colonySelf + " for colony self-improvement work — it is not this project's "
                     + "tree and its git state is not this project's git state.");
