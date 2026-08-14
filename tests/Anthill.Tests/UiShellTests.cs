@@ -1524,16 +1524,18 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.52 — the LOCAL runtime card. The agents page's first offer must be the no-account
-    /// path, and its Install button may only render where the server says an end-to-end install is
-    /// real (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// v0.3.8.52 — the LOCAL runtime card. The first agent offer must be the no-account path, and
+    /// its Install button may only render where the server says an end-to-end install is real
+    /// (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// v0.3.8.56: the hidden agents page folded into Tools → Integrations; the same rules hold on
+    /// the cards' new home, loadIntegrations.
     /// </summary>
     [Fact]
     public void TheAgentsPage_OffersTheLocalRuntime_HonestlyPerPlatform()
     {
         var js = Ui("app.js");
-        var body = BodyOf(js, "async function loadAgentCli(force)");
-        Assert.Contains("d.local", body);
+        var body = BodyOf(js, "async function loadIntegrations()");
+        Assert.Contains("agentsData.local", body);
         Assert.Contains("agentcli-install-local", body);
         Assert.Contains("install_supported", body);
         Assert.Contains("/agents/local/install", body);
