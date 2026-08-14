@@ -94,7 +94,13 @@ public class ScriptedProviderTests : IDisposable
 
         var queen = new Queen(new SqliteMemory(Path.Combine(_dir, "unscripted.db")));
         string? missionId = null;
-        queen.RunMission("A goal whose builder has no script.", onMissionCreated: id => missionId = id);
+        // The goal's WORDING matters: the fallback planner is keyword-driven, and the first
+        // draft of this test said "builder has no script" — whose 'script' keyword produced a
+        // CODE plan with a file-scout task and no builder task at all, so nothing ever asked
+        // the unscripted role. Summary-shaped wording yields the standard research plan whose
+        // builder step is exactly the unscripted ant this test exists to watch fail.
+        queen.RunMission("Summarize what happens when a role has no answer.",
+            onMissionCreated: id => missionId = id);
 
         var tasks = queen.Memory.GetTasksForMission(missionId!);
         var allText = string.Join("\n", tasks.Select(t =>
