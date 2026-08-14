@@ -1,8 +1,15 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.55** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.56** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
+> v0.3.8.56: the sixth field round — the dashboard rebuilt as a cell grid with free placement
+> (widgets live where the operator put them; the drag ruler frozen in document space so a
+> preview cannot move what it is measured against; the operators' own board captured as the
+> shipped default), orchestration folded into the Inspector's role cards, Tools/Providers
+> removed, the coding-agents page folded into Integrations, operator tool CRUD end to end,
+> chat approvals collapsed to a note under Skip-all.
+>
 > v0.3.8.55: the fifth field round — the workdir gate reversed (a pathless project stands in the
 > colony's own source, primary until the operator chooses), the Windows mojibake fixed at all
 > twelve spawn sites with a source-scan guard (UTF-8 pipes, structurally), Models & Routing
