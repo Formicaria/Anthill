@@ -448,16 +448,42 @@
   var dragId = null;
   var dragDraft = null;   // live preview positions; committed on drop, discarded on cancel
 
-  /** The cell under a pointer, for a widget of the given cell width. */
-  function cellAt(x, y, wCells) {
+  /**
+   * The pointer→cell ruler, FROZEN at dragstart.
+   *
+   * v0.3.8.56 (watched live, 165 oscillations in one session): the mapping used to read the
+   * root's LIVE rect on every dragover — but each preview changes the board's height, the
+   * scroller clamps, the rect shifts by exactly the dragged widget's height, and the same
+   * pointer maps to a new cell: a feedback loop with the widget's own height as its amplitude
+   * (the colony bounced rows 5↔7, two cells, forever). The ruler is captured once in DOCUMENT
+   * space when the drag starts, and the board's height is locked for the gesture, so a preview
+   * can never move the thing it is measured against.
+   */
+  var dragRuler = null;
+  function captureDragRuler() {
     var rect = G.root.getBoundingClientRect();
     var cs = getComputedStyle(G.root);
     var padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
-    var rowGap = parseFloat(cs.rowGap) || 0;
     var innerW = rect.width - padL - (parseFloat(cs.paddingRight) || 0);
-    var cellW = innerW / 6;
-    var cx = Math.floor((x - rect.left - padL) / cellW);
-    var cy = Math.floor((y - rect.top - padT) / (cellHeight() + rowGap));
+    dragRuler = {
+      docLeft: rect.left + window.scrollX + padL,
+      docTop: rect.top + window.scrollY + padT,
+      cellW: innerW / 6,
+      rowStep: cellHeight() + (parseFloat(cs.rowGap) || 0),
+    };
+    // Lock the board's height for the gesture: a preview that shrinks the page invites a scroll
+    // clamp, and a scroll clamp moves every viewport-relative coordinate.
+    G.root.style.minHeight = rect.height + 'px';
+  }
+  function releaseDragRuler() {
+    dragRuler = null;
+    G.root.style.minHeight = '';
+  }
+  function cellAt(x, y, wCells) {
+    var r = dragRuler;
+    if (!r) return { x: 0, y: 0 };
+    var cx = Math.floor((x + window.scrollX - r.docLeft) / r.cellW);
+    var cy = Math.floor((y + window.scrollY - r.docTop) / r.rowStep);
     return {
       x: Math.max(0, Math.min(6 - wCells, cx)),
       y: Math.max(0, cy),
@@ -523,6 +549,7 @@
       Object.keys(G.layout.pos).forEach(function (k) {
         dragDraft[k] = { x: G.layout.pos[k].x, y: G.layout.pos[k].y };
       });
+      captureDragRuler();
       // The end-zone: the grid ends at its content, so "below the last row" was OUTSIDE the
       // container and dragover stopped firing there. Padding opens while a drag is live.
       rootEl.classList.add('dg-drag-live');
@@ -554,6 +581,7 @@
       var rects = resolveCollisions(autoPlace(rectsFor(dragDraft)), dragId);
       rects.forEach(function (r) { G.layout.pos[r.id] = { x: r.x, y: r.y }; });
       dragId = null; dragDraft = null;
+      releaseDragRuler();
       G.persist();
       placeAll();
     });
@@ -562,6 +590,7 @@
       rootEl.classList.remove('dg-drag-live');
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-dragging'),
         function (w) { w.classList.remove('dg-dragging'); });
+      releaseDragRuler();
       // A cancelled drag (Escape, or a drop outside the grid) never reaches `drop`; the preview
       // was a draft, so putting things back is just re-placing from the saved positions.
       if (dragId) { dragId = null; dragDraft = null; placeAll(); }
