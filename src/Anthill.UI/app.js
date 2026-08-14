@@ -2148,10 +2148,30 @@ function refreshTopologyAwake(){
   // Measure the container rather than trusting the last resize(): clientWidth is 0 whenever an
   // ancestor is display:none, which is exactly the "user navigated away" case. That makes this a
   // fact about the DOM, not a guess about visibility.
+  //
+  // v0.3.8.55 (field report: "UI needs a refresh"): document.hidden is GONE from this gate — the
+  // third payment for a wrong "it's hidden". Embedded webviews (the desktop shell) and occluded
+  // windows report visibilityState 'hidden' while the operator is looking straight at the canvas,
+  // which latched the loop off until a manual reload. The genuine backgrounded-tab case needs no
+  // help from us: the browser stops firing requestAnimationFrame there all by itself.
   const el=document.getElementById('colony-canvas-area');
-  topologyAwake = !document.hidden && !!el && el.clientWidth>0 && el.clientHeight>0;
+  topologyAwake = !!el && el.clientWidth>0 && el.clientHeight>0;
 }
 document.addEventListener('visibilitychange',refreshTopologyAwake);
+// v0.3.8.55 (field report: "default layout scrambled"): navigation re-measures at a FIXED 50ms,
+// but the dashboard-grid lays its widgets out on its own clock — a canvas measured before its
+// widget settles computes the ring around a stale centre and the map lands scrambled until a
+// manual refresh. The observer makes layout follow the CONTAINER's actual size, whenever it
+// changes, debounced one frame so a drag-resize doesn't relayout per-pixel.
+(function(){
+  const area=document.getElementById('colony-canvas-area');
+  if(!area || typeof ResizeObserver==='undefined') return;
+  let raf=null;
+  new ResizeObserver(()=>{
+    if(raf) return;
+    raf=requestAnimationFrame(()=>{ raf=null; resize(); buildNodes(); refreshTopologyAwake(); });
+  }).observe(area);
+})();
 
 // v0.3.8.43 (SOW §4): reduced motion, honored at the render loop. When the operator asks for
 // reduced motion and the colony is genuinely idle (no running mission), the map redraws at 4fps —
