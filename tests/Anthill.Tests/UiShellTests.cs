@@ -828,13 +828,24 @@ public class UiShellTests
         // Reset must restore the SAME view, or the button quietly outranks the default: resetting
         // to "every widget visible" is an arrangement nobody chose, and it is saved on the way out.
         Assert.Contains("AnthillGrid.defaults = DEFAULT_DASHBOARD_VIEW", app);
-        Assert.Contains("G.defaults", BodyOf(Ui("dashboard-grid.js"), "G.resetLayout = function"));
+        var reset = BodyOf(Ui("dashboard-grid.js"), "G.resetLayout = function");
+        Assert.Contains("G.defaults", reset);
+        // v0.3.8.56: the shipped view is a curated PLACEMENT (captured from the operators' own
+        // board), so the default carries positions and reset restores them — a reset that forgets
+        // pos produces an auto-packed arrangement nobody chose.
+        Assert.Contains("d.pos", reset);
 
         // Every hidden-by-default widget must still be registered, or it is unreachable rather
         // than merely off: the Widgets menu can only list what the grid knows about.
         var view = Regex.Match(app, @"var DEFAULT_DASHBOARD_VIEW = \{.*?\n\};", RegexOptions.Singleline).Value;
         Assert.NotEqual("", view);
         foreach (Match m in Regex.Matches(view, @"'([a-z-]+)':\s*true"))
+            Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
+        Assert.Contains("pos:", view);
+        // Every placed widget must be a registered one, or the default seats a ghost.
+        var posBlock = Regex.Match(view, @"pos: \{.*?\n  \}", RegexOptions.Singleline).Value;
+        Assert.NotEqual("", posBlock);
+        foreach (Match m in Regex.Matches(posBlock, @"'([a-z-]+)':"))
             Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
     }
 
