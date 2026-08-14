@@ -1358,7 +1358,9 @@ public class UiShellTests
         var html = Ui("index.html");
 
         Assert.Contains("label:'Projects'", js);
-        Assert.Contains("<h1>Projects</h1>", html);
+        // v0.3.8.55 (operator's layout rule): the Projects title is its COLUMN's header now — the
+        // page splits into Projects | Automation and each column heads itself in the same shape.
+        Assert.Contains(">Projects</h2>", html);
         // The claim is backed: the console actually calls the project endpoints.
         Assert.Contains("'/projects'", js);
         Assert.Contains("project_id", js);
