@@ -94,7 +94,13 @@ test('the error sinks still exist in escaped form, so the guard above cannot pas
 });
 
 test('model ids are escaped in the ant-config option list, in both attribute and text position', () => {
-  const fn = src.slice(src.indexOf('function antcfgModelOptions'));
+  // v0.3.8.55: antcfgModelOptions moved to inspector-routing.js — the inspector/routing domain's
+  // own console asset (the app.js size guard's split rule). The guard follows the code.
+  const routingSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'Anthill.UI', 'inspector-routing.js'), 'utf8');
+  const at = routingSrc.indexOf('function antcfgModelOptions');
+  assert.ok(at >= 0, 'antcfgModelOptions not found in inspector-routing.js — renamed or moved again');
+  const fn = routingSrc.slice(at);
   const body = fn.slice(0, fn.indexOf('\n}'));
 
   assert.ok(body.includes('value="${escapeHtml(m)}"'),
