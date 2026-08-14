@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Anthill.SDK.Common;
 using Anthill.SDK.Contracts;
 using Anthill.SDK.Security;
@@ -45,6 +46,8 @@ public sealed class ShellCommandTool : ITool
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
                 WorkingDirectory = _guard.Root,
                 CreateNoWindow = true,   // v0.3.8.53: never flash a console from the desktop shell
+                StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+                StandardErrorEncoding = Encoding.UTF8,
             };
             foreach (var arg in parts.Skip(1)) psi.ArgumentList.Add(arg);
             using var proc = Process.Start(psi)!;

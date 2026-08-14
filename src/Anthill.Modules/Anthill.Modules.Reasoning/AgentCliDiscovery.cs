@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Anthill.Modules.Reasoning;
 
@@ -265,6 +266,10 @@ public static class AgentCliDiscovery
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
+            // v0.3.8.55: agent CLIs (node, python) emit UTF-8 regardless of the console codepage;
+            // decoding their pipes with the OS default turned every em dash into â€” on Windows.
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         if (inv.RawCmdLine is not null && refused is null) psi.Arguments = inv.RawCmdLine;
         else foreach (var a in inv.Args) psi.ArgumentList.Add(a);

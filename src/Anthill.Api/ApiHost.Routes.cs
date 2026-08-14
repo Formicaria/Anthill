@@ -84,6 +84,24 @@ public static partial class ApiHost
             return Results.Content(UiHomelabJs, "text/javascript; charset=utf-8");
         });
 
+        // v0.3.8.55: inspector routing + themes, split out of app.js under the size guard.
+        // Same-origin, same no-store policy — the CSP stays script-src 'self'.
+        app.MapGet("/ui/inspector-routing.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiInspectorRoutingJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/themes.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiThemesJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/console-extras.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiConsoleExtrasJs, "text/javascript; charset=utf-8");
+        });
+
         app.MapGet("/ui/dashboard-grid.css", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";

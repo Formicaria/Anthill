@@ -293,4 +293,30 @@ public class CallSiteAuditTests
 
         Assert.True(problems.Count == 0, string.Join("; ", problems));
     }
+
+    /// <summary>
+    /// v0.3.8.55 — every redirected pipe is decoded as UTF-8, structurally. The Windows field
+    /// report: agent CLI answers showed "â€”" where an em dash should be. The CLIs (node, python)
+    /// emit UTF-8 no matter what the console codepage says, and every one of the ELEVEN spawn
+    /// sites decoded with the OS default — right on Linux by coincidence, wrong on every Windows
+    /// box. Same failure class as v0.3.8.53's CreateNoWindow cascade: an invariant that lives at
+    /// eleven call sites is not an invariant, it is eleven separate chances to forget. So the rule
+    /// is scanned, not remembered: a file that redirects a pipe names the encoding it decodes with.
+    /// </summary>
+    [Fact]
+    public void EveryRedirectedPipe_DecodesAsUtf8()
+    {
+        var problems = new List<string>();
+        foreach (var file in ProductionSources())
+        {
+            var source = File.ReadAllText(file);
+            if (!source.Contains("RedirectStandardOutput = true")) continue;
+            if (!source.Contains("StandardOutputEncoding = Encoding.UTF8"))
+                problems.Add($"{Path.GetFileName(file)} redirects stdout without declaring UTF-8 decoding");
+            if (source.Contains("RedirectStandardError = true")
+                && !source.Contains("StandardErrorEncoding = Encoding.UTF8"))
+                problems.Add($"{Path.GetFileName(file)} redirects stderr without declaring UTF-8 decoding");
+        }
+        Assert.True(problems.Count == 0, string.Join("; ", problems));
+    }
 }

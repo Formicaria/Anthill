@@ -73,6 +73,8 @@ public sealed class DashboardWorkspaceState
         // them to panels is what lets the topology occupy the whole page.
         "colony-vitals", "recent-missions", "patch-activity", "objectives", "recent-jobs",
         "live-telemetry",
+        // v0.3.8.55: the Automation Director's glance widget, on the overview by default.
+        "director",
         // v3.1.1: the Mission Composer. Its absence is why the plan-preview review step had no
         // reachable control once the topology workspace became the default console in v2.15.0 —
         // the endpoint, the renderer and the button all existed; nothing could reach them.
@@ -145,6 +147,9 @@ public sealed class DashboardWorkspaceState
     {
         [JsonPropertyName("visible")] public bool Visible { get; set; } = true;
         [JsonPropertyName("anchor")] public string Anchor { get; set; } = "top-left";
+        // v0.3.8.55 (field report): the legend overlays fold to their header. A bool needs no
+        // sanitizing; without the property here the round-trip would silently drop the choice.
+        [JsonPropertyName("collapsed")] public bool Collapsed { get; set; }
     }
 
     /// <summary>

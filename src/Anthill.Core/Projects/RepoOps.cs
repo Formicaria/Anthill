@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Anthill.Core.Projects;
 
@@ -38,6 +39,8 @@ public static class RepoOps
                 // v0.3.8.53: the desktop shell is a WinExe — without this every git call the files
                 // pane polls opened its own console window, a cascade of flashing CMD boxes.
                 CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+                StandardErrorEncoding = Encoding.UTF8,
             };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi);

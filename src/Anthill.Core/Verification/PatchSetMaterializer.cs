@@ -285,6 +285,8 @@ public static class PatchSetMaterializer
             {
                 WorkingDirectory = sourceRoot, RedirectStandardOutput = true,
                 RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+                StandardErrorEncoding = Encoding.UTF8,
             });
             if (proc is null) return "";
             var output = proc.StandardOutput.ReadToEnd().Trim();

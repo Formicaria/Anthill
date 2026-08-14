@@ -41,21 +41,35 @@ public static partial class ApiHost
     private static Dictionary<string, object?> SystemSummary()
     {
         // Per-role routing: how many roles run on local Ollama vs a cloud provider.
+        //
+        // v0.3.8.55 (field report): Settings→Models and this summary DISAGREED — this used to read
+        // the RAW ModelRouting table, whose model value can be a leftover from a previously routed
+        // provider (an agent route ignores it entirely), while /routes/json asks the router for
+        // the resolved answer. Same question, one resolver: the router answers both surfaces, and
+        // the raw table is only the fallback for the window before the router exists.
         var routes = AnthillRuntime.ModelRouting;
         var providerRoles = new List<string>();
         var localRoles = new List<string>();
+        var routeList = new List<Dictionary<string, object?>>();
         foreach (var (role, cfg) in routes)
         {
-            var provider = cfg.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider;
+            string provider, model;
+            // No `?.` on Queen: it is initialized before any route serves, and the conditional
+            // access taught the compiler doubt it then carried to every later dereference (CS8602).
+            if (Queen.Router is { } router)
+                (provider, model) = router.GetRoute(role);
+            else
+            {
+                provider = cfg.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider;
+                model = cfg.GetValueOrDefault("model") ?? "";
+            }
             if (string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)) localRoles.Add(role);
             else providerRoles.Add(role);
+            routeList.Add(new Dictionary<string, object?>
+            {
+                ["role"] = role, ["provider"] = provider, ["model"] = model,
+            });
         }
-        var routeList = routes.Select(kv => new Dictionary<string, object?>
-        {
-            ["role"] = kv.Key,
-            ["provider"] = kv.Value.GetValueOrDefault("provider") ?? AnthillRuntime.DefaultModelProvider,
-            ["model"] = kv.Value.GetValueOrDefault("model"),
-        }).ToList();
 
         // Live Ollama probe. v2.4.3: /api/version alone lied by omission — Ollama can be up while
         // the configured model is absent (typical on offline installs), and every ant call then

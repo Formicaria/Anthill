@@ -1,5 +1,79 @@
 # ANTHILL Changelog
 
+## v0.3.8.55 - the fifth field round: the console reorganized by the operator who uses it
+
+**A pathless project stands in the colony's own source.** The workdir_required gate is gone,
+removed by the operator who asked for it: a project with no working directory no longer refuses
+the chat — it stands in ANTHILL's own source checkout (direct source access), PRIMARY until the
+operator sets a directory, whose choice then takes over completely. The prompt names the default
+as a default, the files pane shows the source tree with the crumb labelled, and the source tree
+still rides as reach after an explicit path takes over.
+
+**The Windows mojibake was the OS codepage.** Agent answers showed `â€”` where an em dash should
+be: UTF-8 output decoded as Windows-1252. All twelve spawn sites now declare
+`StandardOutput/ErrorEncoding = UTF8`, and the rule is scanned, not remembered —
+`EveryRedirectedPipe_DecodesAsUtf8` fails any future site that forgets (the scan found the
+twelfth site the grep for the other eleven missed).
+
+**Models & Routing folds into the Ant Inspector.** One box per role: provider dropdown (a second
+model dropdown appears only when the provider offers more than one usable model — Ollama's
+installed list, queried live), capability gates, telemetry, and the name/colour profile editor,
+saving through the same merge-safe `/routes/{role}` endpoint. The colony-wide priority and the
+orchestration roles moved onto the same page; the redundant Agent Configuration grid is gone.
+
+**Automation moves in with Projects.** The Projects page splits into two columns — projects
+left, the whole Director panel right (admin-only, ids intact). Every legacy automation route
+aliases to /projects.
+
+**The colony view answers its field report.** Legends fold to their headers (persisted through
+the sanitizer round-trip); the transfer dashes MARCH toward the receiving ant with a packet
+travelling the curve — the pattern was static, only its alpha pulsed; the pheromone HUD polls
+wherever the canvas actually is (the workspace redirect had gated it to a page nobody reached);
+and plain wheel zooms on the dedicated Colony page, where the modifier bargain protected
+scrolling that page does not have.
+
+**Themes.** The palette becomes a choice — and the DEFAULT is the website's own (formicaria.us:
+cream on deep navy, cyan accent, IBM Plex Mono), with the old console palette kept as Classic,
+plus Light, Hermes and High contrast — chosen in Settings, saved per device, applied before
+first paint. The chat files pane gains a refresh button that busts the TTL'd cache on demand.
+
+**The second field round: five surfaces stop lying.** The status popover's `? Online` was an
+encoding casualty (status dots, not questions — fixed with its mission-status and users-table
+siblings). The splitter's "white" was an undefined variable's pale fallback plus a `.dragging`
+class no cancelled pointer ever removed. "6/12 roles false" was the registry serializing static
+`Executable` flags while the effective answer sat beside them — all twelve were running the whole
+time; the adapter now reads `executable_roles`. Settings→Models vs the status summary was two
+answers to one question — the router resolves both now. Providers moved from Settings to
+Tools → Providers.
+
+**The canvas stops trusting liars.** `document.hidden` is out of the awake gate (embedded
+webviews report hidden while the operator watches — a genuinely backgrounded tab stops rAF by
+itself), and a ResizeObserver drives layout off the canvas container's actual size — the fixed
+50ms remeasure lost the race against the dashboard-grid and the map landed scrambled. The colony
+wake-up (legend, pheromones) is host-agnostic: it follows the canvas, whether it lives on the
+dedicated page, the ws workspace, or a dashboard-grid widget. Live-diagnosed in the operator's
+own browser (hasFocus true, visibilityState 'hidden', awake false).
+
+**The Director takes its seat.** The Director's STATUS card — state, kill switch, budgets,
+backlog, next objective, start/stop — MOVES to the Colony Overview as a default-visible widget
+(saved layouts that predate it get it spliced in after Colony Vitals, once; layouts that name it
+are never touched). The Projects column keeps the backlog side — Add Objective, objectives,
+runs, completed — plus its own ▶ Start Director, and adding an objective auto-starts an idle
+Director with every refusal said out loud. The two Projects columns head themselves in the same
+shape, buttons with their own column. The leftover amber chrome (29 hardcoded tints) now rides
+--queen-rgb per theme; the Queen ant, her waiting state, and her pheromone stream keep their
+gold — identity, not chrome. Mission workspace checkouts are named by their mission's GOAL,
+GUID demoted to the detail line. Settings gains Report an Issue (a mailto: to
+info@formicaria.us — nothing sent by ANTHILL itself, the operator sees exactly what leaves).
+
+**The memory trail, proven end to end.** A composed twelve-role scripted mission asserted on what
+the colony REMEMBERS: the scribe's words survive verbatim in the task record, both finalization
+ledger claims (learning, archivist) refuse a second caller, the archivist's memory candidates are
+real events with content, and the mission leaves pheromone trails — even an honest adaptive_stop
+leaves an auditable trail, recorded but never strengthened into false reputation. The training
+pack grows from nine missions to twelve (repair loop, the two lanes, workspace discipline) and
+speaks the current console's language; the QA checklist covers every surface this release moved.
+
 ## v0.3.8.54 - the scripted colony: deterministic answers through the real plumbing
 
 **The Scripted Reasoning Provider (AUTONOMY-10 Phase 2's keystone).** A provider whose answers
