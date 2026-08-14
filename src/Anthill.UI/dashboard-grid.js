@@ -426,7 +426,14 @@
       // browser's resizer cannot drag a box below its own min-height. So the first resize worked,
       // set a new floor at whatever height it landed on, and every attempt after that could only
       // grow. Resizing was quietly one-way. The floor is restored on release.
-      if (inCorner) w.classList.add('dg-sizing');
+      //
+      // v0.3.8.56 (field report: "cannot be made smaller once they lock"): the class alone was
+      // HALF a release. `.dg-sizing { min-height: 0 }` beats the CSS floor but loses to the
+      // INLINE min-height that applySize (operator height) and markQuiet (auto-fit) write — so a
+      // widget that had EVER been sized or fitted still could not shrink: rect ≥ inline floor,
+      // the release snap re-read the floored height, and the old floor was stored right back.
+      // The inline floor is cleared for the drag too; markQuiet restores the right one after.
+      if (inCorner) { w.classList.add('dg-sizing'); w.style.minHeight = ''; }
     });
 
     rootEl.addEventListener('mouseup', function () {
@@ -534,7 +541,10 @@
     var colW = (rootW - gap * (cols - 1)) / cols;
     var px = w.getBoundingClientRect().width;
     var span = Math.max(1, Math.min(cols, Math.round((px + gap) / (colW + gap))));
-    var h = w.getBoundingClientRect().height;
+    // The dragged INLINE height is the operator's intent; the rect is that height as constrained
+    // by whatever floor survived the drag. Preferring the inline value means a shrink is stored
+    // as the shrink that was asked for, even if a floor briefly resisted it.
+    var h = parseFloat(w.style.height) || w.getBoundingClientRect().height;
 
     // Hand width back to the grid before storing, or the inline width outlives this breakpoint.
     w.style.width = '';
