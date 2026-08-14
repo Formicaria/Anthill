@@ -239,7 +239,15 @@ public class CodePatchLifecycleTests : IDisposable
 
     // ---- audit scenario 20: all twelve, through their real triggers -----------------------------
 
-    /// <summary>The planner-selectable eight, each named in the scripted plan on its real worker.</summary>
+    /// <summary>
+    /// The planner-selectable eight, each on its real worker and its CONTRACT'S OWN task type
+    /// (the first run's record taught both corrections: 'research' normalized to 'general', which
+    /// ui_cartographer and scribe rightly refused — their contracts speak ui_mapping and
+    /// changelog_update). Dependencies are EXPLICIT along the patch spine (auto-wiring chains the
+    /// coder behind EVERY source task, so the honestly-blocked web ant took the coder — and with
+    /// it the whole inserted-review chain — down with it; explicit deps are respected verbatim,
+    /// and depends_on resolves task titles, per the parser).
+    /// </summary>
     private const string TwelveRolePlan = """
         {
           "tasks": [
@@ -254,19 +262,22 @@ public class CodePatchLifecycleTests : IDisposable
               "task_type": "file_inspection", "depends_on": [] },
             { "title": "Map the frontend surface", "description": "Note any UI surface the change could touch.",
               "assigned_ant": "ui_cartographer", "assigned_worker": "ui_cartographer.route_mapper",
-              "task_type": "research", "depends_on": [] },
+              "task_type": "ui_mapping", "depends_on": [] },
             { "title": "Propose the documentation patch", "description": "Propose the note as a structured patch, JSON only.",
               "assigned_ant": "coder", "assigned_worker": "coder.docs_coder",
-              "task_type": "patch_proposal", "depends_on": [] },
+              "task_type": "patch_proposal",
+              "depends_on": ["Frame the request", "Inspect the workspace"] },
             { "title": "Build the operator answer", "description": "Assemble the outcome for the operator.",
               "assigned_ant": "builder", "assigned_worker": "builder.response_builder",
-              "task_type": "build_answer", "depends_on": [] },
+              "task_type": "build_answer",
+              "depends_on": ["Propose the documentation patch"] },
             { "title": "Draft the changelog line", "description": "Draft a one-line changelog entry for the note.",
               "assigned_ant": "scribe", "assigned_worker": "scribe.changelog_scribe",
-              "task_type": "research", "depends_on": [] },
+              "task_type": "changelog_update", "depends_on": [] },
             { "title": "Verify the outcome", "description": "Check the record addresses the request.",
               "assigned_ant": "verifier", "assigned_worker": "verifier.result_verifier",
-              "task_type": "verification", "depends_on": [] }
+              "task_type": "verification",
+              "depends_on": ["Build the operator answer"] }
           ]
         }
         """;
