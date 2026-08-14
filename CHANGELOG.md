@@ -54,11 +54,16 @@ wake-up (legend, pheromones) is host-agnostic: it follows the canvas, whether it
 dedicated page, the ws workspace, or a dashboard-grid widget. Live-diagnosed in the operator's
 own browser (hasFocus true, visibilityState 'hidden', awake false).
 
-**The Director takes its seat.** A glance-sized Automation Director widget ships visible on the
-Colony Overview by default — state, kill switch, budgets, backlog, next objective, start/stop —
-with its own ids (two surfaces writing one set of singletons is how a hidden panel eats a visible
-panel's update); the full panel stays on Projects. Mission workspace checkouts are named by their
-mission's GOAL, GUID demoted to the detail line. Settings gains Report an Issue (a mailto: to
+**The Director takes its seat.** The Director's STATUS card — state, kill switch, budgets,
+backlog, next objective, start/stop — MOVES to the Colony Overview as a default-visible widget
+(saved layouts that predate it get it spliced in after Colony Vitals, once; layouts that name it
+are never touched). The Projects column keeps the backlog side — Add Objective, objectives,
+runs, completed — plus its own ▶ Start Director, and adding an objective auto-starts an idle
+Director with every refusal said out loud. The two Projects columns head themselves in the same
+shape, buttons with their own column. The leftover amber chrome (29 hardcoded tints) now rides
+--queen-rgb per theme; the Queen ant, her waiting state, and her pheromone stream keep their
+gold — identity, not chrome. Mission workspace checkouts are named by their mission's GOAL,
+GUID demoted to the detail line. Settings gains Report an Issue (a mailto: to
 info@formicaria.us — nothing sent by ANTHILL itself, the operator sees exactly what leaves).
 
 **The memory trail, proven end to end.** A composed twelve-role scripted mission asserted on what
