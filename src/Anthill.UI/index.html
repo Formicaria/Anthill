@@ -18,15 +18,16 @@
    pages opt in by using these classes. Role colors are THE single source for nodes, chambers,
    event dots, badges, pheromone paths, and legends. */
 :root{
-  /* v0.3.8.55: default = the website's palette (formicaria.us). Classic keeps the old values. */
+  /* v0.3.8.55: default = the website's system (cream borders at the site's own alpha; body,
+     not cream, as text). Classic keeps the old values. */
   --anthill-bg:#070a13;
   --anthill-panel:rgba(16,22,37,.8);
   --anthill-panel-strong:rgba(16,22,37,.94);
   --anthill-border:rgba(244,233,214,.14);
-  --anthill-border-strong:rgba(244,233,214,.3);
-  --anthill-text:#f4e9d6;
-  --anthill-muted:#aab2c2;
-  --anthill-dim:#8b93a8;
+  --anthill-border-strong:rgba(244,233,214,.32);
+  --anthill-text:#c9cfdc;
+  --anthill-muted:#8b93a8;
+  --anthill-dim:#667089;
   --role-queen:#ffd76a; --role-mission-control:#9b6cff; --role-research:#36c8ff;
   --role-coder:#ff9a3d; --role-builder:#3a8bff; --role-verifier:#9b6cff;
   --role-tester:#ff5fa8; --role-scout:#45e36f; --role-forager:#45e36f;
@@ -174,25 +175,28 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 
 /* -- Design Tokens ----------------------------------------------------------- */
 :root{
-  /* v0.3.8.55 (operator's rule): the DEFAULT is the website's own palette — formicaria.us, read
-     from the live site's :root — cream (#f4e9d6) on deep navy, cyan #57c7f0 as the working
-     accent, IBM Plex Mono. The previous console palette survives as data-theme="classic". */
-  --queen:#fbbf24;
-  --queen-dim:rgba(251,191,36,.1);
-  --bg:#0a0e1a;
+  /* v0.3.8.55 (operator's rule): the DEFAULT is the website's own system — formicaria.us's
+     tokens, applied by its own two rules: MAGENTA (#ff3fa4) only on things you can act on,
+     CYAN (#57c7f0) only on metadata, everything else body-on-ink (#c9cfdc on #0a0e1a) with
+     cream (#f4e9d6) reserved for statements. IBM Plex Mono. The previous console palette
+     survives as data-theme="classic". */
+  --queen:#ff3fa4;              /* the site's action magenta — active tabs, primary emphasis */
+  --queen-dim:rgba(255,63,164,.1);
+  --cream:#f4e9d6;              /* statement color — sparingly, like the site */
+  --bg:#0a0e1a;                 /* ink */
   --panel:#0d1320;
-  --card:#101625;
-  --inner:#162036;
+  --card:#101625;               /* the site's panel */
+  --inner:#161d31;
   --border:#262e44;
-  --text:#f4e9d6;
-  --muted:#aab2c2;
-  --dim:#8b93a8;
-  --blue:#57c7f0;
+  --text:#c9cfdc;               /* body on ink */
+  --muted:#8b93a8;              /* muted on ink */
+  --dim:#667089;
+  --blue:#57c7f0;               /* the site's metadata cyan */
   --green:#10b981;
   --red:#ef4444;
   --purple:#8b5cf6;
   --orange:#fb923c;
-  --cyan:#35aadf;
+  --cyan:#35aadf;               /* cyan deep — the band */
   --amber:#f59e0b;
   --mono:'IBM Plex Mono','JetBrains Mono','Cascadia Code','Consolas',monospace;
   --font:'Segoe UI',system-ui,-apple-system,sans-serif;
@@ -210,6 +214,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
    themes.js parse time; chosen in Settings → Connection; saved per device. */
 html[data-theme="classic"]{
   /* The console's pre-website palette — blue-grey on slate, kept for operators who had it. */
+  --queen:#fbbf24; --queen-dim:rgba(251,191,36,.1);
   --bg:#090e17; --panel:#0d1525; --card:#111d30; --inner:#162440; --border:#1e3354;
   --text:#d1dce8; --muted:#8ba3bc; --dim:#4a6278;
   --blue:#3b82f6; --cyan:#06b6d4;
@@ -3174,11 +3179,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="section-head">Theme</div>
             <label class="set-label" for="settings-theme">Console palette <span style="font-weight:400;color:var(--dim)">(saved on this device)</span></label>
             <select class="set-input" id="settings-theme" style="margin-bottom:16px;">
-              <option value="default">Formicaria — website palette (default)</option>
-              <option value="classic">Classic — the pre-website console</option>
-              <option value="light">Light</option>
+              <option value="default">Formicaria — cream on ink, magenta action (default)</option>
+              <option value="classic">Classic — blue-grey slate</option>
+              <option value="light">Light — paper &amp; ink</option>
               <option value="hermes">Hermes — warm amber on umber</option>
-              <option value="contrast">High contrast</option>
+              <option value="contrast">High contrast — black &amp; bright</option>
             </select>
 
             <!-- v0.3.8.55 (field report): report a bug or security issue from inside the app.
