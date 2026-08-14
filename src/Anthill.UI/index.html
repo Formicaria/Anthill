@@ -3523,6 +3523,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <select id="chat-files-branch" hidden aria-label="Branch for commit history"
                       style="font-size:9.5px;font-family:var(--mono);background:var(--inner);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 4px;max-width:170px;"></select>
               <span class="ccb-spacer"></span>
+              <!-- v0.3.8.55 (field report): refresh on demand — the tree and git badge are
+                   TTL-cached, and "did my change land" should not wait out a TTL. -->
+              <button class="btn btn-ghost" id="chat-files-refresh" title="Refresh the file tree and git state" aria-label="Refresh the file tree and git state"></button>
               <button class="btn btn-ghost" id="chat-files-commit" hidden
                       title="Commit the working tree's uncommitted changes">Commit</button>
               <button class="btn btn-ghost" id="chat-files-newfile" title="Create a new file">+ File</button>

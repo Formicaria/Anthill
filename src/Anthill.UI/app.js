@@ -2862,6 +2862,7 @@ const GLYPH={
   scale:  INLINE_ICON('<path d="M12 3v18M8 21h8M4 7h16"/><path d="M6 7l-3 6a3.4 3.4 0 0 0 6 0z"/><path d="M18 7l-3 6a3.4 3.4 0 0 0 6 0z"/>'),
   star:     INLINE_ICON('<polygon points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
   starFill: INLINE_ICON('<polygon fill="currentColor" points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+  refresh:  INLINE_ICON('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
 };
 
 async function pollModelInfo(){
@@ -5154,6 +5155,16 @@ async function chatFilesShowRootForm(){
   });
 }
 document.getElementById('chat-files-chroot')?.addEventListener('click',()=>chatFilesShowRootForm());
+
+/* v0.3.8.55 (field report) — refresh on demand. The tree and the git badge ride the TTL'd GET
+ * cache, which is right for polling and wrong for "I just changed something on disk — did it
+ * land?". One button: bust every cached read under /projects, reload the pane. Expansion state
+ * survives (chatFilesExpanded is keyed by path, not by fetch). */
+(function(){
+  const b=document.getElementById('chat-files-refresh'); if(!b) return;
+  b.innerHTML=GLYPH.refresh;   // inline SVG goes through innerHTML, never textContent
+  b.addEventListener('click',()=>{ apiCacheBust('/projects'); chatFilesLoad(); });
+})();
 
 /* v0.3.8.52 — the working-directory picker's two lanes.
  *
