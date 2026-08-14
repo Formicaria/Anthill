@@ -459,7 +459,14 @@ PAGE_ENTER['overview']=()=>{
   if(typeof pollHud==='function') pollHud();
   // v2.14.13: with the workspace on, the dashboard owns the topology. Without it, this is a no-op
   // and the Colony page keeps the canvas exactly as before.
-  if(document.getElementById('ws-topology')) topologyMountTo('dashboard');
+  if(document.getElementById('ws-topology')){
+    topologyMountTo('dashboard');
+    // v0.3.8.55: the hosted topology gets the same wake-up the dedicated page gets — the legend
+    // and the pheromone HUD used to load only through showPage('colony'), which the workspace
+    // redirect made unreachable, so both sat empty on the page that actually shows the map.
+    setTimeout(()=>{ if(typeof renderColonyLegend==='function') renderColonyLegend();
+                     if(typeof pollColonyPheromones==='function') pollColonyPheromones(); },80);
+  }
 };
 // The Colony page reclaims the canvas only when the dashboard is NOT hosting it. With the
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
@@ -1513,8 +1520,21 @@ function drawDataFlowEdge(e,ts){
   const pulse=.4+Math.sin(ts*.002+e.phase)*0.25;
   ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
   ctx.setLineDash([4*camZ,5*camZ]);
-  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.18})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
-  ctx.setLineDash([]);
+  // v0.3.8.55 (field report: "transfer visuals don't look right"): the dashes MARCH toward the
+  // receiving ant. The dash pattern was static — only its alpha pulsed — so an active handoff
+  // read as a flickering dotted line rather than data in motion. The offset advances with time
+  // (negative: from source toward target), the one visual signature every earlier "nice" version
+  // of this had; the alpha pulse stays as the secondary heartbeat.
+  ctx.lineDashOffset=-(ts*.02%(9*camZ))*camZ;
+  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.22})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
+  ctx.setLineDash([]);ctx.lineDashOffset=0;
+  // A packet travelling the curve, tail behind it — the transfer itself, not just its route.
+  const tt=(ts*.0004+e.phase)%1;
+  for(let i=2;i>=0;i--){
+    const pp=qb(fp,cp,tp,Math.max(0,tt-i*.05));
+    ctx.beginPath();ctx.arc(pp.x,pp.y,Math.max(1.2,(2.6-i*.7)*camZ),0,Math.PI*2);
+    ctx.fillStyle=`rgba(${r},${g},${b},${(0.7-i*.22)*pulse})`;ctx.fill();
+  }
   const t2=qb(fp,cp,tp,.92),sz=5*camZ;
   const ax=tp.x-t2.x,ay=tp.y-t2.y,al=Math.hypot(ax,ay)||1;
   ctx.beginPath();
@@ -1694,7 +1714,12 @@ canvas.addEventListener('wheel',e=>{
   // now traps the operator: scrolling down to reach the widgets BELOW the Colony zoomed the map
   // and the page never moved. Zoom takes a modifier; a plain wheel scrolls the dashboard. This is
   // the same bargain embedded maps strike on scrolling pages, and for the same reason.
-  if(!(e.ctrlKey||e.metaKey)) return;      // no preventDefault: let the page scroll
+  // v0.3.8.55 (field report: "can't zoom on colony view"): on the DEDICATED Colony page the
+  // canvas is the page — there is nothing below to scroll to, so the modifier bargain protects
+  // nothing and just makes zoom look broken. Plain wheel zooms there; embedded in the scrolling
+  // dashboard the Ctrl/Cmd bargain stands, for the same reason embedded maps strike it.
+  const dedicated=document.getElementById('page-colony')?.classList.contains('active');
+  if(!(e.ctrlKey||e.metaKey||dedicated)) return;      // no preventDefault: let the page scroll
   e.preventDefault();
   const cl=getCanvasLocal(e);
   const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
@@ -1881,6 +1906,7 @@ function overlayStateFrom(doc){
     out[id]={
       visible: got.visible!==false,
       anchor: OVERLAY_ANCHORS.indexOf(got.anchor)>=0 ? got.anchor : def.anchor,
+      collapsed: got.collapsed===true,   // v0.3.8.55: the legends fold to their header
     };
   });
   return out;
@@ -1908,6 +1934,11 @@ function applyOverlayState(){
     const st=overlayState(id);
     el.classList.add('topo-ov');
     el.classList.toggle('ov-hidden',!st.visible);
+    // v0.3.8.55 (field report): the legend panels COLLAPSE to their header — distinct from
+    // hiding (the Overlays menu) because a folded legend still shows it exists and reopens with
+    // one click. Only panels with a .chud-body fold; the class is inert on the rest.
+    el.classList.toggle('ov-collapsed',!!st.collapsed);
+    const caret=el.querySelector('.ov-caret'); if(caret) caret.textContent=st.collapsed?'▸':'▾';
     // Hidden chrome must leave the tab order, or keyboard users tab into invisible controls.
     el.setAttribute('aria-hidden',st.visible?'false':'true');
     const slot=document.querySelector('[data-ovslot="'+st.anchor+'"]');
@@ -1920,10 +1951,19 @@ function setOverlay(id,changes){
   if(!TOPOLOGY_OVERLAYS[id]) return;
   const st=overlayState(id);
   if(typeof changes.visible==='boolean') st.visible=changes.visible;
+  if(typeof changes.collapsed==='boolean') st.collapsed=changes.collapsed;
   if(changes.anchor&&OVERLAY_ANCHORS.indexOf(changes.anchor)>=0) st.anchor=changes.anchor;
   applyOverlayState();
   saveUiState();
 }
+// v0.3.8.55: one delegated handler folds/unfolds whichever legend header was clicked — the
+// headers are re-rendered with their panels, so per-render listeners would leak or vanish.
+document.addEventListener('click',e=>{
+  const hd=e.target.closest&&e.target.closest('[data-ovcollapse]');
+  if(!hd) return;
+  const id=hd.dataset.ovcollapse;
+  setOverlay(id,{collapsed:!overlayState(id).collapsed});
+});
 
 function resetOverlays(){
   uiState.overlays={};
@@ -2607,13 +2647,22 @@ function renderColonyLegend(){
     ? `<div class="chud-state-hd">STATES</div>`+liveStates.map(s=>
         `<div class="chud-caste on"><span class="dot" style="color:${STATE_COLORS[s]};background:${STATE_COLORS[s]}"></span>${escapeHtml(STATE_LABEL[s]||s)}</div>`).join('')
     : '';
-  el.innerHTML = notice + casteRows + stateRows;
+  // v0.3.8.55 (field report): a header the panel can FOLD to — click collapses to this line.
+  const hd=`<div class="chud-hd" data-ovcollapse="legend" role="button" tabindex="0" title="Collapse or expand the caste legend">Caste legend<span class="ov-caret">${overlayState('legend').collapsed?'▸':'▾'}</span></div>`;
+  el.innerHTML = hd + `<div class="chud-body">` + notice + casteRows + stateRows + `</div>`;
   document.getElementById('chud-legend-retry')?.addEventListener('click', colonyRegistryRetry);
 }
 
 // Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
 async function pollColonyPheromones(){
-  if(!document.getElementById('page-colony')?.classList.contains('active')) return;
+  // v0.3.8.55 (field report: "pheromone visuals don't work"): with the workspace live, showPage
+  // REDIRECTS /colony to the dashboard and this gate — colony page only — meant the pheromone
+  // HUD and canvas drift never received data on the page actually hosting the topology. Poll
+  // wherever the canvas is: the dedicated page, or the dashboard when it hosts the map.
+  const colonyActive=document.getElementById('page-colony')?.classList.contains('active');
+  const dashHosting=document.getElementById('page-overview')?.classList.contains('active')
+    && typeof workspaceHostsTopology==='function' && workspaceHostsTopology();
+  if(!colonyActive && !dashHosting) return;
   try{
     const r=await api('/pheromones/json'); if(!r||!r.success) return;
     const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));

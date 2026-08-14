@@ -145,6 +145,9 @@ public sealed class DashboardWorkspaceState
     {
         [JsonPropertyName("visible")] public bool Visible { get; set; } = true;
         [JsonPropertyName("anchor")] public string Anchor { get; set; } = "top-left";
+        // v0.3.8.55 (field report): the legend overlays fold to their header. A bool needs no
+        // sanitizing; without the property here the round-trip would silently drop the choice.
+        [JsonPropertyName("collapsed")] public bool Collapsed { get; set; }
     }
 
     /// <summary>

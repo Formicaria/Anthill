@@ -475,10 +475,18 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
-.chud-legend{display:flex;flex-wrap:wrap;gap:5px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+.chud-legend{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   /* v2.14.15: the legend now lists every registry ant instead of the first 15, so it scrolls
      rather than growing past the canvas. */
   max-height:38vh;overflow-y:auto;}
+/* v0.3.8.55 (field report): the legend panels fold to their headers. The wrap layout the legend
+   always had moved onto its .chud-body so the header can sit above it. */
+.chud-legend .chud-body{display:flex;flex-wrap:wrap;gap:5px 10px;}
+.chud-hd{cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);}
+.chud-legend .chud-hd{margin-bottom:5px;}
+.chud-hd .ov-caret{color:var(--dim);font-size:9px;}
+.topo-ov.ov-collapsed .chud-body{display:none !important;}
+.topo-ov.ov-collapsed .chud-hd{margin-bottom:0;}
 .chud-caste{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);}
 .chud-caste .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .chud-caste.on{color:var(--text);}
@@ -2027,8 +2035,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="colony-hud" class="colony-hud">
             <div class="chud-legend" id="chud-legend"></div>
             <div class="chud-phero" id="chud-phero">
-              <div class="chud-phero-hd">Colony Learning · Signals</div>
-              <div id="chud-phero-body"><div class="chud-empty">Loading trails…</div></div>
+              <!-- v0.3.8.55: the header folds the panel — same collapse the caste legend has. -->
+              <div class="chud-phero-hd chud-hd" data-ovcollapse="signals" role="button" tabindex="0" title="Collapse or expand the learning signals">Colony Learning · Signals<span class="ov-caret">▾</span></div>
+              <div id="chud-phero-body" class="chud-body"><div class="chud-empty">Loading trails…</div></div>
             </div>
           </div>
           <div class="colony-viewbar" id="colony-viewbar">
