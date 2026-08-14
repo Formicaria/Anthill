@@ -755,8 +755,11 @@ public class UiShellTests
         foreach (Match m in Regex.Matches(css, @"\.dg-quiet[^{}]*\{([^}]*)\}"))
             Assert.DoesNotContain("min-height", m.Groups[1].Value);
 
-        // and the widget floor itself must survive, since that is what keeps rows from collapsing
-        Assert.Contains("min-height: var(--dg-widget-h)", css);
+        // v0.3.8.56 (the cell grid): the CSS floor is GONE — a widget's height is its cell span,
+        // sized by the fixed row track, so a min-height would fight the track it lives in. The
+        // track itself is what keeps rows from collapsing now.
+        Assert.Contains("grid-auto-rows: var(--dg-cell-h)", css);
+        Assert.DoesNotContain("min-height: var(--dg-widget-h)", css);
     }
 
     /// <summary>
@@ -774,12 +777,13 @@ public class UiShellTests
         var js = Ui("dashboard-grid.js");
 
         // The grid has 12 columns on desktop and 24 on an ultrawide, so a stored COUNT would mean
-        // half the dashboard in one and a quarter of it in the other. The fraction is re-resolved
+        // half the dashboard in one and a quarter of it in the other. v0.3.8.56 (cell grid): the
+        // fraction quantizes to SIXTHS — whole cells of the 6-cell row — and is re-resolved
         // against the current column count on every render.
         var setter = BodyOf(js, "G.setSpanFraction = function");
         Assert.NotEqual("", setter);
-        Assert.Contains("/ cols", setter);
-        Assert.Contains("columnCount()", setter);
+        Assert.Contains("/ 6", setter);
+        Assert.Contains("fraction * 6", setter);
 
         // and the inline pixel width the browser's resize grip writes must be handed back to the
         // grid, or the widget stays frozen at one breakpoint's measurement
@@ -824,13 +828,24 @@ public class UiShellTests
         // Reset must restore the SAME view, or the button quietly outranks the default: resetting
         // to "every widget visible" is an arrangement nobody chose, and it is saved on the way out.
         Assert.Contains("AnthillGrid.defaults = DEFAULT_DASHBOARD_VIEW", app);
-        Assert.Contains("G.defaults", BodyOf(Ui("dashboard-grid.js"), "G.resetLayout = function"));
+        var reset = BodyOf(Ui("dashboard-grid.js"), "G.resetLayout = function");
+        Assert.Contains("G.defaults", reset);
+        // v0.3.8.56: the shipped view is a curated PLACEMENT (captured from the operators' own
+        // board), so the default carries positions and reset restores them — a reset that forgets
+        // pos produces an auto-packed arrangement nobody chose.
+        Assert.Contains("d.pos", reset);
 
         // Every hidden-by-default widget must still be registered, or it is unreachable rather
         // than merely off: the Widgets menu can only list what the grid knows about.
         var view = Regex.Match(app, @"var DEFAULT_DASHBOARD_VIEW = \{.*?\n\};", RegexOptions.Singleline).Value;
         Assert.NotEqual("", view);
         foreach (Match m in Regex.Matches(view, @"'([a-z-]+)':\s*true"))
+            Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
+        Assert.Contains("pos:", view);
+        // Every placed widget must be a registered one, or the default seats a ghost.
+        var posBlock = Regex.Match(view, @"pos: \{.*?\n  \}", RegexOptions.Singleline).Value;
+        Assert.NotEqual("", posBlock);
+        foreach (Match m in Regex.Matches(posBlock, @"'([a-z-]+)':"))
             Assert.Contains("id:'" + m.Groups[1].Value + "'", app);
     }
 
@@ -924,11 +939,13 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// markQuiet() must clear the inline floor BEFORE it measures.
+    /// markQuiet() must clear any legacy inline floor BEFORE it measures, and its answer is CELLS.
     ///
-    /// Without this the previous pass's floor is part of this pass's measurement, and because the
-    /// re-measure runs on a timer, every idle card grows a little every few seconds. The failure is
-    /// slow and silent, which is exactly why it is worth a guard rather than an eyeball.
+    /// v0.3.8.56 (the cell grid): the pass still measures content, but what it writes is a
+    /// grid-row span in whole cells — enough to hold the content, capped by the auto ceiling so a
+    /// long list scrolls instead of growing the page. Measuring with a floor still applied would
+    /// make the previous pass part of this pass's answer — the slow silent growth the original
+    /// guard was written for, and the ordering it defends is unchanged.
     /// </summary>
     [Fact]
     public void QuietMeasurement_ReadsNaturalHeight_NotItsOwnPreviousFloor()
@@ -938,16 +955,20 @@ public class UiShellTests
 
         var reset = body.IndexOf("style.minHeight = ''", StringComparison.Ordinal);
         var measure = body.IndexOf("getBoundingClientRect", StringComparison.Ordinal);
-        var write = body.LastIndexOf("style.minHeight =", StringComparison.Ordinal);
+        // v0.3.8.56 (free placement): the measured answer lands in _hCells and placeAll writes
+        // every widget's grid position from the rects — the write moved, the ordering did not.
+        var write = body.LastIndexOf("_hCells[", StringComparison.Ordinal);
+        var place = body.LastIndexOf("placeAll(", StringComparison.Ordinal);
 
         Assert.True(reset >= 0, "markQuiet must clear the inline floor before measuring");
         Assert.True(measure > reset, "measurement must happen after the floor is cleared");
-        Assert.True(write > measure, "the computed floor must be written after measurement");
+        Assert.True(write > measure, "the measured cells must be recorded after measurement");
+        Assert.True(place > write, "placement must follow the measurements it consumes");
 
-        // The standard height is a ceiling: a widget with MORE content than the floor must fall
-        // back to the CSS floor and scroll, never grow the page to fit a long list.
-        Assert.Contains("--dg-widget-h", body);
-        Assert.Contains("desired < cap", body);
+        // The auto ceiling: content past it scrolls, never grows the page.
+        Assert.Contains("AUTO_MAX_CELLS", body);
+        var js = Ui("dashboard-grid.js");
+        Assert.Contains("--dg-cell-h", js);
     }
 
     /// <summary>
@@ -1524,16 +1545,18 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v0.3.8.52 — the LOCAL runtime card. The agents page's first offer must be the no-account
-    /// path, and its Install button may only render where the server says an end-to-end install is
-    /// real (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// v0.3.8.52 — the LOCAL runtime card. The first agent offer must be the no-account path, and
+    /// its Install button may only render where the server says an end-to-end install is real
+    /// (install_supported) — a button that could only refuse is a lie in primary-button blue.
+    /// v0.3.8.56: the hidden agents page folded into Tools → Integrations; the same rules hold on
+    /// the cards' new home, loadIntegrations.
     /// </summary>
     [Fact]
     public void TheAgentsPage_OffersTheLocalRuntime_HonestlyPerPlatform()
     {
         var js = Ui("app.js");
-        var body = BodyOf(js, "async function loadAgentCli(force)");
-        Assert.Contains("d.local", body);
+        var body = BodyOf(js, "async function loadIntegrations()");
+        Assert.Contains("agentsData.local", body);
         Assert.Contains("agentcli-install-local", body);
         Assert.Contains("install_supported", body);
         Assert.Contains("/agents/local/install", body);
