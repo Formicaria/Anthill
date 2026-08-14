@@ -1,7 +1,16 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.53** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.54** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.54: the scripted colony — a reasoning provider whose answers are known in advance,
+> registered and resolved through the production plumbing (AUTONOMY-10 Phase 2's keystone),
+> proven composed through Queen.RunMission. On that foundation, the §6 endgame lands: the
+> code-patch lifecycle composed end to end (coder → materialize → policy review → approval card,
+> live tree untouched), the repair loop pinned with fresh evidence per generation and a bound
+> that binds, and ONE deterministic mission driving all twelve roles through their real
+> production triggers. The deterministic half of the acceptance-suite gap is closed; the
+> live-model half is 3.9.0's first job.
 
 > v0.3.8.53: the backend answers for itself — `anthill --qualification` (SelfTest plus lifecycle
 > checks over a temp workspace, exit nonzero when missions are impossible; audit Phase 11); the
@@ -85,10 +94,10 @@ the roster (`ConfigSchema` migrates only untouched legacy defaults; explicit cho
 before learning consumes them, and made idempotent per evaluation; the verifier is now bound to the
 tester and soldier evidence rather than to whatever the planner had produced at planning time.
 
-**Still true, and the reason §6 stays open:** no live twelve-role mission has run against a real
-model, and there is no deterministic Queen-driven acceptance test that reaches all twelve roles
-through their production triggers. Enabling the roster by default makes that gap more visible, not
-smaller. It is the next release's whole job.
+**Half closed in v0.3.8.54:** a deterministic Queen-driven acceptance test now reaches all twelve
+roles through their production triggers, in one composed mission over the scripted provider
+(`AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission`). Still true: no live
+twelve-role mission has run against a real model. That remaining half is 3.9.0's first job.
 
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
 twelve-role activation program (v3.8.19–v0.3.8.34). What follows is the state they left, measured.
@@ -171,7 +180,7 @@ It is not close, and the gap is not model quality — it is that roles still han
 | **The verifier is still planner-selectable** | PARTLY CLOSED v0.3.8.41 — policy now binds it to the tester's and soldier's evidence, or inserts it when the plan omitted one, and a verification that cannot be inserted sets a `DeterministicBlock`. Its contract is still `PlannerSelectable`, because flipping it would refuse every planner-produced verifier until the adaptive delta-plan path also carries a parent |
 | ~~Six specialists are gated off by default~~ | CLOSED v0.3.8.41 — `roster_profile` defaults to `full`. `ConfigSchema` migrates only configurations that never touched the roster; explicit choices and `disabled_roles` survive |
 | **The tester does not run on the patched tree** | THE gap this release stopped short of from both directions. v0.3.8.41 makes the tester's report NAME the tree it judged and binds the verifier to that evidence, but the materialised patch still does not outlive `VerifyPatchSet`'s sandbox, so the tester resolves to the mission workspace — the same source WITHOUT the proposal in it |
-| **No Queen-driven acceptance suite** | Twelve roles are enabled by default and every one has a production trigger; nothing yet drives all twelve through those triggers in one deterministic mission, and no live twelve-role mission has run against a real model |
+| **No Queen-driven acceptance suite** | HALF CLOSED v0.3.8.54 — one deterministic scripted mission now drives all twelve roles through their production triggers (planner-selected sources, contract task types for ui_cartographer/scribe, policy-inserted tester/soldier, failure-triggered medic, evidence-bound verifier, finalization-claimed archivist; tester and soldier asserted OUT of the plan). Still open: no live twelve-role mission against a real model |
 | ~~Environmental failures charged to the ant~~ | CLOSED v3.8.32 — `FailureClassNames` is the one conversion; a test drives real results through the real mapper into the real attribution rule |
 | ~~The verifier's sandbox held different bytes~~ | CLOSED v3.8.32 — `PatchApply` is the one applier; the materializer, the sandbox runner and `ApplyPatchTool` all call it |
 | ~~The tester→medic handoff never fired~~ | CLOSED v3.8.32 — the gate reads the scheduler's terminal-failure return value instead of the ant's status code |
