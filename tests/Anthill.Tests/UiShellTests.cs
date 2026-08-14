@@ -944,11 +944,15 @@ public class UiShellTests
 
         var reset = body.IndexOf("style.minHeight = ''", StringComparison.Ordinal);
         var measure = body.IndexOf("getBoundingClientRect", StringComparison.Ordinal);
-        var write = body.LastIndexOf("gridRow = 'span '", StringComparison.Ordinal);
+        // v0.3.8.56 (free placement): the measured answer lands in _hCells and placeAll writes
+        // every widget's grid position from the rects — the write moved, the ordering did not.
+        var write = body.LastIndexOf("_hCells[", StringComparison.Ordinal);
+        var place = body.LastIndexOf("placeAll(", StringComparison.Ordinal);
 
         Assert.True(reset >= 0, "markQuiet must clear the inline floor before measuring");
         Assert.True(measure > reset, "measurement must happen after the floor is cleared");
-        Assert.True(write > measure, "the cell span must be written after measurement");
+        Assert.True(write > measure, "the measured cells must be recorded after measurement");
+        Assert.True(place > write, "placement must follow the measurements it consumes");
 
         // The auto ceiling: content past it scrolls, never grows the page.
         Assert.Contains("AUTO_MAX_CELLS", body);
