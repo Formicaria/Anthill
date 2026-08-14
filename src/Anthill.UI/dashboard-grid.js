@@ -292,6 +292,12 @@
    * inline placement and lets the breakpoint's own single-column flow apply. */
   function placeAll(draftPos, pinnedId) {
     if (!G.root) return;
+    // A live drag OWNS the board. Re-places that arrive without a draft mid-gesture — the 4s
+    // remeasure, a poller's widget refresh, a render — used to stomp the preview back to the
+    // SAVED positions under the pointer, then the stale same-cell check kept the preview from
+    // ever coming back: the exact churn reported over the colony widget. They re-apply the
+    // drag's draft instead, and nothing adopts positions while the gesture is in the air.
+    if (!draftPos && dragDraft && dragId) { draftPos = dragDraft; pinnedId = dragId; }
     var cols = columnCount();
     var widgets = G.root.querySelectorAll('.dg-widget');
     if (cols <= STACK_BELOW_COLS) {
@@ -440,6 +446,7 @@
   // ---- direct manipulation: drag to arrange, corner to size ------------------------------------
 
   var dragId = null;
+  var dragDraft = null;   // live preview positions; committed on drop, discarded on cancel
 
   /** The cell under a pointer, for a widget of the given cell width. */
   function cellAt(x, y, wCells) {
@@ -503,8 +510,6 @@
       if (G.layout.locked) return;
       Array.prototype.forEach.call(rootEl.querySelectorAll('.dg-widget'), function (w) { w.draggable = true; });
     });
-
-    var dragDraft = null;   // live preview positions; committed on drop, discarded on cancel
 
     rootEl.addEventListener('dragstart', function (e) {
       if (G.layout.locked) return;
