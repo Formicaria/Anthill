@@ -518,7 +518,8 @@ const IA = [
     // seeing and editing ants — belongs to the Ant Inspector, which now reflects live colony state.
     { label:'Models & Routing', route:'/colony/model-routing', page:'antconfig', vis:'admin' },
     { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
-    { label:'Automation', route:'/colony/automation', page:'autonomy', vis:'admin' },
+    // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
+    // project work, and it now lives beside the projects it feeds (right-hand column there).
   ]},
   { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
   { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
@@ -573,7 +574,7 @@ Object.assign(PAGE_HOME,{
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
   antconfig:'/colony/model-routing', antobs:'/colony/inspector',
-  autonomy:'/colony/automation', security:'/settings/security',
+  autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
 });
@@ -593,7 +594,7 @@ const LEGACY_REDIRECT={
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
   antconfig:'/colony/model-routing', antobs:'/colony/inspector',
-  autonomy:'/colony/automation', security:'/settings/security',
+  autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
@@ -641,15 +642,17 @@ const ROUTE_ALIAS={
   '/operations/missions/events':'/settings/system',
   '/operations/changes':'/chat',
   '/operations/approvals':'/chat',
-  '/operations/automation':'/colony/automation',
-  '/operations/automation/director':'/colony/automation',
+  // v0.3.8.55: Automation folded into Projects — every automation route lands there now.
+  '/colony/automation':'/projects',
+  '/operations/automation':'/projects',
+  '/operations/automation/director':'/projects',
   '/operations/automation/objectives':'/projects',
   '/operations/automation/rules':'/tools/integrations',
   '/monitoring/activity':'/settings/system',
   '/monitoring/activity/events':'/settings/system',
   '/monitoring/activity/results':'/projects',
   '/monitoring/activity/changes':'/chat',
-  '/monitoring/activity/runs':'/colony/automation',
+  '/monitoring/activity/runs':'/projects',
   '/monitoring/activity/infra':'/tools/integrations',
   '/monitoring/alerts':'/tools/integrations',
   '/scheduled':'/projects',
@@ -730,6 +733,13 @@ function showPage(id,o){
   if(id==='colony' && workspaceHostsTopology()){
     id='overview';
     o=Object.assign({},o,{route:PAGE_HOME['overview']||o.route});
+  }
+  // v0.3.8.55: the standalone Automation page folded into Projects (right-hand column). Every
+  // caller that still says showPage('autonomy') — attention chips, the command palette, the 'a'
+  // shortcut — lands on Projects with the Director panel alive.
+  if(id==='autonomy'){
+    id='projects';
+    o=Object.assign({},o,{route:'/projects'});
   }
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -5825,7 +5835,14 @@ async function loadToolsView(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
-PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
+PAGE_ENTER['projects']=()=>{
+  loadProjectCards(); loadProjects();
+  // v0.3.8.55: the Automation panel rides the right-hand column — admin only, same visibility
+  // the standalone page had ('vis:admin' in the old IA entry).
+  const auto=document.getElementById('projects-col-auto');
+  if(auto) auto.hidden=(ROLE!=='admin');
+  if(ROLE==='admin' && typeof openAutonomy==='function') openAutonomy();
+};
 
 /* v0.3.8.48 — the project workspace. One project, whole: Chat (its conversations), Schedules
  * (the real subsystem), History (conversations + their missions), Settings (name, purpose, path,
@@ -7911,9 +7928,10 @@ let autonomyObjectives=[];
 let autoRefreshTimer=null;
 
 async function openAutonomy(){
-  // Data-loader only — do NOT call showPage('autonomy') here. This is invoked exclusively from
-  // PAGE_ENTER['autonomy'] below, which showPage() itself calls *after* switching to this page.
-  // Calling showPage from in here used to re-fire PAGE_ENTER['autonomy'] -> openAutonomy() ->
+  // Data-loader only — do NOT call showPage from here. Invoked exclusively from
+  // PAGE_ENTER['projects'] (v0.3.8.55: the Automation panel lives in the Projects page's right
+  // column), which showPage() itself calls *after* switching to the page.
+  // Calling showPage from in here used to re-fire the page-enter hook -> openAutonomy() ->
   // showPage() in an unbounded mutual-recursion loop: every single visit to the Autonomy page
   // (including clicking Start/Stop, which reloads this page's status) burned the call stack down
   // to a "RangeError: Maximum call stack size exceeded" within milliseconds. Recoverable on its
@@ -7924,13 +7942,15 @@ async function openAutonomy(){
   // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;
   // self-cancels the moment the user navigates elsewhere so it never polls in the background.
   autoRefreshTimer=setInterval(()=>{
-    if(!document.getElementById('page-autonomy')?.classList.contains('active')){
+    // v0.3.8.55: the panel lives inside page-projects now — poll only while that page is open.
+    if(!document.getElementById('page-projects')?.classList.contains('active')){
       clearInterval(autoRefreshTimer); autoRefreshTimer=null; return;
     }
     reloadAutonomyStatus();
   },4000);
 }
-PAGE_ENTER['autonomy']=()=>{ if(ROLE==='admin') openAutonomy(); };
+// v0.3.8.55: no PAGE_ENTER['autonomy'] — showPage remaps 'autonomy' to 'projects' before the
+// hook lookup, and PAGE_ENTER['projects'] runs openAutonomy for admins.
 
 async function reloadAutonomy(){
   await reloadObjectives();

@@ -3075,119 +3075,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: AUTONOMY
       --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-autonomy">
-        <div class="page-hdr">
-          <div><h1>Automation</h1><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="save-msg text-green" id="auto-msg"></span>
-            <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
-            <button class="btn btn-ghost" id="auto-dump" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Dump Directives</button>
-          </div>
-        </div>
+      <!-- v0.3.8.55 (field report): the standalone Automation page moved INTO Projects —
+           the right-hand column of page-projects below. Route /colony/automation aliases there. -->
 
-        <!-- Director status -->
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-            <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
-              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
-              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
-            </div>
-          </div>
-          <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
-            Autonomy is disabled in config. Enable it in Settings → General (Autonomy toggle) before starting the Director.
-          </div>
-          <div class="kpi-grid">
-            <div class="kpi-card" style="border-left-color:var(--green)">
-              <div class="kpi-label">Director</div>
-              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
-              <div class="kpi-sub" id="auto-poll-sub">—</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--blue)">
-              <div class="kpi-label">Missions / Hour</div>
-              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
-              <div class="kpi-sub">used / budget</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--purple)">
-              <div class="kpi-label">Missions / Day</div>
-              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
-              <div class="kpi-sub">used / budget</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--queen)">
-              <div class="kpi-label">Backlog</div>
-              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
-              <div class="kpi-sub">pending / active</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--green)">
-              <div class="kpi-label">Concurrency</div>
-              <div class="kpi-num" id="auto-conc">—</div>
-              <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
-            </div>
-          </div>
-          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
-          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
-          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
-          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
-        </div>
-
-        <!-- Add objective -->
-        <div class="card" style="padding:14px 16px;margin-bottom:16px;">
-          <div class="section-head" style="margin-top:0;">Add Objective</div>
-          <div class="form-row">
-            <div class="form-field"><label>Title</label><input class="form-input" id="obj-title" type="text" placeholder="short title"></div>
-            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="the standing goal this objective keeps working toward" style="width:100%"></div>
-            <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
-            <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
-            <!-- v0.3.8.47: the self-improvement seed. One click fills the form with a standing
-                 objective aimed at ANTHILL's own codebase — the Director turns it into missions
-                 through the same plan → patch → tester/soldier → verification → approval pipeline
-                 every mission uses. Nothing new is claimed; the colony's machinery points at itself. -->
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" id="obj-seed-improve" title="Fill the form with a standing self-improvement objective aimed at ANTHILL's own code">🐜 Seed: improve ANTHILL</button></div>
-          </div>
-          <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
-        </div>
-
-        <!-- Objectives backlog (collapsible; body capped at ~20 rows, then scrolls) -->
-        <div class="card" style="margin-bottom:16px;">
-          <div class="box-toggle-head" data-onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
-            <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
-          </div>
-          <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
-            <table class="data-table">
-              <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Score</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
-              <tbody id="obj-tbody"><tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Recent autonomous runs (collapsible; body capped at ~20 rows, then scrolls) -->
-        <div class="card">
-          <div class="box-toggle-head" data-onclick="toggleBoxBody('auto-runs-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
-            <div class="section-head" style="margin:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
-          </div>
-          <div id="auto-runs-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
-            <table class="data-table">
-              <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Patches</th><th>Started</th><th>Result</th></tr></thead>
-              <tbody id="auto-runs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Completed Objectives (Director loop-retired; collapsible, scrolls after ~20 rows) -->
-        <div class="card" style="margin-top:16px;">
-          <div class="box-toggle-head" data-onclick="toggleBoxBody('completed-obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
-            <div class="section-head" style="margin:0;padding:0;" id="completed-obj-count">Completed Objectives</div>
-            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
-          </div>
-          <div id="completed-obj-box" style="max-height:640px;overflow-y:auto;padding:6px 12px 12px;">
-            <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading…</div></div>
-          </div>
-        </div>
-      </div><!-- /page-autonomy -->
 
       <!-- --------------------------------------------------------------------
            PAGE: SETTINGS
@@ -3674,6 +3564,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
           </div>
         </div>
+        <!-- v0.3.8.55 (field report): Projects hosts Automation side by side — projects on
+             the left, the Director's panel on the right (admin only; hidden by PAGE_ENTER for
+             everyone else). Wraps on narrow screens instead of crushing either column. -->
+        <div id="projects-cols" style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+        <div id="projects-col-main" style="flex:1 1 480px;min-width:0;">
         <div class="card" id="project-new-form" hidden style="margin-bottom:12px;">
           <div style="padding:12px;display:flex;flex-direction:column;gap:8px;">
             <label class="sr-only" for="project-new-name">Project name</label>
@@ -3695,6 +3590,121 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <h2 style="font-size:12px;margin:18px 0 8px;color:var(--muted);">Mission workspace checkouts</h2>
         <div class="sub" style="margin-bottom:8px;">Each mission that changes files works in its own isolated checkout. Nothing here touches your live files until you approve a change.</div>
         <div id="projects-list"><div class="hud-state">Loading…</div></div>
+        </div><!-- /projects-col-main -->
+        <div id="projects-col-auto" style="flex:1 1 420px;min-width:0;" hidden>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <div><h2 style="font-size:14px;margin:0 0 2px;">Automation</h2><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="auto-msg"></span>
+            <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
+            <button class="btn btn-ghost" id="auto-dump" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);">Dump Directives</button>
+          </div>
+        </div>
+
+        <!-- Director status -->
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
+              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
+              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
+            </div>
+          </div>
+          <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
+            Autonomy is disabled in config. Enable it in Settings → General (Autonomy toggle) before starting the Director.
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Director</div>
+              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
+              <div class="kpi-sub" id="auto-poll-sub">—</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--blue)">
+              <div class="kpi-label">Missions / Hour</div>
+              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--purple)">
+              <div class="kpi-label">Missions / Day</div>
+              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--queen)">
+              <div class="kpi-label">Backlog</div>
+              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
+              <div class="kpi-sub">pending / active</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Concurrency</div>
+              <div class="kpi-num" id="auto-conc">—</div>
+              <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
+            </div>
+          </div>
+          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
+          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
+          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
+          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
+        </div>
+
+        <!-- Add objective -->
+        <div class="card" style="padding:14px 16px;margin-bottom:16px;">
+          <div class="section-head" style="margin-top:0;">Add Objective</div>
+          <div class="form-row">
+            <div class="form-field"><label>Title</label><input class="form-input" id="obj-title" type="text" placeholder="short title"></div>
+            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="the standing goal this objective keeps working toward" style="width:100%"></div>
+            <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
+            <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
+            <!-- v0.3.8.47: the self-improvement seed. One click fills the form with a standing
+                 objective aimed at ANTHILL's own codebase — the Director turns it into missions
+                 through the same plan → patch → tester/soldier → verification → approval pipeline
+                 every mission uses. Nothing new is claimed; the colony's machinery points at itself. -->
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" id="obj-seed-improve" title="Fill the form with a standing self-improvement objective aimed at ANTHILL's own code">🐜 Seed: improve ANTHILL</button></div>
+          </div>
+          <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
+        </div>
+
+        <!-- Objectives backlog (collapsible; body capped at ~20 rows, then scrolls) -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="box-toggle-head" data-onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+          </div>
+          <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Title</th><th>Charter</th><th>Prio</th><th>Status</th><th>Runs</th><th>Score</th><th>Fails</th><th>Last Run</th><th>Actions</th></tr></thead>
+              <tbody id="obj-tbody"><tr><td colspan="9" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent autonomous runs (collapsible; body capped at ~20 rows, then scrolls) -->
+        <div class="card">
+          <div class="box-toggle-head" data-onclick="toggleBoxBody('auto-runs-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="auto-runs-count">Recent Autonomous Runs</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+          </div>
+          <div id="auto-runs-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Objective</th><th>Goal</th><th>Status</th><th>Score</th><th>Follow-ups</th><th>Patches</th><th>Started</th><th>Result</th></tr></thead>
+              <tbody id="auto-runs-tbody"><tr><td colspan="8" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Completed Objectives (Director loop-retired; collapsible, scrolls after ~20 rows) -->
+        <div class="card" style="margin-top:16px;">
+          <div class="box-toggle-head" data-onclick="toggleBoxBody('completed-obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+            <div class="section-head" style="margin:0;padding:0;" id="completed-obj-count">Completed Objectives</div>
+            <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
+          </div>
+          <div id="completed-obj-box" style="max-height:640px;overflow-y:auto;padding:6px 12px 12px;">
+            <div id="completed-obj-list"><div style="color:var(--dim);font-size:11px;padding:8px 0;">Loading…</div></div>
+          </div>
+        </div>
+        </div><!-- /projects-col-auto -->
+        </div><!-- /projects-cols -->
       </div>
 
       <!-- v0.3.8.40: Tools — what the colony can actually do, and what it is routed to. -->
