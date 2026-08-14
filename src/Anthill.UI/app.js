@@ -450,7 +450,7 @@ const PAGE_TITLES = {
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
+  chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness', projectview:'Project', integrations:'Integrations'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -478,8 +478,6 @@ PAGE_ENTER['overview']=()=>{
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
-PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli();
-  if(typeof refreshAgentCatalog==='function') refreshAgentCatalog(); };
 PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
   // v0.3.8.42: re-entering Chat restores the colony layer's mount if it was open when the
   // operator left — the Colony page legitimately reclaims the canvas on its own entry, so Chat
@@ -759,6 +757,11 @@ function showPage(id,o){
   if(id==='autonomy'){
     id='projects';
     o=Object.assign({},o,{route:'/projects'});
+  }
+  // v0.3.8.56: the hidden Coding Agents page folded into Integrations.
+  if(id==='agentcli'){
+    id='integrations';
+    o=Object.assign({},o,{route:'/tools/integrations'});
   }
   // v0.3.8.55: Models & Routing merged into the Ant Inspector — same remap for old callers.
   if(id==='antconfig'){
@@ -5990,10 +5993,15 @@ PAGE_ENTER['projectview']=()=>{ if(projectViewId) loadProjectView(); };
 PAGE_ENTER['integrations']=()=>loadIntegrations();
 async function loadIntegrations(){
   const host=document.getElementById('int-body'); if(!host) return;
-  const [cat,conn]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+  // v0.3.8.56 (field report): the hidden Coding Agents page is GONE — its cards render HERE,
+  // populating each agent integration's own row with the full story the page used to tell:
+  // installed state, capability badge, the exact remedy when missing, Install, Docs.
+  const [cat,conn,ag]=await Promise.all([api('/providers/catalog'),api('/providers'),api('/agents')]);
   const catalog=(cat&&cat.data)||[];
   const conns=(conn&&conn.data)||[];
   const byId=Object.fromEntries(conns.map(c=>[c.provider,c]));
+  const agentsData=(ag&&ag.success&&ag.data)||{};
+  const agentsById=Object.fromEntries((agentsData.agents||[]).map(a=>[a.id,a]));
   const row=(p)=>{
     const c=byId[p.provider]||{};
     const configured=!!(c.configured||p.agent&&p.installed);
@@ -6005,7 +6013,62 @@ async function loadIntegrations(){
     return {p,c,configured,status};
   };
   const rows=catalog.map(row).sort((a,b)=>(b.configured?1:0)-(a.configured?1:0));
-  host.innerHTML=rows.map(({p,c,configured,status})=>`<div class="card${configured?'':' int-avail'}" style="margin-bottom:6px;">
+  const agentRow=({p})=>{
+    const a=agentsById[p.provider];
+    if(!a) return null;   // catalogued but unknown to /agents — fall through to the thin row
+    const installed=!!a.installed, d=agentsData;
+    return `<div class="card agentcli-card${installed?'':' int-avail'}" style="margin-bottom:6px;">
+      <div class="agentcli-hd">
+        <span class="health-dot ${installed?'ok':''}"></span>
+        <span class="agentcli-name">${escapeHtml(a.name||a.id)}</span>
+        <span class="agentcli-vendor">${escapeHtml(a.vendor||'')}</span>
+        ${installed?`<span class="hud-badge completed">Installed${a.version?' · '+escapeHtml(a.version):''}</span>`
+                   :`<span class="hud-badge">Not installed</span>`}
+        ${a.writes?`<span class="hud-badge pending" title="This agent edits files and runs commands. The colony confines it to a mission workspace.">Can make changes</span>`:''}
+      </div>
+      ${installed
+        ? `<div class="agentcli-sub">Sign in once in your own terminal if you have not already:
+             <code>${escapeHtml(a.auth_command||'')}</code></div>`
+        : `<div class="agentcli-sub">${escapeHtml(a.unavailable_reason||'Not found on this machine.')}</div>`}
+      <div class="agentcli-actions">
+        ${installed?'':(d.install_enabled
+          ? `<button class="btn btn-primary agentcli-install" data-agent="${escapeHtml(a.id)}">Install</button>`
+          : `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`)}
+        <a class="btn btn-ghost" href="${escapeHtml(a.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+      </div>
+    </div>`;
+  };
+  const localCard=(()=>{
+    const lo=agentsData.local; if(!lo) return '';
+    const loInstalled=!!lo.installed, d=agentsData;
+    return `<div class="card agentcli-card${loInstalled?'':' int-avail'}" style="margin-bottom:6px;">
+      <div class="agentcli-hd">
+        <span class="health-dot ${loInstalled?'ok':''}"></span>
+        <span class="agentcli-name">${escapeHtml(lo.name||'Local models')}</span>
+        <span class="agentcli-vendor">${escapeHtml(lo.vendor||'')}</span>
+        ${loInstalled?`<span class="hud-badge completed">Installed${lo.version?' · '+escapeHtml(lo.version):''}</span>`
+                     :`<span class="hud-badge">Not installed</span>`}
+      </div>
+      ${loInstalled
+        ? `<div class="agentcli-sub">Running locally — pull a model to route ants to it: <code>ollama pull llama3.1:8b</code></div>`
+        : `<div class="agentcli-sub">${escapeHtml(lo.unavailable_reason||'Not found on this machine.')}${
+             lo.install_supported?'':' Install it yourself: '}${
+             lo.install_supported?'':`<code>${escapeHtml(lo.install_command||'')}</code>`}</div>`}
+      <div class="agentcli-actions">
+        ${loInstalled?'':(d.install_enabled&&lo.install_supported
+          ? `<button class="btn btn-primary agentcli-install-local">Install</button>`
+          : '')}
+        <a class="btn btn-ghost" href="${escapeHtml(lo.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+      </div>
+    </div>`;
+  })();
+  host.innerHTML=(agentsData.install_dir
+      ? `<div class="agentcli-where">Agents install into ${escapeHtml(agentsData.install_dir)} — no administrator rights needed, and removing that folder uninstalls them.</div>`:'')
+    +localCard
+    +rows.map(r=>{
+    const {p,c,configured,status}=r;
+    if(p.agent){ const card=agentRow(r); if(card) return card; }
+    return `<div class="card${configured?'':' int-avail'}" style="margin-bottom:6px;">
     <div style="padding:11px 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <b style="color:var(--text);font-size:12px;">${escapeHtml(p.name||p.provider)}</b>
       <span class="sch-badge">${escapeHtml(p.kind||'provider')}</span>
@@ -6015,15 +6078,29 @@ async function loadIntegrations(){
       <span style="flex:1"></span>
       ${!p.agent?`<button class="btn btn-ghost" data-int-cfg="${escapeHtml(p.provider)}">Configure</button>`:''}
       ${!p.agent&&c.configured?`<button class="btn btn-ghost" data-int-test="${escapeHtml(p.provider)}">Test connection</button>`:''}
-      ${p.agent&&!p.installed?`<button class="btn btn-ghost" data-int-agents>Install…</button>`:''}
     </div>
     ${!p.agent?`<div class="int-cfg-slot" data-cfg-slot="${escapeHtml(p.provider)}" hidden style="padding:0 13px 13px;"></div>`:''}
-    </div>`).join('')
+    </div>`;}).join('')
     +`<div class="card" style="margin-top:10px;"><div style="padding:11px 13px;display:flex;align-items:center;gap:10px;">
        <b style="color:var(--text);font-size:12px;">Homelab</b>
        <span class="sch-badge">infrastructure</span>
        <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
        <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
+  // The agent install buttons, wired the way the retired page wired them.
+  host.querySelectorAll('.agentcli-install').forEach(btn=>
+    btn.addEventListener('click',()=>installAgentCli(btn.dataset.agent,btn)));
+  host.querySelector('.agentcli-install-local')?.addEventListener('click',async function(){
+    const btn=this;
+    if(!await uiConfirm('Install Ollama on this machine?\n\nIt runs Windows’ own package manager '
+      + '(winget) here. Models you pull afterwards run entirely on this machine.')) return;
+    btn.disabled=true; btn.textContent='Installing…';
+    agentCliMsg('Installing — a download of this size can take a few minutes.', true);
+    try{
+      const r=await api('/agents/local/install','POST');
+      agentCliMsg((r&&r.message)||(r&&r.success?'Installed.':'Install failed.'), !!(r&&r.success));
+    }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
+    finally{ apiCacheBust('/agents'); loadIntegrations(); }
+  });
   // v0.3.8.50 (field report): Configure was a link to the page it was already on. The provider
   // configuration CARD — the one thing the retired Settings→Providers tab existed for — now opens
   // inline, right under the integration it configures. Same card, same handler, one config path.
@@ -6037,7 +6114,7 @@ async function loadIntegrations(){
     slot.innerHTML=renderProviderCard(p,byId[provider]||{});
     slot.hidden=false;
   }));
-  host.querySelectorAll('[data-int-agents]').forEach(b=>b.addEventListener('click',()=>go('/integrations')||showPage('agentcli',{noHistory:false})));
+  // v0.3.8.56: no more hop to a hidden agents page — the cards above ARE that page's content.
   host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
   host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{
     b.disabled=true; b.textContent='Testing…';
@@ -6420,11 +6497,13 @@ document.getElementById('toolsview-reload')?.addEventListener('click',()=>loadTo
  * their own terminal, under their own account, exactly as they would without Anthill — so there is
  * nothing here to store, refresh or leak.
  */
+// v0.3.8.56: the agents page is gone; install progress reports as a note atop Integrations.
 function agentCliMsg(text, ok){
-  const el=document.getElementById('agentcli-msg'); if(!el) return;
-  el.style.display = text ? '' : 'none';
-  el.textContent = text || '';
-  el.style.color = ok ? 'var(--green)' : 'var(--red)';
+  const host=document.getElementById('int-body'); if(!host||!text) return;
+  const note=document.createElement('div');
+  note.className='hud-state'+(ok?'':' err');
+  note.textContent=text;
+  host.prepend(note); setTimeout(()=>note.remove(),6000);
 }
 
 /**
@@ -6439,104 +6518,7 @@ async function refreshAgentCatalog(){
   }catch(e){ /* the chip falls back to the id, which is still truthful */ }
 }
 
-async function loadAgentCli(force){
-  const list=document.getElementById('agentcli-list'); if(!list) return;
-  try{
-    const r=await api('/agents'+(force?'?refresh=true':''));
-    if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not read the agent list.')}</div>`; return; }
-    const d=r.data||{}, agents=d.agents||[];
-    if(!agents.length){ list.innerHTML='<div class="hud-state">No agents are catalogued in this build.</div>'; return; }
-
-    // v0.3.8.41: where Anthill puts them. Agents install into Anthill's own directory rather than
-    // the system-wide npm prefix, which is what makes installing possible without root — and it
-    // also means they are NOT on the operator's PATH, so saying where they went avoids the
-    // reasonable conclusion that nothing happened.
-    const whereEl=document.getElementById('agentcli-where');
-    if(whereEl && d.install_dir){
-      whereEl.textContent='Installed into '+d.install_dir+' — no administrator rights needed, and removing that folder uninstalls them.';
-      whereEl.style.display='';
-    }
-
-    list.innerHTML = agents.map(a=>{
-      const installed=!!a.installed;
-      return `<div class="card agentcli-card">
-        <div class="agentcli-hd">
-          <!-- health-dot, not t-dot: t-dot's variants are severity names (info/warning/error) and
-               have no neutral member, so 'not installed' had nothing honest to render as. -->
-          <span class="health-dot ${installed?'ok':''}"></span>
-          <span class="agentcli-name">${escapeHtml(a.name||a.id)}</span>
-          <span class="agentcli-vendor">${escapeHtml(a.vendor||'')}</span>
-          ${installed?`<span class="hud-badge completed">Installed${a.version?' · '+escapeHtml(a.version):''}</span>`
-                     :`<span class="hud-badge">Not installed</span>`}
-          ${a.writes?`<span class="hud-badge pending" title="This agent edits files and runs commands. The colony confines it to a mission workspace.">Can make changes</span>`:''}
-        </div>
-        ${installed
-          ? `<div class="agentcli-sub">Sign in once in your own terminal if you have not already:
-               <code>${escapeHtml(a.auth_command||'')}</code></div>`
-          : `<div class="agentcli-sub">${escapeHtml(a.unavailable_reason||'Not found on this machine.')}</div>`}
-        <div class="agentcli-actions">
-          ${installed?'':(d.install_enabled
-            ? `<button class="btn btn-primary agentcli-install" data-agent="${escapeHtml(a.id)}">Install</button>`
-            : `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`)}
-          <a class="btn btn-ghost" href="${escapeHtml(a.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
-        </div>
-      </div>`;
-    }).join('');
-
-    // v0.3.8.52 — the LOCAL runtime, first in the list: the no-account path is the first thing a
-    // fresh install reaches for, and it was the one path this page had no story for. Same card
-    // grammar as the agents; Install only renders where the server says end-to-end install is
-    // real (install_supported — Windows/winget), everywhere else the command is SHOWN instead,
-    // because a button that would only refuse is worse than a sentence.
-    const lo=d.local;
-    if(lo){
-      const loInstalled=!!lo.installed;
-      list.insertAdjacentHTML('afterbegin', `<div class="card agentcli-card">
-        <div class="agentcli-hd">
-          <span class="health-dot ${loInstalled?'ok':''}"></span>
-          <span class="agentcli-name">${escapeHtml(lo.name||'Local models')}</span>
-          <span class="agentcli-vendor">${escapeHtml(lo.vendor||'')}</span>
-          ${loInstalled?`<span class="hud-badge completed">Installed${lo.version?' · '+escapeHtml(lo.version):''}</span>`
-                       :`<span class="hud-badge">Not installed</span>`}
-        </div>
-        ${loInstalled
-          ? `<div class="agentcli-sub">Running locally — pull a model to route ants to it: <code>ollama pull llama3.1:8b</code></div>`
-          : `<div class="agentcli-sub">${escapeHtml(lo.unavailable_reason||'Not found on this machine.')}${
-               lo.install_supported?'':' Install it yourself: '}${
-               lo.install_supported?'':`<code>${escapeHtml(lo.install_command||'')}</code>`}</div>`}
-        <div class="agentcli-actions">
-          ${loInstalled?'':(d.install_enabled&&lo.install_supported
-            ? `<button class="btn btn-primary agentcli-install-local">Install</button>`
-            : (lo.install_supported
-                ? `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`
-                : ''))}
-          <a class="btn btn-ghost" href="${escapeHtml(lo.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
-        </div>
-      </div>`);
-      list.querySelector('.agentcli-install-local')?.addEventListener('click', async function(){
-        const btn=this;
-        if(!await uiConfirm('Install Ollama on this machine?\n\nIt runs Windows’ own package manager '
-          + '(winget) here. Models you pull afterwards run entirely on this machine.')) return;
-        btn.disabled=true; btn.textContent='Installing…';
-        agentCliMsg('Installing — a download of this size can take a few minutes.', true);
-        try{
-          const r=await api('/agents/local/install','POST');
-          if(r&&r.success) agentCliMsg(r.message||'Installed.', true);
-          else agentCliMsg((r&&r.message)||'Install failed.', false);
-        }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
-        finally{ btn.disabled=false; btn.textContent='Install'; loadAgentCli(true); }
-      });
-    }
-
-    // Bound after render, not inline: the console's CSP is script-src 'self' with no unsafe-inline,
-    // so an onclick attribute here would be silently dropped by the browser.
-    list.querySelectorAll('.agentcli-install').forEach(btn=>{
-      btn.addEventListener('click', ()=>installAgentCli(btn.dataset.agent, btn));
-    });
-  }catch(e){
-    list.innerHTML=`<div class="hud-state err">Could not read the agent list: ${escapeHtml(e.message||'')}</div>`;
-  }
-}
+// v0.3.8.56: loadAgentCli is gone with its page — the Integrations rows render the cards.
 
 async function installAgentCli(id, btn){
   const agent=id||'';
@@ -6549,10 +6531,9 @@ async function installAgentCli(id, btn){
     if(r&&r.success){ agentCliMsg((r.message||'Installed.')+' '+((r.data&&r.data.next_step)||''), true); }
     else{ agentCliMsg((r&&r.message)||'Install failed.', false); }
   }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='Install'; } loadAgentCli(true); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Install'; } apiCacheBust('/agents'); if(typeof loadIntegrations==='function') loadIntegrations(); }
 }
 
-document.getElementById('agentcli-reload')?.addEventListener('click',()=>loadAgentCli(true));
 
 async function onAntRecentToggle(det){
   if(!det.open || det.dataset.loaded) return;
