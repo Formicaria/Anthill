@@ -539,9 +539,9 @@ const IA = [
     { label:'Capabilities', route:'/tools', page:'toolsview', vis:'all' },
     // Integrations and external services are tools — they live where the tools do (§9).
     { label:'Integrations', route:'/tools/integrations', page:'integrations', vis:'admin' },
-    // v0.3.8.55 (field report): Providers are tools too — the pane is the settings page's
-    // providers tab, opened as its own destination with the tab strip hidden.
-    { label:'Providers', route:'/tools/providers', page:'settings', stab:'providers', vis:'admin' },
+    // v0.3.8.56 (field report): the standalone Providers destination is GONE — provider keys are
+    // configured inline per integration (Tools → Integrations → Configure), and one surface for
+    // one job beats two. /tools/providers aliases to Integrations.
     // The colony's memory and learning signals belong beside the capabilities that use them.
     { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
   ]},
@@ -659,6 +659,8 @@ const ROUTE_ALIAS={
   '/operations/missions/events':'/settings/system',
   '/operations/changes':'/chat',
   '/operations/approvals':'/chat',
+  // v0.3.8.56: the Providers destination folded into Integrations' per-provider Configure.
+  '/tools/providers':'/tools/integrations',
   // v0.3.8.55: Automation folded into Projects — every automation route lands there now.
   '/colony/automation':'/projects',
   '/operations/automation':'/projects',
@@ -4294,6 +4296,20 @@ async function loadAntObs(){
         <details data-ant="${ant}" data-ontoggle="onAntRecentToggle(this)"><summary>recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
       </div>`;
     }).join('');
+    // v0.3.8.56 (field report): planner, strategist, conversation and fallback are CARDS IN THIS
+    // GRID now, not a separate panel above it — same shape, same immediate-save route selectors.
+    // They carry no gates, telemetry or profile editor because they have none: they are
+    // control-plane roles, and inventing empty stats for them would claim telemetry that does
+    // not exist. ORCHESTRATION_ROLES (inspector-routing.js) supplies label and purpose.
+    const antIds=new Set(ANTOBS_CASTES.map(x=>x[0]));
+    const orch=(typeof ORCHESTRATION_ROLES!=='undefined'?ORCHESTRATION_ROLES:[])
+      .filter(r=>!antIds.has(r.id) && obsRoutes[r.id]);
+    grid.innerHTML += orch.map(r=>`<div class="ant-card" style="border-left-color:${cssColor('#8b93a8')}">
+        <div class="ac-hd"><span class="ac-dot" style="color:#8b93a8;background:#8b93a8"></span>
+          <span class="ac-name">${escapeHtml(r.label)}</span><span class="ac-role">orchestration · ${escapeHtml(r.id)}</span></div>
+        ${obsRouteControls(r.id, obsRoutes[r.id])}
+        <div class="ac-sub" style="margin-top:6px;line-height:1.5;">${escapeHtml(r.why)}</div>
+      </div>`).join('');
     wireAntProfileEditors(grid);
     wireObsRouting(grid);
     loadAntObsDirectory(grid);
