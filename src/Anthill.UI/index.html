@@ -1927,6 +1927,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="ov-conversations-body"><div class="ov2-empty">Connecting...</div></div><!-- /ov-conversations-body -->
           </div>
 
+          <!-- v0.3.8.55 (field report): the Director's status view, ON the overview by default —
+               authored here like every widget body so the id exists with the grid off. The full
+               Automation panel (objectives, runs) stays on the Projects page; this is the glance. -->
+          <div class="ath-card hud-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Automation Director</span></div>
+            <div id="ov-director-body"><div class="ov2-empty">Connecting...</div></div>
+          </div>
+
           <!-- v3.7.2: Tools & Routing and Mission Workspaces. Hidden by default in the grid, but
                authored here for the same reason as the panel above: a body that only exists once a
                widget adopts it is unreachable with the grid off. -->

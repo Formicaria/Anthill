@@ -1,4 +1,5 @@
 using System.Reflection;
+using Anthill.SDK.Common;   // TextUtil — the workspace list's bounded mission-goal name
 using Anthill.Core.Agents;
 using Anthill.Core.Shadow;
 using Anthill.Core.Autonomy;
@@ -1591,6 +1592,11 @@ public static partial class ApiHost
             {
                 ["id"] = w.Id,
                 ["mission_id"] = w.MissionId,
+                // v0.3.8.55 (field report): a checkout named e958531b-… tells the operator
+                // nothing. The mission's own goal is the human name — joined here, bounded, and
+                // absent (not invented) when the mission is gone.
+                ["mission_goal"] = TextUtil.Truncate(
+                    Queen.Memory.GetMission(w.MissionId)?.GetValueOrDefault("goal")?.ToString() ?? "", 90, "…"),
                 ["state"] = w.State.ToString().ToLowerInvariant(),
                 ["mode"] = w.Mode,
                 ["root"] = w.Root,

@@ -459,14 +459,20 @@ PAGE_ENTER['overview']=()=>{
   if(typeof pollHud==='function') pollHud();
   // v2.14.13: with the workspace on, the dashboard owns the topology. Without it, this is a no-op
   // and the Colony page keeps the canvas exactly as before.
-  if(document.getElementById('ws-topology')){
-    topologyMountTo('dashboard');
-    // v0.3.8.55: the hosted topology gets the same wake-up the dedicated page gets — the legend
-    // and the pheromone HUD used to load only through showPage('colony'), which the workspace
-    // redirect made unreachable, so both sat empty on the page that actually shows the map.
-    setTimeout(()=>{ if(typeof renderColonyLegend==='function') renderColonyLegend();
-                     if(typeof pollColonyPheromones==='function') pollColonyPheromones(); },80);
-  }
+  if(document.getElementById('ws-topology')) topologyMountTo('dashboard');
+  // v0.3.8.55: the hosted topology gets the same wake-up the dedicated page gets — legend and
+  // pheromone HUD used to load only through showPage('colony'). Host-agnostic on purpose: the
+  // canvas can live in the ws workspace OR a dashboard-grid widget, and the wake follows the
+  // CANVAS, not the host type.
+  setTimeout(()=>{
+    const area=document.getElementById('colony-canvas-area');
+    if(area && area.closest('#page-overview')){
+      if(typeof renderColonyLegend==='function') renderColonyLegend();
+      if(typeof pollColonyPheromones==='function') pollColonyPheromones();
+    }
+  },80);
+  // v0.3.8.55: the Director widget ships visible by default — fill it on entry, not first poll.
+  if(typeof pollDirectorWidget==='function') pollDirectorWidget();
 };
 // The Colony page reclaims the canvas only when the dashboard is NOT hosting it. With the
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
@@ -2698,14 +2704,12 @@ function renderColonyLegend(){
 
 // Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
 async function pollColonyPheromones(){
-  // v0.3.8.55 (field report: "pheromone visuals don't work"): with the workspace live, showPage
-  // REDIRECTS /colony to the dashboard and this gate — colony page only — meant the pheromone
-  // HUD and canvas drift never received data on the page actually hosting the topology. Poll
-  // wherever the canvas is: the dedicated page, or the dashboard when it hosts the map.
-  const colonyActive=document.getElementById('page-colony')?.classList.contains('active');
-  const dashHosting=document.getElementById('page-overview')?.classList.contains('active')
-    && typeof workspaceHostsTopology==='function' && workspaceHostsTopology();
-  if(!colonyActive && !dashHosting) return;
+  // v0.3.8.55 (field report: "pheromone visuals don't work"): the old gate — colony page only —
+  // meant the HUD and canvas drift never received data on whichever page actually hosted the
+  // topology (ws workspace or a dashboard-grid widget). The gate now follows the CANVAS: poll
+  // whenever its container is actually laid out, whoever hosts it.
+  const cArea=document.getElementById('colony-canvas-area');
+  if(!cArea || cArea.clientWidth===0 || cArea.clientHeight===0) return;
   try{
     const r=await api('/pheromones/json'); if(!r||!r.success) return;
     const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));
@@ -5898,14 +5902,17 @@ async function loadProjects(){
     if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load workspaces.')}</div>`; return; }
     const ws=(r.data&&r.data.workspaces)||r.data||[];
     if(!ws.length){ el.innerHTML='<div class="hud-state">No workspaces yet — the colony creates one the first time a mission needs to change files.</div>'; return; }
+    // v0.3.8.55 (field report): the MISSION GOAL is the checkout's human name; the GUID demotes
+    // to the detail line. A workspace whose mission is gone keeps the id — better a true GUID
+    // than an invented title.
     el.innerHTML=ws.map(w=>`<div class="card agentcli-card">
       <div class="agentcli-hd">
         <span class="health-dot ${w.usable?'ok':''}"></span>
-        <span class="agentcli-name">${escapeHtml(w.mission_id||w.id||'workspace')}</span>
+        <span class="agentcli-name">${escapeHtml(w.mission_goal||w.mission_id||w.id||'workspace')}</span>
         <span class="hud-badge ${w.state==='live'?'active':''}">${escapeHtml(w.state||'')}</span>
         ${w.deletable?'<span class="hud-badge">can be cleaned up</span>':''}
       </div>
-      <div class="agentcli-sub">${escapeHtml(w.mode||'')}${w.branch?' · '+escapeHtml(w.branch):''}${w.base_revision?' · based on '+escapeHtml(String(w.base_revision).slice(0,10)):''}</div>
+      <div class="agentcli-sub">${w.mission_goal?escapeHtml(String(w.mission_id||w.id||'').slice(0,8))+' · ':''}${escapeHtml(w.mode||'')}${w.branch?' · '+escapeHtml(w.branch):''}${w.base_revision?' · based on '+escapeHtml(String(w.base_revision).slice(0,10)):''}</div>
     </div>`).join('');
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
@@ -8841,6 +8848,10 @@ function registerGridWidgets(){
     // and because a conversation waiting for approval is the one thing on this page that stops
     // the colony until a human answers.
     {id:'conversations',      title:'Conversations',      icon:'\u2709', size:'large',  body:'ov-conversations-body'},
+    // v0.3.8.55 (field report): the Director's status glance, on the dashboard BY DEFAULT \u2014 the
+    // full Automation panel (objectives, runs) lives on the Projects page; this answers "is the
+    // Director running and inside budget" without leaving the overview.
+    {id:'director',           title:'Automation Director', icon:'\u23f5', size:'large', body:'ov-director-body'},
   ];
 
   // ---- below the Colony: detail, history and queues -------------------------
@@ -8937,7 +8948,7 @@ var DEFAULT_DASHBOARD_VIEW = {
   // by default. What opens now: the colony's vitals, the colony itself, its health smalls, and what
   // needs the operator's attention.
   order: [
-    'colony-vitals', 'colony', 'operator-attention',
+    'colony-vitals', 'director', 'colony', 'operator-attention',
     'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
     // registered but off by default, in the order they appear in the Widgets menu
     'mission-composer', 'conversations', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
@@ -8952,6 +8963,36 @@ var DEFAULT_DASHBOARD_VIEW = {
   },
   spans: {}, heights: {},
 };
+
+/* v0.3.8.55 — the Director widget's own renderer. Deliberately NOT the auto-* ids: those are the
+ * Projects page's Automation panel, and two surfaces writing one set of singleton ids is how a
+ * hidden panel eats a visible panel's update. Same endpoint, own markup, glance-sized. */
+async function pollDirectorWidget(){
+  const el=document.getElementById('ov-director-body'); if(!el) return;
+  if(!document.getElementById('page-overview')?.classList.contains('active')) return;
+  try{
+    const r=await api('/autonomy/status'); if(!(r&&r.success)) return;
+    const s=r.data||{};
+    const state=s.running?'RUNNING':(s.enabled?'IDLE':'OFF');
+    const col=s.running?'var(--green)':(s.enabled?'var(--queen)':'var(--dim)');
+    const kill=!!s.kill_switch_engaged;
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 0 8px;">
+        <span style="font-size:16px;font-weight:800;color:${col};">${state}</span>
+        <span style="font-size:10px;color:${kill?'var(--red)':'var(--dim)'};">${kill?'kill switch engaged':'kill switch clear'}</span>
+        <span style="flex:1;"></span>
+        <button class="btn btn-primary" data-onclick="dirWidgetStart()" ${(!s.enabled||s.running)?'disabled':''} style="font-size:10px;">▶ Start</button>
+        <button class="btn btn-danger" data-onclick="dirWidgetStop()" ${s.running?'':'disabled'} style="font-size:10px;">■ Stop</button>
+      </div>
+      <div class="info-row"><span class="info-key">Missions / hour</span><span class="info-val">${s.missions_last_hour??0}/${s.max_missions_per_hour??'—'}</span></div>
+      <div class="info-row"><span class="info-key">Missions / day</span><span class="info-val">${s.missions_last_day??0}/${s.max_missions_per_day??'—'}</span></div>
+      <div class="info-row"><span class="info-key">Backlog</span><span class="info-val">${s.backlog_pending??0} pending · ${s.backlog_active??0} active</span></div>
+      <div class="info-row"><span class="info-key">Next objective</span><span class="info-val">${escapeHtml(s.next_objective?s.next_objective.title:'— backlog empty —')}</span></div>
+      <div style="margin-top:8px;"><button class="btn btn-ghost" data-onclick="go('/projects')" style="font-size:10px;">Open Automation →</button></div>`;
+  }catch{}
+}
+function dirWidgetStart(){ api('/autonomy/start','POST').then(()=>{ apiCacheBust('/autonomy'); pollDirectorWidget(); }); }
+function dirWidgetStop(){ api('/autonomy/stop','POST').then(()=>{ apiCacheBust('/autonomy'); pollDirectorWidget(); }); }
+setInterval(pollDirectorWidget, 10000);
 
 /** Mount the responsive grid as the dashboard. */
 function initDashboardGrid(){
