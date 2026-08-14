@@ -36,6 +36,12 @@
 
   display: grid;
   grid-template-columns: repeat(var(--dg-cols), minmax(0, 1fr));
+  /* v0.3.8.56 (field report: "widgets snap to the largest widget next to them") — MASONRY.
+     Implicit rows sized every widget to its tallest row-mate. The grid now runs on small fixed
+     tracks and each widget spans exactly the rows its own measured height needs (markQuiet
+     writes grid-row), so heights are independent. auto-flow stays row, never dense — reading
+     order and tab order keep matching. */
+  grid-auto-rows: 8px;
   gap: var(--dg-gap);
   padding: var(--dg-pad);
   align-content: start;
@@ -79,6 +85,12 @@
 .dg-widget[data-size="medium"] { --dg-span: var(--dg-span-medium); }
 .dg-widget[data-size="large"]  { --dg-span: var(--dg-span-large); }
 .dg-widget[data-size="colony"] { --dg-span: var(--dg-span-colony); }
+
+/* Pre-script masonry spans — one frame's worth of honesty before markQuiet measures and writes
+   the exact grid-row. Sized to the standard floor (≈210px at 8px tracks) and the colony clamp's
+   lower bound, so the first paint packs instead of overlapping. */
+.dg-widget { grid-row: span 27; }
+.dg-widget[data-size="colony"] { grid-row: span 60; }
 
 /* The Colony is the focal point: full width, its own row, taller than anything
    around it, and never in a tab group or behind another widget. */
