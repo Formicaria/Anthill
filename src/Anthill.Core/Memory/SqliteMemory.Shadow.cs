@@ -176,13 +176,18 @@ public sealed partial class SqliteMemory
     /// see. Each row is what the panel needs to put the judgment form next to the recommendation.
     /// </summary>
     public List<Dictionary<string, object?>> LoadUnresolvedShadowRecommendations(int limit = 50) =>
+        // v0.3.8.53, found live: this query shipped in v0.3.8.46 naming r.created_at — a column
+        // shadow_recommendations never had (its timestamp is observed_at) — and no test ever
+        // DROVE the query, so its first real execution was an operator's dashboard poll throwing.
+        // The wire keeps the created_at name the judge panel already reads; the column is the one
+        // that exists. ShadowPersistenceTests now executes this against a seeded store.
         Query(@"SELECT r.incident_id, r.diagnosis, r.proposed_action, r.predicted_outcome,
                        r.risk_level, r.risk_requires_approval, r.rollback_plan,
-                       r.would_recommend_execution, r.created_at
+                       r.would_recommend_execution, r.observed_at AS created_at
                 FROM shadow_recommendations r
                 LEFT JOIN shadow_outcomes o ON o.incident_id = r.incident_id
                 WHERE o.incident_id IS NULL
-                ORDER BY r.created_at DESC LIMIT @limit",
+                ORDER BY r.observed_at DESC LIMIT @limit",
             ("@limit", Math.Clamp(limit, 1, 500))).ToList();
 
     /// <summary>
