@@ -3181,6 +3181,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <option value="contrast">High contrast</option>
             </select>
 
+            <!-- v0.3.8.55 (field report): report a bug or security issue from inside the app.
+                 Deliberately a mailto: — no server-side mail, no stored report, works from every
+                 deployment shape, and the operator sees exactly what leaves their machine. -->
+            <div class="section-head">Report an Issue</div>
+            <label class="set-label" for="report-category">Category</label>
+            <select class="set-input" id="report-category">
+              <option value="Bug report">Bug report</option>
+              <option value="Security issue">Security issue</option>
+              <option value="Feedback">Feedback</option>
+            </select>
+            <label class="set-label" for="report-desc">What happened? <span style="font-weight:400;color:var(--dim)">(no tokens or keys, please)</span></label>
+            <textarea class="set-input" id="report-desc" rows="3" placeholder="What you did, what you expected, what happened instead."></textarea>
+            <button class="btn btn-ghost" id="report-send" style="margin-bottom:4px;">✉ Compose email to info@formicaria.us</button>
+            <div style="font-size:10px;color:var(--dim);margin-bottom:16px;">Opens your own mail app with the report pre-filled — nothing is sent by ANTHILL itself. Security issues: please report privately by email rather than a public GitHub issue.</div>
+
             <div class="section-head">API Endpoint</div>
             <label class="set-label">API Base URL <span style="font-weight:400;color:var(--dim)">(blank = local relative)</span></label>
             <input class="set-input" id="settings-apibase" type="url" placeholder="http://host:8713">

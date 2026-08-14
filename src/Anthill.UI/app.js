@@ -909,6 +909,19 @@ function openSettings(){
   loadSettingsInfo();
 }
 
+/* v0.3.8.55 (field report) — issue reports route to info@formicaria.us by mailto:. The version
+ * and deployment ride along (they are the two questions every first reply asks); the description
+ * is the operator's own words, URL-encoded and bounded by the mailto: length the OS will take. */
+document.getElementById('report-send')?.addEventListener('click',()=>{
+  const cat=document.getElementById('report-category')?.value||'Bug report';
+  const desc=(document.getElementById('report-desc')?.value||'').trim();
+  const ver=(lastSystemSummary&&lastSystemSummary.version)||'unknown';
+  const subject=`[ANTHILL ${cat}] v${ver}`;
+  const body=`${desc}\n\n—\nANTHILL v${ver}\nCategory: ${cat}`;
+  location.href='mailto:info@formicaria.us?subject='+encodeURIComponent(subject)
+    +'&body='+encodeURIComponent(body.slice(0,1800));
+});
+
 document.getElementById('settings-save').addEventListener('click', saveSettings);
 async function saveSettings(){
   const base=document.getElementById('settings-apibase').value.trim();

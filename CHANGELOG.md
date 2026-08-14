@@ -32,9 +32,42 @@ wherever the canvas actually is (the workspace redirect had gated it to a page n
 and plain wheel zooms on the dedicated Colony page, where the modifier bargain protected
 scrolling that page does not have.
 
-**Themes.** The palette becomes a choice: website default, Light, Hermes (warm amber on umber),
-High contrast — chosen in Settings, saved per device, applied before first paint. And the chat
-files pane gains a refresh button that busts the TTL'd cache on demand.
+**Themes.** The palette becomes a choice — and the DEFAULT is the website's own (formicaria.us:
+cream on deep navy, cyan accent, IBM Plex Mono), with the old console palette kept as Classic,
+plus Light, Hermes and High contrast — chosen in Settings, saved per device, applied before
+first paint. The chat files pane gains a refresh button that busts the TTL'd cache on demand.
+
+**The second field round: five surfaces stop lying.** The status popover's `? Online` was an
+encoding casualty (status dots, not questions — fixed with its mission-status and users-table
+siblings). The splitter's "white" was an undefined variable's pale fallback plus a `.dragging`
+class no cancelled pointer ever removed. "6/12 roles false" was the registry serializing static
+`Executable` flags while the effective answer sat beside them — all twelve were running the whole
+time; the adapter now reads `executable_roles`. Settings→Models vs the status summary was two
+answers to one question — the router resolves both now. Providers moved from Settings to
+Tools → Providers.
+
+**The canvas stops trusting liars.** `document.hidden` is out of the awake gate (embedded
+webviews report hidden while the operator watches — a genuinely backgrounded tab stops rAF by
+itself), and a ResizeObserver drives layout off the canvas container's actual size — the fixed
+50ms remeasure lost the race against the dashboard-grid and the map landed scrambled. The colony
+wake-up (legend, pheromones) is host-agnostic: it follows the canvas, whether it lives on the
+dedicated page, the ws workspace, or a dashboard-grid widget. Live-diagnosed in the operator's
+own browser (hasFocus true, visibilityState 'hidden', awake false).
+
+**The Director takes its seat.** A glance-sized Automation Director widget ships visible on the
+Colony Overview by default — state, kill switch, budgets, backlog, next objective, start/stop —
+with its own ids (two surfaces writing one set of singletons is how a hidden panel eats a visible
+panel's update); the full panel stays on Projects. Mission workspace checkouts are named by their
+mission's GOAL, GUID demoted to the detail line. Settings gains Report an Issue (a mailto: to
+info@formicaria.us — nothing sent by ANTHILL itself, the operator sees exactly what leaves).
+
+**The memory trail, proven end to end.** A composed twelve-role scripted mission asserted on what
+the colony REMEMBERS: the scribe's words survive verbatim in the task record, both finalization
+ledger claims (learning, archivist) refuse a second caller, the archivist's memory candidates are
+real events with content, and the mission leaves pheromone trails — even an honest adaptive_stop
+leaves an auditable trail, recorded but never strengthened into false reputation. The training
+pack grows from nine missions to twelve (repair loop, the two lanes, workspace discipline) and
+speaks the current console's language; the QA checklist covers every surface this release moved.
 
 ## v0.3.8.54 - the scripted colony: deterministic answers through the real plumbing
 
