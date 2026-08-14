@@ -19,7 +19,7 @@
          project-schedule contract (UTC instants beside real IANA zones) holds on every OS. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- Must always match AnthillRuntime.Version — enforced by RegressionGuardTests + CI. -->
-    <AnthillVersion>0.3.8.53</AnthillVersion>
+    <AnthillVersion>0.3.8.54</AnthillVersion>
     <Version>$(AnthillVersion)</Version>
     <Authors>ANTHILL Project</Authors>
     <Product>ANTHILL Core</Product>
