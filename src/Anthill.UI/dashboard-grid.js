@@ -221,49 +221,81 @@
 
   // At or below this column count the grid is a single stack and operator widths do not apply.
   var STACK_BELOW_COLS = 4;
+  /* v0.3.8.56 (field report: "widgets snap to the largest widget next to them") — MASONRY.
+   * The grid's implicit rows sized every widget to its tallest row-mate: one tall card stretched
+   * its neighbours, which is exactly the clunk the operator named. The grid now runs on 8px
+   * auto-rows and every widget SPANS exactly the rows its own height needs, so heights are fully
+   * independent — vertically and horizontally. Reading order is untouched: auto-flow stays row
+   * (never dense), so nothing jumps above the Colony and tab order still matches the eye. */
+  var ROW_UNIT = 8;
+  function rowSpanFor(px, rowGap) {
+    return Math.max(1, Math.ceil((px + rowGap) / (ROW_UNIT + rowGap)));
+  }
+
   function markQuiet() {
     if (!G.root) return;
     requestAnimationFrame(function () {
+      var rootCs = getComputedStyle(G.root);
+      var rowGap = parseFloat(rootCs.rowGap) || 0;
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-widget'), function (w) {
-        if (w.getAttribute('data-size') === 'colony') return;    // the map is never "quiet"
-        // An operator-set height is not a measurement to be improved on. Without this the 4s
-        // remeasure would quietly undo every resize a few seconds after it was made.
-        if (w.hasAttribute('data-user-h')) return;
-        var body = w.querySelector('.dg-body');
-        if (!body) return;
+        var h = 0;
 
-        // Measure at the NATURAL height. A floor left over from the previous pass would be included
-        // in this pass's measurement, and the card would grow a little on every cycle.
-        w.style.minHeight = '';
-
-        var only = body.children.length === 1 ? body.firstElementChild : null;
-        var placeholder = only && only.classList && only.classList.contains('dg-state');
-        var content = 0;
-        if (placeholder) {
-          // A placeholder is stretched (`height: 100%`) to centre itself in a full card, so its box
-          // reports the card's height, not its own. Its intrinsic minimum is the honest number.
-          content = parseFloat(getComputedStyle(only).minHeight) || 0;
+        if (w.getAttribute('data-size') === 'colony') {
+          // The map is never "quiet"; it keeps its CSS-clamped height, and computed style
+          // resolves the clamp to the pixels this viewport gives it.
+          h = parseFloat(getComputedStyle(w).minHeight) || w.getBoundingClientRect().height;
+        } else if (w.hasAttribute('data-user-h')) {
+          // An operator-set height is not a measurement to be improved on. Without this the 4s
+          // remeasure would quietly undo every resize a few seconds after it was made.
+          h = parseFloat(w.style.minHeight) || w.getBoundingClientRect().height;
         } else {
-          Array.prototype.forEach.call(body.children, function (n) {
-            content += n.getBoundingClientRect().height;
-          });
+          var body = w.querySelector('.dg-body');
+          if (body) {
+            // Measure at the NATURAL height. A floor left over from the previous pass would be
+            // included in this pass's measurement, and the card would grow a little every cycle.
+            w.style.minHeight = '';
+
+            var only = body.children.length === 1 ? body.firstElementChild : null;
+            var placeholder = only && only.classList && only.classList.contains('dg-state');
+            var content = 0;
+            if (placeholder) {
+              // A placeholder is stretched (`height: 100%`) to centre itself in a full card, so
+              // its box reports the card's height, not its own. Its intrinsic minimum is honest.
+              content = parseFloat(getComputedStyle(only).minHeight) || 0;
+            } else {
+              Array.prototype.forEach.call(body.children, function (n) {
+                content += n.getBoundingClientRect().height;
+              });
+            }
+
+            if (content > 0) {
+              w.classList.toggle('dg-quiet', content < QUIET_BELOW_PX);
+              var head = w.querySelector('.dg-head');
+              var cs = getComputedStyle(body);
+              var pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+              var borders = w.offsetHeight - w.clientHeight;
+              var headH = head ? head.getBoundingClientRect().height : 0;
+              var desired = headH + content + pad + borders;
+
+              // The standard height is a CEILING, not a target. Below it, the card fits its
+              // content — which is what makes the pack tight. At or above it, the CSS floor
+              // applies and the body scrolls: a widget must never grow the page to fit a list.
+              var cap = parseFloat(getComputedStyle(w).getPropertyValue('--dg-widget-h')) || 0;
+              if (cap && desired < cap) {
+                w.style.minHeight = Math.ceil(desired) + 'px';
+                h = desired;
+              } else {
+                h = cap || desired;
+              }
+            } else {
+              h = parseFloat(getComputedStyle(w).minHeight) || w.getBoundingClientRect().height;
+            }
+          } else {
+            h = w.getBoundingClientRect().height;
+          }
         }
 
-        if (content <= 0) return;
-        w.classList.toggle('dg-quiet', content < QUIET_BELOW_PX);
-
-        var head = w.querySelector('.dg-head');
-        var cs = getComputedStyle(body);
-        var pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-        var borders = w.offsetHeight - w.clientHeight;
-        var headH = head ? head.getBoundingClientRect().height : 0;
-        var desired = headH + content + pad + borders;
-
-        // The standard height is a CEILING, not a target. Below it, the card fits its content —
-        // which is what makes rows tight. At or above it, the inline floor is left off so the CSS
-        // floor applies and the body scrolls: a widget must never grow the page to fit a long list.
-        var cap = parseFloat(getComputedStyle(w).getPropertyValue('--dg-widget-h')) || 0;
-        if (cap && desired < cap) w.style.minHeight = Math.ceil(desired) + 'px';
+        if (h > 0) w.style.gridRow = 'span ' + rowSpanFor(Math.ceil(h), rowGap);
       });
     });
   }
@@ -733,6 +765,7 @@
     var snapped = Math.max(1, Math.min(cols, Math.round(fraction * cols)));
     G.layout.spans[id] = snapped / cols;
     if (G._frames[id]) applySize(id, G._frames[id].widget);
+    markQuiet();   // v0.3.8.56: a width change rewraps content — the masonry span re-measures
     G.persist();
   };
 
@@ -741,6 +774,7 @@
     if (!G.widgets[id] || typeof px !== 'number' || !isFinite(px)) return;
     G.layout.heights[id] = Math.max(MIN_H, Math.min(MAX_H, Math.round(px)));
     if (G._frames[id]) applySize(id, G._frames[id].widget);
+    markQuiet();   // v0.3.8.56: the masonry span must follow the new height immediately
     G.persist();
   };
 
