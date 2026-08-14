@@ -165,4 +165,70 @@ public class CodePatchLifecycleTests : IDisposable
         // And the mission closed with a persisted canonical evaluation.
         Assert.NotNull(queen.Memory.LoadMissionEvaluation(missionId!));
     }
+
+    /// <summary>
+    /// Audit scenarios 5/6/bounded-repair, pinned from the OBSERVED record of the first composed
+    /// run (the v3.8.31 rule: pin what production did, not what we assumed). What that run showed,
+    /// unprompted by any assertion: the tester's check ran against the MATERIALIZED revision and
+    /// legitimately failed (a temp tree builds nothing); tester→medic handed off on the typed
+    /// retryable failure; medic→coder produced a GENERATION-1 patch set that was REmaterialized
+    /// and got its own fresh tester review — generation 0's evidence never rode again; and the
+    /// loop stopped at its bound with the adaptive stop naming it ("the bound is spent, not the
+    /// problem"), leaving a terminal, UNVERIFIED outcome — which buys no completed_verified and
+    /// therefore no positive reinforcement.
+    /// </summary>
+    [Fact]
+    public void TheRepairLoop_MaterializesFreshEvidencePerGeneration_AndStopsAtItsBound()
+    {
+        var book = new ScriptBook()
+            .Role("planner", ScriptedPlan)
+            .Role("researcher", "SCRIPTED: frame the note.")
+            .Role("coder", ScriptedProposals)          // repeats for the repair generation — deterministic
+            .Role("verifier", "SCRIPTED: reviewed.")
+            .Role("tester", "SCRIPTED: checks recorded.")
+            .Role("soldier", "SCRIPTED: no concern.")
+            .Role("builder", "SCRIPTED: proposed for review.")
+            .Role("medic", "SCRIPTED: the check failure is environmental to this tree; re-propose.")
+            .Role("scribe", "SCRIPTED: recorded.")
+            .Role("archivist", "SCRIPTED: recorded.");
+
+        AnthillRuntime.UseOllama = true;
+        AnthillRuntime.AllowedWorkspaceRoot = _workspace;
+        using var scripted = ScriptedColony.Begin(book,
+            "planner", "researcher", "coder", "verifier", "tester", "soldier",
+            "builder", "medic", "scribe", "archivist", "fallback");
+
+        var queen = new Queen(new SqliteMemory(Path.Combine(_dir, "repair.db")));
+        string? missionId = null;
+        queen.RunMission("Add a short colony note to the documentation.",
+            onMissionCreated: id => missionId = id);
+        Assert.NotNull(missionId);
+
+        var tasks = queen.Memory.GetTasksForMission(missionId!);
+
+        // Two generations, each with ITS OWN patch set — the repair produced a new set, and the
+        // policy inserted a FRESH tester for it. Generation 0's green (had there been any) could
+        // not have ridden generation 1.
+        Assert.True(queen.Memory.GetRecentEvents(200, "patch_set_created", missionId).Count >= 2,
+            "the repair generation must create its own patch set");
+        Assert.True(tasks.Count(t => t.GetValueOrDefault("assigned_ant")?.ToString() == "tester") >= 2,
+            "each patch-set generation must receive its own tester review");
+
+        // The medic ran — and only because a typed retryable failure summoned it.
+        Assert.Contains(tasks, t => t.GetValueOrDefault("assigned_ant")?.ToString() == "medic");
+
+        // The loop TERMINATED at its bound with one unambiguous outcome: terminal, adaptive-stop,
+        // and NOT verified — an exhausted repair loop must never leave pending work or buy credit.
+        var evaluation = queen.Memory.LoadMissionEvaluation(missionId!);
+        Assert.NotNull(evaluation);
+        Assert.Equal("adaptive_stop", evaluation!.StopReason);
+        Assert.NotEqual(Anthill.Core.Outcomes.MissionOutcome.CompletedVerified, evaluation.OutcomeCode);
+
+        // And no task was left running or pending behind the stop.
+        Assert.DoesNotContain(tasks, t =>
+        {
+            var s = t.GetValueOrDefault("status")?.ToString() ?? "";
+            return s is "running" or "pending" or "queued";
+        });
+    }
 }
