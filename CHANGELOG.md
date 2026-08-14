@@ -1,5 +1,40 @@
 # ANTHILL Changelog
 
+## v0.3.8.56 - the sixth field round: the dashboard becomes a board the operator owns
+
+**Every widget lives at (a)x(b) cells — where the operator put it.** The dashboard is a strict
+cell grid now: a six-cell row, widget widths of 1/2/3/6 cells, heights quantized to cell rows,
+and content that scales to the cell rect it was given instead of dictating it. On top of the
+grid sits FREE PLACEMENT: each widget owns its rect origin, a drag targets the cell under the
+pointer (a draft preview, no DOM churn), occupied widgets are pushed down only when actually
+overlapped, and a hole the operator makes is a hole that stays. Three drag defects fell in the
+proving: mid-gesture re-layouts stomping the preview (a live drag owns the board now), and —
+found by watching the operator drive with a recorder armed — a geometry feedback loop where each
+preview changed the board's height, the scroller clamped, and the same pointer mapped to
+alternating cells, oscillating at exactly the dragged widget's own height. The pointer-to-cell
+ruler is now frozen in document space at dragstart and the board's height locks for the gesture:
+a preview can never move the thing it is measured against.
+
+**The operators' own board is the shipped default.** The first-run view was captured cell by
+cell from the live console after the placement engine settled: colony across the top, the
+command surfaces beneath it, vitals and the working set below. The default carries positions,
+and "Reset layout" restores exactly this placement instead of auto-packing an arrangement
+nobody chose.
+
+**Orchestration folds into the role cards.** The Planner / Strategist / Conversation / Fallback
+boxes are gone from the Ant Inspector's globals; routing for those roles lives on the same
+one-box-per-role cards as everything else (conversation excludes Ollama, as before). Tools /
+Providers is removed outright — Integrations' Configure covers it — and the hidden coding-agents
+page folds into Integrations as agent cards with live install state. Tools / Capabilities gained
+full operator CRUD end to end: add, update, host allowlists, delete.
+
+**Chat approvals surface under Skip-all.** A run under the Skip-all gate no longer renders
+approval cards that imply a decision is wanted; pending proposals collapse to a single note
+line, and the template-echo guard keeps a model that parrots the patch template from minting
+empty proposals. Assorted: the stray "name" text under the colony legends is gone, and the two
+CI node-lane tests that still grepped app.js for surfaces that moved homes now look in the
+right files.
+
 ## v0.3.8.55 - the fifth field round: the console reorganized by the operator who uses it
 
 **A pathless project stands in the colony's own source.** The workdir_required gate is gone,

@@ -19,7 +19,10 @@ function obsProviderLabel(p){
   return p;
 }
 function obsRouteControls(role, rr){
-  const provs=[...obsProvModels.keys()];
+  // v0.3.8.49 (§4), carried into the merged cards: the conversation role is the colony's voice
+  // in Chat and routes to a keyed API or an installed agent — never Ollama, which stays
+  // ant-side infrastructure.
+  const provs=[...obsProvModels.keys()].filter(p=>!(role==='conversation'&&p==='ollama'));
   const curP=rr.provider||'ollama';
   const provList=provs.includes(curP)?provs:[curP,...provs];
   const provOpts=provList.map(p=>
@@ -191,31 +194,11 @@ function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
           ? 'Active — every ant tries '+escapeHtml(priorityModel)+' first.'
           : 'Not set — each ant uses its own route below. Choose a model and Save to promote it.'}
       </div>
-    </div>
-
-    <div class="antcfg-grid" style="margin-bottom:14px">
-      ${ORCHESTRATION_ROLES.map(r=>{
-        const p=routes[r.id]?.provider||'ollama', m=routes[r.id]?.model||'';
-        // v0.3.8.49 (§4): the conversation (chat) role hides Ollama; every other orchestration role
-        // keeps it, because Ollama is legitimate ant-side infrastructure.
-        const chatRole=r.id==='conversation';
-        return `<div class="antcfg-card">
-          <div style="font-size:13px;font-weight:700">${escapeHtml(r.label)}</div>
-          <div class="antcfg-role">orchestration · ${escapeHtml(r.id)}</div>
-          <div style="font-size:10px;color:var(--muted);line-height:1.45;margin:6px 0 8px">${escapeHtml(r.why)}</div>
-          <div class="antcfg-field">
-            <label>Provider</label>
-            <select data-caste="${r.id}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(r.label)}">${antcfgProviderOptions(p,{excludeOllama:chatRole})}</select>
-          </div>
-          <div class="antcfg-field">
-            <label>Model (route)</label>
-            <select data-caste="${r.id}" class="antcfg-model antcfg-modelname" data-provider="${escapeHtml(p)}" aria-label="Model route for ${escapeHtml(r.label)}">
-              ${antcfgModelOptions(p, m)}
-            </select>
-          </div>
-        </div>`;
-      }).join('')}
     </div>`;
+  // v0.3.8.56 (field report): the four orchestration BOXES are gone from up here — planner,
+  // strategist, conversation and fallback render as ordinary role cards in the inspector grid
+  // below (loadAntObs), with the same immediate-save route selectors every ant card has.
+  // ORCHESTRATION_ROLES stays as the labels-and-purposes source those cards read.
 
   // The priority model list follows its provider, the same way the per-caste pair does. Without
   // this, switching provider leaves a model list from the previous one and the operator picks a
