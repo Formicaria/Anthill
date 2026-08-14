@@ -533,6 +533,9 @@ const IA = [
     { label:'Capabilities', route:'/tools', page:'toolsview', vis:'all' },
     // Integrations and external services are tools — they live where the tools do (§9).
     { label:'Integrations', route:'/tools/integrations', page:'integrations', vis:'admin' },
+    // v0.3.8.55 (field report): Providers are tools too — the pane is the settings page's
+    // providers tab, opened as its own destination with the tab strip hidden.
+    { label:'Providers', route:'/tools/providers', page:'settings', stab:'providers', vis:'admin' },
     // The colony's memory and learning signals belong beside the capabilities that use them.
     { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
   ]},
@@ -786,18 +789,28 @@ function showPage(id,o){
   // stab resets to the Connection tab so each route lands deterministically.
   if(id==='settings'){
     const isMR=(o.route||'').indexOf('/colony/model-routing')===0; // Colony → Model Routing view
+    // v0.3.8.55 (field report): Providers moved to Tools → Providers. Its strip tab is GONE, so
+    // the pane switches directly here — the tab-click machinery only works for tabs that exist.
+    const isProv=(o.route||'').indexOf('/tools/providers')===0;
     const stab=o.stab||'connection';
     const tabEl=document.querySelector('.settings-tab[data-tab="'+stab+'"]');
     if(tabEl) tabEl.click();
-    // Model Routing is a dedicated view: hide the full Settings tab strip (its Routes & Models /
-    // Providers sub-nav covers what's relevant) and relabel the header. Administration → Settings
+    else if(stab==='providers'){
+      document.querySelectorAll('.settings-tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.settings-pane').forEach(x=>x.classList.remove('active'));
+      document.getElementById('tab-providers')?.classList.add('active');
+      if(typeof loadProvidersTab==='function') loadProvidersTab();
+    }
+    // Dedicated views hide the Settings tab strip and take their own header; plain Settings
     // keeps the strip and its own title.
     const strip=document.getElementById('settings-tabs');
-    if(strip) strip.style.display=isMR?'none':'';
+    if(strip) strip.style.display=(isMR||isProv)?'none':'';
     const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
-    if(st) st.textContent=isMR?'Model Routing':'Settings';
+    if(st) st.textContent=isMR?'Model Routing':isProv?'Providers':'Settings';
     if(ss) ss.textContent=isMR
       ? 'Provider connections and per-role model routes for the colony.'
+      : isProv
+      ? 'External model providers — keys, connections, and their curated model catalogs.'
       : 'Colony configuration, model routes, and system diagnostics';
   }
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
@@ -988,7 +1001,17 @@ function roleName(r){return prop(r,'displayName','DisplayName')||roleId(r);}
 function roleColony(r){return prop(r,'colony','Colony')||'Colony';}
 function rolePurpose(r){return prop(r,'purpose','Purpose')||'';}
 function roleEnabled(r){return prop(r,'enabled','Enabled')!==false;}
-function roleExecutable(r){return prop(r,'executable','Executable')===true;}
+// v0.3.8.55 (field report: "6/12 roles false by default"): the registry's role RECORDS carry the
+// STATIC Executable flag — false for every gated specialist, by design, forever — while the
+// effective answer (static OR its gate is open) ships right beside them as executable_roles.
+// This adapter read the record and told the operator six running roles were off. It now consults
+// the effective list first; the record is only the fallback for a registry without one.
+function roleExecutable(r){
+  const id=roleId(r);
+  const eff=colonyRegistry&&(colonyRegistry.executable_roles||colonyRegistry.ExecutableRoles);
+  if(Array.isArray(eff)) return eff.some(x=>String(x).toLowerCase()===String(id).toLowerCase());
+  return prop(r,'executable','Executable')===true;
+}
 function roleWorkers(r){return prop(r,'workers','Workers')||[];}
 function rolePerms(r){return prop(r,'permissions','Permissions')||{};}
 function roleAllowedTools(r){return prop(r,'allowedTools','AllowedTools')||[];}
@@ -3005,7 +3028,9 @@ function renderStatusChip(){
 function renderStatusPop(){
   const s=lastSystemSummary||{};
   setEl('sp-version','v'+(s.version||'—'));
-  setEl('sp-api', connected?'? Online':'? Offline');
+  // v0.3.8.55 (field report): these were status DOTS once — an encoding mishap turned them into
+  // literal question marks, so the popover read "? Online" as if unsure of its own answer.
+  setEl('sp-api', connected?'● Online':'● Offline');
   document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
   const or=s.ollama_reachable;
   // v3.8.33: reachability and MODEL are reported separately, because a reachable host with no
@@ -3138,8 +3163,10 @@ async function showJobResult(id){
 }
 
 // -- Mission report: the readable "what actually happened" view ----------------
-const MR_STATUS={complete:['? Completed','var(--green)'],partial:['? Completed with gaps','var(--queen)'],
-  failed:['? Failed','var(--red)'],running:['? Running','var(--blue)']};
+// v0.3.8.55 (field report): the same encoding mishap that hit the status popover — these were
+// outcome glyphs, not questions.
+const MR_STATUS={complete:['✓ Completed','var(--green)'],partial:['◐ Completed with gaps','var(--queen)'],
+  failed:['✗ Failed','var(--red)'],running:['▶ Running','var(--blue)']};
 const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'—',ready:'—'};
 const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
   applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
@@ -5354,8 +5381,13 @@ function wireSplit(handleId, horizontal, storeKey, apply){
       localStorage.setItem(storeKey, String(apply(pct)));
     };
     const up=()=>{ handle.classList.remove('dragging');
-      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up);
+      handle.removeEventListener('pointercancel',up); };
     handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up);
+    // v0.3.8.55 (field report: the bar stayed light): a CANCELLED pointer — touch cancel, window
+    // blur mid-drag — never fired pointerup, so .dragging stuck and the handle kept its bright
+    // drag colour until the next page load. Cancel ends the drag like up does.
+    handle.addEventListener('pointercancel',up);
   });
 }
 wireSplit('chat-split-x', true, 'anthill_split_x', pct=>{
@@ -8563,7 +8595,7 @@ async function reloadUsers(){
         <td>${last}</td>
         <td style="white-space:nowrap">
           <button class="job-btn view" data-onclick="userResetPw('${jsArg(u.username)}')">Reset PW</button>
-          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
+          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coord':'→ Admin'}</button>
           <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${jsArg(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
           ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${jsArg(u.username)}')">Delete</button>`}
         </td></tr>`;

@@ -18,14 +18,15 @@
    pages opt in by using these classes. Role colors are THE single source for nodes, chambers,
    event dots, badges, pheromone paths, and legends. */
 :root{
-  --anthill-bg:#050914;
-  --anthill-panel:rgba(12,22,40,.78);
-  --anthill-panel-strong:rgba(16,31,55,.92);
-  --anthill-border:rgba(140,180,255,.14);
-  --anthill-border-strong:rgba(140,180,255,.28);
-  --anthill-text:#eaf2ff;
-  --anthill-muted:#7f91aa;
-  --anthill-dim:#4f6078;
+  /* v0.3.8.55: default = the website's palette (formicaria.us). Classic keeps the old values. */
+  --anthill-bg:#070a13;
+  --anthill-panel:rgba(16,22,37,.8);
+  --anthill-panel-strong:rgba(16,22,37,.94);
+  --anthill-border:rgba(244,233,214,.14);
+  --anthill-border-strong:rgba(244,233,214,.3);
+  --anthill-text:#f4e9d6;
+  --anthill-muted:#aab2c2;
+  --anthill-dim:#8b93a8;
   --role-queen:#ffd76a; --role-mission-control:#9b6cff; --role-research:#36c8ff;
   --role-coder:#ff9a3d; --role-builder:#3a8bff; --role-verifier:#9b6cff;
   --role-tester:#ff5fa8; --role-scout:#45e36f; --role-forager:#45e36f;
@@ -173,24 +174,27 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 
 /* -- Design Tokens ----------------------------------------------------------- */
 :root{
+  /* v0.3.8.55 (operator's rule): the DEFAULT is the website's own palette — formicaria.us, read
+     from the live site's :root — cream (#f4e9d6) on deep navy, cyan #57c7f0 as the working
+     accent, IBM Plex Mono. The previous console palette survives as data-theme="classic". */
   --queen:#fbbf24;
   --queen-dim:rgba(251,191,36,.1);
-  --bg:#090e17;
-  --panel:#0d1525;
-  --card:#111d30;
-  --inner:#162440;
-  --border:#1e3354;
-  --text:#d1dce8;
-  --muted:#8ba3bc;
-  --dim:#4a6278;
-  --blue:#3b82f6;
+  --bg:#0a0e1a;
+  --panel:#0d1320;
+  --card:#101625;
+  --inner:#162036;
+  --border:#262e44;
+  --text:#f4e9d6;
+  --muted:#aab2c2;
+  --dim:#8b93a8;
+  --blue:#57c7f0;
   --green:#10b981;
   --red:#ef4444;
   --purple:#8b5cf6;
   --orange:#fb923c;
-  --cyan:#06b6d4;
+  --cyan:#35aadf;
   --amber:#f59e0b;
-  --mono:'JetBrains Mono','Cascadia Code','Consolas',monospace;
+  --mono:'IBM Plex Mono','JetBrains Mono','Cascadia Code','Consolas',monospace;
   --font:'Segoe UI',system-ui,-apple-system,sans-serif;
   --nav-w:240px;
   --nav-col:60px;
@@ -202,8 +206,19 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 /* -- v0.3.8.55: THEMES -------------------------------------------------------------------------
    The :root palette above is the DEFAULT — the website's own. A theme re-states the same
    variables on html[data-theme] (higher specificity than :root, so order never matters), and
-   because components name variables, never raw colors, the theme IS the palette. Applied before
-   first paint by the head script; chosen in Settings → Connection; saved per device. */
+   because components name variables, never raw colors, the theme IS the palette. Applied at
+   themes.js parse time; chosen in Settings → Connection; saved per device. */
+html[data-theme="classic"]{
+  /* The console's pre-website palette — blue-grey on slate, kept for operators who had it. */
+  --bg:#090e17; --panel:#0d1525; --card:#111d30; --inner:#162440; --border:#1e3354;
+  --text:#d1dce8; --muted:#8ba3bc; --dim:#4a6278;
+  --blue:#3b82f6; --cyan:#06b6d4;
+  --mono:'JetBrains Mono','Cascadia Code','Consolas',monospace;
+  --anthill-bg:#050914; --anthill-panel:rgba(12,22,40,.78); --anthill-panel-strong:rgba(16,31,55,.92);
+  --anthill-border:rgba(140,180,255,.14); --anthill-border-strong:rgba(140,180,255,.28);
+  --anthill-text:#eaf2ff; --anthill-muted:#7f91aa; --anthill-dim:#4f6078;
+  --hud-cyan:#22d3ee; --hud-glass:rgba(17,29,48,.55); --hud-line:rgba(34,211,238,.18);
+}
 html[data-theme="light"]{
   --queen:#b07a08; --queen-dim:rgba(176,122,8,.12);
   --bg:#f3f5f9; --panel:#ffffff; --card:#ffffff; --inner:#eaeef6; --border:#ccd7e6;
@@ -1145,7 +1160,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
    cards, telemetry lines, the central system core, and state components. Vanilla
    CSS only — no new deps. All animations are CSS and respect reduced-motion.
    ------------------------------------------------------------------------------ */
-:root{ --hud-cyan:#22d3ee; --hud-glass:rgba(17,29,48,.55); --hud-line:rgba(34,211,238,.18); }
+:root{ --hud-cyan:#57c7f0; --hud-glass:rgba(16,22,37,.55); --hud-line:rgba(87,199,240,.2); }
 
 /* Status badge — one consistent label+color per state, everywhere. */
 .hud-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;font-family:var(--mono);
@@ -1395,10 +1410,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
    between the working tree and the docked editor, and disappears with the editor (:has), so a
    handle never floats beside one lone pane. Drag logic in app.js persists the chosen split. */
 .split-x{display:none;order:1;flex:0 0 5px;cursor:col-resize;background:var(--border);}
-.split-x:hover,.split-x.dragging{background:var(--logo-node,#93bdf2);}
+/* v0.3.8.55 (field report): the hover/drag colour rode an UNDEFINED variable whose fallback
+   (#93bdf2) read as white against the dark theme. Themed accent now, defined in every palette. */
+.split-x:hover,.split-x.dragging{background:var(--blue);}
 #page-chat.colony-open .split-x{display:block;}
 .split-y{flex:0 0 5px;cursor:row-resize;background:var(--border);}
-.split-y:hover,.split-y.dragging{background:var(--logo-node,#93bdf2);}
+.split-y:hover,.split-y.dragging{background:var(--blue);}
 #chat-files-layer:has(#chat-files-editor[hidden]) .split-y{display:none;}
 /* Narrow: a split is unreadable. Colony mode becomes a clean full-screen switch — the pane's
    own ✕ (and Escape) returns to the conversation with draft and scroll intact. */
@@ -3130,7 +3147,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <div class="settings-tabs" id="settings-tabs">
           <div class="settings-tab active" data-tab="connection">Connection</div>
-          <div class="settings-tab" data-tab="providers">Providers</div>
+          <!-- v0.3.8.55: the Providers tab moved to Tools → Providers (route /tools/providers);
+               the pane below stays and that route opens it directly. -->
           <div class="settings-tab" data-tab="colony">Colony</div>
           <div class="settings-tab" data-tab="models">Models</div>
           <div class="settings-tab" data-tab="info">System Info</div>
@@ -3148,7 +3166,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="section-head">Theme</div>
             <label class="set-label" for="settings-theme">Console palette <span style="font-weight:400;color:var(--dim)">(saved on this device)</span></label>
             <select class="set-input" id="settings-theme" style="margin-bottom:16px;">
-              <option value="default">ANTHILL — website palette (default)</option>
+              <option value="default">Formicaria — website palette (default)</option>
+              <option value="classic">Classic — the pre-website console</option>
               <option value="light">Light</option>
               <option value="hermes">Hermes — warm amber on umber</option>
               <option value="contrast">High contrast</option>

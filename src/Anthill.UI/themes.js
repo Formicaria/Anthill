@@ -7,7 +7,7 @@
  * the console's CSP is script-src 'self' with no unsafe-inline, and an inline snippet would be
  * silently blocked in the served console while appearing to work from a source checkout.
  * 'default' is the website's own palette and sets no attribute at all. */
-const THEME_IDS=['default','light','hermes','contrast'];
+const THEME_IDS=['default','classic','light','hermes','contrast'];
 function applyTheme(t){
   if(THEME_IDS.indexOf(t)<0) t='default';
   if(t==='default') delete document.documentElement.dataset.theme;
