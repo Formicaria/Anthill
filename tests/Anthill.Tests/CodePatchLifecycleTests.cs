@@ -1,6 +1,11 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Memory;
+using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Security;
+using Anthill.Modules.Tools;
+using Anthill.SDK.Events;
+using Anthill.SDK.Tools;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -230,5 +235,156 @@ public class CodePatchLifecycleTests : IDisposable
             var s = t.GetValueOrDefault("status")?.ToString() ?? "";
             return s is "running" or "pending" or "queued";
         });
+    }
+
+    // ---- audit scenario 20: all twelve, through their real triggers -----------------------------
+
+    /// <summary>The planner-selectable eight, each named in the scripted plan on its real worker.</summary>
+    private const string TwelveRolePlan = """
+        {
+          "tasks": [
+            { "title": "Frame the request", "description": "Understand what the note must say.",
+              "assigned_ant": "researcher", "assigned_worker": "researcher.mission_researcher",
+              "task_type": "research", "depends_on": [] },
+            { "title": "Check public context", "description": "Note any public context worth citing.",
+              "assigned_ant": "web", "assigned_worker": "web.source_finder",
+              "task_type": "external_research", "depends_on": [] },
+            { "title": "Inspect the workspace", "description": "List the workspace files relevant to the note.",
+              "assigned_ant": "file", "assigned_worker": "file.file_scout",
+              "task_type": "file_inspection", "depends_on": [] },
+            { "title": "Map the frontend surface", "description": "Note any UI surface the change could touch.",
+              "assigned_ant": "ui_cartographer", "assigned_worker": "ui_cartographer.route_mapper",
+              "task_type": "research", "depends_on": [] },
+            { "title": "Propose the documentation patch", "description": "Propose the note as a structured patch, JSON only.",
+              "assigned_ant": "coder", "assigned_worker": "coder.docs_coder",
+              "task_type": "patch_proposal", "depends_on": [] },
+            { "title": "Build the operator answer", "description": "Assemble the outcome for the operator.",
+              "assigned_ant": "builder", "assigned_worker": "builder.response_builder",
+              "task_type": "build_answer", "depends_on": [] },
+            { "title": "Draft the changelog line", "description": "Draft a one-line changelog entry for the note.",
+              "assigned_ant": "scribe", "assigned_worker": "scribe.changelog_scribe",
+              "task_type": "research", "depends_on": [] },
+            { "title": "Verify the outcome", "description": "Check the record addresses the request.",
+              "assigned_ant": "verifier", "assigned_worker": "verifier.result_verifier",
+              "task_type": "verification", "depends_on": [] }
+          ]
+        }
+        """;
+
+    /// <summary>
+    /// AUDIT SCENARIO 20 — docs/PLAN.md §6's named gap, closed the only honest way: every one of
+    /// the twelve contracted roles reached through ITS OWN production trigger in one composed
+    /// mission. Eight are planner-selected because the scripted plan names them (the planner's
+    /// real dialect, real workers, validated by the real registry). Tester and soldier appear
+    /// though NO plan named them — policy-inserted on the patch set's existence. The medic
+    /// appears only because the tester's check legitimately failed against the materialized
+    /// revision (failure-triggered). The archivist runs only after the canonical evaluation
+    /// persisted (post-finalization), and its evidence is memory candidates, not a task row.
+    /// Nothing here is ceremonial: remove the patch and tester/soldier/medic vanish; remove the
+    /// evaluation and the archivist does.
+    /// </summary>
+    [Fact]
+    public void AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission()
+    {
+        var specialistsWas = AnthillRuntime.EnableSpecialistAntExecution;
+        var cartographerWas = AnthillRuntime.EnableUiCartographerAnt;
+        var scribeWas = AnthillRuntime.EnableScribeAnt;
+        var archivistWas = AnthillRuntime.EnableArchivistAnt;
+        try
+        {
+            AnthillRuntime.EnableSpecialistAntExecution = true;
+            AnthillRuntime.EnableUiCartographerAnt = true;
+            AnthillRuntime.EnableScribeAnt = true;
+            AnthillRuntime.EnableArchivistAnt = true;
+            AnthillRuntime.UseOllama = true;
+            AnthillRuntime.AllowedWorkspaceRoot = _workspace;
+
+            var book = new ScriptBook()
+                .Role("planner", TwelveRolePlan)
+                .Role("researcher", "SCRIPTED: the note should describe the colony.")
+                .Role("web", "SCRIPTED: no external sources are needed for an internal note.")
+                .Role("file", "SCRIPTED: the workspace holds README.txt.")
+                .Role("ui_cartographer", "SCRIPTED: no UI surface is touched by a documentation note.")
+                .Role("coder", ScriptedProposals)
+                .Role("builder", "SCRIPTED: the note was proposed as a patch and awaits review.")
+                .Role("scribe", "SCRIPTED: docs: add the colony note.")
+                .Role("verifier", "SCRIPTED: the record addresses the request.")
+                .Role("tester", "SCRIPTED: checks recorded.")
+                .Role("soldier", "SCRIPTED: no security concern in a documentation note.")
+                .Role("medic", "SCRIPTED: the check failure is environmental to this tree.")
+                .Role("archivist", "SCRIPTED: recorded.");
+
+            using var scripted = ScriptedColony.Begin(book,
+                "planner", "researcher", "web", "file", "ui_cartographer", "coder", "builder",
+                "scribe", "verifier", "tester", "soldier", "medic", "archivist", "fallback");
+
+            using var memory = new SqliteMemory(Path.Combine(_dir, "twelve.db"));
+            // The production tool drain, exactly as both composition roots do it: the Tools
+            // module's contributions adopted into the Queen's registry. File tools ON (the file
+            // ant lists the real temp workspace — local and deterministic); web/shell/writes OFF.
+            var host = new ModuleHost(memory, NullEventBus.Instance);
+            host.Load(new ToolsModule(new WorkspacePathGuard(), new ScenarioToolGates()));
+            var queen = new Queen(memory);
+            queen.AdoptModuleTools(host.ContributedTools);
+
+            string? missionId = null;
+            queen.RunMission("Add a short colony note to the documentation.",
+                onMissionCreated: id => missionId = id);
+            Assert.NotNull(missionId);
+
+            var tasks = queen.Memory.GetTasksForMission(missionId!);
+            var roles = tasks.Select(t => t.GetValueOrDefault("assigned_ant")?.ToString() ?? "").ToHashSet();
+
+            // Eleven roles as task rows, each on its own trigger…
+            foreach (var role in new[]
+                     {
+                         "researcher", "web", "file", "ui_cartographer", "coder", "builder",
+                         "scribe", "verifier", "tester", "soldier", "medic",
+                     })
+                Assert.True(roles.Contains(role),
+                    $"role '{role}' never received a task; roles that ran: {string.Join(",", roles)}");
+
+            // …and every one of their tasks reached a TERMINAL state: ran and answered, or
+            // refused with a typed outcome. Nothing hung, nothing was silently skipped as
+            // pending — the trigger fired and the runtime answered for it.
+            Assert.DoesNotContain(tasks, t =>
+            {
+                var s = t.GetValueOrDefault("status")?.ToString() ?? "";
+                return s is "running" or "pending" or "queued";
+            });
+
+            // The inserted pair really were INSERTED: the scripted plan named neither.
+            Assert.DoesNotContain("tester", TwelveRolePlan);
+            Assert.DoesNotContain("soldier", TwelveRolePlan);
+
+            // The twelfth role: the archivist runs post-finalization, and its evidence is the
+            // memory candidates it recorded after the persisted evaluation — not a task row.
+            Assert.NotNull(queen.Memory.LoadMissionEvaluation(missionId!));
+            Assert.True(queen.Memory.GetRecentEvents(100, "memory_candidate", missionId).Count > 0,
+                "the archivist left no memory candidates after finalization");
+        }
+        finally
+        {
+            AnthillRuntime.EnableSpecialistAntExecution = specialistsWas;
+            AnthillRuntime.EnableUiCartographerAnt = cartographerWas;
+            AnthillRuntime.EnableScribeAnt = scribeWas;
+            AnthillRuntime.EnableArchivistAnt = archivistWas;
+        }
+    }
+
+    /// <summary>File tools on (local, deterministic); web, shell, writes and auto-apply off.</summary>
+    private sealed class ScenarioToolGates : IToolRuntimeOptions
+    {
+        public bool FileToolsEnabled => true;
+        public bool FileWritingEnabled => false;
+        public bool ShellToolEnabled => false;
+        public bool WebSearchEnabled => false;
+        public bool PatchApplicationEnabled => false;
+        public IReadOnlySet<string> WebSearchKeywords { get; } = new HashSet<string>();
+        public IReadOnlySet<string> PatchAllowedSuffixes { get; } = new HashSet<string> { ".md", ".txt" };
+        public IReadOnlySet<string> BlockedFileSuffixes { get; } = new HashSet<string> { ".db" };
+        public IReadOnlySet<string> BlockedPathParts { get; } = new HashSet<string> { ".git" };
+        public string ScriptDirectory => ".";
+        public string BackupDirectory => "data/backups";
     }
 }
