@@ -242,12 +242,14 @@
 
         if (w.getAttribute('data-size') === 'colony') {
           // The map is never "quiet"; it keeps its CSS-clamped height, and computed style
-          // resolves the clamp to the pixels this viewport gives it.
-          h = parseFloat(getComputedStyle(w).minHeight) || w.getBoundingClientRect().height;
+          // resolves the clamp to the pixels this viewport gives it. (offsetHeight fallback, not
+          // a rect: the natural-height guard requires every rect measurement to follow the
+          // floor-clear below, and these branches measure settled heights, not content.)
+          h = parseFloat(getComputedStyle(w).minHeight) || w.offsetHeight;
         } else if (w.hasAttribute('data-user-h')) {
           // An operator-set height is not a measurement to be improved on. Without this the 4s
           // remeasure would quietly undo every resize a few seconds after it was made.
-          h = parseFloat(w.style.minHeight) || w.getBoundingClientRect().height;
+          h = parseFloat(w.style.minHeight) || w.offsetHeight;
         } else {
           var body = w.querySelector('.dg-body');
           if (body) {
@@ -288,10 +290,10 @@
                 h = cap || desired;
               }
             } else {
-              h = parseFloat(getComputedStyle(w).minHeight) || w.getBoundingClientRect().height;
+              h = parseFloat(getComputedStyle(w).minHeight) || w.offsetHeight;
             }
           } else {
-            h = w.getBoundingClientRect().height;
+            h = w.offsetHeight;
           }
         }
 
