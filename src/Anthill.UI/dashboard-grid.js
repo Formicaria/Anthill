@@ -349,16 +349,26 @@
 
   var dragId = null;
 
-  /** The widget under a drag, and whether the pointer is past its midpoint. */
-  function dropTargetAt(x, y) {
-    var best = null;
-    Array.prototype.forEach.call(G.root.querySelectorAll('.dg-widget'), function (w) {
-      var r = w.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) best = w;
-    });
-    if (!best) return null;
-    var r = best.getBoundingClientRect();
-    return { widget: best, after: x > r.left + r.width / 2 };
+  /**
+   * The insertion point for a pointer position — EVERY position, not just those over a widget.
+   *
+   * v0.3.8.56 (operator's correction): the old hit-test answered only when the pointer sat on
+   * another widget, so gaps, row ends and the space below the last row were dead — a drag into
+   * an "empty spot" did nothing, which read as the whole feature being broken. This scans the
+   * flow order in row bands instead: the pointer is BEFORE the first widget whose row starts
+   * below it, or before the first widget in its own band whose centre it has not passed;
+   * anywhere past everything means "append at the end". Null is a real answer (append), never a
+   * dead zone. The dragged widget is excluded — its rect is the hole being moved.
+   */
+  function insertionRefAt(x, y, dragged) {
+    var ws = Array.prototype.filter.call(G.root.querySelectorAll('.dg-widget'),
+      function (w) { return w !== dragged; });
+    for (var i = 0; i < ws.length; i++) {
+      var r = ws[i].getBoundingClientRect();
+      if (y < r.top - 4) return ws[i];                                 // a row below the pointer
+      if (y <= r.bottom + 4 && x < r.left + r.width / 2) return ws[i]; // same band, centre not passed
+    }
+    return null;                                                       // past everything: the end
   }
 
   /**
@@ -433,6 +443,10 @@
       if (!w) return;
       dragId = w.getAttribute('data-widget-id');
       w.classList.add('dg-dragging');
+      // The end-zone: the grid ends at its content, so "below the last row" was OUTSIDE the
+      // container and dragover stopped firing there. Padding opens while a drag is live so the
+      // append-at-the-end slot is a place the pointer can actually reach.
+      rootEl.classList.add('dg-drag-live');
       try { e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed = 'move'; } catch (err) { /* older engines */ }
     });
 
@@ -454,15 +468,13 @@
       e.dataTransfer.dropEffect = 'move';
 
       var dragged = rootEl.querySelector('[data-widget-id="' + dragId + '"]');
-      var t = dropTargetAt(e.clientX, e.clientY);
-      if (!dragged || !t || t.widget === dragged) return;
-
-      // Where the widget should sit relative to the one under the pointer. Re-checked against the
-      // CURRENT DOM every time, so a slow drag across a row does not thrash the layout: if it is
-      // already in that position, nothing moves.
-      var ref = t.after ? t.widget.nextSibling : t.widget;
-      if (ref === dragged) return;                      // already there
-      if (t.after && t.widget.nextSibling === dragged) return;
+      if (!dragged) return;
+      // Every pointer position resolves to a slot — occupied, gap, row end, or past the last
+      // row. Re-checked against the CURRENT DOM every time, so a slow drag does not thrash: if
+      // the widget already sits there, nothing moves.
+      var ref = insertionRefAt(e.clientX, e.clientY, dragged);
+      if (ref === dragged) return;
+      if (ref === null ? rootEl.lastElementChild === dragged : dragged.nextSibling === ref) return;
       rootEl.insertBefore(dragged, ref);
     });
 
@@ -474,6 +486,7 @@
     });
 
     rootEl.addEventListener('dragend', function () {
+      rootEl.classList.remove('dg-drag-live');
       Array.prototype.forEach.call(G.root.querySelectorAll('.dg-dragging'),
         function (w) { w.classList.remove('dg-dragging'); });
       // A cancelled drag (Escape, or a drop outside the grid) never reaches `drop`, and the DOM has

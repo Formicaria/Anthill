@@ -84,6 +84,11 @@
 .dg-widget { grid-row: span 1; }
 .dg-widget[data-size="colony"] { grid-row: span 2; }
 
+/* While a drag is live the grid grows an end-zone, so "after everything" is a slot the pointer
+   can reach — without it the container ended at its content and dragover went dead below the
+   last row. */
+.dg-root.dg-drag-live { padding-bottom: calc(var(--dg-cell-h) * 0.6); }
+
 /* The Colony is the focal point: full width, its own row, taller than anything
    around it, and never in a tab group or behind another widget. */
 /* v0.3.8.56: the colony's height is cells like everyone else's (2 by default). */
