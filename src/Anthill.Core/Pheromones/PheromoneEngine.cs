@@ -75,6 +75,15 @@ public sealed class PatchProposalParser
                 if (reason.Length == 0) reason = "No reason provided by the coder.";
                 if (risk.Length == 0) risk = "Unspecified risk. Human review required.";
 
+                // v0.3.8.56 (field report): a model that PARROTS the prompt's example produced no
+                // proposal. Two junk approval cards reached the operator's chat whose new_content
+                // was the template's own placeholder sentence continued with prose ("Proposed new
+                // content for Anthill.cs, considering retrying cloning…"). The echo is rejected by
+                // its exact opening words — a narrow, named guard, not a prose classifier.
+                if (EchoesTemplate(newContent, "Proposed new content")
+                    || EchoesTemplate(oldContent, "Exact old content"))
+                    continue;
+
                 proposals.Add(new PatchProposal
                 {
                     FilePath = filePath, ChangeType = EnumExtensions.ParsePatchChangeType(changeType), Reason = reason,
@@ -85,6 +94,11 @@ public sealed class PatchProposalParser
         }
         return new PatchSet { MissionId = missionId, TaskId = taskId, Summary = summary, Proposals = proposals };
     }
+
+    /// <summary>The prompt-template echo test: content that OPENS with the example's own words is
+    /// the example, not a change. Narrow on purpose — it matches the template's exact openings.</summary>
+    private static bool EchoesTemplate(string? content, string opening) =>
+        content is not null && content.TrimStart().StartsWith(opening, StringComparison.OrdinalIgnoreCase);
 
     // Returns string value or null for both missing keys and explicit JSON null values.
     private static string? JsonStrOrNull(System.Text.Json.Nodes.JsonNode? node)
