@@ -167,10 +167,26 @@ public sealed class ColonyDirector : IDisposable
             }
             catch (Exception ex)
             {
-                _queen.Memory.LogEvent(SystemMissionId, "autonomy_error", $"Director loop error: {ex.Message}", antName: "director",
-                    metadata: new() { ["error"] = ex.Message });
-                if (_running) Backoff();
-                else if (DrainInFlight()) break;
+                // The loop's last line of defence — and it runs on a plain background THREAD, so an
+                // exception that escapes here does not fail a mission or a request: it kills the
+                // ENTIRE process. CI proved it (v0.3.8.56): a test's teardown deleted the temp
+                // colony out from under a director that woke mid-poll, the idle log threw 'unable
+                // to open database file', and this handler's own LogEvent threw the same exception
+                // again — unhandled on a bare thread, host dead, a fully green run aborted. The
+                // same hole in production: a full disk or an unmounted volume would not degrade
+                // the director, it would take the whole ship down. If even the error cannot be
+                // logged, the colony this director writes to is already gone — leave quietly.
+                try
+                {
+                    _queen.Memory.LogEvent(SystemMissionId, "autonomy_error", $"Director loop error: {ex.Message}", antName: "director",
+                        metadata: new() { ["error"] = ex.Message });
+                    if (_running) Backoff();
+                    else if (DrainInFlight()) break;
+                }
+                catch
+                {
+                    break;
+                }
             }
         }
     }
