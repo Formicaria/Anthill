@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Anthill.Core.Common;
 using Anthill.Core.Memory;
 
@@ -384,6 +385,8 @@ public sealed class MissionWorkspaceManager
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
+                StandardErrorEncoding = Encoding.UTF8,
             })!;
             var stdout = process.StandardOutput.ReadToEnd();
             var stderr = process.StandardError.ReadToEnd();

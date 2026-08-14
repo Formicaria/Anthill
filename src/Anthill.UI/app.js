@@ -436,7 +436,7 @@ function applyRoleVisibility(){
     const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
     avatarEl.textContent=initials;
     avatarEl.style.background=admin
-      ?'linear-gradient(135deg,#fbbf24,#f59e0b)'
+      ?'linear-gradient(135deg,var(--queen),var(--queen-deep))'
       :'linear-gradient(135deg,#3b82f6,#6366f1)';
   }
 }
@@ -460,6 +460,19 @@ PAGE_ENTER['overview']=()=>{
   // v2.14.13: with the workspace on, the dashboard owns the topology. Without it, this is a no-op
   // and the Colony page keeps the canvas exactly as before.
   if(document.getElementById('ws-topology')) topologyMountTo('dashboard');
+  // v0.3.8.55: the hosted topology gets the same wake-up the dedicated page gets — legend and
+  // pheromone HUD used to load only through showPage('colony'). Host-agnostic on purpose: the
+  // canvas can live in the ws workspace OR a dashboard-grid widget, and the wake follows the
+  // CANVAS, not the host type.
+  setTimeout(()=>{
+    const area=document.getElementById('colony-canvas-area');
+    if(area && area.closest('#page-overview')){
+      if(typeof renderColonyLegend==='function') renderColonyLegend();
+      if(typeof pollColonyPheromones==='function') pollColonyPheromones();
+    }
+  },80);
+  // v0.3.8.55: the Director widget ships visible by default — fill it on entry, not first poll.
+  if(typeof pollDirectorWidget==='function') pollDirectorWidget();
 };
 // The Colony page reclaims the canvas only when the dashboard is NOT hosting it. With the
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
@@ -513,12 +526,12 @@ const IA = [
     // The living colony — topology, ant activity, pheromone signals, mission state. This is the
     // page the old standalone Dashboard became: one place for the colony at a glance.
     { label:'Overview', route:'/colony', page:'overview', vis:'all' },
-    // v0.3.8.49 redo: the standalone "Ants & Roles" tab is gone. Its per-role model routing IS this
-    // "Models & Routing" tab (page antconfig owns the provider/model selectors); the rest of it —
-    // seeing and editing ants — belongs to the Ant Inspector, which now reflects live colony state.
-    { label:'Models & Routing', route:'/colony/model-routing', page:'antconfig', vis:'admin' },
+    // v0.3.8.55 (field report): Models & Routing merged INTO the Ant Inspector — one box per
+    // role carries route, gates, telemetry and profile; the colony-wide priority and the
+    // orchestration roles (planner, conversation) sit above the grid on the same page.
     { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
-    { label:'Automation', route:'/colony/automation', page:'autonomy', vis:'admin' },
+    // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
+    // project work, and it now lives beside the projects it feeds (right-hand column there).
   ]},
   { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
   { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
@@ -526,6 +539,9 @@ const IA = [
     { label:'Capabilities', route:'/tools', page:'toolsview', vis:'all' },
     // Integrations and external services are tools — they live where the tools do (§9).
     { label:'Integrations', route:'/tools/integrations', page:'integrations', vis:'admin' },
+    // v0.3.8.55 (field report): Providers are tools too — the pane is the settings page's
+    // providers tab, opened as its own destination with the tab strip hidden.
+    { label:'Providers', route:'/tools/providers', page:'settings', stab:'providers', vis:'admin' },
     // The colony's memory and learning signals belong beside the capabilities that use them.
     { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
   ]},
@@ -572,8 +588,8 @@ Object.assign(PAGE_HOME,{
   results:'/projects', events:'/settings/system',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
-  autonomy:'/colony/automation', security:'/settings/security',
+  antconfig:'/colony/inspector', antobs:'/colony/inspector',
+  autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
 });
@@ -592,8 +608,8 @@ const LEGACY_REDIRECT={
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/model-routing', antobs:'/colony/inspector',
-  autonomy:'/colony/automation', security:'/settings/security',
+  antconfig:'/colony/inspector', antobs:'/colony/inspector',
+  autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
@@ -607,13 +623,15 @@ const ROUTE_ALIAS={
   '/integrations':'/tools/integrations',
   '/tools-view':'/tools',
   // v0.3.8.49: the standalone Ants & Roles tab folded into Models & Routing.
-  '/colony/roles':'/colony/model-routing',
+  '/colony/roles':'/colony/inspector',
+  // v0.3.8.55: Models & Routing merged into the Ant Inspector.
+  '/colony/model-routing':'/colony/inspector',
   '/colony/model-routing/providers':'/tools/integrations',
   // Roles / Inspector / Automation moved from Settings into Colony.
-  '/settings/roles':'/colony/model-routing',
+  '/settings/roles':'/colony/inspector',
   '/colony/topology':'/colony',
-  '/colony/agents':'/colony/model-routing',
-  '/colony/agents/configure':'/colony/model-routing',
+  '/colony/agents':'/colony/inspector',
+  '/colony/agents/configure':'/colony/inspector',
   '/colony/agents/inspect':'/colony/inspector',
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
@@ -641,15 +659,17 @@ const ROUTE_ALIAS={
   '/operations/missions/events':'/settings/system',
   '/operations/changes':'/chat',
   '/operations/approvals':'/chat',
-  '/operations/automation':'/colony/automation',
-  '/operations/automation/director':'/colony/automation',
+  // v0.3.8.55: Automation folded into Projects — every automation route lands there now.
+  '/colony/automation':'/projects',
+  '/operations/automation':'/projects',
+  '/operations/automation/director':'/projects',
   '/operations/automation/objectives':'/projects',
   '/operations/automation/rules':'/tools/integrations',
   '/monitoring/activity':'/settings/system',
   '/monitoring/activity/events':'/settings/system',
   '/monitoring/activity/results':'/projects',
   '/monitoring/activity/changes':'/chat',
-  '/monitoring/activity/runs':'/colony/automation',
+  '/monitoring/activity/runs':'/projects',
   '/monitoring/activity/infra':'/tools/integrations',
   '/monitoring/alerts':'/tools/integrations',
   '/scheduled':'/projects',
@@ -731,6 +751,18 @@ function showPage(id,o){
     id='overview';
     o=Object.assign({},o,{route:PAGE_HOME['overview']||o.route});
   }
+  // v0.3.8.55: the standalone Automation page folded into Projects (right-hand column). Every
+  // caller that still says showPage('autonomy') — attention chips, the command palette, the 'a'
+  // shortcut — lands on Projects with the Director panel alive.
+  if(id==='autonomy'){
+    id='projects';
+    o=Object.assign({},o,{route:'/projects'});
+  }
+  // v0.3.8.55: Models & Routing merged into the Ant Inspector — same remap for old callers.
+  if(id==='antconfig'){
+    id='antobs';
+    o=Object.assign({},o,{route:'/colony/inspector'});
+  }
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
@@ -763,18 +795,28 @@ function showPage(id,o){
   // stab resets to the Connection tab so each route lands deterministically.
   if(id==='settings'){
     const isMR=(o.route||'').indexOf('/colony/model-routing')===0; // Colony → Model Routing view
+    // v0.3.8.55 (field report): Providers moved to Tools → Providers. Its strip tab is GONE, so
+    // the pane switches directly here — the tab-click machinery only works for tabs that exist.
+    const isProv=(o.route||'').indexOf('/tools/providers')===0;
     const stab=o.stab||'connection';
     const tabEl=document.querySelector('.settings-tab[data-tab="'+stab+'"]');
     if(tabEl) tabEl.click();
-    // Model Routing is a dedicated view: hide the full Settings tab strip (its Routes & Models /
-    // Providers sub-nav covers what's relevant) and relabel the header. Administration → Settings
+    else if(stab==='providers'){
+      document.querySelectorAll('.settings-tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.settings-pane').forEach(x=>x.classList.remove('active'));
+      document.getElementById('tab-providers')?.classList.add('active');
+      if(typeof loadProvidersTab==='function') loadProvidersTab();
+    }
+    // Dedicated views hide the Settings tab strip and take their own header; plain Settings
     // keeps the strip and its own title.
     const strip=document.getElementById('settings-tabs');
-    if(strip) strip.style.display=isMR?'none':'';
+    if(strip) strip.style.display=(isMR||isProv)?'none':'';
     const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
-    if(st) st.textContent=isMR?'Model Routing':'Settings';
+    if(st) st.textContent=isMR?'Model Routing':isProv?'Providers':'Settings';
     if(ss) ss.textContent=isMR
       ? 'Provider connections and per-role model routes for the colony.'
+      : isProv
+      ? 'External model providers — keys, connections, and their curated model catalogs.'
       : 'Colony configuration, model routes, and system diagnostics';
   }
   if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
@@ -965,7 +1007,17 @@ function roleName(r){return prop(r,'displayName','DisplayName')||roleId(r);}
 function roleColony(r){return prop(r,'colony','Colony')||'Colony';}
 function rolePurpose(r){return prop(r,'purpose','Purpose')||'';}
 function roleEnabled(r){return prop(r,'enabled','Enabled')!==false;}
-function roleExecutable(r){return prop(r,'executable','Executable')===true;}
+// v0.3.8.55 (field report: "6/12 roles false by default"): the registry's role RECORDS carry the
+// STATIC Executable flag — false for every gated specialist, by design, forever — while the
+// effective answer (static OR its gate is open) ships right beside them as executable_roles.
+// This adapter read the record and told the operator six running roles were off. It now consults
+// the effective list first; the record is only the fallback for a registry without one.
+function roleExecutable(r){
+  const id=roleId(r);
+  const eff=colonyRegistry&&(colonyRegistry.executable_roles||colonyRegistry.ExecutableRoles);
+  if(Array.isArray(eff)) return eff.some(x=>String(x).toLowerCase()===String(id).toLowerCase());
+  return prop(r,'executable','Executable')===true;
+}
 function roleWorkers(r){return prop(r,'workers','Workers')||[];}
 function rolePerms(r){return prop(r,'permissions','Permissions')||{};}
 function roleAllowedTools(r){return prop(r,'allowedTools','AllowedTools')||[];}
@@ -1193,7 +1245,8 @@ async function loadColonyRegistry(){
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
       buildNodes();renderColonyLegend();
-      if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
+      // v0.3.8.55: the config panel lives inside the merged inspector page now.
+      if(document.getElementById('page-antobs')?.classList.contains('active')) openAntConfig();
       return;
     }
     // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
@@ -1496,8 +1549,21 @@ function drawDataFlowEdge(e,ts){
   const pulse=.4+Math.sin(ts*.002+e.phase)*0.25;
   ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
   ctx.setLineDash([4*camZ,5*camZ]);
-  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.18})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
-  ctx.setLineDash([]);
+  // v0.3.8.55 (field report: "transfer visuals don't look right"): the dashes MARCH toward the
+  // receiving ant. The dash pattern was static — only its alpha pulsed — so an active handoff
+  // read as a flickering dotted line rather than data in motion. The offset advances with time
+  // (negative: from source toward target), the one visual signature every earlier "nice" version
+  // of this had; the alpha pulse stays as the secondary heartbeat.
+  ctx.lineDashOffset=-(ts*.02%(9*camZ))*camZ;
+  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.22})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
+  ctx.setLineDash([]);ctx.lineDashOffset=0;
+  // A packet travelling the curve, tail behind it — the transfer itself, not just its route.
+  const tt=(ts*.0004+e.phase)%1;
+  for(let i=2;i>=0;i--){
+    const pp=qb(fp,cp,tp,Math.max(0,tt-i*.05));
+    ctx.beginPath();ctx.arc(pp.x,pp.y,Math.max(1.2,(2.6-i*.7)*camZ),0,Math.PI*2);
+    ctx.fillStyle=`rgba(${r},${g},${b},${(0.7-i*.22)*pulse})`;ctx.fill();
+  }
   const t2=qb(fp,cp,tp,.92),sz=5*camZ;
   const ax=tp.x-t2.x,ay=tp.y-t2.y,al=Math.hypot(ax,ay)||1;
   ctx.beginPath();
@@ -1677,7 +1743,12 @@ canvas.addEventListener('wheel',e=>{
   // now traps the operator: scrolling down to reach the widgets BELOW the Colony zoomed the map
   // and the page never moved. Zoom takes a modifier; a plain wheel scrolls the dashboard. This is
   // the same bargain embedded maps strike on scrolling pages, and for the same reason.
-  if(!(e.ctrlKey||e.metaKey)) return;      // no preventDefault: let the page scroll
+  // v0.3.8.55 (field report: "can't zoom on colony view"): on the DEDICATED Colony page the
+  // canvas is the page — there is nothing below to scroll to, so the modifier bargain protects
+  // nothing and just makes zoom look broken. Plain wheel zooms there; embedded in the scrolling
+  // dashboard the Ctrl/Cmd bargain stands, for the same reason embedded maps strike it.
+  const dedicated=document.getElementById('page-colony')?.classList.contains('active');
+  if(!(e.ctrlKey||e.metaKey||dedicated)) return;      // no preventDefault: let the page scroll
   e.preventDefault();
   const cl=getCanvasLocal(e);
   const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
@@ -1864,6 +1935,7 @@ function overlayStateFrom(doc){
     out[id]={
       visible: got.visible!==false,
       anchor: OVERLAY_ANCHORS.indexOf(got.anchor)>=0 ? got.anchor : def.anchor,
+      collapsed: got.collapsed===true,   // v0.3.8.55: the legends fold to their header
     };
   });
   return out;
@@ -1891,6 +1963,11 @@ function applyOverlayState(){
     const st=overlayState(id);
     el.classList.add('topo-ov');
     el.classList.toggle('ov-hidden',!st.visible);
+    // v0.3.8.55 (field report): the legend panels COLLAPSE to their header — distinct from
+    // hiding (the Overlays menu) because a folded legend still shows it exists and reopens with
+    // one click. Only panels with a .chud-body fold; the class is inert on the rest.
+    el.classList.toggle('ov-collapsed',!!st.collapsed);
+    const caret=el.querySelector('.ov-caret'); if(caret) caret.textContent=st.collapsed?'▸':'▾';
     // Hidden chrome must leave the tab order, or keyboard users tab into invisible controls.
     el.setAttribute('aria-hidden',st.visible?'false':'true');
     const slot=document.querySelector('[data-ovslot="'+st.anchor+'"]');
@@ -1903,10 +1980,19 @@ function setOverlay(id,changes){
   if(!TOPOLOGY_OVERLAYS[id]) return;
   const st=overlayState(id);
   if(typeof changes.visible==='boolean') st.visible=changes.visible;
+  if(typeof changes.collapsed==='boolean') st.collapsed=changes.collapsed;
   if(changes.anchor&&OVERLAY_ANCHORS.indexOf(changes.anchor)>=0) st.anchor=changes.anchor;
   applyOverlayState();
   saveUiState();
 }
+// v0.3.8.55: one delegated handler folds/unfolds whichever legend header was clicked — the
+// headers are re-rendered with their panels, so per-render listeners would leak or vanish.
+document.addEventListener('click',e=>{
+  const hd=e.target.closest&&e.target.closest('[data-ovcollapse]');
+  if(!hd) return;
+  const id=hd.dataset.ovcollapse;
+  setOverlay(id,{collapsed:!overlayState(id).collapsed});
+});
 
 function resetOverlays(){
   uiState.overlays={};
@@ -2068,10 +2154,30 @@ function refreshTopologyAwake(){
   // Measure the container rather than trusting the last resize(): clientWidth is 0 whenever an
   // ancestor is display:none, which is exactly the "user navigated away" case. That makes this a
   // fact about the DOM, not a guess about visibility.
+  //
+  // v0.3.8.55 (field report: "UI needs a refresh"): document.hidden is GONE from this gate — the
+  // third payment for a wrong "it's hidden". Embedded webviews (the desktop shell) and occluded
+  // windows report visibilityState 'hidden' while the operator is looking straight at the canvas,
+  // which latched the loop off until a manual reload. The genuine backgrounded-tab case needs no
+  // help from us: the browser stops firing requestAnimationFrame there all by itself.
   const el=document.getElementById('colony-canvas-area');
-  topologyAwake = !document.hidden && !!el && el.clientWidth>0 && el.clientHeight>0;
+  topologyAwake = !!el && el.clientWidth>0 && el.clientHeight>0;
 }
 document.addEventListener('visibilitychange',refreshTopologyAwake);
+// v0.3.8.55 (field report: "default layout scrambled"): navigation re-measures at a FIXED 50ms,
+// but the dashboard-grid lays its widgets out on its own clock — a canvas measured before its
+// widget settles computes the ring around a stale centre and the map lands scrambled until a
+// manual refresh. The observer makes layout follow the CONTAINER's actual size, whenever it
+// changes, debounced one frame so a drag-resize doesn't relayout per-pixel.
+(function(){
+  const area=document.getElementById('colony-canvas-area');
+  if(!area || typeof ResizeObserver==='undefined') return;
+  let raf=null;
+  new ResizeObserver(()=>{
+    if(raf) return;
+    raf=requestAnimationFrame(()=>{ raf=null; resize(); buildNodes(); refreshTopologyAwake(); });
+  }).observe(area);
+})();
 
 // v0.3.8.43 (SOW §4): reduced motion, honored at the render loop. When the operator asks for
 // reduced motion and the colony is genuinely idle (no running mission), the map redraws at 4fps —
@@ -2418,7 +2524,7 @@ function renderJobList(jobs, listId, badgeId, limit){
     const canCancel=isRunning||j.status==='queued';
     // v2.7.0: colour the outcome so the list is scannable — green done, red failed, amber stopped early.
     const oc=j.outcome||'';
-    const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'#d9a441':'var(--muted)';
+    const reasonCol=oc==='completed'?'var(--green)':oc==='failed'?'var(--red)':(oc==='timed_out'||oc==='cancelled'||oc==='partial')?'var(--amber)':'var(--muted)';
     let dur=''; if(j.started_at&&j.finished_at){ const s=Math.max(0,Math.round((new Date(j.finished_at)-new Date(j.started_at))/1000)); dur=' · '+(s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'); }
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" data-onclick="selectJob('${j.id}')">
       <div class="job-top">
@@ -2590,13 +2696,20 @@ function renderColonyLegend(){
     ? `<div class="chud-state-hd">STATES</div>`+liveStates.map(s=>
         `<div class="chud-caste on"><span class="dot" style="color:${STATE_COLORS[s]};background:${STATE_COLORS[s]}"></span>${escapeHtml(STATE_LABEL[s]||s)}</div>`).join('')
     : '';
-  el.innerHTML = notice + casteRows + stateRows;
+  // v0.3.8.55 (field report): a header the panel can FOLD to — click collapses to this line.
+  const hd=`<div class="chud-hd" data-ovcollapse="legend" role="button" tabindex="0" title="Collapse or expand the caste legend">Caste legend<span class="ov-caret">${overlayState('legend').collapsed?'▸':'▾'}</span></div>`;
+  el.innerHTML = hd + `<div class="chud-body">` + notice + casteRows + stateRows + `</div>`;
   document.getElementById('chud-legend-retry')?.addEventListener('click', colonyRegistryRetry);
 }
 
 // Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
 async function pollColonyPheromones(){
-  if(!document.getElementById('page-colony')?.classList.contains('active')) return;
+  // v0.3.8.55 (field report: "pheromone visuals don't work"): the old gate — colony page only —
+  // meant the HUD and canvas drift never received data on whichever page actually hosted the
+  // topology (ws workspace or a dashboard-grid widget). The gate now follows the CANVAS: poll
+  // whenever its container is actually laid out, whoever hosts it.
+  const cArea=document.getElementById('colony-canvas-area');
+  if(!cArea || cArea.clientWidth===0 || cArea.clientHeight===0) return;
   try{
     const r=await api('/pheromones/json'); if(!r||!r.success) return;
     const trails=(r.data||[]).slice().sort((a,b)=>(+b.strength||0)-(+a.strength||0));
@@ -2862,6 +2975,7 @@ const GLYPH={
   scale:  INLINE_ICON('<path d="M12 3v18M8 21h8M4 7h16"/><path d="M6 7l-3 6a3.4 3.4 0 0 0 6 0z"/><path d="M18 7l-3 6a3.4 3.4 0 0 0 6 0z"/>'),
   star:     INLINE_ICON('<polygon points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
   starFill: INLINE_ICON('<polygon fill="currentColor" points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
+  refresh:  INLINE_ICON('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
 };
 
 async function pollModelInfo(){
@@ -2938,7 +3052,9 @@ function renderStatusChip(){
 function renderStatusPop(){
   const s=lastSystemSummary||{};
   setEl('sp-version','v'+(s.version||'—'));
-  setEl('sp-api', connected?'? Online':'? Offline');
+  // v0.3.8.55 (field report): these were status DOTS once — an encoding mishap turned them into
+  // literal question marks, so the popover read "? Online" as if unsure of its own answer.
+  setEl('sp-api', connected?'● Online':'● Offline');
   document.getElementById('sp-api').style.color=connected?'var(--green)':'var(--red)';
   const or=s.ollama_reachable;
   // v3.8.33: reachability and MODEL are reported separately, because a reachable host with no
@@ -3071,8 +3187,10 @@ async function showJobResult(id){
 }
 
 // -- Mission report: the readable "what actually happened" view ----------------
-const MR_STATUS={complete:['? Completed','var(--green)'],partial:['? Completed with gaps','var(--queen)'],
-  failed:['? Failed','var(--red)'],running:['? Running','var(--blue)']};
+// v0.3.8.55 (field report): the same encoding mishap that hit the status popover — these were
+// outcome glyphs, not questions.
+const MR_STATUS={complete:['✓ Completed','var(--green)'],partial:['◐ Completed with gaps','var(--queen)'],
+  failed:['✗ Failed','var(--red)'],running:['▶ Running','var(--blue)']};
 const MR_TASK_ICON={complete:'?',failed:'?',skipped:'?',blocked:'?',running:'?',pending:'—',ready:'—'};
 const MR_PATCH_STATE={proposed:['awaiting your approval','var(--queen)'],approved:['approved — not yet applied','var(--blue)'],
   applied:['applied to disk','var(--green)'],rejected:['rejected','var(--red)'],failed:['apply failed','var(--red)']};
@@ -3108,7 +3226,7 @@ const msActivity = MT.ActivityStore();
 let msLastAnnounced = '';
 let msLastSettledCount = -1;
 
-const MS_CHIP={complete:['done','var(--green)'],partial:['partial','#d9a441'],
+const MS_CHIP={complete:['done','var(--green)'],partial:['partial','var(--amber)'],
                failed:['failed','var(--red)'],running:['working','var(--hud-cyan,#22d3ee)'],
                queued:['queued','var(--muted)']};
 
@@ -4114,12 +4232,26 @@ const ANTOBS_CASTES=[
   ['verifier','Verifier',['model']],
 ];
 const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'file write',patch_application:'apply',model:'model only'};
-PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin') loadAntObs(); };
+// v0.3.8.55: the merged page loads BOTH halves — the colony-wide/orchestration routing panel
+// (openAntConfig, which now renders only into #antcfg-global) and the per-role inspector grid.
+PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin'){ if(typeof openAntConfig==='function') openAntConfig(); loadAntObs(); } };
 async function loadAntObs(){
   const grid=document.getElementById('antobs-grid'); if(!grid) return;
   grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
   try{
-    const r=await api('/ants/stats'); if(!r.success) throw new Error(r.message);
+    // v0.3.8.55 (field report, Models & Routing merged in): the same fetch that feeds the cards
+    // also fetches what can actually RUN — /routes/json lists installed local models, configured
+    // catalogs and installed agents — so each card's route selectors offer only real choices.
+    const [r,rj]=await Promise.all([api('/ants/stats'),api('/routes/json')]);
+    if(!r.success) throw new Error(r.message);
+    obsProvModels=new Map(); obsRoutes={};
+    if(rj&&rj.success&&rj.data){
+      for(const m of (rj.data.available_models||[])){
+        if(!obsProvModels.has(m.provider)) obsProvModels.set(m.provider,[]);
+        obsProvModels.get(m.provider).push({model:m.model,label:m.label});
+      }
+      for(const x of (rj.data.roles||[])) obsRoutes[x.role]={provider:x.provider,model:x.model,available:x.available};
+    }
     const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
     // v0.3.8.50 (field report §20): the operator's names and colors, applied wherever the ant is
     // drawn on this page. The registry id stays visible in the role line — an override is a face,
@@ -4145,7 +4277,9 @@ async function loadAntObs(){
           <span class="ac-name">${escapeHtml(label)}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span>
           <button class="chat-copy ant-edit" data-ant-edit="${escapeHtml(ant)}" title="Edit this ant's name and color" aria-label="Edit ant profile">✎</button></div>
         <div class="ant-edit-slot" data-ant-slot="${escapeHtml(ant)}" hidden></div>
-        <div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>
+        ${obsRoutes[ant]
+          ? obsRouteControls(ant, obsRoutes[ant])
+          : `<div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>`}
         <div class="ac-gates">${gateBadges}</div>
         <div class="ac-stats">
           <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
@@ -4161,40 +4295,9 @@ async function loadAntObs(){
       </div>`;
     }).join('');
     wireAntProfileEditors(grid);
+    wireObsRouting(grid);
     loadAntObsDirectory(grid);
   }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
-}
-
-// v0.3.8.50 (field report §20): the profile editor — a name and a color, saved to the real
-// /ants/{id}/profile endpoint, applied on the next render of every surface that draws the ant.
-// "Reset" clears the override; the registry identity was never touched.
-let antProfiles={};
-function wireAntProfileEditors(scope){
-  scope.querySelectorAll('[data-ant-edit]').forEach(b=>b.addEventListener('click',()=>{
-    const ant=b.dataset.antEdit;
-    const slot=scope.querySelector(`[data-ant-slot="${CSS.escape(ant)}"]`);
-    if(!slot) return;
-    if(!slot.hidden){ slot.hidden=true; slot.innerHTML=''; return; }
-    const prof=antProfiles[ant]||{};
-    slot.innerHTML=`<div style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
-      <input class="provider-input ap-name" maxlength="40" placeholder="Display name" value="${escapeHtml(prof.display_name||'')}" style="width:150px;font-size:10px;">
-      <input class="ap-color" type="color" value="${/^#[0-9a-fA-F]{6}$/.test(prof.color||'')?prof.color:'#7fa0bc'}" title="Ant color" style="width:34px;height:26px;padding:0;border:1px solid var(--border);background:var(--inner);border-radius:4px;">
-      <button class="btn btn-primary ap-save" style="font-size:10px;">Save</button>
-      <button class="btn btn-ghost ap-reset" style="font-size:10px;" title="Back to the registry name and color">Reset</button>
-      <span class="save-msg ap-msg" style="font-size:10px;"></span></div>`;
-    slot.hidden=false;
-    const msg=slot.querySelector('.ap-msg');
-    const done=async(r)=>{ if(r&&r.success){ await loadAntObs(); } else { msg.textContent=(r&&r.message)||'Failed'; msg.style.color='var(--red)'; } };
-    slot.querySelector('.ap-save').addEventListener('click',async ()=>{
-      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{
-        display_name:slot.querySelector('.ap-name').value.trim(),
-        color:slot.querySelector('.ap-color').value,
-      }));
-    });
-    slot.querySelector('.ap-reset').addEventListener('click',async ()=>{
-      done(await api('/ants/'+encodeURIComponent(ant)+'/profile','POST',{display_name:'',color:''}));
-    });
-  }));
 }
 
 // v2.2.4: full colony directory — the six cards above are the legacy executable castes with task
@@ -4785,12 +4888,11 @@ async function chatSend(mode){
       }else{
         const r=await response.json().catch(()=>null);
         // v0.3.8.52 (third field round): a refused turn keeps the operator's message and NAMES
-        // the remedy — workdir_required additionally opens the files pane, where the set-root
-        // form is already waiting with the suggested path filled in.
+        // the remedy. (v0.3.8.55: the working-directory refusal is gone — a pathless project
+        // stands in the ANTHILL source by default now.)
         if(r&&r.success===false){
           note=r.message||'Refused';
           if(el) el.value=msg;
-          if(r.error==='workdir_required') chatToggleFiles(true);
         }
         else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
@@ -4799,7 +4901,6 @@ async function chatSend(mode){
       if(r&&r.success===false){
         note=r.message||'Refused';
         if(el) el.value=msg;
-        if(r.error==='workdir_required') chatToggleFiles(true);
       }
       else if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
@@ -5108,7 +5209,9 @@ async function chatFilesLoad(){
     await chatFilesShowRootForm();
     return;
   }
-  setEl('chat-files-crumb', r.data.root||'');
+  // v0.3.8.55: the ANTHILL-source default is LABELLED as one — the crumb must never let the
+  // colony's own checkout pass for a directory the operator picked.
+  setEl('chat-files-crumb', (r.data.root||'') + (r.data.default_root?'  (ANTHILL source — default until you set one)':''));
   body.innerHTML='<div id="cf-tree"></div>';
   chatFilesRenderDir(document.getElementById('cf-tree'), '', r.data.entries||[], 0);
   chatFilesRepoLoad();
@@ -5154,6 +5257,16 @@ async function chatFilesShowRootForm(){
   });
 }
 document.getElementById('chat-files-chroot')?.addEventListener('click',()=>chatFilesShowRootForm());
+
+/* v0.3.8.55 (field report) — refresh on demand. The tree and the git badge ride the TTL'd GET
+ * cache, which is right for polling and wrong for "I just changed something on disk — did it
+ * land?". One button: bust every cached read under /projects, reload the pane. Expansion state
+ * survives (chatFilesExpanded is keyed by path, not by fetch). */
+(function(){
+  const b=document.getElementById('chat-files-refresh'); if(!b) return;
+  b.innerHTML=GLYPH.refresh;   // inline SVG goes through innerHTML, never textContent
+  b.addEventListener('click',()=>{ apiCacheBust('/projects'); chatFilesLoad(); });
+})();
 
 /* v0.3.8.52 — the working-directory picker's two lanes.
  *
@@ -5292,8 +5405,13 @@ function wireSplit(handleId, horizontal, storeKey, apply){
       localStorage.setItem(storeKey, String(apply(pct)));
     };
     const up=()=>{ handle.classList.remove('dragging');
-      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up);
+      handle.removeEventListener('pointercancel',up); };
     handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up);
+    // v0.3.8.55 (field report: the bar stayed light): a CANCELLED pointer — touch cancel, window
+    // blur mid-drag — never fired pointerup, so .dragging stuck and the handle kept its bright
+    // drag colour until the next page load. Cancel ends the drag like up does.
+    handle.addEventListener('pointercancel',up);
   });
 }
 wireSplit('chat-split-x', true, 'anthill_split_x', pct=>{
@@ -5784,14 +5902,17 @@ async function loadProjects(){
     if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load workspaces.')}</div>`; return; }
     const ws=(r.data&&r.data.workspaces)||r.data||[];
     if(!ws.length){ el.innerHTML='<div class="hud-state">No workspaces yet — the colony creates one the first time a mission needs to change files.</div>'; return; }
+    // v0.3.8.55 (field report): the MISSION GOAL is the checkout's human name; the GUID demotes
+    // to the detail line. A workspace whose mission is gone keeps the id — better a true GUID
+    // than an invented title.
     el.innerHTML=ws.map(w=>`<div class="card agentcli-card">
       <div class="agentcli-hd">
         <span class="health-dot ${w.usable?'ok':''}"></span>
-        <span class="agentcli-name">${escapeHtml(w.mission_id||w.id||'workspace')}</span>
+        <span class="agentcli-name">${escapeHtml(w.mission_goal||w.mission_id||w.id||'workspace')}</span>
         <span class="hud-badge ${w.state==='live'?'active':''}">${escapeHtml(w.state||'')}</span>
         ${w.deletable?'<span class="hud-badge">can be cleaned up</span>':''}
       </div>
-      <div class="agentcli-sub">${escapeHtml(w.mode||'')}${w.branch?' · '+escapeHtml(w.branch):''}${w.base_revision?' · based on '+escapeHtml(String(w.base_revision).slice(0,10)):''}</div>
+      <div class="agentcli-sub">${w.mission_goal?escapeHtml(String(w.mission_id||w.id||'').slice(0,8))+' · ':''}${escapeHtml(w.mode||'')}${w.branch?' · '+escapeHtml(w.branch):''}${w.base_revision?' · based on '+escapeHtml(String(w.base_revision).slice(0,10)):''}</div>
     </div>`).join('');
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
@@ -5814,7 +5935,14 @@ async function loadToolsView(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
-PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
+PAGE_ENTER['projects']=()=>{
+  loadProjectCards(); loadProjects();
+  // v0.3.8.55: the Automation panel rides the right-hand column — admin only, same visibility
+  // the standalone page had ('vis:admin' in the old IA entry).
+  const auto=document.getElementById('projects-col-auto');
+  if(auto) auto.hidden=(ROLE!=='admin');
+  if(ROLE==='admin' && typeof openAutonomy==='function') openAutonomy();
+};
 
 /* v0.3.8.48 — the project workspace. One project, whole: Chat (its conversations), Schedules
  * (the real subsystem), History (conversations + their missions), Settings (name, purpose, path,
@@ -7594,315 +7722,19 @@ async function fetchProviderCatalog(){
   }catch{antcfgCatalog=[];antcfgConfigured=new Set();}
 }
 
-function antcfgModelOptions(provider,curModel){
-  const models=provider==='ollama'?availableModels:((antcfgCatalog.find(p=>p.provider===provider)||{}).models||[]);
-  // v0.3.8.52: escaped, in a quoted attribute and in text.
-  //
-  // Two sources feed `models`, and only one of them is ours. `antcfgCatalog` is ProviderCatalog.All,
-  // a hardcoded list in the SDK — safe today, and safe only for as long as it stays hardcoded.
-  // `availableModels` is the tag list read back from a LOCAL OLLAMA over HTTP, which is a separate
-  // process serving whatever names its models were pulled under. A `"` in one of those ends the
-  // attribute value and everything after it parses as markup.
-  //
-  // Escaping both rather than only the Ollama branch: which array a value came from is not visible
-  // at this line, and a rule that depends on remembering that distinction is one edit from being
-  // wrong. `curModel` is escaped for the same reason — it is a stored config value.
-  const opts=models.map(m=>`<option value="${escapeHtml(m)}"${m===curModel?' selected':''}>${escapeHtml(m)}</option>`).join('');
-  const extra=curModel&&!models.includes(curModel)?`<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)} (current)</option>`:'';
-  return `<option value="">— default —</option>${opts}${extra}`;
-}
-
-function antcfgProviderOptions(curProvider, opts){
-  opts=opts||{};
-  let providers=[{provider:'ollama',name:'Ollama (local)'},...antcfgCatalog];
-  // v0.3.8.49 (§4): Ollama is NOT a user-facing Chat provider. It stays fully available to ants — every
-  // other role below still lists it — but the `conversation` role that speaks in Chat must route to
-  // a real provider (a keyed API or an installed agent), so it is dropped from that one dropdown.
-  // Chat provider configuration and ant execution infrastructure are deliberately separated here.
-  if(opts.excludeOllama) providers=providers.filter(p=>p.provider!=='ollama');
-  const isOllamaNow=(curProvider||'ollama')==='ollama';
-  let html='';
-  // If the stored chat route is still Ollama (or unset), show a selected placeholder so the operator
-  // SEES they must pick a chat provider, rather than the select quietly showing something as active.
-  if(opts.excludeOllama && isOllamaNow)
-    html+=`<option value="" selected disabled>— choose a chat provider —</option>`;
-  html+=providers.map(p=>{
-    const connected=p.provider==='ollama'||antcfgConfigured.has(p.provider);
-    const label=connected?p.name:`${p.name} (not connected)`;
-    const selected=(!(opts.excludeOllama&&isOllamaNow) && p.provider===(curProvider||'ollama'))?' selected':'';
-    return `<option value="${p.provider}"${selected}>${label}</option>`;
-  }).join('');
-  return html;
-}
-
-/**
- * v3.8.1 — the colony-wide priority model, and the roles that are not ants.
- *
- * Two gaps, one section. The caste grid below is built from the ant ROSTER, so `planner` and
- * `strategist` — which make model calls but are not ants — had no control anywhere in the console.
- * A colony whose planner model had gone missing fell back to a static task plan and there was
- * nowhere to repoint it. `fallback` had the same problem while being the route every unrouted role
- * silently used.
- *
- * The priority is stated as what it DOES rather than as a toggle: "every ant tries this first". A
- * checkbox labelled "priority" would leave an operator guessing whether it outranks the per-ant
- * routes below it, which is the only question that matters here.
- */
-var ORCHESTRATION_ROLES = [
-  { id:'planner',    label:'Planner',    why:'Turns a goal into the task plan. If this model is missing the colony silently falls back to a static plan.' },
-  { id:'strategist', label:'Strategist', why:'Adaptive mission control — decides whether to replan mid-mission.' },
-  // v0.3.8.49 (§4): who speaks for the colony in Chat. A real provider only — a keyed API or an
-  // installed agent — NOT Ollama, which stays an ant-side backend rather than a chat voice.
-  { id:'conversation', label:'Conversation', why:'Answers chat turns. Route it to a keyed API or an installed agent — the colony’s voice in Chat. (Ollama stays available to ants, not here.)' },
-  { id:'fallback',   label:'Fallback',   why:'Used by any role with no route of its own, and when a preferred route is unhealthy.' },
-];
-
-function renderAntConfigGlobals(routes, priorityProvider, priorityModel){
-  const host=document.getElementById('antcfg-global');
-  if(!host) return;
-
-  const active = !!(priorityProvider && priorityModel);
-
-  host.innerHTML = `
-    <div class="antcfg-card" style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:2px">Colony-wide priority model</div>
-      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">
-        When set, <strong>every ant tries this model first</strong>, whatever its own route says below.
-        Each ant's own route is kept and is what the colony falls back to if this model is unhealthy —
-        clearing this restores every per-ant choice exactly as it was.
-      </div>
-      <div class="antcfg-field">
-        <label>Provider</label>
-        <select id="antcfg-prio-provider" class="antcfg-model">${antcfgProviderOptions(priorityProvider||'ollama')}</select>
-      </div>
-      <div class="antcfg-field">
-        <label>Model</label>
-        <select id="antcfg-prio-model" class="antcfg-model" data-provider="${escapeHtml(priorityProvider||'ollama')}">
-          ${antcfgModelOptions(priorityProvider||'ollama', priorityModel||'')}
-        </select>
-      </div>
-      <div style="font-size:10px;margin-top:4px;color:${active?'var(--accent,#d9a441)':'var(--dim)'}">
-        ${active
-          ? 'Active — every ant tries '+escapeHtml(priorityModel)+' first.'
-          : 'Not set — each ant uses its own route below. Choose a model and Save to promote it.'}
-      </div>
-    </div>
-
-    <div class="antcfg-grid" style="margin-bottom:14px">
-      ${ORCHESTRATION_ROLES.map(r=>{
-        const p=routes[r.id]?.provider||'ollama', m=routes[r.id]?.model||'';
-        // v0.3.8.49 (§4): the conversation (chat) role hides Ollama; every other orchestration role
-        // keeps it, because Ollama is legitimate ant-side infrastructure.
-        const chatRole=r.id==='conversation';
-        return `<div class="antcfg-card">
-          <div style="font-size:13px;font-weight:700">${escapeHtml(r.label)}</div>
-          <div class="antcfg-role">orchestration · ${escapeHtml(r.id)}</div>
-          <div style="font-size:10px;color:var(--muted);line-height:1.45;margin:6px 0 8px">${escapeHtml(r.why)}</div>
-          <div class="antcfg-field">
-            <label>Provider</label>
-            <select data-caste="${r.id}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(r.label)}">${antcfgProviderOptions(p,{excludeOllama:chatRole})}</select>
-          </div>
-          <div class="antcfg-field">
-            <label>Model (route)</label>
-            <select data-caste="${r.id}" class="antcfg-model antcfg-modelname" data-provider="${escapeHtml(p)}" aria-label="Model route for ${escapeHtml(r.label)}">
-              ${antcfgModelOptions(p, m)}
-            </select>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
-
-  // The priority model list follows its provider, the same way the per-caste pair does. Without
-  // this, switching provider leaves a model list from the previous one and the operator picks a
-  // model that provider has never heard of.
-  const provEl=document.getElementById('antcfg-prio-provider');
-  const modelEl=document.getElementById('antcfg-prio-model');
-  if(provEl && modelEl) provEl.addEventListener('change',()=>{
-    modelEl.dataset.provider=provEl.value;
-    modelEl.innerHTML=antcfgModelOptions(provEl.value,'');
-  });
-}
-
-async function openAntConfig(){
-  // Data-loader only — do NOT call showPage('antconfig') here. This is invoked both from
-  // PAGE_ENTER['antconfig'] (which showPage() already calls *after* switching to this page) and
-  // from the "Reset" button below (where the page is already active). Calling showPage from in
-  // here used to re-fire PAGE_ENTER['antconfig'] -> openAntConfig() -> showPage() in an unbounded
-  // mutual-recursion loop, blowing the call stack every single time this page was opened.
-  await Promise.all([fetchModelNames(),fetchProviderCatalog()]);
-  await ensureAntRouteCatalog();
-  const routes=modelRoutes;
-
-  // v3.8.1: the priority model and the non-ant roles, above the caste grid.
-  let prioProvider='', prioModel='';
-  try{
-    const s=await api('/settings');
-    if(s&&s.success){ prioProvider=s.data.model_priority_provider||''; prioModel=s.data.model_priority_model||''; }
-  }catch{}
-  renderAntConfigGlobals(routes, prioProvider, prioModel);
-
-  const grid=document.getElementById('antcfg-grid');
-  const registryRoles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]);
-  const castes=registryRoles.length?registryRoles.map(roleId):['queen',...ANT_CASTES];
-  grid.innerHTML=castes.map(c=>{
-    const reg=registryRoleById(c)||{RoleId:c,DisplayName:c,Colony:ANT_DEFAULTS[c]?.role||'Legacy',Purpose:'Legacy ant role',Workers:[]};
-    const d=ANT_DEFAULTS[c]||{role:roleColony(reg)},name=casteName(c),color=casteColor(c);
-    const curProvider=uiState.castes[c]?.provider||routes[c]?.provider||'ollama';
-    const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
-    // v3.8.1: a role gets model controls when it HAS A ROUTE — not when it happens to be executable
-    // right now.
-    //
-    // The old rule hid the provider/model pair for any role whose Executable flag was false, which
-    // is computed from live specialist canary gates. archivist, medic, scribe, soldier, tester and
-    // ui_cartographer therefore rendered as cards with no way to set a model, and stayed pinned to
-    // whatever the seed default was — in this colony, a model the Ollama host does not even serve.
-    // Executability decides whether a role DISPATCHES today; it has nothing to do with whether an
-    // operator may say which model it should call when it does.
-    //
-    // Queen and director keep no controls because they hold no route: they are control-plane
-    // identities that make no model calls, and offering a selector for a route that does not exist
-    // would be a control that silently does nothing.
-    const hasRoute=Object.prototype.hasOwnProperty.call(routes,c);
-    const modelField=(c==='queen'||c==='director'||!hasRoute)?'':`
-      <div class="antcfg-field">
-        <label>Provider</label>
-        <select data-caste="${c}" class="antcfg-model antcfg-provider" aria-label="Model provider for ${escapeHtml(name)}">${antcfgProviderOptions(curProvider)}</select>
-      </div>
-      <div class="antcfg-field">
-        <label>Model (route)</label>
-        <select data-caste="${c}" class="antcfg-model antcfg-modelname" data-provider="${curProvider}" aria-label="Model route for ${escapeHtml(name)}">
-          ${antcfgModelOptions(curProvider,curModel)}
-        </select>
-      </div>`;
-    // Stated on the card rather than expressed by hiding the control. "Not dispatching today" and
-    // "you may not configure this" are different facts, and the old UI conflated them — an operator
-    // saw a card with no model selector and reasonably concluded the role had no model to set.
-    const dormant=(hasRoute && roleExecutable(reg)===false)
-      ? `<div style="font-size:10px;color:var(--dim);line-height:1.45;margin-bottom:6px">Not dispatching in this build — its route is still used when it is enabled.</div>`
-      : '';
-    const perms=permList(rolePerms(reg)).join(', ')||'none';
-    const workerList=roleWorkers(reg).map(w=>{
-      const wid=workerId(w),tele=workerTelemetryById(wid),u=tele.usage||{},a=tele.audit||{};
-      const taskCount=u.task_count??u.taskCount??u.TaskCount??0;
-      const completeCount=u.complete_count??u.completeCount??u.CompleteCount??0;
-      const failedCount=u.failed_count??u.failedCount??u.FailedCount??0;
-      const auditCount=a.audit_count??a.auditCount??a.AuditCount??0;
-      return `<div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:4px"><span style="color:var(--text)">${escapeHtml(workerName(w))}</span><br><span style="font-family:var(--mono);font-size:9px">${escapeHtml(wid)}</span><br><span>${taskCount} task(s) · ${completeCount} complete · ${failedCount} failed · ${auditCount} audit(s)</span></div>`;
-    }).join('');
-    return `<div class="antcfg-card">
-      <div class="antcfg-top">
-        <span class="antcfg-dot" style="background:${color}"></span>
-        <div><div style="font-size:13px;font-weight:700">${escapeHtml(name)}</div><div class="antcfg-role">${escapeHtml(roleColony(reg)||d.role)} · ${escapeHtml(c)}${roleExecutable(reg)?'':' · visible'}</div></div>
-      </div>
-      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:8px">${escapeHtml(rolePurpose(reg))}</div>
-      ${dormant}
-      <div class="antcfg-field"><label>Display Name</label><input class="antcfg-name" aria-label="Display name for ${escapeHtml(name)}" data-caste="${c}" type="text" value="${name.replace(/"/g,'&quot;')}" maxlength="28"></div>
-      <div class="antcfg-field"><label>Accent Colour</label><input class="antcfg-color" aria-label="Accent colour for ${escapeHtml(name)}" data-caste="${c}" type="color" value="${color}"></div>
-      ${modelField}
-      <div class="antcfg-field"><label>Permissions</label><div style="font-size:10px;color:var(--muted);line-height:1.45">${escapeHtml(perms)}</div></div>
-      ${workerList?`<div class="antcfg-field"><label>Specialized Workers</label>${workerList}</div>`:''}
-    </div>`;
-  }).join('');
-
-  // Switching provider repopulates the model list for that caste from the right catalog.
-  grid.querySelectorAll('.antcfg-provider').forEach(sel=>{
-    sel.addEventListener('change',()=>{
-      const c=sel.dataset.caste,provider=sel.value;
-      const modelSel=grid.querySelector(`.antcfg-modelname[data-caste="${c}"]`);
-      modelSel.dataset.provider=provider;
-      modelSel.innerHTML=antcfgModelOptions(provider,'');
-    });
-  });
-}
-
-/* v0.3.8.48 — the Roles page's model assignment (defects 16–18). ONE selector per role, listing
- * only models that can actually run: installed local models, configured providers' catalogs,
- * installed agents. The stored selection keeps provider and model separate underneath; a current
- * route pointing at something unavailable is shown as a warning, never offered to others. Each
- * change saves through the merge-safe single-role endpoint — nothing else in model_routes moves. */
-async function loadRoleRouting(){
-  const host=document.getElementById('role-routing'); if(!host) return;
-  const r=await api('/routes/json');
-  if(!(r&&r.success&&r.data)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Routes unavailable.')}</div>`; return; }
-  const models=r.data.available_models||[];
-  host.innerHTML=(r.data.roles||[]).map(x=>{
-    const cur=`${x.provider}|${x.model}`;
-    const opts=models.map(m=>{
-      const v=`${m.provider}|${m.model}`;
-      return `<option value="${escapeHtml(v)}"${v===cur?' selected':''}>${escapeHtml(m.label)}</option>`;
-    }).join('');
-    const warn=x.available?'':`<option value="${escapeHtml(cur)}" selected>⚠ ${escapeHtml(x.model)} · ${escapeHtml(x.provider)} (unavailable)</option>`;
-    return `<div class="route-assign"><label for="rr-${escapeHtml(x.role)}">${escapeHtml(x.role)}</label>
-      <select class="provider-input" id="rr-${escapeHtml(x.role)}" data-role="${escapeHtml(x.role)}">${warn}${opts}</select>
-      <span class="save-msg" data-rr-msg="${escapeHtml(x.role)}"></span></div>`;
-  }).join('');
-  host.querySelectorAll('select[data-role]').forEach(sel=>sel.addEventListener('change', async ()=>{
-    const [provider,model]=sel.value.split('|');
-    sel.disabled=true;
-    const res=await api('/routes/'+encodeURIComponent(sel.dataset.role),'POST',{provider,model});
-    sel.disabled=false;
-    const msg=host.querySelector(`[data-rr-msg="${sel.dataset.role}"]`);
-    if(msg){ msg.textContent=(res&&res.message)||'Save failed.';
-             msg.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
-  }));
-}
-
-PAGE_ENTER['antconfig']=()=>{ openAntConfig(); loadRoleRouting(); };
-
-document.getElementById('antcfg-save').addEventListener('click',async()=>{
-  const msg=document.getElementById('antcfg-msg'); msg.textContent='';
-  document.querySelectorAll('.antcfg-name').forEach(i=>{const c=i.dataset.caste,v=i.value.trim();if(v)uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});});
-  document.querySelectorAll('.antcfg-color').forEach(i=>{const c=i.dataset.caste;uiState.castes[c]=Object.assign({},uiState.castes[c],{color:i.value});});
-  const routeUpdate={};
-  // v3.8.1: orchestration roles share this control but are NOT castes — they have no node, colour
-  // or display name, and writing them into uiState.castes would invent visual state for something
-  // that never appears on the colony map.
-  const orchestration=new Set(ORCHESTRATION_ROLES.map(r=>r.id));
-  document.querySelectorAll('.antcfg-modelname').forEach(s=>{
-    const c=s.dataset.caste,v=s.value,provider=s.dataset.provider||'ollama';
-    if(!orchestration.has(c))
-      uiState.castes[c]=Object.assign({},uiState.castes[c],{model:v||undefined,provider:provider!=='ollama'?provider:undefined});
-    if(v) routeUpdate[c]={provider,model:v};
-  });
-  applyUiState();saveUiState();
-
-  // v3.8.1: the priority model. Posted even when EMPTY, because clearing it is a real operator
-  // decision — "stop promoting that model" has to be expressible, and a save that only ever wrote
-  // non-empty values would make the priority impossible to turn off from the console.
-  try{
-    const p=document.getElementById('antcfg-prio-provider'), m=document.getElementById('antcfg-prio-model');
-    if(p&&m){
-      const r=await api('/settings','POST',{
-        model_priority_provider: m.value ? p.value : '',
-        model_priority_model: m.value || '',
-      });
-      if(!r||!r.success) throw new Error((r&&r.message)||'priority update rejected');
-    }
-  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Priority failed: '+e.message; return; }
-
-  if(Object.keys(routeUpdate).length){
-    // v2.14.13: merge, never replace. This used to post ONLY the castes rendered on this page,
-    // which reset every route it omitted (strategist, fallback, and any caste with no model
-    // selected) back to the profile default.
-    try{await saveModelRoute(routeUpdate);}
-    catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
-  }
-  msg.style.color='var(--green)';msg.textContent='Saved ✓';setTimeout(()=>msg.textContent='',2500);
-});
-
-document.getElementById('antcfg-reset').addEventListener('click',async()=>{
-  if(!await uiConfirm('Reset all ant names, colours and positions to defaults?')) return;
-  uiState.castes={};uiState.positions={};applyUiState();buildNodes();saveUiState();openAntConfig();
-});
+// v0.3.8.55: the ant-config globals (options builders, the colony-wide priority panel,
+// openAntConfig, save/reset) live in inspector-routing.js — the inspector/routing domain's own
+// asset, under the app.js size guard.
 
 // -- Autonomy page (Phase 1/2: Colony Director, objective backlog, Strategist runs) -------------
 let autonomyObjectives=[];
 let autoRefreshTimer=null;
 
 async function openAutonomy(){
-  // Data-loader only — do NOT call showPage('autonomy') here. This is invoked exclusively from
-  // PAGE_ENTER['autonomy'] below, which showPage() itself calls *after* switching to this page.
-  // Calling showPage from in here used to re-fire PAGE_ENTER['autonomy'] -> openAutonomy() ->
+  // Data-loader only — do NOT call showPage from here. Invoked exclusively from
+  // PAGE_ENTER['projects'] (v0.3.8.55: the Automation panel lives in the Projects page's right
+  // column), which showPage() itself calls *after* switching to the page.
+  // Calling showPage from in here used to re-fire the page-enter hook -> openAutonomy() ->
   // showPage() in an unbounded mutual-recursion loop: every single visit to the Autonomy page
   // (including clicking Start/Stop, which reloads this page's status) burned the call stack down
   // to a "RangeError: Maximum call stack size exceeded" within milliseconds. Recoverable on its
@@ -7913,13 +7745,15 @@ async function openAutonomy(){
   // Keeps the status card (running/idle, budgets, kill switch) live while this page is open;
   // self-cancels the moment the user navigates elsewhere so it never polls in the background.
   autoRefreshTimer=setInterval(()=>{
-    if(!document.getElementById('page-autonomy')?.classList.contains('active')){
+    // v0.3.8.55: the panel lives inside page-projects now — poll only while that page is open.
+    if(!document.getElementById('page-projects')?.classList.contains('active')){
       clearInterval(autoRefreshTimer); autoRefreshTimer=null; return;
     }
     reloadAutonomyStatus();
   },4000);
 }
-PAGE_ENTER['autonomy']=()=>{ if(ROLE==='admin') openAutonomy(); };
+// v0.3.8.55: no PAGE_ENTER['autonomy'] — showPage remaps 'autonomy' to 'projects' before the
+// hook lookup, and PAGE_ENTER['projects'] runs openAutonomy for admins.
 
 async function reloadAutonomy(){
   await reloadObjectives();
@@ -8030,9 +7864,9 @@ async function reloadObjectives(){
 const OBJ_END_BADGE={
   completed_successfully:['Completed','rgba(16,185,129,.14)','var(--green)'],
   stopped_no_followup_required:['Stopped','rgba(59,130,246,.14)','var(--blue)'],
-  retired_looping:['Retired · Looping','rgba(251,191,36,.14)','var(--queen)'],
+  retired_looping:['Retired · Looping','rgba(var(--queen-rgb),.14)','var(--queen)'],
   failed:['Failed','rgba(239,68,68,.14)','var(--red)'],
-  manually_paused:['Paused','rgba(251,191,36,.14)','var(--queen)'],
+  manually_paused:['Paused','rgba(var(--queen-rgb),.14)','var(--queen)'],
   manually_stopped:['Stopped','rgba(255,255,255,.06)','var(--dim)'],
 };
 async function reloadCompletedObjectives(){
@@ -8099,14 +7933,37 @@ document.getElementById('obj-add').addEventListener('click',async()=>{
   try{
     const r=await api('/objectives','POST',{title,charter,priority,max_runs:maxRuns});
     if(r.success){
-      autoMsg('Objective added.',true);
       document.getElementById('obj-title').value='';
       document.getElementById('obj-charter').value='';
       document.getElementById('obj-priority').value='0';
       document.getElementById('obj-maxruns').value='0';
       await reloadObjectives();
+      // v0.3.8.55 (operator's rule): an objective is a request for WORK — adding one starts the
+      // Director if it is enabled and idle, so the backlog never sits behind a button on another
+      // page. A refused start (kill switch, disabled) is REPORTED, never silent.
+      apiCacheBust('/autonomy');
+      const st=await api('/autonomy/status');
+      const s=(st&&st.success&&st.data)||{};
+      if(s.running){ autoMsg('Objective added — Director already running.',true); }
+      else if(!s.enabled){ autoMsg('Objective added. Autonomy is disabled in config — enable it in Settings to run the backlog.',true); }
+      else{
+        const go=await api('/autonomy/start','POST');
+        apiCacheBust('/autonomy');
+        if(go&&go.success) autoMsg('Objective added — Director started.',true);
+        else autoMsg('Objective added, but the Director did not start: '+((go&&go.message)||'refused')+'. Start it from the Colony Overview.',false);
+      }
     } else autoMsg(r.message||'Failed',false);
   }catch(e){ autoMsg('Failed: '+e.message,false); }
+});
+
+// v0.3.8.55 (operator's rule): the Projects backlog keeps its own Start. Same endpoint as the
+// overview card's button; the answer — started, already running, disabled, kill switch — is
+// always said out loud in auto-msg.
+document.getElementById('proj-auto-start')?.addEventListener('click',async()=>{
+  const r=await api('/autonomy/start','POST');
+  apiCacheBust('/autonomy');
+  autoMsg((r&&r.success)?'Director started.':((r&&r.message)||'The Director did not start.'),!!(r&&r.success));
+  if(typeof reloadAutonomyStatus==='function') reloadAutonomyStatus();
 });
 
 async function objToggleStatus(id,status){
@@ -8589,7 +8446,7 @@ async function reloadUsers(){
         <td>${last}</td>
         <td style="white-space:nowrap">
           <button class="job-btn view" data-onclick="userResetPw('${jsArg(u.username)}')">Reset PW</button>
-          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'? Coord':'? Admin'}</button>
+          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coord':'→ Admin'}</button>
           <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${jsArg(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
           ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${jsArg(u.username)}')">Delete</button>`}
         </td></tr>`;
@@ -8815,6 +8672,10 @@ function registerGridWidgets(){
     // and because a conversation waiting for approval is the one thing on this page that stops
     // the colony until a human answers.
     {id:'conversations',      title:'Conversations',      icon:'\u2709', size:'large',  body:'ov-conversations-body'},
+    // v0.3.8.55 (field report): the Director's status glance, on the dashboard BY DEFAULT \u2014 the
+    // full Automation panel (objectives, runs) lives on the Projects page; this answers "is the
+    // Director running and inside budget" without leaving the overview.
+    {id:'director',           title:'Automation Director', icon:'\u23f5', size:'large', body:'ov-director-body'},
   ];
 
   // ---- below the Colony: detail, history and queues -------------------------
@@ -8911,7 +8772,7 @@ var DEFAULT_DASHBOARD_VIEW = {
   // by default. What opens now: the colony's vitals, the colony itself, its health smalls, and what
   // needs the operator's attention.
   order: [
-    'colony-vitals', 'colony', 'operator-attention',
+    'colony-vitals', 'director', 'colony', 'operator-attention',
     'colony-health', 'system-core', 'resource-usage', 'colony-jobs',
     // registered but off by default, in the order they appear in the Widgets menu
     'mission-composer', 'conversations', 'missions', 'agent-inspector', 'live-telemetry', 'recent-events',
@@ -8979,6 +8840,17 @@ function initDashboardGrid(){
       // SAVED layout always wins, including one that hides nothing — an operator who deliberately
       // turned everything on must not have the default reimposed on their next visit, which is why
       // this tests for the document's presence and not for whether it looks empty.
+      //
+      // v0.3.8.55 (operator's correction): the Director widget is a MOVE of the Projects page's
+      // status card, default-visible BY PLACEMENT. effectiveOrder appends unknown new widgets at
+      // the END, which buried the moved card below the fold in every pre-existing saved layout —
+      // technically visible, practically invisible. A layout saved before the widget existed gets
+      // it spliced in near the top, once; a layout that ALREADY names it (the operator moved or
+      // hid it themselves) is left exactly alone.
+      if(saved && Array.isArray(saved.order) && saved.order.indexOf('director')<0){
+        const at=saved.order.indexOf('colony-vitals');
+        saved.order.splice(at>=0?at+1:0, 0, 'director');
+      }
       window.AnthillGrid.applyLayout(saved || DEFAULT_DASHBOARD_VIEW);
       window.AnthillGrid.renderToolbar(bar);
     }catch(e){ /* keep the registration defaults: an unreachable state doc is not a blank console */ }
