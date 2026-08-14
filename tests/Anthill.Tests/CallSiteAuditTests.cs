@@ -319,4 +319,28 @@ public class CallSiteAuditTests
         }
         Assert.True(problems.Count == 0, string.Join("; ", problems));
     }
+    /// <summary>
+    /// v0.3.8.56 — the director's last catch cannot itself crash the process.
+    ///
+    /// Loop() runs on a plain background Thread, where an escaping exception does not fail a
+    /// mission — it kills the whole process. The catch handler logged the error through the SAME
+    /// database whose failure it may be handling: in CI, teardown deleted the temp colony, the
+    /// idle log threw, the handler re-threw the identical SqliteException, and the test host died
+    /// with 438 tests green. So the rule is structural: the "Director loop error" log must sit
+    /// inside its own try, nearer than the enclosing catch it serves.
+    /// </summary>
+    [Fact]
+    public void TheDirectorsLastCatch_CannotItselfCrashTheProcess()
+    {
+        var src = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ColonyDirector.cs"));
+        var at = src.IndexOf("Director loop error", StringComparison.Ordinal);
+        Assert.True(at > 0, "the director loop's catch handler (its error log) has moved or been removed");
+        var before = src[..at];
+        var nearestTry = before.LastIndexOf("try", StringComparison.Ordinal);
+        var nearestCatch = before.LastIndexOf("catch (Exception ex)", StringComparison.Ordinal);
+        Assert.True(nearestTry > nearestCatch,
+            "the catch handler's own LogEvent must sit inside a nested try: it writes to the same "
+            + "database whose failure it may be handling, and Loop() runs on a bare thread where "
+            + "an escaping exception kills the entire process");
+    }
 }
