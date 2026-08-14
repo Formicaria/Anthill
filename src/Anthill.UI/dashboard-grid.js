@@ -918,9 +918,10 @@
       locked: true,
       spans: d.spans ? JSON.parse(JSON.stringify(d.spans)) : {},
       heights: d.heights ? JSON.parse(JSON.stringify(d.heights)) : {},
-      // v0.3.8.56 (free placement): reset forgets every position too — auto-place re-seats the
-      // board from reading order, which IS the shipped arrangement.
-      pos: {},
+      // v0.3.8.56: the shipped view is a curated PLACEMENT now, not just an order — reset restores
+      // its positions rather than forgetting them, or the button would produce an auto-packed
+      // arrangement nobody chose. A host without default positions still auto-places.
+      pos: d.pos ? JSON.parse(JSON.stringify(d.pos)) : {},
     };
     // Inline overrides live on the element, so clearing the model is not enough to clear the view.
     Object.keys(G._frames).forEach(function (id) {
