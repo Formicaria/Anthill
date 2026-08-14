@@ -1937,7 +1937,53 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                Automation panel (objectives, runs) stays on the Projects page; this is the glance. -->
           <div class="ath-card hud-panel">
             <div class="hud-hd"><span class="hud-hd-title">Automation Director</span></div>
-            <div id="ov-director-body"><div class="ov2-empty">Connecting...</div></div>
+            <div id="ov-director-body">
+        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
+              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
+              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
+            </div>
+          </div>
+          <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
+            Autonomy is disabled in config. Enable it in Settings → General (Autonomy toggle) before starting the Director.
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Director</div>
+              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
+              <div class="kpi-sub" id="auto-poll-sub">—</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--blue)">
+              <div class="kpi-label">Missions / Hour</div>
+              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--purple)">
+              <div class="kpi-label">Missions / Day</div>
+              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
+              <div class="kpi-sub">used / budget</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--queen)">
+              <div class="kpi-label">Backlog</div>
+              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
+              <div class="kpi-sub">pending / active</div>
+            </div>
+            <div class="kpi-card" style="border-left-color:var(--green)">
+              <div class="kpi-label">Concurrency</div>
+              <div class="kpi-num" id="auto-conc">—</div>
+              <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
+            </div>
+          </div>
+          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
+          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
+          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
+          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
+        </div>
+
+          </div>
           </div>
 
           <!-- v3.7.2: Tools & Routing and Mission Workspaces. Hidden by default in the grid, but
@@ -3692,7 +3738,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div><!-- /projects-col-main -->
         <div id="projects-col-auto" style="flex:1 1 420px;min-width:0;" hidden>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-          <div><h2 style="font-size:14px;margin:0 0 2px;">Automation</h2><div class="sub">24/7 Colony Director &mdash; objective backlog, budgets, and the kill switch</div></div>
+          <div><h2 style="font-size:14px;margin:0 0 2px;">Automation</h2><div class="sub">24/7 Colony Director &mdash; objective backlog and runs. Status, budgets and the kill switch live on the Colony Overview.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="save-msg text-green" id="auto-msg"></span>
             <button class="btn btn-ghost" id="auto-refresh">↺ Refresh</button>
@@ -3700,52 +3746,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
 
-        <!-- Director status -->
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-            <div class="section-head" style="margin-top:0;padding:0;">Director Status</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:10px;color:var(--muted);"><span class="kill-dot ok" id="auto-kill-dot"></span><span id="auto-kill-text">—</span></span>
-              <button class="btn btn-primary" id="auto-start-btn">▶ Start</button>
-              <button class="btn btn-danger" id="auto-stop-btn">■ Stop</button>
-            </div>
-          </div>
-          <div id="auto-disabled-note" style="display:none;font-size:10px;color:var(--queen);margin-bottom:10px;">
-            Autonomy is disabled in config. Enable it in Settings → General (Autonomy toggle) before starting the Director.
-          </div>
-          <div class="kpi-grid">
-            <div class="kpi-card" style="border-left-color:var(--green)">
-              <div class="kpi-label">Director</div>
-              <div class="kpi-num" id="auto-running" style="font-size:18px">—</div>
-              <div class="kpi-sub" id="auto-poll-sub">—</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--blue)">
-              <div class="kpi-label">Missions / Hour</div>
-              <div class="kpi-num" id="auto-hour" style="color:var(--blue)">—</div>
-              <div class="kpi-sub">used / budget</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--purple)">
-              <div class="kpi-label">Missions / Day</div>
-              <div class="kpi-num" id="auto-day" style="color:var(--purple)">—</div>
-              <div class="kpi-sub">used / budget</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--queen)">
-              <div class="kpi-label">Backlog</div>
-              <div class="kpi-num" id="auto-backlog" style="color:var(--queen)">—</div>
-              <div class="kpi-sub">pending / active</div>
-            </div>
-            <div class="kpi-card" style="border-left-color:var(--green)">
-              <div class="kpi-label">Concurrency</div>
-              <div class="kpi-num" id="auto-conc">—</div>
-              <div class="kpi-sub" id="auto-conc-sub">effective / configured</div>
-            </div>
-          </div>
-          <div class="info-row" style="margin-top:10px;"><span class="info-key">In flight</span><span class="info-val" id="auto-inflight">—</span></div>
-          <div class="info-row"><span class="info-key">Governor</span><span class="info-val" id="auto-governor">—</span></div>
-          <div class="info-row"><span class="info-key">Next objective</span><span class="info-val" id="auto-next">—</span></div>
-          <div class="info-row"><span class="info-key">Budget decision</span><span class="info-val" id="auto-decision">—</span></div>
-        </div>
-
+        <!-- v0.3.8.55 (operator's correction): the Director STATUS card moved to the
+             Colony Overview dashboard (the 'director' widget) — this column keeps the backlog:
+             objectives, runs, and completed. -->
         <!-- Add objective -->
         <div class="card" style="padding:14px 16px;margin-bottom:16px;">
           <div class="section-head" style="margin-top:0;">Add Objective</div>

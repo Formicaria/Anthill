@@ -8817,6 +8817,17 @@ function initDashboardGrid(){
       // SAVED layout always wins, including one that hides nothing — an operator who deliberately
       // turned everything on must not have the default reimposed on their next visit, which is why
       // this tests for the document's presence and not for whether it looks empty.
+      //
+      // v0.3.8.55 (operator's correction): the Director widget is a MOVE of the Projects page's
+      // status card, default-visible BY PLACEMENT. effectiveOrder appends unknown new widgets at
+      // the END, which buried the moved card below the fold in every pre-existing saved layout —
+      // technically visible, practically invisible. A layout saved before the widget existed gets
+      // it spliced in near the top, once; a layout that ALREADY names it (the operator moved or
+      // hid it themselves) is left exactly alone.
+      if(saved && Array.isArray(saved.order) && saved.order.indexOf('director')<0){
+        const at=saved.order.indexOf('colony-vitals');
+        saved.order.splice(at>=0?at+1:0, 0, 'director');
+      }
       window.AnthillGrid.applyLayout(saved || DEFAULT_DASHBOARD_VIEW);
       window.AnthillGrid.renderToolbar(bar);
     }catch(e){ /* keep the registration defaults: an unreachable state doc is not a blank console */ }
