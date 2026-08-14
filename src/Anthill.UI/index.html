@@ -8,6 +8,9 @@
      so it reads on both light and dark browser chrome. No extra asset request, scales crisply. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cg fill='none' stroke='%23eef2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6.25' y='5.25' width='19.5' height='15' rx='3.6'/%3E%3Cpolyline points='10.6,10 14.2,13 10.6,16'/%3E%3Cline x1='15.7' y1='16' x2='19.6' y2='16'/%3E%3Cpath d='M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6'/%3E%3C/g%3E%3Cg fill='%2393bdf2'%3E%3Ccircle cx='11' cy='25.7' r='2.05'/%3E%3Ccircle cx='16' cy='26.1' r='2.5'/%3E%3Ccircle cx='21' cy='25.7' r='2.05'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="theme-color" content="#0b1220">
+<!-- v0.3.8.55: apply the saved theme BEFORE first paint — a theme that arrives after CSS parses
+     flashes the default palette on every load. Reads localStorage only; default sets nothing. -->
+<script>try{var _t=localStorage.getItem('anthill-theme');if(_t&&_t!=='default')document.documentElement.dataset.theme=_t;}catch(e){}</script>
 <style id="anthill-tokens">
 /* V2.2 Pass A — ANTHILL global design system (Overview + Colony revision).
    Centralized theme tokens + shared component classes. Additive: existing styles untouched;
@@ -193,6 +196,46 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
   --hdr-h:50px;
   --r:6px;
   --t:200ms cubic-bezier(.4,0,.2,1);
+}
+
+/* -- v0.3.8.55: THEMES -------------------------------------------------------------------------
+   The :root palette above is the DEFAULT — the website's own. A theme re-states the same
+   variables on html[data-theme] (higher specificity than :root, so order never matters), and
+   because components name variables, never raw colors, the theme IS the palette. Applied before
+   first paint by the head script; chosen in Settings → Connection; saved per device. */
+html[data-theme="light"]{
+  --queen:#b07a08; --queen-dim:rgba(176,122,8,.12);
+  --bg:#f3f5f9; --panel:#ffffff; --card:#ffffff; --inner:#eaeef6; --border:#ccd7e6;
+  --text:#1d2836; --muted:#4f647d; --dim:#8397ab;
+  --blue:#1d6fe0; --green:#0c8a60; --red:#d32f42; --purple:#6d3fd4;
+  --orange:#c96410; --cyan:#0a87a5; --amber:#a85f07;
+  --anthill-bg:#eceff6; --anthill-panel:rgba(255,255,255,.86); --anthill-panel-strong:rgba(255,255,255,.97);
+  --anthill-border:rgba(29,50,80,.15); --anthill-border-strong:rgba(29,50,80,.3);
+  --anthill-text:#1d2836; --anthill-muted:#4f647d; --anthill-dim:#8aa0b5;
+  --hud-glass:rgba(255,255,255,.7); --hud-line:rgba(10,135,165,.3);
+}
+html[data-theme="hermes"]{
+  /* Warm amber on umber — saddle-stitch orange as the working accent. */
+  --queen:#f0862b; --queen-dim:rgba(240,134,43,.12);
+  --bg:#131009; --panel:#1a1610; --card:#211b12; --inner:#2a2216; --border:#40351f;
+  --text:#f2e9d8; --muted:#b4a284; --dim:#71634c;
+  --blue:#6ea4d8; --green:#8fae4e; --red:#d9534f; --purple:#b08bd8;
+  --orange:#f0862b; --cyan:#5cb8a8; --amber:#e0a458;
+  --anthill-bg:#131009; --anthill-panel:rgba(33,27,18,.82); --anthill-panel-strong:rgba(42,34,22,.94);
+  --anthill-border:rgba(240,180,90,.14); --anthill-border-strong:rgba(240,180,90,.3);
+  --anthill-text:#f2e9d8; --anthill-muted:#b4a284; --anthill-dim:#71634c;
+  --hud-glass:rgba(33,27,18,.6); --hud-line:rgba(240,134,43,.22);
+}
+html[data-theme="contrast"]{
+  --queen:#ffd25e; --queen-dim:rgba(255,210,94,.14);
+  --bg:#000000; --panel:#04070d; --card:#090e17; --inner:#111a2b; --border:#41639b;
+  --text:#ffffff; --muted:#c0d1e4; --dim:#8ba1ba;
+  --blue:#54a2ff; --green:#26d98a; --red:#ff5a6a; --purple:#ab84ff;
+  --orange:#ffa14e; --cyan:#2fd4f2; --amber:#ffc23e;
+  --anthill-bg:#000000; --anthill-panel:rgba(6,12,22,.9); --anthill-panel-strong:rgba(10,17,30,.97);
+  --anthill-border:rgba(160,195,255,.28); --anthill-border-strong:rgba(160,195,255,.5);
+  --anthill-text:#ffffff; --anthill-muted:#c0d1e4; --anthill-dim:#8ba1ba;
+  --hud-glass:rgba(6,12,22,.75); --hud-line:rgba(47,212,242,.35);
 }
 
 /* -- Auth Overlay ------------------------------------------------------------ */
@@ -3098,6 +3141,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="section-head" style="margin-top:0;">Operator Account</div>
             <div class="info-row"><span class="info-key">Username</span><span class="info-val" id="si-username">—</span></div>
             <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Role</span><span class="info-val" id="si-role">—</span></div>
+
+            <!-- v0.3.8.55: theme picker. The default is the website's own palette; themes apply
+                 instantly, persist per device, and load before first paint (head script). -->
+            <div class="section-head">Theme</div>
+            <label class="set-label" for="settings-theme">Console palette <span style="font-weight:400;color:var(--dim)">(saved on this device)</span></label>
+            <select class="set-input" id="settings-theme" style="margin-bottom:16px;">
+              <option value="default">ANTHILL — website palette (default)</option>
+              <option value="light">Light</option>
+              <option value="hermes">Hermes — warm amber on umber</option>
+              <option value="contrast">High contrast</option>
+            </select>
 
             <div class="section-head">API Endpoint</div>
             <label class="set-label">API Base URL <span style="font-weight:400;color:var(--dim)">(blank = local relative)</span></label>

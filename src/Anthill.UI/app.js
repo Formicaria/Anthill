@@ -890,6 +890,28 @@ function openSettings(){
   loadSettingsInfo();
 }
 
+/* v0.3.8.55 — THEMES. The palette is a set of CSS variables and a theme re-states them on
+ * html[data-theme]; nothing else changes, because components name variables, never raw colors.
+ * Saved per device (localStorage), applied instantly here and before first paint by the head
+ * script. 'default' is the website's own palette and sets no attribute at all. */
+const THEME_IDS=['default','light','hermes','contrast'];
+function applyTheme(t){
+  if(THEME_IDS.indexOf(t)<0) t='default';
+  if(t==='default') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme=t;
+}
+(function(){
+  const sel=document.getElementById('settings-theme'); if(!sel) return;
+  let cur='default';
+  try{ cur=localStorage.getItem('anthill-theme')||'default'; }catch{}
+  if(THEME_IDS.indexOf(cur)<0) cur='default';
+  sel.value=cur;
+  sel.addEventListener('change',()=>{
+    applyTheme(sel.value);
+    try{ localStorage.setItem('anthill-theme',sel.value); }catch{}
+  });
+})();
+
 document.getElementById('settings-save').addEventListener('click', saveSettings);
 async function saveSettings(){
   const base=document.getElementById('settings-apibase').value.trim();
