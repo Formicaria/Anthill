@@ -3699,21 +3699,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            optional working-directory path. The mission-workspace checkouts report stays below:
            those are the isolated checkouts missions physically work in. -->
       <div class="page page-scroll" id="page-projects">
-        <div class="page-hdr">
-          <div>
-            <h1>Projects</h1>
-            <div class="sub">Long-lived containers: each conversation lives in one, with its missions and history. The purpose you write here travels with every message in the project.</div>
-          </div>
-          <div style="display:flex;gap:8px;">
+        <!-- v0.3.8.55 (field report): Projects hosts Automation side by side — projects on
+             the left, the Director's panel on the right (admin only; hidden by PAGE_ENTER for
+             everyone else). Wraps on narrow screens instead of crushing either column.
+             (Operator's layout rule): each column carries ITS OWN header in the same shape —
+             title + sub on the left, buttons on the right — so the two read as equals; the old
+             page-wide header put the project buttons on the far right, over the Automation
+             column, where they looked like its controls. -->
+        <div id="projects-cols" style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+        <div id="projects-col-main" style="flex:1 1 480px;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+          <div><h2 style="font-size:14px;margin:0 0 2px;">Projects</h2><div class="sub">Long-lived containers: each conversation lives in one, with its missions and history. The purpose you write here travels with every message in the project.</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn btn-primary" id="project-new-btn">＋ New project</button>
             <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
           </div>
         </div>
-        <!-- v0.3.8.55 (field report): Projects hosts Automation side by side — projects on
-             the left, the Director's panel on the right (admin only; hidden by PAGE_ENTER for
-             everyone else). Wraps on narrow screens instead of crushing either column. -->
-        <div id="projects-cols" style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-        <div id="projects-col-main" style="flex:1 1 480px;min-width:0;">
         <div class="card" id="project-new-form" hidden style="margin-bottom:12px;">
           <div style="padding:12px;display:flex;flex-direction:column;gap:8px;">
             <label class="sr-only" for="project-new-name">Project name</label>
