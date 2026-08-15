@@ -772,7 +772,10 @@ public sealed partial class Queen
                 ["assigned_ant"] = Str(row, "assigned_ant", "unknown"), ["assigned_worker"] = Str(row, "assigned_worker"),
                 ["assigned_agent"] = string.IsNullOrEmpty(Str(row, "assigned_worker")) ? Str(row, "assigned_ant", "unknown") : Str(row, "assigned_worker"),
                 ["role"] = Str(row, "assigned_ant", "unknown"), ["task_type"] = Str(row, "task_type", "general"), ["status"] = status,
-                ["dependency_ids"] = deps, ["depends_on"] = deps, ["parent_task_id"] = row.GetValueOrDefault("parent_task_id"),
+                ["dependency_ids"] = deps, ["depends_on"] = deps,
+                // v0.3.8.57: stored is not the same as reachable. The declared inputs are what
+                // makes a worker's context auditable, so the graph the console reads carries them.
+                ["input_artifact_ids"] = ParseJsonStringList(Str(row, "input_artifact_ids_json", "[]")), ["parent_task_id"] = row.GetValueOrDefault("parent_task_id"),
                 ["parent_task_ids"] = parents, ["child_task_ids"] = childIds.GetValueOrDefault(id, new()).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList(),
                 ["attempt_count"] = row.GetValueOrDefault("attempt_count"), ["max_attempts"] = row.GetValueOrDefault("max_attempts"),
                 ["created_at"] = row.GetValueOrDefault("created_at"), ["started_at"] = row.GetValueOrDefault("started_at"),

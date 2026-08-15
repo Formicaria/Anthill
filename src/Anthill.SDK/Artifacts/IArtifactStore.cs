@@ -44,6 +44,26 @@ public interface IArtifactStore
     /// "what consumed it" answerable — ADR-004's fifth verification item.
     /// </summary>
     IReadOnlyList<Artifact> ConsumersOf(string artifactId);
+
+    /// <summary>
+    /// Record that a role read a specific version of an artifact. v0.3.8.57.
+    ///
+    /// Distinct from <see cref="ConsumersOf"/>, which despite the name answers a question about
+    /// ARTIFACTS — what was derived from this one, via SourceArtifactIds. A role that reads a patch
+    /// set and writes prose creates no such edge, so "did the verifier read this, and which version"
+    /// had no answer at all.
+    ///
+    /// IDEMPOTENT PER (artifact, role, task): a retried task reading the same artifact is one
+    /// relationship observed twice. Implementations increment the read count rather than inserting
+    /// a second row, which keeps this a ledger and not a log.
+    /// </summary>
+    void RecordConsumption(ArtifactConsumption consumption);
+
+    /// <summary>Who read this artifact. The reverse edge that <see cref="ConsumersOf"/> is not.</summary>
+    IReadOnlyList<ArtifactConsumption> ConsumptionsOf(string artifactId);
+
+    /// <summary>Every read recorded for a mission, newest first.</summary>
+    IReadOnlyList<ArtifactConsumption> ConsumptionsForMission(string missionId, int limit = 500);
 }
 
 /// <summary>

@@ -1,7 +1,46 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.56** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.57** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.57: patch integrity — the five Phase-3 items closed. `add` means CREATE (it returned
+> `Overwrote` and replaced whole files with whatever fragment a mislabelled proposal carried); the
+> coder path STAMPS the base hash it was built against (`BaseHash` was assigned in exactly one
+> place in the codebase, so the stale-base guard shipped in v3.8.37 could not fire for any
+> model-produced patch); a live destructive apply refuses without one; auto-apply preflights the
+> whole set and rolls back a partial write, so a repository can no longer be left mixing old and
+> new; a conformance ledger pins that all four appliers ask `PatchApply.Compute` with the full set
+> of facts; and every verdict records the revision, patch-set hash and tree hash it judged, through
+> schema, migration, INSERT and read-back.
+>
+> v0.3.8.57 (cont.): the TYPED CHANNEL becomes load-bearing. Tasks declare their input artifact IDs
+> and the runtime records what each role actually READ (`artifact_consumptions`, hashed as read);
+> every schema's payload shape is checked at both the write and the read boundary; artifacts carry
+> provenance — build, environment, runtime, and the provider and model that actually served the call,
+> which `ToCallResult()` had been discarding one line before any ant could see it. The researcher's
+> four declared sections became a typed `research_brief`; the builder deliberately did NOT, because
+> its prompt asks for free prose and typing that would be relabelling.
+>
+> v0.3.8.57 (cont.): STRUCTURAL ENFORCEMENT. Four acceptance gates close — 6, 7, 8 and 10 — and 9 is
+> pinned. A UI change cannot dispatch without a valid `ui_map`; the verifier's contract now declares
+> the policy insertion the runtime already guaranteed; the repair bound reads typed signatures rather
+> than a substring of a previous medic's narrative; the scribe cannot write a `verified_change_summary`
+> for work nothing verified; and `MissionReconstruction` replays a mission's inputs and evidence from
+> artifact IDs, reporting the specific ways a replay can be wrong rather than only succeeding.
+>
+> v0.3.8.57 (cont.): CHAT TALKS TO THE COLONY. `conversation` was a route key like any other, so
+> pointing it at an installed agent CLI made the chat box a direct line to that agent — it answered
+> AND could edit the working tree, with no task, plan, review, test or verification in the sequence.
+> v0.3.8.53 contained the CHANGES that lane produced; this closes the shape. A provider now declares
+> itself an autonomous coding agent (`IAutonomousCodingAgent`, in the SDK so the core can test for it
+> without naming a module), and the conversation route REFUSES one — saying what to change and that
+> the capability moves rather than disappears. `coder` still routes to an agent, and its work still
+> goes through the patch set, the soldier, the tester and the verifier.
+>
+> v0.3.8.57 (cont.): five git subprocess sites called `WaitForExit(60_000)` and carried on when it
+> returned false — git and its children survived, and `ExitCode` throws on a live process, so the
+> timeout surfaced as an ordinary-looking exception. All five now kill the tree; a sweep covers the
+> twelve bounded-wait sites in the repo.
 
 > v0.3.8.56: the sixth field round — the dashboard rebuilt as a cell grid with free placement
 > (widgets live where the operator put them; the drag ruler frozen in document space so a
@@ -268,19 +307,19 @@ are unverified, produced by the component least able to be relied on for that.
 
 Where the current state differs from the target, both are stated. The gap is the plan.
 
-| Role | Trigger | Tools | Typed output | Gap at v3.8.31 |
+| Role | Trigger | Tools | Typed output | Gap at v0.3.8.57 |
 |---|---|---|---|---|
-| **Researcher** | Planner, near intake | `system_info`, `list_directory`, `search_workspace`, `repository_index` | `context_brief` | Search granted AND dispatched at v3.8.30. Still emits prose (`text`) rather than a typed `context_brief` |
+| **Researcher** | Planner, near intake | `system_info`, `list_directory`, `search_workspace`, `repository_index` | `research_brief` | Done at v0.3.8.57 — the four sections its prompt has always demanded are parsed into a typed artifact, and a response that ignores the format produces NO artifact plus a disclosed warning. Also joined the typed-input channel: it had never seen an artifact |
 | **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
 | **File** | Planner | `list_directory`, `read_text_file`, `search_workspace`, `repository_index` | `file_set` | Done as of v3.8.30 — discovers paths rather than only reading ones the task named |
-| **UI Cartographer** | Planner | 4 read tools | `ui_map` | Generalised at v3.8.28 — thirteen conventional layouts. Still not MANDATORY before Coder |
-| **Coder** | Planner | **none, deliberately** | `patch_set` | Consumes prose, not typed context. PatchSet carries content but no workspace revision link |
+| **UI Cartographer** | Policy — a UI change cannot dispatch without its map | 4 read tools | `ui_map` | Done at v0.3.8.57 — `UiChangeGate` blocks a UI coder task at DISPATCH unless a hash-intact, schema-conforming `ui_map` exists. Detection reads the goal *and* the paths a task names |
+| **Coder** | Planner | **none, deliberately** | `patch_set` | Typed context since v0.3.8.57 (declared inputs, consumption recorded). PatchSet carries content, provenance and a base hash; the revision link lives on the workspace snapshot and the evidence |
 | **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Done as of v3.8.28 — manifest-driven, multi-runtime. Cancellation and per-check timeouts still open |
 | **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Done as of v3.8.26 — reads the real PatchSet, inserted by policy |
-| **Verifier** | Planner, after evidence exists | none | `verification_bundle` | Done as of v3.8.27 — reads the evidence store; a deterministic failure cannot be overridden by prose. Still planner-scheduled rather than policy-inserted |
-| **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | `failure_context` artifact does not exist; reads in-memory mission state |
+| **Verifier** | **Policy**, when its evidence exists | none | `verification_bundle` | Done at v0.3.8.57 — the contract now DECLARES `PolicyInserted`, which the runtime has guaranteed since v0.3.8.41. Insertion fails closed; a planned verifier remains admissible (a floor, not a ceiling) |
+| **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | Done — consumes the typed `failure_context`, and at v0.3.8.57 its repair BOUND does too: repeat detection reads artifact signatures instead of grepping a previous medic's prose |
 | **Builder** | Planner, after verification | none | `operator_summary` | Emits prose |
-| **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_draft` | Done as of v3.8.28 — dispatches its tool; records whether the file list came from a diff or from prose |
+| **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_patch_set` | Done as of v3.8.28; at v0.3.8.57 it refuses a `verified_change_summary` when nothing verified anything, and `docs_patch_set` became its own schema rather than being folded onto `patch_set` |
 | **Archivist** | After canonical evaluation persists | none | `memory_candidate` | Reachable as of v3.8.26 — runs post-finalization, outside the task graph. Had NEVER run before |
 
 **A role with no tool calls is not inactive.** Coder, Soldier, Verifier, Medic, Builder and Archivist
@@ -411,6 +450,36 @@ twelve to report Ready under the full-roster qualification fixture before the de
 
 ---
 
+## 4b. Qualification — what is proved, and what is not
+
+Two things share the name and have different jobs; `docs/QUALIFICATION.md` owns the distinction and
+the protocol. In summary:
+
+**Deterministic (merge-blocking).** The twenty scenarios live in `QualificationMatrixTests` as an
+executable ledger — every cited proof file must exist, every open scenario must say so, and this
+document must name it. Sixteen are pinned. **Qualification scenario 3** (a documentation patch driven
+from goal to applied change through the Queen) and **qualification scenario 15** (all twelve roles
+reached through PRODUCTION triggers in one composed run) are OPEN: both need a `ScriptedColony` script
+book, and the harness exists while the scenarios do not. Scenarios 7 and 17 are PARTIAL with the
+missing case named.
+
+**Per-role graduation record.** `RoleQualificationRecordTests` carries one row per executable role
+across the nine proofs PLAN.md asks for. This is deliberately not an achievement record: the
+**cancellation-and-timeout column is empty for ALL TWELVE roles**, and that is the state of the
+colony rather than a gap in the ledger. The first draft of that column cited two real cancellation
+test files that prove real things and name no role at all — the ledger's weakest check, "does the
+cited file mention this role", is what caught it. It is worth noticing that v0.3.8.57 found five
+separate sites that abandoned a running process on timeout: the area least tested here is the area
+that was least implemented there.
+
+**Live qualification: NEVER RUN.** No result exists for any provider. Everything the suite proves was
+proved against a scripted model whose answers were authored to fit the runtime, which cannot tell us
+what happens when a real one mismatches a fence, ignores a declared format or takes ninety seconds.
+The required coverage and the fields a run must record are in `docs/QUALIFICATION.md` §3. This is the
+largest single gap in the project's evidence and it is stated here rather than left to be inferred.
+
+---
+
 ## 5. Acceptance gates
 
 Non-negotiable. The colony is not a twelve-role colony until all of these pass.
@@ -420,11 +489,54 @@ Non-negotiable. The colony is not a twelve-role colony until all of these pass.
 3. ✅ A compile-breaking proposed change fails when built in the patched mission workspace *(v3.8.23)*
 4. ✅ That failed patch cannot become `completed_verified` *(v3.8.22)* — retention and learning still to close
 5. ✅ A Soldier block cannot be overridden by model text *(v3.8.22)*
-6. ◻ Tester failure triggers exactly one bounded Medic repair and a mandatory retest
-7. ◻ A UI change cannot reach Coder without a valid `ui_map`
-8. ◻ Scribe and Archivist cannot act positively on unverified work
-9. ◻ Archivist runs only after the persisted canonical evaluation exists
-10. ◻ Replaying artifact IDs reconstructs every role's inputs and evidence
+6. ✅ Tester failure triggers exactly one bounded Medic repair and a mandatory retest *(v0.3.8.57 — bound moved off prose, pinned by `BoundedRepairTests`)*
+    - The bound is keyed on the SEMANTIC failure signature and now reads the typed
+      `failure_context` artifacts. It used to be `t.Result.Contains(signature)` — a substring search
+      of a previous medic's narrative — and task results are summarised and truncated, so a long
+      diagnosis whose signature fell past the cut silently stopped matching. The loop control
+      disappeared in exactly the missions that had produced the most output.
+    - Distinct TASKS, not distinct artifacts: one failing task can record several contexts across
+      attempts, and counting those would escalate a single failure on its own retry.
+    - The narrative scan survives ONLY where there is no artifact store (the CLI, and tests that
+      construct a medic without one), because a weaker bound beats none.
+7. ✅ A UI change cannot reach Coder without a valid `ui_map` *(v0.3.8.57 — `UiChangeGate`, enforced at dispatch, pinned by `UiChangeGateTests`)*
+    - Enforced at DISPATCH, not at planning. `InjectSpecialistRouting` still creates the
+      cartographer task — it is what makes the map exist — but planner output is
+      model-influenced, and the dependency it creates means "the cartographer's task
+      finished", which includes finishing by failing.
+    - Detection reads the GOAL *and the paths a task names*. The previous check was goal-text
+      only, so "fix the broken button handler" pointing at `src/Anthill.UI/app.js` was mapped
+      by nobody. One detector, shared with the planner, so the two cannot guard different sets.
+    - VALID, not merely present: the map must be hash-intact and schema-conforming. An
+      existence check waves through a truncated payload, and the coder plans against it anyway.
+    - A disabled `ui_cartographer` is a NAMED REFUSAL rather than a silent pass.
+8. ✅ Scribe and Archivist cannot act positively on unverified work *(v0.3.8.57 — pinned by `ScribeArchivistOrderingTests`)*
+    - The scribe refuses a `verified_change_summary` when `MissionVerification` is not satisfied.
+      That task type's OUTPUT ASSERTS a verification and nothing checked one had happened, so a
+      mission whose verifier never ran could produce the document an operator reads and quotes.
+      Refused rather than hedged: a summary that equivocates about verification is read as one
+      that confirms it.
+    - Only that task type. Release notes and docs proposals mid-mission assert nothing about
+      verification and are untouched.
+    - The archivist's rule was already right: positive procedural memory comes only from
+      `completed_verified`, and nothing it writes auto-promotes.
+9. ✅ Archivist runs only after the persisted canonical evaluation exists *(v3.8.26 / v0.3.8.41, pinned by `ScribeArchivistOrderingTests` at v0.3.8.57)*
+    - Runs OUTSIDE the task graph, after the evaluation is computed and persisted, and claims a
+      ledger entry so a finalization replayed after a crash cannot archive twice. The duplicate
+      matters: memory candidates feed skill registration, whose promotion threshold requires repeat
+      evidence across missions — one mission finalised twice would satisfy a bar designed to need two.
+    - A disabled archivist logs `archivist_skipped` rather than passing silently.
+10. ✅ Replaying artifact IDs reconstructs every role's inputs and evidence *(v0.3.8.57 — `MissionReconstruction`, pinned by `ReconstructionGateTests`)*
+    - Inputs come from the CONSUMPTION LEDGER (what was delivered), not from declarations: an
+      artifact the context budget dropped was never an input, and a replay built on
+      declarations would reconstruct a context the worker never saw.
+    - The gate is the GAPS. A mutated artifact, a consumption pointing at something deleted,
+      and evidence citing an artifact the store no longer holds are each detected and named;
+      a reconstruction that only ever succeeds certifies nothing.
+    - SCOPE, stated rather than implied: roles whose only output is prose — the builder writes
+      the operator answer, deliberately — have reconstructable INPUTS and no typed output.
+      `RoleReconstruction.OutputIsTyped` says which, because "produced nothing typed" and
+      "produced nothing" are different and only one is a problem.
 11. ✅ No mission ant can dispatch shell, direct file-write, or primary-workspace patch tools *(pinned by `RosterContractTests`)*
 12. ✅ Disabled or unavailable roles never receive negative reputation for not running *(v3.8.26)*
 

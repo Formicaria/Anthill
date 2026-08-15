@@ -46,7 +46,29 @@ public sealed class PheromoneEngine
 /// </summary>
 public sealed class PatchProposalParser
 {
-    public PatchSet Parse(string rawText, string missionId, string taskId)
+    /// <summary>
+    /// Turn the coder's structured output into a patch set.
+    /// </summary>
+    /// <param name="readCurrent">
+    /// Reads a workspace file's CURRENT contents, or null when it does not exist. v0.3.8.57.
+    ///
+    /// THE GAP THIS CLOSES. `PatchProposal.BaseHash` was assigned in exactly one place in the whole
+    /// codebase — `WorkspaceChangeSet`, which derives proposals from a finished workspace diff. The
+    /// coder path produced none, so every model-authored modify, delete and rename carried a null
+    /// base hash, and `PatchApply`'s stale-base check — the largest item in AUTONOMY-10 Phase 1,
+    /// shipped in v0.3.8.37 — could not fire on the one path that actually needed it. The guard was
+    /// real, tested, and unreachable for the patches it was built for.
+    ///
+    /// Stamped HERE rather than at apply time, and that is the point: the hash must record the bytes
+    /// the coder REASONED ABOUT, which is the state at production. Computing it during apply would
+    /// hash whatever the file says by then and always agree with itself.
+    ///
+    /// Optional because a caller with no workspace — the parser's own tests, a replay over stored
+    /// text — has nothing to read. Those proposals keep a null hash and are handled exactly as
+    /// pre-v0.3.8.57 ones are: verifiable in a sandbox, refused by the live applier.
+    /// </param>
+    public PatchSet Parse(string rawText, string missionId, string taskId,
+        Func<string, string?>? readCurrent = null)
     {
         var parsed = Json.ExtractJsonObject(rawText);
         var summary = (parsed["summary"]?.GetValue<string>() ?? "").Trim();
@@ -84,10 +106,28 @@ public sealed class PatchProposalParser
                     || EchoesTemplate(oldContent, "Exact old content"))
                     continue;
 
+                var parsedChangeType = EnumExtensions.ParsePatchChangeType(changeType);
+
+                // v0.3.8.57 — stamp the base hash for the operations that destroy prior state.
+                //
+                // `add` is exempt by construction: it creates a file, so there is no prior state it
+                // could have been built against, and hashing a target that should not exist would
+                // record a fact about the wrong thing. A read that comes back null (the file is not
+                // there) also leaves the hash null — the applier refuses that as a missing target,
+                // which names the real problem better than a hash of nothing would.
+                string? baseHash = null;
+                if (readCurrent is not null
+                    && parsedChangeType is PatchChangeType.Modify or PatchChangeType.Delete or PatchChangeType.Rename)
+                {
+                    var current = readCurrent(filePath);
+                    if (current is not null) baseHash = PatchApply.HashOf(current);
+                }
+
                 proposals.Add(new PatchProposal
                 {
-                    FilePath = filePath, ChangeType = EnumExtensions.ParsePatchChangeType(changeType), Reason = reason,
-                    Risk = risk, OldContent = oldContent, NewContent = newContent, RequiresApproval = true, Status = PatchStatus.Proposed,
+                    FilePath = filePath, ChangeType = parsedChangeType, Reason = reason,
+                    Risk = risk, OldContent = oldContent, NewContent = newContent, BaseHash = baseHash,
+                    RequiresApproval = true, Status = PatchStatus.Proposed,
                 });
             }
             catch { /* skip the malformed proposal, keep the rest */ }

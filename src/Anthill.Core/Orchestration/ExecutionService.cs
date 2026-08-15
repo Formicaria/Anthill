@@ -523,11 +523,31 @@ public sealed class ExecutionService : IExecutionService
                 // however they were called — including directly, as their tests do. Both answer
                 // from the same contract, so they cannot disagree about what it says.
                 var contract = AntExecutionCatalog.ContractFor(ant.Name);
+                // v0.3.8.57 (PLAN.md gate 7): a UI change cannot REACH the coder without a valid map.
+                //
+                // Here rather than in the planner, and that is the whole point. The planner has
+                // injected a cartographer ahead of the coder since Stage E, but planner output is
+                // model-influenced and the dependency it creates says "the cartographer's task
+                // finished", which includes finishing by failing. This asks the store whether a
+                // usable map EXISTS, which is the claim the coder actually needs to be true.
+                var uiGate = UiChangeGate.Check(taskSnapshot, mission,
+                    _memory as Anthill.SDK.Artifacts.IArtifactStore,
+                    AntExecutorCatalog.RuntimeAvailable("ui_cartographer"));
+
                 if (contract is not null && !contract.SupportsTaskType(taskSnapshot.TaskType))
                 {
                     execution = AntExecutionResult.Blocked(
                         $"task type '{taskSnapshot.TaskType}' is outside the {ant.Name} execution contract " +
                         $"(v{contract.Version})");
+                }
+                else if (!uiGate.Allowed)
+                {
+                    // BLOCKED, not failed. The condition is curable — a cartographer run produces the
+                    // map — and a failure would spend a repair budget on something no repair fixes.
+                    _memory.LogEvent(mission.Id, "ui_change_blocked_unmapped", uiGate.Reason,
+                        task.Id, task.AssignedAnt,
+                        new() { ["role"] = task.AssignedAnt, ["reason"] = uiGate.Reason });
+                    execution = AntExecutionResult.Blocked(uiGate.Reason);
                 }
                 else
                 {
@@ -815,11 +835,23 @@ public sealed class ExecutionService : IExecutionService
     /// <c>PatchSet</c> one layer up. So the artifact is emitted where the structure exists, not where
     /// the text was written.
     /// </summary>
-    private void RecordPatchArtifact(Mission mission, Task task, PatchSet patchSet)
+    /// <returns>
+    /// The artifact id, or null when the record could not be written. v0.3.8.57 — the id was
+    /// previously discarded, which is why the reviews inserted immediately below had to go looking
+    /// for "the mission's patch sets" instead of being handed the one they exist to review.
+    /// </returns>
+    /// <param name="environmentFingerprint">
+    /// From the CONTEXT, never from AnthillRuntime. The first draft of this read the static
+    /// directly and tripped TheMissionExecutionPath_ReadsNoMutableFeatureGate — correctly: a
+    /// mission resolves its environment at intake, and a live read here would stamp an artifact
+    /// with whatever the process happens to report now rather than what the mission ran under.
+    /// </param>
+    private string? RecordPatchArtifact(Mission mission, Task task, PatchSet patchSet,
+        string environmentFingerprint)
     {
         try
         {
-            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+            return ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
                 schema: Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet,
                 producerRole: task.AssignedAnt,
                 missionId: mission.Id,
@@ -842,6 +874,19 @@ public sealed class ExecutionService : IExecutionService
                     }),
                 }, indented: true),
                 taskId: task.Id,
+                // v0.3.8.57 — provenance, limited to what THIS site can truthfully state. The
+                // execution result is not in scope here (the patch set is parsed from task.Result
+                // one layer up), so provider and model are genuinely unknown and are therefore
+                // absent rather than filled in from the configured route, which a reroute would
+                // make a lie. ModelInvolved is TRUE regardless: a coder's patch text came from a
+                // model call whichever one served it, and that much is not in doubt.
+                provenance: new Anthill.SDK.Artifacts.ArtifactProvenance
+                {
+                    ColonyVersion = AnthillRuntime.Version,
+                    EnvironmentFingerprint = environmentFingerprint,
+                    RuntimeNode = task.AssignedAnt,
+                    ModelInvolved = true,
+                },
                 // Explicit rather than defaulted. This artifact now carries proposed source, which
                 // is exactly the material the visibility classes exist to distinguish: readable by
                 // the colony's own roles, not published outward with the operator summary.
@@ -850,6 +895,10 @@ public sealed class ExecutionService : IExecutionService
         catch (Exception error)
         {
             Console.Error.WriteLine($"Could not record the patch set artifact for task {task.Id}: {error.Message}");
+            // Null, not an empty string. A review task whose declared input is "" would ask the
+            // store for an artifact that cannot exist and report it missing; null means "nothing
+            // was declared", which falls back to the mission-wide read this had before.
+            return null;
         }
     }
 
@@ -1074,7 +1123,17 @@ public sealed class ExecutionService : IExecutionService
                         // traced to the tree it ran in is why v3.8.22's build verdicts were
                         // meaningless — they were true statements about the wrong workspace.
                         detail: $"[{patchSet.Proposals[i].FilePath} @ {materialized.AppliedTreeHash[..12]}] {verdict.Summary}",
-                        taskId: task.Id));
+                        taskId: task.Id,
+                        // v0.3.8.57 — the identity as STRUCTURED FIELDS, not only inside the prose
+                        // above. The twelve-character hash in `Detail` is readable by a person and
+                        // useless to a query, so "does this build result belong to the revision the
+                        // verifier is about to promote?" had no answer the runtime could compute.
+                        // Both hashes are recorded because they answer different questions: the
+                        // patch-set hash is what was asked for, the tree hash is what landed, and
+                        // they differ exactly when evidence must not be reused.
+                        revisionId: $"rev:{patchSet.Id}",
+                        patchSetHash: materialized.PatchSetHash,
+                        treeHash: materialized.AppliedTreeHash));
 
             // The set is promotable only if EVERY proposal is. One unverifiable change in a set is an
             // unverifiable set — a patch is applied as a unit, so it must be judged as one.
@@ -1141,14 +1200,40 @@ public sealed class ExecutionService : IExecutionService
         }
     }
 
+    /// <summary>
+    /// The current bytes of a proposed file, or null when it is absent or unreadable. v0.3.8.57.
+    ///
+    /// Feeds <see cref="PatchProposalParser"/> so a newly produced modify/delete/rename records what
+    /// it was built against. Returns null on ANY failure rather than throwing: a proposal whose base
+    /// cannot be read is one the applier will refuse with a reason, and losing the whole patch set to
+    /// an exception here would be a worse answer than a proposal that has to be re-read.
+    ///
+    /// Path containment is the guard's, not ours — an absolute path aimed at the live checkout
+    /// throws out of ResolveSafePath and lands in the same null.
+    /// </summary>
+    private static string? ReadForBaseHash(string filePath)
+    {
+        try
+        {
+            var guard = new Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+            var resolved = guard.ResolveSafePath(filePath);
+            return File.Exists(resolved) ? File.ReadAllText(resolved) : null;
+        }
+        catch { return null; }
+    }
+
     private void ProcessPatchProposals(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
     {
         if (string.IsNullOrEmpty(task.Result)) return;
         try
         {
-            var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id);
+            // v0.3.8.57 — the parser gets a reader, so newly produced destructive proposals carry a
+            // base hash. Resolved through WorkspacePathGuard, which answers against the MISSION
+            // workspace when a scope is active, so the hash records the tree the coder was actually
+            // looking at rather than the live checkout.
+            var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id, ReadForBaseHash);
             _memory.SavePatchSet(patchSet);
-            RecordPatchArtifact(mission, task, patchSet);
+            var patchArtifactId = RecordPatchArtifact(mission, task, patchSet, context.EnvironmentFingerprint);
             VerifyPatchSet(mission, task, patchSet);
 
             // v3.8.26: the review roles are INSERTED here, not planned.
@@ -1160,7 +1245,7 @@ public sealed class ExecutionService : IExecutionService
             // AFTER RecordPatchArtifact deliberately: the soldier reads the patch-set artifact
             // (v3.8.25), so inserting its task before the artifact exists would schedule a review of
             // something not yet written. The ordering here IS the contract between the two.
-            InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler);
+            InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler, patchArtifactId);
             _memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
                 new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
 
@@ -1707,7 +1792,7 @@ public sealed class ExecutionService : IExecutionService
     /// same reason: this task was caused by something that happened, not scheduled speculatively.
     /// </summary>
     private void InsertPolicyReviewTasks(Mission mission, MissionContext context, Task coderTask,
-        PatchSet patchSet, TaskScheduler? scheduler)
+        PatchSet patchSet, TaskScheduler? scheduler, string? patchArtifactId = null)
     {
         if (patchSet.Proposals.Count == 0) return;
 
@@ -1749,6 +1834,14 @@ public sealed class ExecutionService : IExecutionService
                 // CRITICAL. A failed safety review must be able to stop the mission reaching a
                 // verified outcome — MissionEvaluator disqualifies on a failed critical task.
                 Critical = true,
+                // v0.3.8.57 — THE artifact this review exists to review, named rather than
+                // searched for. This is the one insertion point in the colony where the producer
+                // is unambiguous: the patch set was written one statement ago. Everywhere else
+                // the mission-wide fallback still applies, because guessing a narrower input
+                // would starve a worker of context it legitimately used.
+                InputArtifactIds = patchArtifactId is { Length: > 0 }
+                    ? new List<string> { patchArtifactId }
+                    : new List<string>(),
             };
 
             if (TryAdmitDynamicTask(mission, scheduler, created, context.Constraints) is { Length: > 0 } refusal)

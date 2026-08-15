@@ -138,7 +138,17 @@ public static class WorkspaceChangeSet
             })!;
             var stdout = process.StandardOutput.ReadToEnd();
             var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit(60_000);
+            // v0.3.8.57 — TIMEOUT KILLS THE TREE.
+            //
+            // WaitForExit(ms) returns false and execution CARRIED ON: the git process and
+            // every child it spawned kept running, and `ExitCode` on a process that has not
+            // exited throws — so the timeout was reported as an exception message rather than
+            // as a timeout, and "stop means stop" was false for every one of these sites.
+            if (!process.WaitForExit(60_000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                return (false, "git timed out after 60s and was terminated with its child processes");
+            }
             return (process.ExitCode == 0, process.ExitCode == 0 ? stdout : stderr);
         }
         catch (Exception error)
