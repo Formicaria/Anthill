@@ -126,6 +126,16 @@ public static partial class TextUtil
         return "unknown";
     }
 
+    /// <summary>
+    /// The planner's type NORMALISER: when a model invents a task_type a role's contract refuses,
+    /// this supplies the role's own default instead. v0.3.8.61 — the six specialist roles were
+    /// missing, so the normaliser "repaired" an invalid tester type to "general", which the tester
+    /// contract ALSO refuses. Watched live: every Director mission that planned a tester task
+    /// blocked on it, the medic burned the full repair bound on a defect no repair can fix (the
+    /// mismatch is in the PLAN), and the mission's score halved. The safety net was feeding the
+    /// failure it existed to prevent. Every role with a contract now maps to a type INSIDE that
+    /// contract, and a guard test holds the two in agreement structurally.
+    /// </summary>
     public static string InferTaskType(string assignedAnt, string title = "", string description = "") => assignedAnt switch
     {
         "researcher" => "research",
@@ -134,6 +144,12 @@ public static partial class TextUtil
         "builder" => "build_answer",
         "verifier" => "verification",
         "web" => "external_research",
+        "tester" => "validation_check",
+        "soldier" => "security_review",
+        "medic" => "failure_diagnosis",
+        "archivist" => "memory_consolidation",
+        "ui_cartographer" => "ui_mapping",
+        "scribe" => "operator_documentation",
         _ => "general",
     };
 
