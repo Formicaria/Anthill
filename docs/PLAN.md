@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.61**.
+Shipping release: **v0.3.8.62**.
 
 ---
 
@@ -95,7 +95,7 @@ bytes.
 1. ✅ **S1** — Files-pane traversal and symlink-safe confinement *(v0.3.8.59 — one resolver, `PathContainment`; TOCTOU remains, see below)*
 2. ✅ **S2** — shell tool confinement: disable, or fix *(v0.3.8.59 — arguments contained; `dotnet` residual recorded)*
 3. ✅ **S3** — evidence fail-CLOSED *(v0.3.8.61 — verifier: `verification_unavailable`; auto-apply: five refusal arms; see below)*
-4. **S4** — transactional patch application and durable recovery
+4. ✅ **S4** — transactional patch application and durable recovery *(v0.3.8.62 — `ApplyTransaction`; see below)*
 5. **S5** — Secret-artifact filtering
 6. **S6** — UI gate *(open)*; remaining subprocess handling ✅ v0.3.8.59
 7. **S7** — runtime and fault-injection tests land BEFORE auto-apply is re-enabled
@@ -249,6 +249,19 @@ concurrent edit, process crash — asserting a **byte-identical** restored tree.
 `AutoApplyAtomicityTests.cs` L141–155 currently asserts only that the SOURCE contains a rollback
 call. That is a check answering a question adjacent to the one asked, in the file whose whole
 purpose is to prove atomicity.
+
+**Closed v0.3.8.62.** `ApplyTransaction` (SDK): journal durable before the first mutation; staged
+atomic writes (a target is never half-written); hash-checked rollback that preserves and reports
+newer work as conflicts; a durable `ROLLBACK_FAILED` marker that halts auto-apply until an
+operator clears it; startup recovery replaying interrupted journals under the same rule. The tool
+reports recovery metadata on failure and `applied_hash` on success; the runner journals the batch
+and believes the rollback report; manual revert applies the same hash gate; the un-journaled
+`RollbackAutoApplied` is deleted rather than left to drift. `ApplyTransactionTests` covers the
+fault list behaviourally, byte-identical assertions included; the adjacent-question source scan is
+replaced. Residual: disk-full and permission faults are injected at the transaction's write seam
+rather than by filling a real volume — the seam fires between the temp write and the atomic swap,
+which is the worst real moment; and legacy patches applied before `applied_hash` existed keep the
+old unchecked revert behaviour, stated in the revert reply.
 
 #### S5 — `ArtifactVisibility.Secret` does not prevent model disclosure (P0)
 
