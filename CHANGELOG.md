@@ -1,5 +1,28 @@
 # ANTHILL Changelog
 
+## v0.3.8.63 - S5: Secret means secret, and the last P0 closes
+
+**The visibility contract gains its enforcement.** "Never rendered, never sent to a model" had
+been the Secret visibility's documentation since the field existed, and nothing checked it: the
+context compiler emitted Secret payloads straight into model prompts — declared inputs included —
+and the soldier read payloads with no visibility check at all. The sharpest part of the review's
+finding: malformed visibility deliberately coerces TO Secret, so the unenforced value was exactly
+where a corrupt or hostile import landed.
+
+One definition now, everywhere it matters. `Artifact.IsModelReadable` is an ALLOWLIST — Colony or
+Operator — so an out-of-range enum value fails closed where `!= Secret` would have read row
+corruption as permission. The context compiler, the single place every model context is
+assembled, removes Secret payloads from mission-wide blocks without advertising them, and reports
+declared Secret inputs as WITHHELD by id and schema, never by content: a silent drop is how a
+role reasons confidently about a premise it never received, and "there is one and you may not
+read it" is the only safe sentence. The soldier's direct read applies the same check again,
+because the first consumer that forgets is the leak.
+
+With S5 closed, all four P0s from the external security review are repaired: filesystem
+confinement (.59), evidence failing closed (.61), transactional apply (.62), and secret
+filtering (.63). S6 (UI gate, P1) and S7 (the fault-injection precondition for re-enabling
+auto-apply) remain, and auto-apply stays off until they land.
+
 ## v0.3.8.62 - S4: a write to the operator's tree is a transaction or it does not happen
 
 **The fourth P0 closes.** "A patch set applies as a unit or not at all" was true only while
