@@ -1,5 +1,24 @@
 # ANTHILL Changelog
 
+## v0.3.8.65 - S7 completes behaviourally, and the security ladder closes
+
+**The hang, for real.** v0.3.8.59 fixed the subprocess shape — concurrent drains, a wait that
+bounds the call, a kill that takes the tree — and pinned the ORDER at the source level, saying
+honestly that proving it behaviourally "is S7's own work". This is that work: a git that genuinely
+never exits (a pre-commit hook that sleeps, against a test-seam timeout) proves the timeout fires
+and the call returns bounded; a hook flooding ~130KB into BOTH pipes proves the sequential-read
+deadlock is gone; a `find` over four thousand files through the production shell tool proves the
+flood drains concurrently and the 20K output cap holds. Real processes, real pipes — a source scan
+answers a question adjacent to "does it survive a real hang", and only a real hang answers it.
+
+**The re-enable decision is recorded, not implied.** Every rung of the §1b ladder is closed — S1
+through S7 and S9, across .59 through .65 — and PLAN.md §S8 now carries the explicit operator
+checklist for turning `autonomy_autoapply_enabled` back on: ladder green in the running version,
+no ROLLBACK_FAILED marker (enforced), write gates deliberate, a verify command the deployment can
+run, an allowlist naming only trees whose partial states the operator could tolerate. The flag
+stays off in shipped defaults; enabling it is a decision made once with eyes open rather than
+discovered in fragments during an incident. §2 of the plan — the forward program — resumes.
+
 ## v0.3.8.64 - S6: the UI gate fails closed, and an empty object stops being a map
 
 **The gate learns S3's lesson.** A store that THROWS is not a store that is absent: absent is the
