@@ -75,6 +75,16 @@ public class ConsoleRouteCoverageTests
         ["/homelab/backup/impact/*"] = "homelab backup impact; no console area yet",
         ["/homelab/graph/dependents/*"] = "homelab dependency graph; the deck renders the graph itself",
 
+        // --- MICROMOUND M1: two of these are not console routes at all, and the rest await the
+        // Integrations card that renders the three widget payloads (mound_fleet, mission_status,
+        // evidence_feed) through the widget runtime. ------------------------------------------------
+        ["/micromound/v0/enroll"] = "device endpoint: the one-time token is the auth; a mound is not an operator",
+        ["/micromound/v0/sync"] = "device endpoint: the Ed25519 signature is the auth; mounds dial in, consoles do not",
+        ["/micromound/mounds"] = "UI GAP — fleet list + token mint await the micromound Integrations card (M1 UI)",
+        ["/micromound/evidence"] = "UI GAP — the evidence_feed widget payload is the intended reader (M1 UI)",
+        ["/micromound/stop"] = "UI GAP — per-mound stop control belongs on the fleet card; the global stop is a file by design",
+        ["/micromound/stop/resume"] = "UI GAP — as /micromound/stop; resume is an explicit operator act",
+
         // The v0.3.8.48 schedule entries left this ledger the same release they joined it: the
         // project workspace's Schedules tab reaches all of them.
 
