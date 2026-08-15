@@ -1,3 +1,4 @@
+#if MICROMOUND
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Anthill.Core.Configuration;
@@ -293,3 +294,4 @@ public static partial class ApiHost
         });
     }
 }
+#endif

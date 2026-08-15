@@ -106,6 +106,8 @@ public sealed class AnthillConfig
     [JsonPropertyName("homelab_health_interval_seconds")] public int HomelabHealthIntervalSeconds { get; set; } = 60;
     [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
     [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
+    /// <summary>MICROMOUND optional integration — off unless an operator turns it on.</summary>
+    [JsonPropertyName("micromound_enabled")] public bool MicromoundEnabled { get; set; } = false;
     [JsonPropertyName("homelab_automation_enabled")] public bool HomelabAutomationEnabled { get; set; } = false;
     /// <summary>
     /// v2.15.0: nullable on purpose. The default flipped from off to on, and a plain bool cannot

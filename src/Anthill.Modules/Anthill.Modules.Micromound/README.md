@@ -1,4 +1,12 @@
-# Anthill.Modules.Micromound — M1, read-only
+# Anthill.Modules.Micromound — M1, read-only, OPTIONAL
+
+MICROMOUND is an optional integration, twice over. Its projects live outside `Anthill.sln`: a
+checkout without the sibling `micromound` repository builds a complete colony with **no micromound
+in it** — not a disabled copy, none of it (the Api's wiring compiles under the `MICROMOUND` define,
+which only lights up when the wire-contract checkout exists). And a colony built *with* it still
+opts in explicitly: `micromound_enabled` defaults to off. CI checks the contract out (pinned to a
+micromound tag) and runs `Anthill.Tests.Micromound` as its own lane, so the integration is always
+exercised where it costs nothing to carry.
 
 MICROMOUND extends the colony into physical devices. This module is the ANTHILL side of that
 link, at its first phase: **the colony can see mounds and cannot direct them.**
