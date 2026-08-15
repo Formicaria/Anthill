@@ -63,6 +63,11 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
         MissionId = row.GetValueOrDefault("mission_id")?.ToString() ?? "",
         TaskId = row.GetValueOrDefault("task_id")?.ToString(),
         CreatedAt = ParseUtc(row.GetValueOrDefault("created_at")),
+        // v0.3.8.57 — which tree this check judged. NULL on a legacy row, which reads as "not about
+        // a materialized revision" rather than as a match; see Evidence.IdentifiesARevision.
+        RevisionId = row.GetValueOrDefault("revision_id")?.ToString(),
+        PatchSetHash = row.GetValueOrDefault("patch_set_hash")?.ToString(),
+        TreeHash = row.GetValueOrDefault("tree_hash")?.ToString(),
     };
 
     private static DateTime ParseUtc(object? value) =>
@@ -145,13 +150,20 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR IGNORE INTO evidence
-                    (id, kind, deterministic, passed, artifact_ids_json, detail, mission_id, task_id, created_at)
-                  VALUES (@id, @kind, @det, @passed, @arts, @detail, @mission, @task, @at)",
+                    (id, kind, deterministic, passed, artifact_ids_json, detail, mission_id, task_id, created_at,
+                     revision_id, patch_set_hash, tree_hash)
+                  VALUES (@id, @kind, @det, @passed, @arts, @detail, @mission, @task, @at,
+                          @rev, @psh, @tree)",
                 ("@id", evidence.Id), ("@kind", evidence.Kind),
                 ("@det", evidence.Deterministic ? 1 : 0), ("@passed", evidence.Passed ? 1 : 0),
                 ("@arts", JsonList(evidence.ArtifactIds)), ("@detail", evidence.Detail),
                 ("@mission", evidence.MissionId), ("@task", evidence.TaskId),
-                ("@at", evidence.CreatedAt.ToIso()));
+                ("@at", evidence.CreatedAt.ToIso()),
+                // v0.3.8.57 — persisted, or the identity would exist only in memory and the whole
+                // point (querying "does this evidence judge THIS revision") would be unreachable.
+                ("@rev", (object?)evidence.RevisionId ?? DBNull.Value),
+                ("@psh", (object?)evidence.PatchSetHash ?? DBNull.Value),
+                ("@tree", (object?)evidence.TreeHash ?? DBNull.Value));
         }
         return evidence.Id;
     }

@@ -1074,7 +1074,17 @@ public sealed class ExecutionService : IExecutionService
                         // traced to the tree it ran in is why v3.8.22's build verdicts were
                         // meaningless — they were true statements about the wrong workspace.
                         detail: $"[{patchSet.Proposals[i].FilePath} @ {materialized.AppliedTreeHash[..12]}] {verdict.Summary}",
-                        taskId: task.Id));
+                        taskId: task.Id,
+                        // v0.3.8.57 — the identity as STRUCTURED FIELDS, not only inside the prose
+                        // above. The twelve-character hash in `Detail` is readable by a person and
+                        // useless to a query, so "does this build result belong to the revision the
+                        // verifier is about to promote?" had no answer the runtime could compute.
+                        // Both hashes are recorded because they answer different questions: the
+                        // patch-set hash is what was asked for, the tree hash is what landed, and
+                        // they differ exactly when evidence must not be reused.
+                        revisionId: $"rev:{patchSet.Id}",
+                        patchSetHash: materialized.PatchSetHash,
+                        treeHash: materialized.AppliedTreeHash));
 
             // The set is promotable only if EVERY proposal is. One unverifiable change in a set is an
             // unverifiable set — a patch is applied as a unit, so it must be judged as one.

@@ -41,6 +41,52 @@ public sealed record Evidence
     public required string MissionId { get; init; }
     public string? TaskId { get; init; }
 
+    /* ------------------------------------------------------------------------------------------
+     * WHICH TREE THIS JUDGED. v0.3.8.57.
+     *
+     * A check is a statement about a specific set of bytes, and until this release the evidence row
+     * could not say which. The tree hash appeared only inside `Detail`, truncated to twelve
+     * characters, in prose — readable by a person, useless to a query. So "does this build result
+     * belong to the revision the verifier is about to promote?" had no answer the runtime could
+     * compute, and the failure it guards against is silent: correct evidence attached to the wrong
+     * source tree still reads as a pass.
+     *
+     * That is not hypothetical here. v3.8.22 shipped build verdicts computed against the primary
+     * workspace instead of the patched sandbox — true statements about the wrong bytes — and it took
+     * a release to notice. These three fields are what let the verifier reject that mechanically
+     * rather than by inspection.
+     *
+     * NULLABLE, because plenty of evidence is legitimately not about a revision: a model review on
+     * an informational mission, a tool outcome, a hash match over an artifact. Null means "not about
+     * a materialized revision", which is different from "about one, unrecorded" — a consumer that
+     * requires identity must refuse the null rather than assume it matches.
+     * ------------------------------------------------------------------------------------------ */
+
+    /// <summary>The materialized revision this check ran against, or null when it judged no tree.</summary>
+    public string? RevisionId { get; init; }
+
+    /// <summary>The patch set that produced that revision — WHAT WAS ASKED FOR.</summary>
+    public string? PatchSetHash { get; init; }
+
+    /// <summary>The tree that resulted — WHAT ACTUALLY LANDED. The two differ when a patch applies
+    /// partially or the base moved, which is precisely when evidence must not be reused.</summary>
+    public string? TreeHash { get; init; }
+
+    /// <summary>Whether this row can be matched to a specific materialized revision.</summary>
+    public bool IdentifiesARevision =>
+        !string.IsNullOrWhiteSpace(RevisionId)
+        && !string.IsNullOrWhiteSpace(PatchSetHash)
+        && !string.IsNullOrWhiteSpace(TreeHash);
+
+    /// <summary>
+    /// Does this evidence judge the given revision? Compares the TREE as well as the id, because an
+    /// id can be reused by a re-materialization and a tree hash cannot.
+    /// </summary>
+    public bool Judges(string revisionId, string treeHash) =>
+        IdentifiesARevision
+        && string.Equals(RevisionId, revisionId, StringComparison.Ordinal)
+        && string.Equals(TreeHash, treeHash, StringComparison.Ordinal);
+
     public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
 
     public static Evidence Create(
@@ -50,7 +96,10 @@ public sealed record Evidence
         string missionId,
         IReadOnlyList<string>? artifactIds = null,
         string detail = "",
-        string? taskId = null) => new()
+        string? taskId = null,
+        string? revisionId = null,
+        string? patchSetHash = null,
+        string? treeHash = null) => new()
         {
             Id = $"ev_{Guid.NewGuid():N}",
             Kind = kind,
@@ -60,6 +109,9 @@ public sealed record Evidence
             ArtifactIds = artifactIds ?? Array.Empty<string>(),
             Detail = detail,
             TaskId = taskId,
+            RevisionId = revisionId,
+            PatchSetHash = patchSetHash,
+            TreeHash = treeHash,
         };
 }
 

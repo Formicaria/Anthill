@@ -318,7 +318,11 @@ public sealed partial class SqliteMemory : IDisposable
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, deterministic INTEGER NOT NULL DEFAULT 0,
             passed INTEGER NOT NULL DEFAULT 0, artifact_ids_json TEXT NOT NULL DEFAULT '[]',
             detail TEXT NOT NULL DEFAULT '', mission_id TEXT NOT NULL, task_id TEXT,
-            created_at TEXT NOT NULL)",
+            created_at TEXT NOT NULL,
+            -- v0.3.8.57: WHICH TREE this check judged. A verdict is a statement about a specific
+            -- set of bytes; without these it could not say which, and correct evidence attached to
+            -- the wrong source tree reads exactly like a pass.
+            revision_id TEXT, patch_set_hash TEXT, tree_hash TEXT)",
         @"CREATE INDEX IF NOT EXISTS idx_evidence_mission ON evidence(mission_id, deterministic, passed)",
         @"CREATE TABLE IF NOT EXISTS workers (
             id TEXT PRIMARY KEY, roles_json TEXT NOT NULL DEFAULT '[]',
@@ -565,6 +569,15 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v0.3.8.57 (AUTONOMY-10 Phase 3): evidence identifies the revision it judged. Legacy rows
+        // read as NULL — "not about a materialized revision" — which `Evidence.IdentifiesARevision`
+        // reports as false, so an old row can never be mistaken for one that matches.
+        AddMissing("evidence", new()
+        {
+            ["revision_id"] = "TEXT",
+            ["patch_set_hash"] = "TEXT",
+            ["tree_hash"] = "TEXT",
+        });
         // v2.26.0 pre-V3 hardening (migration 16): the canonical evaluation is PERSISTED — the
         // authoritative outcome must not live only in transient events or per-caller re-derivation.
         // Legacy rows read as '' → "no evaluation", which is never treated as verified.
