@@ -5,6 +5,10 @@
 > per environment. Nothing here modifies a repository you care about: use the throwaway
 > directories the steps create.
 
+> **Two kinds of qualification.** This checklist is the MANUAL pass. The automated merge-blocking
+> suite and the live-model run are separate, and `docs/QUALIFICATION.md` owns the distinction —
+> including the fact that **live qualification has never been run against any provider**.
+
 ## 0. Tester & environment
 
 | Field | Value |

@@ -160,6 +160,17 @@ public sealed record AntMetrics
     public int RetryCount { get; init; }
     /// <summary>Stable description of where this ran, for reproducing a result later.</summary>
     public string? EnvironmentFingerprint { get; init; }
+
+    /// <summary>
+    /// The provider and model that served this ant's call, when one did. v0.3.8.57.
+    ///
+    /// <see cref="ModelCalls"/> has recorded HOW MANY calls were made since the metrics existed and
+    /// never which model made them, so "was this artifact written by the 7B or the 70B" had no
+    /// answer. Null for a deterministic ant, and that is itself provenance worth recording: it says
+    /// no model was involved rather than that the record is incomplete.
+    /// </summary>
+    public string? Provider { get; init; }
+    public string? Model { get; init; }
 }
 
 public sealed record AntExecutionResult
@@ -385,7 +396,25 @@ public static class AntExecutionCatalog
             // promotes, and a DeterministicBlock cannot be argued away — but it is not yet what the
             // spec describes.
             AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
-            Model: new ModelRequirement(StructuredOutput: true)),
+            Model: new ModelRequirement(StructuredOutput: true),
+            // v0.3.8.57 — PolicyInserted, which is what the runtime has GUARANTEED since v0.3.8.41.
+            //
+            // `EnsureVerificationWaitsFor` inserts a verifier when a patch set produces its review
+            // evidence, and `EnsureVerificationAfterDeliverable` inserts one when a builder produces
+            // a deliverable; both fail CLOSED, setting a DeterministicBlock when insertion is refused
+            // so an unverifiable deliverable cannot read as a verified one. The contract meanwhile
+            // still said PlannerSelectable — the default, inherited by never being written down.
+            //
+            // That gap is not cosmetic. The declared mode is what `RoleReadiness` reports, what the
+            // API exposes as `scheduling_mode`, and what a reader consults to answer "can verification
+            // be skipped by a plan that forgets it". The honest answer became NO in v0.3.8.41 and the
+            // table kept saying YES for six releases.
+            //
+            // A FLOOR, NOT A CEILING (v0.3.8.51's rule): PolicyInserted does not forbid a planned
+            // verifier. A plan that asks for verification is asking for more checking, not less, and
+            // the gate in AntRegistry deliberately binds only the two modes whose handlers can do
+            // nothing but refuse a planned invocation.
+            Scheduling: SchedulingMode.PolicyInserted),
 
         // ---- specialist ants ------------------------------------------------------------------
 

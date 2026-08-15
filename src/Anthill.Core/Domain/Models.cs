@@ -21,6 +21,27 @@ public sealed class Task
     public List<string> DependsOn { get; set; } = new();
 
     /// <summary>
+    /// The artifacts this task is AUTHORITATIVELY given, by id. v0.3.8.57.
+    ///
+    /// Empty means "no declared inputs", and the context compiler then falls back to the mission-wide
+    /// block — which is what every task got before this field existed. That fallback is deliberate:
+    /// most tasks have no unambiguous producer to point at, and narrowing them by guesswork would
+    /// starve a worker of context it legitimately used.
+    ///
+    /// WHY IT IS NEEDED. `ArtifactContext.Compile` handed every task every artifact the mission had
+    /// accumulated, ordered by a static schema priority. So a tester received the `ui_map` and a
+    /// researcher received the `patch_set`: technically bounded, and still "whatever previous work
+    /// seems relevant" rather than "the inputs this task was created to consume". When the runtime
+    /// KNOWS the producer — a policy-inserted review exists precisely because a specific patch-set
+    /// artifact was written — the task can say so, and the worker can be given that instead.
+    ///
+    /// Ids rather than content, for the reason `ArtifactContext` already gives: the id is the
+    /// provenance and the excerpt is a convenience. Recording ids is what makes a task's inputs
+    /// reconstructable on replay instead of reassembled from summaries.
+    /// </summary>
+    public List<string> InputArtifactIds { get; set; } = new();
+
+    /// <summary>
     /// When false, a Failed/Skipped result on THIS task does not propagate a skip to tasks
     /// that depend on it — dependents still wait for it to reach a terminal state, then proceed.
     /// Used by spec-ingestion missions so one failed section never aborts synthesis. Critical
@@ -107,6 +128,10 @@ public sealed class Task
         AttemptCount = AttemptCount, MaxAttempts = MaxAttempts, FailureReason = FailureReason, FailureType = FailureType,
         SkippedReason = SkippedReason, BlockedReason = BlockedReason,
         ProducedRevisionId = ProducedRevisionId, RanRevisionId = RanRevisionId,
+        // v0.3.8.57. The ant receives a DeepCopy, and ArtifactContext reads the inputs off the
+        // copy -- omitting this line would leave the field set on the original and empty on the
+        // only object the worker ever sees, which is a silent fall back to mission-wide context.
+        InputArtifactIds = new List<string>(InputArtifactIds),
     };
 }
 

@@ -41,6 +41,52 @@ public sealed record Evidence
     public required string MissionId { get; init; }
     public string? TaskId { get; init; }
 
+    /* ------------------------------------------------------------------------------------------
+     * WHICH TREE THIS JUDGED. v0.3.8.57.
+     *
+     * A check is a statement about a specific set of bytes, and until this release the evidence row
+     * could not say which. The tree hash appeared only inside `Detail`, truncated to twelve
+     * characters, in prose — readable by a person, useless to a query. So "does this build result
+     * belong to the revision the verifier is about to promote?" had no answer the runtime could
+     * compute, and the failure it guards against is silent: correct evidence attached to the wrong
+     * source tree still reads as a pass.
+     *
+     * That is not hypothetical here. v3.8.22 shipped build verdicts computed against the primary
+     * workspace instead of the patched sandbox — true statements about the wrong bytes — and it took
+     * a release to notice. These three fields are what let the verifier reject that mechanically
+     * rather than by inspection.
+     *
+     * NULLABLE, because plenty of evidence is legitimately not about a revision: a model review on
+     * an informational mission, a tool outcome, a hash match over an artifact. Null means "not about
+     * a materialized revision", which is different from "about one, unrecorded" — a consumer that
+     * requires identity must refuse the null rather than assume it matches.
+     * ------------------------------------------------------------------------------------------ */
+
+    /// <summary>The materialized revision this check ran against, or null when it judged no tree.</summary>
+    public string? RevisionId { get; init; }
+
+    /// <summary>The patch set that produced that revision — WHAT WAS ASKED FOR.</summary>
+    public string? PatchSetHash { get; init; }
+
+    /// <summary>The tree that resulted — WHAT ACTUALLY LANDED. The two differ when a patch applies
+    /// partially or the base moved, which is precisely when evidence must not be reused.</summary>
+    public string? TreeHash { get; init; }
+
+    /// <summary>Whether this row can be matched to a specific materialized revision.</summary>
+    public bool IdentifiesARevision =>
+        !string.IsNullOrWhiteSpace(RevisionId)
+        && !string.IsNullOrWhiteSpace(PatchSetHash)
+        && !string.IsNullOrWhiteSpace(TreeHash);
+
+    /// <summary>
+    /// Does this evidence judge the given revision? Compares the TREE as well as the id, because an
+    /// id can be reused by a re-materialization and a tree hash cannot.
+    /// </summary>
+    public bool Judges(string revisionId, string treeHash) =>
+        IdentifiesARevision
+        && string.Equals(RevisionId, revisionId, StringComparison.Ordinal)
+        && string.Equals(TreeHash, treeHash, StringComparison.Ordinal);
+
     public DateTime CreatedAt { get; init; } = Common.AnthillTime.NowUtc();
 
     public static Evidence Create(
@@ -50,7 +96,10 @@ public sealed record Evidence
         string missionId,
         IReadOnlyList<string>? artifactIds = null,
         string detail = "",
-        string? taskId = null) => new()
+        string? taskId = null,
+        string? revisionId = null,
+        string? patchSetHash = null,
+        string? treeHash = null) => new()
         {
             Id = $"ev_{Guid.NewGuid():N}",
             Kind = kind,
@@ -60,6 +109,9 @@ public sealed record Evidence
             ArtifactIds = artifactIds ?? Array.Empty<string>(),
             Detail = detail,
             TaskId = taskId,
+            RevisionId = revisionId,
+            PatchSetHash = patchSetHash,
+            TreeHash = treeHash,
         };
 }
 
@@ -147,13 +199,38 @@ public static class ArtifactSchemas
     /// </summary>
     public const string FailureContext = "failure_context";
 
+    /// <summary>
+    /// A proposal to change DOCUMENTATION, requiring approval. v0.3.8.57.
+    ///
+    /// The scribe has emitted `docs_patch_set` since v3.8.20 and <see cref="ForAntKind"/> folded it
+    /// onto <see cref="PatchSet"/> — but the two payloads have nothing in common. A patch set is
+    /// `{ patch_set_id, summary, proposals[] }` and something materialises it; a docs proposal is
+    /// `{ targets, source_mission, requires_approval }` and the scribe holds no apply permission.
+    /// Every consumer that asked the store for "this mission's patch sets" — the soldier does
+    /// exactly that, and reports how many it reviewed — was handed both and could not tell them
+    /// apart. The vocabulary's own rule applies: a schema the colony already produces and the
+    /// vocabulary did not name is a gap in the vocabulary, not a reason to rename what the ant emits.
+    /// </summary>
+    public const string DocsPatchSet = "docs_patch_set";
+
+    /// <summary>
+    /// The researcher's four declared sections, as data. v0.3.8.57.
+    ///
+    /// Added because the SHAPE ALREADY EXISTED — the researcher's prompt has demanded these
+    /// headings since the ant was written, and the response was then flattened into a string. That
+    /// is the vocabulary's stated rule again: a schema the colony already produces and the
+    /// vocabulary did not name is a gap in the vocabulary. See <see cref="Artifacts.ResearchBrief"/>
+    /// for why the BUILDER deliberately gets no equivalent.
+    /// </summary>
+    public const string ResearchBrief = "research_brief";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
-            FailureContext,
+            FailureContext, DocsPatchSet, ResearchBrief,
         };
 
     /// <summary>
@@ -178,7 +255,9 @@ public static class ArtifactSchemas
         "ui_map" => UiMap,
         "repair_recommendation" => RepairRecommendation,
         "source_set" => SourceSet,
-        "docs_patch_set" or "patch_set" => PatchSet,
+        "docs_patch_set" => DocsPatchSet,
+        "research_brief" => ResearchBrief,
+        "patch_set" => PatchSet,
         "repository_map" => RepositoryMap,
         "file_set" => FileSet,
         "change_plan" => ChangePlan,

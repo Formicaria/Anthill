@@ -110,6 +110,33 @@ public sealed partial class SqliteMemory
     {
         if (result.Artifacts is null || result.Artifacts.Count == 0) return;
 
+        // v0.3.8.57 — built ONCE for the whole execution, because it describes the execution and not
+        // the individual artifact. Two artifacts from one ant ran on the same machine, on the same
+        // build, through the same model; giving each its own copy of that would invite them to
+        // disagree.
+        var provenance = new ArtifactProvenance
+        {
+            ColonyVersion = Configuration.AnthillRuntime.Version,
+            EnvironmentFingerprint = result.Metrics?.EnvironmentFingerprint
+                                     ?? Configuration.AnthillRuntime.EnvironmentFingerprint,
+            RuntimeNode = antName,
+            Provider = result.Metrics?.Provider,
+            Model = result.Metrics?.Model,
+            // Same read the failure path uses, so the two agree about what "the tool" means rather
+            // than each deciding for itself.
+            Tool = result.Evidence?.FirstOrDefault(e => e.Kind == "tool")?.Value,
+            ModelCalls = result.Metrics?.ModelCalls ?? 0,
+            ToolCalls = result.Metrics?.ToolCalls ?? 0,
+            // From the CALL COUNT, not from whether a model name survived. A model call that happened
+            // and whose name was lost is still a model call, and recording it as deterministic would
+            // turn a gap in the record into a false guarantee about the work.
+            ModelInvolved = (result.Metrics?.ModelCalls ?? 0) > 0,
+            // The execution's own caveats, kept with the thing they qualify. Warnings used to die
+            // with the execution, so an artifact from a degraded run was indistinguishable from one
+            // from a clean run.
+            Limitations = result.Warnings?.ToList() ?? new List<string>(),
+        };
+
         try
         {
             var store = (IArtifactStore)this;
@@ -131,7 +158,8 @@ public sealed partial class SqliteMemory
                     // the bridge has none to record. Inferring "everything this mission produced
                     // earlier" would fabricate edges nobody asserted.
                     sourceArtifactIds: null,
-                    visibility: ArtifactVisibility.Colony));
+                    visibility: ArtifactVisibility.Colony,
+                    provenance: provenance));
             }
         }
         catch (Exception error)

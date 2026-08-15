@@ -311,11 +311,37 @@ public sealed class SoldierAnt : BaseAnt
     /// records how many patch artifacts were read, so "0 patch artifacts" is visible to an operator
     /// rather than being indistinguishable from a clean scan of a real one.
     /// </summary>
-    private (string Material, int Count) ReadPatchSetArtifacts(Mission mission)
+    /// <remarks>
+    /// v0.3.8.57 — when the TASK names its inputs, those are the review material and nothing else.
+    ///
+    /// The mission-wide read below is correct for a soldier a planner wrote, which has no way to say
+    /// which change it means. It is WRONG for the policy-inserted soldier: that task exists because
+    /// one specific patch set was just written, and reviewing every patch set the mission has
+    /// accumulated makes "the review passed" a claim about material the operator did not ask about.
+    /// Worse, the count reported below would say "3 patch artifacts read" without saying which — so
+    /// a clean scan of two stale sets and the live one looks identical to a clean scan of the live
+    /// one alone.
+    /// </remarks>
+    private (string Material, int Count) ReadPatchSetArtifacts(Task task, Mission mission)
     {
         if (_artifacts is null) return ("", 0);
         try
         {
+            if (task.InputArtifactIds.Count > 0)
+            {
+                // Declared inputs are read BY ID and not filtered by schema. A task told to review
+                // an artifact reviews it; silently dropping one that is not a patch_set would make
+                // the soldier disagree with the runtime about what it was given.
+                var declared = task.InputArtifactIds
+                    .Select(id => _artifacts.Get(id))
+                    .Where(a => a is not null)
+                    .Select(a => a!)
+                    .ToList();
+                return declared.Count == 0
+                    ? ("", 0)
+                    : (string.Join("\n", declared.Select(a => a.Payload)), declared.Count);
+            }
+
             var patches = _artifacts.ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet);
             return patches.Count == 0
                 ? ("", 0)
@@ -355,7 +381,7 @@ public sealed class SoldierAnt : BaseAnt
         // approved_scope declaration that ScopeMismatch parses, and prior results carry context a
         // patch body does not. Replacing one input with the other would have traded one blind spot
         // for a different one.
-        var (patchMaterial, patchArtifactCount) = ReadPatchSetArtifacts(mission);
+        var (patchMaterial, patchArtifactCount) = ReadPatchSetArtifacts(task, mission);
 
         var input = task.Description + "\n" + string.Join("\n",
             mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null).Select(t => t.Result))
@@ -479,6 +505,28 @@ public sealed class ScribeAnt : BaseAnt
         if (!contract.SupportsTaskType(task.TaskType))
             return AntExecutionResult.Blocked(
                 $"task type '{task.TaskType}' is outside the scribe execution contract");
+
+        // v0.3.8.57 (PLAN.md gate 8) — the scribe cannot CERTIFY what nobody verified.
+        //
+        // `verified_change_summary` is a task type whose OUTPUT ASSERTS a verification. Nothing
+        // checked that one had happened, so a mission whose verifier never ran — or ran and failed —
+        // could still produce a document telling the operator its change was verified. That document
+        // then outlives the mission: it is the artifact a person reads and quotes, and it would have
+        // been the most confident and least grounded thing the colony produced.
+        //
+        // ONLY this task type. A scribe writing release notes or a docs proposal mid-mission is
+        // doing legitimate work and is not claiming anything about verification; blocking those
+        // would be the gate widening past the sentence it was written to enforce.
+        //
+        // BLOCKED, not failed: verification arriving later cures this, and a failure would spend a
+        // repair budget on something no repair addresses.
+        if (string.Equals(task.TaskType, "verified_change_summary", StringComparison.OrdinalIgnoreCase)
+            && !Outcomes.MissionVerification.IsSatisfied(mission.Tasks))
+            return AntExecutionResult.Blocked(
+                "a verified_change_summary asserts that this mission's change was verified, and it was "
+              + $"not: {Outcomes.MissionVerification.Explain(mission.Tasks)}. The summary is refused "
+              + "rather than written with the claim softened — a document that hedges about whether "
+              + "verification happened is read as one that says it did.");
 
         var priorResults = mission.Tasks.Where(t => t.Id != task.Id && t.Result is not null)
             .Select(t => $"[{t.AssignedAnt}] {t.Title}: {t.ResultSummary ?? Truncate(t.Result!)}").ToList();
@@ -644,11 +692,23 @@ public sealed class MedicAnt : BaseAnt
         }
         var retryable = FailureClassify.IsRetryable(cls);
 
-        // §1E — loop control 2, keyed on the SEMANTIC failure signature. A prior medic diagnosis of
-        // the same signature means the same defect came back under a new task UUID without a
-        // materially changed artifact: escalate, do not loop.
-        var repeated = mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
-            && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
+        // §1E — loop control 2, keyed on the SEMANTIC failure signature. A prior occurrence of the
+        // same signature means the same defect came back under a new task UUID without a materially
+        // changed artifact: escalate, do not loop.
+        //
+        // v0.3.8.57 — READ FROM THE TYPED RECORD, not by grepping a previous medic's prose.
+        //
+        // This used to be `mission.Tasks.Any(t => t.AssignedAnt == "medic" && t.Result.Contains(
+        // signature))` — the bound on repair loops, decided by a substring search of narrative text.
+        // Task results are summarised and truncated (`ResultChars`, `MaxResultSummaryChars`), so a
+        // long diagnosis whose signature fell past the cut silently stopped matching, and the loop
+        // control quietly went away in exactly the missions that had produced the most output. Prose
+        // as a control channel is the failure ADR-004 exists to end, and this was the last place in
+        // the repair path where a bound depended on it.
+        //
+        // The failure_context artifacts already carry the signature as a field. Counting them
+        // answers the same question from data that cannot be truncated into a different answer.
+        var repeated = HasSeenSignatureBefore(mission, task, signature);
         if (repeated)
             return Escalation(mission, task,
                 $"Semantic duplicate: failure signature {signature} was already diagnosed in this mission "
@@ -739,6 +799,56 @@ public sealed class MedicAnt : BaseAnt
                 new[] { "failure_diagnosis" }, true, 1, dedupeKey) },
             Warnings = { "escalated" },
         };
+
+    /// <summary>
+    /// Has this exact failure signature already been recorded for a DIFFERENT task? v0.3.8.57.
+    ///
+    /// The bound on repair looping. A signature is semantic — failure class plus normalised error
+    /// plus the identifying fields — so a second occurrence under a new task id means the same defect
+    /// came back and nothing material changed.
+    ///
+    /// FALLS BACK TO THE PROSE SCAN when there is no artifact store, and only then. Dozens of tests
+    /// and the CLI construct a medic without one, and in that configuration the old behaviour is
+    /// still better than no bound at all. Where a store exists the typed record is authoritative,
+    /// because it is the one that cannot be truncated into disagreeing with itself.
+    /// </summary>
+    private bool HasSeenSignatureBefore(Mission mission, Task task, string signature)
+    {
+        if (string.IsNullOrWhiteSpace(signature)) return false;
+
+        if (_artifacts is null)
+            return mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
+                && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
+
+        try
+        {
+            // Distinct TASKS, not distinct artifacts: one failing task can record more than one
+            // context across attempts, and counting those would escalate a single failure on its
+            // own retry — turning a bounded repair into no repair at all.
+            var tasksWithThisSignature = _artifacts
+                .ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.FailureContext)
+                .Select(a => (a.TaskId, Context: Anthill.SDK.Artifacts.FailureContext.FromJson(a.Payload)))
+                .Where(x => x.Context is not null
+                         && string.Equals(x.Context!.FailureSignature, signature, StringComparison.Ordinal))
+                .Select(x => x.TaskId ?? "")
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            // More than one distinct task has failed this way. The current failure is one of them,
+            // so "seen before" means at least two.
+            return tasksWithThisSignature.Count > 1;
+        }
+        catch (Exception error)
+        {
+            // An unreadable store must not silently REMOVE the bound. Fall back to the prose scan,
+            // which is weaker but is a bound, and say that the strong one was unavailable.
+            Console.Error.WriteLine(
+                $"[medic] could not read failure_context signatures for {mission.Id}: {error.Message} "
+              + "— falling back to the narrative scan for loop control");
+            return mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
+                && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
+        }
+    }
 
     /// <summary>The typed failure record for THIS failed task, if the boundary produced one.</summary>
     private Anthill.SDK.Artifacts.FailureContext? LoadFailureContext(Mission mission, Task failed)

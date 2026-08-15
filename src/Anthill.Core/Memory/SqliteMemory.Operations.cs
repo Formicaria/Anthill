@@ -131,16 +131,17 @@ public sealed partial class SqliteMemory
     private void UpsertTask(SqliteConnection conn, SqliteTransaction? tx, string missionId, Task task) =>
         NonQuery(conn, tx,
             @"INSERT OR REPLACE INTO tasks (id, mission_id, title, description, assigned_ant, assigned_worker, task_type,
-                parent_task_id, parent_task_ids_json, depends_on_json, status, result, result_summary,
+                parent_task_id, parent_task_ids_json, depends_on_json, input_artifact_ids_json, status, result, result_summary,
                 result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
                 skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
                 skipped_reason, blocked_reason, skill_id, critical, cancellation_reason)
-              VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @status, @result, @summary,
+              VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @inputs, @status, @result, @summary,
                 @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
                 @max, @freason, @ftype, @sreason, @breason, @skill, @critical, @cancel)",
             ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
             ("@ant", task.AssignedAnt), ("@worker", task.AssignedWorker), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
             ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
+            ("@inputs", Json.SafeDumps(task.InputArtifactIds)),
             ("@status", task.Status.Value()), ("@result", task.Result), ("@summary", task.ResultSummary),
             ("@rc", task.ResultChars), ("@et", task.EstimatedTokens),
             ("@created", ((DateTime?)task.CreatedAt).ToIsoOrNull()), ("@started", task.StartedAt.ToIsoOrNull()),
@@ -864,7 +865,7 @@ public sealed partial class SqliteMemory
 
     public List<Dictionary<string, object?>> GetTasksForMission(string missionId, int limit = 200) =>
         Query(@"SELECT id, mission_id, title, description, assigned_ant, assigned_worker, task_type, parent_task_id,
-                  parent_task_ids_json, depends_on_json, status, result, result_summary, result_chars,
+                  parent_task_ids_json, depends_on_json, input_artifact_ids_json, status, result, result_summary, result_chars,
                   estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at, skipped_at,
                   elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason,
                   skill_id, critical, outcome_code, cancellation_reason
