@@ -34,6 +34,10 @@ secrets.json
 # stray files from sandbox git/test runs — never commit
 FETCH_HEAD
 
+# CI checks the MICROMOUND wire contract out here so Anthill.Modules.Micromound can
+# resolve $(MicromoundRepoPath). Never a local working copy — clone the repo as a sibling instead.
+.micromound/
+
 # local SDK bootstrap helper (downloaded Microsoft installer; not project source)
 dotnet-install.sh
 
