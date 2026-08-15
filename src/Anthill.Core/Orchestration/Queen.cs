@@ -930,8 +930,18 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // constraints and verification policy as resolved at intake, so the evaluation is
         // reproducible from the persisted record rather than dependent on what the statics happened
         // to say at the moment finalization ran.
+        // v0.3.8.66 (§2 item 2): the evaluator receives the store's evidence rows so promotion
+        // can require identity. A read failure passes NULL, which the verification layer treats as
+        // fail-closed for any mission holding a materialized revision — §1b S3's direction, applied
+        // at the last place a mission becomes completed_verified.
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? missionEvidence = null;
+        try { missionEvidence = ((Anthill.SDK.Artifacts.IEvidenceStore)Memory).ForMission(mission.Id); }
+        catch (Exception evidenceError)
+        {
+            Console.Error.WriteLine($"[finalize] could not read evidence for {mission.Id}: {evidenceError.Message}");
+        }
         var evaluation = _evaluator.Evaluate(
-            mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id));
+            mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.
