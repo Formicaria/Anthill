@@ -10,6 +10,9 @@ namespace Anthill.Tests;
 /// failure mode fixed in v2.6.6). Fully offline — the breaker uses an injected clock and the router
 /// short-circuit test drives an already-open breaker, so nothing here makes a real network call.
 /// </summary>
+[Collection("specialist-gates")]   // v0.3.8.60: mutates AnthillRuntime.UseOllama /
+                                   // EnableModelRouting, which a concurrently-running
+                                   // mission reads. See ModelRoutingGlobalsTests.
 public class ModelReliabilityTests
 {
     public ModelReliabilityTests() => AnthillRuntime.Initialize();

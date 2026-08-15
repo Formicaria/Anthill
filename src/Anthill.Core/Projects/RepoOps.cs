@@ -24,6 +24,17 @@ public static class RepoOps
 
     private const int TimeoutMs = 8000;
 
+    /// <summary>
+    /// Read what a finished process wrote, without hanging on an inherited pipe. A grandchild that
+    /// outlives its parent keeps the handle open, so the stream does not reach EOF even though the
+    /// process this method started has already exited.
+    /// </summary>
+    private static string Drain(System.Threading.Tasks.Task<string> read)
+    {
+        try { return read.Wait(TimeSpan.FromSeconds(5)) ? read.Result : ""; }
+        catch { return ""; }
+    }
+
     /// <summary>Run one git command in <paramref name="root"/>. Never throws.</summary>
     internal static (bool Ok, string Output) Git(string root, params string[] args)
     {
@@ -45,9 +56,31 @@ public static class RepoOps
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi);
             if (p is null) return (false, "git could not be started");
-            var stdout = p.StandardOutput.ReadToEnd();
-            var stderr = p.StandardError.ReadToEnd();
+            // v0.3.8.59 (PLAN.md §1b S7) — THE TIMEOUT CAN NOW ACTUALLY FIRE.
+            //
+            // This read stdout to EOF, then stderr to EOF, and only then called WaitForExit. Both
+            // halves were broken and the second is the subtle one:
+            //
+            //   * a git command that never exits blocks forever in the FIRST ReadToEnd, so execution
+            //     never reaches the timeout meant to bound it — the guard sat downstream of the thing
+            //     that hangs;
+            //   * reading the streams sequentially DEADLOCKS whenever git fills its stderr pipe while
+            //     this side is still draining stdout. Each waits for the other and neither is timed
+            //     out. `git clone` on a large repository writes progress to stderr continuously.
+            //
+            // v0.3.8.57 added the process-tree kill on the line below and did not touch the reads,
+            // so the colony has spent two releases with a correct kill on an unreachable path. That
+            // is the shape worth naming: a guard added upstream of nothing, because the failure it
+            // guards against happens before control arrives.
+            var stdoutTask = p.StandardOutput.ReadToEndAsync();
+            var stderrTask = p.StandardError.ReadToEndAsync();
+
             if (!p.WaitForExit(TimeoutMs)) { try { p.Kill(entireProcessTree: true); } catch { } return (false, "git timed out"); }
+
+            // The process is gone, so both reads complete. The bound is for a grandchild that
+            // inherited the pipe and outlived it — git hooks spawn them.
+            var stdout = Drain(stdoutTask);
+            var stderr = Drain(stderrTask);
             return (p.ExitCode == 0, p.ExitCode == 0 ? stdout.TrimEnd() : (stderr + stdout).Trim());
         }
         catch (Exception e)

@@ -134,17 +134,15 @@ public class SoldierAntTests
     [Fact]
     public void GatesControlExecutability()
     {
-        Assert.DoesNotContain("soldier", AntRegistry.ExecutableRoleIds);
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            AnthillRuntime.EnableSoldierAnt = true;
-            Assert.Contains("soldier", AntRegistry.ExecutableRoleIds);
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableSoldierAnt = false;
-        }
+        // v0.3.8.60 — through RosterGates, which has existed since v0.3.8.41 for exactly this.
+        // The old shape read the ambient flags for its NEGATIVE assertion and restored to
+        // `false` rather than to the previous value: it both depended on its neighbours
+        // leaving the gates closed and manufactured that state for them. A mutual arrangement
+        // that held only while everyone was equally careless.
+        RosterGates.With(() => Assert.DoesNotContain("soldier", AntRegistry.ExecutableRoleIds),
+            specialists: false, soldier: false);
+
+        RosterGates.With(() => Assert.Contains("soldier", AntRegistry.ExecutableRoleIds),
+            specialists: true, tier: ActivationTier.Full, soldier: true);
     }
 }

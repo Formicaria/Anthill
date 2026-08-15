@@ -11,7 +11,7 @@ namespace Anthill.Tests;
 /// operator enabled patch application in Settings. The gate must follow the setting through both
 /// boot-time projection and live settings updates.
 /// </summary>
-[Collection("Autonomy")] // serialize with the other tests that mutate AnthillRuntime globals
+[Collection("specialist-gates")] // serialize with the other tests that mutate AnthillRuntime globals
 public class PatchApplyGateTests : IDisposable
 {
     private readonly bool _saved;
