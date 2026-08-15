@@ -307,8 +307,15 @@ Required JSON:
 
     internal static List<Task> InjectSpecialistRouting(List<Task> tasks, string goal)
     {
-        var lowered = goal.ToLowerInvariant();
-        var uiGoal = new[] { "ui", "frontend", "page", "css", "html", "javascript", "dashboard", "canvas" }.Any(lowered.Contains);
+        // v0.3.8.57 — ONE detector, shared with UiChangeGate. This list used to live here and
+        // nowhere else; the dispatch gate that now enforces the map would have needed its own copy,
+        // and two lists mean the planner eventually routes a set the gate does not guard (or the
+        // reverse, which blocks work nothing was planned to map).
+        //
+        // The planner reasons about the GOAL and the gate also reads task paths. That is not a
+        // disagreement: at planning time the tasks the check would read do not exist yet, so the
+        // planner asks the question with what it has and the gate asks it again with more.
+        var uiGoal = Agents.UiChangeGate.LooksLikeUiWork(goal, null);
         var hasCoder = tasks.Any(t => t.AssignedAnt == "coder");
         var hasMapper = tasks.Any(t => t.AssignedAnt == "ui_cartographer");
         if (uiGoal && hasCoder && !hasMapper && AntRegistry.ExecutableRoleIds.Contains("ui_cartographer"))

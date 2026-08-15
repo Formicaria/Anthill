@@ -442,12 +442,194 @@ public class CrossBoundaryAgreementTests
         Assert.Equal(PatchApplyStatus.Created,
             PatchApply.Compute(PatchApply.Add, null, "hello", currentContent: null).Status);
 
-    /// <summary>An add onto an existing file overwrites — recorded distinctly so the backup that
-    /// makes it safe is visible in the audit trail rather than implied.</summary>
+    /// <summary>
+    /// An add onto an existing file is a CONFLICT. v0.3.8.57 — this assertion inverted, deliberately.
+    ///
+    /// It previously asserted <c>Overwrote</c>, "recorded distinctly so the backup that makes it safe
+    /// is visible in the audit trail rather than implied". That reasoning defended the most
+    /// destructive operation in the engine with the weakest gate on it. A model that mislabels a
+    /// targeted edit as `add` supplies only the fragment it is thinking about, so the overwrite
+    /// truncates the file to those few lines — and a backup makes that RECOVERABLE, not correct.
+    /// Nothing compared sizes and nothing asked.
+    ///
+    /// `add` now means create. Changing an existing file requires `modify`, which carries
+    /// old_content and a base hash and is checked against both.
+    /// </summary>
     [Fact]
-    public void AnAddOntoAnExistingPath_OverwritesAndSaysSo() =>
-        Assert.Equal(PatchApplyStatus.Overwrote,
-            PatchApply.Compute(PatchApply.Add, null, "hello", currentContent: "was here").Status);
+    public void AnAddOntoAnExistingPath_IsRefusedAsAConflict()
+    {
+        var result = PatchApply.Compute(PatchApply.Add, null, "hello", currentContent: "was here");
+
+        Assert.Equal(PatchApplyStatus.RefusedTargetExists, result.Status);
+        Assert.False(result.Ok);
+        Assert.Null(result.Content);        // nothing to write, so nothing can be written by accident
+        Assert.Contains("modify", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Nothing produces <c>Overwrote</c> any more. The member survives so a stored audit row written
+    /// before v0.3.8.57 still resolves to the status that actually occurred, but a code path that
+    /// produced it again would be the same silent truncation returning.
+    /// </summary>
+    [Fact]
+    public void NoPatchOutcome_StillOverwritesAWholeFile()
+    {
+        var source = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.SDK", "Common", "PatchApply.cs")));
+
+        // The CONSTRUCTION, not the mention. `Overwrote` still appears in the enum, in its own
+        // doc comment, and in the `Ok`/`WritesContent` predicates that keep historical rows
+        // resolving — none of which produces one. Only `new(PatchApplyStatus.Overwrote, …)` does.
+        Assert.DoesNotContain("new(PatchApplyStatus.Overwrote", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A destructive change with no base hash is refused where it matters — writing to a real tree.
+    ///
+    /// `RefusedStaleBase` catches a patch built against the WRONG base. This is the patch built
+    /// against an UNKNOWN one: the check never runs and the apply proceeds. Every model-produced
+    /// proposal took that path until this release, because nothing on the coder path set a hash.
+    /// </summary>
+    [Theory]
+    [InlineData(PatchApply.Modify)]
+    [InlineData(PatchApply.Delete)]
+    [InlineData(PatchApply.Rename)]
+    public void ADestructiveChangeWithNoBaseHash_IsRefusedWhenRequired(string changeType)
+    {
+        var result = PatchApply.Compute(changeType, "old", changeType == PatchApply.Modify ? "new" : null,
+            currentContent: "before old after", expectedBaseHash: null,
+            destinationPath: changeType == PatchApply.Rename ? "moved.txt" : null,
+            destinationExists: false, requireBaseHash: true);
+
+        Assert.Equal(PatchApplyStatus.RefusedMissingBaseHash, result.Status);
+        Assert.False(result.Ok);
+    }
+
+    /// <summary>
+    /// And it stays OPT-IN. A proposal stored before base hashes were produced carries none;
+    /// defaulting the requirement on would make every one of them permanently unappliable, turning a
+    /// safety property into a migration. The sandbox and materializer verify such a proposal; only
+    /// the tool that writes to the operator's tree refuses it.
+    /// </summary>
+    [Fact]
+    public void ALegacyProposalWithNoBaseHash_StillVerifiesWhenTheRequirementIsOff()
+    {
+        var result = PatchApply.Compute(PatchApply.Modify, "old", "new",
+            currentContent: "before old after", expectedBaseHash: null);
+
+        Assert.Equal(PatchApplyStatus.Modified, result.Status);
+    }
+
+    /// <summary>
+    /// An `add` never needs a base hash, even under the strict requirement — it creates a file, so
+    /// there is no prior state it could have been built against.
+    /// </summary>
+    [Fact]
+    public void AnAddNeedsNoBaseHash_EvenWhenRequired() =>
+        Assert.Equal(PatchApplyStatus.Created,
+            PatchApply.Compute(PatchApply.Add, null, "hello", currentContent: null,
+                expectedBaseHash: null, requireBaseHash: true).Status);
+
+    /// <summary>
+    /// The live applier — the one that writes to the operator's real tree — opts in.
+    ///
+    /// Asserted at the call site because that is where the decision lives: the flag defaults to off,
+    /// so a future edit that drops this argument silently restores the old behaviour and every
+    /// behavioural test above would still pass.
+    /// </summary>
+    [Fact]
+    public void TheLiveApplier_RequiresABaseHash()
+    {
+        var tool = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Modules", "Anthill.Modules.Tools", "ApplyPatchTool.cs")));
+
+        Assert.Contains("requireBaseHash: true", tool, StringComparison.Ordinal);
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // The coder path stamps a base hash. v0.3.8.57.
+    // -------------------------------------------------------------------------------------------
+
+    private const string OneModify = """
+        { "summary": "s", "proposals": [ { "file_path": "a.txt", "change_type": "modify",
+          "old_content": "old", "new_content": "new", "reason": "r", "risk": "low" } ] }
+        """;
+
+    /// <summary>
+    /// THE regression. A model-produced modify now records the bytes it was built against.
+    ///
+    /// Until v0.3.8.57 `BaseHash` was assigned in exactly one place in the codebase —
+    /// `WorkspaceChangeSet` — so every coder proposal carried null, and `PatchApply`'s stale-base
+    /// check could not fire on the path that produces almost all destructive patches. The guard
+    /// shipped in v0.3.8.37, was tested, and was unreachable for the patches it was built for.
+    /// </summary>
+    [Fact]
+    public void ACoderModify_RecordsTheBaseItWasBuiltAgainst()
+    {
+        var set = new PatchProposalParser().Parse(OneModify, "m1", "t1",
+            readCurrent: _ => "before old after");
+
+        var proposal = Assert.Single(set.Proposals);
+        Assert.Equal(PatchApply.HashOf("before old after"), proposal.BaseHash);
+    }
+
+    /// <summary>
+    /// And the hash it records makes the applier accept THAT tree and refuse a moved one — which is
+    /// the whole reason to stamp it. Driven through `PatchApply` rather than compared as a string,
+    /// so this fails if the two sides ever hash differently.
+    /// </summary>
+    [Fact]
+    public void AStampedBaseHash_AcceptsItsOwnTreeAndRefusesAMovedOne()
+    {
+        var proposal = Assert.Single(new PatchProposalParser()
+            .Parse(OneModify, "m1", "t1", readCurrent: _ => "before old after").Proposals);
+
+        Assert.Equal(PatchApplyStatus.Modified,
+            PatchApply.Compute(PatchApply.Modify, "old", "new", "before old after",
+                proposal.BaseHash, requireBaseHash: true).Status);
+
+        Assert.Equal(PatchApplyStatus.RefusedStaleBase,
+            PatchApply.Compute(PatchApply.Modify, "old", "new", "before old after and more",
+                proposal.BaseHash, requireBaseHash: true).Status);
+    }
+
+    /// <summary>
+    /// An `add` gets no base hash even when the file could be read. There is no prior state a
+    /// creation was built against, and recording one would attest to the wrong thing.
+    /// </summary>
+    [Fact]
+    public void ACoderAdd_RecordsNoBaseHash()
+    {
+        var set = new PatchProposalParser().Parse("""
+            { "summary": "s", "proposals": [ { "file_path": "new.txt", "change_type": "add",
+              "new_content": "hello", "reason": "r", "risk": "low" } ] }
+            """, "m1", "t1", readCurrent: _ => "something is already here");
+
+        Assert.Null(Assert.Single(set.Proposals).BaseHash);
+    }
+
+    /// <summary>
+    /// A missing file leaves the hash null rather than hashing the empty string. "The target is not
+    /// there" is a different refusal from "the target moved", and the applier names it better.
+    /// </summary>
+    [Fact]
+    public void AModifyOfAMissingFile_RecordsNoBaseHash() =>
+        Assert.Null(Assert.Single(new PatchProposalParser()
+            .Parse(OneModify, "m1", "t1", readCurrent: _ => null).Proposals).BaseHash);
+
+    /// <summary>
+    /// The production call site passes a reader. Without this the stamping above is real and
+    /// unreachable — the exact shape of defect this repository keeps finding.
+    /// </summary>
+    [Fact]
+    public void TheMissionPath_PassesAReaderToTheParser()
+    {
+        var execution = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
+
+        Assert.Contains("_patchParser.Parse(task.Result, mission.Id, task.Id, ReadForBaseHash)",
+            execution, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// v0.3.8.52 rewrote this test's subject. It used to assert that "delete" was refused as an

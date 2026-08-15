@@ -91,4 +91,35 @@ public static class SourceText
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Anthill.sln"))) dir = dir.Parent;
         return dir!.FullName;
     }
+
+    /// <summary>
+    /// One numbered line from PLAN.md's acceptance-gate list. v0.3.8.57.
+    ///
+    /// SCOPED TO THE SECTION, and matched at column zero. Two tests independently reached for
+    /// `lines.Single(l => l.TrimStart().StartsWith("7."))` and one of them threw: the document also
+    /// contains "§7.3/§7.4" and version strings, and `TrimStart` made every indented sub-bullet a
+    /// candidate. The gate-10 test used the identical idiom and passed only because no other line
+    /// happened to start with "10." — a guard that works by luck is one that fails on an edit
+    /// unrelated to what it guards.
+    ///
+    /// Shared rather than fixed twice, for the reason this release keeps restating: two copies of a
+    /// lookup are two things that can drift, and here they would drift silently into passing.
+    /// </summary>
+    public static string PlanAcceptanceGate(int number)
+    {
+        var plan = File.ReadAllText(Path.Combine(RepoRoot(), "docs", "PLAN.md"));
+
+        var start = plan.IndexOf("## 5. Acceptance gates", StringComparison.Ordinal);
+        if (start < 0) throw new InvalidOperationException(
+            "docs/PLAN.md no longer has an '## 5. Acceptance gates' section, so no gate can be read from it.");
+
+        var end = plan.IndexOf("\n## ", start + 1, StringComparison.Ordinal);
+        var section = end < 0 ? plan[start..] : plan[start..end];
+
+        var line = section.Split('\n').FirstOrDefault(l =>
+            l.StartsWith($"{number}. ", StringComparison.Ordinal));
+
+        return line ?? throw new InvalidOperationException(
+            $"acceptance gate {number} is not in docs/PLAN.md's gate list.");
+    }
 }
