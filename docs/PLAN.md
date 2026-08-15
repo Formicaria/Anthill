@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.63**.
+Shipping release: **v0.3.8.64**.
 
 ---
 
@@ -97,7 +97,7 @@ bytes.
 3. ✅ **S3** — evidence fail-CLOSED *(v0.3.8.61 — verifier: `verification_unavailable`; auto-apply: five refusal arms; see below)*
 4. ✅ **S4** — transactional patch application and durable recovery *(v0.3.8.62 — `ApplyTransaction`; see below)*
 5. ✅ **S5** — Secret-artifact filtering *(v0.3.8.63 — `IsModelReadable` allowlist; WITHHELD reporting; see below)*
-6. **S6** — UI gate *(open)*; remaining subprocess handling ✅ v0.3.8.59
+6. ✅ **S6** — UI gate *(v0.3.8.64 — throwing store refuses; `{}` no longer conforms)*; remaining subprocess handling ✅ v0.3.8.59
 7. **S7** — runtime and fault-injection tests land BEFORE auto-apply is re-enabled
 
 ---
@@ -306,6 +306,14 @@ while an empty one passes.
 
 **Fix.** Fail closed on production dispatch when the store is unavailable. Require an intact map
 from `ui_cartographer` carrying `files_examined`, `routes` and `api_calls`.
+
+**Closed v0.3.8.64.** The gate distinguishes the absent store (CLI/tests — permissive, evidence
+about the wiring) from the throwing store (an incident — refuses, naming the outage), the same
+two-state repair the verifier received in S3. The ui_map schema requires the three keys the
+cartographer has always emitted unconditionally, so `{}` no longer conforms while an honest empty
+map (`routes: []`) still does. S5's API residual was swept and closed by observation: no
+Anthill.Api route serves artifact payloads at all, so "never in an API response" holds vacuously;
+any future artifact-serving route must filter on `IsModelReadable` and this note is its warning.
 
 #### S7 — Subprocess timeouts that cannot fire (P1) ✅ v0.3.8.59
 
