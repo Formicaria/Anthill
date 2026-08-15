@@ -32,13 +32,49 @@ public enum PatchApplyStatus
     Created,
     /// <summary>An existing file's <c>old_content</c> occurrence was replaced.</summary>
     Modified,
-    /// <summary>An <c>add</c> whose target already existed; the file is replaced wholesale.</summary>
+    /// <summary>
+    /// An <c>add</c> whose target already existed; the file was replaced wholesale.
+    ///
+    /// v0.3.8.57 — NO LONGER PRODUCED. Kept so a stored audit row written before this release still
+    /// resolves to the status that actually occurred; see <see cref="RefusedTargetExists"/> for what
+    /// happens now, and why.
+    /// </summary>
     Overwrote,
     /// <summary>The target file was removed. v0.3.8.52. Carries no content — see
     /// <see cref="PatchApplyResult.WritesContent"/>.</summary>
     Deleted,
     /// <summary>The target file was moved to <c>destination_path</c>, bytes unchanged. v0.3.8.52.</summary>
     Renamed,
+
+    /// <summary>
+    /// An <c>add</c> whose target already exists. v0.3.8.57.
+    ///
+    /// THE BEHAVIOUR THIS REPLACES, and why it was worth a breaking change. `add` onto an existing
+    /// file returned <see cref="Overwrote"/> — the whole file replaced by the proposal's
+    /// <c>new_content</c>. The comment defending it called an add-over-existing "a common model
+    /// slip" and said overwriting was safe "because the caller backs the file up first".
+    ///
+    /// Both halves are wrong in the direction that loses work. A model that mislabels a targeted
+    /// edit as `add` supplies only the fragment it is thinking about, so the "overwrite" silently
+    /// truncates the file to a few lines — and a backup makes that recoverable, not correct: nothing
+    /// in the pipeline compares sizes or asks. The single most destructive thing a patch engine can
+    /// do was the one operation with no gate on it.
+    ///
+    /// `add` now means CREATE, and a create over an existing file is a conflict. A proposal that
+    /// genuinely intends to change an existing file must say <c>modify</c>, which carries
+    /// <c>old_content</c> and a base hash and is checked against both.
+    /// </summary>
+    RefusedTargetExists,
+
+    /// <summary>
+    /// A destructive operation with no base hash, where one is required. v0.3.8.57.
+    ///
+    /// <see cref="RefusedStaleBase"/> catches a patch built against the WRONG base. This catches one
+    /// built against an UNKNOWN base, which is the same risk with none of the evidence: the check
+    /// simply never runs, and the apply proceeds. Model-produced proposals carried no base hash at
+    /// all until this release, so every coder patch took that path.
+    /// </summary>
+    RefusedMissingBaseHash,
 
     /// <summary>Change type is not one of add, modify, delete or rename.</summary>
     RefusedUnsupportedChangeType,
@@ -156,14 +192,33 @@ public static class PatchApply
     /// <param name="destinationExists">Whether something already sits at <paramref name="destinationPath"/>.
     /// Passed in rather than probed, because this function does no IO. A caller that cannot answer
     /// should pass true and refuse, not false and overwrite.</param>
+    /// <param name="requireBaseHash">
+    /// Refuse a destructive operation (modify, delete, rename) that carries no base hash. v0.3.8.57.
+    ///
+    /// OPT-IN, and the default is deliberate. A proposal stored before base hashes were produced has
+    /// none, and defaulting this true would make every one of them permanently unappliable —
+    /// changing a safety property into a migration. So the callers that write to a REAL tree pass
+    /// true, and the ones that verify in a sandbox do not: a sandbox that refuses a legacy proposal
+    /// tells the operator nothing they can act on, while a live apply that accepts one is the exact
+    /// silent-stale-write this exists to stop.
+    /// </param>
     public static PatchApplyResult Compute(string? changeType, string? oldContent, string? newContent,
         string? currentContent, string? expectedBaseHash = null,
-        string? destinationPath = null, bool destinationExists = false)
+        string? destinationPath = null, bool destinationExists = false,
+        bool requireBaseHash = false)
     {
         var kind = (changeType ?? "").Trim().ToLowerInvariant();
         if (kind is not (Add or Modify or Delete or Rename))
             return new(PatchApplyStatus.RefusedUnsupportedChangeType, null,
                 $"ANTHILL supports only add, modify, delete and rename patches; refusing change_type '{changeType}'.");
+
+        // Checked before any change-type branch, so one rule covers modify, delete and rename rather
+        // than three copies that can drift. `add` is exempt by construction: it creates a file, so
+        // there is no prior state to have been built against.
+        if (requireBaseHash && kind is Modify or Delete or Rename && string.IsNullOrWhiteSpace(expectedBaseHash))
+            return new(PatchApplyStatus.RefusedMissingBaseHash, null,
+                $"{kind.ToUpperInvariant()} refused because the proposal carries no base hash, so it "
+              + "cannot be shown to have been built against the file's current contents.");
 
         // v0.3.8.52 — delete and rename are dispatched BEFORE the new_content guard below.
         //
@@ -180,14 +235,23 @@ public static class PatchApply
             return new(PatchApplyStatus.RefusedEmptyNewContent, null,
                 "Patch new_content is required and must be non-empty.");
 
+        // v0.3.8.57 — `add` MEANS CREATE. A create over an existing file is a conflict.
+        //
+        // This returned Overwrote and wrote `new_content` over the whole file. The reasoning it
+        // carried — an add-over-existing is a common model slip, refusing would stall the queue, the
+        // caller backs the file up first — reads as pragmatic and gets the risk backwards. A model
+        // that mislabels a targeted edit as `add` supplies only the fragment it is thinking about,
+        // so the "overwrite" truncates the file to those few lines. A backup makes that recoverable,
+        // not correct: nothing compares sizes, nothing asks, and the operator learns about it later.
+        //
+        // Refusing does not stall anything — it returns a typed conflict the coder can act on, which
+        // is what every other malformed proposal already gets.
         if (kind == Add)
             return currentContent is null
                 ? new(PatchApplyStatus.Created, newContent, "")
-                // An `add` onto an existing file is a common model slip. Treating it as a full
-                // overwrite (rather than hard-failing and stalling the queue) is a deliberate
-                // decision that predates this file; it is safe only because the caller backs the
-                // file up first, and it is recorded distinctly so an auditor can see it happened.
-                : new(PatchApplyStatus.Overwrote, newContent, "");
+                : new(PatchApplyStatus.RefusedTargetExists, null,
+                    "ADD refused because the target file already exists. `add` creates a new file; "
+                  + "use `modify` with old_content to change an existing one.");
 
         if (currentContent is null)
             return new(PatchApplyStatus.RefusedTargetMissing, null,
