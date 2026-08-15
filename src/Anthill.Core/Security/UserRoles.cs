@@ -56,6 +56,10 @@ public static class UserRoles
         "run_mission", "read_status", "read_events", "read_ui_state",
         "read_homelab",            // inventory, health, events, allowlist, credential statuses
         "approve_homelab_actions", // approve v2.3.0 action proposals (capability gate still ships off)
+        "read_micromound",         // the mound fleet, beats, and evidence — MICROMOUND M1's whole view
+        "approve_micromound_actions", // per-mound stop/resume: view + halt, the homelab-operator shape
+        // Deliberately absent: manage_micromound (minting enrollment tokens creates device
+        // identities, an admin act like credential writes).
         // Deliberately absent: manage_homelab_integrations (credentials/allowlist writes),
         // execute_homelab_actions, and every provider/settings/user/shell permission.
     };

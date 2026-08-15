@@ -33,6 +33,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- SqliteMoundStore — same package and version the homelab's repository persists through. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Anthill.Tests" />
     <InternalsVisibleTo Include="Anthill.Tests.Micromound" />
   </ItemGroup>
