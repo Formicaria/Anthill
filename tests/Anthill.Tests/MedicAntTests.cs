@@ -235,17 +235,14 @@ public class MedicAntTests
     [Fact]
     public void GatesControlExecutability()
     {
-        Assert.DoesNotContain("medic", AntRegistry.ExecutableRoleIds);
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            AnthillRuntime.EnableMedicAnt = true;
-            Assert.Contains("medic", AntRegistry.ExecutableRoleIds);
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableMedicAnt = false;
-        }
+        // v0.3.8.60 — converted to RosterGates with the others. This one was still PASSING when the
+        // rest failed, which is the only reason it was not in the failure list: same ambient read,
+        // same restore-to-false, just luckier in the ordering. Fixed now rather than left to fail on
+        // the next change that shifts it — ArchivistAntTests has looked like this since v0.3.8.41.
+        RosterGates.With(() => Assert.DoesNotContain("medic", AntRegistry.ExecutableRoleIds),
+            specialists: false, medic: false);
+
+        RosterGates.With(() => Assert.Contains("medic", AntRegistry.ExecutableRoleIds),
+            specialists: true, tier: ActivationTier.Full, medic: true);
     }
 }

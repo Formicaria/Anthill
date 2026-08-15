@@ -26,7 +26,7 @@ namespace Anthill.Tests;
 /// state, exactly one canonical evaluation is persisted, and the refusals are recorded as typed
 /// failures rather than silently completing.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class OfflineMissionTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "anthill_offline_" + Guid.NewGuid().ToString("N"));

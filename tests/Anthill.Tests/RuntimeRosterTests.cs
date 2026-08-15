@@ -16,27 +16,34 @@ namespace Anthill.Tests;
 [Collection("specialist-gates")]
 public class RuntimeRosterTests
 {
-    private static T WithGates<T>(Func<T> body, params string[] specialists)
-    {
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            foreach (var s in specialists)
-            {
-                if (s == "tester") AnthillRuntime.EnableTesterAnt = true;
-                if (s == "medic") AnthillRuntime.EnableMedicAnt = true;
-                if (s == "ui_cartographer") AnthillRuntime.EnableUiCartographerAnt = true;
-            }
-            return body();
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableTesterAnt = false;
-            AnthillRuntime.EnableMedicAnt = false;
-            AnthillRuntime.EnableUiCartographerAnt = false;
-        }
-    }
+    /// <summary>
+    /// Run <paramref name="body"/> with EXACTLY the named specialists open, and the ambient gates
+    /// put back afterwards.
+    ///
+    /// v0.3.8.60 — this now DELEGATES to <see cref="RosterGates"/> rather than hand-rolling the
+    /// save/restore, because that helper has existed since v0.3.8.41 for precisely this and its own
+    /// doc names the defect: "the older helpers restored to false, which was indistinguishable from
+    /// correct while false was also the default and is now a way for one test to silently disable
+    /// the roster for every test that runs after it."
+    ///
+    /// This was one of the older helpers. It did not baseline, so a block built "with tester and
+    /// medic" also contained an ambiently-enabled cartographer; and it restored to false, so calling
+    /// it twice gave two different answers — which `TheRosterIsDeterministic` does, and compares.
+    /// The test that exists to prove the roster is deterministic was made non-deterministic by its
+    /// own fixture.
+    ///
+    /// RosterGates also pins the ACTIVATION TIER, which this never did. The tier is a ceiling over
+    /// the flags, so "gate open" with an ambient tier of Core still leaves a role shut — one more
+    /// ambient value this helper was silently inheriting.
+    /// </summary>
+    private static T WithGates<T>(Func<T> body, params string[] specialists) =>
+        RosterGates.With(body,
+            specialists: specialists.Length > 0,
+            tier: ActivationTier.Full,
+            tester: specialists.Contains("tester"),
+            medic: specialists.Contains("medic"),
+            uiCartographer: specialists.Contains("ui_cartographer"),
+            soldier: false, archivist: false, scribe: false);
 
     [Fact]
     public void TheCoreAntsAreAlwaysPlannable()
@@ -53,15 +60,17 @@ public class RuntimeRosterTests
     [Fact]
     public void AGatedSpecialist_BecomesPlannableOnlyWhenItsGatesOpen()
     {
-        Assert.False(RuntimeRoster.CanPlanFor("tester"));
+        // Each assertion NAMES the gate state it depends on. Reading the ambient value made these
+        // pass only while the neighbouring classes happened to leave the gates closed.
+        Assert.False(WithGates(() => RuntimeRoster.CanPlanFor("tester")));
         Assert.True(WithGates(() => RuntimeRoster.CanPlanFor("tester"), "tester"));
-        Assert.False(RuntimeRoster.CanPlanFor("tester"));   // and closes again afterwards
+        Assert.False(WithGates(() => RuntimeRoster.CanPlanFor("tester")));   // closed again after
     }
 
     [Fact]
     public void AGatedSpecialist_AppearsInThePromptBlockWhenOpen()
     {
-        Assert.DoesNotContain("- tester:", RuntimeRoster.PromptBlock());
+        Assert.DoesNotContain("- tester:", WithGates(() => RuntimeRoster.PromptBlock()));
         Assert.Contains("- tester:", WithGates(() => RuntimeRoster.PromptBlock(), "tester"));
     }
 
@@ -91,10 +100,11 @@ public class RuntimeRosterTests
     [Fact]
     public void TheRosterIsDeterministic()
     {
-        Assert.Equal(RuntimeRoster.PromptBlock(), RuntimeRoster.PromptBlock());
+        Assert.Equal(WithGates(() => RuntimeRoster.PromptBlock()),
+                     WithGates(() => RuntimeRoster.PromptBlock()));
         Assert.Equal(
-            RuntimeRoster.PlannableRoles().Select(r => r.RoleId),
-            RuntimeRoster.PlannableRoles().Select(r => r.RoleId));
+            WithGates(() => RuntimeRoster.PlannableRoles().Select(r => r.RoleId).ToList()),
+            WithGates(() => RuntimeRoster.PlannableRoles().Select(r => r.RoleId).ToList()));
 
         var open = WithGates(() => RuntimeRoster.PromptBlock(), "tester", "medic");
         var openAgain = WithGates(() => RuntimeRoster.PromptBlock(), "tester", "medic");

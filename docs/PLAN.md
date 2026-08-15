@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.59**.
+Shipping release: **v0.3.8.60**.
 
 ---
 
@@ -97,7 +97,7 @@ bytes.
 3. **S3** — evidence fail-CLOSED
 4. **S4** — transactional patch application and durable recovery
 5. **S5** — Secret-artifact filtering
-6. **S6** — UI gate and remaining subprocess handling
+6. **S6** — UI gate *(open)*; remaining subprocess handling ✅ v0.3.8.59
 7. **S7** — runtime and fault-injection tests land BEFORE auto-apply is re-enabled
 
 ---
@@ -272,7 +272,7 @@ while an empty one passes.
 **Fix.** Fail closed on production dispatch when the store is unavailable. Require an intact map
 from `ui_cartographer` carrying `files_examined`, `routes` and `api_calls`.
 
-#### S7 — Subprocess timeouts that cannot fire (P1)
+#### S7 — Subprocess timeouts that cannot fire (P1) ✅ v0.3.8.59
 
 `ShellCommandTool` and `RepoOps.Git` call synchronous `ReadToEnd()` **before**
 `WaitForExit(timeout)`. A process that never exits therefore never reaches the timeout, and
@@ -290,13 +290,18 @@ fix into a method that still hangs. Both pipes now drain concurrently, the wait 
 thing, the kill takes the process tree, and output is capped at 20,000 characters — `find` over a
 large tree previously returned everything, into a ToolResult, into an artifact, into a prompt.
 
-**`RepoOps.Git` is UNCHANGED and still has the defect** (L27–51). It is the other half of S7 and it
-is not fixed here: v0.3.8.57 gave five git sites a process-tree kill on timeout without fixing the
-read that prevents the timeout being reached, so the guard sits downstream of the thing that hangs.
+**`RepoOps.Git` closed too.** Same fix: both pipes drained concurrently, the wait bounds the whole
+call, the process tree is killed. Worth naming what it looked like — v0.3.8.57 added
+`Kill(entireProcessTree: true)` to the very line below the reads and did not touch them, so the
+colony spent two releases with a correct kill on an unreachable path. A guard placed downstream of
+the thing that hangs.
 
-**Tests.** A child that writes heavily to BOTH streams, and one that never exits — neither written
-yet. `ShellConfinementTests` pins the ORDER (no synchronous read between start and wait), which is
-the defect's shape but not a behavioural proof.
+`git clone` on a large repository is the concrete deadlock: it writes progress to stderr
+continuously while this side drains stdout, each waits for the other, and neither is timed out.
+
+**STILL OPEN — the behavioural tests.** A child that writes heavily to BOTH streams and one that
+never exits are not written. `ShellConfinementTests` pins the ORDER (no synchronous read between
+start and wait), which is the defect's shape rather than a proof that the fix survives a real hang.
 
 #### S9 — The colony asserts its roles through a channel that carries no authority (P0-adjacent) ✅ v0.3.8.59
 
@@ -352,6 +357,39 @@ prompt; the contract names its own origin; the untrusted block fences only what 
 `GenerateTyped` call passes `system:`; the catalog appends rather than replaces; an empty contract
 sends no flag (a blank `--append-system-prompt ""` reads as an instruction to have no contract); and
 the contract travels as discrete argv, never shell text.
+
+**THE TALKING POINTS WERE CONDITIONAL FACTS ASSERTED UNCONDITIONALLY**, which is worse than either
+"true" or "false" and is why a worker refusing to vouch for them was right. Both features exist:
+`missions_fts USING fts5` is created in `SqliteMemory.Schema`, and `EnableParallelExecution` /
+`MaxParallelWorkers` drive a `TaskScheduler` that reads `DependsOn`. But both are RUNTIME-CONDITIONAL.
+`FtsAvailable` is a mutable flag the memory layer sets to false when SQLite throws
+(`catch (SqliteException) { FtsAvailable = false; }`), so on an install without FTS5 the claim is
+false — and `SelfTest` already reports exactly that: "FTS5 not available; keyword fallback in use".
+`EnableParallelExecution` is an operator toggle, surfaced in `Queen.Views` as `Parallel Execution:
+{flag}`.
+
+So the colony KNEW the answer at runtime and asked the model to assert it from prose instead. That is
+this repository's own recurring shape — a claim derived from a sentence rather than from the state
+that knows — pointed at the operator reading the answer.
+
+The strongest evidence it was a known hedge that got lost: the non-LLM `FallbackResponse` in the same
+class says "uses FTS5 WHEN AVAILABLE". The deterministic path was more truthful than the instruction
+given to the model.
+
+**Related and NOT fixed:** that same `FallbackResponse` still opens with "1. Review patch proposals
+using /patches…" unconditionally, on missions that produced no patches. Same untruth, deterministic
+rather than generated, so no model will ever flag it.
+
+**COMPLETED in the same release.** All six persona-bearing prompts converted — builder, coder,
+verifier, planner and strategist by name; researcher and web carried only the banner. Operator text
+(mission goal, prior task output, standing objective) is fenced with `UntrustedBlock`. The
+strategist's objective matters most: it is text an operator wrote that the colony re-reads unattended
+on every run, which makes it the highest-value place in the colony to plant an instruction — authored
+once, obeyed forever, with nobody watching that turn.
+
+The builder's `FallbackResponse` no longer opens with "Review patch proposals using /patches" on
+missions that produced none. Same untruth as the deleted talking points, deterministic rather than
+generated, so nothing downstream would ever have flagged it.
 
 **STILL OPEN.** Only Claude Code has a verified system-prompt flag; Codex, Gemini, Aider and OpenCode
 are declared as having none and fall back to folding. That is recorded per agent rather than assumed

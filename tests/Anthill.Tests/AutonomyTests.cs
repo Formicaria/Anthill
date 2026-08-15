@@ -10,7 +10,7 @@ namespace Anthill.Tests;
 /// Phase 0 autonomy rails: objective backlog persistence + priority ordering, the run-outcome
 /// circuit breaker, the durable kill switch, and the rate-budget guard. No execution loop yet.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class AutonomyTests : IDisposable
 {
     private readonly string _dir;

@@ -136,40 +136,38 @@ public class UiCartographerAntTests : IDisposable
     [Fact]
     public void GatesClosed_RoleIsNotExecutable_AndTasksAreRejected()
     {
-        Assert.DoesNotContain("ui_cartographer", AntRegistry.ExecutableRoleIds);
-        var (t, _) = UiTask();
-        var v = AntRegistry.ValidateTask(t, MissionConstraints.Parse("map the ui"));
-        Assert.False(v.Allowed);
-        Assert.Contains("visible-only", v.Reason);
+        // v0.3.8.60: CLOSED means closed explicitly. This is the test whose entire subject is "the
+        // gates are shut", and it was reading whether they happened to be — the one place in the file
+        // where inheriting ambient state is not just fragile but circular.
+        RosterGates.With(() =>
+        {
+            Assert.DoesNotContain("ui_cartographer", AntRegistry.ExecutableRoleIds);
+            var (t, _) = UiTask();
+            var v = AntRegistry.ValidateTask(t, MissionConstraints.Parse("map the ui"));
+            Assert.False(v.Allowed);
+            Assert.Contains("visible-only", v.Reason);
+        }, specialists: false, uiCartographer: false);
     }
 
     [Fact]
     public void GatesOpen_RoleBecomesExecutable_AndTasksValidate()
     {
-        try
+        RosterGates.With(() =>
         {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            AnthillRuntime.EnableUiCartographerAnt = true;
             Assert.Contains("ui_cartographer", AntRegistry.ExecutableRoleIds);
             var (t, _) = UiTask();
             var v = AntRegistry.ValidateTask(t, MissionConstraints.Parse("map the ui"));
             Assert.True(v.Allowed, v.Reason);
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableUiCartographerAnt = false;
-        }
+        }, specialists: true, tier: ActivationTier.Full, uiCartographer: true);
     }
 
     [Fact]
     public void MasterGateAlone_IsNotEnough()
     {
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true; // per-role gate still closed
-            Assert.DoesNotContain("ui_cartographer", AntRegistry.ExecutableRoleIds);
-        }
-        finally { AnthillRuntime.EnableSpecialistAntExecution = false; }
+        // v0.3.8.60: the per-role gate is now CLOSED EXPLICITLY rather than assumed. The point of
+        // this test is that the master gate alone is not enough — which only means anything if the
+        // per-role gate is known to be shut, and it was previously known only by hoping.
+        RosterGates.With(() => Assert.DoesNotContain("ui_cartographer", AntRegistry.ExecutableRoleIds),
+            specialists: true, tier: ActivationTier.Full, uiCartographer: false);
     }
 }
