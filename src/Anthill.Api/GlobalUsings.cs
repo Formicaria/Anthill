@@ -30,7 +30,9 @@ global using Anthill.SDK.Actions;
 // v3.8.7 — the homelab left the core. The API is a composition root, so it may name the module;
 // Anthill.Core may not, and its own tests never load it.
 global using Anthill.Modules.Homelab;
+#if MICROMOUND
 global using Anthill.Modules.Micromound;
+#endif
 global using Anthill.Core.Security;
 
 // v3.8.9 — Capability, FailureClass, FailureClassify, ToolDescriptor and ToolCatalog moved to

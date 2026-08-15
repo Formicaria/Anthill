@@ -288,6 +288,10 @@ public static class AnthillRuntime
     public static int HomelabMaxConcurrentChecks = 2;
     /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
     public static string HomelabStopFileName = "HOMELAB_STOP";
+    /// <summary>MICROMOUND (optional integration): master gate, default OFF. The module also only
+    /// COMPILES in when the wire-contract checkout is present — a colony without hardware carries
+    /// no micromound at all, and a colony built with it still opts in explicitly.</summary>
+    public static bool EnableMicromound = false;
     // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) -------
     /// <summary>Cadence of the scheduler's health-check job.</summary>
     public static int HomelabHealthIntervalSeconds = 60;
@@ -804,6 +808,7 @@ public static class AnthillRuntime
         HomelabHealthIntervalSeconds = Math.Clamp(config.HomelabHealthIntervalSeconds, 10, 86400);
         HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
         EnableHomelabNotifications = config.HomelabNotificationsEnabled;
+        EnableMicromound = config.MicromoundEnabled;
         EnableHomelabAutomation = config.HomelabAutomationEnabled;
         // v2.15.0: unset resolves to the shipping default (on); an explicit false is respected.
         EnableDashboardWorkspace = config.DashboardWorkspaceEnabled ?? true;

@@ -54,6 +54,12 @@ jobs:
       - name: Test
         run: dotnet test Anthill.sln -c Release --no-build -p:MicromoundRepoPath=${{ github.workspace }}/.micromound --logger "trx;LogFileName=test-results.trx" --results-directory ./test-results
 
+      # MICROMOUND is optional and its projects live OUTSIDE the solution — a dev box without the
+      # sibling checkout builds a complete colony with no micromound in it. CI is where the
+      # integration is always exercised, so the module's test suite runs here explicitly.
+      - name: Test the MICROMOUND integration
+        run: dotnet test tests/Anthill.Tests.Micromound -c Release -p:MicromoundRepoPath=${{ github.workspace }}/.micromound --logger "trx;LogFileName=micromound-results.trx" --results-directory ./test-results
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
