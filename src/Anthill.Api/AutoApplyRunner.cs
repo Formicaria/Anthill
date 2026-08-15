@@ -144,7 +144,8 @@ public static class AutoApplyRunner
         // being left open: evidence written before v0.3.8.57 carries no identity, and refusing every
         // such mission would convert a schema addition into a retroactive freeze on work that was
         // legitimately verified under the rules of its own release.
-        var evidenceRefusals = RefuseEvidenceAboutAnotherRevision(queen, missionId, eligible);
+        var evidenceRefusals = RefuseEvidenceAboutAnotherRevision(
+            (Anthill.SDK.Artifacts.IEvidenceStore)queen.Memory, missionId, eligible);
         if (evidenceRefusals.Count > 0)
         {
             queen.Memory.LogEvent(missionId, "autonomy_autoapply_stale_evidence",
@@ -272,40 +273,65 @@ public static class AutoApplyRunner
     /// here rather than discovered halfway through the set.
     /// </summary>
     /// <summary>
-    /// Refuse a set whose evidence is about a DIFFERENT revision. v0.3.8.57.
+    /// The evidence gate for LIVE auto-apply, and it FAILS CLOSED. v0.3.8.61 (PLAN.md §1b S3).
     ///
-    /// Scoped to patch sets that HAVE revision-identified evidence. A mission whose evidence carries
-    /// no identity at all — everything written before this release — is not refused, because the
-    /// absence is a property of when the row was written rather than of the work it describes.
-    /// Silently freezing that work would be a migration masquerading as a safety rule.
+    /// Three of this method's former mercies were the P0. An unreadable store returned zero
+    /// refusals — a database failure widening into permission to write the operator's tree. A
+    /// mission with NO revision-identified evidence sailed through, on the reasoning that old rows
+    /// simply predate identity; true of history, and irrelevant to a LIVE write happening now. And
+    /// a proposal with no patch-set id was invisible to the whole loop, so the one thing that made
+    /// a set checkable also made it optional.
     ///
-    /// What IS refused: a patch set for which the mission holds identified evidence, none of which
-    /// judges this set's revision. That is the repaired-generation case — patch set A's green tester
-    /// run sitting in the store while patch set B is the one about to be written to the live tree.
+    /// The rule now: live auto-apply requires a patch-set identity on every proposal; at least one
+    /// revision-identified evidence row for each set; evidence that is deterministic AND passing for
+    /// the exact revision and tree (<see cref="MissionVerification.EvidenceJudgesRevision"/>); and a
+    /// patch-set CONTENT hash that matches what is about to be written — the evidence judged bytes,
+    /// so the gate compares bytes, and a set that was filtered down to a subset on the way here
+    /// no longer matches the hash and is refused, which is the "applies as a unit" rule enforcing
+    /// itself. Legacy unidentified evidence stays readable for history and the manual apply path;
+    /// what it can no longer do is authorise an unattended write.
     /// </summary>
-    private static List<string> RefuseEvidenceAboutAnotherRevision(
-        Queen queen, string missionId,
+    internal static List<string> RefuseEvidenceAboutAnotherRevision(
+        Anthill.SDK.Artifacts.IEvidenceStore store, string missionId,
         List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)> eligible)
     {
         var refusals = new List<string>();
 
+        // A proposal that cannot name its set cannot have its evidence checked, and "cannot be
+        // checked" must read as "no" at a gate that writes to the live tree.
+        foreach (var (patchId, patchSetId, _, proposal) in eligible)
+            if (string.IsNullOrWhiteSpace(patchSetId))
+                refusals.Add($"patch {patchId} ({proposal.FilePath}): no patch_set_id — live "
+                           + "auto-apply requires a patch-set identity so its evidence can be checked");
+
         List<Anthill.SDK.Artifacts.Evidence> evidence;
-        try { evidence = ((Anthill.SDK.Artifacts.IEvidenceStore)queen.Memory).ForMission(missionId).ToList(); }
+        try { evidence = store.ForMission(missionId).ToList(); }
         catch (Exception error)
         {
-            // An unreadable evidence store is not a verdict about the patches. Say so and let
-            // Preflight decide — failing closed here would turn a store hiccup into "this mission can
-            // never auto-apply", which is a different and much larger claim.
+            // The store failing is not a verdict about the patches — and that is precisely why it
+            // refuses. Without evidence this gate knows NOTHING, and a gate that knows nothing and
+            // lets a live write proceed is not a gate. The refusal names the outage so the operator
+            // fixes the store rather than the mission; nothing here freezes the work forever,
+            // because the next auto-apply cycle re-reads.
             Console.Error.WriteLine($"[autoapply] could not read evidence for {missionId}: {error.Message}");
+            refusals.Add($"the evidence store could not be read ({error.Message}) — live auto-apply "
+                       + "refuses to write without evidence; manual apply remains available");
             return refusals;
         }
 
         var identified = evidence.Where(e => e.IdentifiesARevision).ToList();
-        if (identified.Count == 0) return refusals;
-
-        foreach (var patchSetId in eligible.Select(e => e.PatchSetId)
-                     .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal))
+        if (identified.Count == 0)
         {
+            refusals.Add("the mission holds no revision-identified evidence — live auto-apply "
+                       + "requires evidence that names the revision, content and tree it judged; "
+                       + "legacy evidence remains readable and the set remains manually applicable");
+            return refusals;
+        }
+
+        foreach (var group in eligible.Where(e => !string.IsNullOrWhiteSpace(e.PatchSetId))
+                     .GroupBy(e => e.PatchSetId!, StringComparer.Ordinal))
+        {
+            var patchSetId = group.Key;
             // The identity ExecutionService stamps when it verifies a materialized set.
             var revisionId = $"rev:{patchSetId}";
             var forThisSet = identified.Where(e =>
@@ -322,8 +348,41 @@ public static class AutoApplyRunner
             // so the two cannot disagree about what counts as evidence to act on.
             var treeHash = forThisSet[0].TreeHash;
             if (!MissionVerification.EvidenceJudgesRevision(forThisSet, revisionId, treeHash))
+            {
                 refusals.Add($"patch set {patchSetId}: its evidence exists but none of it is "
                            + "deterministic AND passing for the tree it produced");
+                continue;
+            }
+
+            // At least one deterministic pass is necessary and NOT sufficient: a deterministic
+            // FAILURE for this same revision is a machine saying no, and a green run beside it does
+            // not answer the objection — a build that passed after a test that failed is exactly
+            // the state that needs a human. Mixed rows refuse.
+            var deterministicFailures = forThisSet.Count(e => e.Deterministic && !e.Passed);
+            if (deterministicFailures > 0)
+            {
+                refusals.Add($"patch set {patchSetId}: {deterministicFailures} deterministic "
+                           + "check(s) FAILED for this revision — a deterministic failure cannot be "
+                           + "outvoted by a pass; live auto-apply requires no standing objection");
+                continue;
+            }
+
+            // The CONTENT check. Revision id and tree hash say which verification run this was;
+            // the patch-set hash says which BYTES it judged. The same function the materializer
+            // used computes the hash of what this runner is about to write, so evidence for a
+            // set that has since been altered — or arrived here as a policy-filtered subset of
+            // itself — no longer authorises the write.
+            var aboutToApply = new PatchSet
+            {
+                Id = patchSetId,
+                MissionId = missionId,
+                Proposals = group.Select(e => e.Proposal).ToList(),
+            };
+            var contentHash = Anthill.Core.Verification.PatchSetMaterializer.HashPatchSet(aboutToApply);
+            if (!forThisSet.Any(e => string.Equals(e.PatchSetHash, contentHash, StringComparison.Ordinal)))
+                refusals.Add($"patch set {patchSetId}: the content about to be applied does not match "
+                           + "the content the evidence judged (hash mismatch — the set was altered, "
+                           + "or only part of it is eligible, and evidence judges the whole set)");
         }
 
         return refusals;
