@@ -144,8 +144,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.56/anthill-0.3.8.56-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.56-linux-x64.tar.gz
+curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.57/anthill-0.3.8.57-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.57-linux-x64.tar.gz
 chmod +x anthill
 ```
 

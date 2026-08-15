@@ -5,6 +5,7 @@ using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Outcomes;
 
 namespace Anthill.Api;
 
@@ -74,8 +75,11 @@ public static class AutoApplyRunner
         if (candidates.Count == 0) return;
 
         // v0.3.8.57 — the PROPOSAL is carried alongside the ids so preflight can compute the whole
-        // set before anything is written, without re-reading every row from the store.
-        var eligible = new List<(string PatchId, string? TaskId, PatchProposal Proposal)>();
+        // set before anything is written, without re-reading every row from the store. The PATCH SET
+        // id travels for the same reason: the evidence check below needs to know which set a
+        // proposal belongs to (evidence is stamped `rev:{patchSetId}`), and going back to the store
+        // for it would be a second source for something already in hand here.
+        var eligible = new List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)>();
         foreach (var patchId in candidates)
         {
             var full = queen.Memory.GetPatchProposal(patchId);
@@ -91,7 +95,9 @@ public static class AutoApplyRunner
                 NewContent = full.GetValueOrDefault("new_content") as string,
             };
             var decision = AutoApplyPolicy.Evaluate(proposal);
-            if (decision.Eligible) eligible.Add((patchId, full.GetValueOrDefault("task_id")?.ToString(), proposal));
+            if (decision.Eligible)
+                eligible.Add((patchId, full.GetValueOrDefault("patch_set_id")?.ToString(),
+                    full.GetValueOrDefault("task_id")?.ToString(), proposal));
             else
                 queen.Memory.LogEvent(missionId, "autonomy_autoapply_ineligible",
                     $"Patch not eligible for auto-apply: {proposal.FilePath} — {decision.Reason}", full.GetValueOrDefault("task_id")?.ToString(), "director",
@@ -122,6 +128,36 @@ public static class AutoApplyRunner
          * Preflight cannot be perfect — the tree can change between the check and the write — so it
          * is a gate, not a guarantee, and the transactional rollback below is what covers the gap.
          */
+        // v0.3.8.57 — EVIDENCE ABOUT THIS REVISION, or nothing is applied.
+        //
+        // Preflight below asks whether each patch still fits the tree. This asks the prior question:
+        // is there deterministic, PASSING evidence about the exact revision this patch set produced?
+        //
+        // The task-level pairing in MissionVerification already refuses to call a mission verified
+        // when its latest revision has no tester run stamped with it. That is the scheduling claim.
+        // This is the promotion claim, and it is the one that matters here, because auto-apply writes
+        // to the LIVE TREE: a set applied on the strength of evidence about a different revision is
+        // exactly v3.8.22's failure — true statements about the wrong bytes — with a write at the end
+        // of it.
+        //
+        // Missions with no revision-identified evidence at all are UNAFFECTED. That is not a loophole
+        // being left open: evidence written before v0.3.8.57 carries no identity, and refusing every
+        // such mission would convert a schema addition into a retroactive freeze on work that was
+        // legitimately verified under the rules of its own release.
+        var evidenceRefusals = RefuseEvidenceAboutAnotherRevision(queen, missionId, eligible);
+        if (evidenceRefusals.Count > 0)
+        {
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_stale_evidence",
+                "Auto-apply refused the whole set: its evidence does not judge the revision these "
+                + "patches produced. " + string.Join(" | ", evidenceRefusals.Take(5)), antName: "director",
+                metadata: new()
+                {
+                    ["mission_id"] = missionId, ["eligible_count"] = eligible.Count,
+                    ["refusals"] = evidenceRefusals,
+                });
+            return;
+        }
+
         var refusals = Preflight(eligible);
         if (refusals.Count > 0)
         {
@@ -139,7 +175,7 @@ public static class AutoApplyRunner
 
         // Apply each eligible patch, remembering enough to roll back.
         var applied = new List<Queen.AutoApplyOutcome>();
-        foreach (var (patchId, taskId, _) in eligible)
+        foreach (var (patchId, _, taskId, _) in eligible)
         {
             var outcome = queen.ApplyPatchForAutomation(patchId, missionId, taskId);
             if (outcome.Success) { applied.Add(outcome); continue; }
@@ -235,12 +271,71 @@ public static class AutoApplyRunner
     /// real tree, so a destructive proposal that cannot say what it was built against is refused
     /// here rather than discovered halfway through the set.
     /// </summary>
-    private static List<string> Preflight(List<(string PatchId, string? TaskId, PatchProposal Proposal)> eligible)
+    /// <summary>
+    /// Refuse a set whose evidence is about a DIFFERENT revision. v0.3.8.57.
+    ///
+    /// Scoped to patch sets that HAVE revision-identified evidence. A mission whose evidence carries
+    /// no identity at all — everything written before this release — is not refused, because the
+    /// absence is a property of when the row was written rather than of the work it describes.
+    /// Silently freezing that work would be a migration masquerading as a safety rule.
+    ///
+    /// What IS refused: a patch set for which the mission holds identified evidence, none of which
+    /// judges this set's revision. That is the repaired-generation case — patch set A's green tester
+    /// run sitting in the store while patch set B is the one about to be written to the live tree.
+    /// </summary>
+    private static List<string> RefuseEvidenceAboutAnotherRevision(
+        Queen queen, string missionId,
+        List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)> eligible)
+    {
+        var refusals = new List<string>();
+
+        List<Anthill.SDK.Artifacts.Evidence> evidence;
+        try { evidence = ((Anthill.SDK.Artifacts.IEvidenceStore)queen.Memory).ForMission(missionId).ToList(); }
+        catch (Exception error)
+        {
+            // An unreadable evidence store is not a verdict about the patches. Say so and let
+            // Preflight decide — failing closed here would turn a store hiccup into "this mission can
+            // never auto-apply", which is a different and much larger claim.
+            Console.Error.WriteLine($"[autoapply] could not read evidence for {missionId}: {error.Message}");
+            return refusals;
+        }
+
+        var identified = evidence.Where(e => e.IdentifiesARevision).ToList();
+        if (identified.Count == 0) return refusals;
+
+        foreach (var patchSetId in eligible.Select(e => e.PatchSetId)
+                     .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal))
+        {
+            // The identity ExecutionService stamps when it verifies a materialized set.
+            var revisionId = $"rev:{patchSetId}";
+            var forThisSet = identified.Where(e =>
+                string.Equals(e.RevisionId, revisionId, StringComparison.Ordinal)).ToList();
+
+            if (forThisSet.Count == 0)
+            {
+                refusals.Add($"patch set {patchSetId}: the mission holds {identified.Count} "
+                           + "revision-identified evidence row(s) and none of them judge this set");
+                continue;
+            }
+
+            // Present is not passing, and not every kind promotes. MissionVerification owns that rule
+            // so the two cannot disagree about what counts as evidence to act on.
+            var treeHash = forThisSet[0].TreeHash;
+            if (!MissionVerification.EvidenceJudgesRevision(forThisSet, revisionId, treeHash))
+                refusals.Add($"patch set {patchSetId}: its evidence exists but none of it is "
+                           + "deterministic AND passing for the tree it produced");
+        }
+
+        return refusals;
+    }
+
+    private static List<string> Preflight(
+        List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)> eligible)
     {
         var refusals = new List<string>();
         var guard = new Anthill.Core.Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
 
-        foreach (var (patchId, _, proposal) in eligible)
+        foreach (var (patchId, _, _, proposal) in eligible)
         {
             string? current;
             string? safeDestination = null;

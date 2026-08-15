@@ -199,13 +199,38 @@ public static class ArtifactSchemas
     /// </summary>
     public const string FailureContext = "failure_context";
 
+    /// <summary>
+    /// A proposal to change DOCUMENTATION, requiring approval. v0.3.8.57.
+    ///
+    /// The scribe has emitted `docs_patch_set` since v3.8.20 and <see cref="ForAntKind"/> folded it
+    /// onto <see cref="PatchSet"/> — but the two payloads have nothing in common. A patch set is
+    /// `{ patch_set_id, summary, proposals[] }` and something materialises it; a docs proposal is
+    /// `{ targets, source_mission, requires_approval }` and the scribe holds no apply permission.
+    /// Every consumer that asked the store for "this mission's patch sets" — the soldier does
+    /// exactly that, and reports how many it reviewed — was handed both and could not tell them
+    /// apart. The vocabulary's own rule applies: a schema the colony already produces and the
+    /// vocabulary did not name is a gap in the vocabulary, not a reason to rename what the ant emits.
+    /// </summary>
+    public const string DocsPatchSet = "docs_patch_set";
+
+    /// <summary>
+    /// The researcher's four declared sections, as data. v0.3.8.57.
+    ///
+    /// Added because the SHAPE ALREADY EXISTED — the researcher's prompt has demanded these
+    /// headings since the ant was written, and the response was then flattened into a string. That
+    /// is the vocabulary's stated rule again: a schema the colony already produces and the
+    /// vocabulary did not name is a gap in the vocabulary. See <see cref="Artifacts.ResearchBrief"/>
+    /// for why the BUILDER deliberately gets no equivalent.
+    /// </summary>
+    public const string ResearchBrief = "research_brief";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
-            FailureContext,
+            FailureContext, DocsPatchSet, ResearchBrief,
         };
 
     /// <summary>
@@ -230,7 +255,9 @@ public static class ArtifactSchemas
         "ui_map" => UiMap,
         "repair_recommendation" => RepairRecommendation,
         "source_set" => SourceSet,
-        "docs_patch_set" or "patch_set" => PatchSet,
+        "docs_patch_set" => DocsPatchSet,
+        "research_brief" => ResearchBrief,
+        "patch_set" => PatchSet,
         "repository_map" => RepositoryMap,
         "file_set" => FileSet,
         "change_plan" => ChangePlan,

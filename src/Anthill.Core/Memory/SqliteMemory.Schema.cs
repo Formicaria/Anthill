@@ -238,6 +238,7 @@ public sealed partial class SqliteMemory : IDisposable
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, title TEXT NOT NULL,
             description TEXT NOT NULL, assigned_ant TEXT NOT NULL, assigned_worker TEXT, task_type TEXT NOT NULL,
             parent_task_id TEXT, parent_task_ids_json TEXT, depends_on_json TEXT,
+            input_artifact_ids_json TEXT,
             status TEXT NOT NULL, result TEXT, result_summary TEXT,
             result_chars INTEGER DEFAULT 0, estimated_tokens INTEGER DEFAULT 0,
             created_at TEXT, started_at TEXT, finished_at TEXT, completed_at TEXT,
@@ -311,9 +312,22 @@ public sealed partial class SqliteMemory : IDisposable
             producer_role TEXT NOT NULL, mission_id TEXT NOT NULL, task_id TEXT, workspace_id TEXT,
             source_ids_json TEXT NOT NULL DEFAULT '[]', content_hash TEXT NOT NULL,
             visibility TEXT NOT NULL DEFAULT 'Colony', payload TEXT NOT NULL,
+            provenance_json TEXT,
             created_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_artifacts_mission ON artifacts(mission_id, schema, created_at)",
         @"CREATE INDEX IF NOT EXISTS idx_artifacts_hash ON artifacts(content_hash)",
+        // v0.3.8.57 — WHO READ WHAT. The composite primary key is the idempotency: a retried task
+        // reading the same artifact is one relationship observed twice, so the row is updated and
+        // counted rather than duplicated. Deliberately NO foreign key to missions(id): a diagnostic
+        // ledger that can fail a read because a mission row is absent would break the operation it
+        // exists to describe, which this release already learned once at the artifact write path.
+        @"CREATE TABLE IF NOT EXISTS artifact_consumptions (
+            artifact_id TEXT NOT NULL, consumer_role TEXT NOT NULL, consumer_task_id TEXT NOT NULL DEFAULT '',
+            content_hash TEXT NOT NULL, schema TEXT NOT NULL, mission_id TEXT NOT NULL,
+            read_count INTEGER NOT NULL DEFAULT 1,
+            first_read_at TEXT NOT NULL, last_read_at TEXT NOT NULL,
+            PRIMARY KEY (artifact_id, consumer_role, consumer_task_id))",
+        @"CREATE INDEX IF NOT EXISTS idx_consumptions_mission ON artifact_consumptions(mission_id, last_read_at)",
         @"CREATE TABLE IF NOT EXISTS evidence (
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, deterministic INTEGER NOT NULL DEFAULT 0,
             passed INTEGER NOT NULL DEFAULT 0, artifact_ids_json TEXT NOT NULL DEFAULT '[]',
@@ -649,7 +663,16 @@ public sealed partial class SqliteMemory : IDisposable
             ["failure_reason"] = "TEXT", ["failure_type"] = "TEXT", ["skipped_reason"] = "TEXT", ["blocked_reason"] = "TEXT",
             // v2.22.0: provenance for skill credit — which proven procedure this task followed.
             ["skill_id"] = "TEXT",
+            // v0.3.8.57: the artifact IDs this task was authoritatively given. Without the column
+            // the field would be set in memory and dropped at the database boundary, so a replay
+            // could not reconstruct what a worker actually consumed — which is the whole claim.
+            ["input_artifact_ids_json"] = "TEXT",
         });
+        // v0.3.8.57: how an artifact came to exist — build, environment, runtime, provider, model.
+        // The artifacts table has never needed a migration before, so this is its first: nullable
+        // and additive, and every row written before this release reads back as provenance-absent,
+        // which is the honest state rather than a fabricated origin.
+        AddMissing("artifacts", new() { ["provenance_json"] = "TEXT" });
         // v0.3.8.37: base_hash — what the target hashed to when the patch was built. Additive and
         // nullable, so proposals written before this release keep applying; PatchApply only enforces
         // the check when the column holds a value.

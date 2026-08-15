@@ -78,8 +78,15 @@ public static class DomainHelpers
     /// carry the TYPED record alongside the prose. Optional — a null store produces exactly the
     /// packet this method has always produced, which is what lets the interchange land without
     /// touching the CLI, the older ants, or a hundred tests.</param>
+    /// <param name="declaredInputIds">v0.3.8.57 — the artifacts the CONSUMING TASK was
+    /// authoritatively given. Non-empty narrows the typed block to exactly these; empty keeps the
+    /// mission-wide block every task received before. See <see cref="ArtifactContext.Compile"/>.</param>
+    /// <param name="consumerTaskId">v0.3.8.57 — the task this packet is being built for, so the
+    /// consumption ledger can say WHICH task read an artifact and not merely which role. A role
+    /// reads many times across a mission; a task reads once, which is the unit a replay needs.</param>
     public static string BuildContextPacketText(Mission mission, string consumerRole, int maxTotalChars,
-        int maxItemChars = -1, Anthill.SDK.Artifacts.IArtifactStore? artifacts = null)
+        int maxItemChars = -1, Anthill.SDK.Artifacts.IArtifactStore? artifacts = null,
+        IReadOnlyList<string>? declaredInputIds = null, string? consumerTaskId = null)
     {
         if (maxItemChars < 0) maxItemChars = AnthillRuntime.MaxContextItemChars;
 
@@ -88,7 +95,7 @@ public static class DomainHelpers
             var rawBlocks = mission.Tasks.Where(t => !string.IsNullOrEmpty(t.Result)).Select(t =>
                 $"Task: {t.Title}\nAnt: {t.AssignedAnt}\nTask Type: {t.TaskType}\nStatus: {t.Status.Value()}\nResult:\n{t.Result}");
             return TextUtil.Truncate(string.Join("\n\n---\n\n", rawBlocks), maxTotalChars, "...[context truncated]")
-                 + ArtifactBlock(artifacts, mission.Id, maxTotalChars);
+                 + ArtifactBlock(artifacts, mission.Id, maxTotalChars, declaredInputIds, consumerRole, consumerTaskId);
         }
 
         var allowedRawRoles = AnthillRuntime.RawContextRoles.GetValueOrDefault(consumerRole, new HashSet<string>());
@@ -124,7 +131,7 @@ public static class DomainHelpers
         }
 
         return TextUtil.Truncate(string.Join("\n\n---\n\n", blocks), maxTotalChars, "...[context packet truncated]")
-             + ArtifactBlock(artifacts, mission.Id, maxTotalChars);
+             + ArtifactBlock(artifacts, mission.Id, maxTotalChars, declaredInputIds, consumerRole, consumerTaskId);
     }
 
     /// <summary>
@@ -135,12 +142,23 @@ public static class DomainHelpers
     /// record — which is the arrangement this stage exists to end, reproduced one level down. A
     /// quarter of the prose budget, floored so a small packet still gets a usable block.
     /// </summary>
-    private static string ArtifactBlock(Anthill.SDK.Artifacts.IArtifactStore? artifacts,
-        string missionId, int proseBudget)
+    /// <remarks>
+    /// PUBLIC since v0.3.8.57. Not every model-calling ant builds its prompt through
+    /// <see cref="BuildContextPacketText"/> — the researcher assembles memory, pheromones and tool
+    /// output itself — and those ants were therefore reaching a model having never seen a typed
+    /// artifact. The alternative was a second copy of the quarter-budget rule at each such site,
+    /// which is how two components come to disagree about how much context an artifact block may
+    /// take. One function, every caller.
+    /// </remarks>
+    public static string ArtifactBlock(Anthill.SDK.Artifacts.IArtifactStore? artifacts,
+        string missionId, int proseBudget, IReadOnlyList<string>? declaredInputIds = null,
+        string? consumerRole = null, string? consumerTaskId = null)
     {
         if (artifacts is null) return "";
         var budget = Math.Max(1_500, proseBudget / 4);
-        var block = ArtifactContext.Compile(artifacts, missionId, budget);
+        var block = ArtifactContext.Compile(artifacts, missionId, budget,
+            declaredInputIds: declaredInputIds,
+            consumerRole: consumerRole, consumerTaskId: consumerTaskId);
         return block.Length == 0 ? "" : "\n\n---\n\n" + block;
     }
 }

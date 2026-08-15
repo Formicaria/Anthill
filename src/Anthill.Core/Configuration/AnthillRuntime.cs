@@ -159,8 +159,14 @@ public static class AnthillRuntime
         // colony whose planner model was missing fell back to a static plan with no way to fix it.
         "planner", "strategist",
         // v0.3.8.42: chat replies. The same rule as the planner — not an ant, makes model calls,
-        // must be routable — so Ollama, a keyed API or an installed agent CLI are equally valid
-        // answers to "who speaks for the colony in chat", and the operator chooses.
+        // must be routable, and the operator chooses.
+        //
+        // v0.3.8.57: an AUTONOMOUS CODING AGENT is not a valid answer to "who speaks for the colony
+        // in chat", and the runtime refuses the turn rather than serving it. Routing `conversation`
+        // at an installed agent CLI made the chat box a direct line to that agent — it answered and
+        // could edit the tree, with no plan, no review, no tests and no verification in the sequence.
+        // The agent stays available to the COLONY (the coder routes to one deliberately); what is
+        // removed is the operator addressing it directly. See Queen's conversation `ask`.
         "conversation",
         // Every executable ant.
         "archivist", "builder", "coder", "file", "medic", "researcher", "scribe", "soldier",

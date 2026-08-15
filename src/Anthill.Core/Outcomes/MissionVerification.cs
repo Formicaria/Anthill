@@ -84,6 +84,31 @@ public static class MissionVerification
             && string.Equals(t.RanRevisionId, latest, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Is there DETERMINISTIC, PASSING evidence about this exact revision and tree? v0.3.8.57.
+    ///
+    /// The companion to <see cref="HasFreshEvidenceForLatestRevision"/>, and deliberately a different
+    /// question. That one pairs on the TASK — "a tester ran inside revision B" — which is a true and
+    /// useful statement about scheduling. This one asks the evidence itself, which is what survives
+    /// the mission, what a replay reads, and what can be checked long after the task objects are gone.
+    ///
+    /// Both are needed because they fail differently. A task can be stamped with a revision and
+    /// produce no evidence at all; an evidence row can name a revision whose task record was pruned.
+    /// Neither implies the other, and promotion should require the stronger of the two.
+    ///
+    /// NON-DETERMINISTIC EVIDENCE CANNOT SATISFY THIS. A model review is recorded and never promotes
+    /// — v3.8.22's rule — so a `model_review` naming the right tree is still not grounds to apply
+    /// anything. That distinction is the whole reason `Evidence.Deterministic` exists.
+    /// </summary>
+    public static bool EvidenceJudgesRevision(
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence, string? revisionId, string? treeHash)
+    {
+        if (evidence is null || string.IsNullOrWhiteSpace(revisionId) || string.IsNullOrWhiteSpace(treeHash))
+            return false;
+
+        return evidence.Any(e => e.Deterministic && e.Passed && e.Judges(revisionId!, treeHash!));
+    }
+
     internal static string? LatestProducedRevision(IReadOnlyList<Task> tasks) =>
         tasks.Where(t => !string.IsNullOrEmpty(t.ProducedRevisionId))
              .OrderBy(t => t.FinishedAt ?? t.CreatedAt)
