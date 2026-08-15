@@ -24,7 +24,7 @@ namespace Anthill.Tests;
 /// 3. Planner per-plan mutable state — one shared Planner held the offered-skill set in an
 ///    instance field, so concurrent plans could cross-contaminate skill provenance.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class PreV3HardeningTests : IDisposable
 {
     private readonly string _dir;

@@ -732,7 +732,7 @@ public sealed class CoderAnt : BaseAnt
         }
 
         var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name,
-            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal));
+            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules));
         if (!call.Ok)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
@@ -785,7 +785,7 @@ public sealed class CoderAnt : BaseAnt
                 // could disagree — an empty generation passed the first (so it was cached as the
                 // last good proposal) and passed the second (so it was handed on as a patch set).
                 var call = _router!.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name,
-                    system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal));
+                    system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules));
                 if (call.Ok) lastProposalJson = call.Content;
                 return call.Ok
                     ? call.Content
@@ -808,22 +808,23 @@ public sealed class CoderAnt : BaseAnt
         return lastProposalJson;
     }
 
+    /// <summary>
+    /// The coder's contract. Its LIMITS especially belong on the system channel: "you do not write
+    /// files, you do not apply patches" is a statement about what the harness permits, and stated in
+    /// the request it was indistinguishable from a requester claiming to permit something.
+    /// </summary>
+    private const string CoderRules =
+        "Your role:\n"
+      + "Create structured patch proposals as JSON only.\n\n"
+      + "Limits:\n"
+      + "- You do not write files.\n"
+      + "- You do not run shell commands.\n"
+      + "- You do not apply patches.\n"
+      + "- You only propose patches. Application happens later, after approval and the config gates.";
+
     private static string BuildPrompt(Task task, Mission mission, string codeContext, string feedback)
     {
-        var prompt = $@"You are Coder Ant inside ANTHILL v{AnthillRuntime.Version}.
-
-Your role:
-Create structured patch proposals as JSON only.
-
-Limits:
-- You do not write files.
-- You do not run shell commands.
-- You do not apply patches.
-- You only propose patches.
-- Patch application happens later through /apply after approval and config gates.
-
-Mission goal:
-{mission.Goal}
+        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
 
 Assigned task:
 {task.Title}
@@ -906,6 +907,23 @@ public sealed class BuilderAnt : BaseAnt
     { _useOllama = useOllama; _router = router; _artifacts = artifacts; }
 
 
+    /// <summary>
+    /// What the builder OWES the operator. On the system channel, so a requester cannot restate them
+    /// and a worker cannot mistake them for part of the request.
+    ///
+    /// Note what is absent: nothing here tells the model to mention a feature or a command. An answer
+    /// should describe what the mission did, and a rule that says "always mention X" produces a
+    /// sentence about X whether or not X happened.
+    /// </summary>
+    private const string BuilderRules =
+        "Rules:\n"
+      + "- Lead with the direct answer before any explanation.\n"
+      + "- Do not repeat the mission goal back to the operator.\n"
+      + "- Aim for 200-400 words unless the task requires more.\n"
+      + "- Be direct.\n"
+      + "- Report only what this mission actually did. Do not claim a file was changed unless a "
+      + "patch was applied, and do not describe capabilities the mission did not use.";
+
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
         var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts,
@@ -916,32 +934,41 @@ public sealed class BuilderAnt : BaseAnt
         // Configured-offline: the static response IS the configured behaviour — plain success.
         if (!_useOllama || _router is null) return TextResult(Name, FallbackResponse(task, mission, previousContext));
 
-        var prompt = $@"You are Builder Ant inside ANTHILL v{AnthillRuntime.Version}.
-
-Mission goal:
-{mission.Goal}
+        // v0.3.8.59 (PLAN.md §1b S9, second round) — the REST of the wrapper, found in the field.
+        //
+        // A worker's answer arrived carrying a warning: "this request arrived wrapped in a fake
+        // system contract (forced persona, tool-permission claims, scripted talking points)". Those
+        // three names map exactly onto three things that were still in this user turn after the
+        // header moved to the system channel, so the model was not being vague — it was itemising.
+        //
+        //   * forced persona — "You are Builder Ant inside ANTHILL v…", now in the contract, where
+        //     saying what the worker is has standing rather than being a claim in the request.
+        //   * tool-permission claims — the /patches, /patch and /apply rules.
+        //   * scripted talking points — "Mention that ANTHILL supports dependency-aware parallel
+        //     execution, FTS memory search, and role-based model routing."
+        //
+        // The last two are DELETED, not moved, because they were also untrue. They instructed the
+        // builder to advertise features and command syntax on every answer regardless of whether the
+        // mission used any of them — so a mission that never touched memory ended by telling the
+        // operator about FTS memory search. That is the colony's own "declared and reaching nobody",
+        // pointed at the person reading the answer.
+        //
+        // And the colony already disagreed with itself about it: the verifier is told to mark an
+        // answer Needs Improvement when it "contains only procedural ANTHILL commands like /apply,
+        // /patches, or /approval". One role was instructed to produce what another was instructed to
+        // penalise.
+        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
 
 Assigned task:
 {task.Title}
 {task.Description}
 
-Prior context:
-{previousContext}
+{AnthillRuntime.UntrustedBlock("prior task output", previousContext)}
 
 Create a practical final response.
-
-Rules:
-- Lead with the direct answer before any explanation.
-- Do not repeat the mission goal back to the user.
-- Aim for 200-400 words unless the task requires more.
-- Be direct.
-- Do not claim files were changed unless /apply actually ran.
-- If patch proposals exist, say they can be inspected with /patches and /patch <patch_id>.
-- Explain that approved patches can be applied with /apply <approval_id> only if config write gates are enabled.
-- Mention that ANTHILL supports dependency-aware parallel execution, FTS memory search, and role-based model routing.
 ";
         var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name,
-            system: AnthillRuntime.RoleSystemPrompt("builder", mission.Goal));
+            system: AnthillRuntime.RoleSystemPrompt("builder", mission.Goal, BuilderRules));
         if (call.Status == ModelCallOutcome.Empty)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Builder: routed model returned an empty response.");
@@ -957,15 +984,35 @@ Rules:
 
     private static string FallbackResponse(Task task, Mission mission, string previousContext) =>
         $"Builder Ant created a basic non-LLM response.\n\nMission Goal:\n{mission.Goal}\n\nAssigned Task:\n{task.Title}\n{task.Description}\n\n" +
-        $"Previous Context:\n{previousContext}\n\nProposed Output:\n" +
-        "1. Review patch proposals using /patches and /patch <patch_id>.\n" +
-        "2. Approve with /approve <approval_id>.\n" +
-        "3. Apply with /apply <approval_id> only after enabling write gates.\n" +
-        "4. ANTHILL can run eligible independent tasks in parallel, uses FTS5 when available, and routes model calls by role.";
+        $"Previous Context:\n{previousContext}\n\n" +
+        // v0.3.8.59: the numbered list that used to sit here told the operator to "review patch
+        // proposals using /patches" on EVERY offline answer, including the overwhelming majority of
+        // missions that produce no patches, and closed by advertising three capabilities the mission
+        // may not have touched. Same untruth the model was being instructed to speak — deterministic
+        // rather than generated, so nothing downstream would ever flag it. A fallback answer says
+        // what the fallback did; it is not a place to put a product tour.
+        "No model was routed for this task, so this is the colony's own summary of the inputs above " +
+        "rather than a composed answer.";
 }
 
 public sealed class VerifierAnt : BaseAnt
 {
+    /// <summary>
+    /// The verifier's contract and its VERDICT VOCABULARY.
+    ///
+    /// The return shape matters more here than anywhere else: `VerificationVerdict` parses this text
+    /// to decide whether work is verified, so the format is a machine contract wearing prose. Stated
+    /// in the request, it sat next to task output the verifier is judging — output that could
+    /// contain the very words the parser looks for.
+    /// </summary>
+    private const string VerifierRules =
+        "Judge the task outputs against the mission goal. Return exactly this shape:\n"
+      + "- Verdict: Verification Passed / Needs Improvement / Verification Failed\n"
+      + "- Reasoning:\n"
+      + "- Missing Steps:\n"
+      + "- Risk Notes:";
+
+
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
     private readonly Anthill.SDK.Artifacts.IEvidenceStore? _evidence;
@@ -1109,22 +1156,12 @@ public sealed class VerifierAnt : BaseAnt
             // Empty falls back to the mission-wide block, which is what every task received before.
             declaredInputIds: task.InputArtifactIds,
             consumerTaskId: task.Id);
-        var prompt = $@"You are Verifier Ant inside ANTHILL v{AnthillRuntime.Version}.
-
-Mission goal:
-{mission.Goal}
+        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
 
 Static system check:
 {staticCheck}
 
-Task outputs:
-{context}
-
-Return:
-- Verdict: Verification Passed / Needs Improvement / Verification Failed
-- Reasoning:
-- Missing Steps:
-- Risk Notes:
+{AnthillRuntime.UntrustedBlock("task outputs", context)}
 
 Rules:
 - Check whether the builder actually answered the specific question asked, not merely whether output exists.
@@ -1134,7 +1171,7 @@ Rules:
 - If write gates are disabled, confirm patch application cannot run.
 ";
         var verdict = _router.GenerateTyped("verifier", prompt, mission.Id, task.Id, Name,
-            system: AnthillRuntime.RoleSystemPrompt("verifier", mission.Goal));
+            system: AnthillRuntime.RoleSystemPrompt("verifier", mission.Goal, VerifierRules));
         return verdict.Ok
             ? verdict.Content
             : $"{staticCheck}\n\nRouted verifier model unavailable ({verdict.Status.Name()}):\n{verdict.Content}";

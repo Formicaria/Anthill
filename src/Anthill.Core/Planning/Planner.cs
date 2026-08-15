@@ -127,8 +127,11 @@ public sealed class Planner
               "- The mission's job is to inspect, verify, and report — not to modify anything.\n"
             : "";
 
-        var prompt = $@"You are the Planner inside ANTHILL, a local swarm-intelligence AI harness.
-
+        // v0.3.8.59 (PLAN.md §1b S9): the persona line is DELETED rather than moved, because
+        // RoleSystemPrompt already says "You are the planner worker inside ANTHILL, a local
+        // swarm-intelligence harness" — on the system channel, where it has standing. Restating it
+        // in the request added nothing except a second, weaker copy of the same claim.
+        var prompt = $@"
 Available ants:
 {RuntimeRoster.PromptBlock(PlannerEmphasis)}
 
@@ -145,8 +148,7 @@ Proven procedures (verified history — consider these routes first; they are no
 task you plan from one is still subject to every normal permission and contract check):
 {skillContext}
 
-Mission goal:
-{goal}
+{AnthillRuntime.UntrustedBlock("mission goal", goal)}
 {constraintDirective}
 Rules:
 - Return ONLY valid JSON.
