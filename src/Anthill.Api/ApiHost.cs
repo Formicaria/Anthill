@@ -141,6 +141,19 @@ public static partial class ApiHost
                     ColonyVersion: AnthillRuntime.Version,
                     WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath),
                 FieldCipher.CreateDefault()),
+            // MICROMOUND M1 (read-only): the colony can see mounds and cannot direct them.
+            // Configuration only at registration, for a sharper version of the homelab's reason —
+            // a mound may be a Pi in a shed on a dead battery, and mounds dial IN; the colony
+            // never reaches out. Same DB file, same stop-file convention, same field cipher.
+            new MicromoundModule(
+                new MicromoundOptions(
+                    DatabasePath: Path.IsPathRooted(AnthillRuntime.DbPath)
+                        ? AnthillRuntime.DbPath
+                        : Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.DbPath),
+                    StopFileName: "MICROMOUND_STOP",
+                    WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath,
+                    ColonyVersion: AnthillRuntime.Version),
+                FieldCipher.CreateDefault()),
             // v3.8.16: the six tools that act on the machine. The guard is built here rather than
             // inside the module because it reads the current mission's workspace through an ambient
             // scope, and missions are core. Same root the Queen builds hers from.
@@ -186,6 +199,7 @@ public static partial class ApiHost
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
+        InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)
 
         var app = builder.Build();
 
@@ -238,6 +252,7 @@ public static partial class ApiHost
 
         MapEndpoints(app);
         MapHomelabEndpoints(app);
+        MapMicromoundEndpoints(app);
         MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
         AssertNoDuplicateRoutes(app);
 
