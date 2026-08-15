@@ -106,6 +106,70 @@ public class UiChangeGateTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.64 (S6): a store that THROWS refuses. The absent-store arm stays permissive because
+    /// it is evidence about the wiring (the CLI, the tests); a store that EXISTS and cannot answer
+    /// is an incident, and a gate that allows because its check machinery is down has failed open
+    /// at the exact moment it was needed.
+    /// </summary>
+    [Fact]
+    public void AStoreThatThrows_Refuses()
+    {
+        var decision = UiChangeGate.Check(Coder(), UiMission, new ThrowingStore(), cartographerAvailable: true);
+
+        Assert.False(decision.Allowed);
+        Assert.Contains("could not be read", decision.Reason);
+    }
+
+    /// <summary>And the absent store keeps its contract — the two cases are distinguishable.</summary>
+    [Fact]
+    public void AnAbsentStore_StillAllows() =>
+        Assert.True(UiChangeGate.Check(Coder(), UiMission, artifacts: null, cartographerAvailable: true).Allowed);
+
+    /// <summary>
+    /// v0.3.8.64 (S6): `{}` conformed to the ui_map schema, so an empty object passed a gate whose
+    /// whole purpose is "a real map exists". The cartographer has always emitted files_examined,
+    /// routes and api_calls unconditionally — empty arrays when nothing was found — so an honest
+    /// empty map still conforms and a fabricated empty object no longer does.
+    /// </summary>
+    [Fact]
+    public void AnEmptyObject_IsNotAMap()
+    {
+        using var memory = Memory();
+        ((IArtifactStore)memory).Put(Artifact.Create(ArtifactSchemas.UiMap, "ui_cartographer", "m1", "{}"));
+
+        var decision = UiChangeGate.Check(Coder(), UiMission, (IArtifactStore)memory, true);
+
+        Assert.False(decision.Allowed);
+        Assert.Contains("not", decision.Reason);
+    }
+
+    [Fact]
+    public void AnHonestEmptyMap_StillConforms()
+    {
+        using var memory = Memory();
+        ((IArtifactStore)memory).Put(Artifact.Create(ArtifactSchemas.UiMap, "ui_cartographer", "m1",
+            """{"routes":[],"api_calls":[],"files_examined":[]}"""));
+
+        Assert.True(UiChangeGate.Check(Coder(), UiMission, (IArtifactStore)memory, true).Allowed);
+    }
+
+    private sealed class ThrowingStore : IArtifactStore
+    {
+        public string Put(Artifact artifact) => throw new InvalidOperationException("store is down");
+        public Artifact? Get(string artifactId) => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<Artifact> ForMission(string missionId, int limit = 200)
+            => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<Artifact> ForMission(string missionId, string schema, int limit = 200)
+            => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<Artifact> SourcesOf(string artifactId) => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<Artifact> ConsumersOf(string artifactId) => throw new InvalidOperationException("store is down");
+        public void RecordConsumption(ArtifactConsumption consumption) => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<ArtifactConsumption> ConsumptionsOf(string artifactId) => throw new InvalidOperationException("store is down");
+        public IReadOnlyList<ArtifactConsumption> ConsumptionsForMission(string missionId, int limit = 500)
+            => throw new InvalidOperationException("store is down");
+    }
+
+    /// <summary>
     /// PRESENT is not VALID, and this is the assertion that separates this gate from an existence
     /// check. A truncated payload under a `ui_map` label passes "the artifact exists" and the coder
     /// then plans against a map that is not one.
