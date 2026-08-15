@@ -204,6 +204,16 @@ public static partial class ApiHost
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
+
+        // v0.3.8.62 (S4): the startup half of write durability. A batch interrupted by a crash
+        // left an open journal; every one is rolled back here under the same hash rule as a live
+        // rollback, and an unrecoverable one leaves the durable marker that halts auto-apply.
+        try
+        {
+            foreach (var line in Anthill.SDK.Common.ApplyTransaction.Recover(AnthillRuntime.AllowedWorkspaceRoot))
+                Console.WriteLine($"[apply-recovery] {line}");
+        }
+        catch (Exception e) { Console.Error.WriteLine($"[apply-recovery] recovery scan failed: {e.Message}"); }
 #if MICROMOUND
         if (AnthillRuntime.EnableMicromound)
             InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)

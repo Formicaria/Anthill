@@ -110,6 +110,21 @@ public static class AutoApplyRunner
             : (AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify ? "(none — keep without verify)" : "dotnet build && dotnet test");
         var workspace = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
             ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : AnthillRuntime.AllowedWorkspaceRoot;
+
+        // v0.3.8.62 (S4): a previous batch ended in an INCOMPLETE rollback — the tree may hold a
+        // partial apply. That state is durable (a marker file, not a log line) and it is a HALT:
+        // writing more patches on top of a tree in an unknown state converts one incident into a
+        // compound one. An operator inspects, resolves, and deletes the marker to re-enable.
+        if (Anthill.SDK.Common.ApplyTransaction.HasRollbackFailure(workspace))
+        {
+            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_halted",
+                "CRITICAL: auto-apply is halted — a previous batch's rollback did not complete "
+                + $"(ROLLBACK_FAILED marker present under {Anthill.SDK.Common.ApplyTransaction.JournalDirectoryName}). "
+                + "Inspect the tree, resolve, and delete the marker to re-enable.",
+                antName: "director",
+                metadata: new() { ["mission_id"] = missionId, ["severity"] = "critical", ["reason"] = "rollback_failed_marker" });
+            return;
+        }
         queen.Memory.LogEvent(missionId, "autonomy_autoapply_started",
             $"Director auto-applying {eligible.Count} eligible patch(es), then verifying with: {verifyDescription}.", antName: "director",
             metadata: new() { ["mission_id"] = missionId, ["eligible_count"] = eligible.Count, ["verify_cmd"] = verifyDescription, ["workspace"] = workspace });
@@ -174,37 +189,55 @@ public static class AutoApplyRunner
             return;
         }
 
-        // Apply each eligible patch, remembering enough to roll back.
+        // Apply each eligible patch INSIDE A DURABLE TRANSACTION. v0.3.8.62 (S4). The journal is
+        // written before the first mutation, each file's pre-state and backup are recorded before
+        // its write, and a crash at any instant leaves a journal that startup recovery can replay.
+        // The tool still owns path guards and patch semantics; the transaction owns durability.
+        var tx = Anthill.SDK.Common.ApplyTransaction.Begin(workspace, note: $"auto-apply {missionId}");
+        var txGuard = new Anthill.Core.Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
         var applied = new List<Queen.AutoApplyOutcome>();
-        foreach (var (patchId, _, taskId, _) in eligible)
+        foreach (var (patchId, _, taskId, proposal) in eligible)
         {
+            Anthill.SDK.Common.ApplyTransaction.Entry? entry = null;
+            try
+            {
+                var target = txGuard.ResolveSafePath(proposal.FilePath);
+                var dest = string.IsNullOrWhiteSpace(proposal.DestinationPath)
+                    ? null : txGuard.ResolveSafePath(proposal.DestinationPath!);
+                entry = tx.StageExternal(target, proposal.ChangeType.ToString().ToLowerInvariant(), dest);
+            }
+            catch (Exception stageError)
+            {
+                // Staging could not even record intent — refuse the batch before mutating anything.
+                queen.Memory.LogEvent(missionId, "autonomy_autoapply_apply_failed",
+                    $"Auto-apply could not stage {proposal.FilePath}: {stageError.Message}", taskId, "director",
+                    metadata: new() { ["patch_id"] = patchId, ["error"] = stageError.Message });
+                RollBackBatch(queen, tx, applied, missionId, taskId,
+                    $"{proposal.FilePath} could not be staged");
+                return;
+            }
+
             var outcome = queen.ApplyPatchForAutomation(patchId, missionId, taskId);
-            if (outcome.Success) { applied.Add(outcome); continue; }
+            if (outcome.Success)
+            {
+                tx.MarkApplied(entry, outcome.AppliedHash);
+                applied.Add(outcome);
+                continue;
+            }
 
             /* A write failed AFTER preflight passed — a race, a permission change, a full disk.
-             *
-             * Everything already written is rolled back, in reverse order, from the pre-apply
-             * backups, and the batch is abandoned. This is the half preflight cannot provide: the
-             * old code logged the failure and applied the remaining patches on top of a set it now
-             * knew was incomplete. */
+             * The transaction rolls the whole batch back, INCLUDING whatever the failed operation
+             * left behind: its entry is journaled, its backup exists, and the hash rule decides
+             * per file whether the pre-apply bytes can safely go back. */
             queen.Memory.LogEvent(missionId, "autonomy_autoapply_apply_failed",
                 $"Auto-apply could not write patch {outcome.FilePath}: {outcome.Error}", taskId, "director",
-                metadata: new() { ["patch_id"] = patchId, ["error"] = outcome.Error });
-
-            for (var i = applied.Count - 1; i >= 0; i--)
-                queen.RollbackAutoApplied(applied[i], missionId, null, "a later patch in the set could not be applied");
-
-            queen.Memory.LogEvent(missionId, "autonomy_autoapply_batch_rolled_back",
-                $"Rolled back {applied.Count} already-applied patch(es) because {outcome.FilePath} "
-                + "could not be written. The set is applied as a unit or not at all.", taskId, "director",
-                metadata: new()
-                {
-                    ["mission_id"] = missionId, ["reverted_count"] = applied.Count,
-                    ["failed_patch_id"] = patchId, ["error"] = outcome.Error,
-                });
+                metadata: new() { ["patch_id"] = patchId, ["error"] = outcome.Error,
+                                  ["backup_path"] = outcome.BackupPath });
+            RollBackBatch(queen, tx, applied, missionId, taskId,
+                $"{outcome.FilePath} could not be written");
             return;
         }
-        if (applied.Count == 0) return;
+        if (applied.Count == 0) { tx.Commit(); return; }
 
         // v1.8.21 fix: on a deployment with no build toolchain, the default `dotnet build && dotnet test`
         // verify always fails and every applied patch is rolled back — so auto-apply never persists. When
@@ -224,6 +257,7 @@ public static class AutoApplyRunner
                 + "change records no verified success and reinforces no learning.",
                 antName: "director",
                 metadata: new() { ["mission_id"] = missionId, ["severity"] = "critical", ["kept_count"] = applied.Count });
+            tx.Commit();
             KeepApplied(queen, missionId, applied,
                 "autonomy_autoapply_kept_unverified",
                 $"Kept {applied.Count} auto-applied patch(es) WITHOUT verification " +
@@ -235,6 +269,7 @@ public static class AutoApplyRunner
         var verify = RunVerify();
         if (verify.Green)
         {
+            tx.Commit();
             KeepApplied(queen, missionId, applied,
                 "autonomy_autoapply_verified",
                 $"Verify passed — kept {applied.Count} auto-applied patch(es).",
@@ -242,12 +277,11 @@ public static class AutoApplyRunner
         }
         else
         {
-            // Roll back in reverse apply order.
             var reason = verify.TimedOut ? "verify timed out" : $"verify failed (exit {verify.ExitCode})";
-            for (var i = applied.Count - 1; i >= 0; i--)
-                queen.RollbackAutoApplied(applied[i], missionId, null, reason);
+            var report = RollBackBatch(queen, tx, applied, missionId, null, reason);
             queen.Memory.LogEvent(missionId, "autonomy_autoapply_reverted",
-                $"Verify FAILED ({reason}) — rolled back all {applied.Count} auto-applied patch(es). " +
+                $"Verify FAILED ({reason}) — rolled back {report.Restored} of {applied.Count} auto-applied patch(es)"
+                + (report.Clean ? ". " : " — ROLLBACK INCOMPLETE, auto-apply is now halted. ") +
                 $"Verify ran in {workspace} with: {verifyDescription}. " +
                 "If this deployment has no build toolchain, set autonomy_autoapply_verify_cmd to a check it can run, " +
                 "or autonomy_autoapply_keep_without_verify=true to keep changes without verifying.", antName: "director",
@@ -386,6 +420,51 @@ public static class AutoApplyRunner
         }
 
         return refusals;
+    }
+
+    /// <summary>
+    /// Roll the whole batch back through the transaction and TELL THE TRUTH about the result.
+    /// v0.3.8.62 (S4): the predecessor iterated per-patch rollbacks, ignored every return value,
+    /// and logged the batch as rolled back regardless — so an operator reading the log saw a clean
+    /// revert over a tree that still held half a patch set. The transaction's hash-checked report
+    /// is authoritative: conflicts (files changed after apply — left alone) and failures are
+    /// logged as what they are, and an unclean report has already written the durable
+    /// ROLLBACK_FAILED marker that halts the next run.
+    /// </summary>
+    private static Anthill.SDK.Common.ApplyTransaction.RollbackReport RollBackBatch(
+        Queen queen, Anthill.SDK.Common.ApplyTransaction tx,
+        List<Queen.AutoApplyOutcome> applied, string missionId, string? taskId, string reason)
+    {
+        var report = tx.Rollback();
+
+        foreach (var outcome in applied)
+            queen.Memory.UpdatePatchStatus(outcome.PatchId, PatchStatus.Failed,
+                lastError: $"Auto-apply rolled back: {reason}");
+
+        if (report.Clean)
+        {
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_batch_rolled_back",
+                $"Rolled back {report.Restored} file change(s) because {reason}. "
+                + "The set is applied as a unit or not at all.", taskId, "director",
+                metadata: new() { ["mission_id"] = missionId, ["reverted_count"] = report.Restored,
+                                  ["transaction"] = tx.Id, ["reason"] = reason });
+        }
+        else
+        {
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_rollback_incomplete",
+                $"CRITICAL: rollback INCOMPLETE after {reason} — restored {report.Restored}, "
+                + $"conflicts: {report.Conflicts.Count}, failures: {report.Failures.Count}. "
+                + "A durable ROLLBACK_FAILED marker now halts auto-apply until an operator resolves it.",
+                taskId, "director",
+                metadata: new()
+                {
+                    ["mission_id"] = missionId, ["severity"] = "critical", ["transaction"] = tx.Id,
+                    ["restored"] = report.Restored,
+                    ["conflicts"] = string.Join(" | ", report.Conflicts),
+                    ["failures"] = string.Join(" | ", report.Failures),
+                });
+        }
+        return report;
     }
 
     private static List<string> Preflight(

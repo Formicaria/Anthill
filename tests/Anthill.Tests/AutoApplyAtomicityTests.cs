@@ -134,12 +134,15 @@ public class AutoApplyAtomicityTests
     /// <summary>
     /// A write that fails after preflight passed rolls back what was already written.
     ///
-    /// This is the half preflight cannot provide: the tree can change between the check and the
-    /// write. Without it, the run would leave a partial set behind exactly as before, just less
-    /// often — which is worse, because it would be rarer and therefore less likely to be noticed.
+    /// v0.3.8.62 (S4): the previous version of this test asserted that the SOURCE contained a
+    /// rollback call — a check answering a question adjacent to the one asked, in the file whose
+    /// whole purpose is atomicity. The PLAN.md review named it. The byte-identity claim now lives
+    /// behaviourally in ApplyTransactionTests (fault-injected mid-batch failures asserting a
+    /// byte-identical restored tree); what remains here is the runner's CONTROL FLOW: the failure
+    /// path rolls back through the transaction, believes its report, and stops.
     /// </summary>
     [Fact]
-    public void AFailedWriteMidSet_RollsBackWhatWasAlreadyApplied()
+    public void AFailedWriteMidSet_RollsBackThroughTheTransaction_AndStops()
     {
         var source = RunnerSource();
 
@@ -148,10 +151,17 @@ public class AutoApplyAtomicityTests
 
         var body = source[failed..Math.Min(source.Length, failed + 1200)];
 
-        Assert.Contains("RollbackAutoApplied", body, StringComparison.Ordinal);
-        Assert.Contains("autonomy_autoapply_batch_rolled_back", body, StringComparison.Ordinal);
+        Assert.Contains("RollBackBatch(", body, StringComparison.Ordinal);
         // And it stops rather than applying the rest on top of a set it knows is incomplete.
         Assert.Contains("return;", body, StringComparison.Ordinal);
+
+        // The rollback path consumes the transaction's report rather than narrating success:
+        // an unclean report is logged as rollback_incomplete, never as batch_rolled_back.
+        var rollback = source.IndexOf("private static Anthill.SDK.Common.ApplyTransaction.RollbackReport RollBackBatch", StringComparison.Ordinal);
+        Assert.True(rollback >= 0, "RollBackBatch is no longer recognisable");
+        var rollbackBody = source[rollback..Math.Min(source.Length, rollback + 2500)];
+        Assert.Contains("report.Clean", rollbackBody, StringComparison.Ordinal);
+        Assert.Contains("autonomy_autoapply_rollback_incomplete", rollbackBody, StringComparison.Ordinal);
     }
 
     /// <summary>
