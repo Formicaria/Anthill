@@ -337,12 +337,20 @@ public sealed class SoldierAnt : BaseAnt
                     .Where(a => a is not null)
                     .Select(a => a!)
                     .ToList();
-                return declared.Count == 0
-                    ? ("", 0)
-                    : (string.Join("\n", declared.Select(a => a.Payload)), declared.Count);
+                // v0.3.8.63 (S5): the same check the context compiler applies, applied again at
+                // this direct consumer — the review's rule was "at every direct consumer", because
+                // the first site that forgets is the leak. Withheld inputs are NAMED, not dropped:
+                // a soldier that reviews two of three declared artifacts must know it did.
+                var readable = declared.Where(a => a.IsModelReadable).ToList();
+                var secretNotes = declared.Where(a => !a.IsModelReadable)
+                    .Select(a => $"[WITHHELD: declared input {a.Id} is Secret — payload not shown; the review proceeds without it]")
+                    .ToList();
+                if (readable.Count == 0 && secretNotes.Count == 0) return ("", 0);
+                return (string.Join("\n", secretNotes.Concat(readable.Select(a => a.Payload))), readable.Count);
             }
 
-            var patches = _artifacts.ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet);
+            var patches = _artifacts.ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet)
+                .Where(p => p.IsModelReadable).ToList();
             return patches.Count == 0
                 ? ("", 0)
                 : (string.Join("\n", patches.Select(p => p.Payload)), patches.Count);
