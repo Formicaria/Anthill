@@ -94,7 +94,7 @@ bytes.
 
 1. ✅ **S1** — Files-pane traversal and symlink-safe confinement *(v0.3.8.59 — one resolver, `PathContainment`; TOCTOU remains, see below)*
 2. ✅ **S2** — shell tool confinement: disable, or fix *(v0.3.8.59 — arguments contained; `dotnet` residual recorded)*
-3. **S3** — evidence fail-CLOSED
+3. ✅ **S3** — evidence fail-CLOSED *(v0.3.8.61 — verifier: `verification_unavailable`; auto-apply: five refusal arms; see below)*
 4. **S4** — transactional patch application and durable recovery
 5. **S5** — Secret-artifact filtering
 6. **S6** — UI gate *(open)*; remaining subprocess handling ✅ v0.3.8.59
@@ -209,6 +209,19 @@ readable for history and is manual-apply only.
 revisions, mixed pass/fail rows, wrong tree hashes.
 
 This subsumes §2 item 2, which asked only that the canonical evaluator consume `Evidence.Judges()`.
+
+**Closed v0.3.8.61.** The verifier distinguishes a store that FAILED from a store that never
+existed: failure produces `verification_unavailable` — a verdict `Parse` cannot emit and `IsPass`
+never accepts — while the no-store CLI/test configuration keeps its static contract. Auto-apply's
+gate (`RefuseEvidenceAboutAnotherRevision`, now taking `IEvidenceStore` so tests drive the real
+function) refuses on: store read failure; no revision-identified evidence (legacy rows are
+manual-apply only); missing patch-set id; evidence not deterministic-and-passing for the exact
+revision and tree; any deterministic FAILURE for the revision (a pass cannot outvote it); and a
+patch-set CONTENT hash mismatch — the evidence judged bytes, so the gate compares bytes, which
+also makes a policy-filtered subset self-refusing. `EvidenceFailsClosedTests` covers the full
+test list above behaviourally. Residual: "every policy-required check" is enforced upstream by
+the canonical `completed_verified` evaluation auto-apply already requires; it is not re-derived
+inside the gate, deliberately — one authority (`MissionVerification`) owns that rule.
 
 #### S4 — Transactional patch application (P0)
 
