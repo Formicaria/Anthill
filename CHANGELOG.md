@@ -26,6 +26,14 @@ walk was standing on detached the insertion cursor and killed the rest of the re
 colony canvas threw on every click while the Agent Inspector widget was hidden, because its adopted
 pane was detached and getElementById said so. Both fixed, both now guarded.
 
+**The planner's normaliser could only normalise six of twelve roles.** The Director's own server
+log showed it three missions in a row: a planner-assigned tester task arrived typed 'general', the
+tester contract refused it, and the type normaliser — whose whole job is substituting a valid
+default — substituted 'general' again, because `InferTaskType` had no case for any specialist
+role. The medic then burned the full repair bound on a defect that lives in the plan, where no
+execution repair can reach, and every affected mission's score halved. All six specialists now
+infer a type inside their own contract, held there by a structural guard over the whole catalog.
+
 **Operator note.** The sweep found live auto-apply enabled on a build whose evidence gate still
 failed open, with write gates on and a real tree on the allowlist — the exact configuration §1b's
 containment paragraph warns about. `autonomy_autoapply_enabled` was turned OFF during the sweep
