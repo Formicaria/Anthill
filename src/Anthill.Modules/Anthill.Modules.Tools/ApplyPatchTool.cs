@@ -153,49 +153,75 @@ public sealed class ApplyPatchTool : ITool
         if (!outcome.Ok)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.ValidationFailure);
 
-        switch (outcome.Status)
+        // v0.3.8.62 (PLAN.md §1b S4). Two disciplines applied to every destructive arm below.
+        //
+        // WRITES ARE STAGED: content lands via ApplyTransaction.AtomicWrite — a temp in the same
+        // directory swapped in by an atomic move — so the target file is never half-written. The
+        // old WriteAllText could truncate the target and then throw, leaving bytes that match
+        // neither the pre- nor the post-state, which no recovery rule can reason about.
+        //
+        // FAILURES KEEP THEIR RECOVERY METADATA: the backup is taken before the mutation, and if
+        // the mutation throws, the failure result CARRIES the backup path and target instead of
+        // dissolving them into an exception message. Losing that metadata was the original sin of
+        // this file's outer catch — a backup nobody can find is a backup that does not exist.
+        //
+        // Every success also reports applied_hash — what the mutation left at the live path — so
+        // rollback and manual revert can refuse to overwrite bytes that changed after apply.
+        string? backupTaken = null;
+        try
         {
-            case PatchApplyStatus.Created:
-                Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
-                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
-                return new ToolResult(Name, true, Json.Dumps(
-                    new { action = "add", file_path = safePath, backup_path = (string?)null }, indented: true));
-
-            // v0.3.8.57 — the `Overwrote` arm is GONE. `PatchApply` no longer produces that status:
-            // an `add` onto an existing file is now RefusedTargetExists, handled above. The write it
-            // used to perform replaced a whole file with whatever fragment the proposal carried, and
-            // the backup it took first made that recoverable rather than correct.
-
-            case PatchApplyStatus.Deleted:
+            switch (outcome.Status)
             {
-                // Backup THEN delete, in that order. Reversed, a failure between the two loses the
-                // file outright; this way the worst case is a backup with nothing removed.
-                var deleteBackup = BackupFile(safePath);
-                File.Delete(safePath);
-                return new ToolResult(Name, true, Json.Dumps(
-                    new { action = "delete", file_path = safePath, backup_path = deleteBackup }, indented: true));
-            }
+                case PatchApplyStatus.Created:
+                    Anthill.SDK.Common.ApplyTransaction.AtomicWrite(safePath, outcome.Content!);
+                    return new ToolResult(Name, true, Json.Dumps(
+                        new { action = "add", file_path = safePath, backup_path = (string?)null,
+                              applied_hash = Anthill.SDK.Common.ApplyTransaction.HashText(outcome.Content!) }, indented: true));
 
-            case PatchApplyStatus.Renamed:
-            {
-                // Move, not copy-then-delete. File.Move preserves the bytes exactly and cannot leave
-                // both halves behind if it fails partway. The backup still comes first, because the
-                // revert path needs something to restore when the destination is later gone.
-                var renameBackup = BackupFile(safePath);
-                Directory.CreateDirectory(Path.GetDirectoryName(safeDestination!)!);
-                File.Move(safePath, safeDestination!);
-                return new ToolResult(Name, true, Json.Dumps(
-                    new { action = "rename", file_path = safePath, destination_path = safeDestination,
-                          backup_path = renameBackup }, indented: true));
-            }
+                // v0.3.8.57 — the `Overwrote` arm is GONE. `PatchApply` no longer produces that
+                // status: an `add` onto an existing file is now RefusedTargetExists, handled above.
 
-            default:
-            {
-                var backupPath = BackupFile(safePath);
-                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
-                return new ToolResult(Name, true, Json.Dumps(
-                    new { action = "modify", file_path = safePath, backup_path = backupPath }, indented: true));
+                case PatchApplyStatus.Deleted:
+                {
+                    // Backup THEN delete, in that order. Reversed, a failure between the two loses
+                    // the file outright; this way the worst case is a backup with nothing removed.
+                    backupTaken = BackupFile(safePath);
+                    File.Delete(safePath);
+                    return new ToolResult(Name, true, Json.Dumps(
+                        new { action = "delete", file_path = safePath, backup_path = backupTaken,
+                              applied_hash = (string?)null }, indented: true));
+                }
+
+                case PatchApplyStatus.Renamed:
+                {
+                    // Move, not copy-then-delete. File.Move preserves the bytes exactly and cannot
+                    // leave both halves behind if it fails partway. The backup still comes first,
+                    // because the revert path needs something when the destination is later gone.
+                    backupTaken = BackupFile(safePath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(safeDestination!)!);
+                    File.Move(safePath, safeDestination!);
+                    return new ToolResult(Name, true, Json.Dumps(
+                        new { action = "rename", file_path = safePath, destination_path = safeDestination,
+                              backup_path = backupTaken,
+                              applied_hash = Anthill.SDK.Common.ApplyTransaction.HashFile(safeDestination) }, indented: true));
+                }
+
+                default:
+                {
+                    backupTaken = BackupFile(safePath);
+                    Anthill.SDK.Common.ApplyTransaction.AtomicWrite(safePath, outcome.Content!);
+                    return new ToolResult(Name, true, Json.Dumps(
+                        new { action = "modify", file_path = safePath, backup_path = backupTaken,
+                              applied_hash = Anthill.SDK.Common.ApplyTransaction.HashText(outcome.Content!) }, indented: true));
+                }
             }
+        }
+        catch (Exception e)
+        {
+            return new ToolResult(Name, false, Json.Dumps(
+                    new { action = "failed_apply", file_path = safePath, destination_path = safeDestination,
+                          backup_path = backupTaken, error = e.Message }, indented: true),
+                $"Patch write failed: {e.Message}", ToolFailure.Classify(e));
         }
     }
 }
