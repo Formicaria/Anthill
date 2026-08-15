@@ -1530,15 +1530,24 @@ public sealed class ExecutionService : IExecutionService
     {
         var policy = "ask";
         IReadOnlyList<string> grants = Array.Empty<string>();
+        string? workingDirectory = null;
         try
         {
             var conversation = _memory.FindConversationForMission(mission.Id);
             if (conversation is not null)
             {
                 policy = conversation.EffectivePolicy.ToString().ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(conversation.ProjectId))
-                    grants = _memory.LoadProjectGrants(conversation.ProjectId!)
-                        .Select(g => g.Path).ToList();
+
+                // v0.3.8.58 — the SAME resolution the conversation lane used, not a second one.
+                //
+                // This used to read grants inline and never resolve a working directory, which was
+                // survivable only because the chat lane resolved both for the agent that actually
+                // ran. With chat deleted, a mission is the only lane, so both answers have to be
+                // right here: grants (which include the colony's own source tree as reach, and did
+                // not in the inline copy) and the project's tree, or a project's mission would run
+                // in whatever directory the provider defaults to.
+                grants = Conversations.ConversationRunner.ProjectGrantPaths(_memory, conversation);
+                workingDirectory = Conversations.ConversationRunner.ProjectDirectory(_memory, conversation);
             }
         }
         catch (Exception error)
@@ -1547,7 +1556,8 @@ public sealed class ExecutionService : IExecutionService
             Console.Error.WriteLine($"[execution] agent access lookup failed for {mission.Id}: {error.Message}");
         }
         // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
-        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(policy, grants, confinedWorkspace: true);
+        return Anthill.SDK.Reasoning.AgentAccessScope.Enter(
+            policy, grants, confinedWorkspace: true, workingDirectory: workingDirectory);
     }
 
     /// <summary>

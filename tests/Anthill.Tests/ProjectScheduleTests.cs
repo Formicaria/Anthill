@@ -134,8 +134,7 @@ public class ProjectScheduleTests : IDisposable
     private static (ProjectScheduler Scheduler, SqliteMemory Memory) Rig(SqliteMemory memory)
     {
         var runner = new ConversationRunner(memory,
-            (_, onCreated, _) => { var id = Guid.NewGuid().ToString("N")[..12]; onCreated(id); return id; },
-            ask: (_, _) => new ConversationReply(true, "done", "local", "llama", null));
+            (_, onCreated, _) => { var id = Guid.NewGuid().ToString("N")[..12]; onCreated(id); return id; });
         return (new ProjectScheduler(memory, runner), memory);
     }
 
