@@ -61,7 +61,7 @@ public class ConversationRunnerTests : IDisposable
     /// then keeps working, so the runner can record history without waiting for the work to finish.
     /// A fake that only returned the id would test a pipeline that does not exist.
     /// </summary>
-    private ConversationRunner Runner(Func<string, Action<string>?, ConversationReply>? ask = null) => new(_memory, (_, onCreated, token) =>
+    private ConversationRunner Runner() => new(_memory, (_, onCreated, token) =>
     {
         var id = $"mission-{Interlocked.Increment(ref _missionsStarted)}";
         _lastToken = token;
@@ -74,7 +74,7 @@ public class ConversationRunnerTests : IDisposable
         catch (OperationCanceledException) { /* cancelled mid-flight, which is a valid ending */ }
 
         return id;
-    }, ask);
+    });
 
     private Conversation Chat(EscalationPolicy policy = EscalationPolicy.Ask, bool cancelled = false)
     {
@@ -91,63 +91,94 @@ public class ConversationRunnerTests : IDisposable
     private static Dictionary<string, string> Approve() =>
         new(StringComparer.OrdinalIgnoreCase) { [ConversationRunner.StartMissionAction] = "approve" };
 
-    // ---- chat is the default, and is not gated here ----------------------------------------------
+    // ---- every message is a mission ---------------------------------------------------------
 
     /// <summary>
-    /// Chat runs without an escalation decision. The tools it may call are gated at DISPATCH, which
-    /// is the correct place: a conversation that only reads needs no permission, and one that tries
-    /// to write is stopped at the write rather than at the sentence before it.
+    /// v0.3.8.58 — a bare message, with no mode asked for, IS a mission.
     ///
-    /// v0.3.8.42: and it is ANSWERED. The reply is recorded as an assistant turn carrying the
-    /// provider/model that produced it, and the prompt the provider saw contains the operator's
-    /// message — the loop the ConversationMode.Chat doc always described, finally built.
+    /// This replaces `Chat_RunsWithoutAnEscalationDecision_AndIsAnswered`, and the inversion is the
+    /// whole change: that test asserted a turn which started no mission, recorded no escalation
+    /// decision, and was answered by whatever provider served the `conversation` route. Every one of
+    /// those properties is now a defect. The default mode is still Chat because the API still sends
+    /// it — and it must reach the mission path anyway, which is exactly what a caller who never
+    /// updates their request would otherwise miss.
     /// </summary>
     [Fact]
-    public void Chat_RunsWithoutAnEscalationDecision_AndIsAnswered()
+    public void AMessageWithNoModeRequested_StillBecomesAMission()
     {
-        string? seen = null;
-        var outcome = Runner((prompt, _) => { seen = prompt;
-            return new ConversationReply(true, "It orchestrates missions.", "agent:claude-code", "Claude Code", null); })
-            .Run(Chat(), "what does this repository do?");
+        var outcome = Runner().Run(Chat(EscalationPolicy.Bypass), "what does this repository do?");
 
-        Assert.Equal(ConversationMode.Chat, outcome.Mode);
+        Assert.Equal(ConversationMode.Mission, outcome.Mode);
         Assert.True(outcome.Started);
-        Assert.Null(outcome.MissionId);
-        Assert.Equal(0, _missionsStarted);
-        Assert.Empty(_memory.LoadEscalationDecisions("c1"));
-        Assert.Contains("answered by agent:claude-code/Claude Code", outcome.Summary);
-        Assert.Contains("what does this repository do?", seen);
-
-        var turns = _memory.LoadConversationTurns("c1");
-        Assert.Equal(2, turns.Count);
-        Assert.Equal("assistant", turns[1].Role);
-        Assert.Equal("It orchestrates missions.", turns[1].Content);
-        Assert.Equal("agent:claude-code", turns[1].Provider);
-        Assert.Equal("Claude Code", turns[1].Model);
+        Assert.Equal("mission-1", outcome.MissionId);
+        Assert.Equal(1, _missionsStarted);
     }
 
     /// <summary>
-    /// v0.3.8.46: what the answer cost travels with it — reported usage lands on the recorded
-    /// turn, and an UNREPORTED count stays null all the way through storage. Null rehydrating as
-    /// zero would understate every total built from the transcript.
+    /// And it is GATED like one. The old chat lane ran with no escalation decision at all, which
+    /// was defensible only while it did no work; a lane that could edit the operator's files
+    /// without a recorded decision is the thing this release removes.
     /// </summary>
     [Fact]
-    public void ATurnsTokenUsage_IsRecorded_AndAbsenceStaysAbsent()
+    public void AMessageWithNoModeRequested_IsGatedLikeAMission()
     {
-        Runner((_, _) => new ConversationReply(true, "counted", "local", "llama", null,
-                PromptTokens: 120, CompletionTokens: 45))
-            .Run(Chat(), "how many tokens was that?");
+        var outcome = Runner().Run(Chat(), "delete the logging module");
 
-        var counted = _memory.LoadConversationTurns("c1")[^1];
-        Assert.Equal(120, counted.PromptTokens);
-        Assert.Equal(45, counted.CompletionTokens);
+        Assert.False(outcome.Started);
+        Assert.Equal(0, _missionsStarted);
+        Assert.Contains(_memory.LoadEscalationDecisions("c1"),
+            d => d.Action == ConversationRunner.StartMissionAction && !d.Allowed);
+    }
 
-        Runner((_, _) => new ConversationReply(true, "uncounted", "agent:claude-code", "Claude Code", null))
-            .Run(Chat(), "and that one?");
+    /// <summary>
+    /// The operator's message reaches the mission as its GOAL, with the conversation context that
+    /// tells the colony what "this" and "these" point at.
+    /// </summary>
+    [Fact]
+    public void TheOperatorsMessage_IsTheMissionGoal()
+    {
+        string? goal = null;
+        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
 
-        var uncounted = _memory.LoadConversationTurns("c1")[^1];
-        Assert.Null(uncounted.PromptTokens);
-        Assert.Null(uncounted.CompletionTokens);
+        runner.Run(Chat(EscalationPolicy.Bypass), "make the header sticky", ConversationMode.Mission);
+
+        Assert.NotNull(goal);
+        Assert.Contains("make the header sticky", goal);
+    }
+
+    /// <summary>
+    /// ATTACHMENTS REACH THE WORK. They used to be read by the chat prompt, which no longer exists,
+    /// so deleting that lane without rehoming them would have left a turn showing a file the mission
+    /// could not read — recorded, visible, and consumed by nobody.
+    /// </summary>
+    [Fact]
+    public void AnAttachment_TravelsIntoTheMissionGoal()
+    {
+        string? goal = null;
+        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
+
+        runner.Run(Chat(EscalationPolicy.Bypass), "implement this", ConversationMode.Mission,
+            attachments: new[] { ("spec.md", "The header must stay pinned on scroll.") });
+
+        Assert.Contains("spec.md", goal);
+        Assert.Contains("The header must stay pinned on scroll.", goal);
+    }
+
+    /// <summary>
+    /// A truncated attachment SAYS it was truncated. Silently clipping a spec is worse than
+    /// dropping it: the colony proceeds confidently against half a document and nothing records why.
+    /// </summary>
+    [Fact]
+    public void AnOversizedAttachment_IsTruncatedOutLoud()
+    {
+        string? goal = null;
+        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
+
+        runner.Run(Chat(EscalationPolicy.Bypass), "read it", ConversationMode.Mission,
+            attachments: new[] { ("big.txt", new string('x', 20_000)) });
+
+        Assert.Contains("truncated", goal);
+        Assert.Contains("20000 chars total", goal);
     }
 
     /// <summary>
@@ -173,52 +204,6 @@ public class ConversationRunnerTests : IDisposable
         var decisions = _memory.LoadEscalationDecisions("c1");
         Assert.Contains(decisions, d => d.Action == "run_allowlisted_check" && d.Allowed);
         Assert.DoesNotContain("run_allowlisted_check", ConversationStateReader.Read(_memory, "c1").WaitingOn);
-    }
-
-    /// <summary>A runtime composed without reasoning says so — it does not spin, and it does not
-    /// pretend. The message is still recorded; history survives the missing capability.</summary>
-    [Fact]
-    public void Chat_WithoutAComposedProvider_SaysSo()
-    {
-        var outcome = Runner().Run(Chat(), "hello?");
-
-        Assert.False(outcome.Started);
-        Assert.Contains("no reasoning provider is composed", outcome.Summary);
-        Assert.Single(_memory.LoadConversationTurns("c1"));   // the operator's message, nothing invented
-    }
-
-    /// <summary>A failed provider call records NO fake turn — the summary carries the classified
-    /// error and the remedy (route 'conversation' to a working provider).</summary>
-    [Fact]
-    public void Chat_ProviderFailure_RecordsNoFakeTurn()
-    {
-        var outcome = Runner((_, _) => new ConversationReply(false, "", "local", "llama", "ConnectError: Could not connect"))
-            .Run(Chat(), "hello?");
-
-        Assert.False(outcome.Started);
-        Assert.Contains("Could not connect", outcome.Summary);
-        Assert.Contains("Providers & Model Routing", outcome.Summary);
-        Assert.Single(_memory.LoadConversationTurns("c1"));
-    }
-
-    /// <summary>Stop pressed while the provider was thinking: the reply is discarded, because a
-    /// reply landing in a cancelled conversation would look like it ignored the Stop.</summary>
-    [Fact]
-    public void Chat_ReplyAfterCancel_IsDiscarded()
-    {
-        var chat = Chat();
-        var runner = Runner((_, _) =>
-        {
-            // The cancel arrives while the provider is thinking.
-            _memory.SaveConversation(chat with { Cancelled = true });
-            return new ConversationReply(true, "too late", "local", "llama", null);
-        });
-
-        var outcome = runner.Run(chat, "hello?");
-
-        Assert.False(outcome.Started);
-        Assert.Contains("cancelled while answering", outcome.Summary);
-        Assert.Single(_memory.LoadConversationTurns("c1"));
     }
 
     [Fact]
@@ -299,16 +284,23 @@ public class ConversationRunnerTests : IDisposable
     /// A cancelled conversation starts nothing. Refusing to BEGIN work is the cheap half of
     /// "cancelling a conversation cancels the work it started" — stopping something is harder than
     /// not starting it.
+    ///
+    /// v0.3.8.58: asserted through BOTH entry points. The bare-message path used to be a different
+    /// lane with its own cancellation check, and collapsing two lanes into one is exactly when a
+    /// guarantee that held on both quietly comes to hold on the survivor only.
     /// </summary>
-    [Fact]
-    public void ACancelledConversation_StartsNothing()
+    [Theory]
+    [InlineData(ConversationMode.Mission)]
+    [InlineData(ConversationMode.Chat)]
+    public void ACancelledConversation_StartsNothing(ConversationMode requested)
     {
         var outcome = Runner().Run(Chat(EscalationPolicy.Bypass, cancelled: true),
-            "go", ConversationMode.Mission, Approve());
+            "go", requested, Approve());
 
         Assert.False(outcome.Started);
         Assert.Equal(0, _missionsStarted);
         Assert.Contains("cancelled", outcome.Summary);
+        Assert.Empty(_memory.LoadConversationTurns("c1"));   // nothing recorded, nothing invented
     }
 
     /// <summary>The cancellation token reaches the mission, so a cancelled conversation can stop it.</summary>

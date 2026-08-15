@@ -1066,11 +1066,14 @@ public class UiShellTests
         // The jobs list keeps the durable per-run Cancel.
         Assert.Contains("cancelJob", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
 
-        // v0.3.8.51 (field report): the ⚒ "Do the work" button is RETIRED — one send path. The
-        // colony proposes missions itself (EscalateMarker in ConversationRunner) and the approval
-        // selector governs them; a second send button was a magic word with a tooltip. What must
-        // hold instead: the button is gone, the gates affordance exists beside the policy
-        // selector, and approvals still travel mode:'mission' through the same turn endpoint.
+        // v0.3.8.51 (field report): the ⚒ "Do the work" button is RETIRED — one send path. A
+        // second send button was a magic word with a tooltip.
+        //
+        // v0.3.8.58: and the one remaining path IS the mission path. The escalation marker that
+        // made this true is gone with the lane it escalated FROM — the colony no longer decides,
+        // per turn, whether the operator's message deserves the pipeline. What must hold: the
+        // button is gone, the gates affordance exists beside the policy selector, and approvals
+        // still travel mode:'mission' through the same turn endpoint.
         Assert.DoesNotContain("id=\"chat-work\"", html);
         Assert.DoesNotContain("chatSend('mission')", js);
         // Operator correction: the policy SELECTOR is the gates, so it wears the label — a
@@ -1604,16 +1607,21 @@ public class UiShellTests
     /// v0.3.8.52 (second field round) — every project gets ITS OWN tree. The old fallback sent
     /// every pathless project to the ONE shared workspace root: the files pane showed every
     /// project the same directory, and the chat agent ran every project on the same branch. The
-    /// rule now lives in ProjectRoots and every consumer resolves through it — the files pane,
-    /// the chat lane's confinement (via AgentAccessScope.WorkingDirectory, which the provider
-    /// must prefer over its static default), and the prompt's own description of the tree.
-    /// Two copies of a boundary rule is one copy that eventually disagrees.
+    /// rule now lives in ProjectRoots and every consumer resolves through it — the files pane and
+    /// the agent's confinement (via AgentAccessScope.WorkingDirectory, which the provider must
+    /// prefer over its static default). Two copies of a boundary rule is one copy that eventually
+    /// disagrees.
     ///
     /// v0.3.8.55 (fourth field round) REVERSED the third round's gate: a pathless project no
-    /// longer refuses the chat. It stands in ANTHILL's own source checkout — direct source
-    /// access, primary until the operator sets a directory, which then takes over. The old
-    /// fallback stays forbidden: the default is the COLONY'S OWN TREE, never the shared
-    /// workspace root that made every project identical.
+    /// longer refuses work. It stands in ANTHILL's own source checkout — direct source access,
+    /// primary until the operator sets a directory, which then takes over. The old fallback stays
+    /// forbidden: the default is the COLONY'S OWN TREE, never the shared workspace root that made
+    /// every project identical.
+    ///
+    /// v0.3.8.58: the CONSUMER changed and the rule did not. Chat is deleted, so the lane that
+    /// stands in a project's tree is the mission, and ExecutionService now resolves through the
+    /// same shared pair rather than its old inline copy — which read grants without the colony's
+    /// source reach and never resolved a directory at all.
     /// </summary>
     [Fact]
     public void EveryProject_OwnsItsOwnTree_AndAPathlessOne_StandsInTheColonySource()
@@ -1636,12 +1644,25 @@ public class UiShellTests
         Assert.Contains("sits inside the repository at", providers);
         Assert.Contains("PathsEqual", providers);
 
+        // v0.3.8.58: the resolution still lives in ConversationRunner and its CONSUMER moved.
+        // Chat is deleted, so the only lane that stands in a project tree is the mission — and
+        // ExecutionService previously had a thinner inline copy with no working directory at all.
+        // Left alone, deleting chat would have reproduced the v0.3.8.52 field report one door
+        // down, as "every project's MISSION runs in the same tree".
         var runner = Src("src", "Anthill.Core", "Conversations", "ConversationRunner.cs");
-        Assert.Contains("workingDirectory: ProjectDirectory(conversation)", runner);
-        // One resolution: explicit path first, colony source as the default — and the prompt
-        // names the default as a default instead of claiming a choice the operator never made.
+        Assert.Contains("ProjectDirectory(SqliteMemory _memory, Conversation conversation)", runner);
+        // One resolution: explicit path first, colony source as the default.
         Assert.Contains("return Projects.ProjectRoots.ColonySource();", runner);
-        Assert.Contains("defaultedToSource", runner);
+
+        var execution = Src("src", "Anthill.Core", "Orchestration", "ExecutionService.cs");
+        Assert.Contains("workingDirectory: workingDirectory", execution);
+        Assert.Contains("ConversationRunner.ProjectDirectory(_memory, conversation)", execution);
+        // And the grants come from the same shared resolution, so the mission's reach is not
+        // quietly narrower than what the operator granted the conversation.
+        Assert.Contains("ConversationRunner.ProjectGrantPaths(_memory, conversation)", execution);
+        // The mission tree is always disposable; only the deleted chat lane stood in live files.
+        Assert.Contains("confinedWorkspace: true", execution);
+        Assert.DoesNotContain("confinedWorkspace: false", execution);
 
         var provider = Src("src", "Anthill.Modules", "Anthill.Modules.Reasoning", "AgentCliProvider.cs");
         Assert.Contains("EffectiveWorkingDirectory", provider);

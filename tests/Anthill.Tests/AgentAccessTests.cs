@@ -202,42 +202,41 @@ public class AgentAccessTests : IDisposable
         Assert.Null(_memory.FindConversationForMission("m-unknown"));
     }
 
-    // ---- the colony proposes the mission itself --------------------------------------------------
+    // ---- every message is a mission --------------------------------------------------------
 
     /// <summary>
-    /// The transcript's defect verbatim: the operator asked for work and was told to "ask for it
-    /// as a mission explicitly". Now the chat model ends its reply with the escalation marker, the
-    /// marker is stripped from the record, and the SAME gate the button used takes over — under
-    /// Ask, the mission waits on the operator, visibly.
+    /// v0.3.8.58 — no marker, no proposal, no chat reply. The operator's message IS the mission,
+    /// and under Ask it waits on the operator, visibly.
+    ///
+    /// This replaces `AChatReplyWithTheMarker_BecomesAGatedMission_UnderAsk`. That test was a real
+    /// improvement in its release — before it, the colony answered a work request by telling the
+    /// operator to "ask for it as a mission explicitly", a magic word. But it still routed the
+    /// decision through a MODEL: the chat provider chose whether to emit the marker, so whether the
+    /// colony's pipeline ran at all was a matter of the model's judgement about its own necessity.
+    /// A model deciding it does not need the review is the one decision it must never make.
     /// </summary>
     [Fact]
-    public void AChatReplyWithTheMarker_BecomesAGatedMission_UnderAsk()
+    public void AnyMessage_BecomesAGatedMission_UnderAsk()
     {
         var conversation = new Conversation { Id = "c-esc", Role = "queen", Policy = EscalationPolicy.Ask };
         _memory.SaveConversation(conversation);
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated("m-should-not-run"); return "m-should-not-run"; },
-            ask: (_, _) => new ConversationReply(true,
-                "This needs a real mission — building and testing.\n" + ConversationRunner.EscalateMarker,
-                "local", "llama", null));
+        var runner = new ConversationRunner(_memory,
+            (_, onCreated, _) => { onCreated("m-should-not-run"); return "m-should-not-run"; });
 
         var outcome = runner.Run(conversation, "run the self-check and fix what you find");
 
-        // The proposal was converted into the mission path and REFUSED by the Ask gate — the
-        // colony now waits on the operator instead of the operator waiting on a magic word.
         Assert.Equal(Anthill.Core.Conversations.ConversationMode.Mission, outcome.Mode);
         Assert.False(outcome.Started);
         Assert.Contains("escalation refused", outcome.Summary);
 
+        // One operator turn, and NO assistant turn — nothing answered, because nothing ran.
         var turns = _memory.LoadConversationTurns("c-esc");
-        // One operator turn (never duplicated by the re-entry), one assistant turn, marker gone.
         Assert.Single(turns, t => t.Role == "user");
-        var assistant = Assert.Single(turns, t => t.Role == "assistant");
-        Assert.DoesNotContain(ConversationRunner.EscalateMarker, assistant.Content);
-        Assert.Contains("real mission", assistant.Content);
+        Assert.DoesNotContain(turns, t => t.Role == "assistant");
     }
 
     [Fact]
-    public void AChatReplyWithTheMarker_JustRuns_UnderAutoApprove()
+    public void AnyMessage_JustRuns_UnderAutoApprove()
     {
         var conversation = new Conversation
         {
@@ -246,22 +245,48 @@ public class AgentAccessTests : IDisposable
         };
         _memory.SaveConversation(conversation);
         var missionId = Guid.NewGuid().ToString();
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated(missionId); return missionId; },
-            ask: (_, _) => new ConversationReply(true, "On it.\n" + ConversationRunner.EscalateMarker, "local", "llama", null));
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated(missionId); return missionId; });
 
         var outcome = runner.Run(conversation, "fix the failing build");
 
         Assert.True(outcome.Started);
         Assert.Equal(missionId, outcome.MissionId);
-        // The operator's single turn carries the mission link — proposal, gate and work one history.
         var userTurn = Assert.Single(_memory.LoadConversationTurns("c-auto"), t => t.Role == "user");
         Assert.Equal(missionId, userTurn.MissionId);
     }
 
     /// <summary>
+    /// A QUESTION is a mission too, and this is the assertion the operator asked for in so many
+    /// words: "everytime something is sent in the chat box, it should be a mission for the colony.
+    /// EVERYTIME."
+    ///
+    /// The inverted test it replaces — `AChatReplyWithoutTheMarker_StaysAChatAnswer` — encoded the
+    /// opposite rule, that a question stays outside the colony. That is the seam the whole lane grew
+    /// from: something has to decide "this one is only a question", and wherever that decision lives
+    /// is a place the pipeline can be skipped. The planner may still answer a question with a small
+    /// plan; what it may not do is not be asked.
+    /// </summary>
+    [Fact]
+    public void AQuestion_IsAMissionToo()
+    {
+        var conversation = new Conversation
+        {
+            Id = "c-plain", Role = "queen", Policy = EscalationPolicy.Bypass,
+            PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
+        };
+        _memory.SaveConversation(conversation);
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated("m-q"); return "m-q"; });
+
+        var outcome = runner.Run(conversation, "what is the capital of France?");
+
+        Assert.Equal(Anthill.Core.Conversations.ConversationMode.Mission, outcome.Mode);
+        Assert.Equal("m-q", outcome.MissionId);
+    }
+
+    /// <summary>
     /// Mission 46f1acb7's defect verbatim: the operator said "Make all of these changes", the
     /// list of changes lived in the colony's own prior reply, and the mission goal carried five
-    /// words. The goal now carries the bounded transcript, so the coder can see what "these" is.
+    /// words. The goal carries the bounded transcript, so the coder can see what "these" is.
     /// </summary>
     [Fact]
     public void TheMissionGoal_CarriesTheConversation_SoPronounsResolve()
@@ -279,27 +304,14 @@ public class AgentAccessTests : IDisposable
         Assert.Contains("patch delete in PatchApply.cs", goal);      // the referent travels
         Assert.Contains("conversation context", goal);
 
-        // And a conversation with no prior turns escalates with the plain message, unchanged.
+        // And a conversation with no prior turns, no project and no attachments escalates with the
+        // plain message, unchanged.
         var fresh = new Conversation { Id = "c-fresh", Role = "queen" };
         _memory.SaveConversation(fresh);
         Assert.Equal("do the thing", runner.ComposeMissionGoal(fresh, "do the thing"));
     }
 
-    [Fact]
-    public void AChatReplyWithoutTheMarker_StaysAChatAnswer()
-    {
-        var conversation = new Conversation { Id = "c-plain", Role = "queen" };
-        _memory.SaveConversation(conversation);
-        var runner = new ConversationRunner(_memory, (_, _, _) => "unused",
-            ask: (_, _) => new ConversationReply(true, "The capital of France is Paris.", "local", "llama", null));
-
-        var outcome = runner.Run(conversation, "what is the capital of France?");
-
-        Assert.Equal(Anthill.Core.Conversations.ConversationMode.Chat, outcome.Mode);
-        Assert.True(outcome.Started);
-    }
-
-    // ---- the direct-edit sweep (v0.3.8.52) --------------------------------------------------
+    // ---- the direct-edit lane is gone ---------------------------------------------------------
 
     private static bool GitAvailable =>
         Anthill.Core.Projects.RepoOps.Git(Path.GetTempPath(), "--version").Ok;
@@ -315,17 +327,24 @@ public class AgentAccessTests : IDisposable
     }
 
     /// <summary>
-    /// The v0.3.8.52 field defect verbatim: "Did not auto commit" — because under Skip-all the
-    /// chat lane edits files DIRECTLY with its own tools, no patch exists, and the patch-apply
-    /// commit hook has nothing to fire on. The sweep commits what the run made newly dirty —
-    /// and ONLY that: the operator's own work-in-progress, dirty before the run, is untouchable.
+    /// A CONVERSATION TOUCHES NOTHING, under the most permissive policy there is.
+    ///
+    /// This replaces the two direct-edit sweep tests, and the replacement is an inversion rather
+    /// than a deletion, because the sweep is the evidence of what the old lane was. It existed to
+    /// notice which files a chat turn had written to the operator's live tree and commit them —
+    /// v0.3.8.52's field report was "did not auto commit", meaning the lane wrote files and the
+    /// colony wanted the commits. Nobody builds that for a lane that answers questions.
+    ///
+    /// v0.3.8.57 refused a coding agent for the conversation route and rewrote the prompt to say it
+    /// had no tools, and left the sweep and the unconfined access scope in place — so the sentence
+    /// said one thing and the wiring still did another. Under Skip-all, this test would have failed.
     /// </summary>
     [Fact]
-    public void DirectEditsUnderBypass_AreCommitted_TheOperatorsOwnDirtIsNot()
+    public void UnderSkipAll_AConversationWritesNothingToTheTree()
     {
         if (!GitAvailable) return;
         var root = NewRepo();
-        File.WriteAllText(Path.Combine(root, "operator-wip.txt"), "the operator's half-done thought");
+        var before = Anthill.Core.Projects.RepoOps.Describe(root);
 
         _memory.SaveProject(new Anthill.Core.Projects.Project { Id = "p-sweep", Name = "sweep", Path = root });
         var conversation = new Conversation
@@ -335,47 +354,14 @@ public class AgentAccessTests : IDisposable
         };
         _memory.SaveConversation(conversation);
 
-        var runner = new ConversationRunner(_memory, (_, _, _) => "unused",
-            ask: (_, _) =>
-            {
-                File.WriteAllText(Path.Combine(root, "colony.txt"), "written directly by the agent");
-                return new ConversationReply(true, "Done — colony.txt written.", "local", "llama", null);
-            });
-        var outcome = runner.Run(conversation, "add colony.txt with a note");
-        Assert.True(outcome.Started);
+        // The mission pipeline is faked, so nothing downstream runs either: the only thing that
+        // could write here is the conversation lane itself, which is the thing being tested.
+        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated("m-1"); return "m-1"; });
+        Assert.True(runner.Run(conversation, "add colony.txt with a note").Started);
 
-        var state = Anthill.Core.Projects.RepoOps.Describe(root);
-        Assert.Equal(1, state.DirtyCount);                                    // only the wip remains
-        Assert.Contains(state.Dirty, d => d.Path.Contains("operator-wip"));
-        Assert.NotNull(state.LastCommit);
-        Assert.Contains("add colony.txt", state.LastCommit);                  // subject = the ask
-    }
-
-    /// <summary>Bypass only. Under Automatically approve a dirty tree is the operator's to
-    /// commit (the pane's Commit button) — the sweep must not fire.</summary>
-    [Fact]
-    public void TheSweep_DoesNotFire_UnderAutoApprove()
-    {
-        if (!GitAvailable) return;
-        var root = NewRepo();
-        _memory.SaveProject(new Anthill.Core.Projects.Project { Id = "p-noswp", Name = "noswp", Path = root });
-        var conversation = new Conversation
-        {
-            Id = "c-noswp", Role = "queen", ProjectId = "p-noswp",
-            Policy = EscalationPolicy.AutoApprove, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
-        };
-        _memory.SaveConversation(conversation);
-
-        var runner = new ConversationRunner(_memory, (_, _, _) => "unused",
-            ask: (_, _) =>
-            {
-                File.WriteAllText(Path.Combine(root, "colony.txt"), "auto-approve direct edit");
-                return new ConversationReply(true, "Edited.", "local", "llama", null);
-            });
-        Assert.True(runner.Run(conversation, "tweak something small").Started);
-
-        var state = Anthill.Core.Projects.RepoOps.Describe(root);
-        Assert.Contains(state.Dirty, d => d.Path.Contains("colony.txt"));    // left for the operator
-        Assert.Contains("seed", state.LastCommit ?? "");                     // no new commit landed
+        var after = Anthill.Core.Projects.RepoOps.Describe(root);
+        Assert.Equal(before.DirtyCount, after.DirtyCount);
+        Assert.Equal(before.LastCommit, after.LastCommit);
+        Assert.False(File.Exists(Path.Combine(root, "colony.txt")));
     }
 }

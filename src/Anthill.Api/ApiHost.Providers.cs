@@ -478,13 +478,17 @@ public static partial class ApiHost
                 using (Anthill.SDK.Reasoning.ModelCallScope.Enter(ctx.RequestAborted))
                 using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
                 {
+                    // v0.3.8.58 — NO `delta` FRAMES, because there is no longer a model answering a
+                    // chat turn to stream from. Every message is a mission: this call returns once
+                    // the mission id exists, and the colony's answer arrives in the transcript when
+                    // the work settles.
+                    //
+                    // The endpoint is kept rather than removed so the console's existing fetch keeps
+                    // working, and it emits only what is true — a single terminal `done`. Faking a
+                    // trickle by chunking the summary would be an animation pretending to be
+                    // progress, which is exactly what the eternal spinner of v0.3.8.42 was.
                     var outcome = Queen.Conversations.Run(conversation, message, mode, answers,
-                        attachments: attachments,
-                        onDelta: delta =>
-                        {
-                            try { Frame("delta", System.Text.Json.JsonSerializer.Serialize(delta)); }
-                            catch { /* client gone — the aborted token stops the provider */ }
-                        });
+                        attachments: attachments);
                     try { Frame("done", System.Text.Json.JsonSerializer.Serialize(OutcomePayload(outcome))); }
                     catch { /* client gone before the end — the turn is recorded regardless */ }
                 }
