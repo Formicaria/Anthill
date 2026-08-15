@@ -54,23 +54,25 @@ dotnet build -p:MicromoundRepoPath=D:\src\micromound
 Once `Micromound.Protocol` is published as a package, that property goes away and this becomes an
 ordinary `PackageReference`.
 
-**2. `IMoundStore` is in-memory here.**
+**2. `IMoundStore` has two implementations, and the tests use the in-memory one.**
 
-The SQLite implementation belongs next to `HomelabRepository`'s `integration_instances` /
-`integration_state` tables, and lands with the Api wiring below. Keeping the interface first is
-what lets M1's authority logic be proven network-free and database-free, the same way the homelab's
-mock-provider harness lets its 240 tests run without touching hardware.
+`InMemoryMoundStore` is the reference the 33 tests prove the authority logic against —
+network-free and database-free, the same way the homelab's mock-provider harness lets its 240
+tests run without touching hardware. `SqliteMoundStore` (this directory) is what the composed
+colony runs: same database file as colony memory and the homelab tables, own tables only,
+`HomelabRepository`'s write-lock / WAL / `Bind` conventions, and enrollment token hashes through
+the field cipher when one is configured.
 
-## Still to wire (composition root, `Anthill.Api`)
+## Wired (composition root, `Anthill.Api/Micromound/ApiHost.Micromound.cs`)
 
 None of this is in the module by design — composition happens in `Anthill.Api`.
 
-1. **Integration kind.** Register a `micromound` `IIntegrationDefinition` (category `infra`,
-   auth mode `token`) in `IntegrationCatalog`, publishing the three widget kinds through the
-   existing `integration_state` mechanism so the widget runtime renders it without special-casing.
-2. **Persistence.** A `SqliteMoundStore : IMoundStore` over three tables — `micromound_mounds`,
-   `micromound_enrollment_tokens`, `micromound_beats` — following `HomelabRepository`'s write-lock
-   and `Bind` conventions. Enrollment token hashes go through the field cipher.
+1. **Integration kind.** `micromound` is registered in `IntegrationCatalog` (category `infra`,
+   auth mode `token`), publishing the three widget kinds through the existing `integration_state`
+   mechanism. Its sync is deterministic and network-free: mounds dial in, so "sync" re-derives
+   the widget payloads from what the store already knows.
+2. **Persistence.** `SqliteMoundStore` over `micromound_mounds`, `micromound_enrollment_tokens`,
+   `micromound_beats` (+ `micromound_widget_state` for payload freshness).
 3. **Endpoints**, gated as PROTOCOL.md §9 specifies:
 
    | Endpoint | Method | Permission |
@@ -84,9 +86,17 @@ None of this is in the module by design — composition happens in `Anthill.Api`
    | `/micromound/stop/resume` | POST | `approve_micromound_actions` |
 
    `/micromound/missions` and `/micromound/charters` are **not** M1 endpoints — they are the
-   command path, and they arrive with M2 and M4 respectively.
-4. **Composition.** Build `MicromoundOptions` from the live runtime and pass the existing
-   `FieldCipher`; add `MicromoundModule` alongside `HomelabModule` where modules are registered.
+   command path, and they arrive with M2 and M4 respectively. The device pair (`/v0/enroll`,
+   `/v0/sync`) carries no session gate on purpose: the one-time token and the Ed25519 signature
+   ARE the authentication. `/micromound/stop` is per-mound only — the global stop stays a file
+   (`.anthill/MICROMOUND_STOP`) precisely so no API flow can clear it.
+4. **Composition.** `MicromoundOptions` is built from the live runtime and handed the same
+   `FieldCipher.CreateDefault()` the homelab gets; `MicromoundModule` loads alongside
+   `HomelabModule`. Permissions: `read_micromound` and `manage_micromound` ship enabled;
+   `approve_micromound_actions` also ships enabled because the only thing it can authorize in M1
+   is stopping hardware, and a stop an operator cannot reach is the unsafe default. The homelab
+   operator role gains read + approve (view and halt), never manage — minting an enrollment
+   token creates a device identity, which is an admin act like credential writes.
 5. ~~**Tests.**~~ Shipped: `tests/Anthill.Tests.Micromound/` covers enrollment refusals,
    chain-anchor continuation, signature and impersonation refusal, reduced-profile enforcement,
    stop precedence, and widget shapes. It references `Micromound.Sim` deliberately — the envelopes

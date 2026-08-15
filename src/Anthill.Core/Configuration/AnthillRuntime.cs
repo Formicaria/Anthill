@@ -94,6 +94,14 @@ public static class AnthillRuntime
         // STILL ship disabled — fail closed; an operator must turn the gates on deliberately.
         ["read_homelab"] = true, ["manage_homelab_integrations"] = true,
         ["approve_homelab_actions"] = false, ["execute_homelab_actions"] = false,
+        // MICROMOUND M1 (read-only). Reads and mound management (enrollment tokens) ship enabled.
+        // approve_micromound_actions gates ONLY the stop/resume pair in M1 — the command path does
+        // not exist yet — and ships ENABLED for that reason: the only thing it can authorize is
+        // halting hardware, and a stop an operator cannot reach is the unsafe default, not the
+        // safe one. When M2 hangs charter approval off this same permission, that arrives behind
+        // its own capability gate.
+        ["read_micromound"] = true, ["manage_micromound"] = true,
+        ["approve_micromound_actions"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
