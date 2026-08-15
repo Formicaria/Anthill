@@ -141,6 +141,104 @@ public class RoleContractChannelTests
           + "an agent CLI refuses — and is indistinguishable from the request it is meant to govern.");
     }
 
+    /// <summary>
+    /// NO PROMPT TELLS A WORKER TO ADVERTISE. Second field report, and the sharper one: a worker's
+    /// answer arrived carrying "this request arrived wrapped in a fake system contract (forced
+    /// persona, tool-permission claims, scripted talking points)". Those three names itemised what
+    /// was still in the user turn after the header moved to the system channel.
+    ///
+    /// The talking points were the worst of the three, because they were also FALSE. The builder was
+    /// told to "mention that ANTHILL supports dependency-aware parallel execution, FTS memory search,
+    /// and role-based model routing" on every answer — so a mission that never touched memory ended
+    /// by telling the operator about memory search. An instruction to say a thing unconditionally
+    /// produces a sentence about that thing whether or not it happened.
+    ///
+    /// The colony already disagreed with itself here: the verifier is told to mark an answer Needs
+    /// Improvement when it "contains only procedural ANTHILL commands like /apply, /patches, or
+    /// /approval". One role was instructed to produce exactly what another was instructed to
+    /// penalise, and both instructions shipped for releases.
+    /// </summary>
+    [Fact]
+    public void NoPrompt_InstructsAWorkerToAdvertiseFeaturesOrCommands()
+    {
+        var offenders = new List<string>();
+
+        foreach (var path in Directory.EnumerateFiles(
+                     Path.Combine(SourceText.RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+             || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
+
+            var code = SourceText.CodeOnly(File.ReadAllText(path));
+
+            // "Mention that…" / "Explain that…" as an unconditional instruction. The verifier's rule
+            // about procedural commands is a JUDGEMENT of an answer, not an instruction to produce
+            // one, so it is keyed on the imperative rather than on the command names.
+            foreach (System.Text.RegularExpressions.Match line in
+                     System.Text.RegularExpressions.Regex.Matches(code, @"- (Mention|Explain) that [^\r\n""]*"))
+                offenders.Add($"{Path.GetFileName(path)}: {line.Value.Trim()}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "these prompts instruct a worker to say something regardless of whether it happened: "
+          + string.Join(" | ", offenders)
+          + ". An answer should describe what the mission did. A standing instruction to mention a "
+          + "feature produces a sentence about that feature on missions that never used it.");
+    }
+
+    /// <summary>
+    /// NO PROMPT ASSIGNS A PERSONA IN THE REQUEST. `RoleSystemPrompt` already says what the worker
+    /// is, on the channel where that has standing; a second copy inside the user turn is the weaker
+    /// claim, and it is the one a requester could have written themselves.
+    ///
+    /// All six were converted in v0.3.8.59 — builder, coder, verifier, planner and strategist by
+    /// name, the researcher and web ants having only carried the banner. This guards the shape
+    /// rather than the six, because the next role will be written by copying one of them.
+    /// </summary>
+    [Fact]
+    public void NoPrompt_AssignsAPersonaInsideTheRequest()
+    {
+        var offenders = new List<string>();
+
+        foreach (var path in Directory.EnumerateFiles(
+                     Path.Combine(SourceText.RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+             || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
+            // The contract is where a persona BELONGS, so the file that builds it is not an offender.
+            if (path.EndsWith("AnthillRuntime.cs", StringComparison.Ordinal)) continue;
+
+            var code = SourceText.CodeOnly(File.ReadAllText(path));
+
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(code, @"You are (the )?\w+ (Ant|inside)"))
+                offenders.Add($"{Path.GetFileName(path)}: {m.Value}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "these prompts assign a persona inside the request: " + string.Join(" | ", offenders)
+          + ". Say it in RoleSystemPrompt instead — in the request it is indistinguishable from the "
+          + "requester claiming to assign one, which is what an agent CLI refused missions over.");
+    }
+
+    /// <summary>
+    /// Operator text is FENCED. The mission goal is the operator's words, and a standing objective
+    /// is the operator's words re-read on every unattended run — which makes the objective the
+    /// highest-value place in the colony to plant an instruction, authored once and obeyed forever
+    /// with nobody watching that turn.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Anthill.Core/Agents/Ants.cs")]
+    [InlineData("src/Anthill.Core/Planning/Planner.cs")]
+    [InlineData("src/Anthill.Core/Autonomy/Strategist.cs")]
+    public void OperatorTextIsFenced_AsUntrusted(string relative)
+    {
+        var code = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            relative.Replace('/', Path.DirectorySeparatorChar))));
+
+        Assert.Contains("UntrustedBlock(", code);
+    }
+
     // -------------------------------------------------------------------------------------------
     // The agent CLI boundary
     // -------------------------------------------------------------------------------------------

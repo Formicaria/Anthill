@@ -37,7 +37,7 @@ namespace Anthill.Tests;
 // Serialised with the other tests that mutate model settings. `WithNoConfiguredModel` writes
 // `AnthillRuntime.OllamaModel`, which is process-global, and `RouteModelDefaultTests` writes it
 // through the settings path — two classes doing that in parallel is a flake nobody can reproduce.
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class EffectiveRouteTests
 {
     /// <summary>A host with exactly these models installed, and no network.</summary>

@@ -9,7 +9,7 @@ namespace Anthill.Tests;
 /// deployment with no build toolchain keep auto-applied patches instead of the built-in
 /// <c>dotnet build &amp;&amp; dotnet test</c> verify failing and rolling everything back.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class AutoApplyConfigTests : IDisposable
 {
     private readonly bool _saved;

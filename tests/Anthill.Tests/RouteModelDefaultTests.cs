@@ -36,7 +36,7 @@ namespace Anthill.Tests;
 /// unfixed router too. They now assert that a non-local route's model is EMPTY, which is a claim
 /// about the behaviour rather than about a string that happened not to be there.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class RouteModelDefaultTests : IDisposable
 {
     private readonly Dictionary<string, Dictionary<string, string>> _routes =

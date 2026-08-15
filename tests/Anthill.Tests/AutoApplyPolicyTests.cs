@@ -11,7 +11,7 @@ namespace Anthill.Tests;
 /// matches an operator glob, and it's within the size cap. Everything else denies. Runtime knobs
 /// are saved/restored around every test.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class AutoApplyPolicyTests : IDisposable
 {
     private readonly bool _enabled;
