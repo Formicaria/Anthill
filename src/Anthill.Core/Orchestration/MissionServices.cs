@@ -44,7 +44,8 @@ public interface IMissionCoordinator
 /// </summary>
 public interface IMissionEvaluator
 {
-    MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason, int patchProposalCount);
+    MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason, int patchProposalCount,
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null);
 }
 
 /// <summary>
@@ -54,7 +55,7 @@ public interface IMissionEvaluator
 public sealed class CanonicalMissionEvaluator : IMissionEvaluator
 {
     public MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason,
-        int patchProposalCount) =>
+        int patchProposalCount, IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null) =>
         MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
-            context.Constraints, context.Profile.Verification.ObjectiveVerification);
+            context.Constraints, context.Profile.Verification.ObjectiveVerification, evidence);
 }

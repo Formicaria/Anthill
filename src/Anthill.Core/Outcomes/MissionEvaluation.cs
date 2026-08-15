@@ -65,7 +65,11 @@ public static class MissionEvaluator
     /// between v3.0.1 and here claims a rule set it was not evaluated under. Not retroactively
     /// fixable; noted so the next rules change does not repeat it.
     /// </summary>
-    public const string Version = "evaluator-v2";
+    /// <summary>v3 (v0.3.8.66): the verification layer consumes the evidence store's identity
+    /// testimony — a mission with a materialized patch requires deterministic evidence bound to
+    /// its FINAL revision and tree, and task-pairing alone no longer promotes. A v2 row and a v3
+    /// row are graded under different rules and must say so.</summary>
+    public const string Version = "evaluator-v3";
     public const string LegacyVersion = "legacy";
 
     /// <summary>
@@ -84,16 +88,21 @@ public static class MissionEvaluator
     /// passed in rather than read from a mutable static. This keeps the evaluator a PURE function
     /// of its arguments — the property that makes "evaluated exactly once, and reproducibly" a
     /// checkable claim rather than an aspiration.</param>
+    /// <param name="evidence">v0.3.8.66 (§2 item 2): the mission's evidence rows, so the
+    /// verification layer can require identity for missions that materialized a patch. Null means
+    /// the store could not be read; for a revision-bearing mission that fails closed.</param>
     public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount,
-        MissionConstraints constraints, bool objectiveVerificationEnabled)
+        MissionConstraints constraints, bool objectiveVerificationEnabled,
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null)
     {
         var structural = mission.Status.Value();
 
         // Verification layer — verdict-gated (v2.19); "not run" is distinct from "failed" for the
-        // operator, but neither is a pass.
+        // operator, but neither is a pass. v0.3.8.66: and identity-gated — the evidence store's
+        // own rows must judge the final revision and tree when the mission materialized a patch.
         var hasVerifier = mission.Tasks.Any(MissionVerification.IsVerificationTask);
         var verification = !hasVerifier ? MissionEvaluation.Verification.NotRun
-            : MissionVerification.IsSatisfied(mission.Tasks) ? MissionEvaluation.Verification.Passed
+            : MissionVerification.IsSatisfied(mission.Tasks, evidence) ? MissionEvaluation.Verification.Passed
             : MissionEvaluation.Verification.Failed;
 
         // Deliverable layer — "a patch proposal is a deliverable, not proof the patch is safe".

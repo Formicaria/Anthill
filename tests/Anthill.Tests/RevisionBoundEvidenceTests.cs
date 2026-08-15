@@ -139,6 +139,80 @@ public class RevisionBoundEvidenceTests
         Assert.Contains("MissionVerification.EvidenceJudgesRevision", runner);
     }
 
+    // -------------------------------------------------------------------------------------------
+    // v0.3.8.66 (PLAN.md §2 item 2): the CANONICAL EVALUATOR asks the store, not just the tasks
+    // -------------------------------------------------------------------------------------------
+
+    private static Task Coder(string? producedRevision) => new()
+    {
+        Title = "patch", AssignedAnt = "coder", Status = TaskStatus.Complete,
+        ProducedRevisionId = producedRevision,
+    };
+
+    [Fact]
+    public void AMissionWithNoMaterializedPatch_NeedsNoEvidenceIdentity() =>
+        Assert.True(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { new Task { Title = "t", AssignedAnt = "builder", Status = TaskStatus.Complete } },
+            evidence: null));
+
+    [Fact]
+    public void AMaterializedPatchWithAnUnreadableStore_FailsClosed() =>
+        Assert.False(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { Coder(Rev) }, evidence: null));
+
+    /// <summary>Legacy rows — real verdicts, no identity — stay readable and cannot promote.</summary>
+    [Fact]
+    public void LegacyUnboundEvidence_CannotPromote() =>
+        Assert.False(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { Coder(Rev) },
+            new[] { Check(true, true, revision: null, tree: null) }));
+
+    /// <summary>The repaired-generation case at the PROMOTION gate: A's green run, B on deck.</summary>
+    [Fact]
+    public void AnEarlierGenerationsEvidence_CannotPromoteTheFinalRevision() =>
+        Assert.False(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { Coder(Rev) },
+            new[] { Check(true, true, "rev:ps-A", "sha256:aaaa") }));
+
+    [Fact]
+    public void NonDeterministicEvidenceAlone_CannotPromote() =>
+        Assert.False(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { Coder(Rev) },
+            new[] { Check(false, true, Rev, Tree) }));
+
+    [Fact]
+    public void DeterministicPassingEvidenceForTheFinalRevision_Promotes() =>
+        Assert.True(MissionVerification.EvidenceIdentitySatisfied(
+            new[] { Coder(Rev) },
+            new[] { Check(true, true, Rev, Tree) }));
+
+    /// <summary>
+    /// And the seam is REAL: the two-argument IsSatisfied is what the canonical evaluator calls,
+    /// so a mission whose tasks pair correctly but whose STORE holds nothing for the revision is
+    /// interim-satisfied and promotion-refused — the exact gap this item closes.
+    /// </summary>
+    [Fact]
+    public void TaskPairingAlone_NoLongerSatisfiesThePromotionOverload()
+    {
+        var tasks = new List<Task>
+        {
+            new() { Title = "patch", AssignedAnt = "coder", Status = TaskStatus.Complete, ProducedRevisionId = Rev },
+            new() { Title = "test", AssignedAnt = "tester", Status = TaskStatus.Complete, RanRevisionId = Rev },
+            new() { Title = "verify", AssignedAnt = "verifier", Status = TaskStatus.Complete,
+                    Result = "Verdict: Verification Passed\nReasoning: fine" },
+        };
+
+        Assert.True(MissionVerification.IsSatisfied(tasks));                    // the interim rule
+        Assert.False(MissionVerification.IsSatisfied(tasks, evidence: []));     // the promotion rule
+        Assert.True(MissionVerification.IsSatisfied(tasks,
+            new[] { Check(true, true, Rev, Tree) }));                           // and identity satisfies it
+    }
+
+    /// <summary>The evaluator says which rules graded a row, and the rules changed.</summary>
+    [Fact]
+    public void TheEvaluatorVersion_Bumped() =>
+        Assert.Equal("evaluator-v3", MissionEvaluator.Version);
+
     /// <summary>
     /// REVERSED at v0.3.8.61 (PLAN.md §1b S3). This test used to pin the opposite: legacy
     /// unidentified evidence flowed through auto-apply untouched, on the reasoning that the missing
