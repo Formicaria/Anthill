@@ -1729,7 +1729,7 @@ canvas.addEventListener('mouseup',e=>{
     const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
     const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
     if(hit) showInspector(hit);
-    else{selectedNode=null;document.getElementById('agent-detail').innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
+    else{selectedNode=null;const ad=document.getElementById('agent-detail');if(ad)ad.innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
   }
 });
 
@@ -2038,7 +2038,11 @@ function refreshOverlayMenu(){
 
 
 function showInspector(n){
+  // v0.3.8.61 (caught live): the inspector pane is the Agent Inspector WIDGET's body now, and a
+  // hidden widget's frame is detached — getElementById returns null and every canvas click threw.
+  // Selection state still updates so the pane is correct the moment the widget is shown again.
   selectedNode=n;
+  if(!document.getElementById('agent-detail')) return;
   // The model catalog is only needed once an ant is actually inspected. Re-render exactly once
   // when it lands, and only if this same node is still the selection.
   if(!antRouteCatalogReady) ensureAntRouteCatalog().then(()=>{ if(selectedNode===n) showInspector(n); });
