@@ -20,7 +20,7 @@ namespace Anthill.Tests;
 /// <c>EnableFileTools</c> and <c>EnableFileWriting</c> out of mutable statics during
 /// construction, so "two Queens with different configuration" was not a thing that could exist —
 /// the second one to be built simply overwrote what the first had been told. That is why the
-/// suite grew <c>[Collection("Autonomy")]</c> and <c>[Collection("specialist-gates")]</c>
+/// suite grew <c>[Collection("specialist-gates")]</c> and <c>[Collection("specialist-gates")]</c>
 /// attributes, and why an assembly-wide parallelisation ban was eventually needed on top of them.
 ///
 /// Note what is NOT claimed here. These tests share a process with the rest of the suite, which

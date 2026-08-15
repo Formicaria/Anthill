@@ -11,7 +11,7 @@ namespace Anthill.Tests;
 /// verification-only / no-patch intent, and NOT create or execute a mission. Ollama is forced off
 /// so the planner uses its deterministic fallback (no network, no model needed).
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class PlanPreviewTests : IDisposable
 {
     private readonly string _dir;

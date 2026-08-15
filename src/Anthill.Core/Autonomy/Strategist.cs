@@ -62,7 +62,7 @@ public sealed class Strategist
         try
         {
             result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist",
-                system: AnthillRuntime.RoleSystemPrompt("strategist"));
+                system: AnthillRuntime.RoleSystemPrompt("strategist", rules: StrategistRules));
         }
         catch (Exception ex)
         {
@@ -190,6 +190,15 @@ public sealed class Strategist
         return result;
     }
 
+    /// <summary>
+    /// The strategist runs UNATTENDED, which is why its contract belongs on the system channel more
+    /// than any other role's: there is no operator watching the turn in which it might be talked out
+    /// of its job.
+    /// </summary>
+    private const string StrategistRules =
+        "You run unattended (24/7 autonomy). Your job is to turn one standing objective into the "
+      + "single next concrete mission for the colony to run right now.";
+
     private string BuildPrompt(Objective objective)
     {
         var recentRuns = _memory.ListAutonomyRuns(objective.Id, limit: 5);
@@ -205,13 +214,12 @@ public sealed class Strategist
             : string.Join("\n", trails.Select(t =>
                 $"- {t.GetValueOrDefault("trail_key")} (strength {t.GetValueOrDefault("strength")})"));
 
-        return $@"You are the Strategist inside ANTHILL, a local swarm-intelligence AI harness running
-unattended (24/7 autonomy). Your job is to turn one standing objective into the single next
-concrete mission for the colony to run right now.
-
-Standing objective:
-  Title: {objective.Title}
-  Charter: {objective.Charter}
+        // v0.3.8.59 (PLAN.md §1b S9): the role moved to the contract, and the OBJECTIVE is fenced.
+        // A standing objective is text an operator wrote and the colony re-reads unattended on every
+        // run — the highest-value place in the colony to plant an instruction, because it is authored
+        // once and then obeyed forever with nobody watching the turn.
+        return $@"{AnthillRuntime.UntrustedBlock("standing objective",
+            $"Title: {objective.Title}\nCharter: {objective.Charter}")}
 
 Recent runs for this objective (most recent first):
 {runsSummary}

@@ -9,18 +9,30 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// Defines a shared, non-parallel collection so the autonomy tests never race on global
-/// runtime flags or the on-disk STOP sentinel.
+/// THE collection for tests that touch process-global runtime state. v0.3.8.60.
+///
+/// There were TWO — this one, "Autonomy", whose comment said it existed "so the autonomy tests never
+/// race on global runtime flags", and "specialist-gates", whose comment said "gate toggles are
+/// static; serialize with the other togglers". Same shared resource, same reason, two names — and
+/// xUnit runs different collections IN PARALLEL WITH EACH OTHER, so neither protected anything from
+/// the other. Twelve classes on one side, thirty-two on the other, all mutating
+/// <c>AnthillRuntime</c> statics that a running mission reads at every ant dispatch.
+///
+/// It surfaced as `ColonyAcceptanceTests` ScenarioA failing after twenty seconds: another collection
+/// set `UseOllama = true` mid-mission, so ants that should have taken the deterministic offline path
+/// each spent a connect timeout reaching for a model that was not there, and the mission failed. Two
+/// implementations of one rule, in the test harness rather than the product — and the disagreement
+/// was discovered from the outside, as it always is.
 /// </summary>
-[CollectionDefinition("Autonomy")]
-public class AutonomyCollection { }
+[CollectionDefinition("specialist-gates")]
+public class RuntimeGlobalsCollection { }
 
 /// <summary>
 /// Phase 1 Colony Director loop. Runs fully offline (model routing disabled → planner/ant
 /// fallbacks) so a real objective is pulled, a mission is launched through the job worker,
 /// and the outcome is recorded — all without Ollama.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class DirectorTests : IDisposable
 {
     private readonly string _dir;

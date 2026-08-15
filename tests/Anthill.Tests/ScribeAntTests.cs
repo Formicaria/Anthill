@@ -132,17 +132,15 @@ public class ScribeAntTests
     [Fact]
     public void GatesControlExecutability()
     {
-        Assert.DoesNotContain("scribe", AntRegistry.ExecutableRoleIds);
-        try
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = true;
-            AnthillRuntime.EnableScribeAnt = true;
-            Assert.Contains("scribe", AntRegistry.ExecutableRoleIds);
-        }
-        finally
-        {
-            AnthillRuntime.EnableSpecialistAntExecution = false;
-            AnthillRuntime.EnableScribeAnt = false;
-        }
+        // v0.3.8.60 — through RosterGates, which has existed since v0.3.8.41 for exactly this.
+        // The old shape read the ambient flags for its NEGATIVE assertion and restored to
+        // `false` rather than to the previous value: it both depended on its neighbours
+        // leaving the gates closed and manufactured that state for them. A mutual arrangement
+        // that held only while everyone was equally careless.
+        RosterGates.With(() => Assert.DoesNotContain("scribe", AntRegistry.ExecutableRoleIds),
+            specialists: false, scribe: false);
+
+        RosterGates.With(() => Assert.Contains("scribe", AntRegistry.ExecutableRoleIds),
+            specialists: true, tier: ActivationTier.Full, scribe: true);
     }
 }

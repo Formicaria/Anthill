@@ -1,5 +1,84 @@
 # ANTHILL Changelog
 
+## v0.3.8.60 - the second copy of every rule v0.3.8.59 fixed
+
+v0.3.8.59 closed S1, S2 and S9 and left a second copy of two of them standing. This is the sweep.
+
+**`RepoOps.Git` had S7's defect verbatim.** `ReadToEnd()` on stdout, then stderr, then
+`WaitForExit(8000)` — so a git command that never exits blocks forever in the first read and never
+reaches the timeout meant to bound it, and two sequential reads deadlock whenever git fills its
+stderr pipe while this side drains stdout. `git clone` on a large repository does exactly that,
+writing progress to stderr continuously.
+
+The shape is worth naming. v0.3.8.57 added `Kill(entireProcessTree: true)` to the line *directly
+below* those reads and did not touch them. The colony has spent two releases with a correct kill on a
+path control never arrives at — a guard placed downstream of the thing that hangs. Both pipes now
+drain concurrently and the wait bounds the call, matching the fix `ShellCommandTool` got in .59.
+
+**S9's remaining five prompts are converted.** Personas for coder, verifier, planner and strategist
+moved to the system contract; the planner's was deleted outright, since `RoleSystemPrompt` already
+said it and a second copy in the request was only the weaker claim. The coder's LIMITS moved too —
+"you do not write files, you do not apply patches" is a statement about what the harness permits, and
+inside the request it was indistinguishable from a requester claiming to grant something.
+
+The verifier's return format moved for a sharper reason: `VerificationVerdict` parses that text to
+decide whether work is verified, so it is a machine contract wearing prose — and it was sitting next
+to the task output being judged, output that can contain the very words the parser looks for.
+
+**Operator text is fenced.** Mission goal, prior task output, and the strategist's standing objective
+now travel inside `UntrustedBlock`. The objective is the one to care about: it is text an operator
+wrote that the colony re-reads unattended on every run, which makes it the highest-value place in the
+whole system to plant an instruction — authored once, obeyed forever, with nobody watching that turn.
+
+**One deterministic untruth removed.** The builder's `FallbackResponse` opened every offline answer
+with "Review patch proposals using /patches", on missions that produced no patches, and closed by
+advertising three capabilities the mission may not have used. Same untruth as the talking points
+deleted in .59 — but static rather than generated, so no model would ever have flagged it. Verified
+while checking a worker's refusal to vouch for those claims: both features are real, and both are
+runtime-conditional (`FtsAvailable` is set false when SQLite throws; `EnableParallelExecution` is an
+operator toggle). The colony knew the answer and asked the model to assert it from prose instead.
+
+**A test-suite race, diagnosed after two wrong guesses.** `ColonyAcceptanceTests` ScenarioA began
+failing — mission `failed`, after almost exactly twenty seconds, twice. The first guess was a
+performance regression in `PathContainment`, and that resolver was optimised on the strength of it.
+The optimisation was worth having and it changed nothing here; the second failure at 19.9s against
+the first at 20.1s is the tell, because a fixed cost is a network timeout rather than load.
+
+`AnthillRuntime.UseOllama` is a mutable static every ant reads to choose between a model call and its
+deterministic offline path. With it false, ScenarioA's three tasks finish in milliseconds. When
+another test flips it true mid-run — `ModelReliabilityTests` does — the same tasks each spend the
+connect timeout failing to reach a model that is not there, fail critically, and the mission is
+`failed`. Not caused by any source change: a pre-existing race that three new test classes made land
+on the wrong side, since more classes changes how xUnit schedules the parallel ones.
+
+Merging the collections then exposed the same root cause one level down. `RuntimeRosterTests`'
+`WithGates` helper opened the named specialist gates and, in its `finally`, set all four to false —
+it never saved what they were. So it did not BASELINE (a block built "with tester and medic" also
+contained the cartographer if the cartographer gate was ambiently on) and it did not RESTORE (it
+destroyed ambient state rather than returning it). Which made the helper non-idempotent, and
+`TheRosterIsDeterministic` calls it twice and compares: the first call inherited an ambient
+cartographer, the second did not, because the first call's own cleanup had switched it off. A test
+that exists to prove the roster is deterministic, made non-deterministic by its own fixture, failing
+in a way that reads as a roster defect.
+
+It survived only because it ran beside classes that happened to leave the gates closed. `WithGates`
+now baselines before the body and restores afterwards, and the assertions that read gate state
+ambiently now name the state they depend on. Three reads are left ambient deliberately — core ants
+and control-plane roles are gate-independent by definition, and wrapping them would be ceremony
+rather than correctness.
+
+The collection already existed for exactly this. `ColonyAcceptanceTests` carries
+`[Collection("specialist-gates")]` with the comment "gate toggles are static; serialize with the
+other togglers" — and five classes toggling that kind of static were never added to it. The mechanism
+was right and its membership incomplete, which is worse than having no mechanism: the attribute is
+visible on the tests that carry it and nobody goes looking for the ones that should.
+`ModelRoutingGlobalsTests` is the membership check it never had.
+
+**Guards.** No prompt assigns a persona inside the request; the three prompt-building files fence
+operator text.
+
+**Not fixed here:** S3, S4, S5, and the UI half of S6. Auto-apply stays off.
+
 ## v0.3.8.59 - filesystem confinement, and a working directory that was never a sandbox
 
 PLAN.md §1b **S1**, the first P0 of the external security review. One hardened resolver,

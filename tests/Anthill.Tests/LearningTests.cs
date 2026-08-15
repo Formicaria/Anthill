@@ -11,7 +11,7 @@ namespace Anthill.Tests;
 /// effect on multi-slot selection, and stale/looping retirement decisions. All offline and
 /// deterministic; runtime knobs are saved/restored around every test.
 /// </summary>
-[Collection("Autonomy")]
+[Collection("specialist-gates")]
 public class LearningTests : IDisposable
 {
     private readonly string _dir;
