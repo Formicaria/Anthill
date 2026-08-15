@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.65**.
+Shipping release: **v0.3.8.66**.
 
 ---
 
@@ -482,7 +482,7 @@ described as overwriting after it became a typed refusal.
 A plan built on a wrong map produces work aimed at the wrong place. Everything after this depends on
 this being right first.
 
-### 2 — Make evidence identity mandatory for promotion
+### 2 — Make evidence identity mandatory for promotion ✅ v0.3.8.66
 
 Auto-apply already refuses a patch set whose evidence judges a different revision. The **canonical
 evaluator does not** — `HasDeterministicPass` was deliberately left unchanged, so correct test
@@ -496,6 +496,16 @@ results from the wrong tree can still reach `completed_verified` outside the aut
 
 Small, and it closes the last path by which a true statement about the wrong bytes becomes a verified
 mission.
+
+**Closed v0.3.8.66.** `MissionVerification.IsSatisfied(tasks, evidence)` is the promotion
+overload the canonical evaluator now calls: a mission with a materialized patch requires
+deterministic, passing evidence whose identity (revision id, patch-set hash, tree hash — the
+`Evidence.Judges()` triple) names the FINAL revision. Earlier repair generations, rows with no
+identity (legacy and unpatched-workspace evidence — still readable for history), and
+non-deterministic rows cannot promote; an unreadable store fails closed per §1b S3's direction.
+The Queen hands the evaluator the store's rows at finalization; the evaluator version bumps to
+`evaluator-v3` so a persisted row says which rules graded it — the constant's documented purpose,
+exercised this time.
 
 ### 3 — Close the remaining deterministic qualification scenarios
 

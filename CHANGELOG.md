@@ -1,5 +1,23 @@
 # ANTHILL Changelog
 
+## v0.3.8.66 - the forward program resumes: evidence identity is mandatory for promotion
+
+**§2 item 2, and the last path closes.** Auto-apply has refused a patch set whose evidence judged
+a different revision since v0.3.8.57 — but the canonical evaluator never asked the store at all,
+so correct test results about the WRONG TREE could still reach `completed_verified` outside the
+auto-apply path, reinforce learning, and stand in the record as a verified mission.
+
+The canonical evaluator now consumes the store's own testimony. A mission that materialized a
+patch requires deterministic, passing evidence whose identity — revision id, patch-set hash, tree
+hash, the `Evidence.Judges()` triple — names the FINAL revision. Earlier repair generations
+cannot promote (patch set A's green run says nothing about patch set B), rows with no identity
+cannot promote new work (legacy and unpatched-workspace evidence stay readable for history), a
+model review naming the right tree still cannot promote (deterministic means deterministic), and
+an unreadable store fails closed — §1b S3's direction applied at the last place a mission becomes
+a verified success. The evaluator version bumps to `evaluator-v3`, so a persisted evaluation says
+which rules graded it: the constant whose documented purpose had been exercised exactly once now
+earns its keep.
+
 ## v0.3.8.65 - S7 completes behaviourally, and the security ladder closes
 
 **The hang, for real.** v0.3.8.59 fixed the subprocess shape — concurrent drains, a wait that
