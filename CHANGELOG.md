@@ -1,5 +1,24 @@
 # ANTHILL Changelog
 
+## v0.3.8.64 - S6: the UI gate fails closed, and an empty object stops being a map
+
+**The gate learns S3's lesson.** A store that THROWS is not a store that is absent: absent is the
+CLI and the tests (evidence about the wiring, still permissive), but production dispatch always
+has a store, so one that exists and cannot answer is an incident — and a gate that allows because
+its own check machinery is down has failed open at the exact moment it was needed. The catch now
+refuses, naming the outage.
+
+**`{}` conformed to the ui_map schema.** An existence check wearing a schema check's name, proven
+by the gate's own tests: a truncated map was refused while an empty object passed. The
+cartographer has always emitted `files_examined`, `routes` and `api_calls` unconditionally —
+empty arrays when nothing was found — so the schema now requires the three keys the honest
+producer always writes. An honest empty map still conforms; a fabricated one no longer does.
+
+**S5's residual, swept.** No Anthill.Api route serves artifact payloads at all, so "never in an
+API response" holds vacuously today; the PLAN records the warning any future artifact-serving
+route inherits. With S6 closed, only S7 remains — the runtime fault-injection precondition for
+re-enabling auto-apply, much of whose machinery S4's transaction suite already built.
+
 ## v0.3.8.63 - S5: Secret means secret, and the last P0 closes
 
 **The visibility contract gains its enforcement.** "Never rendered, never sent to a model" had
