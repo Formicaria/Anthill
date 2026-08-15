@@ -101,10 +101,17 @@ public static class UiChangeGate
         try { maps = artifacts.ForMission(mission!.Id, ArtifactSchemas.UiMap).ToList(); }
         catch (Exception error)
         {
-            // An unreadable store is not a verdict about the mission. Say so and allow — the
-            // alternative is a store hiccup silently converting into "this mission cannot do UI work".
+            // v0.3.8.64 (PLAN.md §1b S6): a store that THROWS is not a store that is absent — the
+            // same distinction the verifier learned in S3. Absent is the CLI and the tests, and
+            // that arm (above) stays permissive because it is evidence about the wiring. But
+            // production dispatch always has a store, so a store that exists and cannot answer is
+            // an incident, and letting a UI change through BECAUSE the check machinery is down is
+            // the gate failing open at the exact moment it is needed most.
             Console.Error.WriteLine($"[ui-gate] could not read ui_map artifacts for {mission?.Id}: {error.Message}");
-            return Decision.Allow;
+            return new Decision(false,
+                $"this task changes the UI and the artifact store could not be read ({error.Message}). "
+              + "The gate cannot verify a map exists, and unverifiable is not allowed — retry after "
+              + "the store recovers.");
         }
 
         if (maps.Count == 0)
