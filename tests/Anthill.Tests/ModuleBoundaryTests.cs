@@ -67,7 +67,9 @@ public class ModuleBoundaryTests
     [InlineData("Anthill.Modules.Reasoning")]
     [InlineData("Anthill.Modules.Homelab")]
     [InlineData("Anthill.Modules.Tools")]
+#if MICROMOUND
     [InlineData("Anthill.Modules.Micromound")]
+#endif
     public void AModuleReferencesTheSdkAndNothingElseOfOurs(string moduleName)
     {
         var module = Assembly.Load(moduleName);
