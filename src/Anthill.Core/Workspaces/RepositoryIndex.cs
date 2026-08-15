@@ -242,6 +242,13 @@ public static class RepositoryIndexBuilder
                     // Through the guard, not around it. A symlink pointing out of the workspace
                     // resolves outside the root and is refused here — the one traversal case a
                     // hand-rolled walk gets wrong, and the reason this does not roll its own.
+                    //
+                    // v0.3.8.59: that sentence was FALSE from the day it was written and is true
+                    // now. Deferring here was the right call for the right reason; the guard just
+                    // never resolved links, so the case this comment named as handled was the case
+                    // that got through. Reasoning correctly from a false premise, in the security
+                    // boundary — which is why PLAN.md §1b S1 cites this comment as the finding
+                    // rather than as evidence against it.
                     guard.ResolveSafePath(full);
                 }
                 catch (UnauthorizedAccessException) { continue; }

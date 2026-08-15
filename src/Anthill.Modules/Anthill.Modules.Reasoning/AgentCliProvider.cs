@@ -45,7 +45,7 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
 
     public ModelResponse Send(ModelRequest request, int retries = 2)
     {
-        var prompt = Flatten(request);
+        var (prompt, system) = Split(request);
         if (string.IsNullOrWhiteSpace(prompt))
             return Fail(ModelCallOutcome.ConfigError, "No prompt to send.");
 
@@ -70,7 +70,7 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         // static default — see EffectiveWorkingDirectory. One resolution, both transports.
         var cwd = EffectiveWorkingDirectory(access);
         AgentCliCatalog.MaterializeLocalSettings(_agent, cwd, access);
-        var args = AgentCliCatalog.BuildArgs(_agent, prompt)
+        var args = AgentCliCatalog.BuildArgs(_agent, prompt, system)
             .Concat(AgentCliCatalog.BuildAccessArgs(_agent, access))
             .ToList();
         var (started, stdout, stderr, exit) =
@@ -108,7 +108,7 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
     /// </summary>
     public ModelResponse SendStreaming(ModelRequest request, Action<string> onDelta, int retries = 2)
     {
-        var prompt = Flatten(request);
+        var (prompt, system) = Split(request);
         if (string.IsNullOrWhiteSpace(prompt))
             return Fail(ModelCallOutcome.ConfigError, "No prompt to send.");
         var confinement = Confinement();
@@ -124,7 +124,7 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         var streamAccess = Anthill.SDK.Reasoning.AgentAccessScope.Current;
         var streamCwd = EffectiveWorkingDirectory(streamAccess);
         AgentCliCatalog.MaterializeLocalSettings(_agent, streamCwd, streamAccess);
-        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt)
+        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt, system)
             .Concat(AgentCliCatalog.BuildAccessArgs(_agent, streamAccess))
             .ToList();
         var streamedText = new System.Text.StringBuilder();
@@ -266,21 +266,52 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
     /// agent would produce a confident answer that ignored its constraints, which is the failure
     /// this colony is least able to detect afterwards.
     /// </summary>
-    private static string Flatten(ModelRequest request)
+    /// <summary>
+    /// v0.3.8.59 (PLAN.md §1b S9) — the CONTRACT and the TASK travel separately.
+    ///
+    /// This was one method, `Flatten`, that joined every message into a single string and prefixed
+    /// non-user roles with a literal <c>[system]</c> header. That string then became the argument to
+    /// <c>-p</c>, which is a USER TURN. So the colony's role contract reached the agent as a user
+    /// message asserting a persona, mission ids, tool permissions and a required output format, with
+    /// a line of prose claiming to be the system. An agent CLI refused whole missions on that basis
+    /// and was right to: obeying it is obeying anything wearing the same costume.
+    ///
+    /// System messages now go to the agent's own system flag when it has one. When it does NOT they
+    /// are folded into the prompt as before — because a contract that reaches the worker in a
+    /// suspicious shape is still better than a worker with no contract — but WITHOUT the
+    /// <c>[system]</c> literal, which contributed nothing except the impersonation.
+    /// </summary>
+    private (string Task, string? System) Split(ModelRequest request)
     {
-        // Messages is `required` and non-nullable, and Content is a positional string — a null-guard
-        // on either is dead code the compiler would warn about, which is a poor trade for a check
-        // the type system already makes.
-        var parts = new List<string>();
+        var system = new List<string>();
+        var task = new List<string>();
+
         foreach (var m in request.Messages)
         {
             var text = m.Content.Trim();
             if (string.IsNullOrWhiteSpace(text)) continue;
-            parts.Add(string.Equals(m.Role, ModelMessage.User, StringComparison.OrdinalIgnoreCase)
-                ? text
-                : $"[{m.Role}]\n{text}");
+
+            if (string.Equals(m.Role, ModelMessage.System, StringComparison.OrdinalIgnoreCase))
+                system.Add(text);
+            else if (string.Equals(m.Role, ModelMessage.User, StringComparison.OrdinalIgnoreCase))
+                task.Add(text);
+            else
+                // assistant and tool turns keep a label: it is transcript framing, describing who
+                // said a thing, not a claim of authority over the reader.
+                task.Add($"[{m.Role}]\n{text}");
         }
-        return string.Join("\n\n", parts).Trim();
+
+        var contract = system.Count == 0 ? null : string.Join("\n\n", system);
+
+        if (contract is not null && _agent.SystemPromptArgs is null)
+        {
+            // No system channel on this agent. The contract leads the prompt, plainly, and the
+            // caller gets null back so nothing tries to pass a flag that does not exist.
+            task.Insert(0, contract);
+            contract = null;
+        }
+
+        return (string.Join("\n\n", task).Trim(), contract);
     }
 
     /// <summary>

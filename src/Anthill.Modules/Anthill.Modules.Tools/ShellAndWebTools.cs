@@ -39,24 +39,156 @@ public sealed class ShellCommandTool : ITool
         if (parts.Length == 0) return new ToolResult(Name, false, "", "Empty command after parsing.", FailureClass.ValidationFailure);
         var baseCommand = parts[0].ToLowerInvariant();
         if (!SafeCommands.Contains(baseCommand)) return new ToolResult(Name, false, "", $"Command is not allowlisted: {baseCommand}", FailureClass.AuthorizationFailure);
+
+        // v0.3.8.59 (PLAN.md §1b S2) — THE ARGUMENTS ARE CONTAINED, because the cwd never was.
+        //
+        // Setting WorkingDirectory does not sandbox a process. It sets where RELATIVE paths resolve
+        // and has no bearing on absolute ones, so `cat /etc/passwd`, `grep -r secret /` and
+        // `find / -name '*.key'` all ran exactly as written — three of the nine allowlisted commands
+        // reading anything the colony's user could read. The allowlist was doing the work of a
+        // sandbox and was never that.
+        if (DangerousFlag(baseCommand, parts) is { } dangerous)
+            return new ToolResult(Name, false, "",
+                $"'{dangerous}' can execute or delete and is refused: the allowlist admits {baseCommand} "
+              + "as a way to READ the workspace.", FailureClass.AuthorizationFailure);
+
+        foreach (var argument in parts.Skip(1))
+        {
+            if (PathLikeArgument(argument) is not { } candidate) continue;
+
+            // The guard THROWS on refusal by design — IWorkspacePathGuard says so, on the grounds
+            // that a bool a caller forgets to check is worse than an exception. Caught here rather
+            // than adding a non-throwing overload for one call site, which would give the interface
+            // two answers to one question.
+            try { _guard.ResolveSafePath(candidate); }
+            catch (UnauthorizedAccessException)
+            {
+                return new ToolResult(Name, false, "",
+                    $"Argument '{argument}' points outside the workspace. Shell commands run inside "
+                  + $"{_guard.EffectiveRoot} and may only name paths within it.",
+                    FailureClass.AuthorizationFailure);
+            }
+        }
+
         try
         {
             var psi = new ProcessStartInfo(parts[0])
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
-                WorkingDirectory = _guard.Root,
+                // EffectiveRoot, not Root: inside a mission the workspace is the mission's disposable
+                // tree, and running in the configured root instead pointed every shell command at the
+                // live checkout the mission exists to stay out of.
+                WorkingDirectory = _guard.EffectiveRoot,
                 CreateNoWindow = true,   // v0.3.8.53: never flash a console from the desktop shell
                 StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
                 StandardErrorEncoding = Encoding.UTF8,
             };
             foreach (var arg in parts.Skip(1)) psi.ArgumentList.Add(arg);
             using var proc = Process.Start(psi)!;
-            var stdout = proc.StandardOutput.ReadToEnd();
-            var stderr = proc.StandardError.ReadToEnd();
-            if (!proc.WaitForExit(30_000)) { try { proc.Kill(true); } catch { } return new ToolResult(Name, false, "", "Shell command timed out.", FailureClass.Timeout); }
-            return new ToolResult(Name, proc.ExitCode == 0, stdout.Trim(), string.IsNullOrEmpty(stderr.Trim()) ? null : stderr.Trim());
+
+            // v0.3.8.59 (PLAN.md §1b S7, unavoidably here) — THE TIMEOUT CAN ACTUALLY FIRE.
+            //
+            // This read `ReadToEnd()` on stdout, then stderr, and only then called
+            // `WaitForExit(30_000)`. Both halves were broken. A process that never exits blocks
+            // forever in the FIRST ReadToEnd, so execution never reached the timeout that was
+            // supposed to bound it — the guard sat downstream of the thing that hangs. And reading
+            // the streams sequentially deadlocks whenever the child fills its stderr pipe while this
+            // side is still draining stdout: each waits for the other, neither is timed out.
+            //
+            // Both pipes are now drained CONCURRENTLY and the wait is what bounds the whole thing.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+
+            if (!proc.WaitForExit(30_000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return new ToolResult(Name, false, "", "Shell command timed out after 30s and was "
+                  + "terminated with its child processes.", FailureClass.Timeout);
+            }
+
+            // The child is gone, so both reads complete; the bound is belt-and-braces for a
+            // grandchild holding the pipe open after its parent exited.
+            var stdout = Drain(stdoutTask);
+            var stderr = Drain(stderrTask);
+
+            return new ToolResult(Name, proc.ExitCode == 0, Cap(stdout),
+                string.IsNullOrEmpty(stderr.Trim()) ? null : Cap(stderr));
         }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Shell command failed: {e.Message}", ToolFailure.Classify(e)); }
+    }
+
+    /// <summary>
+    /// Read what a finished process wrote, without hanging on an inherited pipe. A grandchild that
+    /// outlives its parent keeps the handle open, so the stream does not reach EOF even though the
+    /// process this tool started has exited.
+    /// </summary>
+    private static string Drain(System.Threading.Tasks.Task<string> read)
+    {
+        try { return read.Wait(TimeSpan.FromSeconds(5)) ? read.Result : ""; }
+        catch { return ""; }
+    }
+
+    /// <summary>
+    /// Output is BOUNDED. `find /` on a large tree returns hundreds of megabytes, and the whole of
+    /// it travelled into a ToolResult, into an artifact and into a model prompt. Unbounded output is
+    /// a memory failure at best and an eviction of everything else in the context at worst.
+    /// </summary>
+    private static string Cap(string text)
+    {
+        var trimmed = text.Trim();
+        return trimmed.Length <= MaxOutputChars
+            ? trimmed
+            : trimmed[..MaxOutputChars] + $"\n… [truncated at {MaxOutputChars} characters]";
+    }
+
+    private const int MaxOutputChars = 20_000;
+
+    /// <summary>
+    /// Flags that turn a reading command into a writing or executing one.
+    ///
+    /// `find . -exec rm {} ;` is not traversal and passes every containment check above — the path
+    /// is the workspace and the damage is done by the flag. `-delete` is the same in one word. The
+    /// allowlist admits these commands as a way to LOOK at the workspace, and this keeps them to it.
+    /// </summary>
+    private static string? DangerousFlag(string baseCommand, IReadOnlyList<string> parts)
+    {
+        if (baseCommand is not ("find" or "grep")) return null;
+
+        string[] refused = { "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprintf", "-fls", "-fprint" };
+        return parts.Skip(1).FirstOrDefault(p =>
+            refused.Contains(p.Split('=')[0], StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Which arguments are PATHS, and therefore have to be contained.
+    ///
+    /// Deliberately conservative in the direction of checking too much rather than too little: an
+    /// argument is treated as a path if it is rooted, contains a separator, or contains `..`. A bare
+    /// token — `Release`, `secret`, `*.key` — names no location and is left alone, so
+    /// `grep -r secret .` still works while `grep -r secret /` does not.
+    ///
+    /// `--flag=value` is split, because the path in `--output=/etc/x` is on the right of the equals
+    /// and checking the whole token would find no separator at the front and wave it through.
+    /// </summary>
+    private static string? PathLikeArgument(string argument)
+    {
+        var value = argument;
+
+        // A leading '-' is a flag on every platform the colony runs on. Split once, so `-name` stays
+        // a flag and `--out=/etc/passwd` is checked as `/etc/passwd`.
+        if (value.StartsWith('-'))
+        {
+            var equals = value.IndexOf('=');
+            if (equals < 0) return null;
+            value = value[(equals + 1)..];
+            if (value.Length == 0) return null;
+        }
+
+        var looksLikePath = Path.IsPathRooted(value)
+            || value.Contains('/') || value.Contains('\\')
+            || value.Split('/', '\\').Contains("..");
+
+        return looksLikePath ? value : null;
     }
 }
 
