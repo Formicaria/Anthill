@@ -697,6 +697,11 @@
       f.widget.draggable = !G.layout.locked;
       f.widget.classList.toggle('dg-resizable', !G.layout.locked);
       if (G.isHidden(id)) {
+        // Caught live (V&V sweep, v0.3.8.61): hiding the widget the WALK was standing on left
+        // `cursor` pointing at the node just detached, and the next insertBefore threw
+        // "not a child of this node" — the hide button killing the rest of the render. The
+        // insertion point steps off the node before the node leaves.
+        if (f.widget === cursor) cursor = cursor.nextSibling;
         if (f.widget.parentNode) f.widget.parentNode.removeChild(f.widget);
       } else if (f.widget === cursor) {
         cursor = cursor.nextSibling;       // already in the right place: touch nothing
