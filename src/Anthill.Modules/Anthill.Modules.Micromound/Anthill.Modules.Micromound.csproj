@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Modules.Micromound</RootNamespace>
+    <AssemblyName>Anthill.Modules.Micromound</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    THE SDK, AND NOTHING ELSE OF OURS. Same rule as Anthill.Modules.Homelab: no Anthill.Core
+    reference, no reference to another module. ModuleBoundaryTests enforces it, including for
+    references that are present but unused.
+
+    Micromound.Protocol is the exception that proves the rule — it is not an ANTHILL assembly. It
+    is the shared wire contract, normative in micromound/docs/PROTOCOL.md, and the alternative is
+    a second hand-maintained copy of the envelope and charter shapes on this side of the link.
+    MICROMOUND.md's "reuses, never duplicates" applies most sharply to the contract itself: two
+    definitions of a wire format drift, and the drift is only discovered in the field.
+  -->
+  <PropertyGroup>
+    <!--
+      Path to the micromound checkout. Defaults to a sibling of the ANTHILL repo, which is how
+      operation-anthill is laid out. Override on the command line or in Directory.Build.props if
+      yours lives elsewhere:  dotnet build -p:MicromoundRepoPath=D:\src\micromound
+    -->
+    <MicromoundRepoPath Condition="'$(MicromoundRepoPath)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\micromound</MicromoundRepoPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Anthill.SDK\Anthill.SDK.csproj" />
+    <ProjectReference Include="$(MicromoundRepoPath)\src\Micromound.Protocol\Micromound.Protocol.csproj" />
+    <ProjectReference Include="$(MicromoundRepoPath)\src\Micromound.Crypto\Micromound.Crypto.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+    <InternalsVisibleTo Include="Anthill.Tests.Micromound" />
+  </ItemGroup>
+
+</Project>

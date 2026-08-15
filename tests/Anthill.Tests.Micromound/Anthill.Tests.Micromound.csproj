@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Tests.Micromound</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <MicromoundRepoPath Condition="'$(MicromoundRepoPath)' == ''">$(MSBuildThisFileDirectory)..\..\..\micromound</MicromoundRepoPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj" />
+    <!--
+      The device simulator, referenced on purpose. The colony's sync path could be tested against
+      hand-built envelopes, but hand-built envelopes are written by whoever wrote the code being
+      tested and agree with it by construction. Driving SimMound means the bytes, the signatures
+      and the hash chain all come from the device implementation — so a divergence between the two
+      sides shows up here rather than on a Pi in a shed.
+    -->
+    <ProjectReference Include="$(MicromoundRepoPath)\src\Micromound.Sim\Micromound.Sim.csproj" />
+  </ItemGroup>
+
+</Project>

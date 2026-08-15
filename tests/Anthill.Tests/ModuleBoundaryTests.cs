@@ -48,10 +48,26 @@ public class ModuleBoundaryTests
     /// module — modules contribute capability and observe events; one needing another is a design
     /// problem to solve deliberately, not to discover through a reference that already compiles.
     /// </summary>
+    /// <remarks>
+    /// This list is hand-maintained, which is the one soft spot in an otherwise mechanical check:
+    /// a module absent from it is not exempt, it is simply never looked at, and that reads exactly
+    /// like passing. Adding a module to <c>src/Anthill.Modules/</c> means adding a line here and a
+    /// project reference in this test project's csproj, or the boundary silently stops applying to
+    /// it. Micromound was added in the M1 phase and found this gap.
+    ///
+    /// Note what "ours" means mechanically: the filter is the <c>Anthill.</c> prefix. Micromound
+    /// carries <c>Micromound.Protocol</c> and <c>Micromound.Crypto</c> — the MICROMOUND wire
+    /// contract and its Ed25519 implementation, from the sibling repository — and those pass,
+    /// because they are not ANTHILL assemblies. That is the intended reading rather than a hole:
+    /// the rule exists to stop a module reaching into the core or into a sibling module, and a
+    /// shared wire contract is neither. Duplicating it on this side would be the actual violation,
+    /// of MICROMOUND.md's "reuses, never duplicates".
+    /// </remarks>
     [Theory]
     [InlineData("Anthill.Modules.Reasoning")]
     [InlineData("Anthill.Modules.Homelab")]
     [InlineData("Anthill.Modules.Tools")]
+    [InlineData("Anthill.Modules.Micromound")]
     public void AModuleReferencesTheSdkAndNothingElseOfOurs(string moduleName)
     {
         var module = Assembly.Load(moduleName);
@@ -105,6 +121,12 @@ public class ModuleBoundaryTests
         Assert.Contains("Anthill.Modules.Reasoning", refs);
         Assert.Contains("Anthill.Modules.Homelab", refs);
         Assert.Contains("Anthill.Modules.Tools", refs);
+
+        // Anthill.Modules.Micromound is deliberately NOT asserted yet. The module exists and its
+        // boundary is checked above, but the Api does not compose it — MICROMOUND M1 is read-only
+        // and its endpoints, persistence and registration land in the composition root as a
+        // separate step. Add the line here when that step ships; asserting it early would make
+        // this test fail for a reason that is not a boundary violation.
     }
 
     // The CLI is a composition root too, and it must load AND drain the tools module. That is
