@@ -341,6 +341,17 @@ public class SoldierReviewsThePatchTests
             Array.Empty<Anthill.SDK.Artifacts.Artifact>();
         public IReadOnlyList<Anthill.SDK.Artifacts.Artifact> ConsumersOf(string artifactId) =>
             Array.Empty<Anthill.SDK.Artifacts.Artifact>();
+
+        // v0.3.8.57 — the consumption ledger. Left unimplemented DELIBERATELY rather than added to
+        // IArtifactStore as a default no-op: a default would mean a real store that forgot to record
+        // reads compiles, ships, and keeps an empty ledger forever, which is the defect class this
+        // release keeps finding. A fake that records nothing is honest; an interface that lets a
+        // production store record nothing silently is not.
+        public void RecordConsumption(Anthill.SDK.Artifacts.ArtifactConsumption consumption) { }
+        public IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption> ConsumptionsOf(string artifactId) =>
+            Array.Empty<Anthill.SDK.Artifacts.ArtifactConsumption>();
+        public IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption> ConsumptionsForMission(string missionId, int limit = 500) =>
+            Array.Empty<Anthill.SDK.Artifacts.ArtifactConsumption>();
     }
 
     private static (Mission mission, DomainTask task) Fixture(string description = "review the proposed change")
@@ -433,6 +444,15 @@ public class SoldierReviewsThePatchTests
         public IReadOnlyList<Anthill.SDK.Artifacts.Artifact> SourcesOf(string artifactId) =>
             throw new InvalidOperationException("nope");
         public IReadOnlyList<Anthill.SDK.Artifacts.Artifact> ConsumersOf(string artifactId) =>
+            throw new InvalidOperationException("nope");
+
+        // Throws like everything else here: this fake exists to prove the soldier survives a store
+        // that is entirely unavailable, and a ledger call that quietly succeeded would weaken that.
+        public void RecordConsumption(Anthill.SDK.Artifacts.ArtifactConsumption consumption) =>
+            throw new InvalidOperationException("nope");
+        public IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption> ConsumptionsOf(string artifactId) =>
+            throw new InvalidOperationException("nope");
+        public IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption> ConsumptionsForMission(string missionId, int limit = 500) =>
             throw new InvalidOperationException("nope");
     }
 }

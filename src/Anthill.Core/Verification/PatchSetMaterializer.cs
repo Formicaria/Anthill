@@ -290,7 +290,15 @@ public static class PatchSetMaterializer
             });
             if (proc is null) return "";
             var output = proc.StandardOutput.ReadToEnd().Trim();
-            return proc.WaitForExit(10_000) && proc.ExitCode == 0 ? output : "";
+            // v0.3.8.57 — the short-circuit was correct about the RESULT and left the process
+            // running. `&&` skips ExitCode on timeout (which would have thrown), so this site
+            // returned "" honestly and abandoned git and its children.
+            if (!proc.WaitForExit(10_000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                return "";
+            }
+            return proc.ExitCode == 0 ? output : "";
         }
         catch { return ""; }
     }

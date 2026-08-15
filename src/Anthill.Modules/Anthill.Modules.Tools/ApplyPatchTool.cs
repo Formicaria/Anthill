@@ -83,7 +83,13 @@ public sealed class ApplyPatchTool : ITool
                 && (File.Exists(safeDestination) || Directory.Exists(safeDestination));
             return ApplyComputed(safePath, safeDestination,
                 PatchApply.Compute(changeType, oldContent, newContent, current, baseHash,
-                    safeDestination is null ? null : destination, destinationTaken));
+                    safeDestination is null ? null : destination, destinationTaken,
+                    // v0.3.8.57 — THIS is the tool that writes to the operator's real tree, so a
+                    // destructive change with no base hash is refused here. The sandbox and the
+                    // materializer deliberately do not opt in: refusing a legacy proposal during
+                    // verification tells the operator nothing actionable, while accepting one at
+                    // this line is the silent stale write the hash exists to prevent.
+                    requireBaseHash: true));
         }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Patch application failed: {e.Message}", ToolFailure.Classify(e)); }
     }
@@ -135,7 +141,14 @@ public sealed class ApplyPatchTool : ITool
         if (outcome.Status is PatchApplyStatus.RefusedOldContentNotFound
                            or PatchApplyStatus.RefusedAmbiguous
                            or PatchApplyStatus.RefusedStaleBase
-                           or PatchApplyStatus.RefusedDestinationOccupied)
+                           or PatchApplyStatus.RefusedDestinationOccupied
+                           // v0.3.8.57 — both are the TREE disagreeing with the proposal, not a
+                           // malformed proposal: the target exists when the patch expected to create
+                           // it, or the patch cannot say what it was built against. TargetRejection
+                           // is what routes these back for a fresh read rather than to the coder as
+                           // a formatting error.
+                           or PatchApplyStatus.RefusedTargetExists
+                           or PatchApplyStatus.RefusedMissingBaseHash)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.TargetRejection);
         if (!outcome.Ok)
             return new ToolResult(Name, false, "", outcome.Reason, FailureClass.ValidationFailure);
@@ -148,14 +161,10 @@ public sealed class ApplyPatchTool : ITool
                 return new ToolResult(Name, true, Json.Dumps(
                     new { action = "add", file_path = safePath, backup_path = (string?)null }, indented: true));
 
-            case PatchApplyStatus.Overwrote:
-            {
-                // An `add` onto an existing file. Reversible because the backup is taken FIRST.
-                var existingBackup = BackupFile(safePath);
-                File.WriteAllText(safePath, outcome.Content!, new UTF8Encoding(false));
-                return new ToolResult(Name, true, Json.Dumps(
-                    new { action = "add_overwrite", file_path = safePath, backup_path = existingBackup }, indented: true));
-            }
+            // v0.3.8.57 — the `Overwrote` arm is GONE. `PatchApply` no longer produces that status:
+            // an `add` onto an existing file is now RefusedTargetExists, handled above. The write it
+            // used to perform replaced a whole file with whatever fragment the proposal carried, and
+            // the backup it took first made that recoverable rather than correct.
 
             case PatchApplyStatus.Deleted:
             {

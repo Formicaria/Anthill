@@ -55,12 +55,33 @@ public static class ToolEvidence
         if (!DeterministicTools.TryGetValue(toolName ?? "", out var kind)) return null;
         if (string.IsNullOrWhiteSpace(missionId)) return null;
 
+        // v0.3.8.57 — the TREE this check actually ran in.
+        //
+        // Structural repair §3 stamps the revision on the TASK (`RanRevisionId`) and that is what
+        // MissionVerification pairs on. This row said nothing, and it is the one that matters
+        // longest: a task object lives for a mission, while an evidence row is what a replay reads
+        // and what `Evidence.Judges` was built to interrogate. So "the tester ran in revision B" was
+        // answerable and "this passing command_check is about revision B's bytes" was not.
+        //
+        // Read from the AMBIENT SCOPE rather than passed in. The scope is what actually decided which
+        // tree the command ran against — ExecutionService enters it around the dispatch — so taking
+        // the identity from anywhere else would risk recording a revision the check did not run in,
+        // which is precisely the "true statement about the wrong workspace" failure v3.8.22 shipped.
+        //
+        // Null outside a revision, and that is correct: an unpatched mission workspace is not a
+        // revision, and labelling it as one would let evidence about the base tree satisfy a
+        // candidate built from a patch.
+        var scope = Workspaces.MissionWorkspaceScope.Current;
+
         return Evidence.Create(
             kind: kind,
             deterministic: true,
             passed: success,
             missionId: missionId,
             detail: TextUtil.Truncate(detail ?? "", 500),
-            taskId: taskId);
+            taskId: taskId,
+            revisionId: scope?.RevisionId,
+            patchSetHash: scope?.PatchSetHash,
+            treeHash: scope?.TreeHash);
     }
 }

@@ -40,6 +40,20 @@ public enum ModelCallOutcome
 /// </summary>
 public sealed record ModelCallResult(ModelCallOutcome Status, string Content)
 {
+    /// <summary>
+    /// The provider and model that ACTUALLY served this call. v0.3.8.57.
+    ///
+    /// <c>ModelResponse</c> has carried both since v3.4.0 and <c>ToCallResult()</c> discarded them,
+    /// so no ant ever learned which model produced its output — and an artifact could therefore
+    /// never say. The alternative, asking the router for the CONFIGURED route afterwards, answers a
+    /// question adjacent to the one asked: a rerouted call would record the model that did not run.
+    ///
+    /// Null means no model served it, which is a real and useful state: a deterministic ant, or a
+    /// call that failed before a provider was chosen.
+    /// </summary>
+    public string? Provider { get; init; }
+    public string? Model { get; init; }
+
     public bool Ok => Status == ModelCallOutcome.Ok;
     /// <summary>Transient statuses a retry may cure (mirrors the circuit breaker's transient set).</summary>
     public bool Retryable => Status is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError

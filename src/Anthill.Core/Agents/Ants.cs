@@ -62,7 +62,17 @@ public abstract class BaseAnt
     /// decides succeeded / failed and says so explicitly. The narrative remains available to the
     /// operator but carries no control meaning.
     /// </summary>
-    protected static AntExecutionResult TextResult(string role, string text, string? summaryOverride = null)
+    /// <param name="call">
+    /// The model call that produced this text, when one did. v0.3.8.57 — its provider and model
+    /// travel into <see cref="AntMetrics"/> and from there into an artifact's provenance, so a
+    /// stored artifact can say which model wrote it.
+    ///
+    /// Optional because most callers here are the OFFLINE and FALLBACK paths, where no model served
+    /// the text and saying so by omission is correct. Passing the configured route instead would
+    /// record a model that never ran.
+    /// </param>
+    protected static AntExecutionResult TextResult(string role, string text, string? summaryOverride = null,
+        ModelCallResult? call = null)
     {
         var body = text ?? "";
         var summary = summaryOverride ?? TextUtil.CreateResultSummary(body, AnthillRuntime.MaxResultSummaryChars);
@@ -72,7 +82,16 @@ public abstract class BaseAnt
         return AntExecutionResult.Succeeded(summary, body) with
         {
             Artifacts = new List<AntArtifact> { new("text", $"{role} output", body) },
-            Metrics = new AntMetrics { OutputChars = body.Length },
+            Metrics = new AntMetrics
+            {
+                OutputChars = body.Length,
+                // ModelCalls drives ArtifactProvenance.ModelInvolved, so it must count the call
+                // even when the provider name did not survive — "a model ran and I do not know
+                // which" and "no model ran" are different claims about the work.
+                ModelCalls = call is null ? 0 : 1,
+                Provider = call?.Provider,
+                Model = call?.Model,
+            },
         };
     }
 
@@ -186,6 +205,21 @@ public sealed class ResearcherAnt : BaseAnt
                          $"Tool Context:\n{FormatToolReport(toolResults)}";
         rawContext = TextUtil.Truncate(rawContext, AnthillRuntime.MaxContextPacketChars, "...[research context truncated]");
 
+        // v0.3.8.57 — the researcher joins the typed channel.
+        //
+        // It is a CORE ant and it had never seen an artifact. Its context was memory, pheromones
+        // and tool output — every one of them prose — so a researcher summarising "what has this
+        // mission established" was reading other workers' narrative about the patch set rather
+        // than the patch set. The brief it produces then feeds the coder, which is how a
+        // paraphrase of a paraphrase became load-bearing.
+        //
+        // APPENDED AFTER the truncation, exactly as BuildContextPacketText does it, because the
+        // two halves are budgeted separately on purpose: sharing one cap lets a long narrative
+        // crowd out the structured record, which is the arrangement this whole stage exists to end.
+        rawContext += DomainHelpers.ArtifactBlock((Anthill.SDK.Artifacts.IArtifactStore)_memory,
+            mission.Id, AnthillRuntime.MaxContextPacketChars, task.InputArtifactIds,
+            consumerRole: Name, consumerTaskId: task.Id);
+
         if (_router is null || !AnthillRuntime.UseOllama)
         {
             // Configured-offline mode: the local summary IS the deliverable — a plain success.
@@ -226,7 +260,28 @@ Return format:
                 "Researcher fell back to a local context brief (routed model unavailable).",
                 new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" }, fallback);
         }
-        return TextResult(Name, call.Content);
+        // v0.3.8.57 — the four sections the prompt above DEMANDS, extracted rather than flattened.
+        //
+        // v3.8.21 declined to type the researcher on the grounds that naming prose `change_plan`
+        // would be relabelling. Correct in general and wrong here: the shape is not being invented,
+        // it is being recovered — the return format has been part of this prompt since the ant was
+        // written, and the response was parsed by nobody.
+        //
+        // A response that did not follow the format produces NO artifact and a disclosed warning.
+        // Emitting one full of empty sections would make "the model ignored the format" read exactly
+        // like "the researcher found nothing", and every consumer downstream would believe the
+        // second. See ResearchBrief for why the builder gets no equivalent.
+        var brief = Anthill.SDK.Artifacts.ResearchBrief.TryParse(call.Content);
+        var text = TextResult(Name, call.Content, call: call);
+        return brief is null
+            ? text with
+            {
+                StatusCode = "succeeded_with_warnings",
+                Warnings = text.Warnings
+                    .Append("unstructured_research_output: the response did not carry the declared "
+                          + "sections, so no research_brief artifact was produced").ToList(),
+            }
+            : WithArtifact(text, "research_brief", "Research brief", brief.ToJson());
     }
 
     private static bool ShouldInspectWorkspace(Task task, Mission mission)
@@ -663,7 +718,11 @@ public sealed class CoderAnt : BaseAnt
                 "Coder admitted to a read-only / no-patch mission — the planner must not assign coder tasks here, "
                 + "and the coder refuses rather than proposing changes the operator forbade.");
 
-        var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts);
+        var codeContext = DomainHelpers.BuildContextPacketText(mission, "coder", Math.Min(AnthillRuntime.MaxCoderContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts,
+            // v0.3.8.57 — the artifacts THIS TASK was given, when the runtime named any.
+            // Empty falls back to the mission-wide block, which is what every task received before.
+            declaredInputIds: task.InputArtifactIds,
+            consumerTaskId: task.Id);
         if (!_useOllama || _router is null)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
@@ -857,7 +916,11 @@ public sealed class BuilderAnt : BaseAnt
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
-        var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts);
+        var previousContext = DomainHelpers.BuildContextPacketText(mission, "builder", Math.Min(AnthillRuntime.MaxPreviousContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifacts,
+            // v0.3.8.57 — the artifacts THIS TASK was given, when the runtime named any.
+            // Empty falls back to the mission-wide block, which is what every task received before.
+            declaredInputIds: task.InputArtifactIds,
+            consumerTaskId: task.Id);
         // Configured-offline: the static response IS the configured behaviour — plain success.
         if (!_useOllama || _router is null) return TextResult(Name, FallbackResponse(task, mission, previousContext));
 
@@ -900,7 +963,7 @@ Rules:
                 "Builder fell back to a non-LLM response (routed model unavailable).",
                 new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" },
                 $"{call.Content}\n\nFallback Builder Response:\n{FallbackResponse(task, mission, previousContext)}");
-        return TextResult(Name, call.Content);
+        return TextResult(Name, call.Content, call: call);
     }
 
     private static string FallbackResponse(Task task, Mission mission, string previousContext) =>
@@ -1052,7 +1115,11 @@ public sealed class VerifierAnt : BaseAnt
             staticCheck += $"\nDegraded Sections: {degraded.Count} non-critical task(s) failed or were skipped; synthesis proceeded with partial input.";
         if (!_useOllama || _router is null) return staticCheck;
 
-        var context = DomainHelpers.BuildContextPacketText(mission, "verifier", Math.Min(AnthillRuntime.MaxVerifierContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifactStore);
+        var context = DomainHelpers.BuildContextPacketText(mission, "verifier", Math.Min(AnthillRuntime.MaxVerifierContextChars, AnthillRuntime.MaxContextPacketChars), artifacts: _artifactStore,
+            // v0.3.8.57 — the artifacts THIS TASK was given, when the runtime named any.
+            // Empty falls back to the mission-wide block, which is what every task received before.
+            declaredInputIds: task.InputArtifactIds,
+            consumerTaskId: task.Id);
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: verifier | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
 You are concise. Do not explain your reasoning unless asked.

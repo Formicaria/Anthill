@@ -82,7 +82,11 @@ public class ArtifactBridgeTests : IDisposable
     [InlineData("test_report", ArtifactSchemas.TestReport)]
     [InlineData("ui_map", ArtifactSchemas.UiMap)]
     [InlineData("repair_recommendation", ArtifactSchemas.RepairRecommendation)]
-    [InlineData("docs_patch_set", ArtifactSchemas.PatchSet)]
+    // v0.3.8.57 — its OWN schema, no longer folded onto patch_set. The two payloads share nothing:
+    // a patch set is { patch_set_id, summary, proposals[] } and something materialises it; a docs
+    // proposal is { targets, source_mission, requires_approval } and the scribe holds no apply
+    // permission. Every consumer that asked for "this mission's patch sets" received both.
+    [InlineData("docs_patch_set", ArtifactSchemas.DocsPatchSet)]
     public void EveryKindAntsEmit_MapsToASchema(string antKind, string expected) =>
         Assert.Equal(expected, ArtifactSchemas.ForAntKind(antKind));
 

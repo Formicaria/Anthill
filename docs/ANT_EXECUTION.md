@@ -71,13 +71,13 @@ configuration already at schema version 2 is preserved exactly. See `ConfigMigra
 | researcher | MissionAgent | yes | yes | on | research | system_info, list_directory | read-only tools |
 | web | MissionAgent | yes | yes | on | external_research | web_search | read-only |
 | file | MissionAgent | yes | yes | on | file_inspection | list_directory, read_text_file | read-only |
-| coder | MissionAgent | yes | yes | on | code_change | model only | proposals only, no apply |
+| coder | MissionAgent | yes | yes | on | code_change | model only | proposals only, no apply; a UI change cannot dispatch without a valid `ui_map` (v0.3.8.57) |
 | builder | MissionAgent | yes | yes | on | build_answer | model only | — |
-| verifier | MissionAgent | yes | yes | on | verification | model only | — |
-| ui_cartographer | MissionAgent | yes | gated | **on** (full profile) | ui_mapping … | list_directory, read_text_file | read-only; hands to coder |
+| verifier | MissionAgent | yes | yes | on | verification | model only | `PolicyInserted` since v0.3.8.57 — the runtime guarantees one when its evidence exists, and a planned verifier is still admissible |
+| ui_cartographer | MissionAgent | yes | gated | **on** (full profile) | ui_mapping … | list_directory, read_text_file | read-only; its `ui_map` is REQUIRED before a UI coder task dispatches (v0.3.8.57) |
 | tester | MissionAgent | yes | gated | **on** (full profile) | build_check, test_execution … | run_allowlisted_check ONLY | no shell, no model, evidence required |
 | soldier | MissionAgent | yes | gated | **on** (full profile) | security_review … | deterministic PolicyScan | blocks not model-overridable |
-| scribe | MissionAgent | yes | gated | **on** (full profile) | release_notes, docs_patch_proposal … | read summaries | docs-path patches only |
+| scribe | MissionAgent | yes | gated | **on** (full profile) | release_notes, docs_patch_proposal … | read summaries | docs-path patches only; refuses `verified_change_summary` when nothing verified (v0.3.8.57) |
 | medic | MissionAgent | yes | gated | **on** (full profile) | failure_diagnosis … | read failure context | 2 diagnoses/mission, repeat → escalate |
 | archivist | MissionAgent | yes | gated | **on** (full profile) | memory_consolidation … | emits memory candidates | positive ONLY from completed_verified |
 | quartermaster | DeterministicService | n/a | never | n/a | — | — | intentionally non-executable (no metrics contract yet) |

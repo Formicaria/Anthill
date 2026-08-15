@@ -264,11 +264,16 @@ public class FinalizationOrderTests : IDisposable
         var insert = source.IndexOf("private void InsertPolicyReviewTasks", StringComparison.Ordinal);
         Assert.True(insert >= 0, "InsertPolicyReviewTasks is no longer recognisable");
 
-        var body = source[insert..];
-        var bind = body.IndexOf("EnsureVerificationWaitsFor(", StringComparison.Ordinal);
-        Assert.True(bind >= 0 && bind < 4000,
-            "InsertPolicyReviewTasks no longer binds the verifier to the evidence it inserts, so a "
-          + "verifier can be dispatched before the tester and soldier it is supposed to read.");
+        // Scoped to THE METHOD, not to a character budget. The first cut of this bounded the search
+        // at 4,000 characters, which is a proxy for "inside the method" and a bad one: `CodeOnly`
+        // blanks comments but PRESERVES their length, so explaining a change inside this method
+        // pushed the binding past the window and failed a test about something else entirely. The
+        // property being checked is that the call sits in this method — so that is what is checked.
+        var rest = source[insert..];
+        var end = NextMemberDeclaration(rest);
+        var body = rest[..end];
+
+        Assert.Contains("EnsureVerificationWaitsFor(", body, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -312,4 +317,25 @@ public class FinalizationOrderTests : IDisposable
 
         Assert.Contains("DeterministicBlock", body, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Where the member that starts at index 0 of <paramref name="fromMemberStart"/> ends — the next
+    /// member declaration at class indentation, or the end of the file.
+    ///
+    /// Crude on purpose. A real parser would be more precise and would also be a second thing that
+    /// can be wrong; this only has to be right about where the NEXT `private`/`public`/`internal`
+    /// member begins, and every member in these files is declared at four-space indentation.
+    /// </summary>
+    private static int NextMemberDeclaration(string fromMemberStart)
+    {
+        var best = fromMemberStart.Length;
+        foreach (var keyword in new[] { "\n    private ", "\n    public ", "\n    internal ", "\n    protected " })
+        {
+            // Skip index 0's own declaration by searching from one character in.
+            var at = fromMemberStart.IndexOf(keyword, 1, StringComparison.Ordinal);
+            if (at >= 0 && at < best) best = at;
+        }
+        return best;
+    }
+
 }

@@ -1,5 +1,257 @@
 # ANTHILL Changelog
 
+## v0.3.8.57 - the typed channel becomes load-bearing, and four acceptance gates close
+
+The five Priority-1 items from AUTONOMY-10 Phase 3, closed. Each one was a capability that already
+existed and could not reach the path it was built for.
+
+**`add` means CREATE.** An `add` onto an existing file returned `Overwrote` and wrote the proposal's
+`new_content` over the whole file. The comment defending it called an add-over-existing "a common
+model slip" and said overwriting was safe "because the caller backs the file up first". Both halves
+get the risk backwards: a model that mislabels a targeted edit as `add` supplies only the fragment
+it is thinking about, so the overwrite TRUNCATES the file to those few lines — and a backup makes
+that recoverable, not correct, because nothing compares sizes and nothing asks. The most destructive
+operation in the engine had the weakest gate on it. It is now a typed conflict (`RefusedTargetExists`)
+routed as a `TargetRejection`, which sends it back for a fresh read rather than to the coder as a
+formatting error.
+
+**The coder path stamps its base hash.** `PatchProposal.BaseHash` was assigned in exactly one place
+in the entire codebase — `WorkspaceChangeSet`, which derives proposals from a finished workspace
+diff. The coder path set none. So every model-authored modify, delete and rename carried a null base
+hash, and the stale-base guard shipped in v3.8.37 — the largest item in Phase 1 — could not fire on
+the path that produces almost all destructive patches. It was real, tested, and unreachable for
+exactly the patches it existed for.
+
+The parser now records `HashOf(current)` at PRODUCTION time, resolved through `WorkspacePathGuard`
+so it hashes the mission workspace the coder was looking at rather than the live checkout. Stamping
+at apply time would hash whatever the file says by then and always agree with itself — a check that
+passes by construction. `add` is exempt: a creation has no prior state it could have been built
+against.
+
+**A live destructive apply refuses without one.** `RefusedStaleBase` catches a patch built against
+the WRONG base; `RefusedMissingBaseHash` catches one built against an UNKNOWN base, which is the same
+risk with none of the evidence. `requireBaseHash` is opt-in and only `ApplyPatchTool` passes it,
+because it is the one caller that writes to the operator's own tree. Defaulting it on would make
+every proposal stored before this release permanently unappliable — turning a safety property into a
+migration — so the sandbox and the materializer still verify a legacy proposal; only the live write
+refuses it.
+
+**A patch set is applied as a unit, or not at all.** The auto-apply loop logged a failed write and
+carried on to the next patch, so a set whose third member was stale left the first two applied and
+the fourth written on top — a repository in a state no revision ever had. Rollback existed but hung
+off the verify step, so a deployment with no verify command configured simply kept the mixture.
+
+A preflight now computes every proposal against the tree with no IO and aborts before a byte is
+written if any refuses; a write that fails anyway — preflight cannot see a race — rolls back
+everything already applied and abandons the batch. The preflight calls `PatchApply.Compute`, the
+applier's own function, with the same strictness the live applier uses. A second hand-written checker
+would drift, and a preflight that passes where the apply refuses is worse than none: it promises
+atomicity it does not deliver.
+
+**Conformance is a ledger, not four copies of a suite.** Four files decide whether a patch applies.
+Rather than giving each its own semantics table — four things to keep in step, with the drift living
+in whichever copy someone forgot — the matrix runs once against the shared decision, and a ledger
+pins that each call site actually asks it with the full set of facts. Sharing the function is not
+enough to share the answer: a `Compute` called without `destinationExists` cannot refuse a rename
+onto an occupied path, and one called without the base hash cannot notice a stale patch. Both
+omissions compile and look correct. A fifth applier appearing unlisted fails the build.
+
+**Every verdict names the tree it judged.** The tree hash existed only inside `Detail`, truncated to
+twelve characters, in prose — readable by a person, useless to a query. So "does this build result
+belong to the revision the verifier is about to promote?" had no answer the runtime could compute,
+and the failure it guards against is silent: correct evidence attached to the wrong source tree reads
+exactly like a pass. v3.8.22 shipped build verdicts computed against the primary workspace instead of
+the patched sandbox — true statements about the wrong bytes — and it took a release to notice.
+
+`Evidence` carries `RevisionId`, `PatchSetHash` and `TreeHash`, with `Judges()` matching on the tree
+as well as the id, because an id can be reused by a re-materialization and a tree hash cannot. Wired
+through schema, migration, INSERT and read-back — the fields alone would have been written to memory
+and dropped at the database boundary, which is this project's signature defect. Legacy rows read as
+NULL, meaning "not about a materialized revision" rather than "about one, unrecorded", so a consumer
+that requires identity refuses them instead of assuming a match.
+
+The promotion gate is deliberately UNCHANGED. `HasDeterministicPass` still asks what it asked
+before, and a test pins that. Making identity a precondition for a verified outcome would silently
+change which missions can pass, and that is a decision for its own release with its own evidence —
+not a side effect of adding a column.
+
+---
+
+### Typed artifacts stop being a second channel nobody reads
+
+**A task receives what it was GIVEN.** `ArtifactContext.Compile` was bounded and ordered and handed
+every task every artifact the mission held, ranked by a static schema list — so a tester received the
+`ui_map` a cartographer wrote for an unrelated step. Meanwhile `AntExecutionContract.RequiredInputArtifactTypes`
+declared what each role needs and nothing populated it. `Task.InputArtifactIds` is now authoritative
+when non-empty, persisted, carried through `DeepCopy` (an ant reads the copy — a field set only on the
+original is a silent, permanent fallback), and passed at every dispatch site. Only ONE producer fills
+it, because only one is unambiguous: the policy review inserted the statement after its patch set was
+written. Narrowing the rest by guesswork would starve workers of context they legitimately used.
+
+**The researcher joins the channel it had never been on.** It is a core ant whose brief feeds the
+coder, and its entire context was memory, pheromones and tool output — all prose. It was summarising
+other workers' narrative *about* the patch set for the role that writes the next one.
+
+**A schema label is a promise, and both ends are now checked.** Any string could be stored under any
+schema name; `EvidenceKinds.SchemaValid` had been declared since v3.8.19 and produced by nothing.
+`ArtifactSchemaCheck` records, for every schema, the shape its producer actually writes — read off the
+producing code, not off what would be tidy. A `test_report` is KEY: VALUE lines because `TesterAnt`
+writes lines; calling it JSON would fail every correct artifact in the store. Three schemas ADR-004
+named and nothing produces are recorded as `Unfixed` rather than given a default nobody argued for.
+
+Writing the shapes down found a live defect: `ForAntKind` folded the scribe's `docs_patch_set` onto
+`patch_set`, and `SoldierAnt` asks the store for "this mission's patch sets" and reports how many it
+reviewed — so a documentation proposal was swept into a security review of a code change and counted.
+True since v3.8.20. `DocsPatchSet` is now its own schema.
+
+The write boundary STORES and reports; it does not refuse. Dropping the row trades a wrong artifact
+for a missing one, and a consumer of a missing artifact proceeds with less and never knows. The read
+boundary attaches its warning to the specific offending artifact, because "something here is bad" is
+not actionable.
+
+**Who read what, and which version.** `IArtifactStore.ConsumersOf` looked like the reverse edge and
+is not — it walks `SourceArtifactIds` to answer what was DERIVED from an artifact, and a role that
+reads a patch set and writes prose creates no such edge. `artifact_consumptions` records artifact,
+hash-as-read, schema, role and task; the hash is what makes the row falsifiable, since a consumption
+whose hash no longer matches its artifact is the only signal that the append-only rule was broken.
+Recorded inside `Compile`, which is the only place that knows what ARRIVED: the budget decides what is
+delivered, and an artifact omitted for space was never an input. Recording at the call site would
+produce a ledger of intentions that reads exactly like a ledger of facts.
+
+**Provenance, limited to what can be truthfully said.** `ModelResponse` has carried the provider and
+model that actually served a call since v3.4.0, and `ToCallResult()` dropped both one line before they
+reached any ant — which is why no artifact could name its model. Artifacts now carry colony version,
+environment fingerprint, runtime node, provider, model, tool, call counts, an explicit `ModelInvolved`
+(a provenance gap must never read as a determinism guarantee), and the execution's own warnings as
+limitations. Excluded from the content hash, or two identical outputs on two machines stop deduplicating.
+
+Of the nine facets the brief listed, two already existed under other names — sensitivity is
+`Artifact.Visibility`, evidence refs are `IEvidenceStore.ForArtifact` — and two have no producer.
+Assumptions and retention are recorded as GAPS rather than added as fields. A retention label no
+pruner reads is a compliance claim the system does not keep.
+
+**The researcher's output gets a shape; the builder's deliberately does not.** v3.8.21 declined to
+type the core ants on the grounds that naming prose would be relabelling, and was right in general.
+What it missed is that the researcher's PROMPT has demanded four named sections since the ant was
+written, and the response was flattened into a string nothing parsed. All four headings or none — a
+partial would collapse "found no pheromone guidance" into "ignored the format". The builder asks for
+"a practical final response" with no sections at all; structuring it honestly means changing what it
+is asked to produce, not adding a parser.
+
+**Acceptance gate 10 closes.** `MissionReconstruction` replays a mission's per-role inputs, outputs
+and evidence from artifact IDs. Inputs come from the consumption ledger, not from declarations — a
+replay built on declarations reconstructs a context the worker never saw. The value is in the GAPS: a
+mutated artifact, a consumption pointing at something deleted, evidence citing an artifact the store
+no longer holds, evidence attached to nothing. A reconstruction that only ever succeeds certifies
+nothing.
+
+---
+
+### Structural enforcement: four gates close
+
+**Gate 7 — a UI change cannot reach the coder without a valid `ui_map`.** `InjectSpecialistRouting`
+has inserted a cartographer since Stage E and was never the gate: it read GOAL TEXT only (so "fix the
+broken button handler" aimed at `src/Anthill.UI/app.js` was mapped by nobody), it created a
+DEPENDENCY rather than a requirement (the coder waited for the cartographer's task to finish —
+including by failing), and it ran at PLANNING time, where a model has a say. `UiChangeGate` decides at
+dispatch, from the store, on a detector the planner shares. Valid means hash-intact AND
+schema-conforming: an existence check waves through a truncated payload and the coder plans against
+it anyway. A disabled cartographer is a named refusal rather than the silent skip it was.
+
+**Gate 6 — the repair bound stops depending on prose.** It was
+`t.Result.Contains(signature)` — a substring search of a previous medic's narrative. Task results are
+summarised and truncated, so a diagnosis long enough to push the signature past the cut silently
+stopped matching: the bound was weakest exactly where the loop was longest. It now counts
+`failure_context` artifacts, by DISTINCT TASK — counting artifacts would make a single failure look
+like a repeat on its own retry, escalating immediately and turning bounded repair into no repair, and
+that error fails safe-looking.
+
+**Gate 8 — the scribe cannot certify what nobody verified.** Its contract supports
+`verified_change_summary`, a document whose output ASSERTS a verification, and nothing checked one had
+happened. Refused rather than hedged: a summary that equivocates about verification is read as one
+that confirms it. Only that task type — release notes and docs proposals assert nothing.
+
+**Verifier scheduling stops lying.** The contract said `PlannerSelectable`, inherited by never being
+written down, while the runtime had guaranteed insertion since v0.3.8.41. The declared mode is what
+`RoleReadiness` reports and what the API exposes as `scheduling_mode`, so for six releases the table
+answered "yes, verification can be skipped" when the runtime had made it "no". A general guard now
+requires every `PolicyInserted` role to have a named insertion site that exists.
+
+**Evidence names the tree it judged, everywhere.** `ToolEvidence.For` writes the tester's actual
+`command_check` verdict and stamped no revision at all — the row that survives the mission and that a
+replay reads could not say which bytes it judged. Taken from the ambient scope, which is what actually
+decided the tree. And `Evidence.Judges`, added earlier in this release, was called by nothing: a
+declared-and-unreachable introduced while removing three others. Auto-apply now uses it to refuse a
+set whose evidence is about a different revision — the strongest point, since that is what writes to
+the live tree. Legacy evidence with no identity is untouched; refusing it would turn a schema addition
+into a retroactive freeze.
+
+**Chat talks to the colony, not to a coding agent.** `conversation` was a route key like any other
+and the router treats every provider identically, because from its side they are identical: ask,
+receive text. They are not identical in what they DO. Pointing `conversation` at an installed agent
+CLI made the chat box a direct line to that agent — a message went to Claude Code, which answered and
+could also edit the working tree, with no task, no plan, no `ui_map`, no tester, no soldier and no
+verifier anywhere in the sequence. The colony became a text field in front of someone else's tool.
+
+v0.3.8.53 saw the consequence and contained it — changes from that lane became one canonical
+`direct_change` artifact, explicitly unverified, never feeding positive memory. Right response to the
+symptom; the shape was untouched. A provider now DECLARES itself an autonomous coding agent
+(`IAutonomousCodingAgent`), which lives in the SDK so the core can test for it without naming a
+provider implementation, and which cannot rot the way a list of agent ids in the core would: a new
+agent CLI is contained the moment it is written.
+
+The conversation route REFUSES such a provider rather than rerouting around it. A silent fallback
+would leave an operator believing they were talking to the agent they configured, getting worse
+answers for reasons nothing explains. The refusal names the agent, says where to change the route,
+and says the capability is not being removed — it moves to where the review lives. `coder` still
+routes to an agent deliberately, and everything downstream of the coder still applies to its work.
+
+---
+
+### Qualification, and an honest account of what is not proved
+
+**The twenty scenarios become an executable ledger.** They were a prose index in a doc comment, and a
+prose index cannot be wrong in a way anything notices: a cited test can be renamed, deleted or reduced
+to a stub and the comment reads exactly as confidently afterwards. `QualificationMatrixTests` asserts
+every citation resolves to a real file, every open scenario says OPEN, every open one is named in
+`PLAN.md`, and partial coverage is declared rather than implied. Sixteen pinned; scenarios 3 and 15
+open with the reason; 7 and 17 partial with the missing case named.
+
+**Per-role graduation records, and the column that is empty.** `RoleQualificationRecordTests` carries
+one row per executable role across the nine proofs `PLAN.md` asks for. Readiness already answers "can
+this run now"; graduation asks "what has been proved", and a role can be Ready with no fault proof at
+all.
+
+The finding is that **no role has a cancellation-and-timeout proof** — twelve of twelve cells empty —
+and it arrived by the ledger catching a bad citation rather than by inspection. The first draft filled
+six of those cells with `ModelCallCancellationTests` and `ProcessTreeCancellationTests`. Both are real
+and prove real things: the model call observes cancellation, the process-launching sites kill their
+trees. Neither says anything about a ROLE. A citation true about the system and false about the row is
+exactly how a graduation record fills up while nothing gets proved, and what caught it was the weakest
+check in the file — does the cited file so much as mention this role.
+
+That gap is not evenly distributed with the risk. v0.3.8.57 found five separate sites that abandoned a
+running process on timeout, all in the area this column is emptiest about.
+
+**Live qualification: NEVER RUN, and now said so.** `docs/QUALIFICATION.md` separates the
+merge-blocking deterministic suite from the live run and records that no live result exists for any
+provider. Everything this repository proves was proved against a scripted model whose answers were
+authored to fit the runtime; it cannot say what happens when a real one mismatches a fence, ignores a
+declared format or takes ninety seconds. The document specifies the coverage a run must have and the
+fields it must record — provider and model version, tokens, cost, wall time, failure class, which
+trigger reached each role, artifacts produced and consumed — and provenance now carries most of that
+per artifact, so a live mission should be reconstructable from the store rather than from notes.
+
+This is the largest single gap in the project's evidence. It is stated rather than left to be
+inferred, because a gap written down gets scheduled and a gap merely absent gets mistaken for
+finished work.
+
+**Stop means stop.** Five git sites did `WaitForExit(60_000); return (process.ExitCode == 0, ...)`.
+The wait returns false on timeout and execution carried on, so git and its children kept running — and
+`ExitCode` THROWS on a live process, so the timeout surfaced as an exception from the nearest catch.
+That is why it went unnoticed: it looked like an ordinary failure while the process was still going.
+All five kill the tree and report a timeout, and a sweep covers all twelve bounded-wait sites.
+
 ## v0.3.8.56 - the sixth field round: the dashboard becomes a board the operator owns
 
 **Every widget lives at (a)x(b) cells — where the operator put it.** The dashboard is a strict

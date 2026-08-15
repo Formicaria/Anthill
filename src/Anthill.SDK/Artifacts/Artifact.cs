@@ -71,6 +71,18 @@ public sealed record Artifact
     public required string Payload { get; init; }
 
     /// <summary>
+    /// How it came to exist — build, environment, runtime, provider, model, tool. v0.3.8.57.
+    ///
+    /// NOT part of <see cref="ContentHash"/>, deliberately. The hash exists to detect a changed
+    /// PAYLOAD; folding origin into it would make two identical outputs produced on two machines
+    /// hash differently, which breaks the deduplication question the hash is asked.
+    ///
+    /// Null on every artifact written before this release, and on any producer that cannot state
+    /// its origin. Absent provenance is honest; invented provenance is not.
+    /// </summary>
+    public ArtifactProvenance? Provenance { get; init; }
+
+    /// <summary>
     /// Build one, hashing the payload. The only supported way to make an artifact: a constructor
     /// that let a caller supply <see cref="ContentHash"/> would let it supply the wrong one, and a
     /// hash that can be wrong detects nothing.
@@ -84,7 +96,8 @@ public sealed record Artifact
         string? workspaceId = null,
         IReadOnlyList<string>? sourceArtifactIds = null,
         ArtifactVisibility visibility = ArtifactVisibility.Colony,
-        int schemaVersion = 1) => new()
+        int schemaVersion = 1,
+        ArtifactProvenance? provenance = null) => new()
         {
             Id = $"art_{Guid.NewGuid():N}",
             Schema = schema,
@@ -97,6 +110,7 @@ public sealed record Artifact
             ContentHash = HashOf(payload),
             Visibility = visibility,
             Payload = payload,
+            Provenance = provenance,
         };
 
     /// <summary>SHA-256, lowercase hex, prefixed so a bare hash is never mistaken for an id.</summary>

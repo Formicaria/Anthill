@@ -50,6 +50,10 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             : ArtifactVisibility.Secret,
         Payload = row.GetValueOrDefault("payload")?.ToString() ?? "",
         CreatedAt = ParseUtc(row.GetValueOrDefault("created_at")),
+        // Null for every artifact written before v0.3.8.57, and for any producer that could not
+        // state its origin. FromJson returns null on unparseable text rather than throwing: an
+        // artifact whose provenance cannot be read is still an artifact a worker may need.
+        Provenance = ArtifactProvenance.FromJson(row.GetValueOrDefault("provenance_json")?.ToString()),
     };
 
     private static Evidence ToEvidence(Dictionary<string, object?> row) => new()
@@ -63,6 +67,11 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
         MissionId = row.GetValueOrDefault("mission_id")?.ToString() ?? "",
         TaskId = row.GetValueOrDefault("task_id")?.ToString(),
         CreatedAt = ParseUtc(row.GetValueOrDefault("created_at")),
+        // v0.3.8.57 — which tree this check judged. NULL on a legacy row, which reads as "not about
+        // a materialized revision" rather than as a match; see Evidence.IdentifiesARevision.
+        RevisionId = row.GetValueOrDefault("revision_id")?.ToString(),
+        PatchSetHash = row.GetValueOrDefault("patch_set_hash")?.ToString(),
+        TreeHash = row.GetValueOrDefault("tree_hash")?.ToString(),
     };
 
     private static DateTime ParseUtc(object? value) =>
@@ -75,19 +84,60 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
     {
         ArgumentNullException.ThrowIfNull(artifact);
 
+        // v0.3.8.57 — the WRITE boundary. Until now any string could be stored under any schema
+        // name, so the store could prove a payload had not changed and nothing about whether it
+        // was ever the shape its label claimed.
+        //
+        // REPORTS, DOES NOT REFUSE. A producer with an off-shape payload has made a mistake worth
+        // surfacing; dropping the row would trade a wrong artifact for a missing one, and a missing
+        // one is the harder failure to notice — the consumer just proceeds with less. The read
+        // boundary in ArtifactContext tells the worker what it is actually holding.
+        var conformance = ArtifactSchemaCheck.Validate(artifact.Schema, artifact.Payload);
+        if (!conformance.Conforms)
+        {
+            // The REPORT may never fail the WRITE. `events` carries a foreign key to missions(id)
+            // and `artifacts` does not, so an artifact stored against a mission with no row — which
+            // several call sites and tests legitimately do — made LogEvent throw and took the Put
+            // down with it. A diagnostic that can break the operation it is describing is worse than
+            // no diagnostic: it converts "this payload is the wrong shape" into "the artifact was
+            // never stored", which is the harder failure and the wrong one.
+            try
+            {
+                LogEvent(artifact.MissionId, "artifact_schema_violation",
+                    $"{artifact.ProducerRole} stored an artifact that does not match its schema: {conformance.Reason}",
+                    artifact.TaskId, artifact.ProducerRole,
+                    new()
+                    {
+                        ["artifact_id"] = artifact.Id,
+                        ["schema"] = artifact.Schema,
+                        ["conformance"] = conformance.Status.ToString(),
+                        ["reason"] = conformance.Reason,
+                    });
+            }
+            catch (Exception error)
+            {
+                // Still SAID, on the channel that cannot fail. Swallowing it entirely would make the
+                // check silent exactly when the store is unhealthy.
+                Console.Error.WriteLine(
+                    $"[artifact-schema] {artifact.Schema} from {artifact.ProducerRole}: {conformance.Reason} "
+                  + $"(could not record the event: {error.Message})");
+            }
+        }
+
         lock (_writeLock)
         {
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR IGNORE INTO artifacts
                     (id, schema, schema_version, producer_role, mission_id, task_id, workspace_id,
-                     source_ids_json, content_hash, visibility, payload, created_at)
-                  VALUES (@id, @schema, @sv, @role, @mission, @task, @ws, @sources, @hash, @vis, @payload, @at)",
+                     source_ids_json, content_hash, visibility, payload, provenance_json, created_at)
+                  VALUES (@id, @schema, @sv, @role, @mission, @task, @ws, @sources, @hash, @vis, @payload, @prov, @at)",
                 ("@id", artifact.Id), ("@schema", artifact.Schema), ("@sv", artifact.SchemaVersion),
                 ("@role", artifact.ProducerRole), ("@mission", artifact.MissionId),
                 ("@task", artifact.TaskId), ("@ws", artifact.WorkspaceId),
                 ("@sources", JsonList(artifact.SourceArtifactIds)), ("@hash", artifact.ContentHash),
                 ("@vis", artifact.Visibility.ToString()), ("@payload", artifact.Payload),
+                ("@prov", artifact.Provenance?.ToJson()),
                 ("@at", artifact.CreatedAt.ToIso()));
         }
         return artifact.Id;
@@ -134,6 +184,60 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             : Query("SELECT * FROM artifacts WHERE source_ids_json LIKE @needle ORDER BY created_at DESC",
                     ("@needle", $"%\"{artifactId}\"%")).Select(ToArtifact).ToList();
 
+    // ---- the consumption ledger (v0.3.8.57) -------------------------------
+
+    private static ArtifactConsumption ToConsumption(Dictionary<string, object?> row) => new()
+    {
+        ArtifactId = row.GetValueOrDefault("artifact_id")?.ToString() ?? "",
+        ContentHash = row.GetValueOrDefault("content_hash")?.ToString() ?? "",
+        Schema = row.GetValueOrDefault("schema")?.ToString() ?? "",
+        MissionId = row.GetValueOrDefault("mission_id")?.ToString() ?? "",
+        ConsumerRole = row.GetValueOrDefault("consumer_role")?.ToString() ?? "",
+        // Stored as '' rather than NULL so the composite primary key works — SQLite treats NULLs in a
+        // key as distinct, which would defeat the whole idempotency. Read back as null, because "no
+        // task" is what it means.
+        ConsumerTaskId = row.GetValueOrDefault("consumer_task_id")?.ToString() is { Length: > 0 } t ? t : null,
+        ReadCount = (int)AsLong(row.GetValueOrDefault("read_count")),
+        FirstReadAt = ParseUtc(row.GetValueOrDefault("first_read_at")),
+        LastReadAt = ParseUtc(row.GetValueOrDefault("last_read_at")),
+    };
+
+    void IArtifactStore.RecordConsumption(ArtifactConsumption consumption)
+    {
+        ArgumentNullException.ThrowIfNull(consumption);
+        if (string.IsNullOrWhiteSpace(consumption.ArtifactId) || string.IsNullOrWhiteSpace(consumption.ConsumerRole))
+            return;
+
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT INTO artifact_consumptions
+                    (artifact_id, consumer_role, consumer_task_id, content_hash, schema, mission_id,
+                     read_count, first_read_at, last_read_at)
+                  VALUES (@aid, @role, @task, @hash, @schema, @mission, 1, @at, @at)
+                  ON CONFLICT (artifact_id, consumer_role, consumer_task_id) DO UPDATE SET
+                    read_count = read_count + 1,
+                    last_read_at = @at",
+                ("@aid", consumption.ArtifactId), ("@role", consumption.ConsumerRole),
+                ("@task", consumption.ConsumerTaskId ?? ""), ("@hash", consumption.ContentHash),
+                ("@schema", consumption.Schema), ("@mission", consumption.MissionId),
+                ("@at", AnthillTime.NowUtc().ToIso()));
+        }
+    }
+
+    IReadOnlyList<ArtifactConsumption> IArtifactStore.ConsumptionsOf(string artifactId) =>
+        string.IsNullOrWhiteSpace(artifactId)
+            ? Array.Empty<ArtifactConsumption>()
+            : Query("SELECT * FROM artifact_consumptions WHERE artifact_id = @a ORDER BY last_read_at DESC",
+                    ("@a", artifactId)).Select(ToConsumption).ToList();
+
+    IReadOnlyList<ArtifactConsumption> IArtifactStore.ConsumptionsForMission(string missionId, int limit) =>
+        string.IsNullOrWhiteSpace(missionId)
+            ? Array.Empty<ArtifactConsumption>()
+            : Query("SELECT * FROM artifact_consumptions WHERE mission_id = @m ORDER BY last_read_at DESC LIMIT @l",
+                    ("@m", missionId), ("@l", limit)).Select(ToConsumption).ToList();
+
     // ---- IEvidenceStore ---------------------------------------------------
 
     string IEvidenceStore.Put(Evidence evidence)
@@ -145,13 +249,20 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR IGNORE INTO evidence
-                    (id, kind, deterministic, passed, artifact_ids_json, detail, mission_id, task_id, created_at)
-                  VALUES (@id, @kind, @det, @passed, @arts, @detail, @mission, @task, @at)",
+                    (id, kind, deterministic, passed, artifact_ids_json, detail, mission_id, task_id, created_at,
+                     revision_id, patch_set_hash, tree_hash)
+                  VALUES (@id, @kind, @det, @passed, @arts, @detail, @mission, @task, @at,
+                          @rev, @psh, @tree)",
                 ("@id", evidence.Id), ("@kind", evidence.Kind),
                 ("@det", evidence.Deterministic ? 1 : 0), ("@passed", evidence.Passed ? 1 : 0),
                 ("@arts", JsonList(evidence.ArtifactIds)), ("@detail", evidence.Detail),
                 ("@mission", evidence.MissionId), ("@task", evidence.TaskId),
-                ("@at", evidence.CreatedAt.ToIso()));
+                ("@at", evidence.CreatedAt.ToIso()),
+                // v0.3.8.57 — persisted, or the identity would exist only in memory and the whole
+                // point (querying "does this evidence judge THIS revision") would be unreachable.
+                ("@rev", (object?)evidence.RevisionId ?? DBNull.Value),
+                ("@psh", (object?)evidence.PatchSetHash ?? DBNull.Value),
+                ("@tree", (object?)evidence.TreeHash ?? DBNull.Value));
         }
         return evidence.Id;
     }

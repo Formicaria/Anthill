@@ -187,6 +187,38 @@ provenance queryable from the colony UI and the mission record.
 documented control signal. The runtime can reconstruct the complete producer-to-consumer graph for a
 mission. Invalid, stale, tampered or missing artifacts fail with a canonical reason.
 
+### Where Phase 3 actually stands, at v0.3.8.57
+
+Most of it shipped. What did NOT is written down here rather than left to be rediscovered.
+
+**Done.** Tasks declare input artifact IDs (`Task.InputArtifactIds`, persisted and carried through
+`DeepCopy`). The bounded context compiler reaches every model-calling role that should have one, with
+a ledger recording the decision for the ones that should not. Payload shapes are validated at the
+write AND read boundaries against shapes read off the real producers. Consumption is recorded per
+role and task with the hash AS READ. Provenance carries build, environment, runtime, provider, model,
+tool, call counts and the execution's own limitations. `MissionReconstruction` rebuilds a mission's
+producer-to-consumer graph from artifact IDs and names the specific ways a replay can be wrong.
+
+**Not done, and why.**
+
+- **`assumptions` and `retention`.** Nothing in the colony produces either. A field for assumptions
+  would be filled by whoever remembers, which is nobody, and would then read as "this artifact
+  assumed nothing". A retention label no pruner reads is a compliance claim the system does not keep.
+  Both need a producer before they need a field.
+- **Four of the listed type names do not exist**, and two of those are deliberate. `context_brief`
+  shipped as `research_brief`; `diagnosis` and `repair_plan` shipped as `failure_diagnosis` and
+  `repair_recommendation`, which is what the medic already emitted — the vocabulary was corrected to
+  the producer rather than the producer renamed to the vocabulary. `objective_spec`, `build_report`
+  and `mission_summary` have no producer; `repository_map`, `change_plan` and `operator_summary` are
+  named by ADR-004 and likewise unproduced, and are recorded in `ArtifactSchemaCheck` as shapes
+  nobody has chosen yet.
+- **The builder's output is still prose, deliberately.** Its prompt asks for a practical final
+  response in 200-400 words with no sections. Typing that by parsing would be the relabelling this
+  phase exists to prevent; structuring it honestly means changing what the builder is ASKED to
+  produce, which is a behaviour change to the operator-facing answer and belongs in its own release.
+- **Provenance is not yet queryable from the console.** It is stored, migrated and read back; no UI
+  surfaces it.
+
 ---
 
 ## Phase 4 — structurally enforced workflows
@@ -200,6 +232,21 @@ ui_cartographer input before Coder. Any failed test/build/security stage require
 artifact. **Any repaired patch requires a fresh test run — old evidence cannot verify a new artifact
 hash.** Scribe may summarize only after a terminal outcome exists. Archivist may promote memory only
 after verification and eligibility checks.
+
+### Where Phase 4 stands, at v0.3.8.57
+
+Enforced: tester and soldier are policy-inserted on every state-changing patch set; the verifier's
+contract now DECLARES the insertion the runtime had guaranteed since v0.3.8.41, and insertion fails
+closed; a UI change cannot dispatch to the coder without a hash-intact, schema-conforming `ui_map`;
+the failure boundary produces a `failure_context` and the repair bound reads its signature rather than
+a substring of prose; a repaired generation cannot inherit the previous generation's evidence, at the
+task level and now at the evidence level; the scribe cannot write a `verified_change_summary` for work
+nothing verified; the archivist runs after the persisted canonical evaluation, once per evaluation.
+
+Open: the scribe may still run mid-mission for task types that assert nothing about verification, which
+is deliberate — "summarize only after a terminal outcome" would block legitimate documentation work,
+and the invariant that matters is that it cannot CERTIFY. Whether that reading is the right one is
+worth revisiting with a real scenario rather than settling from the sentence.
 
 **The required repair loop.**
 

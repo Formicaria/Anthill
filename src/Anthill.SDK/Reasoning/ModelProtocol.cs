@@ -132,5 +132,10 @@ public sealed record ModelResponse
     public static ModelResponse FromCallResult(ModelCallResult result, string? provider = null, string? model = null) =>
         new() { Status = result.Status, Content = result.Content, Provider = provider, Model = model };
 
-    public ModelCallResult ToCallResult() => new(Status, Content);
+    /// <remarks>
+    /// v0.3.8.57 — carries Provider and Model. This conversion USED to drop them, which is why an
+    /// artifact could not say which model produced it: the router resolved a route, the response
+    /// recorded it, and the narrowing to ModelCallResult threw it away one line before the ant.
+    /// </remarks>
+    public ModelCallResult ToCallResult() => new(Status, Content) { Provider = Provider, Model = Model };
 }
