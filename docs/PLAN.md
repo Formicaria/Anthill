@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.62**.
+Shipping release: **v0.3.8.63**.
 
 ---
 
@@ -96,7 +96,7 @@ bytes.
 2. ✅ **S2** — shell tool confinement: disable, or fix *(v0.3.8.59 — arguments contained; `dotnet` residual recorded)*
 3. ✅ **S3** — evidence fail-CLOSED *(v0.3.8.61 — verifier: `verification_unavailable`; auto-apply: five refusal arms; see below)*
 4. ✅ **S4** — transactional patch application and durable recovery *(v0.3.8.62 — `ApplyTransaction`; see below)*
-5. **S5** — Secret-artifact filtering
+5. ✅ **S5** — Secret-artifact filtering *(v0.3.8.63 — `IsModelReadable` allowlist; WITHHELD reporting; see below)*
 6. **S6** — UI gate *(open)*; remaining subprocess handling ✅ v0.3.8.59
 7. **S7** — runtime and fault-injection tests land BEFORE auto-apply is re-enabled
 
@@ -285,6 +285,15 @@ omitted — a silent drop is how a role reasons confidently about a premise it n
 the check again at every direct consumer.
 
 **Tests.** Prioritized, declared, and corrupt-visibility Secret artifacts.
+
+**Closed v0.3.8.63.** `Artifact.IsModelReadable` is the one definition, and it is an ALLOWLIST
+(Colony or Operator) so an out-of-range enum value fails closed — the coercion of malformed
+visibility TO Secret finally means something. The context compiler removes Secret payloads from
+mission-wide blocks (unadvertised) and reports declared Secret inputs as WITHHELD by id and
+schema, never by content; the soldier's direct read applies the same check and names what it
+withheld. `SecretArtifactTests` covers the review's three cases. Residual: the enum doc also says
+"never in an API response" — the API surfaces return artifact METADATA through their own routes
+and were not part of the four defect sites; a sweep of those routes belongs with S6's UI work.
 
 #### S6 — UI-map gate fails open, and `{}` is a valid map (P1)
 
