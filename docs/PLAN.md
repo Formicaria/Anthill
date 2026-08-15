@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.64**.
+Shipping release: **v0.3.8.65**.
 
 ---
 
@@ -346,6 +346,13 @@ continuously while this side drains stdout, each waits for the other, and neithe
 never exits are not written. `ShellConfinementTests` pins the ORDER (no synchronous read between
 start and wait), which is the defect's shape rather than a proof that the fix survives a real hang.
 
+**Closed v0.3.8.65.** `SubprocessHangTests` runs the real things: a git that genuinely never exits
+(a pre-commit hook that sleeps, against a shortened test-seam timeout) proves the timeout FIRES
+and the call returns bounded; a hook that writes ~130KB to BOTH streams proves the sequential-read
+deadlock is gone; and a `find` over four thousand files, through the production ShellCommandTool,
+proves the flood drains concurrently and the output cap holds. POSIX-only by early return — the
+children are shell scripts, and CI and both operator gates run them.
+
 #### S9 — The colony asserts its roles through a channel that carries no authority (P0-adjacent) ✅ v0.3.8.59
 
 **Found in the field, v0.3.8.59, and it is the release's own defect class one layer out.** With every
@@ -438,9 +445,28 @@ generated, so nothing downstream would ever have flagged it.
 are declared as having none and fall back to folding. That is recorded per agent rather than assumed
 uniform, but it means the fix is partial for four of five agents until each flag is confirmed.
 
-#### S8 — Re-enable
+#### S8 — Re-enable ✅ decision recorded v0.3.8.65
 
 Fault-injection tests land before auto-apply is switched back on. §2 resumes after that.
+
+**The precondition is met.** Every rung of this ladder is closed: confinement (S1/S2, .59),
+evidence failing closed (S3, .61), transactional apply with durable recovery (S4, .62), secret
+filtering (S5, .63), the UI gate (S6, .64), subprocess hangs proven survivable behaviourally
+(S7, .59 + .65), and the authority channel (S9, .59). The fault-injection suites the reviewer
+required exist and run on every gate: `ApplyTransactionTests` (mid-write faults, crash recovery,
+concurrent edits, vanished backups — byte-identical restores or durable halts),
+`EvidenceFailsClosedTests` (throwing stores), `SubprocessHangTests` (real hangs and floods).
+
+**Re-enabling is an OPERATOR act, and this is its checklist.** `autonomy_autoapply_enabled` stays
+off in the shipped defaults; an operator turning it on should verify, in order: (1) this section's
+ladder shows every rung ✅ in the running version; (2) no `ROLLBACK_FAILED` marker exists under the
+workspace's `.anthill/apply-journal/` — the runner refuses while one does; (3) both write gates
+(`patch_application_enabled`, `file_writing_enabled`) are deliberate choices, not leftovers;
+(4) `autonomy_autoapply_verify_cmd` names a check the deployment can actually run, or the
+break-glass keep-without-verify is a knowing, logged choice; (5) the auto-apply path allowlist
+names only trees whose partial states the operator could tolerate diagnosing. The colony enforces
+(2) itself and logs the rest; the list exists so the decision is made once, with eyes open, rather
+than discovered in fragments during an incident.
 
 ## 2. The plan, in order
 

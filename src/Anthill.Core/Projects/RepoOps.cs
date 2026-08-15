@@ -22,7 +22,13 @@ public static class RepoOps
     public sealed record RepoState(bool IsRepo, string? Branch, int DirtyCount,
         IReadOnlyList<(string Status, string Path)> Dirty, string? LastCommit, string? Error);
 
-    private const int TimeoutMs = 8000;
+    /// <summary>
+    /// v0.3.8.65 (S7 completion): mutable internal rather than const, as a TEST SEAM only — the
+    /// behavioural hang test shortens it so a genuinely never-exiting git (a hook that sleeps)
+    /// proves the timeout actually fires, in milliseconds rather than eight seconds. Production
+    /// never writes it.
+    /// </summary>
+    internal static int TimeoutMs = 8000;
 
     /// <summary>
     /// Read what a finished process wrote, without hanging on an inherited pipe. A grandchild that
