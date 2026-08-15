@@ -118,10 +118,14 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.SourceSet] =
                 AsObject("WebResearchAnt", "sources"),
 
-            // No required keys, deliberately: UiCartographerAnt builds the map from what it found,
-            // so demanding a key would make an honest map of a repository without routes invalid.
+            // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
+            // an existence check wearing a schema check's name. The old comment worried an honest
+            // map of a route-less repository would be invalid — but the cartographer has always
+            // emitted these three keys unconditionally, as EMPTY ARRAYS when nothing was found.
+            // An honest empty map says "routes: []"; only a fabricated or truncated one says
+            // nothing at all.
             [ArtifactSchemas.UiMap] =
-                AsObject("UiCartographerAnt"),
+                AsObject("UiCartographerAnt", "files_examined", "routes", "api_calls"),
 
             // FailureContext.FromJson owns the field-level contract; this only asserts it is an
             // object at all. Two components enforcing the same field list is how they come to

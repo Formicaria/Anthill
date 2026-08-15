@@ -87,7 +87,7 @@ public class ArtifactSchemaConformanceTests : IDisposable
     [InlineData(ArtifactSchemas.WorkspaceSnapshot, """{"patch_set_id":"ps-1","applied_tree_hash":"sha256:aa"}""")]
     [InlineData(ArtifactSchemas.FileSet, """{"files":["a.cs"],"read_ok":1,"read_failed":0}""")]
     [InlineData(ArtifactSchemas.SourceSet, """{"query":"q","sources":[]}""")]
-    [InlineData(ArtifactSchemas.UiMap, """{"routes":[],"api_calls":[]}""")]
+    [InlineData(ArtifactSchemas.UiMap, """{"routes":[],"api_calls":[],"files_examined":[]}""")]
     [InlineData(ArtifactSchemas.FailureContext, """{"failure_class":"Timeout"}""")]
     [InlineData(ArtifactSchemas.MemoryCandidate, """[{"memory_class":"procedural"}]""")]
     // TesterAnt writes KEY: VALUE lines. Declaring this JSON would fail every real test report.
