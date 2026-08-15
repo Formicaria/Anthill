@@ -228,11 +228,7 @@ public sealed class ResearcherAnt : BaseAnt
             return TextResult(Name, offline);
         }
 
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: researcher | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-Summarize only the context that is relevant to the mission below.
+        var prompt = $@"Summarize only the context that is relevant to the mission below.
 Do not repeat the mission goal back to the user.
 Produce a tight context brief for downstream ants.
 Aim for 150-300 words unless more is required.
@@ -246,7 +242,8 @@ Return format:
 - Pheromone Guidance:
 - Research Need:
 ";
-        var call = _router.GenerateTyped("researcher", prompt, mission.Id, task.Id, Name);
+        var call = _router.GenerateTyped("researcher", prompt, mission.Id, task.Id, Name,
+            system: AnthillRuntime.RoleSystemPrompt("researcher", mission.Goal));
         if (call.Status == ModelCallOutcome.Empty)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Researcher: routed model returned an empty response.");
@@ -502,18 +499,15 @@ public sealed class WebResearchAnt : BaseAnt
                        $"Quality: confidence={quality.GetValueOrDefault("confidence_score")} label={quality.GetValueOrDefault("confidence_label")} notes={quality.GetValueOrDefault("quality_notes")}";
         if (_router is null || !AnthillRuntime.UseOllama)
             return TextUtil.Truncate(string.IsNullOrEmpty(snippet) ? title : snippet, AnthillRuntime.MaxSourceSummaryChars);
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: web | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-Summarize why this source may be relevant to the mission in 1-3 sentences.
+        var prompt = $@"Summarize why this source may be relevant to the mission in 1-3 sentences.
 Include any obvious freshness or authority caveat.
 Do not invent details beyond the title/snippet/url/quality fields.
 
 Source:
 {baseText}
 ";
-        var summary = _router.GenerateTyped("web", prompt, antName: "web");
+        var summary = _router.GenerateTyped("web", prompt, antName: "web",
+            system: AnthillRuntime.RoleSystemPrompt("web", goal));
         var response = summary.Content;
         return !summary.Ok
             ? TextUtil.Truncate(string.IsNullOrEmpty(snippet) ? title : snippet, AnthillRuntime.MaxSourceSummaryChars)
@@ -737,7 +731,8 @@ public sealed class CoderAnt : BaseAnt
             if (sandboxed is not null) return ClassifyPatchJson(sandboxed);
         }
 
-        var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name);
+        var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name,
+            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal));
         if (!call.Ok)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
@@ -789,7 +784,8 @@ public sealed class CoderAnt : BaseAnt
                 // v3.2.0: one status decides both branches. Before, two independent prefix tests
                 // could disagree — an empty generation passed the first (so it was cached as the
                 // last good proposal) and passed the second (so it was handed on as a patch set).
-                var call = _router!.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name);
+                var call = _router!.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name,
+                    system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal));
                 if (call.Ok) lastProposalJson = call.Content;
                 return call.Ok
                     ? call.Content
@@ -814,11 +810,7 @@ public sealed class CoderAnt : BaseAnt
 
     private static string BuildPrompt(Task task, Mission mission, string codeContext, string feedback)
     {
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: coder | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-You are Coder Ant inside ANTHILL v{AnthillRuntime.Version}.
+        var prompt = $@"You are Coder Ant inside ANTHILL v{AnthillRuntime.Version}.
 
 Your role:
 Create structured patch proposals as JSON only.
@@ -924,11 +916,7 @@ public sealed class BuilderAnt : BaseAnt
         // Configured-offline: the static response IS the configured behaviour — plain success.
         if (!_useOllama || _router is null) return TextResult(Name, FallbackResponse(task, mission, previousContext));
 
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: builder | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-You are Builder Ant inside ANTHILL v{AnthillRuntime.Version}.
+        var prompt = $@"You are Builder Ant inside ANTHILL v{AnthillRuntime.Version}.
 
 Mission goal:
 {mission.Goal}
@@ -952,7 +940,8 @@ Rules:
 - Explain that approved patches can be applied with /apply <approval_id> only if config write gates are enabled.
 - Mention that ANTHILL supports dependency-aware parallel execution, FTS memory search, and role-based model routing.
 ";
-        var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name);
+        var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name,
+            system: AnthillRuntime.RoleSystemPrompt("builder", mission.Goal));
         if (call.Status == ModelCallOutcome.Empty)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Builder: routed model returned an empty response.");
@@ -1120,11 +1109,7 @@ public sealed class VerifierAnt : BaseAnt
             // Empty falls back to the mission-wide block, which is what every task received before.
             declaredInputIds: task.InputArtifactIds,
             consumerTaskId: task.Id);
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: verifier | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-You are Verifier Ant inside ANTHILL v{AnthillRuntime.Version}.
+        var prompt = $@"You are Verifier Ant inside ANTHILL v{AnthillRuntime.Version}.
 
 Mission goal:
 {mission.Goal}
@@ -1148,7 +1133,8 @@ Rules:
 - If /apply was not executed, do not claim files were modified.
 - If write gates are disabled, confirm patch application cannot run.
 ";
-        var verdict = _router.GenerateTyped("verifier", prompt, mission.Id, task.Id, Name);
+        var verdict = _router.GenerateTyped("verifier", prompt, mission.Id, task.Id, Name,
+            system: AnthillRuntime.RoleSystemPrompt("verifier", mission.Goal));
         return verdict.Ok
             ? verdict.Content
             : $"{staticCheck}\n\nRouted verifier model unavailable ({verdict.Status.Name()}):\n{verdict.Content}";

@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.58**.
+Shipping release: **v0.3.8.59**.
 
 ---
 
@@ -92,8 +92,8 @@ every later fix is verified by reading and writing files, and evidence comes bef
 apply because a correct transaction around an unverified patch is a reliable way to ship the wrong
 bytes.
 
-1. **S1** — Files-pane traversal and symlink-safe confinement
-2. **S2** — shell tool confinement: disable, or fix
+1. ✅ **S1** — Files-pane traversal and symlink-safe confinement *(v0.3.8.59 — one resolver, `PathContainment`; TOCTOU remains, see below)*
+2. ✅ **S2** — shell tool confinement: disable, or fix *(v0.3.8.59 — arguments contained; `dotnet` residual recorded)*
 3. **S3** — evidence fail-CLOSED
 4. **S4** — transactional patch application and durable recovery
 5. **S5** — Secret-artifact filtering
@@ -102,7 +102,7 @@ bytes.
 
 ---
 
-#### S1 — Filesystem confinement (P0)
+#### S1 — Filesystem confinement (P0) ✅ v0.3.8.59
 
 Broken in two independent ways, either of which is sufficient.
 
@@ -120,20 +120,71 @@ Broken in two independent ways, either of which is sufficient.
   unrestricted absolute paths, and setting a working directory does not sandbox a process:
   `ShellAndWebTools.cs` L31–56.
 
-**Fix.** One hardened resolver, used by every filesystem route: Files pane, tools, patch apply and
-revert, indexing, sandbox harvest, verification. Require exact-root equality or root-plus-separator.
-Resolve or reject every symlink and reparse-point component; for a file being created, validate the
-nearest existing parent. Close the validate-then-open TOCTOU, ideally with handle-relative /
-no-follow APIs.
+**Fixed in v0.3.8.59.** `Anthill.Core.Security.PathContainment` is the one resolver. It requires
+exact-root equality or root-plus-separator, and it walks the path from the volume root resolving
+EVERY component through its own chain of links, bounded at 40 hops so a cycle is a refusal rather
+than a hang. Components that do not exist cannot be links and are appended literally, which is what
+lets a file be created at a path whose parent is real. `WorkspacePathGuard.ResolveSafePath` delegates
+to it, so all twenty call sites behind it are covered at once.
 
-**Tests.** Linux symlinks, Windows junctions, sibling-prefix traversal, destination-parent symlinks,
-blocked-path aliases.
+**The review named two sites; there were six.** The sweep the fix prompted found the identical
+missing-separator comparison in `PatchVerifyRunner`, `SandboxWorkspace.Harvest` and
+`Verification.Verify`, and a separator-correct but link-blind one in `PatchSetMaterializer`. The
+`Verification` copy was the worst: it hashes a required artifact as EVIDENCE, so a link or a
+sibling-prefixed path meant a hash recorded as proof of a file inside the workspace could be of a
+file outside it. `PathContainmentTests` now carries a detector keyed on the ROOT side of the
+comparison rather than the variable name — the first draft keyed on the variable and found only the
+two already known, which is what a detector written around the examples in hand always does.
 
-#### S2 — Shell tool confinement (P0, part of S1's surface)
+**`RepositoryIndex`'s comment is now true.** It claimed a symlink out of the workspace "resolves
+outside the root and is refused here". It never was. Deferring to the guard was the right call for
+the right reason; the guard just did not do the thing the comment credited it with.
 
-Called out separately by the reviewer because it has its own remedy: the tool can be disabled
-outright while S1 lands. A working directory is not a sandbox, and the allowlisted commands take
-absolute paths.
+**STILL OPEN — the TOCTOU race.** This is resolution-time containment. A component swapped for a
+link BETWEEN the check and the caller's open is not closed, and cannot be with the APIs .NET exposes
+portably — it needs handle-relative, no-follow syscalls (`openat` with `O_NOFOLLOW`). The window is
+narrow and requires an attacker already able to write inside the workspace. Recorded here rather
+than described in the code as handled.
+
+**Tests.** `PathContainmentTests`: sibling-prefix traversal, absolute and relative link targets,
+intermediate-component links, links pointing back inside, a root that is itself a link, link cycles,
+non-existent leaves inside and outside, and the guard enforcing the same boundary. The link tests
+probe for the privilege to create a link and skip without it — Windows needs Developer Mode or
+elevation — so on such a machine the link half is unverified and the sibling half still runs. Linux
+CI covers both. Windows junctions are covered by the same `LinkTarget` path .NET uses for symlinks
+but are not separately exercised; that gap is real and small.
+
+#### S2 — Shell tool confinement (P0) ✅ v0.3.8.59
+
+Called out separately by the reviewer because it had its own remedy — the tool can be disabled
+outright — and because the defect is a category error rather than a bug. `WorkingDirectory` decides
+where RELATIVE paths resolve and confines nothing; `cat /etc/passwd`, `grep -r secret /` and
+`find / -name '*.key'` ran exactly as written. The nine-command allowlist says WHICH PROGRAM may
+run and nothing about what it is pointed at, and it was being asked to do a sandbox's job.
+
+**Fixed in v0.3.8.59.** Every path-like argument resolves through `PathContainment` before a process
+starts. An argument counts as a path if it is rooted, contains a separator, or contains `..`;
+`--flag=value` is split so a path on the right of the equals is checked rather than skipped. Bare
+tokens are left alone, so `grep -r secret .` still searches for the word. The command now runs in
+`EffectiveRoot` rather than `Root` — inside a mission the workspace is a disposable tree, and the
+old value pointed every shell command at the live checkout the mission exists to stay out of.
+
+**Beyond the review:** `find -exec`, `-execdir`, `-ok`, `-okdir`, `-delete` and the `-fprintf`
+family are refused. `find . -exec rm {} ;` passes every containment check because the path IS the
+workspace — the flag is what runs the other program, which is the same question the review asked
+about paths applied to arguments.
+
+**STILL OPEN — `dotnet` is arbitrary code execution.** It is on the allowlist deliberately, for
+build and test, and `dotnet run` executes whatever the workspace contains. Argument containment
+cannot address that; it is governed by `shell_tool_enabled`, which is off by default. A real sandbox
+(container, seccomp profile, job object) is the correct answer and is not reachable in-process across
+the three platforms the colony supports.
+
+**Tests.** `ShellConfinementTests` — absolute paths outside the root for each command the review
+named, relative traversal, paths hidden in flag values, execute/delete flags, bare tokens that must
+NOT be treated as paths, and paths inside the workspace that must still work. The gates fixture
+opens the shell deliberately: with it closed every one of these would pass, refused by the enable
+flag before containment was consulted, which is the adjacent-question defect in its purest form.
 
 #### S3 — Verification and evidence fail OPEN (P0)
 
@@ -233,7 +284,78 @@ prevents the timeout being reached — the guard was added upstream of the thing
 
 **Fix.** Concurrent asynchronous draining, bounded output, cancellation, process-tree termination.
 
-**Tests.** A child that writes heavily to BOTH streams, and one that never exits.
+**Half done in v0.3.8.59, unavoidably.** `ShellCommandTool`'s reads and its timeout are the same
+method S2 had to change, so leaving the ordering broken there would have meant shipping a security
+fix into a method that still hangs. Both pipes now drain concurrently, the wait bounds the whole
+thing, the kill takes the process tree, and output is capped at 20,000 characters — `find` over a
+large tree previously returned everything, into a ToolResult, into an artifact, into a prompt.
+
+**`RepoOps.Git` is UNCHANGED and still has the defect** (L27–51). It is the other half of S7 and it
+is not fixed here: v0.3.8.57 gave five git sites a process-tree kill on timeout without fixing the
+read that prevents the timeout being reached, so the guard sits downstream of the thing that hangs.
+
+**Tests.** A child that writes heavily to BOTH streams, and one that never exits — neither written
+yet. `ShellConfinementTests` pins the ORDER (no synchronous read between start and wait), which is
+the defect's shape but not a behavioural proof.
+
+#### S9 — The colony asserts its roles through a channel that carries no authority (P0-adjacent) ✅ v0.3.8.59
+
+**Found in the field, v0.3.8.59, and it is the release's own defect class one layer out.** With every
+message now a mission, the colony's role prompts reach an agent CLI and the agent REFUSES them as a
+prompt-injection attempt. It is right to.
+
+`AgentCliProvider.Flatten` collapses every `ModelMessage` into one string, prefixing non-user roles
+with a literal `[system]` text header, and hands the result to `-p "{prompt}"`. `-p` is a **USER
+TURN**. `AgentCli` has `PromptArgs`, `StreamArgs`, `AcceptEditsArgs`, `AutoApproveToolArgs`,
+`BypassArgs`, `AddDirArgs` and `LocalSettingsRelativePath` — and **no system-prompt flag at all**.
+
+So what the agent receives is a user message that assigns it a persona, cites mission IDs, asserts
+tool permissions the session does not have, demands a fixed output format, and carries a line of
+prose that says `[system]`. That is the signature of an injection, not a resemblance to one. A model
+that complied would be a model that does whatever any user turn claiming to be a system tells it.
+
+The direct agent lane never hit this because the operator's words arrived as what they were: a person
+asking a question. Nothing was impersonating anything. Deleting that lane was still right — but it
+exposed that the colony's authority over its workers was never carried by anything except prose.
+
+**Fix.** Use the real channel. Claude Code has `--append-system-prompt` and `--system-prompt` (and
+`--system-prompt-file`), all valid alongside `-p`. Add `SystemPromptArgs` to `AgentCli`; route the
+role contract there and ONLY the operator's actual task through `-p`; delete the `[system]` text
+header, which exists solely because the system channel was missing. An agent with no such flag either
+keeps the flattened form and its refusals, or is not routed roles that need a persona — recorded
+per agent rather than assumed uniform.
+
+**And stop laundering operator text as colony framing.** The field report showed an operator's
+off-topic question surfacing as a project's "stated purpose". Operator text must be labelled as
+operator text; presenting it under a heading that claims it is something else is the same defect
+pointed inward, and it is what makes a legitimate prompt read as a fabricated one.
+
+**Fixed in v0.3.8.59.** `AnthillRuntime.PromptInjectionPrefix` is deleted. `RoleSystemPrompt(role,
+mission)` replaces it on the SYSTEM channel and says where it comes from — "this message is your
+operating contract and comes from the harness itself, not from the person who wrote the request" —
+which is a claim the transport now makes true. `UntrustedBlock(label, text)` fences the spans that
+genuinely are untrusted, with paired delimiters and a subject.
+
+`GenerateTyped` takes `system:`, composing a System + User pair; null keeps the old single-message
+shape so an unconverted caller loses nothing. `AgentCli.SystemPromptArgs` carries the contract to an
+agent's own flag — Claude Code's `--append-system-prompt`, appended rather than replacing so the
+agent keeps its own tool guidance and safety instructions. `AgentCliProvider.Flatten` became `Split`;
+the `[system]` literal is gone, and an agent with no such channel folds the contract into the prompt
+plainly rather than impersonating a system header.
+
+All eight model-calling roles now send a contract. The scribe is worth noting: it never carried the
+old prefix, so it was the one role NOT sending an injection-shaped prompt — and also the one sending
+no operating rules at all. Same gap, opposite symptom.
+
+**Tests.** `RoleContractChannelTests` — no source anywhere asserts a system boundary from inside a
+prompt; the contract names its own origin; the untrusted block fences only what it labels; every
+`GenerateTyped` call passes `system:`; the catalog appends rather than replaces; an empty contract
+sends no flag (a blank `--append-system-prompt ""` reads as an instruction to have no contract); and
+the contract travels as discrete argv, never shell text.
+
+**STILL OPEN.** Only Claude Code has a verified system-prompt flag; Codex, Gemini, Aider and OpenCode
+are declared as having none and fall back to folding. That is recorded per agent rather than assumed
+uniform, but it means the fix is partial for four of five agents until each flag is confirmed.
 
 #### S8 — Re-enable
 

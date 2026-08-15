@@ -60,22 +60,60 @@ public sealed class WorkspacePathGuard : IWorkspacePathGuard
         }
     }
 
+    /// <summary>
+    /// The canonical form of the last effective root this guard saw, so a caller resolving thousands
+    /// of paths against one root does not re-walk it every time.
+    ///
+    /// Per INSTANCE, not static, and that is the whole safety argument: a guard's life is one
+    /// operation — `RepositoryIndex` builds one and walks a workspace with it — so nothing here
+    /// outlives the work it was created for, and no two operations share a stale answer. A process-
+    /// wide cache would have to reason about a root being replaced between missions; this does not.
+    ///
+    /// Keyed by the effective root's raw string because <see cref="EffectiveRoot"/> changes when a
+    /// mission workspace scope opens or closes, and the same guard is used on both sides of that.
+    /// </summary>
+    private string? _cachedRootKey;
+    private string? _cachedCanonicalRoot;
+
+    /// <summary>
+    /// Resolved against the EFFECTIVE root, so a relative path an agent supplies lands inside the
+    /// mission workspace rather than in the live checkout — and an absolute path pointing at the
+    /// live checkout fails containment, which is the whole point.
+    ///
+    /// v0.3.8.59 (PLAN.md §1b S1): the containment rule moved to <see cref="PathContainment"/> and
+    /// is no longer implemented here. The separator check this method already had was correct; what
+    /// it did not do was resolve LINKS. <see cref="Path.GetFullPath(string)"/> is lexical — it strips
+    /// <c>..</c> and knows nothing of the filesystem — so a symlink or junction inside the workspace
+    /// pointing outside it produced a path still textually under the root, and every caller passed.
+    /// Twenty call sites resolve through this method, so all twenty were escapable by anything that
+    /// could create a link in the workspace, which includes the coding agent working in it.
+    ///
+    /// Throwing is kept deliberately: those twenty callers catch
+    /// <see cref="UnauthorizedAccessException"/> and treat it as refusal, and changing a security
+    /// boundary's failure MODE in the same commit that changes its logic is how a refusal quietly
+    /// becomes a null somebody dereferences into a pass.
+    /// </summary>
     public string ResolveSafePath(string requestedPath)
     {
-        // Resolved against the EFFECTIVE root, so a relative path an agent supplies lands inside the
-        // mission workspace rather than in the live checkout — and an absolute path pointing at the
-        // live checkout fails the containment check below, which is the whole point.
         var root = EffectiveRoot;
 
-        var requested = requestedPath;
-        if (!Path.IsPathRooted(requested)) requested = Path.Combine(root, requested);
-        var resolved = Path.GetFullPath(requested);
+        if (!string.Equals(_cachedRootKey, root, StringComparison.Ordinal))
+        {
+            try { _cachedCanonicalRoot = PathContainment.CanonicalRoot(root); }
+            catch (Exception error)
+            {
+                // A root that will not resolve refuses everything, exactly as PathContainment.Resolve
+                // does — the cache must not become a route to a weaker answer.
+                _cachedRootKey = null;
+                throw new UnauthorizedAccessException(
+                    $"the workspace root could not be resolved: {error.Message}");
+            }
+            _cachedRootKey = root;
+        }
 
-        var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-        if (!resolved.Equals(root, StringComparison.Ordinal) &&
-            !resolved.StartsWith(rootWithSep, StringComparison.Ordinal))
-            throw new UnauthorizedAccessException($"Access denied. Path is outside allowed workspace root: {root}");
-        return resolved;
+        var decision = PathContainment.ResolveUnder(_cachedCanonicalRoot!, requestedPath);
+        if (!decision.Allowed) throw new UnauthorizedAccessException(decision.Reason);
+        return decision.Path;
     }
 
     public bool IsBlockedPath(string path)
