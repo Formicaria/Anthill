@@ -72,6 +72,50 @@ public static class MissionVerification
         return HasFreshEvidenceForLatestRevision(tasks);
     }
 
+    /// <summary>
+    /// The PROMOTION rule: the interim checks above, plus the evidence store's own testimony.
+    /// v0.3.8.66 (PLAN.md §2 item 2) — auto-apply already refused a set whose evidence judged a
+    /// different revision, but the canonical evaluator did not ask the store at all, so correct
+    /// test results about the WRONG TREE could still reach completed_verified outside the
+    /// auto-apply path. This overload closes that: it is what the canonical evaluator calls, and
+    /// task-pairing alone no longer promotes a mission that materialized a patch.
+    /// </summary>
+    /// <param name="evidence">The mission's evidence rows. NULL means the store could not be
+    /// read — and for a mission holding a materialized revision that fails CLOSED (§1b S3's
+    /// direction: an outage is never permission), while a mission with no revision needs no
+    /// evidence identity and is unaffected.</param>
+    public static bool IsSatisfied(IReadOnlyList<Task>? tasks,
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence) =>
+        IsSatisfied(tasks) && EvidenceIdentitySatisfied(tasks!, evidence);
+
+    /// <summary>
+    /// Does the STORE hold deterministic, passing evidence for the mission's FINAL revision and
+    /// tree? Distinct from <see cref="HasFreshEvidenceForLatestRevision"/> by design — that one
+    /// pairs on task stamps, which vanish with the task objects; this one asks the rows that
+    /// survive the mission, and it is the stronger question promotion requires.
+    ///
+    /// What cannot satisfy it: evidence for an earlier repair generation (only the latest revision
+    /// counts); rows with no identity (legacy and unpatched-workspace evidence stay readable for
+    /// history and cannot promote new work); non-deterministic rows (a model review naming the
+    /// right tree is still not grounds to promote); and an unreadable store.
+    /// </summary>
+    public static bool EvidenceIdentitySatisfied(IReadOnlyList<Task> tasks,
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence)
+    {
+        var latest = LatestProducedRevision(tasks);
+        if (latest is null) return true;    // no materialized patch: nothing to identify
+
+        if (evidence is null) return false; // the store could not answer, and unverifiable is not verified
+
+        var forLatest = evidence
+            .Where(e => e.IdentifiesARevision
+                     && string.Equals(e.RevisionId, latest, StringComparison.Ordinal))
+            .ToList();
+        if (forLatest.Count == 0) return false;
+
+        return EvidenceJudgesRevision(forLatest, latest, forLatest[0].TreeHash);
+    }
+
     /// <summary>True when the mission has no materialized revision, or its latest revision has at
     /// least one COMPLETED tester run stamped with that exact revision.</summary>
     internal static bool HasFreshEvidenceForLatestRevision(IReadOnlyList<Task> tasks)
