@@ -47,6 +47,19 @@ public sealed record AgentCli
     public required IReadOnlyList<string> PromptArgs { get; init; }
 
     /// <summary>
+    /// v0.3.8.59 (PLAN.md §1b S9) — how this agent is told its OPERATING CONTRACT, with
+    /// <c>{system}</c> replaced by the role's system prompt. Null means the agent exposes no such
+    /// channel and the contract has to travel in the prompt with everything else.
+    ///
+    /// That distinction is why this is nullable rather than defaulted. Without it the colony's role
+    /// contract arrives as a user turn asserting a persona, fake capabilities and a required output
+    /// format — the exact form of a prompt injection, which is why an agent refused whole missions
+    /// on sight. Declaring the absence per agent keeps "we have no channel here" a recorded fact
+    /// rather than an assumption that every CLI works like the one that was tested.
+    /// </summary>
+    public IReadOnlyList<string>? SystemPromptArgs { get; init; }
+
+    /// <summary>
     /// v0.3.8.47: arguments for a turn whose stdout STREAMS as NDJSON events, for agents that
     /// have such a mode. Null means the agent has no streaming mode and plain line streaming is
     /// the honest best; Claude Code buffers a piped answer entirely, which is why this exists.
@@ -142,6 +155,11 @@ public static class AgentCliCatalog
             Vendor = "Anthropic",
             Binary = "claude",
             PromptArgs = new[] { "-p", "{prompt}" },
+            // --append-system-prompt rather than --system-prompt: appending keeps Claude Code's own
+            // tool guidance and safety instructions and adds the colony's contract on top. Replacing
+            // would drop both, and the colony would then owe the worker everything the default
+            // prompt was providing — which it does not currently say.
+            SystemPromptArgs = new[] { "--append-system-prompt", "{system}" },
             // stream-json emits one JSON event per line as the answer is produced; --verbose is
             // required by the CLI for stream-json in print mode.
             // --include-partial-messages adds stream_event token deltas; without it stream-json
@@ -251,13 +269,29 @@ public static class AgentCliCatalog
     /// backticks; handed to a shell it would be a command-injection vector. Passed as discrete
     /// argv entries to a process started without a shell, it cannot be anything but an argument.
     /// </summary>
-    public static IReadOnlyList<string> BuildArgs(AgentCli agent, string prompt) =>
-        agent.PromptArgs.Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
+    public static IReadOnlyList<string> BuildArgs(AgentCli agent, string prompt, string? system = null) =>
+        agent.PromptArgs.Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal))
+            .Concat(BuildSystemArgs(agent, system)).ToList();
 
     /// <summary>v0.3.8.47: the streaming variant. Falls back to the plain args when the agent has none.</summary>
-    public static IReadOnlyList<string> BuildStreamArgs(AgentCli agent, string prompt) =>
+    public static IReadOnlyList<string> BuildStreamArgs(AgentCli agent, string prompt, string? system = null) =>
         (agent.StreamArgs ?? agent.PromptArgs)
-        .Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal)).ToList();
+        .Select(a => a.Replace("{prompt}", prompt, StringComparison.Ordinal))
+        .Concat(BuildSystemArgs(agent, system)).ToList();
+
+    /// <summary>
+    /// The contract's own flags, or nothing.
+    ///
+    /// Nothing when the agent has no system channel OR when there is no contract to send — and the
+    /// two are deliberately the same outcome here, because the caller has already folded the
+    /// contract into the prompt in the first case (see AgentCliProvider.Split). Emitting an empty
+    /// <c>--append-system-prompt ""</c> would hand the agent a blank contract and look like a
+    /// deliberate instruction to have none.
+    /// </summary>
+    public static IReadOnlyList<string> BuildSystemArgs(AgentCli agent, string? system) =>
+        agent.SystemPromptArgs is null || string.IsNullOrWhiteSpace(system)
+            ? Array.Empty<string>()
+            : agent.SystemPromptArgs.Select(a => a.Replace("{system}", system, StringComparison.Ordinal)).ToList();
 
     /// <summary>
     /// v0.3.8.51 — the operator's approval gate, as THIS agent's flags. Pure function of the

@@ -292,10 +292,15 @@ public sealed class ArtifactVerifier : IVerifier
         var missing = new List<string>();
         foreach (var rel in required)
         {
-            var full = Path.GetFullPath(Path.Combine(r.WorkspaceRoot, rel));
-            if (!full.StartsWith(Path.GetFullPath(r.WorkspaceRoot), StringComparison.OrdinalIgnoreCase) || !File.Exists(full))
+            // v0.3.8.59 (PLAN.md §1b S1): the fourth copy of the missing-separator comparison, and
+            // the one with the worst consequence — this hashes a required artifact as EVIDENCE. A
+            // link or a sibling-prefixed path meant the hash recorded as proof of a file inside the
+            // workspace could be the hash of a file outside it, and a true statement about the wrong
+            // bytes is the failure this repository has spent releases removing.
+            var containment = Security.PathContainment.Resolve(r.WorkspaceRoot, rel);
+            if (!containment.Allowed || !File.Exists(containment.Path))
             { missing.Add(rel); continue; }
-            evidence.Add(new("file_hash", DiffVerifier.Sha(File.ReadAllText(full)), rel));
+            evidence.Add(new("file_hash", DiffVerifier.Sha(File.ReadAllText(containment.Path)), rel));
         }
         return new(Name, missing.Count == 0, true,
             missing.Count == 0 ? $"{required.Count} artifact(s) present" : $"missing: {string.Join(", ", missing)}",
