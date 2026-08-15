@@ -1,482 +1,217 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.57** — the 3.8 line is CLOSED.
-The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+**The single forward document.** What is done, what is left, and the order to do it in.
+`AUTONOMY-10.md` folded into this file; role mechanics live in
+[`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
+[`QUALIFICATION.md`](QUALIFICATION.md).
 
-> v0.3.8.57: patch integrity — the five Phase-3 items closed. `add` means CREATE (it returned
-> `Overwrote` and replaced whole files with whatever fragment a mislabelled proposal carried); the
-> coder path STAMPS the base hash it was built against (`BaseHash` was assigned in exactly one
-> place in the codebase, so the stale-base guard shipped in v3.8.37 could not fire for any
-> model-produced patch); a live destructive apply refuses without one; auto-apply preflights the
-> whole set and rolls back a partial write, so a repository can no longer be left mixing old and
-> new; a conformance ledger pins that all four appliers ask `PatchApply.Compute` with the full set
-> of facts; and every verdict records the revision, patch-set hash and tree hash it judged, through
-> schema, migration, INSERT and read-back.
->
-> v0.3.8.57 (cont.): the TYPED CHANNEL becomes load-bearing. Tasks declare their input artifact IDs
-> and the runtime records what each role actually READ (`artifact_consumptions`, hashed as read);
-> every schema's payload shape is checked at both the write and the read boundary; artifacts carry
-> provenance — build, environment, runtime, and the provider and model that actually served the call,
-> which `ToCallResult()` had been discarding one line before any ant could see it. The researcher's
-> four declared sections became a typed `research_brief`; the builder deliberately did NOT, because
-> its prompt asks for free prose and typing that would be relabelling.
->
-> v0.3.8.57 (cont.): STRUCTURAL ENFORCEMENT. Four acceptance gates close — 6, 7, 8 and 10 — and 9 is
-> pinned. A UI change cannot dispatch without a valid `ui_map`; the verifier's contract now declares
-> the policy insertion the runtime already guaranteed; the repair bound reads typed signatures rather
-> than a substring of a previous medic's narrative; the scribe cannot write a `verified_change_summary`
-> for work nothing verified; and `MissionReconstruction` replays a mission's inputs and evidence from
-> artifact IDs, reporting the specific ways a replay can be wrong rather than only succeeding.
->
-> v0.3.8.57 (cont.): CHAT TALKS TO THE COLONY. `conversation` was a route key like any other, so
-> pointing it at an installed agent CLI made the chat box a direct line to that agent — it answered
-> AND could edit the working tree, with no task, plan, review, test or verification in the sequence.
-> v0.3.8.53 contained the CHANGES that lane produced; this closes the shape. A provider now declares
-> itself an autonomous coding agent (`IAutonomousCodingAgent`, in the SDK so the core can test for it
-> without naming a module), and the conversation route REFUSES one — saying what to change and that
-> the capability moves rather than disappears. `coder` still routes to an agent, and its work still
-> goes through the patch set, the soldier, the tester and the verifier.
->
-> v0.3.8.57 (cont.): five git subprocess sites called `WaitForExit(60_000)` and carried on when it
-> returned false — git and its children survived, and `ExitCode` throws on a live process, so the
-> timeout surfaced as an ordinary-looking exception. All five now kill the tree; a sweep covers the
-> twelve bounded-wait sites in the repo.
-
-> v0.3.8.56: the sixth field round — the dashboard rebuilt as a cell grid with free placement
-> (widgets live where the operator put them; the drag ruler frozen in document space so a
-> preview cannot move what it is measured against; the operators' own board captured as the
-> shipped default), orchestration folded into the Inspector's role cards, Tools/Providers
-> removed, the coding-agents page folded into Integrations, operator tool CRUD end to end,
-> chat approvals collapsed to a note under Skip-all.
->
-> v0.3.8.55: the fifth field round — the workdir gate reversed (a pathless project stands in the
-> colony's own source, primary until the operator chooses), the Windows mojibake fixed at all
-> twelve spawn sites with a source-scan guard (UTF-8 pipes, structurally), Models & Routing
-> merged into the Ant Inspector (one box per role), Automation folded into Projects, the colony
-> view's legends folding / transfer dashes marching / pheromones polling where the canvas is /
-> wheel zoom on the dedicated page, themes (default, Light, Hermes, High contrast), and a files
-> pane refresh button.
-
-> v0.3.8.54: the scripted colony — a reasoning provider whose answers are known in advance,
-> registered and resolved through the production plumbing (AUTONOMY-10 Phase 2's keystone),
-> proven composed through Queen.RunMission. On that foundation, the §6 endgame lands: the
-> code-patch lifecycle composed end to end (coder → materialize → policy review → approval card,
-> live tree untouched), the repair loop pinned with fresh evidence per generation and a bound
-> that binds, and ONE deterministic mission driving all twelve roles through their real
-> production triggers. The deterministic half of the acceptance-suite gap is closed; the
-> live-model half is 3.9.0's first job.
-
-> v0.3.8.53: the backend answers for itself — `anthill --qualification` (SelfTest plus lifecycle
-> checks over a temp workspace, exit nonzero when missions are impossible; audit Phase 11); the
-> direct-agent lane is NAMED (every writing chat run captured as one canonical, explicitly
-> unverified `direct_change` artifact, structurally excluded from learning; Phase 7, fail-closed);
-> the twenty-scenario audit matrix gets its ledger and its one unpinned proof (a partially
-> inapplicable PatchSet materializes nothing; Phase 10 — the composed scripted-provider lifecycle
-> and all-twelve-through-triggers remain §6's open job); consoles stop flashing from the desktop
-> shell (CreateNoWindow everywhere); the approval gate answers before a conversation exists; and
-> QA gets its checklist (docs/QA-CHECKLIST.md).
-
-> v0.3.8.52: the chat lane's direct edits reach git — the sweep commits what a Skip-all run
-> newly dirtied and never the operator's own WIP; the files pane grows manners (whole-row
-> selection that stays lit, git status letters, one-line bar buttons) and a commit train per
-> file with a GitHub-style branch selector that never checks anything out; syntax highlighting
-> lands in chat prose (inline code, bold) and in the editor via a highlighted layer under a
-> transparent textarea.
-
-> v0.3.8.51: open the gates — the conversation's approval policy rides to the agent CLI as
-> flags AND a materialized settings.local.json; directory gates per project (--add-dir);
-> Skip-all applies verified patches unprompted through the audited transitions and commits
-> them; one JSON approve-apply endpoint replaces the card's broken two-call flow; the colony
-> proposes missions itself (no Do-the-work button); Files beside the chat with a docked
-> editor; RepoOps git awareness with the repo badge and operator Commit.
-
-> v0.3.8.49: Formicaria — the UI/UX and architecture pass. Navigation folded to five destinations
-> (Colony, Projects, Chat, Tools, Settings); Chat scrolls correctly and condenses mission
-> responses, and is the one authoritative approval surface; the colony map shows each ant's real
-> state (working, waiting, blocked, awaiting approval) from /graph rather than fabricated motion;
-> the router reroutes declared-reasoning roles off a model that cannot reason; the terminal's quick
-> actions are platform-aware; Ollama is no longer a Chat voice but stays ant infrastructure; and the
-> real Formicaria mark ships in the sidebar and as a favicon.
-
-> v0.3.8.48: the project-centered restructure — conversations choose their project, a real
-> restart-safe scheduler whose runs are conversations, approvals on the conversation itself
-> with inline change cards, and seven navigation destinations with every old route aliased.
-
-> v0.3.8.47: real projects (one per conversation, purpose-as-context, optional working
-> directory), attachments with drag-and-drop, import and edit-resend, whitespace-tight chat
-> bubbles, line-streamed agent stdout, and a desktop tray with a tell-only update check.
-
-> v0.3.8.46: conversation search (server-side, over titles and transcript content), pinned
-> conversations (stored, restart-safe, recency-beating), and markdown export with the decision
-> log included — the chat items from the maturation directive, each backed by the store. The
-> UI gap ledger emptied too: plan preview in chat's gate, the shadow judgment queue with its
-> form, the Readiness page (snapshot, attestation, certification, report, introspection), and
-> source quality on Memory & Signals. Plus turn timestamps and token accounting, home-grown
-> escape-first syntax highlighting, and three escalation bugs found by driving the full
-> chat→gate→preview→approve→mission→patch loop live, each fixed with a regression test.
-
-> v0.3.8.45: Chat + Colony became a SPLIT page on the field's verdict — the desktop tester could
-> not see the colony (it drew, centred, under the opaque floating conversation panel) and the
-> operator ruled "should be a split page". Conversation left, colony right, in-flow, one
-> canonical canvas; the frosted-overlay presentation is now forbidden by guard test.
-
-> v0.3.8.44: chat answers ARRIVE as they are produced — a real streaming contract from SDK to
-> provider to SSE to console, with abort reaching the model call — and the desktop app's first
-> field failure was fixed at all three of its layers (loopback default, a log with the host's
-> words, native-library self-extraction) with the Windows release archive now carrying
-> `AnthillDesktop.exe` beside the server binary.
-
-> v0.3.8.43 adds the two shapes the product had been promised: **AnthillDesktop**, the colony in a
-> native Windows window (one WebView2 over the same in-process API — a window onto the colony,
-> never a second one), and the **layered Chat + Colony mode** — the topology behind a frosted
-> conversation panel, with Fit view and `prefers-reduced-motion` honored at the render loop.
-
-> v0.3.8.42 is the *UI truthfulness and cohesion* release: the console claims only what the
-> backend proves. Chat became the one mission entry (the four competing composers retired, each
-> leaving a path behind) and chat turns are ANSWERED, through the same router the roles use; the
-> topology opens beside the conversation through the one re-parented canvas; the Monitoring domain
-> dissolved into the homes its concepts already had; and the found-by-driving-it defects closed
-> (the fabricated role roster, cancelled-as-prose conversation state, double-submitting patch
-> mutations, configured-reported-as-connected, fitness graded against a route no call would use).
-> The governing audit is `docs/UI-CONTRACT-AUDIT.md`; §2 below still measures v0.3.8.40/41 and is
-> superseded only where that document says so.
-
-**v0.3.8.41 changed one thing in the table below.** `roster_profile` now defaults to `full`, so the
-twelve mission roles are enabled on a new installation and on any existing one that never touched
-the roster (`ConfigSchema` migrates only untouched legacy defaults; explicit choices and
-`disabled_roles` survive). Finalization was reordered so the archivist writes its memory candidates
-before learning consumes them, and made idempotent per evaluation; the verifier is now bound to the
-tester and soldier evidence rather than to whatever the planner had produced at planning time.
-
-**Half closed in v0.3.8.54:** a deterministic Queen-driven acceptance test now reaches all twelve
-roles through their production triggers, in one composed mission over the scripted provider
-(`AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission`). Still true: no live
-twelve-role mission has run against a real model. That remaining half is 3.9.0's first job.
-
-Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
-twelve-role activation program (v3.8.19–v0.3.8.34). What follows is the state they left, measured.
-
-> **v3.8.31 closed this line and was wrong to.** An external review of v3.8.29 found five defects
-> that were still present, all with passing tests over them. v3.8.32 fixed them and built the guards
-> that would have caught them; §6 records what the pattern was. The lesson is in the cleanup that
-> missed them: it swept for ABSENCE — TODOs, broken links, unused declarations — and every one of
-> those defects was a thing PRESENT and wired wrong. An absence-sweep cannot find them.
-
-This replaces `NORTH_STAR.md`, `ROADMAP.md`, `REFACTOR-PLAN.md` and `POST_REFACTOR-PLAN.md`, which
-are archived under `docs/archive/v3/`. There were 2,746 lines across those four, they overlapped
-heavily, two of them were closed or superseded, and every release had to edit three of them to stay
-consistent — which is how three documents come to disagree about the same release.
-
-`CHANGELOG.md` remains the complete record of what shipped. This document answers ONE question:
-**where the colony actually is**, measured.
-
-**What is LEFT now lives in [`AUTONOMY-10.md`](AUTONOMY-10.md)** — the ten-phase program from here to
-a production-qualified autonomous assistant, each phase with an exit gate that must pass through the
-real composed runtime. Adopted v3.8.32.
-
-The split is deliberate and is the lesson of the four documents this file replaced: a document that
-describes both the present and the future ends up disagreeing with itself about the release in
-between. PLAN.md is measured against the tree; AUTONOMY-10.md is ordered by dependency. Where a phase
-there is already partly delivered, its status table says so rather than re-planning work that
-shipped.
-
-Rules for this file:
-
-- Everything here is MEASURED against the tree, not estimated. Where something is unmeasured it says
-  so rather than guessing.
-- An item is DONE only when it has a production call site and a test keyed to what the producer
-  actually emits. "Implemented" is not done — that distinction has cost this project six releases.
-- When an item completes, it moves to the record below with its version, and the reasoning that made
-  it hard stays attached. The reasoning is usually worth more than the fix.
+Shipping release: **v0.3.8.57**.
 
 ---
 
-## 1. What ANTHILL is for
+## 1. Where the colony measurably is
 
-A local, bounded, auditable colony that takes a goal, plans it, executes it through specialised
-roles, and produces work an operator can verify and accept — on the operator's own hardware, with no
-step that requires trusting a model's word about whether it succeeded.
+**Structurally complete, deterministically qualified across most of its declared scenarios, and
+never once run against a real model.** That last clause is the whole shape of what remains.
 
-The load-bearing commitment, from which most of the design follows:
+Done and load-bearing:
 
-> **Only reproducible evidence may carry a mission to a verified outcome.** A model's review is worth
-> recording and can never promote. A compiler, a test runner, a hash comparison and a policy engine
-> can.
+- Twelve roles, contracted, gated, each with a real production trigger.
+- Patch integrity: `add` means create, destructive applies require a base hash, a patch set applies
+  as a unit or not at all, and one decision function (`PatchApply.Compute`) answers for every applier.
+- The typed artifact channel: declared task inputs, a consumption ledger recording what each role
+  actually read and at which hash, schema validation at the write and read boundaries, provenance
+  carrying the provider and model that served each call.
+- Structural enforcement: a UI change cannot dispatch without a valid `ui_map`; verification is
+  policy-inserted and fails closed; the repair bound reads typed signatures; the scribe cannot
+  certify unverified work; `MissionReconstruction` replays a mission from artifact IDs.
+- Chat talks to the colony. An autonomous coding agent may not serve the conversation route; the
+  colony dispatches one as a tool, inside a mission that reviews and verifies its work.
 
-The V4 target is a Codex/Claude-Code-style autonomous software workflow running on that framework.
-It is not close, and the gap is not model quality — it is that roles still hand each other prose.
-
----
-
-## 2. Where the colony actually is (measured at v0.3.8.40)
-
-### Working end to end
-
-| Capability | State |
-|---|---|
-| Mission planning and dispatch | Working. 12 roles registered, 12 handlers, 12 execution contracts |
-| Durable worker/attempt runtime | Working. Leases, heartbeats, crash reclamation (v3.8.0) |
-| Core/Modules boundary | Done and enforced by assembly-reference tests (v3.8.3–v3.8.18, ADR-007) |
-| Artifact + evidence stores | Stores, producers, provenance, hashing (ADR-004, v3.8.19–v3.8.21) |
-| Patch verification | Per-proposal, in a materialised sandbox containing the patch (v3.8.22–v3.8.23) |
-| Deterministic blocks | A failed bundle or a soldier policy block demotes the mission outcome (v3.8.22) |
-| Verification from evidence | The verifier reads stored evidence; model prose is recorded, never decisive (v3.8.27) |
-| Pheromone decay | Trails fade toward neutral (v3.8.19) — they never had before |
-| Colony recall | What has worked / usually fails / who solved this / what knowledge exists (v3.8.19) |
-| Mission workspaces | Detached git worktrees, attributable to a base revision (v3.5.0) |
-| Twelve roles run together | All twelve execute against a real database and registry, returning structured outcomes (v3.8.30) |
-
-### Known gaps, stated plainly
-
-| Gap | Why it matters |
-|---|---|
-| **Prose is still the PRIMARY channel** | v3.8.29 makes typed artifacts travel alongside it (coder, builder, verifier) with IDs for replay. `Task.Result` is still a string and the prose is still what the model reads first |
-| **The verifier is still planner-selectable** | PARTLY CLOSED v0.3.8.41 — policy now binds it to the tester's and soldier's evidence, or inserts it when the plan omitted one, and a verification that cannot be inserted sets a `DeterministicBlock`. Its contract is still `PlannerSelectable`, because flipping it would refuse every planner-produced verifier until the adaptive delta-plan path also carries a parent |
-| ~~Six specialists are gated off by default~~ | CLOSED v0.3.8.41 — `roster_profile` defaults to `full`. `ConfigSchema` migrates only configurations that never touched the roster; explicit choices and `disabled_roles` survive |
-| **The tester does not run on the patched tree** | THE gap this release stopped short of from both directions. v0.3.8.41 makes the tester's report NAME the tree it judged and binds the verifier to that evidence, but the materialised patch still does not outlive `VerifyPatchSet`'s sandbox, so the tester resolves to the mission workspace — the same source WITHOUT the proposal in it |
-| **No Queen-driven acceptance suite** | HALF CLOSED v0.3.8.54 — one deterministic scripted mission now drives all twelve roles through their production triggers (planner-selected sources, contract task types for ui_cartographer/scribe, policy-inserted tester/soldier, failure-triggered medic, evidence-bound verifier, finalization-claimed archivist; tester and soldier asserted OUT of the plan). Still open: no live twelve-role mission against a real model |
-| ~~Environmental failures charged to the ant~~ | CLOSED v3.8.32 — `FailureClassNames` is the one conversion; a test drives real results through the real mapper into the real attribution rule |
-| ~~The verifier's sandbox held different bytes~~ | CLOSED v3.8.32 — `PatchApply` is the one applier; the materializer, the sandbox runner and `ApplyPatchTool` all call it |
-| ~~The tester→medic handoff never fired~~ | CLOSED v3.8.32 — the gate reads the scheduler's terminal-failure return value instead of the ant's status code |
-| ~~Readiness lied about the six core ants~~ | CLOSED v3.8.32 — `RoleGateStatus.NotGated` exists, and the ladder moved out of the route lambda into `RoleReadiness` where it is testable |
-| ~~"Runs without an LLM" was untested~~ | CLOSED v3.8.32 — `OfflineMissionTests` runs whole missions with no provider |
-| ~~The local model was hardcoded~~ | CLOSED v3.8.33 in source, v0.3.8.34 on disk — the retired default is recognised in an upgraded config.json rather than obeyed. `LocalModelResolver`; any model works, an unchosen one refuses with a remedy, and a source guard blocks a new default |
-| ~~The console hid an unusable model~~ | CLOSED v3.8.33 — `/status` computed `ollama_model_present` from v2.4.3 and `app.js` never read it. Ninth instance of implemented-tested-unreachable, first in the UI |
-| ~~Console executable attributes trusted escapeHtml~~ | CLOSED v0.3.8.34 — `jsArg` escapes for the interpreter before the attribute; 105 sites, verified against the real parser. v3.8.13 fixed one value and its own test documented why that was not enough |
-| ~~A computed status field could have no reader~~ | CLOSED v0.3.8.34 — `StatusFieldConsumerTests`; `ollama_model_present` was probed on every request since v2.4.3 and read by nothing |
-| ~~Backend capability with no console surface was invisible~~ | CLOSED v0.3.8.36 — `ConsoleRouteCoverageTests` audits the other direction. 25 of 176 routes had no surface; `/config/health` had computed configuration findings with no reader since v2.x. Six remain recorded as UI GAP |
-| ~~A patch built on a stale read applied silently~~ | CLOSED v0.3.8.37 — `PatchProposal.BaseHash`; refused by all three appliers, checked before the fragment search, classified as TargetRejection |
-| ~~A shipped changelog entry could be rewritten~~ | CLOSED v0.3.8.37 — `ShippedChangelogTests` compares each entry to its own tag. The mistake was made three times |
-| ~~Mission submission could duplicate on retry~~ | CLOSED v0.3.8.38 — `POST /missions` passes an `Idempotency-Key` at last; the store has supported replay since v2.8.0 and nothing reached it |
-| ~~A listed job could not be opened after restart~~ | CLOSED v0.3.8.38 — one projection for list and detail, live and durable; `outcome_code` joined from the canonical evaluation |
-| ~~Cancel-all was not durable~~ | CLOSED v0.3.8.38 — delegates to the single durable cancel, so a crash cannot requeue cancelled work |
-| ~~Clearing history could delete a running mission~~ | CLOSED v0.3.8.38 — refused server-side while work is active, and the durable job tables are no longer left dangling |
-| **Reputation is derived, not consumed** | `ReputationOf` computes standing from trails as of v3.8.29. Nothing ROUTES on it yet — the router still picks by configuration |
-| ~~Trail kinds unenforced~~ | CLOSED v3.8.31 — eleven kinds extracted from the call sites, validated on write, and a test pins the vocabulary against the code in both directions |
-| **`AntMetrics`: InputChars still zero** | ToolCalls, ModelCalls, ElapsedSeconds, RetryCount and the environment fingerprint are all measured at chokepoints (v3.8.26, v3.8.31). InputChars would need each ant to report its own prompt size and no chokepoint sees it |
-| **9 `/events/json` pollers remain in `app.js`** | The event stream exists and the console still polls. NOT a defect — polling is the documented fallback and works; moving to push is an optimisation for 3.9.0 |
-| **166 public statics on `AnthillRuntime`** | Configuration is not standardised. The mission path is already forbidden from reading them (ADR-001, guarded); this is ergonomics rather than correctness |
-| **No live twelve-role mission has ever run** | THE remaining gap. Everything above is verified by tests, and tests check what their author told them to check. A mission with `roster_profile: "full"` against a live model is the first thing 3.9.0 should do |
+Not done, and the reason each matters, is the ordered plan below.
 
 ---
 
-## 3. The twelve-role program
+## 2. The plan, in order
 
-The target workflow. Every role has a real production trigger, a bounded surface, typed evidence,
-and a proven end-to-end outcome — which does **not** mean every role dispatches a tool or runs in
-every mission.
+### 1 — Reconcile the documentation
 
-```
-Context (Researcher · Web · File · UI Cartographer)
-        │
-        ▼
-     Coder ──► PatchSet
-        │
-        ▼
-     Queen ──► apply to isolated mission workspace
-        │
-        ▼
-Tester + Soldier ──(retryable failure)──► Medic ──► back to Coder
-        │
-        ▼
-   Verifier ──► VerificationBundle
-        │
-        ▼
-Builder + Scribe ──► operator output
-        │
-        ▼
-Canonical MissionEvaluation ──► Archivist ──► MemoryCandidate + pheromones
-```
+**This change.** Three documents disagreed with the code they describe, in ways that would have
+misled anyone planning the work below: the verifier was recorded as planner-selectable in three
+places after it became policy-inserted; the tester was recorded as running on the unpatched tree
+after `MissionRevisionRegistry` began keeping the revision alive; `delete`/`rename` were recorded as
+unimplemented after `DestinationPath` and `ComputeDelete` shipped; and `add`-over-existing was still
+described as overwriting after it became a typed refusal.
 
-### 3.1 Scheduling modes
+A plan built on a wrong map produces work aimed at the wrong place. Everything after this depends on
+this being right first.
 
-Declared on the contract (v3.8.23) and ENFORCED for all three non-planner modes (v3.8.25–v3.8.26).
+### 2 — Make evidence identity mandatory for promotion
 
-| Mode | Roles |
-|---|---|
-| Planner-selectable | researcher, web, file, ui_cartographer, coder, builder, scribe |
-| Inserted by policy | tester, soldier — inserted when a patch set exists (v3.8.26). The verifier is still planner-selectable |
-| Triggered by retryable failure | medic |
-| Triggered after finalization | archivist |
+Auto-apply already refuses a patch set whose evidence judges a different revision. The **canonical
+evaluator does not** — `HasDeterministicPass` was deliberately left unchanged, so correct test
+results from the wrong tree can still reach `completed_verified` outside the auto-apply path.
 
-This is the mechanism that stops safety-critical steps depending on a model remembering to plan
-them. A plan that omits the tester is not a plan that skipped a step — it is a plan whose patches
-are unverified, produced by the component least able to be relied on for that.
+- The canonical evaluator consumes `Evidence.Judges()`.
+- Any mission with a materialized patch requires revision-bound evidence.
+- Final patch-set and tree hashes must match; earlier repair generations and unpatched-workspace
+  evidence are refused.
+- Legacy unbound evidence stays readable for history and cannot promote new work.
 
-### 3.2 Role specification
+Small, and it closes the last path by which a true statement about the wrong bytes becomes a verified
+mission.
 
-Where the current state differs from the target, both are stated. The gap is the plan.
+### 3 — Close the remaining deterministic qualification scenarios
 
-| Role | Trigger | Tools | Typed output | Gap at v0.3.8.57 |
-|---|---|---|---|---|
-| **Researcher** | Planner, near intake | `system_info`, `list_directory`, `search_workspace`, `repository_index` | `research_brief` | Done at v0.3.8.57 — the four sections its prompt has always demanded are parsed into a typed artifact, and a response that ignores the format produces NO artifact plus a disclosed warning. Also joined the typed-input channel: it had never seen an artifact |
-| **Web** | Planner, when external info needed | `web_search` | `source_set` | Done — genuinely typed since v3.8.21 |
-| **File** | Planner | `list_directory`, `read_text_file`, `search_workspace`, `repository_index` | `file_set` | Done as of v3.8.30 — discovers paths rather than only reading ones the task named |
-| **UI Cartographer** | Policy — a UI change cannot dispatch without its map | 4 read tools | `ui_map` | Done at v0.3.8.57 — `UiChangeGate` blocks a UI coder task at DISPATCH unless a hash-intact, schema-conforming `ui_map` exists. Detection reads the goal *and* the paths a task names |
-| **Coder** | Planner | **none, deliberately** | `patch_set` | Typed context since v0.3.8.57 (declared inputs, consumption recorded). PatchSet carries content, provenance and a base hash; the revision link lives on the workspace snapshot and the evidence |
-| **Tester** | Policy, after every state-changing PatchSet | `run_allowlisted_check` | `test_report` + evidence | Done as of v3.8.28 — manifest-driven, multi-runtime. Cancellation and per-check timeouts still open |
-| **Soldier** | Policy, on every state-changing PatchSet | none (PolicyScan is an in-process service) | `security_review` | Done as of v3.8.26 — reads the real PatchSet, inserted by policy |
-| **Verifier** | **Policy**, when its evidence exists | none | `verification_bundle` | Done at v0.3.8.57 — the contract now DECLARES `PolicyInserted`, which the runtime has guaranteed since v0.3.8.41. Insertion fails closed; a planned verifier remains admissible (a floor, not a ceiling) |
-| **Medic** | Retryable failure only | none (consumes `failure_context`) | `failure_diagnosis`, `repair_recommendation` | Done — consumes the typed `failure_context`, and at v0.3.8.57 its repair BOUND does too: repeat detection reads artifact signatures instead of grepping a previous medic's prose |
-| **Builder** | Planner, after verification | none | `operator_summary` | Emits prose |
-| **Scribe** | Planner, after verification | `read_changed_files_summary` | `release_notes` / `docs_patch_set` | Done as of v3.8.28; at v0.3.8.57 it refuses a `verified_change_summary` when nothing verified anything, and `docs_patch_set` became its own schema rather than being folded onto `patch_set` |
-| **Archivist** | After canonical evaluation persists | none | `memory_candidate` | Reachable as of v3.8.26 — runs post-finalization, outside the task graph. Had NEVER run before |
+`QualificationMatrixTests` is the ledger; four entries are short.
 
-**A role with no tool calls is not inactive.** Coder, Soldier, Verifier, Medic, Builder and Archivist
-can be fully functional through typed inputs, deterministic services, structured outputs and
-consequential orchestration. Inventing tools to make an inventory look complete adds attack surface
-without adding capability — which is why the three phantom tools were deleted rather than built
-(v3.8.23; see §6).
+- **Qualification scenario 3** — a documentation patch driven through the Queen: goal → planner →
+  docs proposal → typed `docs_patch_set` → materialization → verification → apply → evaluation.
+- **Qualification scenario 15** — one composed mission reaching all twelve roles through their
+  **production triggers**. No role invoked to satisfy a count.
+- **Scenario 7** — the soldier block inside a full lifecycle: coder proposes, policy inserts the
+  soldier, the block prevents verification, application and positive learning, and model text cannot
+  argue it away.
+- **Scenario 17** — kill the process mid-apply and restart: the incomplete transaction is detected,
+  the tree is restored or resumed, and nothing is applied, approved or finalized twice.
+- Plus the composed **UI-patch lifecycle**, which scenario 5 covers only in halves.
 
----
+The `ScriptedColony` harness exists. These are script books, not new machinery.
 
-## 4. What is left, in order
+### 4 — Cancellation and timeout proof for every role
 
-Each stage is a release. The order is a dependency order, not a preference.
+The graduation record's cancellation column is empty for all twelve roles. System-level tests prove
+the model call observes cancellation and that process-launching sites kill their trees; neither says
+anything about a role.
 
-### Stage A — the roster declares itself ✅ DONE (v3.8.23)
+Per role: cancellation before dispatch, during generation, during a tool call, and while waiting on a
+dependency. Correct terminal state, no retry or handoff after operator cancellation, no orphan
+process, no positive memory or reputation, clean restart.
 
-All twelve contracted; `SchedulingMode` declared; phantom tools removed; patches verified in a tree
-that contains them.
+Highest risk first — tester, file, researcher, web, ui_cartographer, scribe, and the coder on an
+agent CLI. Those hold tools, sockets and subprocesses open.
 
-### Stage B — the roster becomes consequential ✅ DONE (v3.8.25–v3.8.26)
+### 5 — The first live qualification run
 
-Done: handoffs ingested on terminal failure; a refused REQUIRED handoff sets `DeterministicBlock`;
-`ToolExecutionContext` has a production call site fed by `CapabilityGrant`; `SchedulingMode` enforced
-for FailureTriggered and PostFinalization.
+Everything above is proved against a scripted model whose answers were written to fit the runtime.
+`QUALIFICATION.md` §3 holds the protocol and the fields a run must record.
 
-Also done: the soldier reviews the actual PatchSet — the patch-set artifact carries `new_content` at
-Colony visibility and the review reads it, so a secret in proposed source is found rather than
-scanned for in prose about it.
+Deliberately **after** items 3 and 4: without a complete deterministic baseline, a live failure
+cannot be attributed to the model rather than to a hole already present.
 
-v3.8.26 closed it: `InsertPolicyReviewTasks` inserts tester and soldier whenever a patch set exists,
-`PolicyInserted` is enforced now that the replacement path is real, and `/colony` reports per-role
-readiness with the first binding blocked reason.
+Cover Ollama, an OpenAI-compatible provider, and Anthropic or a supported agent CLI; ideally one
+small local model and one strong cloud model. Record provider and model version, tokens, cost,
+durations, failure classes, which trigger reached each role, artifacts produced and consumed, and
+whether `MissionReconstruction` can replay the result.
 
-The verifier stays planner-selectable, deliberately — it is how verification happens at all today,
-and moving it to policy insertion belongs with making it a deterministic evidence reader (Stage D).
+### 6 — Authoritative task inputs everywhere
 
-1. **Honour `SchedulingMode`.** Policy inserts tester/soldier/verifier whenever their inputs exist.
-   Medic fires from a typed retryable failure with a strict repair budget. Archivist runs after the
-   canonical evaluation persists. The planner stops being able to schedule any of them.
-2. **Ingest handoffs on the failure path.** Move `IngestHandoffs` so a failed task's handoffs are
-   acted on — today Tester's failure→Medic handoff is unreachable.
-3. **Make a rejected REQUIRED handoff consequential.** Block or fail the mission; do not just log.
-4. **Route production dispatch through `ToolExecutionContext`.** Remove the ant-name authorization
-   path. Every invocation carries mission/task/role/worker/attempt ids, granted capabilities, tool
-   budget and a cancellation token.
-5. **Soldier reviews the actual PatchSet**, not prior-task prose.
+`Task.InputArtifactIds` is authoritative when populated, and exactly one producer fills it. Every
+other task still falls back to the mission-wide block.
 
-### Stage C — typed collaboration ◐ INTERCHANGE DONE (v3.8.29)
+The scheduler should derive inputs from dependencies, required schema types, the current revision,
+artifact generation and policy relationships — never because an artifact merely exists somewhere in
+the same mission.
 
-The one that unblocks everything downstream, and the largest.
+### 7 — Finish replacing prose as the primary channel
 
-1. Task contracts gain input artifact IDs and expected output schemas.
-2. A context compiler passes bounded artifact excerpts to workers.
-3. Researcher, Builder and Verifier get genuinely structured outputs — **not renamed prose**.
-4. PatchSet stores diff content linked to a workspace revision.
-5. `VerificationBundle` is persisted, bound to the patch and its evidence.
-6. The canonical evaluator consumes that bundle.
-7. Every artifact carries schema version, producer, environment fingerprint, content hash, non-null
-   `sourceArtifactIds`, and a redaction class.
+The typed channel is load-bearing but not sole. The builder still produces free prose and
+`Task.Result` remains central.
 
-### Stage D — per-role graduation ◻
+Not by labelling arbitrary prose. Change the builder's prompt to request a stable structure, define
+an honest `mission_summary` carrying the operator-facing text as a field alongside verified outcome,
+deliverables, evidence references, limitations and unresolved items, and have the answer assembler
+consume it. The user-facing answer then traces to the verified record instead of being an independent
+last-minute narrative.
 
-Each role brought to the target in §3.2: UI Cartographer generalised and mandatory before Coder;
-Tester manifest-driven with multi-runtime adapters and cancellation; Medic consuming a typed
-`failure_context` with one bounded repair then mandatory retest; Scribe actually calling its tool and
-drafting only from verified artifacts; Archivist running post-finalization.
+### 8 — Complete artifact provenance
 
-### Stage E — outcome-gated learning ✅ DONE (v3.8.26, v3.8.29)
+Recorded as gaps rather than fields, because nothing produces them:
 
-Pheromones recorded **only after** the canonical outcome persists.
+- **Assumptions** — statement, source, confidence, whether verified, what would invalidate it.
+  Exposes reasoning built on an unverified premise.
+- **Retention** — class, expiry or review date, holds, supersession links, and a pruner that obeys
+  the classification. A retention label nothing reads is a compliance claim the system does not keep.
+- **Validation status** — queryable rather than reinterpreted from warning text: valid, invalid,
+  unfixed schema, hash mismatch, unsupported version, missing source, superseded.
 
-| Situation | Effect |
-|---|---|
-| Output consumed downstream, required evidence passed, `completed_verified` | Positive role/worker trail |
-| Typed failure attributable to a role's output | Negative role/task-type trail |
-| Tester catches a real failure | Positive Tester; possibly negative patch/route |
-| Soldier correctly blocks a dangerous patch | Positive Soldier; negative patch/route |
-| Medic's repair passes mandatory retest | Positive Medic recovery trail |
-| `completed_unverified` | Store the episode; no positive reinforcement |
-| Disabled / skipped / cancelled / missing dependency | **Neutral.** A role is never punished for not running — `LearningAttribution`, v3.8.26 |
-| Provider failure | Update provider reliability, not worker skill |
-| Tool failure from the environment | Update tool/environment reliability, not worker skill |
+### 9 — Research citation quality
 
-No single global worker score. Trails are keyed by role, worker, task type, capability, environment
-fingerprint, tool/source domain, and contract version. A trail influences routing only after a
-configurable minimum number of observations. **Learning starts at full-roster activation** — legacy
-unverified completions are never backfilled as positive.
+Qualification scenario 1 proves a brief parses. It does not prove the citations are any good.
 
-### Stage F — qualification and activation ◐ FIXTURE DONE (v3.8.29)
+Every factual claim links to source IDs that resolve to real `source_set` entries; URLs and retrieval
+times persist; coverage is scored; unsupported claims and contradictory sources are surfaced; source
+confidence affects synthesis; a malformed citation prevents a "fully verified research" status.
 
-CI requires all twelve to qualify. The default deliberately stays `core`; flipping it is the
-operator's act, after a real run.
+### 10 — Complete the per-role graduation record
 
-Per role: unit, integration, production-call-site, fault and end-to-end tests; cancellation, timeout,
-retry and loop-bound tests; real model/tool-call metrics; shadow then supervised operation; an
-operator-visible activation record and rollback.
+Once the columns are honestly filled, delete the test that asserts gaps must exist and replace it
+with one requiring every cell. Do not graduate a role because a test file mentions its name. Prefer
+structured qualification records over a hand-authored citation table.
 
-A readiness surface reporting, per role: enabled state, scheduling mode, handler present, contract
-present, tools implemented and registered, capabilities granted, model fitness, qualification status,
-and the exact blocked reason. `RoleAvailability` already carries part of this.
+Then "Ready" means both configured now and proven.
 
-Then a coherent profile rather than several unrelated flags:
+### 11 — Reputation-aware routing
 
-Shipped in v3.8.26 as `roster_profile` + `disabled_roles`; the shape below was the target:
+The colony calculates reputation and does not consume it: `ModelRouter.GetRoute()` is
+configuration-driven.
 
-```json
-{
-  "ant_roster": {
-    "profile": "full",
-    "enabled_roles": ["researcher","web","file","coder","builder","verifier",
-                      "ui_cartographer","tester","soldier","scribe","medic","archivist"],
-    "handoff_ingestion": true,
-    "adaptive_mission_control": true,
-    "objective_verification": true,
-    "max_medic_repairs_per_mission": 1
-  }
-}
-```
+Task-specific reputation, provider quality history, tool reliability, cost and latency scoring,
+minimum observation thresholds, recency and decay, safe exploration, a human-readable explanation of
+why a route was chosen, and a policy ceiling reputation cannot override. Demonstrated on a controlled
+benchmark.
 
-Per-role kill switches stay, for rollback. `profile: full` resolves to all twelve. **CI requires all
-twelve to report Ready under the full-roster qualification fixture before the default flips.**
+Until this lands, the colony stores experience without becoming better from it.
 
-### Stage G — remaining cleanup ◻
+### 12 — Semantic and procedural memory
 
-- 9 `/events/json` pollers in `app.js` move to the event stream
-- Configuration standardisation (166 public statics on `AnthillRuntime`)
-- The withdrawn no-UI boot gate (see §6)
+Episodes, artifacts, trails and candidates exist; the promotion layer does not. Combine verified
+episodes into stable facts and reusable procedures with prerequisites, environments and confidence.
+Expire stale knowledge, supersede contradicted knowledge, invalidate procedures when their
+dependencies change, keep synthetic and imported material out of verified memory, and let an operator
+inspect, export, invalidate and purge.
+
+### 13 — The autonomous coding and PR lifecycle
+
+The colony produces and validates a safer patch set; it cannot yet carry a task from issue to
+reviewable PR. Branch ownership, base-commit policy, coherent commits, push authorization, idempotent
+push, PR creation, durable external-action receipts, CI status ingestion and log diagnosis, review
+feedback ingestion, bounded follow-up patches, requalification, base movement, conflict refusal,
+protected-branch enforcement, approval-controlled merge, and restart without duplicate commits or PRs.
+
+### 14 — Connectors, self-improvement, production qualification
+
+The long horizon.
+
+- **Connectors** — SDK, credential handles, OAuth scopes, read/write separation, typed external
+  actions, risk tiers, idempotency keys, receipts, post-action verification, compensating rollback,
+  events, webhooks and schedules.
+- **Safe self-improvement** — mine verified failures, generate replay cases, propose isolated
+  improvements, evaluate on held-out benchmarks, canary, detect reward hacking, roll back
+  automatically, require human approval for any change to the colony's own authority.
+- **Production qualification** — thirty-day soak, fault injection across provider, network, database
+  and disk, external security review, threat model, SBOM and signed builds, backup and restore
+  drills, migration and rollback tests, SLOs, alerting and runbooks.
+
+### 15 — Technical cleanup
+
+Carried, not forgotten: event-stream dropped-event accounting and the nine `/events/json` pollers
+that depend on it; the ~166 `AnthillRuntime` statics; the no-UI build-and-boot CI gate; unique TRX
+files per test project; fully async provider and ant execution; a genuinely new module with zero core
+changes; narrow store interfaces only where a module needs one; VRAM-aware local scheduling; the
+fixed ten-mission dedupe window; dashboard legacy-workspace deletion; the full
+Windows/Linux/Docker/LXC QA checklist; `AntMetrics.InputChars`; and a re-audit of executable UI
+interpolation attributes.
 
 ---
 
-## 4b. Qualification — what is proved, and what is not
+## 3. What "done" would mean
 
-Two things share the name and have different jobs; `docs/QUALIFICATION.md` owns the distinction and
-the protocol. In summary:
+After items 1–5: *the mission runner is structurally complete, deterministically qualified across its
+declared scenarios, and demonstrated against at least one real model.*
 
-**Deterministic (merge-blocking).** The twenty scenarios live in `QualificationMatrixTests` as an
-executable ledger — every cited proof file must exist, every open scenario must say so, and this
-document must name it. Sixteen are pinned. **Qualification scenario 3** (a documentation patch driven
-from goal to applied change through the Queen) and **qualification scenario 15** (all twelve roles
-reached through PRODUCTION triggers in one composed run) are OPEN: both need a `ScriptedColony` script
-book, and the harness exists while the scenarios do not. Scenarios 7 and 17 are PARTIAL with the
-missing case named.
-
-**Per-role graduation record.** `RoleQualificationRecordTests` carries one row per executable role
-across the nine proofs PLAN.md asks for. This is deliberately not an achievement record: the
-**cancellation-and-timeout column is empty for ALL TWELVE roles**, and that is the state of the
-colony rather than a gap in the ledger. The first draft of that column cited two real cancellation
-test files that prove real things and name no role at all — the ledger's weakest check, "does the
-cited file mention this role", is what caught it. It is worth noticing that v0.3.8.57 found five
-separate sites that abandoned a running process on timeout: the area least tested here is the area
-that was least implemented there.
-
-**Live qualification: NEVER RUN.** No result exists for any provider. Everything the suite proves was
-proved against a scripted model whose answers were authored to fit the runtime, which cannot tell us
-what happens when a real one mismatches a fence, ignores a declared format or takes ninety seconds.
-The required coverage and the fields a run must record are in `docs/QUALIFICATION.md` §3. This is the
-largest single gap in the project's evidence and it is stated here rather than left to be inferred.
+That is not a finished autonomous coding agent. Reputation routing, mature memory and the end-to-end
+PR lifecycle are what stand between that claim and this one.
 
 ---
 
@@ -489,147 +224,45 @@ Non-negotiable. The colony is not a twelve-role colony until all of these pass.
 3. ✅ A compile-breaking proposed change fails when built in the patched mission workspace *(v3.8.23)*
 4. ✅ That failed patch cannot become `completed_verified` *(v3.8.22)* — retention and learning still to close
 5. ✅ A Soldier block cannot be overridden by model text *(v3.8.22)*
-6. ✅ Tester failure triggers exactly one bounded Medic repair and a mandatory retest *(v0.3.8.57 — bound moved off prose, pinned by `BoundedRepairTests`)*
-    - The bound is keyed on the SEMANTIC failure signature and now reads the typed
-      `failure_context` artifacts. It used to be `t.Result.Contains(signature)` — a substring search
-      of a previous medic's narrative — and task results are summarised and truncated, so a long
-      diagnosis whose signature fell past the cut silently stopped matching. The loop control
-      disappeared in exactly the missions that had produced the most output.
-    - Distinct TASKS, not distinct artifacts: one failing task can record several contexts across
-      attempts, and counting those would escalate a single failure on its own retry.
-    - The narrative scan survives ONLY where there is no artifact store (the CLI, and tests that
-      construct a medic without one), because a weaker bound beats none.
-7. ✅ A UI change cannot reach Coder without a valid `ui_map` *(v0.3.8.57 — `UiChangeGate`, enforced at dispatch, pinned by `UiChangeGateTests`)*
-    - Enforced at DISPATCH, not at planning. `InjectSpecialistRouting` still creates the
-      cartographer task — it is what makes the map exist — but planner output is
-      model-influenced, and the dependency it creates means "the cartographer's task
-      finished", which includes finishing by failing.
-    - Detection reads the GOAL *and the paths a task names*. The previous check was goal-text
-      only, so "fix the broken button handler" pointing at `src/Anthill.UI/app.js` was mapped
-      by nobody. One detector, shared with the planner, so the two cannot guard different sets.
-    - VALID, not merely present: the map must be hash-intact and schema-conforming. An
-      existence check waves through a truncated payload, and the coder plans against it anyway.
-    - A disabled `ui_cartographer` is a NAMED REFUSAL rather than a silent pass.
-8. ✅ Scribe and Archivist cannot act positively on unverified work *(v0.3.8.57 — pinned by `ScribeArchivistOrderingTests`)*
-    - The scribe refuses a `verified_change_summary` when `MissionVerification` is not satisfied.
-      That task type's OUTPUT ASSERTS a verification and nothing checked one had happened, so a
-      mission whose verifier never ran could produce the document an operator reads and quotes.
-      Refused rather than hedged: a summary that equivocates about verification is read as one
-      that confirms it.
-    - Only that task type. Release notes and docs proposals mid-mission assert nothing about
-      verification and are untouched.
-    - The archivist's rule was already right: positive procedural memory comes only from
-      `completed_verified`, and nothing it writes auto-promotes.
-9. ✅ Archivist runs only after the persisted canonical evaluation exists *(v3.8.26 / v0.3.8.41, pinned by `ScribeArchivistOrderingTests` at v0.3.8.57)*
-    - Runs OUTSIDE the task graph, after the evaluation is computed and persisted, and claims a
-      ledger entry so a finalization replayed after a crash cannot archive twice. The duplicate
-      matters: memory candidates feed skill registration, whose promotion threshold requires repeat
-      evidence across missions — one mission finalised twice would satisfy a bar designed to need two.
-    - A disabled archivist logs `archivist_skipped` rather than passing silently.
-10. ✅ Replaying artifact IDs reconstructs every role's inputs and evidence *(v0.3.8.57 — `MissionReconstruction`, pinned by `ReconstructionGateTests`)*
-    - Inputs come from the CONSUMPTION LEDGER (what was delivered), not from declarations: an
-      artifact the context budget dropped was never an input, and a replay built on
-      declarations would reconstruct a context the worker never saw.
-    - The gate is the GAPS. A mutated artifact, a consumption pointing at something deleted,
-      and evidence citing an artifact the store no longer holds are each detected and named;
-      a reconstruction that only ever succeeds certifies nothing.
-    - SCOPE, stated rather than implied: roles whose only output is prose — the builder writes
-      the operator answer, deliberately — have reconstructable INPUTS and no typed output.
-      `RoleReconstruction.OutputIsTyped` says which, because "produced nothing typed" and
-      "produced nothing" are different and only one is a problem.
+6. ✅ Tester failure triggers exactly one bounded Medic repair and a mandatory retest *(v0.3.8.57 — the bound reads typed `failure_context` signatures, counted by distinct task; the narrative scan survives only where there is no artifact store)*
+7. ✅ A UI change cannot reach Coder without a valid `ui_map` *(v0.3.8.57 — `UiChangeGate`, enforced at dispatch on a detector shared with the planner; valid means hash-intact and schema-conforming)*
+8. ✅ Scribe and Archivist cannot act positively on unverified work *(v0.3.8.57 — the scribe refuses a `verified_change_summary` when verification is not satisfied; positive procedural memory comes only from `completed_verified`)*
+9. ✅ Archivist runs only after the persisted canonical evaluation exists *(v3.8.26 / v0.3.8.41, pinned at v0.3.8.57 — outside the task graph, ledger-claimed so a replayed finalization cannot archive twice)*
+10. ✅ Replaying artifact IDs reconstructs every role's inputs and evidence *(v0.3.8.57 — `MissionReconstruction`; inputs come from the consumption ledger, and the gaps are the gate)*
 11. ✅ No mission ant can dispatch shell, direct file-write, or primary-workspace patch tools *(pinned by `RosterContractTests`)*
 12. ✅ Disabled or unavailable roles never receive negative reputation for not running *(v3.8.26)*
 
----
-
-## 6. The record — what was hard, and why
-
-Kept because the *shape* of these mistakes recurs, and recognising the shape is worth more than any
-individual fix.
-
-**The recurring defect: a check that answers a question ADJACENT to the one asked, and passes.**
-Found thirteen times.
-
-| # | Release | The adjacent answer |
-|---|---|---|
-| 1–5 | v3.8.18 | `ApplyPatchTool` validated patch paths without its injected options; `WebSearchTool` the same on SSRF; `WorkspacePathGuard` read ambient state; `SafetyPolicy.Configure`/`Reset` were public so any SDK consumer could clear the blocklist; the no-UI gate asked for a fabricated resource name and watched a null check |
-| 6 | v3.8.21 → fixed v3.8.22 | The planner emits `patch_proposal`; `VerificationPolicy` is keyed `code_patch`; nothing mapped them, so `diff` and `build` never ran on a single patch while the event row said verification had happened |
-| 6b | v3.8.22 → fixed v3.8.23 | The build verifier then ran against the PRIMARY workspace, which does not contain the patch. True statements about the wrong tree |
-| 7 | v3.8.26 → fixed v3.8.32 | `LearningAttribution` compared `task.FailureType` (`transient_provider_failure`) against the enum NAME (`TransientProviderFailure`) with `OrdinalIgnoreCase` — which bridges casing and not underscores. The test fed the enum name, a value production never writes there. Every environmental failure was charged to the ant for six releases |
-| 8 | v3.8.23 → fixed v3.8.32 | `PatchSetMaterializer` overwrote whole files, ignoring `old_content`. Its tests checked that materialisation SUCCEEDED and hashed, never that the bytes matched what `ApplyPatchTool` would produce. Three appliers, no two alike |
-| 9 | v3.8.25 → fixed v3.8.32 | The handoff gate read `!decision.Retryable` — the ant's status code — where it meant "the scheduler scheduled no retry". Tests covered "handoffs ingest on terminal failure" and "the tester emits a medic handoff" separately, never together |
-| 10 | v3.8.26 → fixed v3.8.32 | The readiness ladder asked specialist-only questions of all twelve roles. Untestable inside a route lambda, so untested |
-| 11 | v3.8.5 → fixed v3.8.32 | `CoreWithoutProviderTests` proved a typed refusal at one boundary and was allowed to stand for "a mission runs with no LLM" |
-| 12 | v0.3.8.40 → fixed v0.3.8.41 | `AgentCliProvider` took a `workingDirectory` documented as the confinement for a writing agent. Neither production caller passed it, so a `Writes = true` agent inherited the API host's directory — the live checkout — and went around `SandboxWorkspace`, the path guard, PatchSet review and the approval gate in one step. `Writes` had one consumer: a JSON field the console displays. A sweep for "is confinement implemented?" finds a documented parameter and a flag and answers yes |
-| 13 | v3.5.0 → named v0.3.8.41 | `RunAllowlistedCheckTool` resolves its workdir from whatever workspace is ambient. A tester ant runs as its own DAG task, AFTER `VerifyPatchSet` disposed the scope holding the materialised patch — so it checked the mission workspace, which has no patch in it, and "3 checks passed" was recorded as though it judged the proposal. 6b again, one layer out: the verifiers were fixed in v3.8.23 and the ant that runs the same checks was not |
-
-**The rule that came out of it:** a test for a production wiring must be keyed to a value the
-PRODUCER actually emits. The v3.8.21 tests passed the literal string `"code_patch"` — a task type
-production never produces — so they could only ever prove the callee was self-consistent.
-
-**The rule was written after #6 and applied only FORWARD.** That is the v3.8.32 lesson and it is the
-expensive one. Defects 7–11 were all already in the tree when the rule was written down; it was
-applied to new code as it was authored and never run backward over the suite that existed. Recording
-a lesson as history is not the same as building a detector for it.
-
-`CrossBoundaryAgreementTests` is that detector, and it exists in three forms — no `FailureClass`
-stringified outside the shared converter, no second patch applier, no enum with a custom wire form
-read by `Enum.TryParse`. All three were verified to FAIL against v3.8.31 before being kept. **A guard
-nobody has watched fail is a guard nobody has tested**, and the vocabulary guard added in v3.8.31 is
-the proof: the first thing it did on its first run was catch its own author.
-
-**Why the v3.8.31 "full cleanup" missed all five.** It swept for ABSENCE — TODO comments, broken
-links, untracked files, undeclared trail kinds, unsuppressed warnings. Every question it asked was
-"is something missing". All five defects were things PRESENT and wired wrong, where nothing is
-missing and everything compiles. An absence-sweep is structurally incapable of finding them, and
-1,750 passing tests measured how much had been asserted rather than how much was true.
-
-**The second recurring defect: a well-built subsystem with no production call site.** Found three
-times, all in the same area. `VerificationRunner` (four verifiers, a policy table, tested since
-v2.12, never called). `SandboxWorkspace` + `PatchVerifyRunner` (materialise a patch and build it
-since v1.8.24 — operator-triggered only, never reached from a mission). `ToolExecutionContext`
-(**still open**, Stage B item 4). The generated call-site audit exists because of this class; it
-catches declarations with no consumer, and did not catch these because the consumers exist — they
-are just not on the path that matters.
-
-**Fail-closed logic blind to its own case (v3.8.23).** `AntExecutorCatalog.Initialize` checked for a
-missing contract only `if (isSpecialist)`, so for the six roles that had no contract the check that
-would have reported it did not apply. The most privileged role in the colony — the coder, the only
-one producing source changes — was the least specified, and nothing could see it.
-
-**Three phantom tools, deleted rather than built (v3.8.23).** `policy_scan`, `read_failure_context`
-and `write_memory_candidate` sat in contracts from v2.19.0 with nothing implementing them. The
-instinct was to build all three. On inspection: `policy_scan`'s capability already exists as an
-in-process deterministic service and belongs out of a model's reach; `read_failure_context` should be
-orchestration assembling a typed artifact, not a tool the medic fetches with; and
-`write_memory_candidate` was **redundant** — the archivist already writes candidates as artifacts and
-`IngestMemoryCandidates` already consumes them, so building it would have created a second channel
-writing the same fact. Implementing all three would have produced a green inventory with more attack
-surface and one duplicate write path.
-
-**A withdrawn gate, on purpose (v3.8.18).** The no-UI boot CI job failed three times; rather than
-mark it `continue-on-error` and keep a green tick, the job was removed and the success criterion
-reverted to NOT PROVEN. A gate that cannot hold is worse than an absent one, because it is counted.
-Still open, in Stage G.
-
-**Ordering that had to be argued (v3.8.19).** Worker reputation is numbered three stages before the
-knowledge graph in the old plan, and was deliberately built after it: reputation learned before
-reproducible evidence rewards persuasive prose rather than demonstrated work. Read the dependency
-order, not the numbering — which is part of why those documents were merged into this one.
+Gates 1 and 2 close with plan items 3, 4 and 5 — a role is not Ready in the sense this list means
+until its qualification scenario and its graduation record are real.
 
 ---
 
-## 7. Where everything else lives
+## 6. The record — the shape of the mistakes
 
-| Document | Purpose |
-|---|---|
-| `CHANGELOG.md` | The complete record of what shipped |
-| `docs/adr/ADR-001…007` | Decision records. Why a choice was made, and what it cost |
-| `docs/ANT_EXECUTION.md` | The execution framework's role matrix and gates |
-| `docs/AUTONOMY.md` | The autonomy model and its limits |
-| `docs/APPROVALS.md`, `docs/CONTRACTS.md` | Approval pipeline; task contract vocabulary |
-| `docs/DEPLOYMENT.md`, `docs/HOMELAB.md` | Running it |
-| `docs/HANDOFF.md` | Release recipe — including the manual tag steps |
-| `docs/TRAINING_MISSIONS.md` | Missions used to exercise the colony |
-| `docs/archive/v3/` | `NORTH_STAR`, `ROADMAP`, `REFACTOR-PLAN`, `POST_REFACTOR-PLAN`, and superseded design docs |
-| `docs/archive/v2/` | The Homelab Command Center era, closed at v2.26.0 |
+Kept because the shape recurs and recognising it is worth more than any individual fix.
+
+**A check that answers a question ADJACENT to the one asked, and passes.** Found fifteen times. The
+newest: a graduation record cited two real cancellation test files that prove real things and name no
+role, and a qualification index lived in a doc comment where a citation could rot into a deleted file
+without anything noticing.
+
+**Declared, and reaching nobody.** `RequiredInputArtifactTypes`, `EvidenceKinds.SchemaValid` and
+`Task.InputArtifactIds` were each declared before anything populated them, and each looked exactly
+like a working feature for releases. `Evidence.Judges` joined them inside a single release — added
+and read by nothing until the same release closed it.
+
+**A declaration that disagrees with the runtime.** The verifier's contract said planner-selectable
+for six releases after the runtime guaranteed insertion. `scheduling_mode` is reported by the API and
+read by operators, so this was the system stating a guarantee it did not keep.
+
+**Prose as a control channel.** The bound on repair looping was a substring search of a previous
+medic's narrative, and task results are truncated — so the bound was weakest exactly where the loop
+was longest.
+
+**A diagnostic that breaks what it describes.** The artifact schema check logged a violation through
+an event table with a foreign key, turning "this payload is the wrong shape" into "the artifact was
+never stored".
+
+**Timeouts that abandon the work.** Five sites called `WaitForExit(ms)`, carried on when it returned
+false, and read `ExitCode` — which throws on a live process — so a timeout surfaced as an
+ordinary-looking exception while the process kept running.
