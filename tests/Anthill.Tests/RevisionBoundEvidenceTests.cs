@@ -140,19 +140,20 @@ public class RevisionBoundEvidenceTests
     }
 
     /// <summary>
-    /// Missions whose evidence carries NO identity are untouched.
-    ///
-    /// Every row written before v0.3.8.57 looks like that, and refusing them all would convert a
-    /// schema addition into a retroactive freeze on work that was legitimately verified under the
-    /// rules of its own release. The absence is a fact about when the row was written, not about the
-    /// work it describes — the same reasoning `PatchApply` applies to proposals with no base hash.
+    /// REVERSED at v0.3.8.61 (PLAN.md §1b S3). This test used to pin the opposite: legacy
+    /// unidentified evidence flowed through auto-apply untouched, on the reasoning that the missing
+    /// identity was a fact about when the row was written. True about the ROW — and irrelevant to a
+    /// LIVE WRITE happening now, which either has evidence naming the bytes it judged or does not.
+    /// Legacy evidence stays readable for history and the manual apply path stays open; what a row
+    /// without identity can no longer do is authorise an unattended write to the operator's tree.
     /// </summary>
     [Fact]
-    public void LegacyEvidenceWithNoIdentity_IsNotRetroactivelyRefused()
+    public void LegacyEvidenceWithNoIdentity_IsManualApplyOnly()
     {
         var runner = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
             "src", "Anthill.Api", "AutoApplyRunner.cs")));
 
-        Assert.Contains("if (identified.Count == 0) return refusals;", runner);
+        Assert.Contains("no revision-identified evidence", runner);
+        Assert.DoesNotContain("if (identified.Count == 0) return refusals;", runner);
     }
 }
