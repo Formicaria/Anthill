@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.57**.
+Shipping release: **v0.3.8.58**.
 
 ---
 
@@ -25,12 +25,219 @@ Done and load-bearing:
 - Structural enforcement: a UI change cannot dispatch without a valid `ui_map`; verification is
   policy-inserted and fails closed; the repair bound reads typed signatures; the scribe cannot
   certify unverified work; `MissionReconstruction` replays a mission from artifact IDs.
-- Chat talks to the colony. An autonomous coding agent may not serve the conversation route; the
-  colony dispatches one as a tool, inside a mission that reviews and verifies its work.
+- Every operator message is a mission. There is no chat lane, no `conversation` route and no
+  unconfined agent access anywhere; the colony dispatches a coding agent as a TOOL, inside a mission
+  that plans, reviews, tests and verifies its work (v0.3.8.58).
 
 Not done, and the reason each matters, is the ordered plan below.
 
 ---
+
+## 1b. Security review — BLOCKING, ahead of everything below
+
+An external source-level review found **four P0 and two P1 defects**. They take priority over every
+item in §2, because §2 is about the colony doing MORE and these are about its existing autonomy being
+trustworthy. Shipping more autonomy on top of a broken confinement boundary enlarges the blast
+radius; it does not improve the system.
+
+> The biggest benefit is not additional autonomy — it is making existing autonomy trustworthy: no
+> workspace escapes, no silent secret disclosure, no partial trees described as rolled back, and no
+> database failure turning into permission to write.
+
+### What was reviewed
+
+| | |
+|---|---|
+| Release reviewed | **v0.3.8.57**, commit `c62a27a` |
+| Main at review time | `527b4a7` — its only post-release changes are the PR #11 documentation reconciliation, so the runtime code is identical |
+| CI | green on both the release and current main |
+| Issue tracking | **none** — no open GitHub issues track any of these findings |
+| Method | source-level review; the reviewing environment had no .NET SDK, so nothing was executed locally |
+
+The last two rows matter. Green CI is not evidence against these findings — every one of them is a
+path the suite does not exercise, and two of them (S2, S5) are places where a test asserts something
+adjacent to the claim and passes. And with no issues open, this section is the only record.
+
+### Immediate containment, until the P0s close
+
+```json
+{
+  "autonomy_autoapply_enabled": false,
+  "patch_application_enabled": false,
+  "file_writing_enabled": false,
+  "file_tools_enabled": false,
+  "shell_tool_enabled": false
+}
+```
+
+Also deny or restrict `/projects/{id}/file` and `/projects/{id}/files` at the proxy or API layer.
+The Files-pane endpoints **do not consult the runtime write flags**, and their READ route is
+escapable on its own — so the flags above do not contain S1 by themselves.
+
+### The findings
+
+| Priority | Finding | Worst consequence |
+|---|---|---|
+| **P0** | Files-pane and workspace confinement can be escaped | Read/write files outside the selected workspace |
+| **P0** | Auto-apply is not actually atomic | Partial/truncated tree, with logs claiming rollback succeeded |
+| **P0** | Verification and evidence fail open | Unverified patches reach live auto-apply |
+| **P0** | Secret artifacts can be sent to models | Credential / private-data disclosure |
+| **P1** | UI-map enforcement fails open | UI code dispatched without a trustworthy map |
+| **P1** | Some subprocess timeouts are ineffective | Hung worker or director; unbounded output/memory |
+
+### Repair order
+
+This is the reviewer's order and it is **not** the severity order. Confinement comes first because
+every later fix is verified by reading and writing files, and evidence comes before transactional
+apply because a correct transaction around an unverified patch is a reliable way to ship the wrong
+bytes.
+
+1. **S1** — Files-pane traversal and symlink-safe confinement
+2. **S2** — shell tool confinement: disable, or fix
+3. **S3** — evidence fail-CLOSED
+4. **S4** — transactional patch application and durable recovery
+5. **S5** — Secret-artifact filtering
+6. **S6** — UI gate and remaining subprocess handling
+7. **S7** — runtime and fault-injection tests land BEFORE auto-apply is re-enabled
+
+---
+
+#### S1 — Filesystem confinement (P0)
+
+Broken in two independent ways, either of which is sufficient.
+
+- The Files pane checks `full.StartsWith(root, StringComparison.Ordinal)` with **no separator
+  requirement**. A project at `/srv/project` therefore serves `../project-secret/key.txt`, which
+  resolves to `/srv/project-secret/key.txt` — a SIBLING whose name merely starts with the root
+  string. The vulnerable helper feeds read, create and edit alike:
+  `ApiHost.Providers.cs` L855–980.
+- `WorkspacePathGuard` uses `Path.GetFullPath`, which removes `..` but does **not** resolve symlinks
+  or Windows junctions. A link inside the workspace pointing outside it passes containment and is
+  then followed by the file tools and the patch applier: `WorkspacePathGuard.cs` L63–78. Worse,
+  `RepositoryIndex.cs` L232–249 CLAIMS symlinks are resolved while the guard does not — a
+  declaration that disagrees with the runtime, in the security boundary.
+- With `shell_tool_enabled`, confinement is weaker still: `cat`, `find` and `grep` accept
+  unrestricted absolute paths, and setting a working directory does not sandbox a process:
+  `ShellAndWebTools.cs` L31–56.
+
+**Fix.** One hardened resolver, used by every filesystem route: Files pane, tools, patch apply and
+revert, indexing, sandbox harvest, verification. Require exact-root equality or root-plus-separator.
+Resolve or reject every symlink and reparse-point component; for a file being created, validate the
+nearest existing parent. Close the validate-then-open TOCTOU, ideally with handle-relative /
+no-follow APIs.
+
+**Tests.** Linux symlinks, Windows junctions, sibling-prefix traversal, destination-parent symlinks,
+blocked-path aliases.
+
+#### S2 — Shell tool confinement (P0, part of S1's surface)
+
+Called out separately by the reviewer because it has its own remedy: the tool can be disabled
+outright while S1 lands. A working directory is not a sandbox, and the allowlisted commands take
+absolute paths.
+
+#### S3 — Verification and evidence fail OPEN (P0)
+
+Two consecutive fail-open boundaries, and the direction is the wrong one — a store failure WIDENS
+authority instead of stopping a live write.
+
+- A verifier that cannot read evidence returns null and falls through to model or static prose:
+  `Ants.cs` L1001–1051. The static fallback can emit `Verification Passed` from completed task
+  counts alone: L1157–1165.
+- Auto-apply that cannot read evidence returns **zero refusals** and continues. It also
+  deliberately accepts missions with no revision-identified evidence, and skips proposals with a
+  null patch-set id: `AutoApplyRunner.cs` L286–329.
+
+**Fix.** An unavailable evidence store must produce `verification_unavailable` and never prose
+fallback for production verification. Live auto-apply must require a non-empty patch-set id and
+complete revision identity; the complete verification bundle for the exact revision and tree; at
+least one deterministic pass; no deterministic failure; every policy-required check. Compare the
+patch-set CONTENT hash as well as revision id and tree hash. Legacy unidentified evidence stays
+readable for history and is manual-apply only.
+
+**Tests.** Evidence-query exceptions, no evidence, legacy evidence, null patch-set id, mixed
+revisions, mixed pass/fail rows, wrong tree hashes.
+
+This subsumes §2 item 2, which asked only that the canonical evaluator consume `Evidence.Judges()`.
+
+#### S4 — Transactional patch application (P0)
+
+The v0.3.8.57 "a patch set applies as a unit or not at all" guarantee does not survive a mid-write
+failure.
+
+- `ApplyPatchTool` backs up and then performs destructive I/O, but its outer handler returns only an
+  error — the backup and path metadata are lost. A `WriteAllText` that truncates or partially
+  creates a file before throwing is therefore unrecoverable: L75–95, L156–198.
+- `AutoApplyRunner` rolls back only the EARLIER successful patches, never the operation that failed
+  mid-write. It ignores every rollback return value and logs the whole batch as rolled back
+  regardless: L176–204, L243–258.
+- Rollback itself can destroy newer work: it deletes added files and overwrites modified or renamed
+  ones without checking whether they changed after apply. Manual revert has the same behaviour:
+  `Queen.Views.cs` L173–226, L268–318.
+
+**Fix.** Stage writes into temporaries and atomically replace or move. Write a durable transaction
+journal before the first mutation, and recover incomplete journals at startup. Return recovery
+metadata even when the current operation fails. Record pre- and post-apply hashes, and roll back
+only where the current bytes still match what was applied. Treat incomplete rollback as a critical,
+durable `rollback_failed` state that halts auto-apply.
+
+**Tests.** Injected disk-full, permission change, partial write, rename, rollback failure,
+concurrent edit, process crash — asserting a **byte-identical** restored tree.
+`AutoApplyAtomicityTests.cs` L141–155 currently asserts only that the SOURCE contains a rollback
+call. That is a check answering a question adjacent to the one asked, in the file whose whole
+purpose is to prove atomicity.
+
+#### S5 — `ArtifactVisibility.Secret` does not prevent model disclosure (P0)
+
+`Artifact.cs` L63–71 states that a Secret artifact is "never rendered, never sent to a model".
+Nothing enforces it:
+
+- mission queries return every visibility: `SqliteMemory.Artifacts.cs` L146–158;
+- `ArtifactContext.Compile` does not filter Secret and emits their payloads, including declared
+  inputs: `ArtifactContext.cs` L98–143, L168–205;
+- those blocks are appended directly to model prompts: `DomainHelpers.cs` L153–162;
+- the soldier reads payloads directly with no visibility check: `SpecialistAnts.cs` L325–354.
+
+Built-in producers currently write mostly Colony or Operator, so exploitation needs a module, a
+custom producer, or a corrupted/imported row. That is not much comfort: the public SDK exists to
+support modules, and **malformed visibility is deliberately coerced TO Secret** — so the unsafe
+value is precisely the one a malformed import lands on.
+
+**Fix.** An audience-aware retrieval and render policy. Secret artifacts never enter any model
+context or narrative renderer. A declared Secret INPUT is reported as WITHHELD rather than silently
+omitted — a silent drop is how a role reasons confidently about a premise it never received. Apply
+the check again at every direct consumer.
+
+**Tests.** Prioritized, declared, and corrupt-visibility Secret artifacts.
+
+#### S6 — UI-map gate fails open, and `{}` is a valid map (P1)
+
+`UiChangeGate.Check` allows when the artifact store is absent or throws: L88–107. That was a
+deliberate choice — a missing store is evidence about the WIRING rather than the mission, and
+failing closed would block every CLI and test caller — but production dispatch always has a store,
+and the two cases are distinguishable. Separately, the `ui_map` schema requires no keys, so `{}`
+conforms: `ArtifactSchemaCheck.cs` L121–124. `UiChangeGateTests` proves a truncated map is refused
+while an empty one passes.
+
+**Fix.** Fail closed on production dispatch when the store is unavailable. Require an intact map
+from `ui_cartographer` carrying `files_examined`, `routes` and `api_calls`.
+
+#### S7 — Subprocess timeouts that cannot fire (P1)
+
+`ShellCommandTool` and `RepoOps.Git` call synchronous `ReadToEnd()` **before**
+`WaitForExit(timeout)`. A process that never exits therefore never reaches the timeout, and
+sequential stdout-then-stderr reads deadlock when the other pipe fills: `ShellAndWebTools.cs`
+L44–56, `RepoOps.cs` L27–51.
+
+v0.3.8.57 fixed five git sites to kill their process trees on timeout and did not fix the read that
+prevents the timeout being reached — the guard was added upstream of the thing that blocks it.
+
+**Fix.** Concurrent asynchronous draining, bounded output, cancellation, process-tree termination.
+
+**Tests.** A child that writes heavily to BOTH streams, and one that never exits.
+
+#### S8 — Re-enable
+
+Fault-injection tests land before auto-apply is switched back on. §2 resumes after that.
 
 ## 2. The plan, in order
 

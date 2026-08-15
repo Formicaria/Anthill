@@ -19,18 +19,8 @@ namespace Anthill.Modules.Reasoning;
 /// refused login is AuthError. An ant seeing NotAvailable can route elsewhere; an ant seeing a
 /// string beginning "ERROR:" could only guess.
 /// </summary>
-public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningProvider, IAutonomousCodingAgent
+public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningProvider
 {
-    /// <summary>
-    /// v0.3.8.57 — this provider DECLARES that it is an autonomous coding agent, so the runtime
-    /// can tell it apart from a chat model without the core naming a provider implementation.
-    ///
-    /// The distinction it makes possible: the colony may dispatch an agent as a TOOL, inside a
-    /// mission that plans, reviews, tests and verifies its work; the operator's chat box may not
-    /// be wired directly to one. See IAutonomousCodingAgent.
-    /// </summary>
-    public string AgentDisplayName => _agent.DisplayName;
-
     private readonly AgentCli _agent;
     private readonly TimeSpan _timeout;
     private readonly string? _workingDirectory;

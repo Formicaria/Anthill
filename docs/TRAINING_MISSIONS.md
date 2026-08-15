@@ -165,17 +165,19 @@ gaps remain open (the live twelve-role mission against a real model), and which 
 shipped versus future. Store this as durable direction for future mission planning.
 ```
 
-### 10. The Two Lanes
+### 10. The One Lane
 
 ```text
-One-shot, read-only training mission, do not modify files: document the difference between the
-colony's two working lanes. The mission lane: Queen-planned, policy-reviewed, verifier-bound,
-memory-earning — its outcomes can strengthen pheromone trails. The direct-agent lane: chat turns
-under Bypass or Automatically-approve, captured as direct_change artifacts that are explicitly
-marked not colony-verified and are structurally excluded from learning — unverified work can never
-buy reputation. Cover when each lane is appropriate, how the approval policy governs the chat
-lane, how the direct-edit sweep records what a writing chat run changed, and why the separation
-exists. Produce the explanation as an operator-facing reference.
+One-shot, read-only training mission, do not modify files: document why the colony has exactly ONE
+working lane. Every operator message becomes a mission: Queen-planned, policy-reviewed,
+verifier-bound, memory-earning. Cover the lane that used to exist beside it and why it was removed
+— chat turns under Bypass or Automatically-approve wrote to the operator's live tree, were captured
+as direct_change artifacts marked not colony-verified, and were structurally excluded from learning.
+Explain why "capture the unverified work and label it" was the wrong fix: a lane whose output must
+be quarantined is a lane doing work outside the colony, and the label was the receipt. Cover what
+the approval policy governs now (whether a MISSION needs a confirmation card, never whether the chat
+box may edit files) and why the two were conflated. Produce the explanation as an operator-facing
+reference.
 ```
 
 ### 11. Workspace & Project Discipline
