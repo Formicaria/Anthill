@@ -125,9 +125,14 @@ public static class PatchVerifyRunner
             // preferCopy: verify against the workspace AS IT IS ON DISK, including uncommitted
             // local state the patch was diffed against — a HEAD worktree could miss it.
             using var sandbox = SandboxWorkspace.Create(liveRoot, preferCopy: true);
-            var target = Path.GetFullPath(Path.Combine(sandbox.Root, filePath));
-            if (!target.StartsWith(Path.GetFullPath(sandbox.Root), StringComparison.OrdinalIgnoreCase))
+            // v0.3.8.59 (PLAN.md §1b S1) — through the one resolver. This carried the SAME defect
+            // the review found in the Files pane: a prefix comparison with no separator, so a
+            // sandbox at .../work served .../work-other, and no link was ever resolved. Not named in
+            // the review, found by the sweep the fix prompted — which is the argument for the sweep.
+            var containment = Anthill.Core.Security.PathContainment.Resolve(sandbox.Root, filePath);
+            if (!containment.Allowed)
                 return fail($"Patch path escapes the sandbox: {filePath}", "path_escape");
+            var target = containment.Path;
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.WriteAllText(target, newContent);
             verify = AutoApplyRunner.RunVerify(sandbox.Root);
