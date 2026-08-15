@@ -3,18 +3,26 @@ using ThreadingTask = System.Threading.Tasks.Task;
 
 namespace Anthill.Core.Conversations;
 
-/// <summary>How a turn is executed. The same conversation, two execution modes.</summary>
+/// <summary>
+/// What a turn was ASKED for. v0.3.8.58: both answers do the same thing.
+///
+/// The enum is kept because the API still sends a mode and the console still has a mission button,
+/// and a caller that never updates must not break. What is gone is the second behaviour: `Chat` no
+/// longer selects a lane in which a model answers directly and can write to the operator's files.
+/// It is retained as the API's default and routed to the mission pipeline like everything else.
+///
+/// Deleting the member outright was the alternative and it is worse: an old client sending
+/// `"mode": "chat"` would then fail to deserialize rather than get the behaviour it should have had
+/// all along.
+/// </summary>
 public enum ConversationMode
 {
-    /// <summary>
-    /// Bounded work in the tool-calling loop: ask, run tools, feed results back, stop. Turn, tool
-    /// call, wall-clock and repeat budgets all apply. The default, because most turns are questions.
-    /// </summary>
+    /// <summary>What an unspecified request means. Reaches the mission pipeline.</summary>
     Chat = 0,
 
     /// <summary>
-    /// The full mission pipeline: a plan, multiple tasks, specialists, verification. Reached only by
-    /// ESCALATION — see <see cref="ConversationRunner.StartMissionAction"/>.
+    /// The full mission pipeline: a plan, multiple tasks, specialists, verification — gated by
+    /// <see cref="ConversationRunner.StartMissionAction"/>. Every turn reaches this now.
     /// </summary>
     Mission,
 }
@@ -26,14 +34,6 @@ public sealed record ConversationOutcome(
     string? MissionId,
     string Summary,
     EscalationDecision? Decision = null);
-
-/// <summary>
-/// v0.3.8.42 — one conversational reply: the text, and which provider/model actually produced it.
-/// The attribution is not decoration: capability-aware routing can substitute providers, and a
-/// transcript that cannot say who answered cannot be audited.
-/// </summary>
-public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error,
-    int? PromptTokens = null, int? CompletionTokens = null);
 
 /// <summary>
 /// v3.7.0 — the escalation boundary: what turns a conversation into a mission.
@@ -65,15 +65,6 @@ public sealed class ConversationRunner
     /// itself. It is not a tool and never will be — no model may call it.
     /// </summary>
     public const string StartMissionAction = "start_mission";
-
-    /// <summary>
-    /// v0.3.8.51 — the chat model's escalation PROPOSAL: a reply ending with this exact marker
-    /// asks the colony to run the operator's request as a mission. Stripped from the record and
-    /// converted into the same deterministic start_mission gate the old button used — the model
-    /// can request, only the gate (and under Ask, only the operator) can allow. Double-bracketed
-    /// so ordinary prose can never trip it.
-    /// </summary>
-    public const string EscalateMarker = "[[START_MISSION]]";
 
     /// <summary>How long to wait for the mission ROW to exist before giving up on linking it.</summary>
     public const int MissionIdTimeoutSeconds = 15;
@@ -114,42 +105,15 @@ public sealed class ConversationRunner
     private readonly Dictionary<string, List<CancellationTokenSource>> _running = new();
 
     /// <summary>
-    /// <paramref name="startMission"/> is the mission pipeline, injected. The runner decides WHETHER
-    /// a mission starts; the Queen decides what a mission does. Keeping those apart is what lets the
-    /// escalation boundary be tested without standing up a colony.
-    /// </summary>
-    /// <summary>
     /// <paramref name="startMission"/> is the mission pipeline, injected. It reports the new mission
     /// id through its callback AS SOON AS THE ROW EXISTS, then keeps running — the runner needs the
     /// id to record history, and must not wait for the work to finish to get it.
     /// </summary>
-    /// <summary>How many recent turns travel to the provider as context. Bounded, like everything.</summary>
-    public const int ChatContextTurns = 12;
-
-    /// <summary>
-    /// v0.3.8.42 — the reasoning call behind chat turns, injected like the mission pipeline is.
-    ///
-    /// Until this existed, Chat mode recorded the operator's message and answered NOTHING: the
-    /// "bounded conversational work" summary described a loop that had never been built, the
-    /// console rendered the permanent "conversational work" state as an eternal spinner, and the
-    /// natural misreading was "the model endpoint is down" when the truth was "no model is ever
-    /// asked". The delegate resolves through the SAME router the roles use — the `conversation`
-    /// route key, so Ollama, a keyed API or an installed agent CLI are equally valid answers and
-    /// the operator chooses under Administration → Providers &amp; Model Routing. Null means the
-    /// runtime was composed without reasoning, and the turn says so instead of pretending.
-    /// </summary>
-    /// <summary>v0.3.8.44: the second argument is the delta channel — null when the caller wants
-    /// one reply, a sink when it wants the reply as it is produced. The delegate decides whether
-    /// its provider can actually stream; the runner never fakes it.</summary>
-    private readonly Func<string, Action<string>?, ConversationReply>? _ask;
-
     public ConversationRunner(SqliteMemory memory,
-        Func<string, Action<string>, CancellationToken, string> startMission,
-        Func<string, Action<string>?, ConversationReply>? ask = null)
+        Func<string, Action<string>, CancellationToken, string> startMission)
     {
         _memory = memory;
         _startMission = startMission;
-        _ask = ask;
     }
 
     /// <summary>
@@ -165,7 +129,6 @@ public sealed class ConversationRunner
         ConversationMode requested = ConversationMode.Chat,
         IReadOnlyDictionary<string, string>? answers = null,
         CancellationToken cancel = default,
-        Action<string>? onDelta = null,
         IReadOnlyList<(string Filename, string Content)>? attachments = null)
     {
         if (conversation is null)
@@ -180,108 +143,37 @@ public sealed class ConversationRunner
 
         var ordinal = _memory.LoadConversationTurns(conversation.Id).Count + 1;
 
-        if (requested == ConversationMode.Chat)
-        {
-            // Chat is not gated HERE. The tools it may call are gated at dispatch, by the same gate,
-            // which is the correct place: a conversation that only reads needs no permission, and
-            // one that tries to write is stopped at the write rather than at the sentence before it.
-            RecordTurn(conversation, ordinal, message, null, attachments);
-
-            // v0.3.8.42: the turn is ANSWERED. Before this the message was recorded and nothing
-            // was ever asked — see the _ask field for what that cost.
-            if (_ask is null)
-                return new ConversationOutcome(ConversationMode.Chat, false, null,
-                    "no reasoning provider is composed — the message is recorded, and nothing can answer it");
-
-            // v0.3.8.52 (field report): "did not auto commit." The v0.3.8.51 commit hook rode the
-            // patch pipeline — but under Skip-all the CHAT LANE edits live files DIRECTLY with its
-            // own tools, so no patch ever exists and the hook has nothing to fire on. The sweep
-            // closes that lane: snapshot which paths are already dirty before the agent runs, and
-            // afterwards commit only what the run made NEWLY dirty — the operator's own
-            // work-in-progress sitting in the same tree is never swept into the colony's commit.
-            var sweep = BeginDirectEditSweep(conversation);
-
-            ConversationReply reply;
-            try
-            {
-                // v0.3.8.51, second field round: the CHAT LANE is a working agent too — Claude
-                // Code with a real directory — and it ran with nothing while only missions got
-                // the operator's answer. The same policy + grants now ride this call, marked
-                // UNCONFINED because this lane stands in live files: Manual approval grants no
-                // writes here (the agent proposes a mission instead, where the sandbox is);
-                // Automatically approve and Skip-all act as the operator chose.
-                // v0.3.8.52 (field report: every project's chat ran in the same tree): the agent
-                // stands in THIS conversation's project directory — the explicit path, else the
-                // project's own tree under <workspace root>/projects/, created on first use
-                // (ProjectRoots). Null only when nothing resolves, which keeps the provider's
-                // refuse-not-roam confinement rule in force.
-                using var access = Anthill.SDK.Reasoning.AgentAccessScope.Enter(
-                    conversation.EffectivePolicy.ToString().ToLowerInvariant(),
-                    ProjectGrantPaths(conversation),
-                    confinedWorkspace: false,
-                    workingDirectory: ProjectDirectory(conversation));
-                reply = _ask(ChatPrompt(conversation), onDelta);
-            }
-            catch (Exception error) { reply = new ConversationReply(false, "", "", "", error.Message); }
-
-            // The writes happened whether or not the reply landed — commit them either way,
-            // BEFORE any early return below can walk past them.
-            CommitDirectEdits(conversation, sweep, message);
-
-            if (!reply.Ok)
-                return new ConversationOutcome(ConversationMode.Chat, false, null,
-                    $"no answer: {reply.Error ?? "the provider returned nothing"} — route "
-                  + "'conversation' to a working provider under Administration → Providers & Model Routing");
-
-            // Cancelled while the provider was thinking: the operator has already moved on, and a
-            // reply landing in a cancelled conversation would look like it ignored the Stop.
-            var current = _memory.LoadConversation(conversation.Id);
-            if (current?.Cancelled == true)
-                return new ConversationOutcome(ConversationMode.Chat, false, null,
-                    "cancelled while answering — the reply was discarded");
-
-            // v0.3.8.51 (field report): THE COLONY PROPOSES THE MISSION ITSELF. The transcript's
-            // worst sentence was the colony telling its operator to "ask for it as a mission
-            // explicitly" — a magic word. The chat prompt now invites the model to end its reply
-            // with the escalation marker when the request is real work; the marker is stripped
-            // from the record and the SAME deterministic gate the mission button used takes over:
-            // Manual approval shows the in-chat card, Automatically approve and Skip-all just run.
-            // The marker is a PROPOSAL, exactly as trusted as a handoff — the model can request,
-            // only the gate can allow.
-            var wantsMission = reply.Content.Contains(EscalateMarker, StringComparison.Ordinal);
-            var content = wantsMission
-                ? reply.Content.Replace(EscalateMarker, "", StringComparison.Ordinal).TrimEnd()
-                : reply.Content;
-
-            _memory.SaveConversationTurn(new ConversationTurn(
-                Guid.NewGuid().ToString("N")[..12], conversation.Id, ordinal + 1, "assistant", content)
-            {
-                Provider = reply.Provider,
-                Model = reply.Model,
-                // v0.3.8.46: what the answer cost, when the provider says. Null is "not reported".
-                PromptTokens = reply.PromptTokens,
-                CompletionTokens = reply.CompletionTokens,
-            });
-
-            if (wantsMission)
-                // Re-enter as a MISSION with the operator's own message as the goal. The recursion
-                // is bounded — the mission path never re-enters chat — and the gate downstream is
-                // the one authority: Ask records the refusal and waits visibly; Auto/Bypass run.
-                // RecordTurn's identical-pending reuse links the mission to the operator's turn
-                // instead of duplicating it.
-                return Run(conversation, message, ConversationMode.Mission, answers,
-                    cancel: cancel, onDelta: null, attachments: null);
-
-            return new ConversationOutcome(ConversationMode.Chat, true, null,
-                $"answered by {reply.Provider}/{reply.Model}");
-        }
+        // v0.3.8.58 — THERE IS NO SECOND LANE. Every message the operator sends is a mission.
+        //
+        // `requested` still arrives from the API because the console has a mission button, but it no
+        // longer selects between two behaviours: Chat and Mission both mean "give this to the
+        // colony". The chat lane is not narrowed here, it is DELETED, and the deletion is the point.
+        //
+        // WHAT THE LANE ACTUALLY WAS. Not a chat model answering questions. It entered
+        // AgentAccessScope with confinedWorkspace:false — standing in the operator's LIVE project
+        // tree — and handed the conversation's approval policy to the provider, which is what
+        // materialised the agent CLI's own edit flags and its settings file. Then BeginDirectEditSweep
+        // and CommitDirectEdits existed to notice which files that turn had written and commit them.
+        // A hundred lines of machinery for capturing work done outside the colony is not something
+        // anyone builds for a lane that answers questions; it is the receipt for a lane that worked.
+        //
+        // v0.3.8.57 blocked a coding agent from serving this route and rewrote the prompt to say it
+        // had no tools. Both were true and neither was the grant: the authorisation lived in the
+        // access scope, not the sentence. That is this repository's own named defect — prose as a
+        // control channel — committed by the change that was supposed to close it.
+        //
+        // WHAT REPLACES IT. The planner decides the shape. A trivial message yields a trivial plan;
+        // a real request yields the full one. The colony deciding that a message is small is a
+        // different thing from a lane in front of the colony deciding it never had to ask, and only
+        // the first one keeps the roles load-bearing. There is no marker, no escalation and no
+        // proposal, because there is nothing left to escalate FROM.
 
         // The shared budget, checked BEFORE the gate. A conversation that has spent its mission
         // allowance is not asking for permission — it is out of budget, and asking the operator to
         // approve something that will be refused anyway trains them to approve without reading.
         if (!conversation.Budget.AllowsAnotherMission(conversation.MissionIds.Count))
         {
-            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
+            RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"conversation budget exhausted: {conversation.MissionIds.Count} of "
               + $"{conversation.Budget.MaxMissions} missions already started");
@@ -309,7 +201,7 @@ public sealed class ConversationRunner
             // The turn is recorded even though nothing ran. An attempt to escalate that was refused
             // is part of the conversation's history — arguably the most interesting part, since it
             // is the moment the colony wanted more authority than it had.
-            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
+            RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"escalation refused: {decision.Reason}", decision);
         }
@@ -341,7 +233,7 @@ public sealed class ConversationRunner
         // referred to a plan that lived in the CONVERSATION and the mission never saw it. The
         // goal now carries the operator's message plus the bounded recent transcript, so what
         // "this" and "these" point at travels with the work.
-        var missionGoal = ComposeMissionGoal(conversation, message);
+        var missionGoal = ComposeMissionGoal(conversation, message, attachments);
 
         _ = ThreadingTask.Run(() =>
         {
@@ -378,7 +270,7 @@ public sealed class ConversationRunner
         {
             // The pipeline threw before creating a row. Recorded as a turn that started nothing,
             // because it did — and a silent drop here would lose the attempt entirely.
-            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
+            RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"mission failed to start: {error.InnerException?.Message ?? error.Message}", decision);
         }
@@ -388,7 +280,7 @@ public sealed class ConversationRunner
             // The row did not appear in time. The work may still be starting, so this is reported
             // rather than treated as a failure — but it is NOT linked, because linking an id we do
             // not have would be a fabricated history.
-            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
+            RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, true, null,
                 "mission started, but its id did not arrive in time to link — check the mission list",
                 decision);
@@ -400,13 +292,13 @@ public sealed class ConversationRunner
             // rather than stored: a bad link is worse than a missing one, because a missing link
             // shows up as a gap an operator can investigate and a bad one silently answers every
             // future join with nothing while looking perfectly healthy.
-            RecordTurn(conversation, ordinal, message, null, reuseIdenticalPending: true);
+            RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, true, null,
                 "mission started, but the pipeline reported something that is not a mission id — "
               + "not linking it; check the mission list", decision);
         }
 
-        RecordTurn(conversation, ordinal, message, missionId, reuseIdenticalPending: true);
+        RecordTurn(conversation, ordinal, message, missionId, attachments, reuseIdenticalPending: true);
         _memory.SaveConversation(conversation with
         {
             // The link that makes the conversation and the mission ONE history, which is the exit
@@ -463,8 +355,16 @@ public sealed class ConversationRunner
         return signalled;
     }
 
-    /// <summary>The project's open directory gates, as paths — the chat lane's grant set.</summary>
-    private IReadOnlyList<string> ProjectGrantPaths(Conversation conversation)
+    /// <summary>
+    /// The project's open directory gates, as paths, plus the colony's own source tree.
+    ///
+    /// v0.3.8.58: this was the CHAT lane's grant set and chat no longer exists. It is kept and made
+    /// shared rather than deleted, because the execution path had its own thinner copy — grants
+    /// only, no colony-source reach — and deleting this one would have quietly narrowed what a
+    /// mission may touch to less than the operator granted. Two resolutions of one question is how
+    /// they disagree; there is now one.
+    /// </summary>
+    internal static IReadOnlyList<string> ProjectGrantPaths(SqliteMemory _memory, Conversation conversation)
     {
         var paths = new List<string>();
         try
@@ -496,32 +396,95 @@ public sealed class ConversationRunner
     /// mission got five words and no list. The coder's refusal was correct; the goal was wrong.
     /// A conversation with no prior turns escalates with the plain message, unchanged.
     /// </summary>
-    internal string ComposeMissionGoal(Conversation conversation, string message)
+    internal string ComposeMissionGoal(Conversation conversation, string message,
+        IReadOnlyList<(string Filename, string Content)>? attachments = null)
     {
         const int MaxContextChars = 4000;
+        const int MaxAttachmentChars = 8000;
         List<ConversationTurn> turns;
         try { turns = _memory.LoadConversationTurns(conversation.Id).ToList(); }
-        catch { return message; }
+        catch { turns = new List<ConversationTurn>(); }
 
         var prior = turns
             .Where(t => !string.Equals(t.Content, message, StringComparison.Ordinal))
             .TakeLast(6).ToList();
-        if (prior.Count == 0) return message;
 
         var sb = new System.Text.StringBuilder(message);
-        sb.AppendLine();
-        sb.AppendLine();
-        sb.AppendLine("--- conversation context (what the request above refers to) ---");
-        var budget = MaxContextChars;
-        foreach (var t in prior)
+
+        // v0.3.8.58 — the PROJECT's standing context, rehomed from the deleted chat prompt.
+        //
+        // Its purpose is the point of writing one: it framed every chat turn, and a mission planned
+        // without it would plan for a repository whose reason for existing nobody mentioned. Labelled
+        // as the operator's own framing rather than the colony's conclusion, because a description is
+        // an instruction and the plan should not later cite it as a finding.
+        try
         {
-            var who = string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator" : "Colony";
-            var text = t.Content ?? "";
-            if (text.Length > budget) text = text[..budget];
-            sb.AppendLine($"{who}: {text}");
-            budget -= text.Length;
-            if (budget <= 0) break;
+            if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+                && _memory.LoadProject(conversation.ProjectId!) is { } project)
+            {
+                sb.AppendLine();
+                sb.AppendLine();
+                sb.AppendLine($"--- project \"{project.Name}\" ---");
+                if (!string.IsNullOrWhiteSpace(project.DescriptionMd))
+                {
+                    sb.AppendLine("The operator describes its purpose as:");
+                    sb.AppendLine(project.DescriptionMd.Trim());
+                }
+                // v0.3.8.55's rule survives the move: a pathless project stands in ANTHILL's own
+                // checkout, and that is SAID rather than presented as a directory the operator chose.
+                if (ProjectDirectory(_memory, conversation) is { } dir)
+                    sb.AppendLine(string.IsNullOrWhiteSpace(project.Path)
+                        ? $"No working directory is set, so the work stands in ANTHILL's own source checkout: {dir}"
+                        : $"The project's working directory is: {dir}");
+            }
         }
+        catch { /* a project that will not load is missing context, never a failed mission */ }
+
+        if (prior.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("--- conversation context (what the request above refers to) ---");
+            var budget = MaxContextChars;
+            foreach (var t in prior)
+            {
+                var who = string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator" : "Colony";
+                var text = t.Content ?? "";
+                if (text.Length > budget) text = text[..budget];
+                sb.AppendLine($"{who}: {text}");
+                budget -= text.Length;
+                if (budget <= 0) break;
+            }
+        }
+
+        // v0.3.8.58 — the operator's ATTACHMENTS travel with the goal.
+        //
+        // They used to reach the model through ChatPrompt, which no longer exists. Recording them
+        // against the turn and stopping there would leave the console showing a file the mission
+        // could not read — a turn that says "here is the spec" and work that never saw it. That is
+        // this repository's "declared and reaching nobody", introduced by deleting their only
+        // reader, so they get a reader here. Bounded like the transcript, for the same reason.
+        var attached = attachments ?? Array.Empty<(string Filename, string Content)>();
+        if (attached.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"--- attachments ({attached.Count}) ---");
+            var budget = MaxAttachmentChars;
+            foreach (var (filename, content) in attached)
+            {
+                var text = content ?? "";
+                var truncated = text.Length > budget;
+                if (truncated) text = budget <= 0 ? "" : text[..budget];
+                sb.AppendLine($"# {filename}");
+                sb.AppendLine(text);
+                // Truncation is SAID. A silently clipped spec is worse than a missing one: the work
+                // proceeds confidently against half a document and nothing anywhere records why.
+                if (truncated) sb.AppendLine($"[truncated — {(content ?? "").Length} chars total]");
+                budget -= text.Length;
+                if (budget <= 0) break;
+            }
+        }
+
         return sb.ToString();
     }
 
@@ -632,7 +595,7 @@ public sealed class ConversationRunner
             MissionId = missionId,
         });
         // v0.3.8.47: attachments belong to the turn that brought them — recorded with it, shown
-        // with it, and fed to the model with it through ChatPrompt.
+        // with it, and carried into the mission goal by ComposeMissionGoal.
         foreach (var (filename, content) in attachments ?? Array.Empty<(string, string)>())
             _memory.SaveAttachment(new ConversationAttachment(
                 Guid.NewGuid().ToString("N")[..12], conversation.Id, id,
@@ -641,24 +604,15 @@ public sealed class ConversationRunner
     }
 
     /// <summary>
-    /// The bounded prompt: a short instruction and the last <see cref="ChatContextTurns"/> turns,
-    /// the just-recorded message included. Provider-agnostic text, because the delegate may be
-    /// backed by anything from a local model to an installed agent CLI, and the least capable
-    /// transport (a prompt on argv) sets the contract for all of them.
+    /// v0.3.8.52 — this conversation's working tree. v0.3.8.58 — and therefore its MISSION's.
+    ///
+    /// The field report this fixed was "every project's chat ran in the same tree". Only the chat
+    /// lane ever consulted it, so removing that lane without moving this would have reproduced the
+    /// same bug one door down, as "every project's mission runs in the same tree" — a regression
+    /// introduced by a deletion, which is the kind that gets attributed to anything but the change
+    /// that caused it.
     /// </summary>
-    /// <summary>
-    /// The pre-run half of the direct-edit sweep: with a project working directory that a git
-    /// repository owns, remember which paths were ALREADY dirty and which revision HEAD names.
-    /// v0.3.8.53 (audit Phase 7): watches Bypass AND Automatically approve — both lanes can
-    /// write, so both runs are captured as a canonical unverified direct_change artifact; only
-    /// Bypass commits. Null for Manual approval (read-only here), plain folders, missing
-    /// projects, or any lookup failure. Never throws.
-    /// </summary>
-    /// <summary>
-    /// v0.3.8.52 — this conversation's working tree.
-    /// One resolution for the agent's cwd, the prompt's description, and the direct-edit sweep.
-    /// </summary>
-    private string? ProjectDirectory(Conversation conversation)
+    internal static string? ProjectDirectory(SqliteMemory _memory, Conversation conversation)
     {
         try
         {
@@ -678,212 +632,4 @@ public sealed class ConversationRunner
         catch { return null; }
     }
 
-    private (string Root, string? BaseHead, HashSet<string> PreDirty)? BeginDirectEditSweep(Conversation conversation)
-    {
-        try
-        {
-            // v0.3.8.53 (audit Phase 7): the sweep watches BOTH writing policies now. Bypass
-            // still commits; Automatically approve captures only — but in EITHER case the run's
-            // fresh changes become one canonical direct_change artifact (unverified, and marked
-            // so), because a lane whose work the colony cannot even NAME is a second source of
-            // truth. Manual approval grants no writes here, so there is nothing to watch.
-            if (conversation.EffectivePolicy is not (EscalationPolicy.Bypass or EscalationPolicy.AutoApprove))
-                return null;
-            if (ProjectDirectory(conversation) is not { } dir) return null;
-            var root = Projects.RepoOps.TopLevel(dir);
-            // Third field round: the sweep commits to the project's OWN repo only. A project
-            // directory nested inside a larger repository (the ANTHILL checkout, say) must never
-            // have the colony committing to the ENCLOSING tree on the operator's behalf.
-            if (root is not null && !string.Equals(
-                    Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
-                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-                return null;
-            if (root is null) return null;
-            var state = Projects.RepoOps.Describe(root);
-            if (!state.IsRepo) return null;
-            // The base the coming changes are made AGAINST — named now, while it is still true.
-            return (root, Projects.RepoOps.Head(root),
-                state.Dirty.Select(d => d.Path).ToHashSet(StringComparer.Ordinal));
-        }
-        catch { return null; }
-    }
-
-    /// <summary>
-    /// The post-run half: commit exactly the paths the agent's run made NEWLY dirty, with the
-    /// operator's message as the subject. Paths that were dirty before the run are left alone —
-    /// they are the operator's, and sweeping them would commit work nobody asked the colony to
-    /// touch. A failure is logged and swallowed: the reply must land even when git refuses.
-    /// </summary>
-    private void CommitDirectEdits(Conversation conversation,
-        (string Root, string? BaseHead, HashSet<string> PreDirty)? sweep, string operatorMessage)
-    {
-        if (sweep is null) return;
-        try
-        {
-            var (root, baseHead, preDirty) = sweep.Value;
-            var after = Projects.RepoOps.Describe(root);
-            if (!after.IsRepo) return;
-            var fresh = after.Dirty.Where(d => !preDirty.Contains(d.Path)).Select(d => d.Path).ToList();
-            if (fresh.Count == 0) return;
-
-            // v0.3.8.53 (audit Phase 7) — CAPTURE BEFORE COMMIT, while HEAD→worktree still shows
-            // the run's own diff. The direct lane's output becomes one canonical direct_change
-            // artifact: base revision, files, bounded diffs, and an explicit unverified marking.
-            // This is the audit's sanctioned fail-closed shape — the change is NAMED and
-            // operator-visible, it is never described as verified colony work, and (structurally,
-            // pinned by test) it never feeds positive memory: learning consumes canonical mission
-            // evaluations, which a conversation is not.
-            var diffs = new List<Dictionary<string, object?>>();
-            var diffBudget = 60_000;
-            foreach (var p in fresh.Take(50))
-            {
-                var (dOk, diff) = Projects.RepoOps.DiffFile(root, p);
-                var text = dOk ? TextUtil.Truncate(diff, Math.Min(4000, Math.Max(0, diffBudget))) : "(diff unavailable)";
-                diffBudget -= text.Length;
-                diffs.Add(new() { ["path"] = p, ["diff"] = text });
-            }
-
-            var committed = false; string commitOutput = ""; string? finalHead = null;
-            if (conversation.EffectivePolicy == EscalationPolicy.Bypass)
-            {
-                var subject = TextUtil.Truncate((operatorMessage ?? "").Split('\n')[0].Trim(), 72);
-                if (string.IsNullOrWhiteSpace(subject)) subject = "anthill: direct edits from chat";
-                var commitMessage = subject + "\n\nanthill chat " + conversation.Id
-                    + " — direct edits under Skip all approvals";
-                (committed, commitOutput) = Projects.RepoOps.Commit(root, fresh, commitMessage,
-                    $"bypass-policy({conversation.PolicySetBy ?? "operator"})");
-                if (committed) finalHead = Projects.RepoOps.Head(root);
-                _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId,
-                    committed ? "chat_direct_edits_committed" : "chat_direct_edits_commit_failed",
-                    committed ? $"Committed {fresh.Count} file(s) the chat agent edited directly in {root}."
-                       : $"Commit of the chat agent's direct edits failed: {TextUtil.Truncate(commitOutput, 200)}",
-                    null, "queen",
-                    new() { ["conversation_id"] = conversation.Id, ["files"] = string.Join(",", fresh.Take(20)), ["ok"] = committed });
-            }
-
-            var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
-            {
-                ["conversation_id"] = conversation.Id,
-                ["project_id"] = conversation.ProjectId,
-                ["policy"] = conversation.EffectivePolicy.ToString().ToLowerInvariant(),
-                ["repo_root"] = root,
-                ["base_revision"] = baseHead,          // null = unborn HEAD, stated rather than invented
-                ["final_revision"] = finalHead,        // null = not committed (Automatically approve, or commit refused)
-                ["committed"] = committed,
-                ["files"] = fresh,
-                ["diffs"] = diffs,
-                // The load-bearing sentence, in the artifact itself: this is DIRECT-AGENT OUTPUT.
-                // No builder, tester, soldier or verifier has judged it, and it must never be
-                // presented — or learned from — as verified colony work.
-                ["verification"] = "none — direct-agent output; not colony-verified work",
-            });
-            var artifact = Anthill.SDK.Artifacts.Artifact.Create(
-                schema: "direct_change",
-                producerRole: "operator-agent",
-                missionId: Configuration.AnthillRuntime.SystemApiMissionId,
-                payload: payload,
-                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Operator);
-            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(artifact);
-            _memory.LogEvent(Configuration.AnthillRuntime.SystemApiMissionId, "direct_change_recorded",
-                $"Direct-agent change recorded as unverified artifact {artifact.Id}: {fresh.Count} file(s) in {root}"
-                + (committed ? " (committed)." : " (left uncommitted for the operator)."),
-                null, "queen",
-                new() { ["conversation_id"] = conversation.Id, ["artifact_id"] = artifact.Id, ["committed"] = committed });
-        }
-        catch (Exception e) { Console.Error.WriteLine($"[conversation] direct-edit capture failed: {e.Message}"); }
-    }
-
-    private string ChatPrompt(Conversation conversation)
-    {
-        var turns = _memory.LoadConversationTurns(conversation.Id);
-        var recent = turns.Skip(Math.Max(0, turns.Count - ChatContextTurns));
-        var sb = new System.Text.StringBuilder();
-        // v0.3.8.51, second field round: the prompt used to say "you have no tools", which is a
-        // LIE when the routed provider is a working agent — it then hit its own permission walls
-        // and reported them to a confused operator. The prompt now states the access the operator
-        // actually chose, so the agent acts within it or proposes a mission, never mystery-fails.
-        var access = conversation.EffectivePolicy switch
-        {
-            EscalationPolicy.Bypass =>
-                "The operator has set Skip all approvals for this conversation: you may read, edit "
-                + "and run your available tools directly for small, contained work.",
-            EscalationPolicy.AutoApprove =>
-                "The operator has set Automatically approve for this conversation: you may edit "
-                + "files and run bounded build/test commands directly for small, contained work.",
-            _ =>
-                "This conversation is under Manual approval: your access is READ-ONLY here. Do not "
-                + "attempt writes or commands — they will be refused.",
-        };
-        sb.AppendLine("You are the ANTHILL colony's conversational assistant. Answer the operator's "
-            + "last message concisely and truthfully, and never claim work you did not do. "
-            + access + " For REAL multi-step work — builds, file changes, larger research — say "
-            + "briefly what the mission will do and end your reply with the exact marker "
-            + EscalateMarker + " on its own line. The colony then runs it as a mission under the "
-            + "operator's approval policy; under Manual approval the operator is asked first. "
-            + "Never use the marker for a question you can simply answer.");
-        sb.AppendLine();
-        // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
-        // shape as Claude's project instructions: it travels with every turn, clearly labelled as
-        // the operator's own framing, not the colony's conclusion.
-        if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
-            && _memory.LoadProject(conversation.ProjectId!) is { } project)
-        {
-            // v0.3.8.52 (third field round): the directory described is the operator's EXPLICIT
-            // choice — the turns gate refuses a pathless project before this ever runs — and the
-            // git description speaks only for the project's OWN tree: a directory nested inside
-            // a larger repository is a plain folder here, because reporting the enclosing
-            // repo's branch is how the operator got told about a branch they never chose.
-            var projectDir = ProjectDirectory(conversation);
-            // v0.3.8.55 (fourth field round): a pathless project now stands in ANTHILL's own
-            // source by default — and the prompt SAYS so, because "the project's working
-            // directory" would claim a choice the operator never made.
-            var defaultedToSource = string.IsNullOrWhiteSpace(project.Path) && projectDir is not null;
-            sb.AppendLine($"This conversation belongs to the project \"{project.Name}\"."
-                + (string.IsNullOrWhiteSpace(project.DescriptionMd) ? "" : " The operator describes its purpose as:"));
-            if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
-            if (projectDir is not null)
-            {
-                sb.AppendLine(defaultedToSource
-                    ? $"The project has no working directory set yet, so you are standing in ANTHILL's own source checkout: {projectDir} — direct source access, the default until the operator sets a directory in the Files tab."
-                    : $"The project's working directory is: {projectDir}");
-                // v0.3.8.51 third round — git awareness: the colony applied changes and the
-                // operator asked why nothing was committed. The colony now KNOWS what the
-                // directory is (repo on a branch, or plain folder) and states its commit rules
-                // instead of discovering them by surprise.
-                var top = Projects.RepoOps.TopLevel(projectDir);
-                var ownRepo = top is not null && string.Equals(
-                    Path.GetFullPath(top).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(projectDir).TrimEnd(Path.DirectorySeparatorChar),
-                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-                var repo = ownRepo ? Projects.RepoOps.Describe(projectDir) : null;
-                sb.AppendLine(repo is { IsRepo: true }
-                    ? $"That directory is a git repository on branch '{repo.Branch}'"
-                      + (repo.DirtyCount > 0 ? $" with {repo.DirtyCount} uncommitted change(s)." : " with a clean working tree.")
-                      + " Under Skip-all-approvals or Automatically-approve, patches you apply are committed"
-                      + " automatically; under Manual approval the operator commits from the files pane."
-                    : "That directory is a plain folder, not a git repository — applied changes are not version-controlled."
-                      + (top is not null && !ownRepo
-                          ? $" (It sits inside the repository at {top}; the project tracks only its own tree.)" : ""));
-            }
-            // The "separately reachable" sentence only when the source ISN'T already the tree
-            // being described — telling the model the same directory is two places is worse
-            // than saying nothing.
-            if (!defaultedToSource && Projects.ProjectRoots.ColonySource() is { } colonySelf)
-                sb.AppendLine("Separately, ANTHILL's own source checkout is reachable at "
-                    + colonySelf + " for colony self-improvement work — it is not this project's "
-                    + "tree and its git state is not this project's git state.");
-            sb.AppendLine();
-        }
-        foreach (var t in recent)
-        {
-            sb.AppendLine((string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator: " : "Colony: ") + t.Content);
-            // v0.3.8.47: a turn's attachments travel with it, clearly framed as operator-provided
-            // files — the model sees the text the operator handed over, nothing more.
-            foreach (var a in _memory.LoadTurnAttachments(t.Id))
-                sb.AppendLine($"[Operator attached \"{a.Filename}\"]\n{a.Content}\n[end of \"{a.Filename}\"]");
-        }
-        sb.AppendLine("Colony:");
-        return sb.ToString();
-    }
 }

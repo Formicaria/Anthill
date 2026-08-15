@@ -127,7 +127,9 @@ public class QualificationMatrixTests
         new(20, "direct-agent work excluded from colony learning",
             new[] { "DirectAgentLaneTests.cs", "ChatSpeaksToTheColonyTests.cs" },
             "v0.3.8.53 contained the lane's OUTPUT (unverified `direct_change`, never positive memory); "
-          + "v0.3.8.57 closed the lane into chat entirely — an agent may not serve the conversation route."),
+          + "v0.3.8.57 refused an agent for the conversation route but left the grant in the access "
+          + "scope; v0.3.8.58 DELETED the lane — every operator message is a mission, so there is no "
+          + "direct-agent output to exclude from learning and no unconfined access anywhere."),
     };
 
     private static string TestPath(string file) =>

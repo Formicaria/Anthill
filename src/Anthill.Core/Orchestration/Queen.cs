@@ -184,69 +184,19 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // v3.7.0: the conversation runtime gets its production call site here. Without this the
         // escalation gate is unreachable — ConversationScope.Evaluate returns null when nothing has
         // entered a scope, so every gate check would silently pass.
-        // v0.3.8.42: chat turns are ANSWERED, through the same router the roles use. The
-        // `conversation` route key resolves like any role's — configured route, then the
-        // configured fallback, then the default provider. A runtime composed without routing says
-        // so instead of spinning.
+        // v0.3.8.58 — THE CONVERSATION HAS NO MODEL OF ITS OWN, because it is not a lane.
         //
-        // v0.3.8.57: WITH ONE EXCEPTION, and it is the architecture rather than a preference.
-        // An autonomous coding agent may NOT serve the conversation route. See the refusal below.
+        // Until now the runner took an `ask` delegate resolving the `conversation` route, and that
+        // delegate is what made the chat box a place work could happen: it handed a prompt to
+        // whatever provider was routed there, inside an access scope standing in the operator's live
+        // tree. v0.3.8.57 refused a coding agent for that route, which narrowed WHO could do the work
+        // without changing THAT the work was done outside the colony.
+        //
+        // The delegate is gone. Every operator message is a mission; the mission's own roles reason,
+        // and the answer the operator reads is the scribe's, recorded back into the conversation by
+        // RecordMissionAnswer. One voice, and it is downstream of verification rather than beside it.
         Conversations = new Anthill.Core.Conversations.ConversationRunner(
-            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token),
-            ask: Router is null ? null : (prompt, onDelta) =>
-            {
-                var (provider, model) = Router.GetRoute("conversation");
-                var client = Router.GetClientForProvider(provider, model);
-
-                // v0.3.8.57 — THE OPERATOR TALKS TO THE COLONY, NOT TO A CODING AGENT.
-                //
-                // `conversation` was a route key like any other, so pointing it at an installed agent
-                // CLI made the chat box a direct line to that agent: a message went to Claude Code,
-                // which answered AND could edit the working tree, with no task, no plan, no tester,
-                // no soldier and no verifier anywhere in the sequence. The colony became a text field
-                // in front of someone else's tool.
-                //
-                // v0.3.8.53 contained the CHANGES that lane produced — the `direct_change` artifact,
-                // explicitly unverified, never feeding positive memory. That was the right response
-                // to the symptom. This is the shape: an agent is something the colony DISPATCHES, as
-                // a tool, inside a mission that reviews and verifies what it did. The coder role
-                // still routes to one, deliberately, and everything downstream of the coder still
-                // applies. What cannot happen is the operator addressing it directly.
-                //
-                // REFUSED, NOT REROUTED. Silently answering from a different provider would leave an
-                // operator believing they were talking to the agent they configured, and the reply
-                // would be worse than the one they expected for reasons nothing explains. The message
-                // says what to change and what to do instead, because the capability is not being
-                // taken away — it moves to where the review lives.
-                if (client is Anthill.SDK.Reasoning.IAutonomousCodingAgent agent)
-                    return new Anthill.Core.Conversations.ConversationReply(
-                        false, "", provider, model,
-                        $"Chat is not wired to {agent.AgentDisplayName}, and will not be. You are talking "
-                      + "to the colony; the colony dispatches a coding agent as a TOOL, inside a mission "
-                      + "that plans the work, reviews the change, runs the checks and verifies the "
-                      + "result. A chat turn answered by an agent skips every one of those.\n\n"
-                      + "Set the `conversation` route to a reasoning provider (Ollama or a keyed API) "
-                      + $"in Providers & Model Routing, and leave `coder` pointed at {agent.AgentDisplayName} "
-                      + "— that is the path where its work gets checked. Ask for the change here and the "
-                      + "colony will start a mission for it.");
-                // v0.3.8.44: streaming is a capability the client either HAS or does not. A
-                // streaming-capable provider delivers deltas; any other answers whole through the
-                // same call it always made — the caller sees one honest reply, never a fake trickle.
-                // v0.3.8.46: Send(ModelRequest), not Generate(string) — the string boundary was
-                // discarding the provider's token accounting on every turn. Usage travels with
-                // the reply so the transcript can say what each answer cost; null means the
-                // provider did not report, which is a different fact from zero.
-                var response = onDelta is not null && client is Anthill.SDK.Reasoning.IStreamingReasoningProvider streaming
-                    ? streaming.SendStreaming(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt), onDelta)
-                    : client.Send(Anthill.SDK.Reasoning.ModelRequest.FromPrompt(prompt));
-                var result = response.ToCallResult();
-                return new Anthill.Core.Conversations.ConversationReply(
-                    result.Ok && !string.IsNullOrWhiteSpace(result.Content),
-                    result.Content, provider, model,
-                    result.Ok ? (string.IsNullOrWhiteSpace(result.Content) ? "the provider answered with empty content" : null)
-                              : $"{result.Status}: {TextUtil.Truncate(result.Content, 300, "…")}",
-                    response.Usage.PromptTokens, response.Usage.CompletionTokens);
-            });
+            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token));
 
         Scheduler = new Projects.ProjectScheduler(Memory, Conversations);
 

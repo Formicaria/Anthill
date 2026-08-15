@@ -1,149 +1,157 @@
-using Anthill.SDK.Reasoning;
 using Xunit;
 
 namespace Anthill.Tests;
 
 /// <summary>
-/// The operator talks to the COLONY. The colony dispatches a coding agent as a tool. v0.3.8.57.
+/// EVERY OPERATOR MESSAGE IS A MISSION. v0.3.8.58.
 ///
-/// THE SHAPE THAT WAS WRONG. `conversation` is a route key like `coder` or `planner`, and the router
-/// treats every provider identically because from its side they are: ask, receive text. So pointing
-/// `conversation` at an installed agent CLI made the chat box a DIRECT LINE to that agent. A message
-/// went to Claude Code, which answered — and, being an agent, could also edit the working tree. No
-/// task, no plan, no ui_map, no tester, no soldier, no verifier anywhere in the sequence. The colony
+/// THE SHAPE THAT WAS WRONG. `conversation` was a route key like `coder` or `planner`, and the
+/// router treats every provider identically because from its side they are identical: ask, receive
+/// text. So pointing `conversation` at an installed agent CLI made the chat box a direct line to
+/// that agent. A message went to Claude Code, which answered — and, being an agent standing in a
+/// real directory with the operator's approval policy, could also edit the working tree. No task,
+/// no plan, no ui_map, no tester, no soldier, no verifier anywhere in the sequence. The colony
 /// reduced to a text field in front of someone else's tool.
 ///
-/// v0.3.8.53 saw the consequence and contained it: changes from that lane became one canonical
-/// `direct_change` artifact, explicitly unverified, never feeding positive memory. That was the right
-/// response to the symptom and left the shape intact — the lane still existed, it was just labelled.
+/// TWO RELEASES TRIED TO CLOSE IT AND CLOSED SOMETHING ELSE.
 ///
-/// This closes the shape. An agent CLI is the most capable thing the colony can dispatch and the
-/// coder role still routes to one; everything downstream of the coder — patch set, soldier, tester,
-/// verifier, revision-bound evidence — still applies to its work. What cannot happen is the operator
-/// addressing it directly, because that path has none of those.
+/// v0.3.8.53 saw the consequence and contained it: changes from that lane became one canonical
+/// `direct_change` artifact, explicitly unverified, never feeding positive memory. Correct about
+/// the symptom, and it left the shape intact — the lane still existed, it was just labelled.
+///
+/// v0.3.8.57 blocked an autonomous coding agent from serving the route, and rewrote the chat prompt
+/// to say the lane had no tools and changed nothing. The first narrowed WHO could bypass the
+/// colony. The second changed what a model was TOLD. Neither was the authorisation, which lived in
+/// `AgentAccessScope.Enter(..., confinedWorkspace: false)` and in a hundred lines of direct-edit
+/// sweep whose entire job was to notice which files a chat turn had written and commit them. The
+/// tests in that release asserted on the prompt's wording, so they passed. A guard that reads prose
+/// to decide whether prose is load-bearing is the defect it is looking for.
+///
+/// WHAT REPLACES ALL OF IT. There is no second lane to secure. `Run` sends every message down the
+/// mission path; the planner decides the shape of the work; the answer the operator reads is the
+/// scribe's, recorded back into the conversation after the mission settles. The colony deciding a
+/// message is small is a different thing from a lane in front of the colony deciding it never had
+/// to ask, and only the first keeps twelve roles load-bearing.
+///
+/// The approval policy still governs MISSIONS. Skip-all means a verified patch applies without a
+/// card; it never meant the chat box may edit files. Those two were one sentence, which is how an
+/// operator granted the second while meaning the first.
 /// </summary>
 public class ChatSpeaksToTheColonyTests
 {
-    // -------------------------------------------------------------------------------------------
-    // The marker
-    // -------------------------------------------------------------------------------------------
-
-    /// <summary>
-    /// The provider DECLARES what it is. The alternative was a list of agent ids in the core, which
-    /// the layering forbids (the core may not name a provider implementation) and which would rot:
-    /// a new agent CLI would be uncontained until somebody remembered to add it to the list.
-    /// </summary>
-    [Fact]
-    public void TheAgentCliProvider_DeclaresItselfAnAutonomousCodingAgent()
-    {
-        var provider = typeof(Anthill.Modules.Reasoning.AgentCliProvider);
-
-        Assert.True(typeof(IAutonomousCodingAgent).IsAssignableFrom(provider),
-            "AgentCliProvider no longer declares IAutonomousCodingAgent, so the runtime can no longer "
-          + "tell it apart from a chat model and the conversation route would silently accept it.");
-    }
-
-    /// <summary>
-    /// And an ordinary reasoning provider does NOT. Without this the marker could be satisfied by
-    /// everything, and the refusal below would block all chat rather than one lane.
-    /// </summary>
-    [Theory]
-    [InlineData(typeof(Anthill.Modules.Reasoning.OllamaClient))]
-    public void OrdinaryProviders_AreNotMarkedAsCodingAgents(Type provider) =>
-        Assert.False(typeof(IAutonomousCodingAgent).IsAssignableFrom(provider));
-
-    /// <summary>
-    /// The marker lives in the SDK, which is what lets the core test for it without naming a module.
-    /// If it drifted into `Anthill.Modules.Reasoning`, the core could not reference it and the check
-    /// would have to be reimplemented as the id list this design exists to avoid.
-    /// </summary>
-    [Fact]
-    public void TheMarker_LivesInTheSdkSoTheCoreCanSeeIt() =>
-        Assert.Equal("Anthill.SDK.Reasoning", typeof(IAutonomousCodingAgent).Namespace);
-
-    // -------------------------------------------------------------------------------------------
-    // The refusal
-    // -------------------------------------------------------------------------------------------
+    private static string RunnerSource() => SourceText.CodeOnly(File.ReadAllText(
+        Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "Conversations", "ConversationRunner.cs")));
 
     private static string QueenSource() => SourceText.CodeOnly(File.ReadAllText(
         Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs")));
 
-    /// <summary>
-    /// The conversation `ask` refuses a coding agent. This is the whole change; everything else is
-    /// scaffolding around it.
-    /// </summary>
-    [Fact]
-    public void TheConversationRoute_RefusesAnAutonomousCodingAgent()
-    {
-        var queen = QueenSource();
-
-        Assert.Contains("IAutonomousCodingAgent agent", queen);
-        Assert.Contains("Chat is not wired to", queen);
-    }
+    // -------------------------------------------------------------------------------------------
+    // There is no route to point at an agent
+    // -------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// REFUSED, not silently rerouted.
+    /// THE CONFIGURATION SURFACE IS GONE, which is the strongest available form of this fix.
     ///
-    /// Falling back to another provider would leave an operator believing they were talking to the
-    /// agent they configured, getting worse answers than they expected, with nothing anywhere
-    /// explaining why. The refusal is the honest option — and it is only tolerable because the
-    /// message says what to change and what to do instead, which is asserted here rather than
-    /// assumed.
+    /// v0.3.8.57 kept the `conversation` route and refused an agent for it at dispatch. That shape
+    /// still offers the choice in the console, still lets the operator pick it, and explains
+    /// afterwards why the thing they were allowed to configure does not work. An option that cannot
+    /// be selected cannot be selected wrongly.
     /// </summary>
     [Fact]
-    public void TheRefusal_SaysWhatToChangeAndWhatToDoInstead()
-    {
-        var queen = QueenSource();
-
-        // Fragments that survive line-wrapping. The first draft asserted "the colony will start a
-        // mission for it", which is one sentence in the REPLY and two string literals in the SOURCE
-        // — so the test failed on how the message happens to be wrapped rather than on what it says.
-        // A guard that breaks when a line is re-flowed is a formatting check wearing a content
-        // check's name, and it gets weakened rather than read the next time it fires.
-        //
-        // Where the operator fixes it.
-        Assert.Contains("Providers & Model Routing", queen);
-        // That the capability is not being removed — it moves to where the review lives.
-        Assert.Contains("leave `coder` pointed at", queen);
-        // And that asking here still gets the work done, by the colony.
-        Assert.Contains("start a mission for it", queen);
-
-        // The refusal must NOT reroute: no second GetClientForProvider call rescuing the turn.
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(queen, @"GetClientForProvider\("));
-    }
+    public void ThereIsNoConversationRoute_ToPointAtAnything() =>
+        Assert.DoesNotContain("conversation", Anthill.Core.Configuration.AnthillRuntime.RoutableRoles);
 
     /// <summary>
-    /// The colony keeps the agent. This is the half that makes the rule a boundary rather than a ban
-    /// — `coder` is still routable to an agent CLI, and its output still goes through the patch set,
-    /// the soldier, the tester and the verifier.
+    /// The colony KEEPS the agent. This is the half that makes the change a boundary rather than a
+    /// ban: `coder` still routes to an agent CLI deliberately, and everything downstream of the
+    /// coder — patch set, soldier, tester, verifier, revision-bound evidence — still applies to
+    /// what it produces. What is removed is the operator addressing it directly.
     /// </summary>
     [Fact]
-    public void TheColonyMayStillDispatchAnAgent()
-    {
+    public void TheColonyMayStillDispatchAnAgentAsATool() =>
         Assert.Contains("coder", Anthill.Core.Configuration.AnthillRuntime.RoutableRoles);
-        Assert.Contains("conversation", Anthill.Core.Configuration.AnthillRuntime.RoutableRoles);
 
-        // The refusal is scoped to the conversation route only — nothing about it touches the roles.
+    /// <summary>
+    /// And the Queen composes the runner with NO chat model. The `ask` delegate resolved the
+    /// conversation route and handed a prompt to whatever served it; it is what made the chat box a
+    /// place where work could happen.
+    /// </summary>
+    [Fact]
+    public void TheQueen_ComposesTheRunnerWithNoChatModel()
+    {
         var queen = QueenSource();
-        var refusal = queen.IndexOf("IAutonomousCodingAgent agent", StringComparison.Ordinal);
-        var route = queen.IndexOf("GetRoute(\"conversation\")", StringComparison.Ordinal);
 
-        Assert.True(route >= 0 && refusal > route,
-            "the coding-agent refusal is no longer inside the conversation route's resolution, so it "
-          + "is either unreachable or has widened to a path it was never reasoning about.");
+        Assert.DoesNotContain("GetRoute(\"conversation\")", queen);
+        Assert.DoesNotContain("ask:", queen);
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Every message is a mission
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The runner holds no reasoning delegate at all. A field is a stronger subject than a sentence:
+    /// as long as one existed, the question was only ever "under what conditions is it called".
+    /// </summary>
+    [Fact]
+    public void TheRunner_HoldsNoReasoningDelegate()
+    {
+        var runner = RunnerSource();
+
+        Assert.DoesNotContain("ConversationReply", runner);
+        Assert.DoesNotContain("_ask", runner);
     }
 
     /// <summary>
-    /// The route list's own comment says the rule. Config and runtime disagreeing about whether an
-    /// agent may serve chat is precisely the "declared one thing, does another" defect this release
-    /// spent its length removing — and a comment is what an operator reads before the code.
+    /// No prompt is built here, and no escalation marker is parsed.
+    ///
+    /// The marker deserves its own line because it was the previous design's best idea: the model
+    /// ended a reply with `[[START_MISSION]]` to propose real work, which fixed the genuinely worse
+    /// thing before it (the colony telling its operator to "ask for it as a mission explicitly", a
+    /// magic word). But it left the model holding the decision about whether the colony's own
+    /// pipeline was necessary — the one decision a model must never make about itself.
     /// </summary>
     [Fact]
-    public void TheRoutableRoleList_DocumentsTheRule()
+    public void NoChatPromptIsBuilt_AndNoEscalationMarkerIsParsed()
     {
-        var runtime = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
-            "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs"));
+        var runner = RunnerSource();
 
-        Assert.Contains("is not a valid answer to \"who speaks for the colony", runtime);
+        Assert.DoesNotContain("ChatPrompt", runner);
+        Assert.DoesNotContain("START_MISSION", runner);
+    }
+
+    /// <summary>
+    /// The runtime behaviour, not the source: a bare message with no mode requested reaches the
+    /// mission pipeline. Every assertion above is a source-level detector, and source detectors
+    /// prove a thing is absent rather than that the remaining path works.
+    /// </summary>
+    [Fact]
+    public void ABareMessage_ReachesTheMissionPipeline()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "anthill-chatmission-" + Guid.NewGuid().ToString("N")[..10]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            using var memory = new Anthill.Core.Memory.SqliteMemory(Path.Combine(dir, "memory.db"));
+            var conversation = new Anthill.Core.Conversations.Conversation
+            {
+                Id = "c1", Role = "queen",
+                Policy = Anthill.Core.Conversations.EscalationPolicy.Bypass,
+                PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
+            };
+            memory.SaveConversation(conversation);
+
+            var goals = new List<string>();
+            var runner = new Anthill.Core.Conversations.ConversationRunner(memory,
+                (goal, onCreated, _) => { goals.Add(goal); onCreated("m1"); return "m1"; });
+
+            // No mode argument at all — the default is what an un-updated caller sends.
+            var outcome = runner.Run(conversation, "what does this repository do?");
+
+            Assert.Equal(Anthill.Core.Conversations.ConversationMode.Mission, outcome.Mode);
+            Assert.Equal("m1", outcome.MissionId);
+            Assert.Contains("what does this repository do?", Assert.Single(goals));
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 }

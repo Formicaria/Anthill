@@ -1,5 +1,80 @@
 # ANTHILL Changelog
 
+## v0.3.8.58 - every operator message is a mission
+
+The chat lane is deleted. Not narrowed, not relabelled, not guarded — removed. Every message the
+operator sends goes to the colony's planner, and the answer they read is the scribe's, downstream of
+verification rather than beside it.
+
+**What the lane actually was.** Not a chat model answering questions. `ConversationRunner` entered
+`AgentAccessScope` with `confinedWorkspace: false` — the operator's LIVE project tree — and handed
+the conversation's approval policy to whatever provider served the `conversation` route. For an
+agent CLI that policy materialised `--permission-mode acceptEdits`, an `--allowedTools` list
+including `Edit`, `Write` and `Bash`, and under Skip-all `--dangerously-skip-permissions`, plus a
+`.claude/settings.local.json` written before the run. Then `BeginDirectEditSweep` and
+`CommitDirectEdits` — around a hundred lines — existed to notice which files that turn had written
+and commit them. Nobody builds a commit sweeper for a lane that changes nothing; v0.3.8.52's field
+report was literally "did not auto commit", which is the lane's own receipt.
+
+**Two previous releases aimed at this and hit next to it.** v0.3.8.53 contained the OUTPUT: fresh
+changes became one canonical `direct_change` artifact, explicitly unverified, structurally barred
+from positive memory. Right about the symptom, and it left the shape — the lane still existed, now
+labelled. v0.3.8.57 then refused an autonomous coding agent for the conversation route, and rewrote
+the chat prompt to say it had no tools and changed nothing. The first narrowed WHO could bypass the
+colony. The second changed what a model was TOLD. Neither was the grant, because the grant was the
+access scope. The tests asserted on the prompt's wording, so they passed — a guard reading prose to
+decide whether prose is load-bearing, in the release whose stated purpose was removing prose as a
+control channel.
+
+**What changed**
+
+- `ConversationMode.Chat` no longer selects a lane. Both modes reach the mission pipeline; the enum
+  member is kept so an old client sending `"mode": "chat"` gets the right behaviour instead of a
+  deserialization error.
+- Deleted: the `ask` delegate, `ChatPrompt`, `ConversationReply`, the `[[START_MISSION]]` escalation
+  marker, `BeginDirectEditSweep`, `CommitDirectEdits`, `ChatContextTurns`, and the unconfined
+  `AgentAccessScope.Enter`.
+- The `conversation` ROUTE KEY is gone from `RoutableRoles`. v0.3.8.57 kept it and refused an agent
+  at dispatch; that shape still offers the choice in the console and explains afterwards why the
+  thing the operator was allowed to configure does not work. An option that is not there cannot be
+  chosen wrongly. A stale entry in an existing config is simply never read.
+- `IAutonomousCodingAgent` is deleted with the route that was its only reader.
+- The SSE turn endpoint emits no `delta` frames, because no model answers a chat turn. It keeps its
+  single terminal `done`; chunking a summary to fake a trickle would be the eternal spinner again.
+
+**Three things that would have regressed by deletion, rehomed rather than lost**
+
+- **Attachments.** Their only reader was `ChatPrompt`. They now travel in the mission goal, bounded,
+  and truncation is stated rather than silent.
+- **The project's standing context.** Name, the operator's own description of its purpose, and the
+  working directory — the reason for writing a description at all.
+- **The per-project working directory.** Only the chat lane resolved one. `ExecutionService` had a
+  thinner inline copy: grants without the colony-source reach, and no directory at all. Both now
+  call the one shared resolution, so v0.3.8.52's "every project's chat ran in the same tree" does
+  not return as "every project's mission runs in the same tree".
+
+**The security review is queued, not summarised.** An external source-level review of v0.3.8.57
+(`c62a27a`) found four P0 and two P1 defects — escapable workspace confinement, non-atomic
+auto-apply, verification that fails OPEN, `ArtifactVisibility.Secret` artifacts reaching model
+prompts, a UI gate that fails open with `{}` as a conforming map, and subprocess timeouts that can
+never fire. `docs/PLAN.md` §1b records them ahead of the entire forward plan, with the containment
+flags, the reviewer's repair order and every file citation.
+
+None of them is fixed here. What is added is `SecurityReviewQueueTests`, which pins the queue: every
+finding still has a heading, every cited file still exists, the section still precedes §2, and — the
+assertion with teeth — every one of the five containment flags an operator is told to set is a real
+setting in the source. The review reported no open issue tracking any of this, so §1b is the only
+record, and a prose-only record is one release away from being tidied up. It also records WHY green
+CI is not an argument against the findings: `AutoApplyAtomicityTests` asserts that the source
+contains a rollback call rather than that a tree is restored, and `UiChangeGateTests` proves a
+truncated `ui_map` is refused while an empty one conforms. Both pass. Both answer a question
+adjacent to the one asked.
+
+**Tests.** `DirectAgentLaneTests` is inverted rather than deleted: it now proves the conversation
+enters no agent access scope, that `confinedWorkspace: false` appears at no call site in `src/`, and
+that nothing commits or sweeps from a conversation. The first of those would have failed in
+v0.3.8.57 while that release's own chat tests passed.
+
 ## v0.3.8.57 - the typed channel becomes load-bearing, and four acceptance gates close
 
 The five Priority-1 items from AUTONOMY-10 Phase 3, closed. Each one was a capability that already

@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.57";
+    public const string Version = "0.3.8.58";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -158,16 +158,18 @@ public static class AnthillRuntime
         // planner is the one that started this — its model was unreachable from the console, so a
         // colony whose planner model was missing fell back to a static plan with no way to fix it.
         "planner", "strategist",
-        // v0.3.8.42: chat replies. The same rule as the planner — not an ant, makes model calls,
-        // must be routable, and the operator chooses.
+        // v0.3.8.58: there is NO `conversation` route, and its absence is the fix.
         //
-        // v0.3.8.57: an AUTONOMOUS CODING AGENT is not a valid answer to "who speaks for the colony
-        // in chat", and the runtime refuses the turn rather than serving it. Routing `conversation`
-        // at an installed agent CLI made the chat box a direct line to that agent — it answered and
-        // could edit the tree, with no plan, no review, no tests and no verification in the sequence.
-        // The agent stays available to the COLONY (the coder routes to one deliberately); what is
-        // removed is the operator addressing it directly. See Queen's conversation `ask`.
-        "conversation",
+        // v0.3.8.42 added one so chat replies could be routed like a role's. v0.3.8.57 then had to
+        // refuse an autonomous coding agent for it at runtime, because pointing it at an installed
+        // agent CLI made the chat box a direct line to that agent. A runtime refusal is the weaker
+        // shape: the option is still offered in the console, the operator still picks it, and the
+        // system explains afterwards why the thing it let them configure does not work.
+        //
+        // Every operator message is a mission now, so no model answers chat and there is nothing to
+        // route. The key is gone from the surface rather than guarded on the path — an operator
+        // cannot misconfigure a choice that is not there. A stale `conversation` entry in an
+        // existing config is simply never read; nothing seeds it and nothing resolves it.
         // Every executable ant.
         "archivist", "builder", "coder", "file", "medic", "researcher", "scribe", "soldier",
         "tester", "ui_cartographer", "verifier", "web",

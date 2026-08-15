@@ -1,182 +1,117 @@
-using Anthill.Core.Configuration;
-using Anthill.Core.Conversations;
-using Anthill.Core.Memory;
-using Anthill.Core.Projects;
-using Anthill.SDK.Artifacts;
 using Xunit;
 
 namespace Anthill.Tests;
 
 /// <summary>
-/// v0.3.8.53 — audit Phase 7: the direct coding-agent lane may not be a second, untracked source
-/// of "verified" work. The sanctioned fail-closed shape: every writing run's fresh changes are
-/// captured as ONE canonical <c>direct_change</c> artifact — base revision, files, bounded diffs,
-/// commit state — explicitly marked unverified, never fed to positive memory. These tests run the
-/// REAL ConversationRunner sweep over a REAL temporary git repository; only the reasoning reply
-/// is faked, at its documented boundary (the ask function), which is what edits the files exactly
-/// as a real agent CLI would — by writing them.
+/// v0.3.8.58 — THE DIRECT AGENT LANE IS GONE, and these are the detectors that keep it gone.
+///
+/// WHAT THIS FILE USED TO TEST, and why the change is an inversion rather than a deletion. In
+/// v0.3.8.53 the conversation lane could write to the operator's live tree, so the audit's
+/// fail-closed shape was to CAPTURE what it wrote: every writing run became one canonical
+/// <c>direct_change</c> artifact — base revision, files, bounded diffs, commit state — marked
+/// unverified and structurally barred from positive memory. Those tests ran the real sweep over a
+/// real temporary repository and passed, and the guarantee they established was real.
+///
+/// It was also the wrong guarantee, and its own existence said so. A lane whose output has to be
+/// quarantined as "unverified work of unknown provenance" is a lane doing work outside the colony.
+/// The artifact was the receipt. v0.3.8.52's field report — "did not auto commit" — is the same
+/// fact stated as a complaint: the lane wrote files, and the commit hook, which rode the patch
+/// pipeline, had nothing to fire on because no patch had ever existed.
+///
+/// v0.3.8.57 addressed this twice and missed twice. It refused an autonomous coding agent for the
+/// conversation route, which changed WHO could do the work; and it rewrote the chat prompt to say
+/// "you have no tools in this conversation and you change nothing", which changed what the model
+/// was TOLD. Neither touched the grant. That lived in
+/// <c>AgentAccessScope.Enter(..., confinedWorkspace: false)</c> — the operator's approval policy,
+/// handed to the provider, standing in a real directory — and it outlived both fixes. Prose as a
+/// control channel, in the release whose stated purpose was removing prose as a control channel.
+///
+/// So the lane is deleted, not narrowed. Every operator message is a mission. What remains here is
+/// the set of source-level detectors that make its return visible, in the
+/// CrossBoundaryAgreementTests tradition: a structural guarantee has to be checked structurally,
+/// because a lane like this comes back as a small helpful convenience and not as a decision.
 /// </summary>
-public class DirectAgentLaneTests : IDisposable
+public class DirectAgentLaneTests
 {
-    private readonly string _dir;
-    private readonly string _repo;
-    private readonly SqliteMemory _memory;
-
-    public DirectAgentLaneTests()
-    {
-        _dir = Path.Combine(Path.GetTempPath(), "anthill-directlane-" + Guid.NewGuid().ToString("N")[..10]);
-        _repo = Path.Combine(_dir, "repo");
-        Directory.CreateDirectory(_repo);
-        _memory = new SqliteMemory(Path.Combine(_dir, "memory.db"));
-        _memory.EnsureSystemMission(AnthillRuntime.SystemApiMissionId, "System API events");
-    }
-
-    public void Dispose()
-    {
-        _memory.Dispose();
-        try { Directory.Delete(_dir, recursive: true); } catch { }
-    }
-
-    private static bool GitAvailable => RepoOps.Git(Path.GetTempPath(), "--version").Ok;
-
-    /// <summary>A project-linked conversation whose working directory is the temp repo.</summary>
-    private Conversation Chat(EscalationPolicy policy)
-    {
-        var project = new Project { Id = "p1", Name = "Lane", Path = _repo };
-        _memory.SaveProject(project);
-        var conversation = new Conversation
-        {
-            Id = "c1", Role = "queen", Policy = policy, ProjectId = "p1",
-            PolicySetBy = policy == EscalationPolicy.Ask ? null : "tester",
-            PolicySetAt = policy == EscalationPolicy.Ask ? null : DateTime.UtcNow,
-        };
-        _memory.SaveConversation(conversation);
-        return conversation;
-    }
-
-    /// <summary>A runner whose "agent" edits a file directly — the direct lane's defining act.</summary>
-    private ConversationRunner EditingRunner(string fileName, string content) =>
-        new(_memory, (_, onCreated, _) => { onCreated("m-x"); return "m-x"; },
-            (_, _) =>
-            {
-                File.WriteAllText(Path.Combine(_repo, fileName), content);
-                return new ConversationReply(true, "edited it directly", "agent:claude-code", "Claude Code", null);
-            });
-
-    private void SeedRepo()
-    {
-        Assert.True(RepoOps.Init(_repo).Ok);
-        File.WriteAllText(Path.Combine(_repo, "seed.txt"), "seed\n");
-        Assert.True(RepoOps.Commit(_repo, new[] { "seed.txt" }, "seed", "tester").Ok);
-    }
-
-    private Artifact? DirectChange() =>
-        ((IArtifactStore)_memory).ForMission(AnthillRuntime.SystemApiMissionId, "direct_change")
-            .FirstOrDefault();
-
-    [Fact]
-    public void Bypass_DirectEdit_IsCommitted_AndCapturedAsUnverifiedArtifact()
-    {
-        if (!GitAvailable) return;
-        SeedRepo();
-        var baseHead = RepoOps.Head(_repo);
-        Assert.NotNull(baseHead);
-
-        EditingRunner("colony.txt", "the colony was here\n")
-            .Run(Chat(EscalationPolicy.Bypass), "leave a note");
-
-        // Committed: the tree is clean again and HEAD moved.
-        var state = RepoOps.Describe(_repo);
-        Assert.Equal(0, state.DirtyCount);
-        Assert.NotEqual(baseHead, RepoOps.Head(_repo));
-
-        // And the canonical artifact names everything the audit requires.
-        var artifact = DirectChange();
-        Assert.NotNull(artifact);
-        Assert.Equal("operator-agent", artifact!.ProducerRole);
-        Assert.Contains(baseHead!, artifact.Payload);                       // base revision
-        Assert.Contains("colony.txt", artifact.Payload);                    // the changed file
-        Assert.Contains("\"committed\":true", artifact.Payload);
-        Assert.Contains("not colony-verified work", artifact.Payload);      // the load-bearing sentence
-        Assert.False(string.IsNullOrWhiteSpace(artifact.ContentHash));
-    }
-
-    [Fact]
-    public void AutoApprove_DirectEdit_IsCaptured_ButNeverCommitted()
-    {
-        if (!GitAvailable) return;
-        SeedRepo();
-        var baseHead = RepoOps.Head(_repo);
-
-        EditingRunner("notes.txt", "auto-approve edit\n")
-            .Run(Chat(EscalationPolicy.AutoApprove), "take a note");
-
-        // NOT committed — under Automatically approve the dirty tree stays the operator's.
-        var state = RepoOps.Describe(_repo);
-        Assert.Equal(1, state.DirtyCount);
-        Assert.Equal(baseHead, RepoOps.Head(_repo));
-
-        var artifact = DirectChange();
-        Assert.NotNull(artifact);
-        Assert.Contains("\"committed\":false", artifact!.Payload);
-        Assert.Contains("\"final_revision\":null", artifact.Payload);
-        Assert.Contains("not colony-verified work", artifact.Payload);
-    }
-
-    [Fact]
-    public void ManualApproval_NoSweep_NoArtifact_NoCommit()
-    {
-        if (!GitAvailable) return;
-        SeedRepo();
-        var baseHead = RepoOps.Head(_repo);
-
-        EditingRunner("sneaky.txt", "should not be swept\n")
-            .Run(Chat(EscalationPolicy.Ask), "hello");
-
-        Assert.Equal(baseHead, RepoOps.Head(_repo));   // nothing committed
-        Assert.Null(DirectChange());                   // and nothing captured: this lane is read-only by policy
-    }
-
-    [Fact]
-    public void OperatorsPreexistingDirt_IsNeverSweptIntoTheColonyCommit()
-    {
-        if (!GitAvailable) return;
-        SeedRepo();
-        // The operator's own work-in-progress, dirty BEFORE the agent runs.
-        File.WriteAllText(Path.Combine(_repo, "wip.txt"), "operator's own\n");
-
-        EditingRunner("agentwork.txt", "the agent's file\n")
-            .Run(Chat(EscalationPolicy.Bypass), "do the thing");
-
-        var state = RepoOps.Describe(_repo);
-        Assert.Equal(1, state.DirtyCount);                                   // wip.txt survives, uncommitted
-        Assert.Contains(state.Dirty, d => d.Path.Contains("wip.txt"));
-        var artifact = DirectChange();
-        Assert.NotNull(artifact);
-        Assert.DoesNotContain("wip.txt", artifact!.Payload);                 // and is not claimed by the capture
-    }
-
-    // ---- the structural half: this lane can never reach positive memory -------------------------
+    private static string Runner() => File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+        "src", "Anthill.Core", "Conversations", "ConversationRunner.cs"));
 
     /// <summary>
-    /// Learning consumes canonical mission evaluations; a conversation is not a mission. That is
-    /// the fail-closed guarantee — and it must be STRUCTURAL, so these are source-level detectors
-    /// in the CrossBoundaryAgreementTests tradition: the conversation lane must never grow a
-    /// pheromone or learning call, and the learning lane must never grow a direct_change consumer
-    /// that could turn unverified direct-agent output into positive reinforcement.
+    /// THE GRANT IS GONE. The conversation may not enter an agent access scope at all — confined or
+    /// otherwise — because it dispatches no agent.
+    ///
+    /// This is the assertion that would have failed in v0.3.8.57, when the prompt said the lane had
+    /// no tools and this call was still four lines away. Asserting on the prompt text is how that
+    /// release convinced itself; asserting on the scope is what would have caught it.
     /// </summary>
     [Fact]
-    public void TheDirectLane_HasNoPathIntoLearning_AndLearningHasNoPathIntoDirectChanges()
+    public void TheConversationLane_EntersNoAgentAccessScope() =>
+        Assert.DoesNotContain("AgentAccessScope", SourceText.CodeOnly(Runner()));
+
+    /// <summary>
+    /// UNCONFINED ACCESS EXISTS NOWHERE. The mission path enters a scope, deliberately, and it is
+    /// always confined: mission work stands in a disposable sandbox or worktree, never the live
+    /// checkout. `confinedWorkspace: false` was the whole of the direct lane's authority, so its
+    /// absence across the entire source tree is the durable form of this guarantee — narrower than
+    /// naming the one file that used to hold it, and it stays true if the lane returns elsewhere.
+    /// </summary>
+    [Fact]
+    public void NoCallSiteAnywhere_RequestsUnconfinedAgentAccess()
     {
-        var runner = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
-            "src", "Anthill.Core", "Conversations", "ConversationRunner.cs"));
-        Assert.DoesNotContain("LearningRecorder", runner.Replace(
-            "never feeds positive memory: learning consumes canonical mission", ""));  // prose mention only
+        var offenders = new List<string>();
+        foreach (var path in Directory.EnumerateFiles(
+                     Path.Combine(SourceText.RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+             || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
+            // The scope's own DECLARATION carries the parameter and its default; only CALLS count.
+            if (path.EndsWith("AgentAccessScope.cs", StringComparison.Ordinal)) continue;
+            if (SourceText.CodeOnly(File.ReadAllText(path))
+                .Contains("confinedWorkspace: false", StringComparison.Ordinal))
+                offenders.Add(Path.GetFileName(path));
+        }
+
+        Assert.True(offenders.Count == 0,
+            "these call sites grant an agent access to a NON-disposable tree: "
+          + string.Join(", ", offenders)
+          + ". That is the direct lane, whatever it is called now — work reaching the operator's "
+          + "files without a plan, a review, a test or a verdict.");
+    }
+
+    /// <summary>
+    /// NOTHING SWEEPS OR COMMITS FROM A CONVERSATION. The sweep existed only to catch what the lane
+    /// wrote; a new one would be evidence the lane is back, and it would arrive looking helpful.
+    /// </summary>
+    [Fact]
+    public void TheConversationLane_CommitsNothingAndCapturesNoDirectChange()
+    {
+        var runner = SourceText.CodeOnly(Runner());
+
+        Assert.DoesNotContain("direct_change", runner);
+        Assert.DoesNotContain("RepoOps.Commit", runner);
+        Assert.DoesNotContain("DirectEditSweep", runner);
+    }
+
+    /// <summary>
+    /// And the original structural guarantee is KEPT, because it costs nothing to keep and it
+    /// guards the consequence rather than the mechanism: the conversation lane must never grow a
+    /// pheromone or learning call, and the learning lane must never grow a `direct_change`
+    /// consumer that could turn unverified output into positive reinforcement.
+    ///
+    /// The prose exemption the v0.3.8.53 version needed — a mention inside a comment — is gone with
+    /// the comment, so this now reads the blanked source and needs no exemption at all. A guard
+    /// with a carve-out is one refactor away from being a guard with a hole.
+    /// </summary>
+    [Fact]
+    public void TheConversationLane_HasNoPathIntoLearning_AndLearningHasNoPathIntoDirectChanges()
+    {
+        var runner = SourceText.CodeOnly(Runner());
+        Assert.DoesNotContain("LearningRecorder", runner);
         Assert.DoesNotContain("Pheromone", runner);
         Assert.DoesNotContain("ReinforceTrail", runner);
 
-        var learning = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
-            "src", "Anthill.Core", "Orchestration", "LearningRecorder.cs"));
+        var learning = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Orchestration", "LearningRecorder.cs")));
         Assert.DoesNotContain("direct_change", learning);
     }
 }
