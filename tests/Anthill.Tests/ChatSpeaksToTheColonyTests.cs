@@ -109,7 +109,7 @@ public class ChatSpeaksToTheColonyTests
         Assert.Contains("start a mission for it", queen);
 
         // The refusal must NOT reroute: no second GetClientForProvider call rescuing the turn.
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(queen, @"GetClientForProvider\(").Count);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(queen, @"GetClientForProvider\("));
     }
 
     /// <summary>
