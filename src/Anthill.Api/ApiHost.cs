@@ -122,6 +122,24 @@ public static partial class ApiHost
         ReasoningProviders.RegisterLocalModelLister(InstalledOllamaModels);
 
         Modules = new ModuleHost(memory, events);
+#if MICROMOUND
+        // MICROMOUND is an OPTIONAL integration, twice over: this block only compiles when the
+        // wire-contract checkout exists beside the repo, and only runs when the operator has set
+        // micromound_enabled. A colony without hardware carries no micromound — not a disabled
+        // copy of it, none of it. Configuration only at registration, for a sharper version of
+        // the homelab's reason: a mound may be a Pi in a shed on a dead battery, and mounds dial
+        // IN; the colony never reaches out.
+        if (AnthillRuntime.EnableMicromound)
+            Modules.LoadAll(new MicromoundModule(
+                new MicromoundOptions(
+                    DatabasePath: Path.IsPathRooted(AnthillRuntime.DbPath)
+                        ? AnthillRuntime.DbPath
+                        : Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.DbPath),
+                    StopFileName: "MICROMOUND_STOP",
+                    WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath,
+                    ColonyVersion: AnthillRuntime.Version),
+                FieldCipher.CreateDefault()));
+#endif
         Modules.LoadAll(
             new ReasoningModule(AnthillRuntime.OllamaHost),
             // v3.8.7: the homelab is configuration-only at registration, so an asleep Proxmox
@@ -140,19 +158,6 @@ public static partial class ApiHost
                     GenericWebhook: AnthillRuntime.HomelabGenericWebhook,
                     ColonyVersion: AnthillRuntime.Version,
                     WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath),
-                FieldCipher.CreateDefault()),
-            // MICROMOUND M1 (read-only): the colony can see mounds and cannot direct them.
-            // Configuration only at registration, for a sharper version of the homelab's reason —
-            // a mound may be a Pi in a shed on a dead battery, and mounds dial IN; the colony
-            // never reaches out. Same DB file, same stop-file convention, same field cipher.
-            new MicromoundModule(
-                new MicromoundOptions(
-                    DatabasePath: Path.IsPathRooted(AnthillRuntime.DbPath)
-                        ? AnthillRuntime.DbPath
-                        : Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.DbPath),
-                    StopFileName: "MICROMOUND_STOP",
-                    WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath,
-                    ColonyVersion: AnthillRuntime.Version),
                 FieldCipher.CreateDefault()),
             // v3.8.16: the six tools that act on the machine. The guard is built here rather than
             // inside the module because it reads the current mission's workspace through an ambient
@@ -199,7 +204,10 @@ public static partial class ApiHost
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
-        InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)
+#if MICROMOUND
+        if (AnthillRuntime.EnableMicromound)
+            InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)
+#endif
 
         var app = builder.Build();
 
@@ -252,7 +260,9 @@ public static partial class ApiHost
 
         MapEndpoints(app);
         MapHomelabEndpoints(app);
-        MapMicromoundEndpoints(app);
+#if MICROMOUND
+        if (AnthillRuntime.EnableMicromound) MapMicromoundEndpoints(app);
+#endif
         MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
         AssertNoDuplicateRoutes(app);
 

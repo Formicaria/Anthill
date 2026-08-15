@@ -29,6 +29,16 @@
       absent from the test output directory and its boundary theory case cannot run — which is
       indistinguishable from passing.
     -->
+  </ItemGroup>
+
+  <!-- MICROMOUND is optional: the boundary check on its assembly only exists when the wire
+       contract does. Same condition and define as Anthill.Api. -->
+  <PropertyGroup>
+    <MicromoundRepoPath Condition="'$(MicromoundRepoPath)' == ''">$(MSBuildThisFileDirectory)..\..\..\micromound</MicromoundRepoPath>
+    <MicromoundPresent Condition="Exists('$(MicromoundRepoPath)\src\Micromound.Protocol\Micromound.Protocol.csproj')">true</MicromoundPresent>
+    <DefineConstants Condition="'$(MicromoundPresent)' == 'true'">$(DefineConstants);MICROMOUND</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MicromoundPresent)' == 'true'">
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj" />
   </ItemGroup>
 
