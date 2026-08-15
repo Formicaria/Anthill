@@ -127,11 +127,7 @@ public sealed class Planner
               "- The mission's job is to inspect, verify, and report — not to modify anything.\n"
             : "";
 
-        var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: planner | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(goal, 180)}
-You are concise. Do not explain your reasoning unless asked.
-
-You are the Planner inside ANTHILL, a local swarm-intelligence AI harness.
+        var prompt = $@"You are the Planner inside ANTHILL, a local swarm-intelligence AI harness.
 
 Available ants:
 {RuntimeRoster.PromptBlock(PlannerEmphasis)}
@@ -192,7 +188,8 @@ Required JSON:
         // v3.2.0: the provider's own status decides, not the shape of its prose. An EMPTY model
         // response now falls back too — it never started with "ERROR:", so it used to be handed
         // to the JSON parser as if it were a plan.
-        var result = _router.GenerateTyped("planner", prompt, antName: "planner");
+        var result = _router.GenerateTyped("planner", prompt, antName: "planner",
+            system: AnthillRuntime.RoleSystemPrompt("planner", goal));
         var response = result.Content;
         if (!result.Ok)
         {
