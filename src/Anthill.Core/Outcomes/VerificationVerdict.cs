@@ -21,6 +21,15 @@ public static class VerificationVerdict
     public const string Failed = "failed";
     public const string Unknown = "unknown";
 
+    /// <summary>
+    /// v0.3.8.61 (PLAN.md §1b S3): the verdict for a verifier whose evidence store EXISTS and could
+    /// not be read. Distinct from <see cref="Unknown"/> on purpose — Unknown means "the output held
+    /// no verdict"; this means "the machinery that produces verdicts was down", and the two demand
+    /// different operator responses. Never emitted by <see cref="Parse"/>: no prose can claim it,
+    /// only the verifier's own store read can set it. Not a pass, like everything except Passed.
+    /// </summary>
+    public const string Unavailable = "verification_unavailable";
+
     /// <summary>The exact phrases VerifierAnt emits, mapped to their verdict.</summary>
     private static readonly (string Phrase, string Verdict)[] Phrases =
     {
@@ -63,6 +72,7 @@ public static class VerificationVerdict
         Passed => "verifier returned Verification Passed",
         NeedsImprovement => "verifier returned Needs Improvement — the mission is not verified",
         Failed => "verifier returned Verification Failed",
+        Unavailable => "the evidence store could not be read — verification is unavailable, which is not a pass",
         _ => "verifier output contained no single recognisable verdict — treated as unverified",
     };
 }

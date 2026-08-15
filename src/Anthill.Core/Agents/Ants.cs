@@ -1035,18 +1035,28 @@ public sealed class VerifierAnt : BaseAnt
     }
 
     /// <summary>
-    /// The verdict this mission's stored evidence supports, or null when there is no store to ask.
-    /// A read failure is null too: a verifier that refused to run because the store hiccuped would
-    /// be worse than one falling back to the static check it has always had.
+    /// What asking the evidence store produced. Three states, not two — and the difference is the
+    /// whole of PLAN.md §1b S3's verifier finding. NO STORE is the CLI and the older tests: the
+    /// static/prose path is that configuration's contract and it stands. STORE FAILED is a colony
+    /// whose verification machinery is down, and until v0.3.8.61 it was silently collapsed into
+    /// "no store": the verdict fell through to prose parsed out of model text, which means a store
+    /// outage WIDENED what the model's words could decide. Failure now carries its own state and
+    /// produces <see cref="Outcomes.VerificationVerdict.Unavailable"/> — never prose.
     /// </summary>
-    private Outcomes.EvidenceVerdict.Result? ReadEvidenceVerdict(Mission mission)
+    private sealed record EvidenceRead(
+        Outcomes.EvidenceVerdict.Result? Verdict, bool StoreFailed, string? Error)
     {
-        if (_evidence is null) return null;
-        try { return Outcomes.EvidenceVerdict.For(_evidence.ForMission(mission.Id)); }
+        public static readonly EvidenceRead NoStore = new(null, false, null);
+    }
+
+    private EvidenceRead ReadEvidenceVerdict(Mission mission)
+    {
+        if (_evidence is null) return EvidenceRead.NoStore;
+        try { return new EvidenceRead(Outcomes.EvidenceVerdict.For(_evidence.ForMission(mission.Id)), false, null); }
         catch (Exception error)
         {
             Console.Error.WriteLine($"[verifier] could not read evidence for {mission.Id}: {error.Message}");
-            return null;
+            return new EvidenceRead(null, true, error.Message);
         }
     }
 
@@ -1081,12 +1091,24 @@ public sealed class VerifierAnt : BaseAnt
         // Falls back to the prose verdict ONLY when there is no store — the CLI and the older tests.
         // Returning `unknown` for every mission in those configurations would be a regression
         // wearing the costume of rigour.
-        var fromEvidence = ReadEvidenceVerdict(mission);
+        var read = ReadEvidenceVerdict(mission);
+        var fromEvidence = read.Verdict;
 
-        var verdict = fromEvidence?.Verdict ?? Outcomes.VerificationVerdict.Parse(text);
+        // S3 (v0.3.8.61): a store that FAILED is not a store that is absent. The prose fallback
+        // exists for configurations that never had a store; letting it answer for a broken one
+        // turns an outage into authority. Unavailable is not a pass, and nothing downstream —
+        // MissionVerification, the scribe, auto-apply — treats it as one.
+        var verdict = read.StoreFailed
+            ? Outcomes.VerificationVerdict.Unavailable
+            : fromEvidence?.Verdict ?? Outcomes.VerificationVerdict.Parse(text);
         var passed = Outcomes.VerificationVerdict.IsPass(verdict);
 
-        var narrative = fromEvidence is null ? text
+        var narrative = read.StoreFailed
+            ? text
+              + "\n\nevidence_verdict: verification_unavailable"
+              + $"\nevidence_basis: the evidence store could not be read ({read.Error}); "
+              + "the model text above is narrative only and decides nothing"
+            : fromEvidence is null ? text
             : text
               + $"\n\nevidence_verdict: {fromEvidence.Verdict}"
               + $"\nevidence_basis: {fromEvidence.Explanation}"
@@ -1104,7 +1126,7 @@ public sealed class VerifierAnt : BaseAnt
         };
         return result with
         {
-            Evidence = BuildVerdictEvidence(verdict, text, fromEvidence),
+            Evidence = BuildVerdictEvidence(verdict, text, fromEvidence, read.StoreFailed, read.Error),
         };
     }
 
@@ -1116,12 +1138,22 @@ public sealed class VerifierAnt : BaseAnt
     /// every report the colony produces, which is precisely the confusion this release removes.
     /// </summary>
     private static List<AntEvidence> BuildVerdictEvidence(
-        string verdict, string modelText, Outcomes.EvidenceVerdict.Result? fromEvidence)
+        string verdict, string modelText, Outcomes.EvidenceVerdict.Result? fromEvidence,
+        bool storeFailed = false, string? storeError = null)
     {
         var rows = new List<AntEvidence>
         {
             new("verification_verdict", verdict, Outcomes.VerificationVerdict.Explain(verdict)),
         };
+        if (storeFailed)
+        {
+            // The source row says WHY there is no basis, so an operator reading the report can tell
+            // "the store was down" from "nobody produced evidence" — the second is a mission
+            // property, the first is an incident.
+            rows.Add(new("verdict_source", "evidence_store_unavailable",
+                $"the evidence store exists and could not be read: {storeError}"));
+            return rows;
+        }
         if (fromEvidence is null) return rows;
 
         rows.Add(new("verdict_source", "evidence_store", fromEvidence.Explanation));
