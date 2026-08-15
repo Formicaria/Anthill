@@ -1,5 +1,36 @@
 # ANTHILL Changelog
 
+## v0.3.8.61 - evidence fails closed, and what a live sweep found
+
+**S3 closes: a store failure is no longer permission to write.** The third P0 from the security
+review, and the direction is the whole finding — both fail-open boundaries WIDENED authority when
+the evidence store failed. The verifier now distinguishes a store that FAILED from a store that
+never existed: failure produces `verification_unavailable`, a verdict prose cannot claim and
+`IsPass` never accepts, while the no-store CLI configuration keeps its static contract. Auto-apply's
+evidence gate refuses instead of shrugging, five ways: a store read failure refuses; a mission with
+no revision-identified evidence is manual-apply only; a proposal without a patch_set_id cannot slip
+the loop; a deterministic FAILURE for the revision cannot be outvoted by a pass beside it; and the
+gate compares the patch-set CONTENT hash — the evidence judged bytes, so the gate matches bytes,
+which makes "applies as a unit" self-enforcing. Eleven behavioural tests drive the real gate with a
+real throwing store.
+
+**A full live E2E sweep, and the two defects its error log surfaced.** Every surface was driven in
+the running console: the frozen drag ruler held one target across ten identical dragovers with the
+pollers firing; a chat message rode the approval gate into a real mission, was verified, and
+answered with typed artifacts; the operator tool CRUD ran end to end including the host allowlist
+refusing an unlisted host; the Director started, passed the governor and budget, launched a backlog
+objective as an autonomous mission and stopped with the kill switch re-engaged; micromound stayed
+dark with its flag off (404s, no catalog kind), which is the optionality contract observed from
+outside. The console's own error log then paid for the trip: hiding the dashboard widget the render
+walk was standing on detached the insertion cursor and killed the rest of the render, and the
+colony canvas threw on every click while the Agent Inspector widget was hidden, because its adopted
+pane was detached and getElementById said so. Both fixed, both now guarded.
+
+**Operator note.** The sweep found live auto-apply enabled on a build whose evidence gate still
+failed open, with write gates on and a real tree on the allowlist — the exact configuration §1b's
+containment paragraph warns about. `autonomy_autoapply_enabled` was turned OFF during the sweep
+and should stay off until S4 (transactional apply) and S5 (secret filtering) close.
+
 ## v0.3.8.60 - the second copy of every rule v0.3.8.59 fixed
 
 v0.3.8.59 closed S1, S2 and S9 and left a second copy of two of them standing. This is the sweep.
