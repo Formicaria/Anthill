@@ -73,7 +73,9 @@ public static class AutoApplyRunner
             .ToList();
         if (candidates.Count == 0) return;
 
-        var eligible = new List<(string PatchId, string? TaskId)>();
+        // v0.3.8.57 — the PROPOSAL is carried alongside the ids so preflight can compute the whole
+        // set before anything is written, without re-reading every row from the store.
+        var eligible = new List<(string PatchId, string? TaskId, PatchProposal Proposal)>();
         foreach (var patchId in candidates)
         {
             var full = queen.Memory.GetPatchProposal(patchId);
@@ -89,7 +91,7 @@ public static class AutoApplyRunner
                 NewContent = full.GetValueOrDefault("new_content") as string,
             };
             var decision = AutoApplyPolicy.Evaluate(proposal);
-            if (decision.Eligible) eligible.Add((patchId, full.GetValueOrDefault("task_id")?.ToString()));
+            if (decision.Eligible) eligible.Add((patchId, full.GetValueOrDefault("task_id")?.ToString(), proposal));
             else
                 queen.Memory.LogEvent(missionId, "autonomy_autoapply_ineligible",
                     $"Patch not eligible for auto-apply: {proposal.FilePath} — {decision.Reason}", full.GetValueOrDefault("task_id")?.ToString(), "director",
@@ -106,16 +108,64 @@ public static class AutoApplyRunner
             $"Director auto-applying {eligible.Count} eligible patch(es), then verifying with: {verifyDescription}.", antName: "director",
             metadata: new() { ["mission_id"] = missionId, ["eligible_count"] = eligible.Count, ["verify_cmd"] = verifyDescription, ["workspace"] = workspace });
 
+        /* v0.3.8.57 — PREFLIGHT THE WHOLE SET BEFORE WRITING ANYTHING.
+         *
+         * The set is applied as a unit or not at all. Every proposal is computed against the tree
+         * first, with no IO, and one refusal aborts the batch before a single byte is written.
+         *
+         * What this replaces: the loop below applied patches one at a time and, on a failure, logged
+         * it and CARRIED ON to the next. A set whose third patch was stale therefore left patches one
+         * and two applied and the rest not — a repository in a state no revision ever had, mixing old
+         * and new, with rollback reachable only through the verify step further down. If verify was
+         * not configured, or the run ended before reaching it, the mixture simply stayed.
+         *
+         * Preflight cannot be perfect — the tree can change between the check and the write — so it
+         * is a gate, not a guarantee, and the transactional rollback below is what covers the gap.
+         */
+        var refusals = Preflight(eligible);
+        if (refusals.Count > 0)
+        {
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_preflight_refused",
+                $"Auto-apply refused the whole set: {refusals.Count} of {eligible.Count} patch(es) "
+                + "cannot be applied to the tree as it stands, so none were. "
+                + string.Join(" | ", refusals.Take(5)), antName: "director",
+                metadata: new()
+                {
+                    ["mission_id"] = missionId, ["eligible_count"] = eligible.Count,
+                    ["refused_count"] = refusals.Count, ["refusals"] = refusals,
+                });
+            return;
+        }
+
         // Apply each eligible patch, remembering enough to roll back.
         var applied = new List<Queen.AutoApplyOutcome>();
-        foreach (var (patchId, taskId) in eligible)
+        foreach (var (patchId, taskId, _) in eligible)
         {
             var outcome = queen.ApplyPatchForAutomation(patchId, missionId, taskId);
-            if (outcome.Success) applied.Add(outcome);
-            else
-                queen.Memory.LogEvent(missionId, "autonomy_autoapply_apply_failed",
-                    $"Auto-apply could not write patch {outcome.FilePath}: {outcome.Error}", taskId, "director",
-                    metadata: new() { ["patch_id"] = patchId, ["error"] = outcome.Error });
+            if (outcome.Success) { applied.Add(outcome); continue; }
+
+            /* A write failed AFTER preflight passed — a race, a permission change, a full disk.
+             *
+             * Everything already written is rolled back, in reverse order, from the pre-apply
+             * backups, and the batch is abandoned. This is the half preflight cannot provide: the
+             * old code logged the failure and applied the remaining patches on top of a set it now
+             * knew was incomplete. */
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_apply_failed",
+                $"Auto-apply could not write patch {outcome.FilePath}: {outcome.Error}", taskId, "director",
+                metadata: new() { ["patch_id"] = patchId, ["error"] = outcome.Error });
+
+            for (var i = applied.Count - 1; i >= 0; i--)
+                queen.RollbackAutoApplied(applied[i], missionId, null, "a later patch in the set could not be applied");
+
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_batch_rolled_back",
+                $"Rolled back {applied.Count} already-applied patch(es) because {outcome.FilePath} "
+                + "could not be written. The set is applied as a unit or not at all.", taskId, "director",
+                metadata: new()
+                {
+                    ["mission_id"] = missionId, ["reverted_count"] = applied.Count,
+                    ["failed_patch_id"] = patchId, ["error"] = outcome.Error,
+                });
+            return;
         }
         if (applied.Count == 0) return;
 
@@ -171,6 +221,60 @@ public static class AutoApplyRunner
                     ["verify_tail"] = Tail(verify.Output, 1500),
                 });
         }
+    }
+
+    /// <summary>
+    /// Compute every proposal against the tree WITHOUT writing. v0.3.8.57.
+    ///
+    /// Returns one line per refusal; empty means the whole set can be applied. Reuses
+    /// <see cref="PatchApply.Compute"/> — the same function the applier runs — so a preflight that
+    /// passes and an apply that then refuses would mean the two disagree, which is exactly the drift
+    /// a second hand-written checker would introduce.
+    ///
+    /// <c>requireBaseHash: true</c> matches the live applier: this batch writes to the operator's
+    /// real tree, so a destructive proposal that cannot say what it was built against is refused
+    /// here rather than discovered halfway through the set.
+    /// </summary>
+    private static List<string> Preflight(List<(string PatchId, string? TaskId, PatchProposal Proposal)> eligible)
+    {
+        var refusals = new List<string>();
+        var guard = new Anthill.Core.Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+
+        foreach (var (patchId, _, proposal) in eligible)
+        {
+            string? current;
+            string? safeDestination = null;
+            var destinationTaken = false;
+            try
+            {
+                var resolved = guard.ResolveSafePath(proposal.FilePath);
+                current = File.Exists(resolved) ? File.ReadAllText(resolved) : null;
+
+                if (!string.IsNullOrWhiteSpace(proposal.DestinationPath))
+                {
+                    safeDestination = guard.ResolveSafePath(proposal.DestinationPath!);
+                    destinationTaken = File.Exists(safeDestination) || Directory.Exists(safeDestination);
+                }
+            }
+            catch (Exception error)
+            {
+                // A path that will not resolve is a refusal, not a crash: the batch stops and says so.
+                refusals.Add($"{proposal.FilePath}: {error.Message}");
+                continue;
+            }
+
+            var outcome = PatchApply.Compute(
+                proposal.ChangeType.Value(), proposal.OldContent, proposal.NewContent, current,
+                proposal.BaseHash,
+                safeDestination is null ? null : proposal.DestinationPath,
+                destinationTaken,
+                requireBaseHash: true);
+
+            if (!outcome.Ok)
+                refusals.Add($"{proposal.FilePath} ({proposal.ChangeType.Value()}) [{patchId}]: {outcome.Reason}");
+        }
+
+        return refusals;
     }
 
     /// <summary>
