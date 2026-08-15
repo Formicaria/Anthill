@@ -409,15 +409,17 @@ public sealed partial class SqliteMemory
     }
 
     public void UpdatePatchStatus(string patchId, PatchStatus status, string? appliedAt = null,
-        string? backupPath = null, string? lastError = null)
+        string? backupPath = null, string? lastError = null, string? appliedHash = null)
     {
         lock (_writeLock)
         {
             using var conn = Connect();
             NonQuery(conn, null,
                 @"UPDATE patch_proposals SET status = @s, applied_at = COALESCE(@a, applied_at),
-                    backup_path = COALESCE(@b, backup_path), last_error = @e WHERE id = @id",
-                ("@s", status.Value()), ("@a", appliedAt), ("@b", backupPath), ("@e", lastError), ("@id", patchId));
+                    backup_path = COALESCE(@b, backup_path), last_error = @e,
+                    applied_hash = COALESCE(@h, applied_hash) WHERE id = @id",
+                ("@s", status.Value()), ("@a", appliedAt), ("@b", backupPath), ("@e", lastError),
+                ("@h", appliedHash), ("@id", patchId));
         }
     }
 

@@ -117,7 +117,10 @@ public sealed partial class Queen
     /// </summary>
     public sealed record AutoApplyOutcome(bool Success, string PatchId, string? Error,
         string? ResolvedPath, string? BackupPath, string ChangeType, string FilePath,
-        string? ResolvedDestination = null);
+        string? ResolvedDestination = null,
+        // v0.3.8.62 (S4): what the apply left at the live path. Rollback restores ONLY while the
+        // current bytes still match this — anything else is newer work, not rollback's to destroy.
+        string? AppliedHash = null);
 
     /// <summary>
     /// Phase 5: applies a patch directly for the auto-apply runner (no separate approval step) and
@@ -134,13 +137,11 @@ public sealed partial class Queen
 
         var result = Tools.RunTool("apply_patch", missionId, taskId, "director",
             new() { ["patch"] = patch });
-        if (!result.Success)
-        {
-            Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
-            return new AutoApplyOutcome(false, patchId, result.Error, null, null, changeType, filePath);
-        }
 
-        string? backupPath = null, resolvedPath = null, resolvedDestination = null;
+        // v0.3.8.62 (S4): parse metadata from SUCCESS AND FAILURE alike. The tool now reports the
+        // backup it took and the path it touched even when the mutation threw — a failed write
+        // whose backup path dissolved into an exception message was S4's unrecoverable case.
+        string? backupPath = null, resolvedPath = null, resolvedDestination = null, appliedHash = null;
         try
         {
             var root = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement;
@@ -149,88 +150,33 @@ public sealed partial class Queen
             // v0.3.8.52: present only on a rename. Absent for everything else, which is why the
             // rollback treats a missing one as "nothing was moved" rather than as an error.
             resolvedDestination = root.TryGetProperty("destination_path", out var dp) ? dp.GetString() : null;
+            appliedHash = root.TryGetProperty("applied_hash", out var ah) ? ah.GetString() : null;
         }
         catch { /* tolerate — rollback for a modify still needs the backup, handled by caller */ }
 
-        Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
+        if (!result.Success)
+        {
+            Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error, backupPath: backupPath);
+            return new AutoApplyOutcome(false, patchId, result.Error, resolvedPath, backupPath, changeType, filePath, resolvedDestination);
+        }
+
+        Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null, appliedHash);
         Memory.LogEvent(missionId, "autonomy_autoapply_applied", $"Director auto-applied patch: {filePath}", taskId, "director",
-            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["verified"] = false });
-        return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath, resolvedDestination);
+            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["applied_hash"] = appliedHash, ["verified"] = false });
+        return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath, resolvedDestination, appliedHash);
     }
 
-    /// <summary>
-    /// Reverts a patch applied by <see cref="ApplyPatchForAutomation"/>: restores the pre-apply
-    /// backup for a modify or a delete, deletes the created file for an add, moves the file back for
-    /// a rename. Marks the patch Failed and logs the rollback. Used when the post-apply verify
-    /// (build+test) comes back red.
-    ///
-    /// v0.3.8.52 made rename explicit. It previously fell through to the backup-restore arm, which
-    /// is wrong in a way that looks right: the backup is a copy of the SOURCE, so restoring it
-    /// recreated the source while the moved file sat at the destination untouched. A rolled-back
-    /// rename left the tree holding both, which is a state neither applying nor not applying the
-    /// patch produces.
-    /// </summary>
-    public bool RollbackAutoApplied(AutoApplyOutcome applied, string missionId, string? taskId, string reason)
-    {
-        var ok = false;
-        try
-        {
-            if (applied.ChangeType.Equals("add", StringComparison.OrdinalIgnoreCase))
-            {
-                if (applied.ResolvedPath is { Length: > 0 } addPath && File.Exists(addPath)) { File.Delete(addPath); ok = true; }
-            }
-            else if (applied.ChangeType.Equals("rename", StringComparison.OrdinalIgnoreCase))
-            {
-                // Move back, rather than restore-from-backup, so the destination is emptied by the
-                // same operation that refills the source. Falls through to the backup arm only if
-                // the destination is already gone — something else moved it and a copy is the best
-                // remaining answer.
-                if (applied.ResolvedDestination is { Length: > 0 } dest && File.Exists(dest)
-                    && applied.ResolvedPath is { Length: > 0 } source)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(source)!);
-                    File.Move(dest, source, overwrite: true);
-                    ok = true;
-                }
-                else if (applied.BackupPath is { Length: > 0 } renameBackup
-                         && applied.ResolvedPath is { Length: > 0 } renameSource && File.Exists(renameBackup))
-                {
-                    File.Copy(renameBackup, renameSource, overwrite: true);
-                    ok = true;
-                }
-            }
-            else if (applied.BackupPath is { Length: > 0 } backup && applied.ResolvedPath is { Length: > 0 } target
-                     && File.Exists(backup))
-            {
-                // Covers modify AND delete: both are undone by putting the pre-apply bytes back at
-                // the original path, and the delete arm of the apply tool takes that backup first
-                // precisely so this line works for it.
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(backup, target, overwrite: true);
-                ok = true;
-            }
-        }
-        catch (Exception e)
-        {
-            Memory.LogEvent(missionId, "autonomy_autoapply_rollback_failed",
-                $"Rollback FAILED for {applied.FilePath}: {e.Message}", taskId, "director",
-                new() { ["patch_id"] = applied.PatchId, ["file_path"] = applied.FilePath, ["error"] = e.Message });
-            return false;
-        }
-
-        Memory.UpdatePatchStatus(applied.PatchId, PatchStatus.Failed, lastError: $"Auto-apply rolled back: {reason}");
-        Memory.LogEvent(missionId, "autonomy_autoapply_rolled_back",
-            $"Director rolled back auto-applied patch ({(ok ? "restored" : "no backup — could not restore")}): {applied.FilePath}",
-            taskId, "director",
-            new() { ["patch_id"] = applied.PatchId, ["file_path"] = applied.FilePath, ["change_type"] = applied.ChangeType, ["restored"] = ok, ["reason"] = reason });
-        return ok;
-    }
+    // v0.3.8.62 (S4): `RollbackAutoApplied` is GONE. The auto-apply runner rolls back through
+    // ApplyTransaction — journaled, hash-checked, honest about incomplete restores — and a
+    // per-patch rollback with no journal and no hash gate surviving beside it would have been the
+    // second implementation that drifts. The operator's manual path is RevertAppliedPatch below,
+    // which now applies the same hash rule.
 
     /// <summary>
     /// v2.7.0: manually reverts an APPLIED patch on operator request — for an "add" it deletes the
     /// created file, for a "modify" or a "delete" it restores the pre-apply backup, and for a
     /// "rename" (v0.3.8.52) it moves the file back. Marks the patch Reverted and
-    /// logs the action. Mirrors the automation rollback (<see cref="RollbackAutoApplied"/>) but is
+    /// logs the action. Mirrors the automation rollback (the ApplyTransaction path in AutoApplyRunner) but is
     /// operator-initiated and keyed by patch id, resolving the on-disk path exactly as the apply tool
     /// did (through the same <see cref="WorkspacePathGuard"/>), so a revert can never escape the
     /// sandboxed workspace. Idempotent-ish: only an "applied" patch can be reverted.
@@ -255,6 +201,13 @@ public sealed partial class Queen
         try { resolved = guard.ResolveSafePath(filePath); }
         catch (Exception e) { return $"Cannot revert: path '{filePath}' is unsafe or unresolvable ({e.Message})."; }
 
+        // v0.3.8.62 (S4): the same hash gate the automated rollback applies. An applied patch that
+        // recorded its post-apply hash is revertable only while the live file still holds those
+        // bytes; a file edited since is newer work, and the honest answer is a refusal that names
+        // the situation rather than an overwrite that quietly destroys it. Patches applied before
+        // this release carry no hash and keep their old behaviour — recorded in the reply.
+        var appliedHash = Str(patch, "applied_hash");
+
         // The destination is resolved through the SAME guard as the source, for the same reason the
         // method comment gives for resolving the source at all: a revert must not be able to move a
         // file out of the sandboxed workspace any more than an apply can.
@@ -263,6 +216,18 @@ public sealed partial class Queen
         {
             try { resolvedDestination = guard.ResolveSafePath(destinationPath); }
             catch (Exception e) { return $"Cannot revert: destination '{destinationPath}' is unsafe or unresolvable ({e.Message})."; }
+        }
+
+        if (appliedHash.Length > 0)
+        {
+            var livePath = changeType.Equals("rename", StringComparison.OrdinalIgnoreCase) && resolvedDestination is { Length: > 0 }
+                ? resolvedDestination : resolved;
+            var currentHash = Anthill.SDK.Common.ApplyTransaction.HashFile(livePath);
+            if (currentHash != appliedHash)
+                return $"Revert refused: {filePath} changed after this patch was applied. "
+                     + "The current content is newer work; reverting would destroy it. "
+                     + "Restore manually from the backup if that is really what you want: "
+                     + (backupPath.Length > 0 ? backupPath : "(no backup on record)");
         }
 
         bool restored; string detail;
