@@ -1141,12 +1141,38 @@ public sealed class ExecutionService : IExecutionService
         }
     }
 
+    /// <summary>
+    /// The current bytes of a proposed file, or null when it is absent or unreadable. v0.3.8.57.
+    ///
+    /// Feeds <see cref="PatchProposalParser"/> so a newly produced modify/delete/rename records what
+    /// it was built against. Returns null on ANY failure rather than throwing: a proposal whose base
+    /// cannot be read is one the applier will refuse with a reason, and losing the whole patch set to
+    /// an exception here would be a worse answer than a proposal that has to be re-read.
+    ///
+    /// Path containment is the guard's, not ours — an absolute path aimed at the live checkout
+    /// throws out of ResolveSafePath and lands in the same null.
+    /// </summary>
+    private static string? ReadForBaseHash(string filePath)
+    {
+        try
+        {
+            var guard = new Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+            var resolved = guard.ResolveSafePath(filePath);
+            return File.Exists(resolved) ? File.ReadAllText(resolved) : null;
+        }
+        catch { return null; }
+    }
+
     private void ProcessPatchProposals(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
     {
         if (string.IsNullOrEmpty(task.Result)) return;
         try
         {
-            var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id);
+            // v0.3.8.57 — the parser gets a reader, so newly produced destructive proposals carry a
+            // base hash. Resolved through WorkspacePathGuard, which answers against the MISSION
+            // workspace when a scope is active, so the hash records the tree the coder was actually
+            // looking at rather than the live checkout.
+            var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id, ReadForBaseHash);
             _memory.SavePatchSet(patchSet);
             RecordPatchArtifact(mission, task, patchSet);
             VerifyPatchSet(mission, task, patchSet);
