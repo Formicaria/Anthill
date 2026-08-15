@@ -1,7 +1,17 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.56** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.57** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
+
+> v0.3.8.57: patch integrity — the five Phase-3 items closed. `add` means CREATE (it returned
+> `Overwrote` and replaced whole files with whatever fragment a mislabelled proposal carried); the
+> coder path STAMPS the base hash it was built against (`BaseHash` was assigned in exactly one
+> place in the codebase, so the stale-base guard shipped in v3.8.37 could not fire for any
+> model-produced patch); a live destructive apply refuses without one; auto-apply preflights the
+> whole set and rolls back a partial write, so a repository can no longer be left mixing old and
+> new; a conformance ledger pins that all four appliers ask `PatchApply.Compute` with the full set
+> of facts; and every verdict records the revision, patch-set hash and tree hash it judged, through
+> schema, migration, INSERT and read-back.
 
 > v0.3.8.56: the sixth field round — the dashboard rebuilt as a cell grid with free placement
 > (widgets live where the operator put them; the drag ruler frozen in document space so a

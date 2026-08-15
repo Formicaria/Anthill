@@ -1,5 +1,80 @@
 # ANTHILL Changelog
 
+## v0.3.8.57 - patch integrity: nothing lands half-applied, and every verdict names its tree
+
+The five Priority-1 items from AUTONOMY-10 Phase 3, closed. Each one was a capability that already
+existed and could not reach the path it was built for.
+
+**`add` means CREATE.** An `add` onto an existing file returned `Overwrote` and wrote the proposal's
+`new_content` over the whole file. The comment defending it called an add-over-existing "a common
+model slip" and said overwriting was safe "because the caller backs the file up first". Both halves
+get the risk backwards: a model that mislabels a targeted edit as `add` supplies only the fragment
+it is thinking about, so the overwrite TRUNCATES the file to those few lines — and a backup makes
+that recoverable, not correct, because nothing compares sizes and nothing asks. The most destructive
+operation in the engine had the weakest gate on it. It is now a typed conflict (`RefusedTargetExists`)
+routed as a `TargetRejection`, which sends it back for a fresh read rather than to the coder as a
+formatting error.
+
+**The coder path stamps its base hash.** `PatchProposal.BaseHash` was assigned in exactly one place
+in the entire codebase — `WorkspaceChangeSet`, which derives proposals from a finished workspace
+diff. The coder path set none. So every model-authored modify, delete and rename carried a null base
+hash, and the stale-base guard shipped in v3.8.37 — the largest item in Phase 1 — could not fire on
+the path that produces almost all destructive patches. It was real, tested, and unreachable for
+exactly the patches it existed for.
+
+The parser now records `HashOf(current)` at PRODUCTION time, resolved through `WorkspacePathGuard`
+so it hashes the mission workspace the coder was looking at rather than the live checkout. Stamping
+at apply time would hash whatever the file says by then and always agree with itself — a check that
+passes by construction. `add` is exempt: a creation has no prior state it could have been built
+against.
+
+**A live destructive apply refuses without one.** `RefusedStaleBase` catches a patch built against
+the WRONG base; `RefusedMissingBaseHash` catches one built against an UNKNOWN base, which is the same
+risk with none of the evidence. `requireBaseHash` is opt-in and only `ApplyPatchTool` passes it,
+because it is the one caller that writes to the operator's own tree. Defaulting it on would make
+every proposal stored before this release permanently unappliable — turning a safety property into a
+migration — so the sandbox and the materializer still verify a legacy proposal; only the live write
+refuses it.
+
+**A patch set is applied as a unit, or not at all.** The auto-apply loop logged a failed write and
+carried on to the next patch, so a set whose third member was stale left the first two applied and
+the fourth written on top — a repository in a state no revision ever had. Rollback existed but hung
+off the verify step, so a deployment with no verify command configured simply kept the mixture.
+
+A preflight now computes every proposal against the tree with no IO and aborts before a byte is
+written if any refuses; a write that fails anyway — preflight cannot see a race — rolls back
+everything already applied and abandons the batch. The preflight calls `PatchApply.Compute`, the
+applier's own function, with the same strictness the live applier uses. A second hand-written checker
+would drift, and a preflight that passes where the apply refuses is worse than none: it promises
+atomicity it does not deliver.
+
+**Conformance is a ledger, not four copies of a suite.** Four files decide whether a patch applies.
+Rather than giving each its own semantics table — four things to keep in step, with the drift living
+in whichever copy someone forgot — the matrix runs once against the shared decision, and a ledger
+pins that each call site actually asks it with the full set of facts. Sharing the function is not
+enough to share the answer: a `Compute` called without `destinationExists` cannot refuse a rename
+onto an occupied path, and one called without the base hash cannot notice a stale patch. Both
+omissions compile and look correct. A fifth applier appearing unlisted fails the build.
+
+**Every verdict names the tree it judged.** The tree hash existed only inside `Detail`, truncated to
+twelve characters, in prose — readable by a person, useless to a query. So "does this build result
+belong to the revision the verifier is about to promote?" had no answer the runtime could compute,
+and the failure it guards against is silent: correct evidence attached to the wrong source tree reads
+exactly like a pass. v3.8.22 shipped build verdicts computed against the primary workspace instead of
+the patched sandbox — true statements about the wrong bytes — and it took a release to notice.
+
+`Evidence` carries `RevisionId`, `PatchSetHash` and `TreeHash`, with `Judges()` matching on the tree
+as well as the id, because an id can be reused by a re-materialization and a tree hash cannot. Wired
+through schema, migration, INSERT and read-back — the fields alone would have been written to memory
+and dropped at the database boundary, which is this project's signature defect. Legacy rows read as
+NULL, meaning "not about a materialized revision" rather than "about one, unrecorded", so a consumer
+that requires identity refuses them instead of assuming a match.
+
+The promotion gate is deliberately UNCHANGED. `HasDeterministicPass` still asks what it asked
+before, and a test pins that. Making identity a precondition for a verified outcome would silently
+change which missions can pass, and that is a decision for its own release with its own evidence —
+not a side effect of adding a column.
+
 ## v0.3.8.56 - the sixth field round: the dashboard becomes a board the operator owns
 
 **Every widget lives at (a)x(b) cells — where the operator put it.** The dashboard is a strict
