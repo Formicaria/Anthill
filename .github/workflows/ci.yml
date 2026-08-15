@@ -16,6 +16,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The MICROMOUND wire contract lives in its own repository and is consumed by ProjectReference,
+# so every job that compiles .NET has to fetch it first. The ref is pinned HERE, in one place,
+# rather than at each checkout site: a commit to micromound must not be able to turn this
+# repository's CI red with nobody having touched this repository. Bump deliberately.
+env:
+  MICROMOUND_REF: v0.1.0
+
 jobs:
   build-and-test:
     name: Build & test (.NET, ${{ matrix.os }})
@@ -31,13 +38,20 @@ jobs:
       # its own repository. $(MicromoundRepoPath) defaults to a sibling checkout — true on a dev
       # box, never true on a runner, so the runner is told where it actually put it.
       #
-      # Pinned to a tag rather than floating on main: otherwise a commit to micromound can turn
-      # this repository's CI red with nobody having touched this repository. Bump deliberately.
+      # The ref is pinned at the workflow level (env.MICROMOUND_REF), not here. This step said
+      # "pinned to a tag" while the code said `ref: main`; it now points at a real tag.
+      #
+      # This also requires Formicaria/micromound to be READABLE BY THE RUNNER. The default
+      # GITHUB_TOKEN is scoped to this repository alone, so while micromound was private this
+      # step failed with "remote: Repository not found" — byte-identical to the error GitHub
+      # returns for a repository that does not exist, which is what made it hard to read. Both
+      # repositories are public. If micromound is ever taken private again, this step needs a
+      # `token:` (PAT or GitHub App) or an `ssh-key:` deploy key; nothing else here changes.
       - name: Check out the MICROMOUND wire contract
         uses: actions/checkout@v4
         with:
           repository: Formicaria/micromound
-          ref: main
+          ref: ${{ env.MICROMOUND_REF }}
           path: .micromound
 
       - name: Setup .NET 9
@@ -69,6 +83,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Anthill.Cli and Anthill.Desktop do NOT reference Anthill.Modules.Micromound today, so this
+      # checkout and the -p:MicromoundRepoPath flags below are not yet load-bearing. They are here
+      # because the M1 composition root registers MicromoundModule in Anthill.Api, which both of
+      # these publish through — the day that lands, this job would fail on an unresolvable
+      # ProjectReference in a run whose diff touched nothing near it. One checkout of a public
+      # repository is cheaper than that debugging session.
+      - name: Check out the MICROMOUND wire contract
+        uses: actions/checkout@v4
+        with:
+          repository: Formicaria/micromound
+          ref: ${{ env.MICROMOUND_REF }}
+          path: .micromound
+
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
         with:
@@ -79,6 +106,7 @@ jobs:
           dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
             -c Release -r linux-x64 --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/linux-x64
 
       # v0.3.8.43: the Windows desktop shell builds here even though it only RUNS on Windows
@@ -89,6 +117,7 @@ jobs:
           dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj \
             -c Release -r win-x64 --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/win-x64-desktop
 
       - name: Run the framework self-test harness
@@ -120,6 +149,15 @@ jobs:
   docker:
     name: Docker build + boot smoke test
     runs-on: ubuntu-latest
+    # KNOWN GAP, recorded rather than papered over: unlike the two jobs above, this one cannot be
+    # future-proofed by adding a checkout. The image compiles Anthill.Cli INSIDE the container
+    # from `COPY . .`, so $(MicromoundRepoPath)'s sibling default resolves to /micromound —
+    # outside the build context, wherever the checkout lands. Making this work needs a Dockerfile
+    # change: a .micromound checkout in the context, an ARG for the path, -p:MicromoundRepoPath on
+    # the publish, and .micromound kept off .dockerignore (which is opt-out — .git/ and .github/
+    # are listed there, so a new dotfile directory is included unless someone excludes it).
+    # Shipping that now would be an untested Dockerfile change for a dependency the image does not
+    # yet have. Do it in the same commit that registers MicromoundModule in Anthill.Api.
     steps:
       - uses: actions/checkout@v4
 

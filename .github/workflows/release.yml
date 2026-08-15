@@ -25,6 +25,12 @@ permissions:
   contents: write
   packages: write
 
+# Mirrors ci.yml: the MICROMOUND wire contract is a separate repository consumed by
+# ProjectReference, pinned in one place. Keep this value in step with ci.yml's — a release must
+# be built against the same contract CI proved green.
+env:
+  MICROMOUND_REF: v0.1.0
+
 jobs:
   verify-version:
     name: Verify tag matches AnthillRuntime.Version
@@ -68,6 +74,13 @@ jobs:
         with:
           ref: ${{ needs.verify-version.outputs.ref }}
 
+      - name: Check out the MICROMOUND wire contract
+        uses: actions/checkout@v4
+        with:
+          repository: Formicaria/micromound
+          ref: ${{ env.MICROMOUND_REF }}
+          path: .micromound
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -77,6 +90,7 @@ jobs:
           dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
             -c Release -r ${{ matrix.rid }} --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/${{ matrix.rid }}
 
       # v0.3.8.44: the Windows archive carries the DESKTOP APP beside the server binary — one
@@ -87,6 +101,7 @@ jobs:
           dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj \
             -c Release -r win-x64 --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/win-x64
 
       - name: Package archive
@@ -119,6 +134,13 @@ jobs:
         with:
           ref: ${{ needs.verify-version.outputs.ref }}
 
+      - name: Check out the MICROMOUND wire contract
+        uses: actions/checkout@v4
+        with:
+          repository: Formicaria/micromound
+          ref: ${{ env.MICROMOUND_REF }}
+          path: .micromound
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -129,10 +151,12 @@ jobs:
           dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
             -c Release -r win-x64 --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/win-x64
           dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj \
             -c Release -r win-x64 --self-contained true \
             -p:PublishSingleFile=true -p:DebugType=none \
+            -p:MicromoundRepoPath=${{ github.workspace }}/.micromound \
             -o ./publish/win-x64
           cp config.example.json README.md CHANGELOG.md ./publish/win-x64/
 
