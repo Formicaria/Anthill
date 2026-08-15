@@ -1,5 +1,28 @@
 # ANTHILL Changelog
 
+## v0.3.8.62 - S4: a write to the operator's tree is a transaction or it does not happen
+
+**The fourth P0 closes.** "A patch set applies as a unit or not at all" was true only while
+nothing failed mid-write: a `WriteAllText` could truncate a file and throw with the backup path
+dissolving into the exception, a crash mid-batch left no record a batch was in flight, rollback
+overwrote paths without asking whether they still held what was applied, and the runner ignored
+every rollback return value while logging the batch as rolled back.
+
+`ApplyTransaction` is the missing bookkeeping: a journal durable before the first mutation and
+updated before each one; staged writes (temp in the same directory, atomic move) so a target holds
+the old bytes or the new bytes and never a truncation; hash-checked rollback that restores a file
+only while its current bytes are the bytes the transaction wrote — newer work is preserved and
+reported as a conflict, never silently destroyed; a durable `ROLLBACK_FAILED` marker that halts
+auto-apply until an operator resolves it; and startup recovery that replays interrupted journals
+under the same rule. The apply tool's failures now carry their recovery metadata, successes record
+`applied_hash` on the patch row, manual revert refuses when the file changed after apply, and the
+un-journaled second rollback implementation is deleted rather than left to drift.
+
+Eleven fault-injection tests prove it by breaking it — mid-write faults, crash recovery,
+concurrent edits, vanished backups — each asserting a byte-identical restored tree or a durable,
+loud halt. The old test that merely checked the source contained a rollback call, the one the
+security review named, is replaced by the claim it was standing in for.
+
 ## v0.3.8.61 - evidence fails closed, and what a live sweep found
 
 **S3 closes: a store failure is no longer permission to write.** The third P0 from the security
