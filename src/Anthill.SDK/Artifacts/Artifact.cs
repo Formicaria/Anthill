@@ -67,6 +67,16 @@ public sealed record Artifact
     /// </summary>
     public ArtifactVisibility Visibility { get; init; } = ArtifactVisibility.Colony;
 
+    /// <summary>
+    /// Whether this artifact's PAYLOAD may enter a model context or narrative renderer.
+    /// v0.3.8.63 (PLAN.md §1b S5): the one definition every render site and direct consumer asks.
+    /// An ALLOWLIST, deliberately — <c>!= Secret</c> would read an out-of-range enum value (a
+    /// corrupt row, a hostile import) as readable, and the whole point of coercing malformed
+    /// visibility TO Secret is that the unknown case fails closed.
+    /// </summary>
+    public bool IsModelReadable =>
+        Visibility is ArtifactVisibility.Colony or ArtifactVisibility.Operator;
+
     /// <summary>The content itself, serialised per <see cref="Schema"/>.</summary>
     public required string Payload { get; init; }
 
