@@ -86,11 +86,13 @@ public class ProjectTests : IDisposable
         var conversation = new Conversation { Id = "c1", ProjectId = "p1" };
         memory.SaveConversation(conversation);
 
+        // v0.3.8.58: the project's standing context used to frame the CHAT PROMPT. Chat is gone —
+        // every message is a mission — so the assertion follows the context to the mission GOAL.
+        // Dropping this test with the prompt would have quietly un-tested the project description,
+        // and a description nothing reads is the reason for writing one, removed.
         string? seen = null;
-        new ConversationRunner(memory, (_, _, _) => "unused",
-                ask: (prompt, _) => { seen = prompt;
-                    return new ConversationReply(true, "noted", "local", "llama", null); })
-            .Run(conversation, "what are we doing here?");
+        new ConversationRunner(memory, (goal, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
+            .Run(conversation with { Policy = EscalationPolicy.Bypass, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow }, "what are we doing here?");
 
         Assert.Contains("release engineering", seen);
         Assert.Contains("Ship small, ship honest.", seen);
@@ -102,19 +104,20 @@ public class ProjectTests : IDisposable
     /// v0.3.8.47: an attachment rides its turn — stored against it, and fed to the model framed
     /// as an operator-provided file. Binary and size rules live at the API; storage just keeps
     /// what it is given faithfully.
+    ///
+    /// v0.3.8.58: "the prompt" is now the MISSION GOAL — the chat prompt that used to read
+    /// attachments is deleted, and they were rehomed rather than dropped.
     /// </summary>
     [Fact]
-    public void AnAttachment_RidesItsTurn_IntoStorageAndThePrompt()
+    public void AnAttachment_RidesItsTurn_IntoStorageAndTheMissionGoal()
     {
         using var memory = Memory();
         var conversation = new Conversation { Id = "c1" };
         memory.SaveConversation(conversation);
 
         string? seen = null;
-        new ConversationRunner(memory, (_, _, _) => "unused",
-                ask: (prompt, _) => { seen = prompt;
-                    return new ConversationReply(true, "read it", "local", "llama", null); })
-            .Run(conversation, "summarize this file",
+        new ConversationRunner(memory, (goal, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
+            .Run(conversation with { Policy = EscalationPolicy.Bypass, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow }, "summarize this file",
                 attachments: new[] { ("notes.md", "# Notes\nthe colony hums") });
 
         var userTurn = memory.LoadConversationTurns("c1")[0];
@@ -122,7 +125,8 @@ public class ProjectTests : IDisposable
         Assert.Equal("notes.md", stored.Filename);
         Assert.Contains("the colony hums", stored.Content);
 
-        Assert.Contains("Operator attached \"notes.md\"", seen);
+        Assert.Contains("notes.md", seen);
+        Assert.Contains("the colony hums", seen);
         Assert.Contains("the colony hums", seen);
     }
 
