@@ -107,6 +107,16 @@ public static class ArtifactContext
 
         var declared = declaredInputIds is { Count: > 0 };
 
+        // v0.3.8.63 (S5): the enforcement the Secret contract never had. Artifact.cs has said
+        // "never rendered, never sent to a model" since the visibility field existed, and nothing
+        // checked it — this compiler emitted Secret payloads straight into prompts, including for
+        // declared inputs, and malformed visibility coerces TO Secret, so the unsafe value was
+        // exactly where a corrupt or hostile row landed. Secret payloads are removed here, at the
+        // one place every model context is assembled; declared Secret inputs are reported as
+        // WITHHELD below rather than silently dropped, because a silent drop is how a role
+        // reasons confidently about a premise it never received.
+        var withheld = new List<Artifact>();
+
         // The empty-store shortcut applies only when NOTHING WAS DECLARED. v0.3.8.57 — this check
         // used to sit above the declared-inputs handling and returned "" first, which silently
         // cancelled the missing-input report in the one case where it matters most: a task told it
@@ -130,20 +140,22 @@ public static class ArtifactContext
             ordered = new List<Artifact>();
             foreach (var id in declaredInputIds!)
             {
-                if (byId.TryGetValue(id, out var found)) ordered.Add(found);
-                else missing.Add(id);
+                if (!byId.TryGetValue(id, out var found)) missing.Add(id);
+                else if (!found.IsModelReadable) withheld.Add(found);
+                else ordered.Add(found);
             }
         }
         else
         {
             ordered = artifacts
+                .Where(a => a.IsModelReadable)
                 .Where(a => Array.IndexOf(Priority, a.Schema) >= 0)
                 .OrderBy(a => Array.IndexOf(Priority, a.Schema))
                 .ThenByDescending(a => a.CreatedAt)
                 .ToList();
         }
 
-        if (ordered.Count == 0 && missing.Count == 0) return "";
+        if (ordered.Count == 0 && missing.Count == 0 && withheld.Count == 0) return "";
 
         var lines = new List<string>
         {
@@ -157,6 +169,13 @@ public static class ArtifactContext
         // things and one could not be found" lead to different work.
         if (missing.Count > 0)
             lines.Add($"\n- [{missing.Count} declared input(s) NOT FOUND in the store: {string.Join(", ", missing)}]");
+        // WITHHELD, by id and schema but never by content. The consumer learns the premise exists
+        // and was deliberately not shown — the difference between "there is no credential artifact"
+        // and "there is one and you may not read it" leads to different work, and only the second
+        // sentence is safe to say.
+        foreach (var secret in withheld)
+            lines.Add($"\n- [WITHHELD: declared input {secret.Id} (schema: {secret.Schema}) is Secret "
+                    + "— its payload is never shown to a model. Proceed without it, and say so in your output.]");
         // Sum, not lines[0]: the missing-inputs notice above is part of the block and must be
         // charged to the budget, or a long list of absent ids could push the block past its cap.
         var used = lines.Sum(l => l.Length);
