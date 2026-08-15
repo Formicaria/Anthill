@@ -11,8 +11,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Homelab", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Tools", "src\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj", "{B8888888-8888-8888-8888-888888888888}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Micromound", "src\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj", "{C9999999-9999-9999-9999-999999999999}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Core", "src\Anthill.Core\Anthill.Core.csproj", "{A1111111-1111-1111-1111-111111111111}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Api", "src\Anthill.Api\Anthill.Api.csproj", "{B2222222-2222-2222-2222-222222222222}"
@@ -24,8 +22,6 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Tests.Homelab", "tests\Anthill.Tests.Homelab\Anthill.Tests.Homelab.csproj", "{6604B0BF-B2FB-4A09-8FC4-0AB1052CAA16}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Tests.Micromound", "tests\Anthill.Tests.Micromound\Anthill.Tests.Micromound.csproj", "{D1010101-1010-4010-8010-101010101010}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -145,36 +141,11 @@ Global
 		{B8888888-8888-8888-8888-888888888888}.Release|x64.Build.0 = Release|Any CPU
 		{B8888888-8888-8888-8888-888888888888}.Release|x86.ActiveCfg = Release|Any CPU
 		{B8888888-8888-8888-8888-888888888888}.Release|x86.Build.0 = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|x64.Build.0 = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Debug|x86.Build.0 = Debug|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|x64.ActiveCfg = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|x64.Build.0 = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|x86.ActiveCfg = Release|Any CPU
-		{C9999999-9999-9999-9999-999999999999}.Release|x86.Build.0 = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|x64.Build.0 = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Debug|x86.Build.0 = Debug|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|x64.ActiveCfg = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|x64.Build.0 = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|x86.ActiveCfg = Release|Any CPU
-		{D1010101-1010-4010-8010-101010101010}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{6604B0BF-B2FB-4A09-8FC4-0AB1052CAA16} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
-		{D1010101-1010-4010-8010-101010101010} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

@@ -15,7 +15,6 @@
     <!-- Composition root: modules are wired in here, never referenced by the core. -->
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
-    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
   </ItemGroup>
 
@@ -60,6 +59,23 @@
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" Condition="'$(AnthillNoUi)' != 'true'" />
+  </ItemGroup>
+
+  <!--
+    MICROMOUND is an OPTIONAL integration. The module compiles against the wire contract in the
+    sibling micromound repository; a colony without that checkout is a complete colony — it builds,
+    boots and tests with no micromound anywhere in it. When the checkout exists (or
+    MicromoundRepoPath points at one), the module is composed in and the MICROMOUND define lights
+    up the wiring in ApiHost. CI checks the contract out explicitly, so the integration is always
+    exercised there; a dev box only pays for what it has.
+  -->
+  <PropertyGroup>
+    <MicromoundRepoPath Condition="'$(MicromoundRepoPath)' == ''">$(MSBuildThisFileDirectory)..\..\..\micromound</MicromoundRepoPath>
+    <MicromoundPresent Condition="Exists('$(MicromoundRepoPath)\src\Micromound.Protocol\Micromound.Protocol.csproj')">true</MicromoundPresent>
+    <DefineConstants Condition="'$(MicromoundPresent)' == 'true'">$(DefineConstants);MICROMOUND</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MicromoundPresent)' == 'true'">
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj" />
   </ItemGroup>
 
 </Project>
