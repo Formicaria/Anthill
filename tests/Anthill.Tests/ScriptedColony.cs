@@ -1,7 +1,9 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Anthill.Core.Configuration;
 using Anthill.Core.Models;
 using Anthill.SDK.Reasoning;
+using Anthill.SDK.Tools;
 
 namespace Anthill.Tests;
 
@@ -162,6 +164,58 @@ public sealed class ScriptBook
             return next;
         }
         return _last.TryGetValue(role, out var last) ? last : null;
+    }
+}
+
+/// <summary>
+/// A scripted <c>web_search</c>, and the same argument as <see cref="ScriptedProvider"/> one adapter
+/// over. v0.3.8.68.
+///
+/// WHY THIS EXISTS. The web ant was the second of the two roles v0.3.8.68 found decorative in the
+/// all-twelve mission. Its only real trigger is a search, a search means the network, and a suite
+/// that reaches the network is neither deterministic nor honest about what it proved — so the ant
+/// was given a task it could not do, refused it with a typed block, and the refusal was counted as
+/// the role having run.
+///
+/// The reasoning provider had this problem first and the repository already answered it: substitute
+/// at the OUTERMOST adapter and leave everything behind it real. That is what this is. What runs for
+/// real, once the results are handed back: URL decoding, SSRF refusal, dedupe by normalised URL,
+/// domain quality scoring, the source-confidence threshold, `SaveSourceRecord`, and both pheromone
+/// trails. Only the socket is missing.
+///
+/// FAIL-SAFE BY CONSTRUCTION, which matters more here than in the model case. Scenarios shadow the
+/// module's real tool by registering this one under the same name AFTER the module's tools are
+/// adopted (<c>ToolRegistry.Register</c> is last-write-wins). If that shadowing ever stopped working
+/// — a registration order change, a rename — the tool underneath is the real one, whose gate the
+/// scenarios deliberately leave OFF. So the failure mode of this fixture breaking is a deterministic
+/// refusal, never a silent outbound request from a unit test.
+/// </summary>
+public sealed class ScriptedWebSearchTool : ITool
+{
+    public string Name => "web_search";
+    public string Description => "Scripted web search — fixed results, no network.";
+
+    private readonly string _payload;
+
+    /// <summary>Every query it is asked is recorded, so a scenario can assert the ant asked
+    /// something derived from the real goal rather than that it merely ran.</summary>
+    public List<string> Queries { get; } = new();
+
+    /// <summary>
+    /// Results in the shape <c>WebResearchAnt</c> parses: <c>{"results":[{title,url,snippet}]}</c>.
+    /// Public https URLs on distinct hosts, because the ant's real dedupe and SSRF checks run on
+    /// them and a scenario that fed loopback or duplicate URLs would be testing the fixture.
+    /// </summary>
+    public ScriptedWebSearchTool(params (string Title, string Url, string Snippet)[] results) =>
+        _payload = JsonSerializer.Serialize(new
+        {
+            results = results.Select(r => new { title = r.Title, url = r.Url, snippet = r.Snippet }),
+        });
+
+    public ToolResult Run(IReadOnlyDictionary<string, object?> args)
+    {
+        lock (Queries) Queries.Add(args.GetValueOrDefault("query")?.ToString() ?? "");
+        return new ToolResult(Name, success: true, output: _payload);
     }
 }
 
