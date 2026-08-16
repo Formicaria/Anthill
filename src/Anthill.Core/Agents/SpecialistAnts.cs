@@ -346,19 +346,91 @@ public sealed class SoldierAnt : BaseAnt
                     .Select(a => $"[WITHHELD: declared input {a.Id} is Secret — payload not shown; the review proceeds without it]")
                     .ToList();
                 if (readable.Count == 0 && secretNotes.Count == 0) return ("", 0);
-                return (string.Join("\n", secretNotes.Concat(readable.Select(a => a.Payload))), readable.Count);
+                return (string.Join("\n", secretNotes.Concat(readable.Select(a => DecodeForScanning(a.Payload)))),
+                    readable.Count);
             }
 
             var patches = _artifacts.ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.PatchSet)
                 .Where(p => p.IsModelReadable).ToList();
             return patches.Count == 0
                 ? ("", 0)
-                : (string.Join("\n", patches.Select(p => p.Payload)), patches.Count);
+                : (string.Join("\n", patches.Select(p => DecodeForScanning(p.Payload))), patches.Count);
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"[soldier] could not read patch artifacts for {mission.Id}: {error.Message}");
             return ("", 0);
+        }
+    }
+
+    /// <summary>
+    /// The patch artifact's VALUES, decoded — not its serialization. v0.3.8.71.
+    ///
+    /// THE DEFECT, and it is the most severe rule in the table. v3.8.25 gave the soldier the real
+    /// patch, and its release note said exactly why: "the `secret_material` rule looks for
+    /// `-----BEGIN PRIVATE KEY-----` and `api_key = "…"` in source, and source was the one thing it
+    /// never saw." The patch arrived. The rule still could not see it.
+    ///
+    /// `RecordPatchArtifact` stores the proposals as JSON, so a proposal whose content is
+    ///
+    ///     api_key = "sk-live-9f3a2b7c4d1e"
+    ///
+    /// is in the payload as
+    ///
+    ///     "new_content": "…api_key = \"sk-live-9f3a2b7c4d1e\"…"
+    ///
+    /// and the rule's pattern requires a quote immediately after `[:=]\s*`. In the serialization the
+    /// next character is a BACKSLASH. `secret_material` is critical and blocking, it is the rule the
+    /// v3.8.26 note widened after a capital K let a secret through — and since v3.8.25 it has been
+    /// structurally unable to fire on a quoted secret in patch content, because every quote in every
+    /// payload is escaped. It could only ever match the task description, which is prose, which is
+    /// the blind spot v3.8.25 existed to close.
+    ///
+    /// FOUND BY THE SCENARIO 7 FIXTURE, which proposed a runbook containing a credential and got an
+    /// empty warnings list. The test was written to prove the block reaches the write; it proved the
+    /// block never happened.
+    ///
+    /// EVERY STRING VALUE, RECURSIVELY, rather than the two field names this payload happens to use.
+    /// The rules match paths and content both, the shape of the artifact is not this method's to
+    /// know, and a decoder that reads named fields silently stops covering a field the day one is
+    /// added — which is this defect's own shape a second time.
+    ///
+    /// A payload that will not parse is returned RAW rather than dropped: scanning the serialization
+    /// is worse than scanning the values and far better than scanning nothing, and a malformed patch
+    /// artifact is exactly when a review should be more suspicious, not less.
+    /// </summary>
+    internal static string DecodeForScanning(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return "";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(payload);
+            var values = new List<string>();
+            Walk(doc.RootElement, values);
+            return values.Count == 0 ? payload : string.Join("\n", values);
+        }
+        catch { return payload; }
+
+        static void Walk(System.Text.Json.JsonElement element, List<string> into)
+        {
+            switch (element.ValueKind)
+            {
+                case System.Text.Json.JsonValueKind.String:
+                    if (element.GetString() is { Length: > 0 } s) into.Add(s);
+                    break;
+                case System.Text.Json.JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        // The KEY too: a rule matching a field name is still a rule, and dropping
+                        // keys would make this decoder decide which text is reviewable.
+                        into.Add(property.Name);
+                        Walk(property.Value, into);
+                    }
+                    break;
+                case System.Text.Json.JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray()) Walk(item, into);
+                    break;
+            }
         }
     }
 
