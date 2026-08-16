@@ -1,5 +1,48 @@
 # ANTHILL Changelog
 
+## v0.3.8.72 - the fix that would have looked right
+
+The sweep for other copies of v0.3.8.71's defect — a scanner reading a serialization instead of the
+values — found the more useful thing one layer up: **the obvious fix was wrong, and it would have
+shipped looking correct.**
+
+**What was nearly shipped.** v0.3.8.71 fixed the soldier at the feed (`DecodeForScanning`). The
+follow-up's first move was to also widen `PolicyScan.secret_material` to tolerate an escaped quote
+(`\"`), on the reasoning that the feed is not the only way encoded text reaches a scanner. That
+allowance does nothing. `Json.Dumps` leaves `JsonSerializerOptions.Encoder` at
+`JavaScriptEncoder.Default`, which never emits `\"` — it emits a `"` unicode escape, and treats
+`<`, `>`, `&`, `'` and `+` the same way. The widened pattern would have been exactly as blind as the
+original while reading as fixed, and a guard written by hand-typing "the escaped form" would have
+agreed with it, because both would have been guessing at the same wrong encoding. The same widening
+was drafted for `ArchivistAnt.SecretLike` and has been reverted for the same reason.
+
+**So the rule is unchanged and the layering is the fix.** A scanner that tries to recognise text
+through an encoding has to know every encoding, and is wrong the first time one changes. Patterns
+match source; callers hand them source. That is the rule this repository already applies to
+containment (`PathContainment`) and to test collections — one place answers each question — applied
+to policy scanning.
+
+**`SecretPatternEncodingTests` never hand-writes an encoding.** Every encoded sample comes out of
+`Json.Dumps`, the same call `RecordPatchArtifact` makes, and every decode goes through
+`DecodeForScanning`. If .NET changes its default encoder these tests still describe the truth,
+because they never claimed to know what the escaping looks like. The property is not "the rule
+handles escapes" — it is "the rule is never asked to". `NoScannerIsHandedARawArtifactPayload` is the
+layering rule enforced, and it says plainly what it cannot see: an adjacency check in the file where
+the two meet, blind to a payload arriving through three helpers.
+
+**The rest of the sweep, including what was fine.** `PolicyScan.Scan` has two callers, and the second
+is why this hid for two releases: `SecurityPolicyVerifier` reads `r.ChangedPath` and `r.NewContent`,
+raw strings that are never serialized — so one caller proved the rule healthy while the other could
+not use it at all. `ArchivistAnt.SecretLike` has the same shape with the failure running the *other*
+way (a miss writes a secret into durable memory rather than declining to block a patch), but its
+inputs are plain strings and it never sees a payload; it is left alone, with the reasoning recorded
+against it. `TaskScheduler.SensitiveAssignment` was already encoding-tolerant. Recorded because
+"checked, and fine" is a finding.
+
+**Also:** the duplicate encoding tests that shipped inside `SoldierBlockLifecycleTests` are deleted in
+favour of the single file above — one of them described the escaping as `\"`, which is the mistake
+this release is about, sitting in a test that passed.
+
 ## v0.3.8.71 - the patch arrived escaped
 
 **The soldier could not find a quoted secret in a patch. Since v3.8.25.**
