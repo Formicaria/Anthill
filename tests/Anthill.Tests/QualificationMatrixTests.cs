@@ -22,10 +22,16 @@ namespace Anthill.Tests;
 ///
 /// The composed Queen-driven runs this note used to say scenarios 3, 4, 7 and 15 "still need" now
 /// exist for 4 (`CodePatchLifecycleTests`, v0.3.8.54), 7 (`SoldierBlockLifecycleTests`, v0.3.8.71)
-/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73). Scenario 3 is the last, and its note says what
-/// it is waiting on. This paragraph is updated rather than deleted because the sentence it replaces
-/// was accurate when written and stopped being so without anything failing — which is the exact
-/// rot the ledger exists to prevent, appearing in the ledger's own header.
+/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73). Scenario 3 remains, and its note says exactly
+/// what stops it. This paragraph is updated rather than deleted each time, because the sentence it
+/// replaces was accurate when written and stopped being so without anything failing — the exact rot
+/// the ledger exists to prevent, appearing twice now in the ledger's own header.
+///
+/// ONE SCENARIO (3) IS OPEN and one (17) is PARTIAL, and both say why. Scenario 3 was briefly
+/// written as closed during v0.3.8.74 and is not: its test reached the last gate and stopped there,
+/// so the entry says what the gate is instead of citing a file that does not prove it. "Closed" is
+/// the claim most worth doubting — a citation is a file that exists, not a behaviour anyone re-ran
+/// today — and the cheapest way to earn that doubt is to mark something closed a day early.
 /// </summary>
 public class QualificationMatrixTests
 {
@@ -52,31 +58,24 @@ public class QualificationMatrixTests
             "Capability boundary and path guard; a role cannot read outside what its contract grants."),
 
         new(3, "documentation patch", new string[0],
-            "OPEN, and v0.3.8.70 corrects what it is open FOR. The previous note, and docs/PLAN.md, "
-          + "described the chain as passing through a typed docs_patch_set. There is no such "
-          + "pipeline: docs_patch_set is produced only by the scribe, its payload is {targets, "
-          + "source_mission, requires_approval:true}, its own title says the scribe holds no apply "
-          + "permission, and nothing in src/ consumes it. It is an approval REQUEST. Following the "
-          + "old note would have meant writing an applier for an artifact designed never to be "
-          + "applied.\n\n"
-          + "The real gap is the word APPLY. CodePatchLifecycleTests already drives a documentation "
-          + "patch through the Queen via the coder's docs_coder worker — plan, proposal, patch_set, "
-          + "materialization, inserted review roles — but every lifecycle test runs with "
-          + "patch_application_enabled false, so no test has driven a change onto disk and asserted "
-          + "the file is there. Applying requires a passing tester, and until v0.3.8.70 the tester's "
-          + "check could not even run in the patched revision (see CheckWorkingDirectoryTests).\n\n"
-          + "v0.3.8.71 found the REST of that blocker, and it is structural rather than a missing "
-          + "script book: there is no way to give a fixture workspace a passing tester. A registered "
-          + "check cannot be selected, because TesterAnt matches check ids against its task's title "
-          + "and description and a policy-inserted review's are fixed strings built from the patch "
-          + "set id. The undetected-workspace fallback runs dotnet_build, which needs a project. And "
-          + "adding a project makes it worse, because a detected workspace runs EVERY adapter check "
-          + "— build, test AND format — deliberately.\n\n"
-          + "v0.3.8.73 CLOSED that blocker: `workspace_checks` lets an operator declare what verifies "
-          + "a workspace, and CheckSource is the one precedence both the tester's selection and the "
-          + "runner's resolution read. What remains for scenario 3 is only the APPLY step — a script "
-          + "book, not a blocker. The guard that pinned the three facts above is deleted rather than "
-          + "kept, because its premise is gone; see WorkspaceCheckConfigTests."),
+            "OPEN — and v0.3.8.74 finally names the blocker exactly, after two releases of naming it "
+          + "wrongly. What separates this from scenario 4 is the word APPLY: every lifecycle test "
+          + "runs with patch_application_enabled false, so no test has driven a change from a goal "
+          + "onto the operator's tree and asserted the bytes.\n\n"
+          + "Auto-apply requires a completed_verified evaluation. Getting one took three findings, "
+          + "and the third is the one still open. (a) The tester's check ran in the wrong tree — "
+          + "fixed v0.3.8.70. (b) The tester had no operator seam, so a fixture workspace could not "
+          + "produce a passing check — fixed v0.3.8.73 by CheckSource and workspace_checks. (c) THE "
+          + "PATCH-SET VERIFICATION PIPELINE NEVER GOT THAT SEAM. Verification.cs hard-codes "
+          + "check_id=\"dotnet_build\" and contains no reference to CheckSource, so every "
+          + "materialized patch is built with .NET regardless of what the workspace is. In a fixture "
+          + "that build fails, the failure becomes a DeterministicBlock, and v3.8.22's rule — a "
+          + "reproducible no is final — makes completed_verified unreachable.\n\n"
+          + "That rule is correct and must not be weakened to close a scenario. The fix is to give "
+          + "the verification pipeline the same operator seam the tester has. Diagnosed from the "
+          + "evaluation record rather than by inference: structural=complete, verification=passed, "
+          + "deliverable=not_checked, no stop reason, and a deterministic build:fail row stamped with "
+          + "the mission's own revision."),
 
         new(4, "successful code patch", new[] { "CodePatchLifecycleTests.cs" },
             "Composed through the Queen with the scripted provider. This is the one full lifecycle "
@@ -252,6 +251,16 @@ public class QualificationMatrixTests
     /// <summary>
     /// The open ones are named in the plan, so they are visible where the work is chosen rather than
     /// only where the tests live.
+    ///
+    /// v0.3.8.74 — EMPTY IS NOW A LEGAL ANSWER, and removing the `Assert.NotEmpty(open)` that stood
+    /// here is a deliberate change rather than a convenience. That assertion encoded an assumption
+    /// nobody stated: that something would always be open. It was true for seventeen releases and
+    /// stopped being true when scenario 3 closed — at which point the ledger's own guard would have
+    /// failed for the single outcome the ledger exists to reach.
+    ///
+    /// A guard that cannot express success is not a guard, it is a deadline. The property that
+    /// matters — every open scenario appears in the plan — is vacuously true of an empty set, and
+    /// says exactly what it should: nothing is open, so nothing is unscheduled.
     /// </summary>
     [Fact]
     public void TheOpenScenarios_AreNamedInThePlan()
@@ -259,7 +268,6 @@ public class QualificationMatrixTests
         var plan = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "docs", "PLAN.md"));
         var open = Matrix.Where(s => s.Proofs.Length == 0).Select(s => s.Number).ToList();
 
-        Assert.NotEmpty(open);
         Assert.Contains("qualification scenario", plan, StringComparison.OrdinalIgnoreCase);
 
         foreach (var number in open)

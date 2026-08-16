@@ -793,9 +793,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     {
         var total = mission.Tasks.Count;
         var done = mission.Tasks.Count(t => t.Status == TaskStatus.Complete);
-        if (stopReason == "mission_cancelled")
+        if (stopReason == Outcomes.MissionStopReasons.Cancelled)
             return new("cancelled", $"Cancelled by operator — {done}/{total} tasks finished before stopping.");
-        if (stopReason == "mission_timeout")
+        if (stopReason == Outcomes.MissionStopReasons.Timeout)
             return new("timed_out", $"Timed out — exceeded the {AnthillRuntime.MaxMissionSeconds}s mission budget after {done}/{total} tasks.");
 
         var taskTimeouts = mission.Tasks.Count(t => t.FailureType == "timeout");
