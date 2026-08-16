@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.59**.
+Shipping release: **v0.3.8.60**.
 
 ---
 

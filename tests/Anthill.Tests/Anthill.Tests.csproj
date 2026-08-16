@@ -24,6 +24,12 @@
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
     <!-- The tool implementations moved out of the core in v3.8.16; their tests follow them. -->
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
+    <!--
+      Referenced so ModuleBoundaryTests can Assembly.Load it. Without this the module is simply
+      absent from the test output directory and its boundary theory case cannot run — which is
+      indistinguishable from passing.
+    -->
+    <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Micromound\Anthill.Modules.Micromound.csproj" />
   </ItemGroup>
 
 </Project>
