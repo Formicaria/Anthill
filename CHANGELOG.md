@@ -1,5 +1,59 @@
 # ANTHILL Changelog
 
+## v0.3.8.68 - the guard that was right for the wrong reason
+
+Two corrections to the record, and one guard replaced with the one it should have been.
+
+**A test failed, and it was correct.** `NoTwoReleaseCommits_ClaimTheSameVersion` reported that
+`0.3.8.60` is claimed by two release commits. It is: `3ec0366` (#16) is the real v0.3.8.60, and
+`9198dd5` (#23) is **v0.3.8.67 committed under v0.3.8.60's subject line** — the stale
+`RELEASE_MSG.txt` that v0.3.8.67's own notes describe, reaching `git commit -F`. Nothing about the
+shipped artifact is wrong: the tag `v0.3.8.67` points at `9198dd5` and the tree in it is v0.3.8.67's.
+Only every human-readable account of the release is wrong, which is why a green build could not
+see it.
+
+**But that guard caught it by coincidence, and the coincidence is the finding.** It fires on a
+version claimed *twice*. A stale notes file only produces a duplicate if it happens to hold a
+previous release's text — which it did. A file holding a draft, a placeholder, or a version that
+never shipped would have passed it, and passed everything else too. The guard answered a question
+adjacent to the one that mattered and answered it right, which is the most misleading way for a
+check to be useful.
+
+**`TheSubjectOfATaggedRelease_NamesThatRelease`** asserts the property that was actually violated:
+if a tag's commit subject uses the `v<version>:` form, the version in it is the tag's own. It is
+independent of what any stale text says. It fires on exactly one tag in the current history —
+v0.3.8.67 — and that one is recorded in `MisnamedReleaseCommits` with its reason, because history is
+not editable and rewriting it to make a guard green is the wrong direction.
+
+The subject *shape* stays optional on purpose. v0.3.8.61, .65 and .66 are tagged on commits whose
+subjects describe the work rather than the version; that is a legitimate style, and a guard that also
+demanded the form would fail three honest releases. A check that is wrong about releases that were
+fine is one people learn to override.
+
+**`ReleaseNotesTests`** is the preventive half, shipped here alongside it: `RELEASE_MSG.txt`, when
+present, must open with the runtime version and match the changelog's top entry. Absent is fine and
+deliberately so — it is a release-time artifact, not tracked source, and requiring it would fail
+every ordinary build. What must never happen is a *present* file describing a different release,
+because that is the state that gets committed. The file is now derived from the changelog rather than
+written twice; two copies of a release's story is one copy that eventually disagrees.
+
+**The scenario-15 ledger was under-crediting work that exists.** `QualificationMatrixTests` marked
+scenario 15 OPEN and cited `TwelveRoleEndToEndTests`, while
+`CodePatchLifecycleTests.AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission`
+already does most of what 15 asks: a real Queen mission on the scripted provider, eleven roles as
+task rows, tester and soldier proved *inserted* rather than planned, archivist reached after
+finalization. Pointing at the wrong file kept that invisible.
+
+What scenario 15 actually still fails is its own clause *"no role invoked to satisfy a count"*, and
+the existing test fails it in the open: the goal is "Add a short colony note to the documentation",
+the plan contains a `ui_cartographer` task called "Map the frontend surface", and the cartographer's
+own scripted answer is *"no UI surface is touched by a documentation note."* The web ant's is *"no
+external sources are needed for an internal note."* Two decorative roles, planned so the count
+reaches twelve and saying so when asked. The ledger note and `docs/PLAN.md` item 3 are corrected to
+name that, and to say the remaining work is **a goal, not a bigger plan** — a mission that changes a
+UI route, updates the doc describing it and trips a check would earn the cartographer, the web ant,
+the tester, the medic and the scribe each on its own trigger.
+
 ## v0.3.8.67 - the fence that made the prompt unparseable
 
 A field report: a mission reached `builder.result_compiler`, the builder invoked Claude Code, and the
