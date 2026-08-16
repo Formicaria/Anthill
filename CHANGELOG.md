@@ -1,5 +1,56 @@
 # ANTHILL Changelog
 
+## v0.3.8.74 - a green mission graded as an escalation
+
+**`ExecutionService` returned one stop reason for two opposite situations, and the evaluator graded
+both as a failure.**
+
+`adaptive_stop` came back from three call sites for either "the repair bound is spent and the
+critical failure persists" — a real escalation — or "the controller wanted to add a verification step
+and found the mission already has one", which is success. `MissionEvaluation.Resolve` mapped every
+`adaptive_stop` to `escalated` **before looking at a single task, verdict or piece of evidence**.
+
+That is not cosmetic. Auto-apply consumes the canonical evaluation and refuses anything that is not
+`completed_verified`, so a mission whose plan included a verifier — the ordinary shape — could pass
+every check, pass its security review, record deterministic evidence bound to its revision, and be
+structurally incapable of applying its own patch. In production, not only in tests.
+
+`MissionStopReasons` names the closed set; `adaptive_stop_satisfied` falls through to be graded on
+the mission's own record, because a controller that looked, found nothing to do and said so must not
+change the grade. `AdaptiveStopMeaningTests` proves both directions, so the fix cannot be "stop
+escalating" — a spent bound is exactly when a person is needed.
+
+The compile error that came out of naming the type was itself useful: `ExecutionService` already had
+a private `MissionStopReason(context, token)` method that ASKS whether to stop. Both now read the
+same vocabulary, so `mission_timeout` and `mission_cancelled` have one definition instead of being
+literals in the producer and literals again in the evaluator that grades them.
+
+### Why scenario 3 is still open, and this release does not close it
+
+It was written, it ran, and it stopped one gate short — so it is not shipped and the ledger says
+OPEN. What it bought is a blocker named exactly, after two releases of naming it wrongly.
+
+Auto-apply needs `completed_verified`, and reaching one took three findings. The tester's check ran
+in the wrong tree (fixed v0.3.8.70). The tester had no operator seam, so a fixture workspace could
+not produce a passing check (fixed v0.3.8.73). And now: **the patch-set verification pipeline never
+got that seam.** `Verification.cs` hard-codes `check_id="dotnet_build"` and contains no reference to
+`CheckSource`, so every materialized patch is built with .NET whatever the workspace is. In a fixture
+that build fails, the failure becomes a `DeterministicBlock`, and v3.8.22's rule — a reproducible no
+is final — correctly makes `completed_verified` unreachable.
+
+**That rule is right and must not be weakened to close a scenario.** The fix is to give the
+verification pipeline the operator seam the tester already has, which is a change to a
+safety-critical path and belongs in its own release with its own tests — not folded into one that
+already carries an unrelated fix. Shipping a half-understood change to the verification pipeline
+would be the partial thing here; shipping a proven fix without it is not.
+
+It was diagnosed from the evaluation record rather than by inference, and only after two rounds of
+guessing which layer said no. `completed_verified` is a conjunction of four independent layers and
+the outcome code names none of them, so the assertion now prints all four plus the evaluator's own
+explanation and every evidence row. One run then said it: structural complete, verification passed,
+deliverable not_checked, no stop reason, and a deterministic `build:fail` stamped with the mission's
+own revision.
+
 ## v0.3.8.73 - the report nobody wrote, and the operator half of a sentence from v3.5.0
 
 ### The first live qualification run

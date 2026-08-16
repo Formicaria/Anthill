@@ -24,7 +24,8 @@ public sealed record MissionEvaluation(
     string StructuralStatus,      // MissionStatus.Value(): complete | partial | failed
     string VerificationStatus,    // MissionEvaluation.Verification.*
     string DeliverableStatus,     // MissionEvaluation.Deliverable.*
-    string? StopReason,           // mission_timeout | mission_cancelled | adaptive_stop | null
+    string? StopReason,           // MissionStopReasons.* | null — see that type; adaptive_stop
+                                  // and adaptive_stop_satisfied are NOT the same outcome
     string EvaluatorVersion,
     string EvaluatedAt,
     string Explanation)
@@ -152,9 +153,21 @@ public static class MissionEvaluator
         string verification, string deliverable, bool generationDegraded, bool deterministicBlock = false)
     {
         // An interrupted mission is never completed, whatever the tasks say.
-        if (stopReason == "mission_cancelled") return MissionOutcome.Cancelled;
-        if (stopReason == "mission_timeout") return MissionOutcome.TimedOut;
-        if (stopReason == "adaptive_stop") return MissionOutcome.Escalated;
+        if (stopReason == MissionStopReasons.Cancelled) return MissionOutcome.Cancelled;
+        if (stopReason == MissionStopReasons.Timeout) return MissionOutcome.TimedOut;
+
+        // v0.3.8.74 — ONLY AN ESCALATING STOP ESCALATES. This line used to read
+        // `if (stopReason == "adaptive_stop")`, and `adaptive_stop` was returned for two opposite
+        // situations: the repair bound spent with the failure persisting, and the controller
+        // declining to add a verification step the mission already had. The second is success, and
+        // grading it as an escalation made a clean, fully verified patch mission unable to reach
+        // `completed_verified` — which auto-apply consumes, so it could never apply its own patch.
+        //
+        // `MissionStopReasons.AdaptiveStopSatisfied` falls through deliberately: the mission is then
+        // graded on its tasks, its verification and its deliverable, exactly as if the controller
+        // had never spoken. A controller that looked, found nothing to do and said so must not
+        // change the grade.
+        if (MissionStopReasons.IsEscalation(stopReason)) return MissionOutcome.Escalated;
 
         if (structuralStatus == MissionStatus.Partial) return MissionOutcome.Partial;
         if (structuralStatus is not MissionStatus.Complete) return MissionOutcome.FailedPermanent;
