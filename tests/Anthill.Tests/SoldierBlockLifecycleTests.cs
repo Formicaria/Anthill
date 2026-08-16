@@ -200,71 +200,11 @@ public class SoldierBlockLifecycleTests : IDisposable
                 .Contains("no canonical completed_verified evaluation", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// THE DEFECT THE SCENARIO ABOVE FOUND, isolated. v0.3.8.71.
-    ///
-    /// The lifecycle test was written to prove a block reaches the write. Its first run returned an
-    /// EMPTY warnings list: the block never happened. `secret_material` — critical, blocking, and the
-    /// rule v3.8.26 widened after a capital K let a secret past — could not fire on a quoted secret
-    /// in patch content, because `RecordPatchArtifact` stores proposals as JSON and the soldier
-    /// scanned the SERIALIZATION. Every quote in every payload is `\"`, and the pattern requires a
-    /// quote immediately after `[:=]\s*`.
-    ///
-    /// So v3.8.25's note — "a policy engine that scans a description cannot find a secret in the
-    /// change" — was right about the problem and its fix delivered the change in a form the rule
-    /// still could not read. The patch arrived escaped.
-    ///
-    /// These assertions run PolicyScan directly against both forms, so the claim is about the rule
-    /// and the encoding rather than about the mission plumbing that surfaced it.
-    /// </summary>
-    [Fact]
-    public void AQuotedSecret_IsFound_InTheDecodedPatch_AndNotInItsSerialization()
-    {
-        var payload = Anthill.SDK.Common.Json.Dumps(new
-        {
-            patch_set_id = "ps-1",
-            proposals = new[]
-            {
-                new { FilePath = "docs/RUNBOOK.md", new_content = "api_key = \"sk-live-9f3a2b7c4d1e\"\n" },
-            },
-        }, indented: true);
-
-        // THE DEFECT, stated as the fact that motivates the decoder: scanning the raw serialization
-        // finds nothing, because the quote the rule needs is behind a backslash.
-        Assert.DoesNotContain(Anthill.Core.Agents.PolicyScan.Scan(payload),
-            f => f.RuleId == "secret_material");
-
-        // …and the decoded values are what the rule was written against.
-        var decoded = Anthill.Core.Agents.SoldierAnt.DecodeForScanning(payload);
-        var findings = Anthill.Core.Agents.PolicyScan.Scan(decoded);
-
-        var secret = findings.FirstOrDefault(f => f.RuleId == "secret_material");
-        Assert.True(secret is not null,
-            "a quoted credential in a proposed patch produced no secret_material finding. This is "
-          + "the rule the soldier's whole blocking authority rests on, and the review reports "
-          + "'0 blocking findings' rather than 'I could not read the content' — a clean scan of "
-          + "material it never decoded.");
-        Assert.True(secret!.Blocking);
-
-        // The path is still visible after decoding, so the fix did not trade content for paths.
-        Assert.Contains("docs/RUNBOOK.md", decoded);
-    }
-
-    /// <summary>
-    /// The decoder is not a parser for one payload shape. A patch artifact whose JSON is malformed
-    /// is scanned RAW rather than skipped — a review should get more suspicious when an artifact is
-    /// broken, not quietly stop reading it.
-    /// </summary>
-    [Fact]
-    public void AMalformedPayload_IsStillScanned()
-    {
-        const string broken = "{ \"proposals\": [ { \"new_content\": \"rm -rf /\" ";
-
-        Assert.Equal(broken, Anthill.Core.Agents.SoldierAnt.DecodeForScanning(broken));
-        Assert.Contains(Anthill.Core.Agents.PolicyScan.Scan(
-            Anthill.Core.Agents.SoldierAnt.DecodeForScanning(broken)),
-            f => f.RuleId == "destructive_operation");
-    }
+    // The defect this fixture uncovered — the soldier scanning a patch artifact's JSON
+    // serialization instead of its values — is proved in SecretPatternEncodingTests, against the
+    // real serializer rather than a transcription of its escaping. v0.3.8.72 moved it there and
+    // deleted the copies that lived here: the earlier pair asserted the same property twice, and
+    // one of them described the escaping as `\"`, which is not what JsonSerializer emits.
 
     /// <summary>
     /// THIS RELEASE'S OTHER FINDING, written as a test because a paragraph in a plan does not stay
