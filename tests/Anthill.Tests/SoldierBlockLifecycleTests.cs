@@ -34,9 +34,10 @@ namespace Anthill.Tests;
 /// attributable to the missing verified evaluation, so the recorded reason is asserted too, not just
 /// the absence of the file.
 ///
-/// A note on the fixture's honesty: the tester also fails in this mission, environmentally — see
-/// TheTesterHasNoSeam_ForAFixtureWorkspace below, which is this release's other finding. That does
-/// NOT weaken the claim here, because the assertion is not "the mission failed"; it is that the
+/// A note on the fixture's honesty: the tester also fails in this mission, environmentally — this
+/// workspace declares no checks, so the tester falls back to `dotnet_build` in a tree with no
+/// project. That does NOT weaken the claim here, because the assertion is not "the mission failed";
+/// it is that the
 /// soldier recorded a deterministic block, that the block is present in the persisted record, and
 /// that the write path refused and said why. A mission that failed for two reasons still refused
 /// for both of them.
@@ -206,77 +207,17 @@ public class SoldierBlockLifecycleTests : IDisposable
     // deleted the copies that lived here: the earlier pair asserted the same property twice, and
     // one of them described the escaping as `\"`, which is not what JsonSerializer emits.
 
-    /// <summary>
-    /// THIS RELEASE'S OTHER FINDING, written as a test because a paragraph in a plan does not stay
-    /// true. v0.3.8.71.
-    ///
-    /// Qualification scenarios 3 (an APPLIED docs patch) and 15's last edge (a check that fails
-    /// BECAUSE of the proposal) both need one thing: a mission in a fixture workspace whose tester
-    /// PASSES. There is currently no way to produce one, and the reason is structural rather than a
-    /// missing script book — which is what the plan assumed, and why both have sat open.
-    ///
-    /// Three routes, all closed:
-    ///   * REGISTER A CHECK. `CheckCatalog.Register` is documented as the "operator/test extension
-    ///     point". `TesterAnt` selects from it by matching ids against its task's TITLE and
-    ///     DESCRIPTION — and for a policy-inserted review those are fixed strings built by
-    ///     `ExecutionService` ("Run checks on the proposed change" / "Run the workspace's declared
-    ///     checks against patch set {id}"). A mission cannot mention a check id, so a registered
-    ///     check can never be selected by the role that exists to run checks.
-    ///   * LET IT FALL BACK. With no ids matched and no manifest, the tester runs
-    ///     `{dotnet_version, dotnet_build}`. `dotnet build` in a directory with no project fails.
-    ///   * GIVE THE FIXTURE A PROJECT. A `.csproj` makes the .NET adapter fire — and a detected
-    ///     workspace runs EVERYTHING its adapters declare, deliberately ("a tester that picked a
-    ///     subset would be choosing which failures the colony is allowed to notice"). That is
-    ///     `dotnet_build`, `dotnet_test` AND `dotnet_format_check`. A minimal fixture project passes
-    ///     the first and fails the other two, so adding a project makes it worse.
-    ///
-    /// None of that is a defect on its own — each piece is defending something real, and the
-    /// adapter-detection direction is an explicit exit gate ("verification commands come from the
-    /// manifest or operator configuration, never model invention"). The gap is that OPERATOR
-    /// CONFIGURATION is named in that sentence and has no path to the tester: the catalog is
-    /// reachable only through task text the operator does not write.
-    ///
-    /// This test pins the three facts so the next attempt starts from them instead of rediscovering
-    /// them, and fails the moment any of them stops being true — at which point scenarios 3 and 15
-    /// become writable and this test should be replaced by them.
-    /// </summary>
-    [Fact]
-    public void TheTesterHasNoSeam_ForAFixtureWorkspace()
-    {
-        // 1. The inserted tester's task text is fixed and mentions no check id, so the catalog's
-        //    documented extension point cannot be reached through it.
-        var executionService = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
-            SourceText.RepoRoot(), "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
-        Assert.Contains("Run checks on the proposed change", executionService);
-        Assert.Contains("Run the workspace's declared checks against patch set", executionService);
-
-        // Demonstrated rather than argued: a check registered through the documented extension point
-        // is in the catalog, and neither inserted-task string mentions it — nor could, since both
-        // are built from the patch set id.
-        const string probe = "fixture_probe";
-        Anthill.Core.Tools.CheckCatalog.Register(new Anthill.Core.Tools.CheckDefinition(
-            probe, "dotnet", "--version", 30, true, "test: reachable only if selectable"));
-        try
-        {
-            Assert.NotNull(Anthill.Core.Tools.CheckCatalog.Get(probe));
-            Assert.DoesNotContain(probe, "Run checks on the proposed change");
-            Assert.DoesNotContain(probe, "Run the workspace's declared checks against patch set ");
-        }
-        finally { Anthill.Core.Tools.CheckCatalog.Unregister(probe); }
-
-        // 2. The fallback for an undetected workspace is the .NET pair, and dotnet_build needs a
-        //    project. Read from the ant so a change to the fallback fails here.
-        var specialists = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
-            SourceText.RepoRoot(), "src", "Anthill.Core", "Agents", "SpecialistAnts.cs")));
-        Assert.Contains("\"dotnet_version\", \"dotnet_build\"", specialists);
-
-        // 3. A detected .NET workspace runs all three adapter checks, not a chosen subset.
-        var adapter = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
-            SourceText.RepoRoot(), "src", "Anthill.Core", "Workspaces", "WorkspaceAdapter.cs")));
-        foreach (var check in new[] { "dotnet_build", "dotnet_test", "dotnet_format_check" })
-            Assert.Contains(check, adapter);
-        Assert.Contains("requested = manifest.IsEmpty", specialists);
-    }
+    // v0.3.8.71's TheTesterHasNoSeam_ForAFixtureWorkspace lived here. Its own doc said it should
+    // "be deleted and replaced by the scenarios it is standing in for" the moment any of the three
+    // facts it pinned stopped being true, and v0.3.8.73 made all three false at once: an operator
+    // can declare checks (`workspace_checks`), so a fixture workspace can have a passing tester.
+    // It failed on exactly the assertion that was supposed to catch this — the `{dotnet_version,
+    // dotnet_build}` fallback literal, which moved into CheckSource.DefaultSelection.
+    //
+    // Replaced by WorkspaceCheckConfigTests (the seam) and EarnedRepairLifecycleTests (a check that
+    // fails because of the proposal and passes because of the repair). Deleting a guard because its
+    // premise is gone is the correct end of its life; keeping it would have meant asserting a
+    // limitation the release removed.
 
     /// <summary>Docs patches allowed; file tools on; web, shell and direct writes off. Auto-apply's
     /// own gates are set on the runtime by the test, which is where AutoApplyRunner reads them.</summary>
