@@ -1,5 +1,80 @@
 # ANTHILL Changelog
 
+## v0.3.8.75 - a documentation patch is verified as documentation
+
+**Qualification scenario 3 closes. It was the last of the twenty.**
+
+### The defect: an escape hatch that was built and never reachable
+
+`docs_patch` has required `{diff, security_policy}` — deliberately no build — since the policy table
+was written. **Nothing ever selected it.** The planner emits `patch_proposal` for every patch, docs
+and code alike; the alias maps that to `code_patch`; `code_patch` requires `build`. So a README-only
+change has always been compiled with `dotnet build -c Release`, on the Director thread, before it
+could be called verified.
+
+v3.8.21's note in that same table worries at length about exactly this cost — "up to half an hour of
+wall clock per code-patch task, serially, on the Director thread" — and removed `test` from the
+default to contain it. It did not notice that the `docs_patch` row three lines below would have
+contained it further, for free.
+
+**The task type cannot tell them apart**: `coder.docs_coder` and `coder.ui_coder` both emit
+`patch_proposal`. The patch's own paths can, and they are the honest source — what a change touches
+is a fact about the change rather than a claim about it.
+
+**Conservative in the direction that matters.** Every proposal must be a documentation path: one
+`.cs` file among ten `.md` files makes the whole set a code patch, because a set applies as a unit
+and is exactly as dangerous as its most dangerous member. An empty set is not documentation. An
+explicit policy key is never softened by paths. `diff` and `security_policy` still run, the soldier
+is still policy-inserted, and a docs patch that trips either is blocked exactly as before — this
+narrows **which deterministic build runs**, and nothing about whether a reproducible no is final.
+
+`ScribeAnt`'s documentation-only restriction and this policy now read one predicate. Two copies of
+"what counts as docs" would be two answers to a question the security boundary asks, and they would
+drift toward the more permissive one.
+
+### Scenario 3, and the four defects between proposing and doing
+
+Every one was found by trying to reach an outcome nothing had needed before: the tester's check
+running in the original tree (v0.3.8.70), the tester having no operator seam (v0.3.8.73), a green
+mission graded as an escalation (v0.3.8.74), and this release's. `AppliedDocsPatchLifecycleTests`
+walks all nine gates between a proposal and a byte, asserts the file is absent beforehand, that the
+operator's check verified it rather than `dotnet_build`, that **no build ran at all**, that the
+evidence identifies its revision, that no break-glass event was recorded, and that the proposal left
+`proposed`.
+
+An earlier draft moved its check to a root-level file on the theory that a subdirectory target was
+what broke it. That theory was never tested — the failure it was invented to explain was the
+adaptive-stop defect — so the workaround is undone and the straightforward thing is used. A
+workaround for a defect that does not exist is worse than none.
+
+### Item 1 — reconcile the documentation, given a form that lasts
+
+This item keeps being absorbed into other releases and keeps coming back, because a reconciliation is
+true on the day it is done and decays silently after. This release alone corrected three documents
+that had sent work in the wrong direction, and `HANDOFF.md` — the file whose whole purpose is to be
+pasted into a fresh session — opened with *"The 3.8 line is CLOSED at v0.3.8.34"* while the shipping
+release was v0.3.8.74. That is not staleness; a handoff is read by someone who knows nothing else
+yet, so a wrong one actively misdirects.
+
+`HANDOFF.md` is now a **pointer**, not a snapshot: a table of where each answer always lives, the
+working rules that are not obvious from the code, and the recurring defect classes. A snapshot has to
+be rewritten every release to stay true and will therefore be false most of the time. Pointers stay
+true on their own.
+
+**`DocumentCurrencyTests`** makes the detectable half executable. Every file in `docs/` is classified
+CURRENT, HISTORICAL or POINTER — so a new document forces the decision rather than defaulting to
+"current and quietly rotting" — historical ones must say so before their content starts, and no
+current document may present a superseded release as the state of things.
+
+It says plainly what it cannot do: it cannot tell whether a current document is *correct*. The
+`docs_patch_set` chain that sent scenario 3 the wrong way named no version at all. This closes the
+subclass a machine can see; the rest is reading.
+
+Its own first run caught the trap this repository keeps finding in its guards — `as of` matched
+"Provenance already carries most of this per artifact **as of** v0.3.8.57", a historical reference
+inside a current document and exactly the construction that must stay legal. The guard was wrong, not
+the document, so the pattern narrowed rather than the sentence changing.
+
 ## v0.3.8.74 - a green mission graded as an escalation
 
 **`ExecutionService` returned one stop reason for two opposite situations, and the evaluator graded
