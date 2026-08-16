@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.66";
+    public const string Version = "0.3.8.67";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -169,8 +169,26 @@ public static class AnthillRuntime
     /// nothing about how to treat it. Unlike the prefix this replaces, the claim it makes is true:
     /// everything between the markers really is data the colony did not author.
     /// </summary>
+    /// <remarks>
+    /// v0.3.8.67 — THE DELIMITER IS `===`, NOT `---`, AND THAT IS A BUG FIX.
+    ///
+    /// v0.3.8.60 put this block at the START of the coder, builder and verifier prompts, so every
+    /// one of those prompts began with `--- BEGIN UNTRUSTED MISSION GOAL ---`. That string is passed
+    /// as the value of Claude Code's `-p`, and an option parser will not accept a value beginning
+    /// with `-`: the CLI read `-p` as having no value and the fence as an unknown option, so it
+    /// exited with `error: unknown option` and the mission never reached the model.
+    ///
+    /// The fence added to make untrusted input legible is what made the prompt unparseable — and it
+    /// failed at the transport, before any model saw it, which is why it looked like a colony defect
+    /// rather than a formatting one.
+    ///
+    /// `=` carries no meaning to any argument parser. The prompt also no longer travels as an
+    /// argument at all (see <c>AgentCli.PromptOnStdin</c>), so this is the belt to that braces: with
+    /// stdin the leading character stops mattering, and with `===` it stops mattering for any agent
+    /// whose transport is still argv.
+    /// </remarks>
     public static string UntrustedBlock(string label, string? text) =>
-        $"--- BEGIN UNTRUSTED {label.ToUpperInvariant()} ---\n{text?.Trim() ?? ""}\n--- END UNTRUSTED {label.ToUpperInvariant()} ---";
+        $"=== BEGIN UNTRUSTED {label.ToUpperInvariant()} ===\n{text?.Trim() ?? ""}\n=== END UNTRUSTED {label.ToUpperInvariant()} ===";
 
     // ---- Model routing ----------------------------------------------------
     public static bool EnableModelRouting = true;

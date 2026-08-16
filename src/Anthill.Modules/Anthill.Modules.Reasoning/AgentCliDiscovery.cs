@@ -253,7 +253,8 @@ public static class AgentCliDiscovery
 
     private static ProcessStartInfo BuildPsi(
         string binary, IReadOnlyList<string> args, string? workingDirectory,
-        IReadOnlyDictionary<string, string>? environment, out string? refused)
+        IReadOnlyDictionary<string, string>? environment, out string? refused,
+        bool redirectStdin = false)
     {
         var inv = BuildInvocation(binary, args);
         refused = inv.RawCmdLine?.StartsWith("REFUSED:", StringComparison.Ordinal) == true
@@ -270,6 +271,10 @@ public static class AgentCliDiscovery
             // decoding their pipes with the OS default turned every em dash into â€” on Windows.
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
+            // v0.3.8.67: the prompt's channel when the agent reads it from stdin. Requested rather
+            // than always-on, because redirecting stdin for an agent that expects a terminal changes
+            // how it behaves — an unasked-for empty stdin is not a neutral default.
+            RedirectStandardInput = redirectStdin,
         };
         if (inv.RawCmdLine is not null && refused is null) psi.Arguments = inv.RawCmdLine;
         else foreach (var a in inv.Args) psi.ArgumentList.Add(a);
@@ -277,6 +282,28 @@ public static class AgentCliDiscovery
         if (environment is not null)
             foreach (var (k, v) in environment) psi.Environment[k] = v;
         return psi;
+    }
+
+
+    /// <summary>
+    /// Write the prompt to the child's stdin and CLOSE it.
+    ///
+    /// Closing is the whole contract: a CLI reading stdin to EOF waits forever if the pipe stays
+    /// open, so a forgotten close turns a working transport into a hang that the timeout then
+    /// reports as the agent being slow. Encoding is pinned to UTF-8 without a BOM — a BOM at the
+    /// head of a prompt is three bytes of garbage before the first word, and on the receiving side
+    /// it looks like the model was asked something malformed.
+    /// </summary>
+    private static void WritePromptToStdin(Process p, string prompt)
+    {
+        try
+        {
+            using var stdin = new StreamWriter(
+                p.StandardInput.BaseStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            stdin.Write(prompt);
+            stdin.Flush();
+        }
+        catch (IOException) { /* the agent exited before reading — its exit code is the real answer */ }
     }
 
     private static string Trim(string s) =>
@@ -290,9 +317,13 @@ public static class AgentCliDiscovery
     /// a prompt cannot become a command. Building one string and handing it to /bin/sh would be
     /// the same feature with a command-injection hole in it.
     /// </summary>
+    /// <param name="stdin">
+    /// v0.3.8.67 — the prompt, when the agent reads it from stdin rather than argv. Null keeps the
+    /// argument transport for agents whose stdin behaviour has not been verified.
+    /// </param>
     internal static (bool Started, string Stdout, string Stderr, int ExitCode) Run(
         string binary, IReadOnlyList<string> args, TimeSpan timeout, string? workingDirectory = null,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null, string? stdin = null)
     {
         // v0.3.8.41: resolve against Anthill's own bin directories before falling back to PATH.
         // Agents are installed into ~/.anthill/agents rather than a root-owned global prefix,
@@ -300,7 +331,8 @@ public static class AgentCliDiscovery
         // successfully and then be reported as missing, which is the worst of both.
         // v0.3.8.52: BuildPsi additionally translates Windows .cmd shims into something
         // CreateProcess can start — see BuildInvocation for the two cases and the injection rule.
-        var psi = BuildPsi(binary, args, workingDirectory, environment, out var refused);
+        var psi = BuildPsi(binary, args, workingDirectory, environment, out var refused,
+            redirectStdin: stdin is not null);
         if (refused is not null)
             return (false, "", $"Refusing to run {refused} through cmd.exe with an argument cmd would interpret.", -1);
 
@@ -309,6 +341,10 @@ public static class AgentCliDiscovery
         try { if (!p.Start()) return (false, "", "", -1); }
         catch (System.ComponentModel.Win32Exception) { return (false, "", "", -1); }  // not on PATH
         catch (System.IO.FileNotFoundException) { return (false, "", "", -1); }
+
+        // BEFORE draining stdout: an agent that reads its whole prompt before answering blocks until
+        // this closes, and this side would otherwise be waiting for output that cannot come.
+        if (stdin is not null) WritePromptToStdin(p, stdin);
 
         // Read both pipes concurrently. Draining one and then the other deadlocks the moment the
         // child fills the pipe it is not being read from, which for an agent writing a long answer
@@ -335,11 +371,12 @@ public static class AgentCliDiscovery
     /// </summary>
     internal static (bool Started, string Stdout, string Stderr, int ExitCode) RunStreaming(
         string binary, IReadOnlyList<string> args, TimeSpan timeout, Action<string> onLine,
-        CancellationToken cancel, string? workingDirectory = null)
+        CancellationToken cancel, string? workingDirectory = null, string? stdin = null)
     {
         // Same Windows .cmd translation as Run — the streaming path carries the PROMPT, so it is
         // precisely the path the npm-shim rewrite exists for (node + argv, never cmd.exe).
-        var psi = BuildPsi(binary, args, workingDirectory, environment: null, out var refused);
+        var psi = BuildPsi(binary, args, workingDirectory, environment: null, out var refused,
+            redirectStdin: stdin is not null);
         if (refused is not null)
             return (false, "", $"Refusing to run {refused} through cmd.exe with an argument cmd would interpret.", -1);
 
@@ -348,6 +385,8 @@ public static class AgentCliDiscovery
         try { if (!p.Start()) return (false, "", "", -1); }
         catch (System.ComponentModel.Win32Exception) { return (false, "", "", -1); }
         catch (System.IO.FileNotFoundException) { return (false, "", "", -1); }
+
+        if (stdin is not null) WritePromptToStdin(p, stdin);
 
         using var reg = cancel.Register(() => { try { p.Kill(entireProcessTree: true); } catch { } });
 
