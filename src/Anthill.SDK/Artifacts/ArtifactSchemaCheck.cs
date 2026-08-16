@@ -167,8 +167,17 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.ChangePlan] =
                 AsUnfixed("named by ADR-004; the coder proposes patches directly and no change_plan is written"),
 
+            // v0.3.8.73 — it HAS a producer now. `Queen.RecordMissionReport` compiles the mission's
+            // record from persisted rows at finalization and stores it here, so the old note ("named
+            // by ADR-004; the scribe writes release_notes instead") became a declaration that
+            // disagrees with the runtime the moment that shipped — this repository's own recurring
+            // defect, in the table that describes what everything else writes.
+            //
+            // NARRATIVE rather than an object: the payload is the rendered record an operator reads,
+            // and nothing downstream parses it. Giving it a JSON shape would invite a consumer to
+            // depend on a structure the renderer is free to reformat.
             [ArtifactSchemas.OperatorSummary] =
-                AsUnfixed("named by ADR-004; the scribe writes release_notes instead"),
+                AsNarrative("Queen.RecordMissionReport (compiled from persisted rows; no model)"),
         };
 
     /// <summary>

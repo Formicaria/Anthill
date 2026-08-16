@@ -709,6 +709,17 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // still persisted BEFORE completion is published anywhere: the outcome event, the
         // job callback, and every Director/auto-apply read all come after this line.
         Memory.SaveMissionEvaluation(evaluation);
+
+        // v0.3.8.73 — THE OPERATOR'S RECORD, COMPILED. The first live qualification run found the
+        // final report carrying commands, exit codes, durations, test totals, a role census and a
+        // `Dispatched` column, none of which came from the colony: `BuilderAnt` writes the answer
+        // with a model, so a prompt asking for telemetry got telemetry-shaped prose. There was no
+        // reporting code to have a bug in.
+        //
+        // AFTER SaveMissionEvaluation, because the report reads the persisted outcome — compiling it
+        // earlier would report "none persisted" for a mission that had just been graded, which is
+        // the ordering defect this file already carries two comments about.
+        RecordMissionReport(mission.Id);
         Console.WriteLine("Mission saved to ANTHILL memory.");
 
         // v3.8.26 — the archivist finally has a trigger.
@@ -893,6 +904,45 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             Memory.LogEvent(mission.Id, "archivist_failed",
                 $"Archivist could not run after finalization: {error.Message}",
                 metadata: new() { ["role"] = "archivist", ["outcome_code"] = evaluation.OutcomeCode });
+        }
+    }
+
+    /// <summary>
+    /// Compile the mission's record from persisted state and store it as the `operator_summary`
+    /// artifact. v0.3.8.73.
+    ///
+    /// The artifact is the DURABLE answer to "what actually happened", and it is deliberately
+    /// produced here rather than by a role: every role that could produce it is one a model speaks
+    /// through. Failing to write it is logged and does not fail the mission — a mission that ran
+    /// correctly must not be recorded as failed because its summary could not be filed — but the
+    /// absence is visible rather than silent, because "no report" and "an invented report" are the
+    /// two states this exists to keep apart.
+    /// </summary>
+    private void RecordMissionReport(string missionId)
+    {
+        try
+        {
+            var report = Outcomes.MissionReport.Compile(Memory, missionId);
+            ((Anthill.SDK.Artifacts.IArtifactStore)Memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.OperatorSummary,
+                producerRole: "queen",
+                missionId: missionId,
+                payload: Outcomes.MissionReport.Render(report),
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Colony,
+                provenance: new Anthill.SDK.Artifacts.ArtifactProvenance
+                {
+                    ColonyVersion = AnthillRuntime.Version,
+                    RuntimeNode = "queen",
+                    // The one field that matters here: NO model contributed to this payload, and
+                    // saying so is what lets a reader tell it apart from the builder's narrative.
+                    ModelInvolved = false,
+                }));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[mission-report] could not record the operator summary for {missionId}: {error.Message}");
+            Memory.LogEvent(missionId, "mission_report_unavailable",
+                $"The compiled mission record could not be stored: {error.Message}", antName: "queen");
         }
     }
 

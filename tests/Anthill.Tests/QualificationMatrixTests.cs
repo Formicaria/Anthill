@@ -16,10 +16,16 @@ namespace Anthill.Tests;
 /// OPEN with the reason, and the test asserts they are still open — a scenario that quietly acquires
 /// a proof without the ledger changing is drift in the direction that feels like progress.
 ///
-/// WHAT THIS DOES NOT CLAIM. Citing a file is weaker than running the scenario, and it is not a
-/// substitute for the composed Queen-driven run that scenarios 3, 4, 7 and 15 still need. The value
-/// is that the twenty are in one place, each with a named owner, and that the list cannot rot
-/// silently. Where a scenario is only partially covered, that is what it says.
+/// WHAT THIS DOES NOT CLAIM. Citing a file is weaker than running the scenario. The value is that
+/// the twenty are in one place, each with a named owner, and that the list cannot rot silently.
+/// Where a scenario is only partially covered, that is what it says.
+///
+/// The composed Queen-driven runs this note used to say scenarios 3, 4, 7 and 15 "still need" now
+/// exist for 4 (`CodePatchLifecycleTests`, v0.3.8.54), 7 (`SoldierBlockLifecycleTests`, v0.3.8.71)
+/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73). Scenario 3 is the last, and its note says what
+/// it is waiting on. This paragraph is updated rather than deleted because the sentence it replaces
+/// was accurate when written and stopped being so without anything failing — which is the exact
+/// rot the ledger exists to prevent, appearing in the ledger's own header.
 /// </summary>
 public class QualificationMatrixTests
 {
@@ -65,9 +71,12 @@ public class QualificationMatrixTests
           + "and description and a policy-inserted review's are fixed strings built from the patch "
           + "set id. The undetected-workspace fallback runs dotnet_build, which needs a project. And "
           + "adding a project makes it worse, because a detected workspace runs EVERY adapter check "
-          + "— build, test AND format — deliberately. See "
-          + "SoldierBlockLifecycleTests.TheTesterHasNoSeam_ForAFixtureWorkspace, which pins all "
-          + "three so the next attempt starts from them."),
+          + "— build, test AND format — deliberately.\n\n"
+          + "v0.3.8.73 CLOSED that blocker: `workspace_checks` lets an operator declare what verifies "
+          + "a workspace, and CheckSource is the one precedence both the tester's selection and the "
+          + "runner's resolution read. What remains for scenario 3 is only the APPLY step — a script "
+          + "book, not a blocker. The guard that pinned the three facts above is deleted rather than "
+          + "kept, because its premise is gone; see WorkspaceCheckConfigTests."),
 
         new(4, "successful code patch", new[] { "CodePatchLifecycleTests.cs" },
             "Composed through the Queen with the scripted provider. This is the one full lifecycle "
@@ -128,8 +137,9 @@ public class QualificationMatrixTests
             new[] { "ArchivistAntTests.cs", "MemoryCandidateIngestTests.cs", "ScribeArchivistOrderingTests.cs" },
             "Positive procedural memory only from completed_verified; nothing archival auto-promotes."),
 
-        new(15, "legitimate all-twelve-role coverage", new[] { "CodePatchLifecycleTests.cs" },
-            "PARTIAL — and the partial is precise, because two rewrites of this entry taught what the "
+        new(15, "legitimate all-twelve-role coverage",
+            new[] { "CodePatchLifecycleTests.cs", "EarnedRepairLifecycleTests.cs" },
+            "CLOSED at v0.3.8.73, and the route there is the entry's value. Three rewrites taught what the "
           + "scenario actually turns on. Two tests in the cited file split the claim. "
           + "AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission gets all twelve "
           + "through production triggers and proves tester and soldier were INSERTED, not planned. "
@@ -143,10 +153,17 @@ public class QualificationMatrixTests
           + "WHAT IS STILL MISSING, stated so the citation cannot be read as more than it is: the "
           + "tester's failure is ENVIRONMENTAL — a materialized revision in a temp directory has no "
           + "build — so the medic's trigger is real while the failure's relationship to the change is "
-          + "not. Closing that needs an allowlisted check that fails BECAUSE of the proposal — and "
-          + "v0.3.8.71 established that no such check can currently be arranged in a fixture "
-          + "workspace, for the same structural reason scenario 3 names. The remaining edge is "
-          + "therefore blocked on the tester's missing configuration seam, not on a script book."),
+          + "not. v0.3.8.71 established that no such check could be arranged at all — the tester had "
+          + "no operator seam — and v0.3.8.73 built one. "
+          + "EarnedRepairLifecycleTests.ACheckFailsBecauseOfTheProposal_AndPassesBecauseOfTheRepair "
+          + "now closes it: an operator-declared check passes only when VERIFIED.md exists in the "
+          + "tree it runs in, the coder's first proposal omits it and the check FAILS against "
+          + "revision one, the medic hands back, the second proposal adds it and the same check "
+          + "PASSES against revision two. Nothing environmental changed between the runs; only the "
+          + "patch did. It needs two earlier releases to be true — v0.3.8.70 (the check runs inside "
+          + "the materialized revision, so a patch can change an outcome) and v0.3.8.73 (the check "
+          + "is declarable at all) — and asserts the operator's check ran rather than dotnet_build, "
+          + "because 'the seam is wired' is exactly the claim that passes while a fallback runs."),
 
         new(16, "failure during every patch transaction position",
             new[] { "AuditScenarioTests.cs", "AutoApplyAtomicityTests.cs" },

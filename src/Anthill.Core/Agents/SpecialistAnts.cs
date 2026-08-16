@@ -180,24 +180,22 @@ public sealed class TesterAnt : BaseAnt
         // precedence `RunAllowlistedCheckTool` already applies when it actually runs the check. Two
         // components disagreeing about which catalog is authoritative is how a tester selects an id
         // the runner then refuses.
+        // v0.3.8.73 — the precedence lives in CheckSource, shared with RunAllowlistedCheckTool.
+        // Selection and resolution were two spellings of one rule, which is how a tester comes to
+        // select an id the runner refuses; operator configuration would have been a third spelling.
         var manifest = Workspaces.WorkspaceCapabilityManifest.ForCurrentMission();
-        var available = manifest.IsEmpty
-            ? CheckCatalog.Ids.ToList()
-            : manifest.Checks.Select(c => c.Id).ToList();
+        var available = CheckSource.Available(manifest).Select(c => c.Id).ToList();
 
         var requested = available
             .Where(id => task.Description.Contains(id, StringComparison.OrdinalIgnoreCase)
                       || task.Title.Contains(id, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (requested.Count == 0)
-            requested = manifest.IsEmpty
-                // No workspace in scope: the historical .NET default, unchanged, because this is
-                // the configuration every existing caller and test runs in.
-                ? new List<string> { "dotnet_version", "dotnet_build" }
-                // A detected workspace runs EVERYTHING its adapters declare. A tester that picked a
-                // subset would be choosing which failures the colony is allowed to notice.
-                : available;
+        // Nothing named: run what this workspace declares. A configured or detected workspace runs
+        // EVERYTHING it declares — a tester that picked a subset would be choosing which failures
+        // the colony is allowed to notice — and the unconfigured, undetected case keeps the
+        // historical .NET pair, because that is what every existing installation verifies with.
+        if (requested.Count == 0) requested = CheckSource.DefaultSelection(manifest).ToList();
 
         if (requested.Count == 0)
             return AntExecutionResult.Blocked(

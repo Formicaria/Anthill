@@ -75,7 +75,7 @@ configuration already at schema version 2 is preserved exactly. See `ConfigMigra
 | builder | MissionAgent | yes | yes | on | build_answer | model only | — |
 | verifier | MissionAgent | yes | yes | on | verification | model only | `PolicyInserted` since v0.3.8.57 — the runtime guarantees one when its evidence exists, and a planned verifier is still admissible |
 | ui_cartographer | MissionAgent | yes | gated | **on** (full profile) | ui_mapping … | list_directory, read_text_file | read-only; its `ui_map` is REQUIRED before a UI coder task dispatches (v0.3.8.57) |
-| tester | MissionAgent | yes | gated | **on** (full profile) | build_check, test_execution … | run_allowlisted_check ONLY | no shell, no model, evidence required |
+| tester | MissionAgent | yes | gated | **on** (full profile) | build_check, test_execution … | run_allowlisted_check ONLY | no shell, no model, evidence required; runs inside the materialized revision (v0.3.8.70) and its checks come from `CheckSource` (v0.3.8.73) |
 | soldier | MissionAgent | yes | gated | **on** (full profile) | security_review … | deterministic PolicyScan | blocks not model-overridable |
 | scribe | MissionAgent | yes | gated | **on** (full profile) | release_notes, docs_patch_proposal … | read summaries | docs-path patches only; refuses `verified_change_summary` when nothing verified (v0.3.8.57) |
 | medic | MissionAgent | yes | gated | **on** (full profile) | failure_diagnosis … | read failure context | 2 diagnoses/mission, repeat → escalate |
@@ -83,6 +83,33 @@ configuration already at schema version 2 is preserved exactly. See `ConfigMigra
 | quartermaster | DeterministicService | n/a | never | n/a | — | — | intentionally non-executable (no metrics contract yet) |
 | queen/director/planner/constraint | ControlPlane | yes | never | n/a | — | — | — |
 | 8 homelab roles | DeterministicService | yes | never | n/a | — | C# services/providers | never LLM-directed |
+
+## Where a check comes from — v0.3.8.73
+
+`CheckSource` is the single decision function both the tester's SELECTION and
+`run_allowlisted_check`'s RESOLUTION read. Precedence:
+
+1. **Operator configuration** — `workspace_checks` in ANTHILL's own config file. Non-empty
+   **replaces** detection for the installation; absent or empty changes nothing.
+2. **Workspace detection** — `WorkspaceAdapters`, as since v3.5.0.
+3. **The compiled catalog** — only when neither of the above says anything.
+
+Two properties are load-bearing and neither is negotiable.
+
+**The declarations live in ANTHILL's configuration, never in the workspace being modified.** There is
+deliberately no `.anthill-checks.json`: a check file inside the repository would hand every coding
+agent the power to rewrite its own exam, which is the exact separation `WorkspaceAdapter` was built
+to preserve. `PolicyScan.allowlist_tampering` also matches `workspace_checks`, so a patch proposing
+to edit the setting is a blocking finding.
+
+**One function, because there used to be two.** Selection read
+`manifest.IsEmpty ? CheckCatalog.Ids : manifest.Checks` while resolution read
+`manifest.Find(id) ?? CheckCatalog.Get(id)` — two spellings of one rule, and the runner's own comment
+named the failure they invite: a tester selecting an id the runner then refuses.
+
+A built-in id (`dotnet_build`, `dotnet_test`, `dotnet_version`) cannot be redefined by configuration.
+Those names appear in the auto-apply verify path, the graduation record and the changelog; keeping
+the name while changing the command is how a report describes a check that did not run.
 
 ## Outcome semantics
 
