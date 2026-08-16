@@ -73,8 +73,12 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         var args = AgentCliCatalog.BuildArgs(_agent, prompt, system)
             .Concat(AgentCliCatalog.BuildAccessArgs(_agent, access))
             .ToList();
+        // v0.3.8.67: the prompt goes on stdin for agents that read it there, and is NOT also an
+        // argument — BuildArgs has no {prompt} to substitute for those agents, so there is exactly
+        // one copy and exactly one channel.
         var (started, stdout, stderr, exit) =
-            AgentCliDiscovery.Run(_agent.Binary, args, _timeout, cwd);
+            AgentCliDiscovery.Run(_agent.Binary, args, _timeout, cwd,
+                stdin: _agent.PromptOnStdin ? prompt : null);
 
         if (!started)
             return Fail(ModelCallOutcome.NotAvailable,
@@ -145,7 +149,8 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
             if (result is not null) resultText = result;
         };
         var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
-            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, streamCwd);
+            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, streamCwd,
+            stdin: _agent.PromptOnStdin ? prompt : null);
         if (hasStreamMode && exit == 0)
             stdout = !string.IsNullOrWhiteSpace(resultText) ? resultText
                    : streamedText.Length > 0 ? streamedText.ToString() : stdout;

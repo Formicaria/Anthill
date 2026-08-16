@@ -36,9 +36,20 @@ public class AgentCliTests
             Assert.DoesNotContain("/", a.Binary, StringComparison.Ordinal);
             Assert.DoesNotContain("\\", a.Binary, StringComparison.Ordinal);
 
-            // Without a placeholder the operator's text would never reach the agent, and the call
-            // would look like it worked while asking the agent nothing.
-            Assert.Contains(a.PromptArgs, arg => arg.Contains("{prompt}", StringComparison.Ordinal));
+            // EVERY AGENT HAS A CHANNEL FOR THE PROMPT — argv or stdin, and exactly one of them.
+            //
+            // v0.3.8.67: this used to require `{prompt}` in PromptArgs, which was the right check
+            // while argv was the only transport. It became wrong when the prompt moved to stdin for
+            // Claude Code, and it is worth stating what the invariant actually was: not "there is a
+            // placeholder" but "the operator's text reaches the agent". A call with neither channel
+            // looks like it worked while asking the agent nothing.
+            //
+            // BOTH is also refused. A placeholder alongside stdin would send the text twice — once
+            // safely and once as the argument whose leading `---` is what broke the transport.
+            var inArgv = a.PromptArgs.Any(arg => arg.Contains("{prompt}", StringComparison.Ordinal));
+            Assert.True(inArgv ^ a.PromptOnStdin,
+                $"{a.Id} must carry the prompt in EXACTLY ONE channel: {{prompt}} in PromptArgs, or "
+              + $"PromptOnStdin. argv={inArgv}, stdin={a.PromptOnStdin}.");
         }
     }
 
@@ -96,18 +107,39 @@ public class AgentCliTests
     /// characters survive intact inside a single element rather than being escaped, stripped, or
     /// split across several.
     /// </summary>
+    /// <remarks>
+    /// v0.3.8.67 — asserted per TRANSPORT, and the stdin case is the stronger one.
+    ///
+    /// This used to take `All.First()` and require the prompt to be one argument. That agent is now
+    /// Claude Code, whose prompt travels on stdin, so the assertion found nothing and failed — while
+    /// the property it cares about had become MORE true, not less: text that is never an argument
+    /// cannot be split, escaped or mangled by an argument vector at all.
+    ///
+    /// So both transports are checked, over every agent rather than whichever happens to be first.
+    /// A test pinned to `First()` is one catalogue reordering away from testing something else.
+    /// </remarks>
     [Fact]
-    public void APromptWithShellMetacharacters_StaysOneArgument()
+    public void APromptWithShellMetacharacters_ReachesTheAgentIntact()
     {
-        var agent = AgentCliCatalog.All.First();
         const string nasty = "fix `main`; rm -rf / && echo \"done\" $(whoami)\nsecond line";
 
-        var args = AgentCliCatalog.BuildArgs(agent, nasty);
+        foreach (var agent in AgentCliCatalog.All)
+        {
+            var args = AgentCliCatalog.BuildArgs(agent, nasty);
+            var carrying = args.Where(a => a.Contains("rm -rf", StringComparison.Ordinal)).ToList();
 
-        var carrying = args.Where(a => a.Contains("rm -rf", StringComparison.Ordinal)).ToList();
-        Assert.Single(carrying);
-        Assert.Equal(nasty, carrying[0]);
-        Assert.DoesNotContain(args, a => a.Contains("{prompt}", StringComparison.Ordinal));
+            if (agent.PromptOnStdin)
+                Assert.True(carrying.Count == 0,
+                    $"{agent.Id} takes the prompt on stdin, so it must not ALSO be an argument — "
+                  + "two channels is how the text arrives twice and once as an option.");
+            else
+            {
+                Assert.Single(carrying);
+                Assert.Equal(nasty, carrying[0]);
+            }
+
+            Assert.DoesNotContain(args, a => a.Contains("{prompt}", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
