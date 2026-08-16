@@ -1,5 +1,55 @@
 # ANTHILL Changelog
 
+## v0.3.8.60 - MICROMOUND arrives read-only, and a boundary test that was never looking
+
+MICROMOUND extends the colony into physical devices - Raspberry Pis, ESP32s, sensors, robots,
+building systems. This release is its first phase on the ANTHILL side, and the shape of it is the
+point: **the colony can see mounds and cannot direct them.**
+
+`Anthill.Modules.Micromound` registers a mound registry, one-time-token enrollment, a signed sync
+beat, the `.anthill/MICROMOUND_STOP` kill switch, and three Integrations-tab widget payloads.
+What it does not contain is the whole argument for shipping it now - no charters, no missions, no
+actuation, and no code path that can raise an action ceiling. `approve_micromound_actions` is
+declared and unused, so the permission tiering is settled before anything exists to be tempted to
+skip it for. That is design rule 1 - observe before act - applied to a link whose far end moves
+hardware.
+
+**Enrollment makes one thing true: a mound's identity is something an operator granted, not
+something a device asserted.** The operator mints a single-use token, the device generates its own
+Ed25519 keypair and sends only the public half, and the token burns on use. Re-enrollment after a
+reflash needs a fresh operator-minted token, because a device that can re-key itself can also
+re-key itself after being stolen.
+
+**A backlog is believed all-or-nothing.** The sync beat verifies every envelope's signature against
+the key that mound enrolled with, and verifies the hash chain continues from the digest this colony
+last acknowledged. One bad envelope refuses the batch rather than trimming to the good prefix - a
+chain that has been tampered with tells you nothing trustworthy about the envelopes before the
+break either, and silently accepting a prefix is exactly how a gap becomes invisible.
+
+**Persistence follows the homelab's conventions rather than inventing its own.** `SqliteMoundStore`
+uses the same WAL pragmas, write lock and idempotent DDL as `HomelabRepository`, over
+`micromound_mounds`, `micromound_enrollment_tokens`, `micromound_beats` and
+`micromound_widget_state`. Beats are a ring buffer at 500 per mound. Enrollment token hashes are
+deliberately **not** run through the field cipher: the homelab ciphers credentials because those
+are secrets it must recover and replay to a third-party API, whereas this is SHA-256 of 256 bits of
+CSPRNG output that is never recovered and cannot be brute forced. Encrypting it would buy nothing
+and advertise a protection that is not real.
+
+**`ModuleBoundaryTests` had never looked at the new module.** The theory that enforces "a module
+references the SDK and nothing else of ours" takes a hand-written `[InlineData]` list, and
+Micromound was absent from it - so it passed by never being examined, which reads identically to
+passing on the terminal. It is on the list now, with a project reference so the assembly is
+actually loadable, and a remark recording that a module missing from that list is not exempt from
+the boundary but invisible to it. The check itself confirms the cross-repository reference is
+legal: the filter is the `Anthill.` prefix, and `Micromound.Protocol` is a shared wire contract
+rather than a sibling module.
+
+Tests: `Anthill.Tests.Micromound` runs one contract suite against both `IMoundStore`
+implementations, because the in-memory store is what the fast tests use and the SQLite store is
+what actually runs - separate suites would drift, and the drift would only surface in production.
+It references `Micromound.Sim` on purpose, so the envelopes under test are produced by the device
+implementation rather than hand-built to agree with the colony.
+
 ## v0.3.8.59 - filesystem confinement, and a working directory that was never a sandbox
 
 PLAN.md §1b **S1**, the first P0 of the external security review. One hardened resolver,
