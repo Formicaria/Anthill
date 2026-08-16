@@ -61,7 +61,8 @@ public sealed class Strategist
         ModelCallResult result;
         try
         {
-            result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist");
+            result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist",
+                system: AnthillRuntime.RoleSystemPrompt("strategist"));
         }
         catch (Exception ex)
         {
@@ -204,11 +205,7 @@ public sealed class Strategist
             : string.Join("\n", trails.Select(t =>
                 $"- {t.GetValueOrDefault("trail_key")} (strength {t.GetValueOrDefault("strength")})"));
 
-        return $@"{AnthillRuntime.PromptInjectionPrefix}
-ANTHILL v{AnthillRuntime.Version} | role: strategist | timestamp: {AnthillTime.NowUtc().ToIso()}
-You are concise. Do not explain your reasoning unless asked.
-
-You are the Strategist inside ANTHILL, a local swarm-intelligence AI harness running
+        return $@"You are the Strategist inside ANTHILL, a local swarm-intelligence AI harness running
 unattended (24/7 autonomy). Your job is to turn one standing objective into the single next
 concrete mission for the colony to run right now.
 

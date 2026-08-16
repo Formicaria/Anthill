@@ -61,8 +61,13 @@ public sealed class SandboxWorkspace : IDisposable
         var harvested = new List<string>();
         foreach (var rel in relativePaths)
         {
-            var src = Path.GetFullPath(Path.Combine(Root, rel));
-            if (!src.StartsWith(Path.GetFullPath(Root), StringComparison.OrdinalIgnoreCase)) continue; // no traversal
+            // v0.3.8.59 (PLAN.md §1b S1): the same missing-separator comparison as the Files pane,
+            // on the path work takes to LEAVE the sandbox. Harvest is the one sanctioned exit, so a
+            // link planted in the sandbox — by the agent that works there — could name a file
+            // outside it and have the colony copy it out for the operator.
+            var containment = Security.PathContainment.Resolve(Root, rel);
+            if (!containment.Allowed) continue;                      // no traversal, no link escape
+            var src = containment.Path;
             if (!File.Exists(src)) continue;
             var dest = Path.Combine(destinationDir, rel.Replace('/', '_').Replace('\\', '_'));
             File.Copy(src, dest, overwrite: true);

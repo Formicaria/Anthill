@@ -856,12 +856,28 @@ public static partial class ApiHost
                 return (null, $"The working directory {project.Path} does not exist — re-set or correct it below.");
             return (Path.GetFullPath(project.Path), null);
         }
+        // v0.3.8.59 (PLAN.md §1b S1) — through the ONE resolver, not a second copy of the rule.
+        //
+        // This helper is the P0. It asked `full.StartsWith(root, StringComparison.Ordinal)` with no
+        // separator, so a project rooted at /srv/project served `../project-secret/key.txt` — which
+        // normalises to /srv/project-secret/key.txt, a SIBLING whose name begins with the root
+        // string. By comparison time the `..` is gone, so nothing about the path looks like
+        // traversal. It fed every Files-pane route: list, read, create and edit.
+        //
+        // It also never resolved links, and — separately from the runtime write flags, which these
+        // endpoints do not consult — that made the READ route escapable on its own.
+        //
+        // The leading-separator strip stays: the pane sends browser-style paths, and `/etc/passwd`
+        // arriving as an absolute path must be read as "the project's own /etc/passwd" rather than
+        // handed to a resolver that would correctly refuse it with a confusing message about roots.
         static (string Full, string? Error) JailedPath(string root, string relative)
         {
-            var full = Path.GetFullPath(Path.Combine(root, relative.Replace('\\', '/').TrimStart('/')));
-            return full.StartsWith(root, StringComparison.Ordinal)
-                ? (full, null)
-                : (root, "That path escapes the project's directory.");
+            var decision = Anthill.Core.Security.PathContainment.Resolve(
+                root, relative.Replace('\\', '/').TrimStart('/'));
+
+            return decision.Allowed
+                ? (decision.Path, null)
+                : (decision.Path, "That path escapes the project's directory.");
         }
         // v0.3.8.52 (third field round): "is this directory ITSELF the repo toplevel" — the
         // question the git badge and the commit gate both ask, so it is answered once.
