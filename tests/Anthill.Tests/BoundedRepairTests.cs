@@ -88,7 +88,13 @@ public class BoundedRepairTests
         var execution = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
             "src", "Anthill.Core", "Orchestration", "ExecutionService.cs")));
 
-        Assert.Contains("adaptive_stop", execution);
+        // v0.3.8.74 — the reason is now a NAMED constant rather than a literal, because
+        // `adaptive_stop` turned out to be returned for two opposite situations and the evaluator
+        // graded both as an escalation. This test's property is unchanged and is the reason the
+        // split matters: an exhausted budget must end the mission with a reason an operator can act
+        // on. It now checks that the executor derives that reason instead of hard-coding one.
+        Assert.Contains("AdaptiveStopReason", execution);
+        Assert.Contains("MissionStopReasons.AdaptiveStop", execution);
     }
 
     // -------------------------------------------------------------------------------------------

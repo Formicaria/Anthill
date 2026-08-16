@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.73**.
+Shipping release: **v0.3.8.74**.
 
 ---
 
@@ -511,52 +511,27 @@ exercised this time.
 
 `QualificationMatrixTests` is the ledger; four entries are short.
 
-- **Qualification scenario 3** — a documentation patch driven through the Queen: goal → planner →
-  docs proposal → materialization → verification → apply → evaluation.
+- **Qualification scenario 3** — a documentation patch driven through the Queen, all the way to
+  applied bytes. **OPEN**, and v0.3.8.74 names the blocker exactly after two releases of naming it
+  wrongly.
 
-  *Corrected v0.3.8.70.* This item used to name `docs_patch_set` as a stage in that chain. **There is
-  no such pipeline and there should not be.** `docs_patch_set` is produced only by the scribe, its
-  payload is `{targets, source_mission, requires_approval: true}`, its own artifact title says "the
-  scribe holds no apply permission", and nothing in `src/` consumes it. It is an approval REQUEST,
-  not a patch — building a materializer for it would mean building an applier for an artifact
-  deliberately designed never to be applied. The patch that gets applied is the coder's `patch_set`,
-  from the `docs_coder` worker; the scribe's record belongs beside the scenario as context.
+  Auto-apply requires a `completed_verified` evaluation, and reaching one took three findings:
 
-  What actually separates this from scenario 4 is the word **apply**: every existing lifecycle test
-  runs with `patch_application_enabled: false`, so no test has ever driven a change onto disk through
-  the Queen and asserted the file is there. That needs the tester to produce a real pass.
+  1. the tester's check ran in the wrong tree — fixed v0.3.8.70;
+  2. the tester had no operator seam, so a fixture workspace could not produce a passing check —
+     fixed v0.3.8.73 (`CheckSource`, `workspace_checks`);
+  3. **the patch-set verification pipeline never got that seam.** `Verification.cs` hard-codes
+     `check_id="dotnet_build"` and contains no reference to `CheckSource`, so every materialized
+     patch is built with .NET whatever the workspace is. In a fixture that build fails, the failure
+     becomes a `DeterministicBlock`, and v3.8.22's rule — a reproducible no is final — correctly
+     makes `completed_verified` unreachable.
 
-  **UNBLOCKED at v0.3.8.73.** What follows is the blocker as v0.3.8.71 found it, kept because the
-  diagnosis is the reason the fix has the shape it does. `CheckSource` and the `workspace_checks`
-  setting close it: an operator can now declare what verifies their workspace, so a fixture workspace
-  can have a passing tester. Scenario 15's last edge closed on it the same release; scenario 3's
-  remaining work is now only the apply step, and is a script book.
+  **That rule is right and must not be weakened to close a scenario.** The fix is to give the
+  verification pipeline the same operator seam the tester has: `Verification`'s build verifier should
+  resolve its check through `CheckSource` rather than naming `dotnet_build`. That is a change to a
+  safety-critical path and belongs in its own release, with its own tests, rather than being folded
+  into one that already carries an unrelated fix.
 
-  - **A registered check cannot be selected.** `CheckCatalog.Register` is the documented
-    "operator/test extension point", and `TesterAnt` picks check ids by matching them against its
-    task's *title and description*. For a policy-inserted review those are fixed strings built by
-    `ExecutionService` from the patch set id. A mission cannot mention a check id, so the extension
-    point is unreachable by the role that runs checks.
-  - **The fallback needs a project.** No manifest and no matched id means `{dotnet_version,
-    dotnet_build}`, and `dotnet build` in a directory with no project fails.
-  - **Adding a project makes it worse.** A `.csproj` fires the .NET adapter, and a detected workspace
-    runs *every* check the adapter declares — build, test and format — deliberately, because "a
-    tester that picked a subset would be choosing which failures the colony is allowed to notice."
-    A minimal fixture passes build and fails the other two.
-
-  Each piece defends something real, and adapter detection is an explicit exit gate: verification
-  commands come from the manifest **or operator configuration**, never model invention. The gap was
-  that the second half of that sentence had no path to the tester — the manifest half was built in
-  v3.5.0 and the operator half never existed.
-
-  **`workspace_checks` is that half** (v0.3.8.73). Declarations live in ANTHILL's own configuration,
-  never in the workspace being modified — there is deliberately no `.anthill-checks.json`, because a
-  check file inside the repository hands every coding agent the power to rewrite its own exam, which
-  is the separation `WorkspaceAdapter` exists to preserve. `CheckSource` is the single decision
-  function both the tester's selection and the runner's resolution read; they used to spell the
-  precedence differently, which the runner's own comment warned invites "a tester selecting an id the
-  runner then refuses". `PolicyScan.allowlist_tampering` matches the key, so a patch proposing to edit
-  it is a blocking finding. Built-in ids cannot be redefined.
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
   **production triggers**. No role invoked to satisfy a count. **CLOSED at v0.3.8.73.**
 
