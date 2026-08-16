@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.74**.
+Shipping release: **v0.3.8.75**.
 
 ---
 
@@ -512,25 +512,14 @@ exercised this time.
 `QualificationMatrixTests` is the ledger; four entries are short.
 
 - **Qualification scenario 3** — a documentation patch driven through the Queen, all the way to
-  applied bytes. **OPEN**, and v0.3.8.74 names the blocker exactly after two releases of naming it
-  wrongly.
+  applied bytes. **CLOSED at v0.3.8.75**, and it was the last of the twenty.
 
-  Auto-apply requires a `completed_verified` evaluation, and reaching one took three findings:
-
-  1. the tester's check ran in the wrong tree — fixed v0.3.8.70;
-  2. the tester had no operator seam, so a fixture workspace could not produce a passing check —
-     fixed v0.3.8.73 (`CheckSource`, `workspace_checks`);
-  3. **the patch-set verification pipeline never got that seam.** `Verification.cs` hard-codes
-     `check_id="dotnet_build"` and contains no reference to `CheckSource`, so every materialized
-     patch is built with .NET whatever the workspace is. In a fixture that build fails, the failure
-     becomes a `DeterministicBlock`, and v3.8.22's rule — a reproducible no is final — correctly
-     makes `completed_verified` unreachable.
-
-  **That rule is right and must not be weakened to close a scenario.** The fix is to give the
-  verification pipeline the same operator seam the tester has: `Verification`'s build verifier should
-  resolve its check through `CheckSource` rather than naming `dotnet_build`. That is a change to a
-  safety-critical path and belongs in its own release, with its own tests, rather than being folded
-  into one that already carries an unrelated fix.
+  Four defects stood between "materialized and reviewed" and "the bytes are on disk", every one
+  found by trying to reach an outcome nothing had needed before: the tester's check running in the
+  original tree (v0.3.8.70), the tester having no operator seam (v0.3.8.73), a green mission graded
+  as an escalation (v0.3.8.74), and a documentation patch verified as a code patch and therefore
+  compiled (v0.3.8.75). The `docs_patch` policy requiring no build had existed, unreachable, since
+  the policy table was written.
 
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
   **production triggers**. No role invoked to satisfy a count. **CLOSED at v0.3.8.73.**
