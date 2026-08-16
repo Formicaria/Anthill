@@ -111,6 +111,17 @@ public static class VerificationPolicy
     };
 
     /// <summary>
+    /// A path this repository treats as documentation. v0.3.8.75.
+    ///
+    /// The SAME definition <c>ScribeAnt</c> enforces for its documentation-only restriction, moved
+    /// here and referenced there rather than written twice — two copies of "what counts as docs" is
+    /// two answers to a question the security boundary asks.
+    /// </summary>
+    public static readonly System.Text.RegularExpressions.Regex DocsPath =
+        new(@"^(?:docs/[\w./\-]+\.md|README\.md|CHANGELOG\.md)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
     /// The policy key for a task type: itself when the table knows it, its alias when one exists,
     /// otherwise the type unchanged (so an unknown type still reaches the fallback in <see cref="For"/>).
     /// An explicit table key always wins over an alias — a policy written for a name is never
@@ -121,6 +132,50 @@ public static class VerificationPolicy
         var t = taskType ?? "";
         if (Required.ContainsKey(t)) return t;
         return Aliases.TryGetValue(t, out var canonical) ? canonical : t;
+    }
+
+    /// <summary>
+    /// The policy key for a patch, read from WHAT IT TOUCHES as well as what the task calls itself.
+    /// v0.3.8.75.
+    ///
+    /// THE DEFECT. `docs_patch` has required `{diff, security_policy}` — no build — since the policy
+    /// table was written, and nothing has ever selected it. The planner emits `patch_proposal` for
+    /// every patch, docs and code alike; the alias maps that to `code_patch`; and `code_patch`
+    /// requires `build`. So a README-only change has always been compiled with
+    /// `dotnet build -c Release`, on the Director thread, before it could be called verified. The
+    /// v3.8.21 note above worries in detail about exactly that cost and did not notice that the
+    /// escape hatch beside it was unreachable.
+    ///
+    /// The task type CANNOT distinguish them: `coder.docs_coder` and `coder.ui_coder` both emit
+    /// `patch_proposal`. The patch's own paths can, and they are the honest source — what a change
+    /// touches is a fact about the change, not a claim about it.
+    ///
+    /// CONSERVATIVE BY CONSTRUCTION, in the direction that matters:
+    ///   * EVERY proposal must be a documentation path. One `.cs` file among ten `.md` files makes
+    ///     the whole set a code patch, because a set is applied as a unit and is exactly as
+    ///     dangerous as its most dangerous member.
+    ///   * an empty set is NOT docs — "nothing to look at" must never select the lighter policy.
+    ///   * `security_policy` and `diff` still run. The soldier is still policy-inserted. This
+    ///     narrows which DETERMINISTIC BUILD runs, and nothing about whether a reproducible no is
+    ///     final: a docs patch that fails `diff` or trips `PolicyScan` is blocked exactly as before.
+    ///   * an explicit table key still wins, so a task that names `code_patch` is never softened.
+    /// </summary>
+    public static string Canonical(string? taskType, IReadOnlyList<string>? changedPaths)
+    {
+        var canonical = Canonical(taskType);
+
+        // An explicit policy for this task type is a decision someone made; paths do not override it.
+        if (Required.ContainsKey(taskType ?? "")) return canonical;
+
+        // Only ever narrows code_patch → docs_patch. No other transition is inferred from paths.
+        if (!string.Equals(canonical, "code_patch", StringComparison.OrdinalIgnoreCase)) return canonical;
+
+        if (changedPaths is null || changedPaths.Count == 0) return canonical;
+
+        var allDocs = changedPaths.All(p =>
+            DocsPath.IsMatch((p ?? "").Replace('\\', '/').TrimStart('/')));
+
+        return allDocs ? "docs_patch" : canonical;
     }
 
     public static IReadOnlyList<string> For(string taskType) =>
