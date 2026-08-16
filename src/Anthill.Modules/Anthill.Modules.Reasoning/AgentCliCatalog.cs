@@ -60,6 +60,25 @@ public sealed record AgentCli
     public IReadOnlyList<string>? SystemPromptArgs { get; init; }
 
     /// <summary>
+    /// v0.3.8.67 — the prompt travels on STDIN rather than as an argument.
+    ///
+    /// Field report: a mission prompt beginning `=== BEGIN UNTRUSTED …` (then `--- …`) was passed as
+    /// the value of `-p`, and the CLI's option parser refused a value starting with `-`, exiting
+    /// with `unknown option`. Argv was never the right channel for this: the prompt is many
+    /// kilobytes of multi-line operator-derived text, and every transport that treats it as an
+    /// argument inherits the argument grammar — length limits, leading-hyphen rules, and on Windows
+    /// a shim layer that has already needed two rounds of escaping work.
+    ///
+    /// Claude Code's non-interactive mode reads stdin, which is the documented shape for exactly
+    /// this. `PromptArgs` then carries only the FLAG; nothing substitutes `{prompt}`, so the text
+    /// cannot arrive twice or arrive as an option by accident.
+    ///
+    /// False for agents whose stdin behaviour is unverified — a fact recorded per agent, because
+    /// assuming one CLI works like another is what put the prompt in argv in the first place.
+    /// </summary>
+    public bool PromptOnStdin { get; init; }
+
+    /// <summary>
     /// v0.3.8.47: arguments for a turn whose stdout STREAMS as NDJSON events, for agents that
     /// have such a mode. Null means the agent has no streaming mode and plain line streaming is
     /// the honest best; Claude Code buffers a piped answer entirely, which is why this exists.
@@ -154,7 +173,10 @@ public static class AgentCliCatalog
             DisplayName = "Claude Code",
             Vendor = "Anthropic",
             Binary = "claude",
-            PromptArgs = new[] { "-p", "{prompt}" },
+            // The prompt goes on STDIN (see PromptOnStdin), so these are flags only — there is no
+            // {prompt} to substitute and therefore no argument that can be mistaken for an option.
+            PromptArgs = new[] { "-p" },
+            PromptOnStdin = true,
             // --append-system-prompt rather than --system-prompt: appending keeps Claude Code's own
             // tool guidance and safety instructions and adds the colony's contract on top. Replacing
             // would drop both, and the colony would then owe the worker everything the default
@@ -164,7 +186,7 @@ public static class AgentCliCatalog
             // required by the CLI for stream-json in print mode.
             // --include-partial-messages adds stream_event token deltas; without it stream-json
             // emits one assistant event per COMPLETE message and nothing trickles.
-            StreamArgs = new[] { "-p", "{prompt}", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
+            StreamArgs = new[] { "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
             PackageManager = "npm",
             Package = "@anthropic-ai/claude-code",
             AuthCommand = "claude",           // first run walks the operator through sign-in

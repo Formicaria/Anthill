@@ -91,14 +91,42 @@ public static class ScriptedColony
         }
     }
 
-    /// <summary>Reads the role out of the prompt's own header — the producers' convention.</summary>
+    /// <summary>
+    /// Reads the role out of the SYSTEM message's header — where the producers now put it.
+    ///
+    /// v0.3.8.67 — this doc used to say "the prompt's own header", and that stopped being true at
+    /// v0.3.8.60 when the role contract moved to the system channel. `RoleSystemPrompt` emits
+    /// `ANTHILL v… | role: builder | …`; the user turn carries the task and no longer carries a
+    /// banner. The harness kept working only because the loop ran BACKWARDS and fell through to the
+    /// system message — right answer, wrong reason, and a comment describing a convention that had
+    /// moved.
+    ///
+    /// Reading the system message FIRST is not tidying. The user turn now contains the mission goal
+    /// and, via `ComposeMissionGoal`, a bounded slice of the prior transcript — which can quote an
+    /// earlier answer that itself contained a role header. Under the old backwards scan that quoted
+    /// header would win, and the scripted provider would answer as the wrong role: a scenario would
+    /// fail, or worse pass, for a reason nobody would look for in a test fixture.
+    ///
+    /// The user turn is still searched as a fallback, because a caller that builds a single-message
+    /// request (`ModelRequest.FromPrompt`) is legitimate and must not silently get role "".
+    /// </summary>
     internal static string RoleOf(ModelRequest request)
     {
-        for (var i = request.Messages.Count - 1; i >= 0; i--)
+        static string? Header(string? content)
         {
-            var m = Regex.Match(request.Messages[i].Content ?? "", @"\|\s*role:\s*([A-Za-z_-]+)\s*\|");
-            if (m.Success) return m.Groups[1].Value.ToLowerInvariant();
+            var m = Regex.Match(content ?? "", @"\|\s*role:\s*([A-Za-z_-]+)\s*\|");
+            return m.Success ? m.Groups[1].Value.ToLowerInvariant() : null;
         }
+
+        foreach (var m in request.Messages)
+            if (string.Equals(m.Role, ModelMessage.System, StringComparison.OrdinalIgnoreCase)
+                && Header(m.Content) is { } fromContract)
+                return fromContract;
+
+        // No system message: a single-prompt caller, whose banner (if any) is in the user turn.
+        for (var i = request.Messages.Count - 1; i >= 0; i--)
+            if (Header(request.Messages[i].Content) is { } fromPrompt) return fromPrompt;
+
         return "";
     }
 }

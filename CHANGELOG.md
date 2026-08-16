@@ -1,5 +1,55 @@
 # ANTHILL Changelog
 
+## v0.3.8.67 - the fence that made the prompt unparseable
+
+A field report: a mission reached `builder.result_compiler`, the builder invoked Claude Code, and the
+CLI answered `error: unknown option '--- BEGIN UNTRUSTED MISSION GOAL --- …'`. No ant executed. It
+read as a colony defect and was a transport one — the prompt never reached a model.
+
+**Self-inflicted, in v0.3.8.60.** That release put `UntrustedBlock` at the START of the coder,
+builder and verifier prompts, so each began `--- BEGIN UNTRUSTED MISSION GOAL ---`, and that string
+was the value of `-p`. An option parser will not take a value beginning with `-`: it read `-p` as
+valueless and the fence as an unknown option. The device added to make untrusted input legible is
+what made the prompt unparseable.
+
+**What the review got wrong, and why it changes the fix.** The report said Anthill "builds one
+command string" and should "use `.ArgumentList`, not a manually concatenated command string". It
+already does — `AgentCliDiscovery.BuildPsi` adds discrete argv entries with `UseShellExecute = false`,
+and `AgentCliCatalog.BuildArgs` names that as the security-relevant decision in the file. Quotes,
+semicolons and backticks were never a problem here, and the escaping regression tests it proposed
+would all have passed on the broken build. The failure was the CLI's own option grammar, not shell
+quoting, so the fix is the CHANNEL rather than the escaping.
+
+**Two changes; either fixes this instance, together they close the class.**
+
+- The prompt travels on **stdin** for agents that read it there. Claude Code's non-interactive mode
+  does, which is documented, and nothing about a leading character can matter to a stream. Its
+  argument lists now carry flags only — `PromptArgs` is `["-p"]` with no `{prompt}` to substitute, so
+  the text cannot arrive twice or arrive as an option by accident. `PromptOnStdin` is declared per
+  agent and false where the behaviour is unverified, because assuming one CLI works like another is
+  what put the prompt in argv to begin with.
+- `UntrustedBlock` fences with `===` instead of `---`. `=` means nothing to an option parser. This is
+  what protects the four agents whose transport is still argv.
+
+Stdin is written **before** stdout is drained and the pipe is **closed** after: an agent that reads
+its whole prompt first blocks until EOF, so a forgotten close turns a working transport into a hang
+that the timeout then reports as the agent being slow — sending anyone debugging it to the wrong
+place.
+
+**Tests.** `AgentCliTransportTests` asserts a hyphen-leading prompt never becomes an argument, using
+the exact string that broke; that the fence no longer opens with a hyphen while still marking both
+ends; that both provider transports pass the prompt to stdin; and that the pipe is closed and written
+before the drain. Awkward prompts — multiline, quoted, backticked, Unicode, Windows paths — are
+covered too, recorded as *already* working rather than as the defect. **Not proved here:** no test
+starts a real agent and round-trips a prompt through its stdin; that needs a binary the suite can
+rely on across three platforms, and the transport is currently proved by the field report that
+produced this fix.
+
+**Not fixed here, both from the same report and both real:** the planner turned an observability
+audit into "Synthesize condensed implementation plan", and `ComposeMissionGoal` appends the recent
+transcript to every mission goal — which is how a conversation *about* prompt injection ended up
+inside a later mission's context.
+
 ## v0.3.8.66 - the forward program resumes: evidence identity is mandatory for promotion
 
 **§2 item 2, and the last path closes.** Auto-apply has refused a patch set whose evidence judged
