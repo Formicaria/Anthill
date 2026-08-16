@@ -248,33 +248,49 @@ public class PatchConformanceTests
     }
 
     /// <summary>
-    /// And every decider CONTAINS its paths before deciding.
+    /// And every decider CONTAINS its paths before deciding, THROUGH THE SHARED RESOLVER.
     ///
-    /// `Compute` does no IO, so containment, casing and symlink resolution cannot be its job — a
-    /// pure function has no path to resolve. AUTONOMY-10 lists them in the same suite, so they are
-    /// checked where they actually live: at the call site, before the decision.
+    /// `Compute` does no IO, so containment, casing and link resolution cannot be its job — a pure
+    /// function has no path to resolve. So they are checked where they live: at the call site,
+    /// before the decision.
     ///
-    /// Two idioms are accepted because both are genuinely in use and both are correct. Three
-    /// deciders call a named guard (`ResolveSafePath`); `PatchSetMaterializer` writes into a
-    /// disposable sandbox it created, so it resolves against that root inline —
+    /// v0.3.8.59 (PLAN.md §1b S1) — THIS TEST USED TO ACCEPT THE BUG, and the reasoning it accepted
+    /// it with was good. It allowed a second idiom: `PatchSetMaterializer` writes into a disposable
+    /// sandbox it created, so it resolved against that root inline —
     /// <c>GetFullPath(Combine(sandboxRoot, …))</c> then <c>StartsWith(sandboxRoot + separator)</c> —
-    /// for the source and again for a rename destination. Insisting on the helper would have failed
-    /// a file that does the work correctly, which is a test dictating spelling rather than checking
-    /// a property.
+    /// and the comment defended that as correct, on the grounds that insisting on the helper would
+    /// be "a test dictating spelling rather than checking a property".
+    ///
+    /// The spelling WAS the property. `GetFullPath` is lexical: it strips `..` and knows nothing
+    /// about the filesystem, so that idiom never resolved a symlink or junction and a link inside
+    /// the sandbox pointing at the operator's live checkout materialised straight through it. The
+    /// separator was right and the resolution was not — and because this test named the idiom as an
+    /// accepted alternative, the file that used it was pinned in that shape by its own guard.
+    ///
+    /// So the inline idiom is now REFUSED rather than allowed. All four deciders resolve through a
+    /// named guard, three via `ResolveSafePath` and the materializer via `PathContainment.Resolve`
+    /// directly; both end at the same function. A test may not dictate spelling — but where two
+    /// spellings mean different things, choosing between them is checking a property.
     /// </summary>
     [Theory]
     [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)]
-    public void EveryDecider_ContainsItsPathsBeforeDeciding(int index)
+    public void EveryDecider_ContainsItsPathsThroughTheSharedResolver(int index)
     {
         var (path, _, _) = Deciders[index];
         var source = Read(path);
 
-        var namedGuard = Regex.IsMatch(source, @"ResolveSafePath|SafeJoin|ValidateSafePatchPath|EnsureInside");
-        var inlineContainment = source.Contains("GetFullPath(", StringComparison.Ordinal)
-                             && source.Contains("StartsWith(", StringComparison.Ordinal);
+        Assert.True(
+            Regex.IsMatch(source, @"ResolveSafePath|PathContainment\.Resolve"),
+            $"{path} computes a patch outcome without containing the path through the shared "
+          + "resolver, so a `..`-laden or link-bearing proposal is judged and written on that route "
+          + "with nothing checking where it actually lands.");
 
-        Assert.True(namedGuard || inlineContainment,
-            $"{path} computes a patch outcome without containing the path first, so a `..`-laden "
-          + "proposal is judged and written on that route with nothing checking where it lands.");
+        // And NOT by hand. A file that resolves correctly and also keeps the old lexical comparison
+        // has two answers to one question, and the weaker one is the one that gets copied.
+        Assert.False(
+            Regex.IsMatch(source, @"\.StartsWith\([^;]*?[Rr]oot"),
+            $"{path} still compares a path against a root by hand. That comparison is lexical — it "
+          + "cannot see a symlink — and its presence beside the real check is how the wrong idiom "
+          + "spreads to the next applier.");
     }
 }

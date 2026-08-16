@@ -118,17 +118,19 @@ public static class PatchSetMaterializer
                 if (string.IsNullOrWhiteSpace(proposal.FilePath))
                     throw new InvalidOperationException($"proposal {proposal.Id} has no file path");
 
-                var target = Path.GetFullPath(Path.Combine(sandboxRoot, proposal.FilePath));
-
-                // The guard PatchVerifyRunner has carried since v1.8.24, kept verbatim in intent: a
-                // relative path with enough `..` in it resolves outside the sandbox, and writing
+                // A relative path with enough `..` in it resolves outside the sandbox, and writing
                 // there would modify the operator's real tree from inside what is supposed to be an
-                // isolated verification. Checked after full resolution, because that is the only
-                // point at which traversal is visible.
-                if (!target.StartsWith(sandboxRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(target, sandboxRoot, StringComparison.OrdinalIgnoreCase))
+                // isolated verification.
+                //
+                // v0.3.8.59 (PLAN.md §1b S1): this one had the separator RIGHT and links wrong —
+                // Path.GetFullPath is lexical, so a link inside the sandbox pointing at the live
+                // checkout resolved to a path still textually under sandboxRoot and materialised
+                // straight through it. Now the same resolver as everywhere else.
+                var containment = Security.PathContainment.Resolve(sandboxRoot, proposal.FilePath);
+                if (!containment.Allowed)
                     throw new InvalidOperationException(
                         $"proposal {proposal.Id} path escapes the sandbox: {proposal.FilePath}");
+                var target = containment.Path;
 
                 // v0.3.8.52 — the delete arm that used to sit here is gone.
                 //
@@ -145,10 +147,12 @@ public static class PatchSetMaterializer
                 string? destinationTarget = null;
                 if (!string.IsNullOrWhiteSpace(proposal.DestinationPath))
                 {
-                    destinationTarget = Path.GetFullPath(Path.Combine(sandboxRoot, proposal.DestinationPath));
-                    if (!destinationTarget.StartsWith(sandboxRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    var destinationContainment =
+                        Security.PathContainment.Resolve(sandboxRoot, proposal.DestinationPath);
+                    if (!destinationContainment.Allowed)
                         throw new InvalidOperationException(
                             $"proposal {proposal.Id} destination escapes the sandbox: {proposal.DestinationPath}");
+                    destinationTarget = destinationContainment.Path;
                 }
 
                 // v3.8.32 — THE defect this file shipped with.

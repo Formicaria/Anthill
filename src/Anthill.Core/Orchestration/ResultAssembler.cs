@@ -1,4 +1,5 @@
 using Anthill.Core.Common;
+using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Models;
@@ -182,8 +183,13 @@ public sealed class ResultAssembler : IResultAssembler
         ModelCallResult? synthesized = null;
         try
         {
+            // v0.3.8.59 (PLAN.md §1b S9): the scribe gets a contract on the system channel like every
+            // other role. It never carried the old `[SYSTEM BOUNDARY]` prefix — so it was the one
+            // role NOT sending an injection-shaped prompt, and also the one sending no operating
+            // rules at all beyond prose in the user turn. Same gap, opposite symptom.
             synthesized = _router.GenerateTyped("scribe", BuildAnswerSynthesisPrompt(mission, raw),
-                mission.Id, antName: "scribe");
+                mission.Id, antName: "scribe",
+                system: AnthillRuntime.RoleSystemPrompt("scribe", mission.Goal));
         }
         catch (Exception ex)
         {

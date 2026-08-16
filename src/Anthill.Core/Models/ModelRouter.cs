@@ -388,9 +388,22 @@ public sealed class ModelRouter
     /// status travels with the result from the client that knew it, and the string-returning
     /// <c>Generate</c> is the thin projection instead of the other way round.
     /// </summary>
+    /// <param name="system">
+    /// v0.3.8.59 (PLAN.md §1b S9) — the role's OPERATING CONTRACT, on the system channel.
+    ///
+    /// Until this existed every role call was a single user message (see
+    /// <see cref="Anthill.SDK.Reasoning.ModelRequest.FromPrompt"/>, which builds exactly one, with
+    /// role `user`) carrying the persona, the rules, the output format and the operator's text in
+    /// one undifferentiated block. A worker had no way to tell its contract from its input, and
+    /// neither did anything downstream — an agent CLI refused whole missions as prompt injection,
+    /// which is what a user turn asserting a persona and a system boundary actually looks like.
+    ///
+    /// Null keeps the old single-message shape, so a caller that has not been converted behaves
+    /// exactly as before rather than silently losing its instructions.
+    /// </param>
     public ModelCallResult GenerateTyped(string role, string prompt, string? missionId = null,
-        string? taskId = null, string? antName = null, int retries = 2) =>
-        GenerateCore(role, prompt, missionId, taskId, antName, retries);
+        string? taskId = null, string? antName = null, int retries = 2, string? system = null) =>
+        GenerateCore(role, prompt, missionId, taskId, antName, retries, system);
 
     /// <summary>Content-only projection, for callers that have not yet moved to the typed result.</summary>
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
@@ -398,8 +411,24 @@ public sealed class ModelRouter
         GenerateCore(role, prompt, missionId, taskId, antName, retries).Content;
 
     private ModelCallResult GenerateCore(string role, string prompt, string? missionId, string? taskId,
-        string? antName, int retries) =>
-        SendCore(role, ModelRequest.FromPrompt(prompt), missionId, taskId, antName, retries).ToCallResult();
+        string? antName, int retries, string? system = null) =>
+        SendCore(role, Compose(prompt, system), missionId, taskId, antName, retries).ToCallResult();
+
+    /// <summary>
+    /// One user message, or a system message and a user message. Never a system message alone —
+    /// every provider the colony speaks to treats that as a request with nothing to answer.
+    /// </summary>
+    private static ModelRequest Compose(string prompt, string? system) =>
+        string.IsNullOrWhiteSpace(system)
+            ? ModelRequest.FromPrompt(prompt)
+            : new ModelRequest
+            {
+                Messages = new[]
+                {
+                    new ModelMessage(ModelMessage.System, system!),
+                    new ModelMessage(ModelMessage.User, prompt ?? ""),
+                },
+            };
 
     /// <summary>
     /// v3.4.0 (ADR-006): route and send a TYPED request — the path a tool-calling agent loop needs,
