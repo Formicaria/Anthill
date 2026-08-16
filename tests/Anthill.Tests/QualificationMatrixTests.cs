@@ -58,8 +58,16 @@ public class QualificationMatrixTests
           + "materialization, inserted review roles — but every lifecycle test runs with "
           + "patch_application_enabled false, so no test has driven a change onto disk and asserted "
           + "the file is there. Applying requires a passing tester, and until v0.3.8.70 the tester's "
-          + "check could not even run in the patched revision (see CheckWorkingDirectoryTests). That "
-          + "was the blocker; the script book is the easy part."),
+          + "check could not even run in the patched revision (see CheckWorkingDirectoryTests).\n\n"
+          + "v0.3.8.71 found the REST of that blocker, and it is structural rather than a missing "
+          + "script book: there is no way to give a fixture workspace a passing tester. A registered "
+          + "check cannot be selected, because TesterAnt matches check ids against its task's title "
+          + "and description and a policy-inserted review's are fixed strings built from the patch "
+          + "set id. The undetected-workspace fallback runs dotnet_build, which needs a project. And "
+          + "adding a project makes it worse, because a detected workspace runs EVERY adapter check "
+          + "— build, test AND format — deliberately. See "
+          + "SoldierBlockLifecycleTests.TheTesterHasNoSeam_ForAFixtureWorkspace, which pins all "
+          + "three so the next attempt starts from them."),
 
         new(4, "successful code patch", new[] { "CodePatchLifecycleTests.cs" },
             "Composed through the Queen with the scripted provider. This is the one full lifecycle "
@@ -76,9 +84,20 @@ public class QualificationMatrixTests
           + "patch set REPLACES the revision so old green evidence cannot ride."),
 
         new(7, "security violation blocked by Soldier",
-            new[] { "SoldierAntTests.cs", "DeterministicBlockTests.cs", "StageBConsequentialTests.cs" },
-            "The soldier reads the real patch set and its block cannot be overridden by model text. "
-          + "PARTIAL: a composed mission where a soldier block stops a real lifecycle is still open."),
+            new[] { "SoldierAntTests.cs", "DeterministicBlockTests.cs", "StageBConsequentialTests.cs",
+                    "SoldierBlockLifecycleTests.cs" },
+            "The soldier reads the real patch set and its block cannot be overridden by model text; "
+          + "and as of v0.3.8.71 the composed half is closed — a release in which 'reads' also "
+          + "stopped being an overstatement: until then the soldier scanned the patch artifact's "
+          + "JSON SERIALIZATION, where every quote is escaped, so secret_material could not fire on "
+          + "a quoted credential at all. "
+          + "SoldierBlockLifecycleTests drives a Queen mission whose coder proposes a runbook "
+          + "containing a quoted credential, the soldier is INSERTED on the patch set's existence, "
+          + "PolicyScan.secret_material fires as blocking, the marker reaches the persisted task "
+          + "result, the mission cannot reach a positive canonical evaluation, and AutoApplyRunner "
+          + "refuses to write — with the write gates deliberately ON, so the refusal is attributable "
+          + "to the block rather than to a disabled feature. The recorded reason is asserted, not "
+          + "just the file's absence."),
 
         new(8, "provider outage and malformed provider responses",
             new[] { "ModelReliabilityTests.cs", "ProviderWireFormatTests.cs", "JsonRepairTests.cs",
@@ -124,8 +143,10 @@ public class QualificationMatrixTests
           + "WHAT IS STILL MISSING, stated so the citation cannot be read as more than it is: the "
           + "tester's failure is ENVIRONMENTAL — a materialized revision in a temp directory has no "
           + "build — so the medic's trigger is real while the failure's relationship to the change is "
-          + "not. Closing that needs an allowlisted check that fails BECAUSE of the proposal. That is "
-          + "its own scenario and is named in docs/PLAN.md rather than implied by these two passing."),
+          + "not. Closing that needs an allowlisted check that fails BECAUSE of the proposal — and "
+          + "v0.3.8.71 established that no such check can currently be arranged in a fixture "
+          + "workspace, for the same structural reason scenario 3 names. The remaining edge is "
+          + "therefore blocked on the tester's missing configuration seam, not on a script book."),
 
         new(16, "failure during every patch transaction position",
             new[] { "AuditScenarioTests.cs", "AutoApplyAtomicityTests.cs" },

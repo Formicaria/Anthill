@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.70**.
+Shipping release: **v0.3.8.71**.
 
 ---
 
@@ -524,8 +524,30 @@ exercised this time.
 
   What actually separates this from scenario 4 is the word **apply**: every existing lifecycle test
   runs with `patch_application_enabled: false`, so no test has ever driven a change onto disk through
-  the Queen and asserted the file is there. That needs the tester to produce a real pass, which is
-  what the check-workdir fix below unblocks.
+  the Queen and asserted the file is there. That needs the tester to produce a real pass.
+
+  **BLOCKED, and v0.3.8.71 says on what.** There is no way to give a fixture workspace a passing
+  tester, and the reason is structural rather than a missing script book — which is what this item
+  assumed for four releases.
+
+  - **A registered check cannot be selected.** `CheckCatalog.Register` is the documented
+    "operator/test extension point", and `TesterAnt` picks check ids by matching them against its
+    task's *title and description*. For a policy-inserted review those are fixed strings built by
+    `ExecutionService` from the patch set id. A mission cannot mention a check id, so the extension
+    point is unreachable by the role that runs checks.
+  - **The fallback needs a project.** No manifest and no matched id means `{dotnet_version,
+    dotnet_build}`, and `dotnet build` in a directory with no project fails.
+  - **Adding a project makes it worse.** A `.csproj` fires the .NET adapter, and a detected workspace
+    runs *every* check the adapter declares — build, test and format — deliberately, because "a
+    tester that picked a subset would be choosing which failures the colony is allowed to notice."
+    A minimal fixture passes build and fails the other two.
+
+  Each piece defends something real, and adapter detection is an explicit exit gate: verification
+  commands come from the manifest **or operator configuration**, never model invention. The gap is
+  that the second half of that sentence has no path to the tester. Closing it means giving the
+  workspace a declared, operator-owned check source that detection does not have to invent — at
+  which point scenarios 3 and 15's last edge both become writable, and
+  `SoldierBlockLifecycleTests.TheTesterHasNoSeam_ForAFixtureWorkspace` should be replaced by them.
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
   **production triggers**. No role invoked to satisfy a count. **PARTIAL as of v0.3.8.68.**
 

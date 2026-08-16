@@ -1,5 +1,94 @@
 # ANTHILL Changelog
 
+## v0.3.8.71 - the patch arrived escaped
+
+**The soldier could not find a quoted secret in a patch. Since v3.8.25.**
+
+This was found by a test written for something else, which is the only reason it was found at all.
+The scenario 7 fixture proposes a deployment runbook that pastes in a working credential — the
+ordinary way secrets reach a repository, not an attack — and asserts the soldier blocks it. Its first
+run returned an **empty warnings list**. The block never happened.
+
+`secret_material` is the most severe rule in `PolicyScan`: critical, blocking, and the one v3.8.26
+widened after a capital `K` let a secret through. Its pattern needs a quote immediately after
+`[:=]\s*`. `RecordPatchArtifact` stores proposals as JSON, so
+
+    api_key = "sk-live-9f3a2b7c4d1e"
+
+reaches the soldier as
+
+    "new_content": "…api_key = \"sk-live-9f3a2b7c4d1e\"…"
+
+and the character after `= ` is a **backslash**. Every quote in every payload is escaped, so the rule
+has been structurally unable to fire on a quoted secret in patch content for as long as the soldier
+has had patch content to read. It could only ever match the task description — which is prose, which
+is precisely the blind spot v3.8.25 existed to close.
+
+That release's note said it plainly: *"a policy engine that scans a description cannot find a secret
+in the change."* Right about the problem; the fix delivered the change in a form the rule still could
+not read. **The patch arrived, escaped.** And the failure is silent in the worst direction — the
+review reports "0 blocking findings", not "I could not read the content", so a clean scan of
+undecoded material is indistinguishable from a clean scan of a real one.
+
+`SoldierAnt.DecodeForScanning` now hands `PolicyScan` the artifact's **values**, recursively, rather
+than its serialization — every string, keys included, not the two field names this payload happens to
+use. A decoder that read named fields would stop covering a field the day someone added one, which is
+this defect's own shape a second time. A payload that will not parse is scanned **raw** rather than
+dropped: a malformed patch artifact is when a review should be more suspicious, not less.
+
+`AQuotedSecret_IsFound_InTheDecodedPatch_AndNotInItsSerialization` pins both halves against
+`PolicyScan` directly, so the claim is about the rule and the encoding rather than about the mission
+plumbing that surfaced it.
+
+### And qualification scenario 7's composed half closes
+
+`SoldierAntTests` and `DeterministicBlockTests` have proved since v0.3.8.57 that the soldier reads
+the real patch set and that its block cannot be argued away by model text. That is a claim about the
+soldier — and, as above, "reads" turned out to be doing more work in that sentence than it could
+bear. The scenario's other claim — that a
+block stops a real lifecycle — is about everything downstream believing it, and was open.
+
+`SoldierBlockLifecycleTests` drives it end to end. A Queen mission on the scripted provider proposes
+a deployment runbook whose content pastes in a working credential — the ordinary way secrets reach a
+repository, not an attack. The soldier is **policy-inserted** on the patch set's existence, no plan
+names it, `PolicyScan.secret_material` fires as a blocking finding, the `deterministic_block` marker
+reaches the persisted task result, the mission cannot reach a positive canonical evaluation, and
+`AutoApplyRunner.Run` refuses to write.
+
+**The write gates are deliberately ON for that run**, which is the only configuration in which the
+assertion means anything: with `autonomy_autoapply_enabled`, `patch_application_enabled` and
+`file_writing_enabled` off, nothing would be written whatever the soldier decided, and the test would
+pass while proving nothing. The recorded refusal reason is asserted too, so the absence of the file
+cannot stand in for a block that never happened.
+
+### Scenarios 3 and 15's last edge are blocked, and this release says on what
+
+Both need one thing: a mission in a fixture workspace whose tester **passes**. The plan has assumed
+for four releases that this was a missing script book. It is structural, and all three routes are
+closed:
+
+- **A registered check cannot be selected.** `CheckCatalog.Register` is documented as the
+  "operator/test extension point", and `TesterAnt` picks check ids by matching them against its
+  task's *title and description*. For a policy-inserted review those are fixed strings built by
+  `ExecutionService` from the patch set id. A mission cannot mention a check id, so the extension
+  point is unreachable by the one role that exists to run checks.
+- **The fallback needs a project.** No manifest and no matched id means `{dotnet_version,
+  dotnet_build}`, and `dotnet build` in a directory with no project fails.
+- **Adding a project makes it worse.** A `.csproj` fires the .NET adapter, and a detected workspace
+  runs *every* check the adapter declares — build, test **and** format — deliberately, because "a
+  tester that picked a subset would be choosing which failures the colony is allowed to notice." A
+  minimal fixture passes the first and fails the other two.
+
+None of that is a defect in isolation; each piece defends something real, and adapter detection is an
+explicit exit gate. The gap is one clause: verification commands are supposed to come from the
+manifest **or operator configuration**, and the second half has no path to the tester.
+
+`TheTesterHasNoSeam_ForAFixtureWorkspace` pins all three facts against the source that establishes
+them, so the next attempt starts from the finding instead of rediscovering it — and fails the moment
+any of them stops being true, at which point it should be deleted and replaced by the scenarios it
+is standing in for. The ledger and `docs/PLAN.md` now say the same, in place of the script-book note
+that sent the work in the wrong direction.
+
 ## v0.3.8.70 - the check that judged the wrong tree
 
 Surveying qualification scenario 3 found a source defect in the evidence path, which takes priority
