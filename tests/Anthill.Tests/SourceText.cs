@@ -109,10 +109,18 @@ public static class SourceText
     {
         var plan = File.ReadAllText(Path.Combine(RepoRoot(), "docs", "PLAN.md"));
 
-        var start = plan.IndexOf("## 5. Acceptance gates", StringComparison.Ordinal);
-        if (start < 0) throw new InvalidOperationException(
-            "docs/PLAN.md no longer has an '## 5. Acceptance gates' section, so no gate can be read from it.");
+        // By NAME, not by section number. This was pinned to "## 5. Acceptance gates" and broke when
+        // the plan was renumbered — a failure that said the gates were gone when every gate was
+        // present and unchanged. The gate list is the thing; its ordinal is presentation.
+        var heading = System.Text.RegularExpressions.Regex.Match(
+            plan, @"^##\s+\S+\s+Acceptance gates\s*$",
+            System.Text.RegularExpressions.RegexOptions.Multiline
+          | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+        if (!heading.Success) throw new InvalidOperationException(
+            "docs/PLAN.md no longer has an '## <n>. Acceptance gates' section, so no gate can be read from it.");
+
+        var start = heading.Index;
         var end = plan.IndexOf("\n## ", start + 1, StringComparison.Ordinal);
         var section = end < 0 ? plan[start..] : plan[start..end];
 
