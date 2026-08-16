@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -43,13 +44,35 @@ namespace Anthill.Tests;
 public class ModelRoutingGlobalsTests
 {
     /// <summary>The statics an in-flight mission reads to decide whether to call a model at all.</summary>
-    private static readonly string[] RoutingGlobals =
-    {
-        "AnthillRuntime.UseOllama = ",
-        "AnthillRuntime.EnableModelRouting = ",
-    };
+    private static readonly string[] RoutingGlobals = { "UseOllama", "EnableModelRouting" };
 
     private const string Collection = "Collection(\"specialist-gates\")";
+
+    // -----------------------------------------------------------------------------------------------
+    // ONE spelling rule for both directions, which v0.3.8.69 learned by getting it wrong.
+    //
+    // These were plain substrings: `"AnthillRuntime.UseOllama = "` to find a mutation, and
+    // `"= AnthillRuntime.UseOllama;"` to find the matching capture. The first is a SUFFIX match and so
+    // it sees `Anthill.Core.Configuration.AnthillRuntime.UseOllama = false;` perfectly well. The
+    // second is anchored at `= ` and so it does NOT see the fully-qualified capture on the very next
+    // line of the very same file — and `ColonyAcceptanceTests`, which captures and restores
+    // correctly, was reported as a leak.
+    //
+    // The false positive was the cheap half. The same asymmetry means a REAL leak written with a
+    // qualified name would have been flagged as a mutation and then, once someone added any
+    // unqualified capture elsewhere in the file, silently forgiven. A guard whose two halves disagree
+    // about how a name may be spelled is answering a question about spelling, not about custody.
+    //
+    // Both directions now allow an optional namespace qualifier, from one pattern per global.
+    // -----------------------------------------------------------------------------------------------
+
+    /// <summary>An ASSIGNMENT to the global — `AnthillRuntime.X =`, but not `==`.</summary>
+    private static Regex Mutation(string name) =>
+        new($@"(?:[\w.]*\.)?AnthillRuntime\.{name}\s*=(?!=)");
+
+    /// <summary>A READ of the global into something — `… = AnthillRuntime.X;` — the saved value.</summary>
+    private static Regex Capture(string name) =>
+        new($@"=\s*(?:[\w.]*\.)?AnthillRuntime\.{name}\s*;");
 
     [Fact]
     public void EveryTestThatMutatesAModelRoutingGlobal_IsSerializedWithTheMissionTests()
@@ -66,7 +89,7 @@ public class ModelRoutingGlobalsTests
             var source = SourceText.CodeOnly(File.ReadAllText(path));
             if (Path.GetFileName(path) == "ModelRoutingGlobalsTests.cs") continue;
 
-            if (RoutingGlobals.Any(g => source.Contains(g, StringComparison.Ordinal))
+            if (RoutingGlobals.Any(g => Mutation(g).IsMatch(source))
                 && !source.Contains(Collection, StringComparison.Ordinal))
                 offenders.Add(Path.GetFileName(path));
         }
@@ -117,4 +140,51 @@ public class ModelRoutingGlobalsTests
     public void TheMissionRunningTests_AreInTheCollection(string file) =>
         Assert.Contains(Collection, SourceText.CodeOnly(File.ReadAllText(
             Path.Combine(SourceText.RepoRoot(), "tests", "Anthill.Tests", file))));
+
+    /// <summary>
+    /// AND IT PUTS THE VALUE BACK. v0.3.8.69 — the assertion this file was missing, added because
+    /// its absence let the defect above survive the fix that was written for it.
+    ///
+    /// The three checks above are all about WHO RUNS BESIDE WHOM. Every one of them passed while
+    /// `ModelReliabilityTests` set <c>UseOllama = true</c> and never restored it, because membership
+    /// in a collection is not custody of the value. Serialization only decided who inherited the
+    /// leak: instead of a mission being interrupted mid-flight, every test scheduled after that class
+    /// ran with a live model. `ColonyAcceptanceTests.ScenarioA` then planned against a real Ollama and
+    /// failed on a plan a model wrote — a failure that looks nothing like the original and is the
+    /// same bug.
+    ///
+    /// So this asks the question the others were adjacent to: does the file that MUTATES the global
+    /// also CAPTURE it? Every compliant class in the suite already does, spelled
+    /// <c>_useOllamaWas = AnthillRuntime.UseOllama;</c> or the same shape in a local.
+    ///
+    /// WHAT THIS DOES NOT PROVE, plainly, because a guard that overstates is the thing this suite
+    /// keeps finding: a capture is not a restore. It cannot see whether the restore runs on the
+    /// failing path, or at all. It catches the case that actually happened — a mutation with no
+    /// saved value anywhere in the file — and the honest name for the rest is a code review.
+    ///
+    /// Its FIRST run also caught something about itself; see the note on <see cref="Mutation"/>.
+    /// </summary>
+    [Fact]
+    public void EveryTestThatMutatesAModelRoutingGlobal_AlsoCapturesThePriorValue()
+    {
+        var offenders = new List<string>();
+
+        foreach (var path in Directory.EnumerateFiles(
+                     Path.Combine(SourceText.RepoRoot(), "tests", "Anthill.Tests"), "*.cs"))
+        {
+            if (Path.GetFileName(path) == "ModelRoutingGlobalsTests.cs") continue;
+            var source = SourceText.CodeOnly(File.ReadAllText(path));
+
+            foreach (var global in RoutingGlobals)
+                if (Mutation(global).IsMatch(source) && !Capture(global).IsMatch(source))
+                    offenders.Add($"{Path.GetFileName(path)} sets AnthillRuntime.{global}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "these test classes set a model-routing global and never read the prior value, so they "
+          + "cannot be putting it back: " + string.Join("; ", offenders)
+          + ". Being in the \"specialist-gates\" collection does not help — serialization decides who "
+          + "inherits the leaked value, not whether it leaks. Capture it in the constructor and "
+          + "restore it in Dispose, the way every other class here does.");
+    }
 }
