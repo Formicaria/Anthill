@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.68**.
+Shipping release: **v0.3.8.69**.
 
 ---
 
@@ -514,25 +514,31 @@ exercised this time.
 - **Qualification scenario 3** — a documentation patch driven through the Queen: goal → planner →
   docs proposal → typed `docs_patch_set` → materialization → verification → apply → evaluation.
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
-  **production triggers**. No role invoked to satisfy a count.
+  **production triggers**. No role invoked to satisfy a count. **PARTIAL as of v0.3.8.68.**
 
-  *Re-scoped v0.3.8.68 after reading what exists.* Most of this is already built:
+  Two rewrites of this item taught what the scenario turns on, so both are worth keeping. The first
+  said it needed "a ScriptedColony scenario set, Queen-driven, through production triggers" and cited
+  a file that does not do that, while
   `CodePatchLifecycleTests.AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission`
-  is a Queen-driven scripted mission that gets eleven roles as task rows, proves tester and soldier
-  were INSERTED rather than planned, and reaches the archivist after finalization. The previous note
-  here asked for exactly that and cited a file that does not do it, which is how the work stayed
-  invisible.
+  already did — eleven roles as task rows, tester and soldier proved INSERTED, archivist after
+  finalization. Pointing at the wrong file kept finished work invisible.
 
-  What fails the scenario is the count clause, and the existing test fails it visibly: the goal is
-  "Add a short colony note to the documentation" and the plan contains a `ui_cartographer` task
-  called "Map the frontend surface". The cartographer's own scripted answer is "no UI surface is
-  touched by a documentation note"; the web ant's is "no external sources are needed for an internal
-  note". Two roles are planned so the count reaches twelve and say so when asked.
+  What that test failed was the count clause, visibly: its goal was "Add a short colony note to the
+  documentation" while its plan carried a `ui_cartographer` task called "Map the frontend surface",
+  whose scripted answer was "no UI surface is touched by a documentation note". The web ant's was the
+  same shape. **The fix was the GOAL, not a bigger plan** — and
+  `AGoalThatEarnsTheRoles_LeavesNoRoleAnsweringThatItHadNothingToDo` is that goal: it changes a UI
+  route and documents it, so the cartographer maps a real console page and the web ant runs a real
+  search through `ScriptedWebSearchTool` (the socket is faked; dedupe, SSRF refusal, domain scoring
+  and persistence are not). The map is load-bearing rather than merely present — `UiChangeGate`
+  refuses the coder's UI patch without a conformant `ui_map` — and the test asserts that no *planned*
+  role ends `blocked` or `failed_permanent`, which is the clause made executable.
 
-  **The remaining work is a GOAL, not a bigger plan.** A mission that changes a UI route, updates the
-  doc that describes it, and trips a check would earn the cartographer (a real route to map), the web
-  ant (an external reference to check), the tester and medic (a real failure and a bounded repair)
-  and the scribe (a changelog line for a real change) — each on its own trigger, none for the count.
+  **What remains, and it is one thing:** the tester's failure in both missions is ENVIRONMENTAL — a
+  materialized revision in a temp directory has no build — so the medic's trigger is real while the
+  failure's *relationship to the change* is not. Closing 15 needs an allowlisted check that fails
+  BECAUSE of the proposal and passes after the medic's repair. That is the last decorative edge and
+  the only one left.
 - **Scenario 7** — the soldier block inside a full lifecycle: coder proposes, policy inserts the
   soldier, the block prevents verification, application and positive learning, and model text cannot
   argue it away.

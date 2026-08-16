@@ -98,25 +98,23 @@ public class QualificationMatrixTests
             new[] { "ArchivistAntTests.cs", "MemoryCandidateIngestTests.cs", "ScribeArchivistOrderingTests.cs" },
             "Positive procedural memory only from completed_verified; nothing archival auto-promotes."),
 
-        new(15, "legitimate all-twelve-role coverage", new string[0],
-            "OPEN — and v0.3.8.68 corrects WHY, because the previous note described a gap that had "
-          + "already been half closed and missed the one that remains. It said this needs 'a "
-          + "ScriptedColony scenario set, Queen-driven, through production triggers'. One exists: "
-          + "CodePatchLifecycleTests.AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScripted"
-          + "Mission runs a real Queen mission on the scripted provider, gets eleven roles as task "
-          + "rows, proves tester and soldier were INSERTED rather than planned, and reaches the "
-          + "archivist post-finalization. That is most of the scenario.\n\n"
-          + "WHAT ACTUALLY FAILS IT is the clause 'no role invoked to satisfy a count', and the test "
-          + "fails it in the open: its goal is 'Add a short colony note to the documentation', and "
-          + "its plan contains a ui_cartographer task titled 'Map the frontend surface'. A "
-          + "documentation note has no frontend surface — and the cartographer's own scripted answer "
-          + "says so: 'no UI surface is touched by a documentation note'. The web ant is the same "
-          + "shape, answering 'no external sources are needed for an internal note'. Two of the "
-          + "twelve are decorative: planned so the count reaches twelve, and saying as much when "
-          + "asked.\n\n"
-          + "So this is not cited as proof. Closing it needs a mission whose GOAL gives every role a "
-          + "reason — a UI change with a doc update and a failing check would earn the cartographer, "
-          + "the web ant, the tester, the medic and the scribe honestly — not a bigger plan."),
+        new(15, "legitimate all-twelve-role coverage", new[] { "CodePatchLifecycleTests.cs" },
+            "PARTIAL — and the partial is precise, because two rewrites of this entry taught what the "
+          + "scenario actually turns on. Two tests in the cited file split the claim. "
+          + "AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScriptedMission gets all twelve "
+          + "through production triggers and proves tester and soldier were INSERTED, not planned. "
+          + "AGoalThatEarnsTheRoles_LeavesNoRoleAnsweringThatItHadNothingToDo adds the other clause, "
+          + "'no role invoked to satisfy a count': its goal changes a UI route and documents it, so "
+          + "the cartographer maps a real console page (and the map is load-bearing — UiChangeGate "
+          + "refuses the coder's UI patch without a conformant ui_map) and the web ant runs a real "
+          + "search through ScriptedWebSearchTool, which fakes the socket and leaves dedupe, SSRF "
+          + "refusal, domain scoring and source persistence real. It asserts no PLANNED role ends "
+          + "blocked or failed_permanent, which is the executable form of the clause.\n\n"
+          + "WHAT IS STILL MISSING, stated so the citation cannot be read as more than it is: the "
+          + "tester's failure is ENVIRONMENTAL — a materialized revision in a temp directory has no "
+          + "build — so the medic's trigger is real while the failure's relationship to the change is "
+          + "not. Closing that needs an allowlisted check that fails BECAUSE of the proposal. That is "
+          + "its own scenario and is named in docs/PLAN.md rather than implied by these two passing."),
 
         new(16, "failure during every patch transaction position",
             new[] { "AuditScenarioTests.cs", "AutoApplyAtomicityTests.cs" },
