@@ -45,6 +45,20 @@ public static class PolicyScan
         // Quoted-only, case-insensitive, with the noun list widened: one hit across all of `src/`,
         // and it is the archivist's own redaction pattern — a true positive by construction. The
         // actual defect was CASING, and casing is what this fixes.
+        // v0.3.8.72 — THIS RULE READS SOURCE, AND IT IS THE CALLER'S JOB TO HAND IT SOURCE.
+        //
+        // v0.3.8.71 found the rule unable to fire on a quoted secret in a proposed patch, because the
+        // soldier was scanning the patch artifact's JSON SERIALIZATION rather than its values. The
+        // first instinct in v0.3.8.72 was to widen the pattern to tolerate an escaped quote — and
+        // that was wrong, usefully. `Json.Dumps` leaves `JsonSerializerOptions.Encoder` at
+        // `JavaScriptEncoder.Default`, which does not write `\"` at all: it writes `"`, and also
+        // escapes `<`, `>`, `&`, `'` and `+` the same way. A `\\?['"]` allowance sees none of that.
+        //
+        // The general shape of the mistake is worth more than the instance: a scanner that tries to
+        // recognise text through an encoding has to know every encoding, and it will be wrong the
+        // first time one changes. DECODING BELONGS AT THE FEED. `SoldierAnt.DecodeForScanning` is
+        // where it lives, `SecretPatternEncodingTests` pins that every artifact-scanning caller goes
+        // through it, and this pattern stays written against source exactly as v3.8.26 tuned it.
         new("secret_material", "critical", true, Rx(
             @"-----BEGIN [A-Z ]*PRIVATE KEY-----"
             + @"|(?:password|passwd|api[_-]?key|api[_-]?token|auth[_-]?token|access[_-]?token|client[_-]?secret|bearer|credential|secret|token)"
