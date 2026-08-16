@@ -262,6 +262,32 @@ public class ShippedChangelogTests
         {
             ["0.3.8.40"] = "#224 and #225 both shipped under this version; the tag points at one of "
                          + "them. Found during the v0.3.8.41 audit, recorded rather than rewritten.",
+
+            // NOT the same defect as .40, despite arriving at the same guard. Nothing shipped twice
+            // under this name: `3ec0366` (#16) is the real v0.3.8.60, and `9198dd5` (#23) is
+            // v0.3.8.67 wearing v0.3.8.60's subject because `RELEASE_MSG.txt` was never regenerated
+            // and the release procedure pipes it into `git commit -F`. The tag `v0.3.8.67` points at
+            // `9198dd5` and the tree in it is v0.3.8.67's; only the sentence is wrong.
+            //
+            // Recorded here because history is not editable, but note what this means: THIS GUARD
+            // CAUGHT IT BY COINCIDENCE. It fires on a repeated version, and a stale notes file only
+            // repeats a version if it happens to hold a previous release's text — which it did.
+            // A notes file naming nothing, or naming a version never released, would have shipped
+            // silently. See TheSubjectOfATaggedRelease_NamesThatRelease for the check that is
+            // actually about this, and ReleaseNotesTests for the one that prevents it.
+            ["0.3.8.60"] = "#16 is this release. #23 is v0.3.8.67 committed under this subject from "
+                         + "a stale RELEASE_MSG.txt; its tag and tree are correct.",
+        };
+
+    /// <summary>
+    /// Tagged releases whose commit subject names the wrong version, with the reason. Same policy as
+    /// the dictionary above: the history stands, the mistake is written down.
+    /// </summary>
+    private static readonly Dictionary<string, string> MisnamedReleaseCommits =
+        new(StringComparer.Ordinal)
+        {
+            ["0.3.8.67"] = "shipped under v0.3.8.60's subject line — RELEASE_MSG.txt was not "
+                         + "regenerated and the release script commits with `-F` that file.",
         };
 
     [Fact]
@@ -282,6 +308,82 @@ public class ShippedChangelogTests
         Assert.True(duplicates.Count == 0,
             "These versions are claimed by more than one release commit, so the tag can only point "
             + "at one of them and the rest shipped unfindable: " + string.Join(", ", duplicates));
+    }
+
+    /// <summary>
+    /// A tagged release's commit subject names THAT release. v0.3.8.68.
+    ///
+    /// WHY THIS EXISTS AND THE DUPLICATE GUARD ABOVE WAS NOT ENOUGH. v0.3.8.67 shipped with the
+    /// commit subject "v0.3.8.60 - the second copy of every rule v0.3.8.59 fixed", because
+    /// `RELEASE_MSG.txt` had not been regenerated and the release procedure pipes it into
+    /// `git commit -F`. The tag, the tree and all four version markers were right; only every
+    /// human-readable account of the release was wrong, which is the kind of error a green build
+    /// cannot see.
+    ///
+    /// <see cref="NoTwoReleaseCommits_ClaimTheSameVersion"/> did fire — but by accident. It notices a
+    /// version claimed TWICE, and a stale notes file only produces a duplicate when it happens to
+    /// hold a previous release's text. Had the file held a draft, a placeholder, or a version number
+    /// that never shipped, nothing would have failed. The property that was actually violated is the
+    /// one asserted here, and it holds regardless of what the stale text says.
+    ///
+    /// THE SUBJECT SHAPE IS OPTIONAL, DELIBERATELY. Several releases on this line are tagged on a
+    /// commit whose subject describes the work rather than the version — v0.3.8.61, .65 and .66 all
+    /// do. That is a legitimate style and this guard does not argue with it: it only checks subjects
+    /// that DO use the `v<version>:` form, and requires the version in them to be the tag's own.
+    /// A check that also demanded the form would fail three honest releases, and a guard that is
+    /// wrong on releases that were fine is one people learn to override.
+    /// </summary>
+    [Fact]
+    public void TheSubjectOfATaggedRelease_NamesThatRelease()
+    {
+        var tags = Git("tag --list v0.*");
+        if (tags is null) return;   // git unavailable, or an export with no tags
+
+        var wrong = new List<string>();
+
+        foreach (var tag in tags.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                                .Select(t => t.Trim()).Where(t => t.Length > 1))
+        {
+            var version = tag[1..];   // strip the leading 'v'
+            if (MisnamedReleaseCommits.ContainsKey(version)) continue;
+
+            var subject = Git($"log -1 --format=%s {tag}")?.Trim();
+            if (string.IsNullOrEmpty(subject)) continue;   // tag unreachable in a shallow clone
+
+            var named = Regex.Match(subject, @"^v(0\.\d+(?:\.\d+)+)\s*[:\-—]");
+            if (!named.Success) continue;   // describes the work, not the version — allowed
+
+            if (!string.Equals(named.Groups[1].Value, version, StringComparison.Ordinal))
+                wrong.Add($"{tag} is committed as \"{subject}\"");
+        }
+
+        Assert.True(wrong.Count == 0,
+            "These tags point at a commit whose subject names a DIFFERENT release, so the tree is "
+            + "right and every account of it is wrong — the state v0.3.8.67 shipped in: "
+            + string.Join("; ", wrong)
+            + ". The cause is a stale RELEASE_MSG.txt reaching `git commit -F`; derive it from the "
+            + "changelog's top entry and let ReleaseNotesTests check it before the commit exists.");
+    }
+
+    /// <summary>
+    /// The misnaming list may not name a version with no entry — same rule the correction list below
+    /// carries. An excuse for a release that does not exist is an excuse nobody can check.
+    /// </summary>
+    [Fact]
+    public void TheMisnamingList_NamesOnlyReleasesThatExist()
+    {
+        var entries = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+
+        var unknown = MisnamedReleaseCommits.Keys
+            .Concat(DuplicateReleaseCommits.Keys)
+            .Where(v => !entries.ContainsKey(v))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(unknown.Count == 0,
+            "These versions are excused as misnamed or duplicated, but the changelog has no entry "
+            + "for them: " + string.Join(", ", unknown));
     }
 
     /// <summary>
