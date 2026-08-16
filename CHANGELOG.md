@@ -1,5 +1,68 @@
 # ANTHILL Changelog
 
+## v0.3.8.70 - the check that judged the wrong tree
+
+Surveying qualification scenario 3 found a source defect in the evidence path, which takes priority
+over the scenario by §1b's own argument — existing autonomy being trustworthy before the colony does
+more.
+
+**`RunAllowlistedCheckTool` chose its working directory with `manifest.IsEmpty ? _workdir :
+manifest.Root`.** That reads as "no workspace in scope, use the configured directory" and does not
+mean it. The manifest is empty when the workspace **adapters detect no project type** at the scoped
+root — a statement about what is in the directory, not about whether a directory is in scope.
+
+So the sequence was: `ExecutionService` materializes the patched revision, enters a
+`MissionWorkspaceScope` bound to it, dispatches the tester inside that scope, and stamps
+`task.RanRevisionId = revision.RevisionId` — unconditionally. Meanwhile the check ran against
+`_workdir`, which is `AnthillRuntime.AllowedWorkspaceRoot`: the original, unpatched tree. **The record
+said the tester judged the revision; the process had run somewhere else.** A declaration disagreeing
+with the runtime, in the evidence path, on the side that reports success. This is pending item #44,
+"bind Tester and Soldier to the exact patched revision".
+
+It survived because on this repository it is invisible — ANTHILL is .NET, every materialized revision
+carries `.csproj` files, the adapters detect them, and `manifest.Root` happens to equal the scoped
+root. It bites on project types the adapters do not detect, and on docs-only patches, which is
+exactly scenario 3's subject.
+
+The fix separates the two questions the one flag was answering: **the scope answers "where"**, since
+that is what it was built for and the same value `WorkspacePathGuard` confines writes to; the
+manifest keeps answering "which checks exist", unchanged.
+
+**`CheckWorkingDirectoryTests` does not assert on the code**, deliberately — a test reading the branch
+would have passed either way, and a test run against ANTHILL's own tree would have passed either way
+too. It builds two directories differing only in which holds a marker file, scopes the mission to
+one, and runs a declared check that succeeds only where the marker is. The exit code is the answer to
+"where did you run". It is proved from both sides, so the fix cannot be "always succeed", and the
+unscoped case is pinned so the CLI's and API's ordinary behaviour is unchanged.
+
+**And the catalog can now be put back the way it was found.** `CheckCatalog.Register` called itself a
+test extension point and offered no way back, so every check a test added stayed in a process-global
+allowlist for the rest of the run — four test classes do it. That is the shape of the two static
+leaks v0.3.8.69 closed, and it reaches further than it looks: `TesterAnt` selects from
+`CheckCatalog.Ids` when the manifest is empty, matching ids against the task's own title, so which
+checks a later mission can be asked to run depends on which tests ran first. `Unregister` refuses
+built-ins, the same rule and reasoning `ToolRegistry.Unregister` carries.
+
+### A correction, and a note this release cannot make in the right place
+
+v0.3.8.69 said the tester's failure in the composed lifecycle was environmental because "a
+materialized revision in a temp directory has no build". The conclusion was right and the reason was
+wrong: the check never entered the revision. That entry is shipped and therefore frozen, so the
+correction lives here, which is what the frozen-changelog rule is for.
+
+**Qualification scenario 3's chain was also wrong, in the plan and in the ledger.** Both described it
+as passing through a typed `docs_patch_set`. There is no such pipeline and there should not be:
+`docs_patch_set` is produced only by the scribe, its payload is `{targets, source_mission,
+requires_approval: true}`, its own artifact title says the scribe holds no apply permission, and
+nothing in `src/` consumes it. It is an approval **request**. Following the old note would have meant
+writing an applier for an artifact deliberately designed never to be applied — the second time in
+three releases that a ledger entry would have sent the work somewhere the code does not go.
+
+What actually separates scenario 3 from scenario 4 is the word **apply**: every lifecycle test runs
+with `patch_application_enabled: false`, so no test has driven a change onto disk through the Queen
+and asserted the file is there. Applying needs a passing tester, and a passing tester needed this
+release's fix. Both records now say that.
+
 ## v0.3.8.69 - a goal that earns its roles
 
 Qualification scenario 15 asks for one mission reaching all twelve roles through their production

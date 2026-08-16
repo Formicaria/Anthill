@@ -46,9 +46,20 @@ public class QualificationMatrixTests
             "Capability boundary and path guard; a role cannot read outside what its contract grants."),
 
         new(3, "documentation patch", new string[0],
-            "OPEN. ScribeAntTests proves the docs-path restriction and the refusal of non-docs targets, "
-          + "but no test drives a docs patch from goal to applied change through the Queen. Needs a "
-          + "ScriptedColony script book — the harness exists (ScriptedColony.cs); the scenario does not."),
+            "OPEN, and v0.3.8.70 corrects what it is open FOR. The previous note, and docs/PLAN.md, "
+          + "described the chain as passing through a typed docs_patch_set. There is no such "
+          + "pipeline: docs_patch_set is produced only by the scribe, its payload is {targets, "
+          + "source_mission, requires_approval:true}, its own title says the scribe holds no apply "
+          + "permission, and nothing in src/ consumes it. It is an approval REQUEST. Following the "
+          + "old note would have meant writing an applier for an artifact designed never to be "
+          + "applied.\n\n"
+          + "The real gap is the word APPLY. CodePatchLifecycleTests already drives a documentation "
+          + "patch through the Queen via the coder's docs_coder worker — plan, proposal, patch_set, "
+          + "materialization, inserted review roles — but every lifecycle test runs with "
+          + "patch_application_enabled false, so no test has driven a change onto disk and asserted "
+          + "the file is there. Applying requires a passing tester, and until v0.3.8.70 the tester's "
+          + "check could not even run in the patched revision (see CheckWorkingDirectoryTests). That "
+          + "was the blocker; the script book is the easy part."),
 
         new(4, "successful code patch", new[] { "CodePatchLifecycleTests.cs" },
             "Composed through the Queen with the scripted provider. This is the one full lifecycle "

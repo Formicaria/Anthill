@@ -26,8 +26,34 @@ public static class CheckCatalog
     public static CheckDefinition? Get(string id) => Checks.TryGetValue(id ?? "", out var c) ? c : null;
     public static IReadOnlyCollection<string> Ids => Checks.Keys;
 
+    /// <summary>The ids compiled in, which no caller may remove. See <see cref="Unregister"/>.</summary>
+    private static readonly HashSet<string> BuiltIn =
+        new(Checks.Keys, StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Operator/test extension point — still a declared allowlist, never free text.</summary>
     public static void Register(CheckDefinition def) => Checks[def.Id] = def;
+
+    /// <summary>
+    /// Take a registered check back out. v0.3.8.70.
+    ///
+    /// <see cref="Register"/> called itself a test extension point and offered no way back, so every
+    /// check a test added stayed in this process-global allowlist for the rest of the run. Four test
+    /// classes do it. That is the same shape as the two static leaks v0.3.8.69 closed, and it reaches
+    /// further than it looks: <c>TesterAnt</c> selects from <see cref="Ids"/> when the workspace
+    /// manifest is empty, matching ids against the task's own title and description — so which checks
+    /// a later mission can be asked to run depends on which tests ran first.
+    ///
+    /// BUILT-INS ARE REFUSED, the same rule and the same reasoning as
+    /// <c>ToolRegistry.Unregister</c>: registration composes what the colony may execute, and a
+    /// runtime call able to strip <c>dotnet_build</c> out of the catalog would be a second, unaudited
+    /// way to decide what gets verified. Returns false rather than throwing, so a cleanup path that
+    /// names one by mistake does not fail a test for a reason unrelated to the test.
+    /// </summary>
+    public static bool Unregister(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || BuiltIn.Contains(id)) return false;
+        return Checks.Remove(id);
+    }
 }
 
 public sealed class RunAllowlistedCheckTool : ITool
@@ -54,7 +80,27 @@ public sealed class RunAllowlistedCheckTool : ITool
         //
         // Outside a mission scope this is the configured workdir and the declared catalog, unchanged.
         var manifest = WorkspaceCapabilityManifest.ForCurrentMission();
-        var workdir = manifest.IsEmpty ? _workdir : manifest.Root;
+
+        // v0.3.8.70 — WHERE a check runs and WHICH checks exist are two questions, and one flag was
+        // answering both.
+        //
+        // `manifest.IsEmpty ? _workdir : manifest.Root` reads as "no workspace in scope, use the
+        // configured directory". It does not mean that. The manifest is empty when the adapters
+        // detect NO PROJECT TYPE at the scoped root — which is a statement about what is in the
+        // directory, not about whether a directory is in scope. So a mission that materialized a
+        // patched revision, entered a scope bound to it, and dispatched the tester inside that scope
+        // ran the check against `_workdir` — `AnthillRuntime.AllowedWorkspaceRoot`, the ORIGINAL
+        // tree — the moment the revision held nothing the adapters recognise.
+        //
+        // ExecutionService stamps `task.RanRevisionId = revision.RevisionId` whenever a revision
+        // exists, unconditionally. So the record said the tester judged the patched revision while
+        // the check had run somewhere else: a declaration disagreeing with the runtime, in the
+        // evidence path, on the side that reports success.
+        //
+        // The scope answers "where", because that is the question it was built for — it is the same
+        // value `WorkspacePathGuard` confines writes to. The manifest keeps answering "which",
+        // unchanged, below.
+        var workdir = MissionWorkspaceScope.CurrentRoot ?? _workdir;
 
         // The manifest is consulted FIRST, then the global catalog. Both are declared in this
         // repository under review; neither is ever read from the project being modified.
