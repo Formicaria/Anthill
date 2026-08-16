@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.72";
+    public const string Version = "0.3.8.73";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -546,6 +546,20 @@ public static class AnthillRuntime
     public static bool EnableFtsMemory = true;
     public static bool EnableWebSearch = false;
 
+    /// <summary>
+    /// The operator's declared verification checks, resolved and validated. v0.3.8.73.
+    ///
+    /// EMPTY IS THE DEFAULT AND MEANS "unchanged": detection answers, exactly as it did before this
+    /// setting existed. Non-empty REPLACES detection — see <see cref="Tools.CheckSource"/> for the
+    /// precedence and why replacement rather than merge.
+    ///
+    /// Held as validated <see cref="Tools.CheckDefinition"/>s rather than raw configuration, so no
+    /// caller can be handed an entry with no command or an unbounded timeout. Refusals are reported
+    /// at load, not at dispatch: a check that silently vanished between the file and the run is the
+    /// failure this whole area keeps producing.
+    /// </summary>
+    public static IReadOnlyList<Tools.CheckDefinition> WorkspaceChecks = Array.Empty<Tools.CheckDefinition>();
+
     // ---- Web search -------------------------------------------------------
     // v3.8.16 — declared in Anthill.SDK.Tools.ToolLimits, which is where the tool that applies them
     // now lives. Re-exported here so the operator-facing surface is unchanged while there is still
@@ -789,6 +803,23 @@ public static class AnthillRuntime
         OllamaModel = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_MODEL") ?? config.OllamaModel;
         OllamaHost = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
         EnableWebSearch = config.WebSearchEnabled;
+
+        // v0.3.8.73 — the operator's checks, validated once, here, where a refusal can still be
+        // reported. Announced like the roster is: a configuration that REPLACES what verifies this
+        // installation must not be discoverable only by noticing which commands ran.
+        var checkConfig = WorkspaceCheckConfig.Resolve(config.WorkspaceChecks);
+        WorkspaceChecks = checkConfig.Checks;
+        foreach (var problem in checkConfig.Problems)
+            Console.Error.WriteLine($"[workspace-checks] refused: {problem}");
+        if (WorkspaceChecks.Count > 0)
+            Console.Error.WriteLine(
+                $"[workspace-checks] {WorkspaceChecks.Count} operator-declared check(s) REPLACE "
+              + "workspace detection for this installation: "
+              + string.Join(", ", WorkspaceChecks.Select(c => $"{c.Id}{(c.Enabled ? "" : " (disabled)")}")));
+        else if (config.WorkspaceChecks is { Count: > 0 })
+            Console.Error.WriteLine(
+                "[workspace-checks] every declared check was refused; detection still answers. "
+              + "This is NOT 'no checks' — it is a configuration that did not take.");
         EnablePatchApplication = config.PatchApplicationEnabled;
         // v1.10.0 fix: the API capability gate for POST /apply/{id} must follow the operator's
         // patch_application_enabled setting. It shipped as a static false and was never projected,

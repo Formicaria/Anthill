@@ -73,6 +73,21 @@ public sealed class AnthillConfig
     // empty allowlist is therefore a usable, deliberate state and NOT treated as "allow everything".
     [JsonPropertyName("user_tools_enabled")] public bool UserToolsEnabled { get; set; } = false;
     [JsonPropertyName("user_tool_allowed_hosts")] public List<string> UserToolAllowedHosts { get; set; } = new();
+
+    /// <summary>
+    /// v0.3.8.73 — THE OPERATOR HALF of "verification commands come from the manifest or operator
+    /// configuration, never model invention." Only the manifest half was ever built.
+    ///
+    /// Absent or empty means unchanged: detection answers, exactly as before. A non-empty list
+    /// REPLACES detection for this installation, because an operator who states what verifies their
+    /// workspace is stating a fact about it, and appending the detected checks back on would make
+    /// the setting advisory.
+    ///
+    /// This lives in ANTHILL's configuration and NOT in the workspace being modified — that
+    /// direction is the whole security property, and it is why there is no `.anthill-checks.json`.
+    /// A coding agent can edit the repository it is working in; it cannot edit this.
+    /// </summary>
+    [JsonPropertyName("workspace_checks")] public List<ConfiguredCheck> WorkspaceChecks { get; set; } = new();
     // Operator shell console (Configuration -> Shell): an interactive host terminal for admins
     // ONLY. Distinct from shell_tool_enabled (which gates the AI ants' allowlisted shell tool) —
     // this is arbitrary command execution by a logged-in human admin, every command audit-logged.

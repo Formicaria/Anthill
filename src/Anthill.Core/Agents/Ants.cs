@@ -490,8 +490,55 @@ public sealed class WebResearchAnt : BaseAnt
             }, indented: true));
     }
 
-    private static string BuildQuery(Task task, Mission mission) =>
-        TextUtil.Truncate($"{mission.Goal} {task.Description}".Trim(), 300, "");
+    /// <summary>
+    /// The search query, with an explicitly requested site HONOURED. v0.3.8.73 — the first live
+    /// qualification run's finding #7: asked to consult a named source, the web ant queried an
+    /// unrelated domain.
+    ///
+    /// It was not ignoring the target so much as never looking for one: the query was
+    /// `goal + description`, and a domain mentioned in either was just more words for a search
+    /// engine to weigh against the rest. When the operator names a site, that is a CONSTRAINT on
+    /// where the answer may come from, not a hint about what to type.
+    ///
+    /// Narrow on purpose. This recognises the two spellings an operator actually writes — a bare
+    /// domain and a `site:` directive — and does nothing clever with URLs, paths or multiple
+    /// domains, because a parser that guessed which of three mentioned domains was meant would be
+    /// inventing intent. One recognised target becomes a `site:` filter; anything else is unchanged
+    /// from the behaviour every existing mission has.
+    /// </summary>
+    internal static string BuildQuery(Task task, Mission mission)
+    {
+        var text = $"{mission.Goal} {task.Description}".Trim();
+        var target = RequestedSite(text);
+        var query = target is null ? text : $"site:{target} {text}";
+        return TextUtil.Truncate(query, 300, "");
+    }
+
+    /// <summary>The site the request names, or null when it names none or names several.</summary>
+    internal static string? RequestedSite(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // `site:example.com` — the operator has already said it in the search engine's own words.
+        var explicitDirective = System.Text.RegularExpressions.Regex.Match(
+            text, @"\bsite:\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (explicitDirective.Success) return explicitDirective.Groups[1].Value.ToLowerInvariant();
+
+        var domains = System.Text.RegularExpressions.Regex.Matches(
+                text, @"\b(?:https?://)?((?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,})\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Select(m => m.Groups[1].Value.ToLowerInvariant())
+            // A sentence-ending "…the docs." is not a domain, and neither is a file name.
+            .Where(d => !d.EndsWith(".md") && !d.EndsWith(".txt") && !d.EndsWith(".json")
+                     && !d.EndsWith(".cs") && !d.EndsWith(".html"))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        // EXACTLY ONE, or none. Two mentioned domains mean the request is about a comparison as
+        // often as it means one of them is the target, and picking is guessing.
+        return domains.Count == 1 ? domains[0] : null;
+    }
 
     private string SummarizeSource(string goal, string title, string url, string snippet, Dictionary<string, object?> quality)
     {
@@ -922,7 +969,18 @@ public sealed class BuilderAnt : BaseAnt
       + "- Aim for 200-400 words unless the task requires more.\n"
       + "- Be direct.\n"
       + "- Report only what this mission actually did. Do not claim a file was changed unless a "
-      + "patch was applied, and do not describe capabilities the mission did not use.";
+      + "patch was applied, and do not describe capabilities the mission did not use.\n"
+      // v0.3.8.73 — the first live qualification run. Asked for a report, the builder produced
+      // commands, exit codes, durations, test totals, a role census and a `Dispatched` column, all
+      // of it plausible and none of it from the colony. The real fix is structural — the compiled
+      // `operator_summary` artifact is now the record, written by the Queen from persisted rows with
+      // no model in the path — and this rule is the smaller half: the narrative must stop competing
+      // with it. A prompt cannot make a model stop inventing figures, but it can stop asking it to,
+      // and the two together mean an invented figure has no reason to exist and nowhere to land.
+      + "- NEVER state a command, exit code, duration, timestamp, test count, file count or role "
+      + "census. Those are compiled from the mission's own records and shown to the operator "
+      + "separately. If the answer needs one, say what it describes in words instead of giving a "
+      + "number you were not given. A figure you produce here is invented, however plausible.";
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -1098,9 +1156,40 @@ public sealed class VerifierAnt : BaseAnt
         // exists for configurations that never had a store; letting it answer for a broken one
         // turns an outage into authority. Unavailable is not a pass, and nothing downstream —
         // MissionVerification, the scribe, auto-apply — treats it as one.
+        // v0.3.8.73 — and a PASS may not come from prose, on any arm.
+        //
+        // The first live qualification run reported "the verifier fails open — it returned PASS
+        // without evidence". Investigating it, that is NOT what production does: `Queen` always
+        // hands this ant the evidence store, and an empty evidence list resolves to `Unknown` with
+        // "no evidence was recorded for this mission — nothing has been verified". The PASS the
+        // operator read was the BUILDER's prose, which is a different defect and is fixed by
+        // `MissionReport`.
+        //
+        // But the report was one line from something true, and the first attempt at closing it was
+        // WRONG in a way worth keeping written down, because it is this repository's signature
+        // mistake made by the person documenting it.
+        //
+        // With no store, `fromEvidence` is null and the verdict comes from `Parse(text)`. The first
+        // fix refused ANY promotion from that path — and broke two tests that were right. `text` is
+        // not always model prose: with `_useOllama` false there is no model in this ant at all, and
+        // `text` is the STATIC verifier's own deterministic evaluation of the mission's task states.
+        // That is the CLI's and the offline suite's contract, and S3 preserved it deliberately
+        // ("collapsing this configuration into unavailable would be rigour's costume on a
+        // regression"). Refusing it would have made every offline mission unverifiable to close a
+        // hole that is unreachable in production, where `Queen` always supplies the store.
+        //
+        // The real discriminator is not "did this come from text" but "did a MODEL write it". So the
+        // refusal is scoped to exactly that: a model-written verdict with no evidence behind it
+        // cannot promote. It may still DOWNGRADE — a model saying "needs improvement" is heard,
+        // because a model's doubt costs nothing and its confidence is what has no standing.
+        var fromProse = Outcomes.VerificationVerdict.Parse(text);
+        var modelWroteIt = _useOllama && _router is not null;
         var verdict = read.StoreFailed
             ? Outcomes.VerificationVerdict.Unavailable
-            : fromEvidence?.Verdict ?? Outcomes.VerificationVerdict.Parse(text);
+            : fromEvidence?.Verdict
+              ?? (modelWroteIt && Outcomes.VerificationVerdict.IsPass(fromProse)
+                    ? Outcomes.VerificationVerdict.Unknown
+                    : fromProse);
         var passed = Outcomes.VerificationVerdict.IsPass(verdict);
 
         var narrative = read.StoreFailed
