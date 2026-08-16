@@ -99,10 +99,24 @@ public class QualificationMatrixTests
             "Positive procedural memory only from completed_verified; nothing archival auto-promotes."),
 
         new(15, "legitimate all-twelve-role coverage", new string[0],
-            "OPEN, and the most honest entry here. TwelveRoleEndToEndTests stands all twelve up and "
-          + "proves each is executable and reachable — its own header says why that is not the same "
-          + "claim: no model runs, and it is not a Queen-driven mission. Closing this needs a "
-          + "ScriptedColony scenario set in which all twelve are reached through PRODUCTION triggers."),
+            "OPEN — and v0.3.8.68 corrects WHY, because the previous note described a gap that had "
+          + "already been half closed and missed the one that remains. It said this needs 'a "
+          + "ScriptedColony scenario set, Queen-driven, through production triggers'. One exists: "
+          + "CodePatchLifecycleTests.AllTwelveRoles_RunThroughTheirRealTriggers_InOneComposedScripted"
+          + "Mission runs a real Queen mission on the scripted provider, gets eleven roles as task "
+          + "rows, proves tester and soldier were INSERTED rather than planned, and reaches the "
+          + "archivist post-finalization. That is most of the scenario.\n\n"
+          + "WHAT ACTUALLY FAILS IT is the clause 'no role invoked to satisfy a count', and the test "
+          + "fails it in the open: its goal is 'Add a short colony note to the documentation', and "
+          + "its plan contains a ui_cartographer task titled 'Map the frontend surface'. A "
+          + "documentation note has no frontend surface — and the cartographer's own scripted answer "
+          + "says so: 'no UI surface is touched by a documentation note'. The web ant is the same "
+          + "shape, answering 'no external sources are needed for an internal note'. Two of the "
+          + "twelve are decorative: planned so the count reaches twelve, and saying as much when "
+          + "asked.\n\n"
+          + "So this is not cited as proof. Closing it needs a mission whose GOAL gives every role a "
+          + "reason — a UI change with a doc update and a failing check would earn the cartographer, "
+          + "the web ant, the tester, the medic and the scribe honestly — not a bigger plan."),
 
         new(16, "failure during every patch transaction position",
             new[] { "AuditScenarioTests.cs", "AutoApplyAtomicityTests.cs" },
