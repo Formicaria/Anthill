@@ -1,5 +1,87 @@
 # ANTHILL Changelog
 
+## v0.3.8.69 - a goal that earns its roles
+
+Qualification scenario 15 asks for one mission reaching all twelve roles through their production
+triggers, **with no role invoked to satisfy a count**. v0.3.8.68 established that the first clause
+was already met and the second was not, and that the existing test failed it in the open: a goal of
+"Add a short colony note to the documentation" with a `ui_cartographer` task titled "Map the frontend
+surface", whose own answer was *"no UI surface is touched by a documentation note."* The web ant's
+was the same shape. The remaining work was named there as **a goal, not a bigger plan**. This is
+that goal.
+
+**`AGoalThatEarnsTheRoles_LeavesNoRoleAnsweringThatItHadNothingToDo`** runs a mission that changes a
+UI route and documents it. The workspace holds a real console page with two `page-*` regions, three
+functions and two API call sites, so the cartographer's map is *extracted from that file* — change
+the page and the assertions change with it.
+
+**The map is load-bearing, not merely present**, and that is the strongest available form of "not
+decorative". It was found by reading `UiChangeGate` rather than assumed: the coder's patch touches
+`index.html`, and the gate refuses a UI change unless the mission holds a `ui_map` that is both
+unmutated and schema-conformant. The coder's completion is therefore reachable only *through* the
+cartographer's output. In the earlier mission the cartographer failed permanently and nothing
+noticed, because nothing depended on it.
+
+**`ScriptedWebSearchTool`** gives the web ant a real search, and applies the reasoning provider's own
+argument one adapter over: substitute at the outermost boundary, leave everything behind it real.
+The socket is faked; URL decoding, SSRF refusal, dedupe by normalised URL, domain quality scoring,
+the confidence threshold, `SaveSourceRecord` and both pheromone trails are production code. It is
+fail-safe by construction — scenarios shadow the module's tool by registering over it, and the tool
+underneath stays gated OFF, so a shadowing failure produces a deterministic refusal rather than a
+unit test that quietly makes network calls.
+
+**The clause is asserted, not described.** "No role invoked to satisfy a count" needed an executable
+meaning, and the earlier mission supplied one by failing: its decorative roles did not merely give
+thin answers, they ended `blocked` (the web ant, on the search gate) and `failed_permanent` (the
+cartographer, "no UI files could be read"). A role given nothing to work on cannot finish, and the
+runtime says so in the status field. So the test asserts that no **planner-selected** role ends
+blocked or permanently failed — scoped to the planned roles deliberately, because the tester's
+failure here is real and expected, and folding an inserted role's honest failure into that clause
+would make the assertion answer a different question.
+
+**Scenario 15 moves to PARTIAL, and the partial is precise.** What remains is one thing: the tester's
+failure is ENVIRONMENTAL — a materialized revision in a temp directory has no build — so the medic's
+trigger is real while the failure's *relationship to the change* is not. Closing 15 needs an
+allowlisted check that fails BECAUSE of the proposal and passes after the repair. That is the last
+decorative edge, it is named in `docs/PLAN.md`, and it is not implied by these tests passing.
+
+### And a fix that shipped incomplete three releases ago
+
+Adding the test above made `ColonyAcceptanceTests.ScenarioA` fail on "the default plan is research →
+build → verify". Same defect as v0.3.8.60, same trigger — a new test class changing the order inside
+a collection — and it survived that release's fix because the fix was only half of one.
+
+v0.3.8.60 found `ModelReliabilityTests` flipping `AnthillRuntime.UseOllama` true while a mission was
+running, and answered it by putting both classes in one collection. That was right and insufficient:
+**the mutation was never restored.** Serialization removed the concurrency, so the flag stopped being
+flipped mid-mission and started being left true for everything scheduled after that class instead.
+The symptom moved rather than went away — ScenarioA now reached a live local Ollama, planned
+dynamically, and failed on a two-task plan a model wrote. Membership in a collection is not custody
+of a value; serialization only decides who inherits the leak.
+
+`ModelReliabilityTests` now captures and restores, like every other class that touches the flag.
+**`EveryTestThatMutatesAModelRoutingGlobal_AlsoCapturesThePriorValue`** is the assertion the guard
+file was missing — its three existing checks are all about who runs beside whom, and every one of
+them passed throughout. It states plainly what it cannot see: a capture is not a restore, and it
+catches the case that actually happened rather than claiming more.
+
+Its first run then caught something about itself, worth recording because it is this repository's
+signature defect turned on a brand-new guard. The two halves were plain substrings —
+`"AnthillRuntime.UseOllama = "` to find a mutation, `"= AnthillRuntime.UseOllama;"` to find the
+capture. The first is a suffix match and sees a fully-qualified name; the second is anchored and does
+not. So it reported `ColonyAcceptanceTests` — which captures and restores correctly — as a leak,
+because that file spells the same statics `Anthill.Core.Configuration.AnthillRuntime.…`. The false
+positive was the cheap half: the same asymmetry means a REAL leak written with a qualified name would
+be flagged, and then silently forgiven the moment anyone added an unqualified capture elsewhere in
+the file. **A guard whose two halves disagree about how a name may be spelled is answering a question
+about spelling, not about custody.** Both directions now come from one pattern per global.
+
+**And ScenarioA is pinned offline**, because the leak only exposed the gap. It asserts the shape of
+the DETERMINISTIC FALLBACK plan — the only planner that has a default — so an outcome that changes
+when a model happens to be installed was never deterministic, and closing the leak alone would leave
+it one config change from flaking again. Everything else in those scenarios stays real; only the
+planner's source of a plan is pinned, and it is pinned to the one the file makes assertions about.
+
 ## v0.3.8.68 - the guard that was right for the wrong reason
 
 Two corrections to the record, and one guard replaced with the one it should have been.
