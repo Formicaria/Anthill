@@ -1,5 +1,132 @@
 # ANTHILL Changelog
 
+## v0.3.8.73 - the report nobody wrote, and the operator half of a sentence from v3.5.0
+
+### The first live qualification run
+
+It reported eight defects. There were **three**, and separating them is most of the value.
+
+**The operator report had no compiler.** Commands, exit codes, durations, test totals, a role census
+and medic activity were all model prose — `BuilderAnt` writes the operator answer by prompting a
+model, and nothing in the colony assembled a report from records. There was no reporting code to have
+a bug in. Five of the eight reported defects were that single fact seen through different columns.
+
+The tell was `Dispatched`: a column that appears nowhere in this repository, holding statuses
+(`In Progress`) the persisted vocabulary has no word for — the real one is the lowercase `TaskStatus`
+enum. The column was invented and so was everything in it.
+
+**`MissionReport`** compiles the record from persisted rows at finalization and stores it as the
+`operator_summary` artifact with `ModelInvolved = false`. Checks come from the tester's own evidence
+rows, the only place an exit code exists. The role census comes from `AntRegistry`, the only thing
+that knows what exists. Times are computed from stamps, and a duration nobody measured renders as
+"not recorded" rather than as a number. `Compile(SqliteMemory, string)` takes no text parameter —
+the signature is the guarantee that no later edit can quietly let prose contribute.
+
+The builder's narrative survives, demoted: it is now forbidden to state a command, exit code,
+duration, timestamp, test count, file count or role census. A prompt cannot stop a model inventing
+figures, but it can stop asking for them, and with the compiled record beside it an invented figure
+has no reason to exist and nowhere to land. This is the division `ScribeAnt` has had since v3.8.28 —
+release notes assembled from the mission's own results, never from a model answer. That role was
+already right; the operator report was the one that was not.
+
+**The web ant ignored a named source**, and was never looking for one — the query was
+`goal + description`, so a domain the operator named was just more words for a search engine to
+weigh. One recognised site now becomes a `site:` filter. Two mean a comparison as often as a target,
+so nothing is guessed: the failure mode this release is about, in miniature.
+
+**Two reported defects were not defects, and that is recorded so nobody fixes them.**
+*"Finalized while tasks were In Progress"* — `Queen.FinalizeMission` carries a v2.26.0 invariant
+forcing any non-terminal task to `failed` with `internal_runtime_defect` and failing the mission
+closed. *"The verifier fails open"* — the Queen always hands it the evidence store, and an empty
+evidence list resolves to `Unknown` with "nothing has been verified". The PASS the operator read was
+the builder's prose. Both are pinned by tests now, because "we checked and the mechanism was already
+right" is a finding this repository keeps having to re-derive.
+
+The report was one line from something true, and that line is closed anyway: with no evidence store
+at all the verdict used to fall through to `Parse(text)`. Unreachable in production, and exactly the
+shape S3 closed on the neighbouring arm.
+
+**The first attempt at closing it was wrong, and the way it was wrong is the release in miniature.**
+It refused *any* verdict parsed from the verifier's text — and broke two tests that were right.
+`text` is not always model prose: with `useOllama` false there is no model in that ant at all, and
+the text is the static verifier's own deterministic evaluation of task states. S3 preserved that path
+deliberately, calling its removal "rigour's costume on a regression"; the refusal would have made
+every offline mission unverifiable in order to close a hole production cannot reach. The
+discriminator is not "did this come from text" but "did a MODEL write it". A model's confidence now
+cannot promote a verdict; its doubt is still heard, because doubt costs nothing and confidence is
+what has no standing.
+
+`operator_summary`'s schema entry said "named by ADR-004; produced by nothing yet". It has a producer
+now, so the entry says so — a stale shape declaration in the table that describes what everything
+else writes would be this repository's own recurring defect, one level up.
+
+### The operator half of a sentence written in v3.5.0
+
+`WorkspaceCapabilityManifest` has carried the same exit gate since v3.5.0: *"verification commands
+come from the manifest or operator configuration, never model invention."* The manifest half was
+built that release. **The operator half never existed.**
+
+v0.3.8.71 established what that cost. A workspace the adapters do not recognise has no usable checks
+at all: `CheckCatalog.Register` is documented as the "operator/test extension point" and is reachable
+only by naming a check id in task text that `ExecutionService` writes — not the operator. The
+fallback needs a project; adding one makes it worse, because a detected workspace runs every adapter
+check by design. Qualification scenarios 3 and 15's last edge had both sat behind that.
+
+**`workspace_checks` is the missing half.** An operator declares id, command, arguments, timeout and
+enabled state in ANTHILL's own configuration. Non-empty **replaces** detection for the installation —
+an operator who states what verifies their workspace is stating a fact about it, and appending the
+detected checks back on would make the setting advisory. It is announced at startup like the roster
+is, because a replacement nobody can see is a replacement nobody can audit.
+
+**It is not a file in the workspace, and that is the load-bearing part.** There is deliberately no
+`.anthill-checks.json`. `WorkspaceAdapter`'s own doc says keeping detection and execution apart is
+"what stops an agent that can edit a repository from editing the thing that checks it" — a check file
+inside the tree would have handed every coding agent the power to rewrite its own exam. The
+convenient design was the unsafe one. `PolicyScan.allowlist_tampering` learned the key the same day
+it was created, so a patch proposing to edit it is a blocking finding like every other allowlist
+edit; and a built-in id cannot be redefined, because `dotnet_build` means one thing across the
+auto-apply verify path, the graduation record and every changelog entry that names it.
+
+**`CheckSource` is one decision function, because there were already two.** The tester selected with
+`manifest.IsEmpty ? CheckCatalog.Ids : manifest.Checks`; the runner resolved with
+`manifest.Find(id) ?? CheckCatalog.Get(id)`. Two spellings of one rule — and the runner's own comment
+names the failure they invite: *"Two components disagreeing about which catalog is authoritative is
+how a tester selects an id the runner then refuses."* Adding a third source to both by hand would
+have been a third chance to disagree. `NeitherCallSite_SpellsThePrecedenceItself` refuses the old
+spellings by name.
+
+Refusals are reported at LOAD rather than at dispatch: a missing command, an id with whitespace, a
+built-in collision, a duplicate, an out-of-range timeout. One bad entry costs its own place and
+nothing else — throwing would turn a typo into an unverified installation, and dropping it silently
+would let the tester report PASS over a check set nobody chose.
+
+### Qualification scenario 15 closes
+
+`EarnedRepairLifecycleTests.ACheckFailsBecauseOfTheProposal_AndPassesBecauseOfTheRepair`.
+
+v0.3.8.69 gave scenario 15 a goal that earned eleven roles honestly and recorded the one that stayed
+decorative: the tester's failure was **environmental**. A materialized revision in a temp directory
+has no build, so `dotnet_build` failed for a reason the patch had nothing to do with, and the medic
+then repaired a failure the change had not caused. The trigger was real; the failure's relationship
+to the change was not.
+
+Now an operator-declared check passes only when `VERIFIED.md` exists in the tree it runs in. The
+coder's first proposal omits it and the check FAILS against revision one. The medic hands back. The
+second proposal adds it and the same check PASSES against revision two. Nothing environmental changed
+between the runs — only the patch did.
+
+It needs two earlier releases to be true, which is why it is the right consumer for them: v0.3.8.70,
+without which the check ran against the original tree and no patch could change an outcome, and this
+one, without which the check could not be declared. And it asserts the operator's check ran rather
+than `dotnet_build`, because "the seam is wired" is exactly the claim that passes while a fallback
+quietly runs instead.
+
+**Scenario 3 is now the last open one**, and its remaining work is only the apply step — a script
+book rather than a blocker. `ANT_EXECUTION.md` gains the precedence table; the ledger header's claim
+that scenarios 3, 4, 7 and 15 "still need" a composed Queen-driven run is corrected rather than
+deleted, because it was true when written and stopped being so without anything failing — the exact
+rot the ledger exists to prevent, in the ledger's own header.
+
 ## v0.3.8.72 - the fix that would have looked right
 
 The sweep for other copies of v0.3.8.71's defect — a scanner reading a serialization instead of the
