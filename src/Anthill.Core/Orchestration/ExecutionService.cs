@@ -206,12 +206,12 @@ public sealed class ExecutionService : IExecutionService
                 RunSingleTask(task, mission, context, taskIndex.GetValueOrDefault(task.Id), mission.Tasks.Count, scheduler);
                 LogSchedulerTransitions(mission, scheduler);
                 // Assess after every task: this loop's "wave" is one task.
-                if (ApplyAdaptiveDecision(mission, context, scheduler, before)) return "adaptive_stop";
+                if (ApplyAdaptiveDecision(mission, context, scheduler, before)) return AdaptiveStopReason;
                 continue;
             }
             // Nothing ready. Before declaring dead dependencies, let the controller decide whether
             // a bounded delta plan or repair can supply what is missing.
-            if (ApplyAdaptiveDecision(mission, context, scheduler, previousFingerprint: null)) return "adaptive_stop";
+            if (ApplyAdaptiveDecision(mission, context, scheduler, previousFingerprint: null)) return AdaptiveStopReason;
             if (scheduler.NextReadyTask() is not null) continue;   // the controller admitted work
             var blocked = mission.Tasks.Where(t => t.Status == TaskStatus.Blocked).ToList();
             if (blocked.Count > 0)
@@ -335,7 +335,7 @@ public sealed class ExecutionService : IExecutionService
                 // rather than per task, so parallel completions cannot each trigger their own
                 // replan for the same unmet criterion.
                 if (running.Count == 0 && ApplyAdaptiveDecision(mission, context, scheduler, waveFingerprint))
-                    return "adaptive_stop";
+                    return AdaptiveStopReason;
                 waveFingerprint = AdaptiveMissionController.Fingerprint(mission);
             }
         }
@@ -388,9 +388,9 @@ public sealed class ExecutionService : IExecutionService
     private static (string Message, string ReasonType)? MissionStopReason(MissionContext context, CancellationToken missionToken)
     {
         if (context.IsPastDeadline(AnthillTime.NowUtc()))
-            return ("Task skipped because mission timed out.", "mission_timeout");
+            return ("Task skipped because mission timed out.", Outcomes.MissionStopReasons.Timeout);
         if (missionToken.IsCancellationRequested)
-            return ("Task skipped because the mission was cancelled.", "mission_cancelled");
+            return ("Task skipped because the mission was cancelled.", Outcomes.MissionStopReasons.Cancelled);
         return null;
     }
 
@@ -729,7 +729,7 @@ public sealed class ExecutionService : IExecutionService
             foreach (var task in running.Values.Where(t => t.Status == TaskStatus.Running).ToList())
             {
                 var now = AnthillTime.NowUtc();
-                var cancelled = reasonType == "mission_cancelled";
+                var cancelled = reasonType == Outcomes.MissionStopReasons.Cancelled;
                 task.CancellationReason = cancelled
                     ? "cancelled: mission was cancelled while this task was still running"
                     : $"timed_out: mission stopped ({reasonType}) while this task was still running";
@@ -2058,8 +2058,29 @@ public sealed class ExecutionService : IExecutionService
     ///
     /// Returns true when the mission should stop.
     /// </summary>
+    /// <summary>
+    /// Whether the adaptive stop that just happened was SATISFACTION rather than escalation.
+    /// v0.3.8.74. Set by the one arm that stops because the work is already complete, and read by
+    /// <see cref="AdaptiveStopReason"/> immediately afterwards.
+    ///
+    /// A field rather than a richer return type because <see cref="ApplyAdaptiveDecision"/> is
+    /// called from three sites that all treat its bool as "stop now", and widening the contract
+    /// would have meant changing three call sites to carry a value only one of them can produce.
+    /// Reset on every call, so a satisfaction stop cannot be read by a later escalation.
+    /// </summary>
+    private bool _adaptiveStopWasSatisfaction;
+
+    /// <summary>The stop reason for the decision just applied — see the note at the satisfaction arm.</summary>
+    private string AdaptiveStopReason =>
+        _adaptiveStopWasSatisfaction
+            ? Outcomes.MissionStopReasons.AdaptiveStopSatisfied
+            : Outcomes.MissionStopReasons.AdaptiveStop;
+
     private bool ApplyAdaptiveDecision(Mission mission, MissionContext context, TaskScheduler? scheduler, string? previousFingerprint)
     {
+        // Every call answers afresh: a stop is satisfaction only if THIS decision says so.
+        _adaptiveStopWasSatisfaction = false;
+
         if (!context.Options.AdaptiveMissionControl) return false;
 
         var budget = new AdaptiveBudget(
@@ -2096,6 +2117,24 @@ public sealed class ExecutionService : IExecutionService
             if (mission.Tasks.Any(t => MissionVerification.IsVerificationTask(t) && t.Status != TaskStatus.Failed))
             {
                 LogAdaptiveStop(mission, decision, "verification already present — a delta plan would duplicate it");
+                // v0.3.8.74 — THIS STOP IS A SUCCESS, and it used to be graded as an escalation.
+                //
+                // The controller wanted to add a verifier, looked, and found the mission already has
+                // one. Nothing is wrong; there is simply nothing to add. But every stop returned the
+                // single reason `adaptive_stop`, and `MissionEvaluation.Resolve` maps that
+                // unconditionally to `escalated` — so a mission whose plan included a verifier, and
+                // which passed every check and every review, was graded as escalated and could never
+                // become `completed_verified`.
+                //
+                // The consequence is not cosmetic. Auto-apply consumes the canonical evaluation, so
+                // this made a clean, fully verified patch mission structurally incapable of applying.
+                // It was found by qualification scenario 3, which is the first test ever to drive a
+                // mission from a goal to applied bytes and therefore the first to need this outcome.
+                //
+                // One reason code was answering two opposite questions: "we stopped because the
+                // bound is spent and the problem persists" and "we stopped because the work is
+                // already done". They are now separate reasons.
+                _adaptiveStopWasSatisfaction = true;
                 return true;
             }
             // Structural repair §7: the delta verifier VERIFIES the mission's completed work, so
