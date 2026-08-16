@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.69**.
+Shipping release: **v0.3.8.70**.
 
 ---
 
@@ -512,7 +512,20 @@ exercised this time.
 `QualificationMatrixTests` is the ledger; four entries are short.
 
 - **Qualification scenario 3** — a documentation patch driven through the Queen: goal → planner →
-  docs proposal → typed `docs_patch_set` → materialization → verification → apply → evaluation.
+  docs proposal → materialization → verification → apply → evaluation.
+
+  *Corrected v0.3.8.70.* This item used to name `docs_patch_set` as a stage in that chain. **There is
+  no such pipeline and there should not be.** `docs_patch_set` is produced only by the scribe, its
+  payload is `{targets, source_mission, requires_approval: true}`, its own artifact title says "the
+  scribe holds no apply permission", and nothing in `src/` consumes it. It is an approval REQUEST,
+  not a patch — building a materializer for it would mean building an applier for an artifact
+  deliberately designed never to be applied. The patch that gets applied is the coder's `patch_set`,
+  from the `docs_coder` worker; the scribe's record belongs beside the scenario as context.
+
+  What actually separates this from scenario 4 is the word **apply**: every existing lifecycle test
+  runs with `patch_application_enabled: false`, so no test has ever driven a change onto disk through
+  the Queen and asserted the file is there. That needs the tester to produce a real pass, which is
+  what the check-workdir fix below unblocks.
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
   **production triggers**. No role invoked to satisfy a count. **PARTIAL as of v0.3.8.68.**
 

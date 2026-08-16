@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.69
+**Current version:** v0.3.8.70
 
 **Runs on:** Windows or Linux
 
@@ -144,8 +144,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.69/anthill-0.3.8.69-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.69-linux-x64.tar.gz
+curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.70/anthill-0.3.8.70-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.70-linux-x64.tar.gz
 chmod +x anthill
 ```
 
