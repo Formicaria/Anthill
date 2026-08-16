@@ -1088,8 +1088,19 @@ public sealed class ExecutionService : IExecutionService
             // supplied — nothing to verify" and a FAIL. It also passed task.TaskType unresolved, so
             // the planner's `patch_proposal` matched no policy key and only security_policy ran.
             // Both halves are fixed here and in VerificationPolicy.Canonical.
+            // v0.3.8.75 — the policy is chosen from what the WHOLE SET touches, not from the task's
+            // declared type alone. `patch_proposal` aliases to `code_patch`, which requires a build,
+            // so a README-only change was compiled with `dotnet build -c Release` before it could be
+            // called verified — while `docs_patch`, which requires no build, sat unreachable.
+            //
+            // The SET's paths, not each proposal's: a set applies as a unit, so one code file among
+            // ten documents makes the whole set a code patch. Passing per-proposal paths here would
+            // let the .md files in a mixed set be verified under the lighter policy.
+            var setPaths = patchSet.Proposals.Select(p => p.FilePath).ToList();
+            var policyType = Verification.VerificationPolicy.Canonical(task.TaskType, setPaths);
+
             var requests = patchSet.Proposals.Select(p => new Verification.VerificationRequest(
-                TaskType: task.TaskType,
+                TaskType: policyType,
                 WorkspaceRoot: materialized.Root,
                 ChangedPath: p.FilePath,
                 NewContent: p.NewContent,

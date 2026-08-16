@@ -537,8 +537,14 @@ public sealed class ScribeAnt : BaseAnt
     /// </summary>
     public ScribeAnt(ToolRegistry? tools = null) : base("scribe") => _tools = tools;
 
-    private static readonly System.Text.RegularExpressions.Regex DocsPath =
-        new(@"^(?:docs/[\w./\-]+\.md|README\.md|CHANGELOG\.md)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    /// <summary>
+    /// What counts as documentation — ONE definition, shared with the verification policy.
+    /// v0.3.8.75: `VerificationPolicy` needs the same answer to tell a docs patch from a code patch,
+    /// and two copies of "what counts as docs" would be two answers to a question the security
+    /// boundary asks. This ant enforces it as a restriction; the policy reads it as a fact.
+    /// </summary>
+    private static System.Text.RegularExpressions.Regex DocsPath =>
+        Verification.VerificationPolicy.DocsPath;
 
     /// <summary>
     /// What this mission actually changed, and where that answer came from.

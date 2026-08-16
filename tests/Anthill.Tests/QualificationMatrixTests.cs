@@ -22,16 +22,17 @@ namespace Anthill.Tests;
 ///
 /// The composed Queen-driven runs this note used to say scenarios 3, 4, 7 and 15 "still need" now
 /// exist for 4 (`CodePatchLifecycleTests`, v0.3.8.54), 7 (`SoldierBlockLifecycleTests`, v0.3.8.71)
-/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73). Scenario 3 remains, and its note says exactly
-/// what stops it. This paragraph is updated rather than deleted each time, because the sentence it
+/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73), and now 3 (`AppliedDocsPatchLifecycleTests`,
+/// v0.3.8.75). This paragraph is updated rather than deleted each time, because the sentence it
 /// replaces was accurate when written and stopped being so without anything failing — the exact rot
-/// the ledger exists to prevent, appearing twice now in the ledger's own header.
+/// the ledger exists to prevent, appearing three times now in the ledger's own header. That is the
+/// argument for `DocumentCurrencyTests`, which makes the mechanically detectable half of it fail.
 ///
-/// ONE SCENARIO (3) IS OPEN and one (17) is PARTIAL, and both say why. Scenario 3 was briefly
-/// written as closed during v0.3.8.74 and is not: its test reached the last gate and stopped there,
-/// so the entry says what the gate is instead of citing a file that does not prove it. "Closed" is
-/// the claim most worth doubting — a citation is a file that exists, not a behaviour anyone re-ran
-/// today — and the cheapest way to earn that doubt is to mark something closed a day early.
+/// NO SCENARIO IS OPEN as of v0.3.8.75; one (17) is PARTIAL and says why. Scenario 3 was written as
+/// closed once during v0.3.8.74 and reverted the same release, because its test reached the last
+/// gate and stopped — the entry said what the gate was instead of citing a file that did not prove
+/// it. It closed a release later, on the fix that gate demanded. "Closed" is the claim most worth
+/// doubting, and the cheapest way to earn that doubt is to mark something closed a day early.
 /// </summary>
 public class QualificationMatrixTests
 {
@@ -57,25 +58,23 @@ public class QualificationMatrixTests
             new[] { "PermissionBoundaryTests.cs", "ToolAuthorizationTests.cs", "WorkspaceToolsTests.cs" },
             "Capability boundary and path guard; a role cannot read outside what its contract grants."),
 
-        new(3, "documentation patch", new string[0],
-            "OPEN — and v0.3.8.74 finally names the blocker exactly, after two releases of naming it "
-          + "wrongly. What separates this from scenario 4 is the word APPLY: every lifecycle test "
-          + "runs with patch_application_enabled false, so no test has driven a change from a goal "
-          + "onto the operator's tree and asserted the bytes.\n\n"
-          + "Auto-apply requires a completed_verified evaluation. Getting one took three findings, "
-          + "and the third is the one still open. (a) The tester's check ran in the wrong tree — "
-          + "fixed v0.3.8.70. (b) The tester had no operator seam, so a fixture workspace could not "
-          + "produce a passing check — fixed v0.3.8.73 by CheckSource and workspace_checks. (c) THE "
-          + "PATCH-SET VERIFICATION PIPELINE NEVER GOT THAT SEAM. Verification.cs hard-codes "
-          + "check_id=\"dotnet_build\" and contains no reference to CheckSource, so every "
-          + "materialized patch is built with .NET regardless of what the workspace is. In a fixture "
-          + "that build fails, the failure becomes a DeterministicBlock, and v3.8.22's rule — a "
-          + "reproducible no is final — makes completed_verified unreachable.\n\n"
-          + "That rule is correct and must not be weakened to close a scenario. The fix is to give "
-          + "the verification pipeline the same operator seam the tester has. Diagnosed from the "
-          + "evaluation record rather than by inference: structural=complete, verification=passed, "
-          + "deliverable=not_checked, no stop reason, and a deterministic build:fail row stamped with "
-          + "the mission's own revision."),
+        new(3, "documentation patch", new[] { "AppliedDocsPatchLifecycleTests.cs", "DocsPatchPolicyTests.cs" },
+            "CLOSED at v0.3.8.75 — the last of the twenty, and the route there is the entry's value. "
+          + "What separates it from scenario 4 is the word APPLY: every lifecycle test ran with "
+          + "patch_application_enabled false, so no test had driven a change from a goal onto the "
+          + "operator's tree and asserted the bytes.\n\n"
+          + "FOUR DEFECTS stood between the two, each found by trying to reach an outcome nothing "
+          + "had needed before. v0.3.8.70: the tester's check ran in the ORIGINAL tree when no "
+          + "project type was detected, so no patch could change an outcome. v0.3.8.73: the tester "
+          + "had no operator seam, so a fixture could not produce a passing check. v0.3.8.74: a "
+          + "green mission was graded escalated, because one stop reason covered both a spent bound "
+          + "and nothing-left-to-add. v0.3.8.75: a DOCUMENTATION patch was verified as a CODE patch "
+          + "and therefore compiled — the docs_patch policy requiring no build had existed, "
+          + "unreachable, since the table was written.\n\n"
+          + "Two earlier versions of this note sent the work elsewhere: one described the chain as "
+          + "passing through a typed docs_patch_set, an approval REQUEST that nothing consumes; the "
+          + "other called the remainder a missing script book when it was a missing seam. Both are "
+          + "recorded because the ledger being wrong is what cost the time, not the code."),
 
         new(4, "successful code patch", new[] { "CodePatchLifecycleTests.cs" },
             "Composed through the Queen with the scripted provider. This is the one full lifecycle "
