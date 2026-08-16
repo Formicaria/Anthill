@@ -65,7 +65,14 @@ public static class PolicyScan
             + @"\s*[:=]\s*['""][^'""\s]{6,}",
             RegexOptions.IgnoreCase), "secret-like content detected"),
         new("permission_expansion", "critical", true, Rx(@"ApplyPatches\s*=\s*true|apply_patch.*(?:allow|grant|enable)|(?:allow|grant|enable).*apply_patch"), "attempt to grant patch application"),
-        new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|homelab_target_allowlist|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),
+        // v0.3.8.73 — `workspace_checks` joins the list the day it is created, not the day someone
+        // notices. Operator-declared checks REPLACE detection, so a patch that edits them is a patch
+        // that edits what verifies the colony's own work — the exact shape this rule exists for, and
+        // a strictly larger prize than the allowlists already named here. The setting lives in
+        // ANTHILL's configuration rather than in the workspace precisely so a mission cannot reach
+        // it; this rule is the second lock, for the case where a mission proposes a patch against
+        // the colony's own tree.
+        new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|homelab_target_allowlist|workspace_checks|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),
         new("destructive_operation", "critical", true, Rx(@"rm\s+-rf\s+/|DROP\s+TABLE|mkfs\.|wipe\s+disk|factory\s+reset", RegexOptions.IgnoreCase), "destructive operation"),
         new("auth_change", "high", false, Rx(@"RequireAuth|AuthLimiter|login|session[_-]?token", RegexOptions.IgnoreCase), "authentication surface touched — reviewer attention required"),
         new("db_migration", "medium", false, Rx(@"CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+COLUMN", RegexOptions.IgnoreCase), "schema change — migration safety review required"),

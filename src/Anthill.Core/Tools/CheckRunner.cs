@@ -30,6 +30,15 @@ public static class CheckCatalog
     private static readonly HashSet<string> BuiltIn =
         new(Checks.Keys, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether an id is compiled in. v0.3.8.73 — operator configuration refuses to redefine one,
+    /// because a built-in id has a fixed meaning across the colony's records (the auto-apply verify
+    /// path, the graduation record, changelog entries all name `dotnet_build`), and configuration
+    /// that kept the name while changing the command is how a report describes a check that did not
+    /// run.
+    /// </summary>
+    public static bool IsBuiltIn(string? id) => id is not null && BuiltIn.Contains(id);
+
     /// <summary>Operator/test extension point — still a declared allowlist, never free text.</summary>
     public static void Register(CheckDefinition def) => Checks[def.Id] = def;
 
@@ -102,18 +111,22 @@ public sealed class RunAllowlistedCheckTool : ITool
         // unchanged, below.
         var workdir = MissionWorkspaceScope.CurrentRoot ?? _workdir;
 
-        // The manifest is consulted FIRST, then the global catalog. Both are declared in this
-        // repository under review; neither is ever read from the project being modified.
-        var def = manifest.Find(id) ?? CheckCatalog.Get(id);
+        // v0.3.8.73 — ONE decision function, shared with TesterAnt's selection. This site used to
+        // spell the precedence as `manifest.Find(id) ?? CheckCatalog.Get(id)` while the tester spelt
+        // it as `manifest.IsEmpty ? CheckCatalog.Ids : manifest.Checks`. Two spellings of one rule,
+        // and this file's own comment names the failure they invite: "Two components disagreeing
+        // about which catalog is authoritative is how a tester selects an id the runner then
+        // refuses." Adding operator configuration to both by hand would have been a third chance.
+        //
+        // Every source is declared in THIS repository or in the operator's own configuration file;
+        // none is ever read from the project being modified.
+        var def = CheckSource.Find(manifest, id);
         if (def is null)
-        {
-            var available = manifest.IsEmpty
-                ? string.Join(", ", CheckCatalog.Ids)
-                : string.Join(", ", manifest.Checks.Select(c => c.Id));
             return new ToolResult(Name, false, "",
-                $"check '{id}' is not in the allowlisted catalog — refused. Available here: {available}",
+                $"check '{id}' is not in the allowlisted catalog — refused. Available here "
+              + $"(from {CheckSource.Describe(manifest)}): "
+              + string.Join(", ", CheckSource.Available(manifest).Select(c => c.Id)),
                 FailureClass.AuthorizationFailure);
-        }
         if (!def.Enabled)
             return new ToolResult(Name, false, "", $"check '{id}' is disabled — refused", FailureClass.AuthorizationFailure);
 

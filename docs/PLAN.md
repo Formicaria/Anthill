@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.72**.
+Shipping release: **v0.3.8.73**.
 
 ---
 
@@ -526,9 +526,11 @@ exercised this time.
   runs with `patch_application_enabled: false`, so no test has ever driven a change onto disk through
   the Queen and asserted the file is there. That needs the tester to produce a real pass.
 
-  **BLOCKED, and v0.3.8.71 says on what.** There is no way to give a fixture workspace a passing
-  tester, and the reason is structural rather than a missing script book — which is what this item
-  assumed for four releases.
+  **UNBLOCKED at v0.3.8.73.** What follows is the blocker as v0.3.8.71 found it, kept because the
+  diagnosis is the reason the fix has the shape it does. `CheckSource` and the `workspace_checks`
+  setting close it: an operator can now declare what verifies their workspace, so a fixture workspace
+  can have a passing tester. Scenario 15's last edge closed on it the same release; scenario 3's
+  remaining work is now only the apply step, and is a script book.
 
   - **A registered check cannot be selected.** `CheckCatalog.Register` is the documented
     "operator/test extension point", and `TesterAnt` picks check ids by matching them against its
@@ -543,13 +545,20 @@ exercised this time.
     A minimal fixture passes build and fails the other two.
 
   Each piece defends something real, and adapter detection is an explicit exit gate: verification
-  commands come from the manifest **or operator configuration**, never model invention. The gap is
-  that the second half of that sentence has no path to the tester. Closing it means giving the
-  workspace a declared, operator-owned check source that detection does not have to invent — at
-  which point scenarios 3 and 15's last edge both become writable, and
-  `SoldierBlockLifecycleTests.TheTesterHasNoSeam_ForAFixtureWorkspace` should be replaced by them.
+  commands come from the manifest **or operator configuration**, never model invention. The gap was
+  that the second half of that sentence had no path to the tester — the manifest half was built in
+  v3.5.0 and the operator half never existed.
+
+  **`workspace_checks` is that half** (v0.3.8.73). Declarations live in ANTHILL's own configuration,
+  never in the workspace being modified — there is deliberately no `.anthill-checks.json`, because a
+  check file inside the repository hands every coding agent the power to rewrite its own exam, which
+  is the separation `WorkspaceAdapter` exists to preserve. `CheckSource` is the single decision
+  function both the tester's selection and the runner's resolution read; they used to spell the
+  precedence differently, which the runner's own comment warned invites "a tester selecting an id the
+  runner then refuses". `PolicyScan.allowlist_tampering` matches the key, so a patch proposing to edit
+  it is a blocking finding. Built-in ids cannot be redefined.
 - **Qualification scenario 15** — one composed mission reaching all twelve roles through their
-  **production triggers**. No role invoked to satisfy a count. **PARTIAL as of v0.3.8.68.**
+  **production triggers**. No role invoked to satisfy a count. **CLOSED at v0.3.8.73.**
 
   Two rewrites of this item taught what the scenario turns on, so both are worth keeping. The first
   said it needed "a ScriptedColony scenario set, Queen-driven, through production triggers" and cited
@@ -569,11 +578,16 @@ exercised this time.
   refuses the coder's UI patch without a conformant `ui_map` — and the test asserts that no *planned*
   role ends `blocked` or `failed_permanent`, which is the clause made executable.
 
-  **What remains, and it is one thing:** the tester's failure in both missions is ENVIRONMENTAL — a
-  materialized revision in a temp directory has no build — so the medic's trigger is real while the
-  failure's *relationship to the change* is not. Closing 15 needs an allowlisted check that fails
-  BECAUSE of the proposal and passes after the medic's repair. That is the last decorative edge and
-  the only one left.
+  **The last edge closed at v0.3.8.73.** It was this: the tester's failure in both missions was
+  ENVIRONMENTAL — a materialized revision in a temp directory has no build — so the medic repaired a
+  failure the change had not caused. `EarnedRepairLifecycleTests` replaces it with an
+  operator-declared check that passes only when `VERIFIED.md` exists in the tree it runs in. The
+  coder's first proposal omits it and the check FAILS against revision one; the medic hands back; the
+  second proposal adds it and the same check PASSES against revision two. Nothing environmental
+  changed between the runs. It needs both `workspace_checks` (the check is declarable) and v0.3.8.70
+  (the check runs inside the revision, so a patch can change an outcome), and it asserts the
+  operator's check ran rather than `dotnet_build` — "the seam is wired" being exactly the claim that
+  passes while a fallback quietly runs instead.
 - **Scenario 7** — the soldier block inside a full lifecycle: coder proposes, policy inserts the
   soldier, the block prevents verification, application and positive learning, and model text cannot
   argue it away.
@@ -608,6 +622,37 @@ Cover Ollama, an OpenAI-compatible provider, and Anthropic or a supported agent 
 small local model and one strong cloud model. Record provider and model version, tokens, cost,
 durations, failure classes, which trigger reached each role, artifacts produced and consumed, and
 whether `MissionReconstruction` can replay the result.
+
+#### First run — v0.3.8.73
+
+A live run happened ahead of this ordering and was worth every bit of the disorder. It reported eight
+defects; they were **three**, and separating them is the finding.
+
+**Real — the operator report had no compiler.** Commands, exit codes, durations, test totals, a role
+census and medic activity were all model prose, because `BuilderAnt` writes the operator answer by
+prompting a model and nothing assembled a report from records. Five of the eight reported defects
+were that one fact seen through different columns. The tell was `Dispatched`, a column that appears
+nowhere in this repository, holding statuses (`In Progress`) the persisted vocabulary has no word
+for. Fixed by `MissionReport` — compiled from rows at finalization, stored as the `operator_summary`
+artifact, with `ModelInvolved = false` — and by forbidding the builder's narrative from stating a
+figure at all.
+
+**Real — the web ant ignored a named source.** It was never looking for one: the query was
+`goal + description`, so a domain the operator named was just more words. One recognised site now
+becomes a `site:` filter; two mean a comparison as often as a target, so nothing is guessed.
+
+**Not defects, and recorded so they are not re-fixed.** "Finalized while tasks were In Progress" —
+`Queen.FinalizeMission` forces any non-terminal task to `failed` with `internal_runtime_defect` and
+fails the mission closed; the `In Progress` was prose. "The verifier fails open" — the Queen always
+hands it the evidence store and an empty evidence list resolves to `Unknown`; the PASS was the
+builder's. The report was one line from something true, and that line (a missing store falling back
+to parsing model text for a verdict) is closed anyway.
+
+**What this says about the ordering above.** The item's own reasoning — run live only after the
+deterministic baseline, so a failure can be attributed — held up exactly backwards and usefully: the
+baseline was strong enough that three of the mechanisms the run accused were provably innocent, and
+the one real architectural gap was in the part no deterministic scenario had ever exercised, because
+no deterministic scenario ever reads the operator's report.
 
 ### 6 — Authoritative task inputs everywhere
 
