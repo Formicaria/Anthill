@@ -985,6 +985,20 @@ public sealed class ArchivistAnt : BaseAnt
 {
     public ArchivistAnt() : base("archivist") { }
 
+    /// <summary>
+    /// What never reaches memory.
+    ///
+    /// v0.3.8.72 examined this alongside <c>PolicyScan.secret_material</c> and deliberately left the
+    /// pattern alone. It is written against SOURCE, its inputs are plain strings — a mission goal, a
+    /// task title, a failure reason — and it never sees an artifact payload. Teaching it to squint
+    /// through an encoding it is never handed would be carrying the cost of the other site's defect
+    /// without its cause, and encoding-aware patterns are what that release concluded against.
+    ///
+    /// The failure direction is worth stating because it is the opposite of the soldier's: a miss
+    /// here does not decline to block a patch, it writes a secret into a durable memory candidate.
+    /// So if a serialized payload ever DOES reach this, the fix is to decode at that call site, the
+    /// way <c>SoldierAnt.DecodeForScanning</c> does — not to widen this.
+    /// </summary>
     private static readonly System.Text.RegularExpressions.Regex SecretLike = new(
         @"(?:password|passwd|api[_-]?key|token|secret)\s*[:=]\s*['""]?[^'""\s]{4,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
