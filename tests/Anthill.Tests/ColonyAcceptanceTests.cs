@@ -23,15 +23,41 @@ namespace Anthill.Tests;
 public class ColonyAcceptanceTests : IDisposable
 {
     private readonly string _dir;
+    private readonly bool _useOllamaWas;
 
+    /// <summary>
+    /// THE PLANNER IS PINNED OFFLINE, and saying so is the point. v0.3.8.69.
+    ///
+    /// ScenarioA asserts "the default plan is research → build → verify" — a claim about the
+    /// DETERMINISTIC FALLBACK planner, which is the only planner that has a default. With
+    /// <see cref="Anthill.Core.Configuration.AnthillRuntime.UseOllama"/> true and a local model
+    /// running, the dynamic planner answers instead and writes whatever plan it likes; the assertion
+    /// then passes or fails on a model's prose, which is exactly what this file's header says it
+    /// never does ("Assertions read STRUCTURED persisted state … never model prose").
+    ///
+    /// It reached this state without anyone choosing it. The flag was leaking in from
+    /// `ModelReliabilityTests`, which set it and never restored it (fixed in the same release), so
+    /// whether this suite planned online depended on collection ordering. But the leak only exposed
+    /// the gap — an acceptance test whose outcome changes when a model happens to be installed was
+    /// never deterministic, and closing the leak alone would leave it one config change from
+    /// flaking again.
+    ///
+    /// Everything else in these scenarios stays real: the Queen, the scheduler, ExecutionService,
+    /// the registry, contracts, the evaluator and Sqlite. Only the planner's source of a plan is
+    /// pinned, and it is pinned to the one this file makes assertions about.
+    /// </summary>
     public ColonyAcceptanceTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "anthill-accept-" + Guid.NewGuid().ToString("N")[..10]);
         Directory.CreateDirectory(_dir);
+
+        _useOllamaWas = Anthill.Core.Configuration.AnthillRuntime.UseOllama;
+        Anthill.Core.Configuration.AnthillRuntime.UseOllama = false;
     }
 
     public void Dispose()
     {
+        Anthill.Core.Configuration.AnthillRuntime.UseOllama = _useOllamaWas;
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 

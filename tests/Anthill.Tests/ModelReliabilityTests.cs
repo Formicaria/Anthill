@@ -13,9 +13,38 @@ namespace Anthill.Tests;
 [Collection("specialist-gates")]   // v0.3.8.60: mutates AnthillRuntime.UseOllama /
                                    // EnableModelRouting, which a concurrently-running
                                    // mission reads. See ModelRoutingGlobalsTests.
-public class ModelReliabilityTests
+public class ModelReliabilityTests : IDisposable
 {
-    public ModelReliabilityTests() => AnthillRuntime.Initialize();
+    private readonly bool _useOllamaWas;
+
+    public ModelReliabilityTests()
+    {
+        _useOllamaWas = AnthillRuntime.UseOllama;
+        AnthillRuntime.Initialize();
+    }
+
+    /// <summary>
+    /// PUT BACK WHAT WAS FOUND. v0.3.8.69, and this is the other half of a fix that shipped
+    /// incomplete.
+    ///
+    /// v0.3.8.60 traced `ColonyAcceptanceTests.ScenarioA` failing at a suspiciously fixed ~20s to
+    /// this class flipping <see cref="AnthillRuntime.UseOllama"/> true while a mission was running,
+    /// and answered it by putting both classes in one collection. That was right and not sufficient:
+    /// the mutation below was never RESTORED. Serialization removed the concurrency, so the flag
+    /// stopped being flipped mid-mission — and started being left true for every test that runs
+    /// after this one in the collection instead.
+    ///
+    /// Which is why the symptom moved rather than went away. ScenarioA is now reached with a live
+    /// local Ollama, its planner produces a real non-deterministic plan instead of the deterministic
+    /// fallback, and "the default plan is research → build → verify" fails against a two-task plan a
+    /// model happened to write. Same root cause, a different-looking failure, three releases later —
+    /// and it re-surfaced because adding a test class changed the order inside the collection, the
+    /// same trigger as the first time.
+    ///
+    /// The lesson is the one <c>RosterGates</c> already carries: a test that mutates process-global
+    /// state owes a restore, and serializing it only decides WHO sees the leak.
+    /// </summary>
+    public void Dispose() => AnthillRuntime.UseOllama = _useOllamaWas;
 
     // ---- Outcome classification (pins the client sentinel strings to outcomes) -----------------
 
