@@ -190,8 +190,14 @@ Required JSON:
         // v3.2.0: the provider's own status decides, not the shape of its prose. An EMPTY model
         // response now falls back too — it never started with "ERROR:", so it used to be handed
         // to the JSON parser as if it were a plan.
+        //
+        // v0.3.8.76: and the shape is now ALSO asked for on the wire, not only in the prose above.
+        // The planner's silent failure is the worst of the four this release wired, because it does
+        // not look like a failure: `TasksFromJson` rejects, `Plan` logs to stderr and returns
+        // `FallbackTasks`, and the mission runs a generic static plan. An operator sees a colony
+        // that ignored their goal, with a green run behind it.
         var result = _router.GenerateTyped("planner", prompt, antName: "planner",
-            system: AnthillRuntime.RoleSystemPrompt("planner", goal));
+            system: AnthillRuntime.RoleSystemPrompt("planner", goal), schema: PlanSchema);
         var response = result.Content;
         if (!result.Ok)
         {
@@ -353,6 +359,60 @@ Required JSON:
 
     // Internal for the v2.26.0 concurrency test: the method is pure (no Planner state), and the
     // test proves two interleaved parses with different offered sets cannot cross-contaminate.
+    /// <summary>
+    /// The task graph's shape, on the wire. v0.3.8.76 (PLAN.md §2 R1).
+    ///
+    /// Mirrors the "Required JSON" block in the prompt and is pinned to it by
+    /// `StructuredOutputTests`. `assigned_ant` is deliberately NOT an enum here even though
+    /// `TasksFromJson` rejects unknown ants: the roster is configurable, an enum baked into a schema
+    /// would be a second copy of it, and the two would disagree the first time a role was disabled.
+    /// Rejection stays where it can read the live roster; the schema constrains the SHAPE, which is
+    /// the part that is constant.
+    ///
+    /// TWO THINGS THIS SCHEMA MUST NOT DO, both found by checking it against the parser rather than
+    /// against the prompt, and both of which would have turned a fix into an outage:
+    ///
+    ///   * `depends_on` is NOT an array of integers. `TasksFromJson` reads each element with
+    ///     `ToString()` and the resolver immediately below it exists because "LLMs often emit
+    ///     non-ID dependency references: integer indices or task titles" — both are accepted and
+    ///     normalised. Typing it as `integer` would make the schema reject, at the provider, the
+    ///     exact output the parser was written to tolerate.
+    ///
+    ///   * `skill_id` is optional in the prompt, absent from its example, and READ by the parser.
+    ///     With `additionalProperties: false` and no entry here, a schema-honouring provider would
+    ///     have been forbidden from emitting the one field that records which proven procedure a
+    ///     task followed — silently ending skill attribution rather than breaking anything visible.
+    /// </summary>
+    internal const string PlanSchema = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tasks"],
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "description", "assigned_ant", "task_type"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "assigned_ant": { "type": "string" },
+                  "assigned_worker": { "type": "string" },
+                  "task_type": { "type": "string" },
+                  "skill_id": { "type": "string" },
+                  "depends_on": {
+                    "type": "array",
+                    "items": { "type": ["string", "integer"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
+
     internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
     {
         var rejections = new List<PlanRejection>();

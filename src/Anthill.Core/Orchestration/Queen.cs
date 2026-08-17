@@ -288,7 +288,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         if (Router is null) return;
         var output = to ?? Console.Error;
 
-        var report = AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts);
+        var report = AntModelFitness.CheckAll(Router);
 
         // v0.3.8.41 — an UNRESOLVED route is reported once, not once per role.
         //
