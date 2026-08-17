@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.79**.
+Shipping release: **v0.3.8.80**.
 
 ---
 
@@ -37,7 +37,7 @@ Done and load-bearing:
 | | |
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
-| Acceptance gates | **10 of 12**. Gates 1 and 2 (all roles Ready; every role with handler, contract, real trigger, typed output) close with items R3–R4 |
+| Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
 | Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
@@ -160,24 +160,34 @@ The two scenarios the ledger overstated, and the two defects closing them uncove
 
 ---
 
-### R3 — Per-role cancellation and timeout · *3–5 releases*
+### R3 — Per-role cancellation and timeout · *1–3 releases* · **in progress**
 
-The largest single item remaining, and the other large area where nothing has ever asserted the
-outcome — which by the pattern of R2's neighbours means it will find defects rather than document
-behaviour.
+The largest single item remaining, and the other large area where nothing had ever asserted the
+outcome.
 
-**All twelve roles**, not the high-risk subset. Order by risk — tester, file, researcher, web,
-ui_cartographer, scribe, and the coder on an agent CLI hold tools, sockets and subprocesses — but
-builder, verifier, soldier, medic and archivist need explicit proofs too.
-
-Four cancellation points per role: before dispatch, during generation, during a tool call, and while
-waiting on a dependency. Five properties each: correct terminal state, no retry or handoff after
-operator cancellation, no orphan process, no positive memory or reputation, clean restart.
-
-Build the shared harness first; twelve roles × four points is a fixture, not forty-eight tests.
+- ✅ **The cancellation matrix and its harness** *(v0.3.8.80 — `RoleCancellationTests`. Twelve roles ×
+  four points = 48 cells, every one decided: 24 driven live by the harness, 11 cited to the tests
+  that already prove them, 13 marked not-applicable — and the not-applicable claims are CHECKED
+  against the contracts, so a role that acquires a tool or a router stops being exempt and the suite
+  says so.)*
+  **What it closed that nothing had:** every prior cancellation test was about a MECHANISM — the
+  ambient model-call scope, the process tree, a hanging subprocess. None was about a ROLE. "Does
+  cancelling stop the archivist without writing a lesson to durable memory" had no answer anywhere,
+  and the damage differs per role: a cancelled tester leaves a process, a cancelled archivist leaves
+  a memory, a cancelled coder leaves a patch set.
+- ✅ **Acceptance gates 1 and 2** *(v0.3.8.80 — `AcceptanceGatesOneAndTwoTests`. Gate 1 asks for
+  READY, which is stronger than the gate-only check that existed: `Ready` is a conjunction of five
+  conditions and "no gate blocks it" reads exactly like "it is ready" in a summary. Gate 2 reads its
+  four clauses from four different sources on purpose, because the gate is about them agreeing.)*
+- ◻ **Drive `during_generation` and `during_tool_call` live** rather than citing them. The cited
+  tests prove the mechanism aborts; they do not prove the ROLE leaves nothing behind when it does.
+  This is where orphan processes actually appear.
+- ◻ **The graduation record's cancellation column**, including the missing `ui_cartographer` fault
+  cell.
 
 > **Exit gate.** The graduation record's cancellation column is complete for all twelve roles,
-> including the missing `ui_cartographer` fault cell. **Acceptance gates 1 and 2 close here.**
+> including the missing `ui_cartographer` fault cell. **Acceptance gates 1 and 2 — ✅ closed at
+> v0.3.8.80.**
 
 ---
 
@@ -291,10 +301,10 @@ some belong before R9 rather than after.
 
 ## 3. Acceptance gates
 
-Non-negotiable. The colony is not a twelve-role colony until all of these pass. **10 of 12.**
+Non-negotiable. The colony is not a twelve-role colony until all of these pass. **12 of 12** *(v0.3.8.80)*.
 
-1. ◻ All twelve roles report Ready under the full profile *(closes with R3)*
-2. ◻ Every enabled role has a handler, contract, real production trigger and typed output *(R1 + R3)*
+1. ✅ All twelve roles report Ready under the full profile *(v0.3.8.80)*
+2. ✅ Every enabled role has a handler, contract, real production trigger and typed output *(v0.3.8.80)*
 3. ✅ A compile-breaking proposed change fails when built in the patched mission workspace *(v3.8.23)*
 4. ✅ That failed patch cannot become `completed_verified` *(v3.8.22)*
 5. ✅ A Soldier block cannot be overridden by model text *(v3.8.22)*
