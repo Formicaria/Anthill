@@ -80,6 +80,39 @@ public static class CheckSource
     /// detected, because that is the historical behaviour of exactly that case and changing it would
     /// alter what every existing installation verifies.
     /// </summary>
+    /// <summary>
+    /// The checks that constitute THE BUILD for this workspace. v0.3.8.78 (PLAN.md §2 R2).
+    ///
+    /// WHY THIS EXISTS. `BuildVerifier` asked the runner for the literal id `dotnet_build`. The
+    /// runner has resolved ids through this class since v0.3.8.73 — so a Node or static-frontend
+    /// workspace got a correctly-resolved .NET build definition and ran `dotnet build` against a
+    /// directory with no project. It failed, deterministically, and a code patch in any non-.NET
+    /// workspace could therefore never be verified. The runner was widened and its one caller was
+    /// not.
+    ///
+    /// THE PRECEDENCE IS THE SAME as <see cref="Available"/> and <see cref="DefaultSelection"/>,
+    /// deliberately: operator configuration, then what the workspace adapters detected, then the
+    /// compiled default. A fourth spelling of this precedence is how the tester and the runner came
+    /// to disagree about which catalog was authoritative, which is the defect v0.3.8.73 merged.
+    ///
+    /// WHAT THE OPERATOR ARM MEANS. If an operator declared checks, those checks ARE the build for
+    /// their workspace — all of them, and `BuildVerifier` fails if any fails. This widens WHERE the
+    /// check comes from and never whether a reproducible no is final.
+    ///
+    /// AND THE FALLBACK IS DELIBERATELY NARROWER THAN <see cref="DefaultSelection"/>. That method
+    /// returns `dotnet_version` too, which is right for "what could an operator run here" and wrong
+    /// here: adding a second command to the build gate would change what verification means for
+    /// every existing .NET workspace, in a release about making a non-.NET one work at all. With
+    /// nothing declared, this returns exactly what `BuildVerifier` ran before.
+    /// </summary>
+    public static IReadOnlyList<string> BuildSelection(WorkspaceCapabilityManifest manifest)
+    {
+        if (AnthillRuntime.WorkspaceChecks.Count > 0)
+            return AnthillRuntime.WorkspaceChecks.Select(c => c.Id).ToList();
+        if (!manifest.IsEmpty) return manifest.Checks.Select(c => c.Id).ToList();
+        return new[] { "dotnet_build" };
+    }
+
     public static IReadOnlyList<string> DefaultSelection(WorkspaceCapabilityManifest manifest)
     {
         if (AnthillRuntime.WorkspaceChecks.Count > 0)
