@@ -1,5 +1,68 @@
 # ANTHILL Changelog
 
+## v0.3.8.80 - the colony stops when told, and twelve of twelve gates pass
+
+**PLAN.md §2 R3 opens and §3 closes.** All twelve acceptance gates now pass — the first time the
+colony has met its own definition of being a twelve-role colony.
+
+### Cancellation was proved about mechanisms, never about roles
+
+The suite had real cancellation coverage: `ModelCallCancellationTests` proves the ambient scope
+aborts an in-flight HTTP call, `ProcessTreeCancellationTests` proves every timeout site kills the
+whole process tree, `SubprocessHangTests` proves a git that never exits is bounded. **Every one is
+about a MECHANISM. None was about a ROLE.**
+
+So "does cancelling a mission stop the archivist without writing a lesson to durable memory" had no
+answer anywhere. The properties that matter to an operator are per role, because the damage differs:
+a cancelled tester leaves a process, a cancelled archivist leaves a memory, a cancelled coder leaves
+a patch set. A mechanism that aborts correctly says nothing about what the role left behind.
+
+`RoleCancellationTests` is the matrix R3 asked for — twelve roles × four cancellation points, and
+the plan's own instruction was to build the harness first because 48 cells is a fixture, not 48
+hand-written tests. Every cell is decided:
+
+- **24 driven live** by the harness — `before_dispatch` and `awaiting_dependency` for all twelve —
+  asserting terminal state, no positive memory candidate, no handoff scheduled, and no task
+  completing after the stop. The memory assertion is the one that matters most: a mission can reach
+  a correct terminal state while still having written a lesson learned from work that never ran, and
+  the memory outlives the mission.
+- **11 cited** to the mechanism tests that already prove them.
+- **13 not-applicable** — a role with no tools has no "during a tool call" point — **and the claims
+  are checked against the contracts rather than trusted.** If a role acquires a tool or a router, its
+  cell stops being exempt and the suite says so. That is what stops a matrix becoming a place to
+  record convenient beliefs.
+
+### Acceptance gates 1 and 2
+
+**Gate 1: all twelve roles report Ready under the full profile.** `RoleReadinessTests` already
+proved no role is blocked *by a gate* — but that is one of five reasons `RoleReadiness` withholds
+Ready, the others being a missing handler, an unregistered tool, an ungranted capability, and a
+runtime reporting itself unavailable. **"No gate blocks it" reads exactly like "it is ready" in a
+summary**, and they are not the same claim. The gate asks for Ready.
+
+The tool registry comes from `ToolsModule`, not from the contracts' own `AllowedTools`, and that
+distinction is the point: deriving the registry from the declarations would make the test assert that
+the contracts agree with themselves, and it would pass for a role declaring a tool nobody
+implemented. A sibling test proves the check is not vacuous — an empty registry still withholds
+Ready.
+
+**Gate 2: handler, contract, real production trigger, typed output.** Each clause is read from a
+different source deliberately, because the gate is about them AGREEING: the handler from the runtime
+snapshot, the contract version from the catalog, the trigger from the declared scheduling mode, and
+the typed output from the artifact types the contract promises. A role satisfying three of four is
+one that gets dispatched and produces something nothing downstream can consume.
+
+Both were held for R3 on purpose. Until v0.3.8.76 the contracts disagreed with the runtime about
+which roles could even call a model, and a "Ready" computed from declarations that were wrong is a
+green light with nothing behind it.
+
+### What remains of R3
+
+Driving `during_generation` and `during_tool_call` **live** rather than citing them — the cited tests
+prove the mechanism aborts, not that the role leaves nothing behind when it does, and that is where
+orphan processes actually appear. Plus the graduation record's cancellation column and its missing
+`ui_cartographer` fault cell.
+
 ## v0.3.8.79 - twenty of twenty, and two shells that stopped lying
 
 **PLAN.md §2 R2 closes.** Every deterministic qualification scenario is now closed by substance:
