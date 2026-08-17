@@ -208,9 +208,63 @@ public static class ProviderWireFormat
                 });
             body["tools"] = tools;
         }
+        else if (request.ResponseSchemaJson is { Length: > 0 } schema)
+        {
+            /*
+             * STRUCTURED OUTPUT, in the only form Anthropic serves it. v0.3.8.77 (PLAN.md §2 R1).
+             *
+             * THE DEFECT THIS FIXES. `ModelCapabilityCatalog` declares anthropic as `Standard`,
+             * which includes `StructuredOutput = true`. So `Negotiate` KEPT the schema — correctly,
+             * by its own lights — and this method never read the field. The schema was dropped on
+             * the floor, silently, while the capability report told the operator structured output
+             * was supported.
+             *
+             * It was latent until v0.3.8.76, because until then no producer set `ResponseSchemaJson`
+             * at all. Wiring the coder, planner and strategist made a three-year-old declaration
+             * reachable for the first time, and the first thing it reached was an adapter that
+             * ignores it. That is the same defect the previous release was about, one layer down,
+             * and it is exactly what a conformance suite is for.
+             *
+             * WHY A TOOL AND NOT A `response_format`. Anthropic has no OpenAI-style
+             * `response_format: json_schema`. Its documented way to bind a reply to a shape is a
+             * tool the model is FORCED to call: the schema becomes the tool's `input_schema`, and
+             * `tool_choice` names it, so the reply must be an instance of the schema.
+             * `ReadAnthropic` unwraps that call's input back into `Content`, so a caller sees the
+             * same JSON text it would get from OpenAI and no call site learns a provider name.
+             *
+             * AND WHY `else`. Schema-plus-tools is not representable here: forcing `tool_choice` at
+             * the synthetic tool would make the model's real tools unreachable, and offering both
+             * without forcing would leave the shape unbound again. The colony never sends both —
+             * `GenerateTyped` carries a schema and no tools, `ToolCallingLoop` carries tools and no
+             * schema — and `AdapterConformanceTests` pins that it stays unreachable rather than
+             * leaving it to be discovered by whoever writes the first request that does both.
+             */
+            body["tools"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["name"] = StructuredOutputToolName,
+                    ["description"] = "Return the answer as an instance of this schema.",
+                    ["input_schema"] = JsonNode.Parse(schema),
+                },
+            };
+            body["tool_choice"] = new JsonObject
+            {
+                ["type"] = "tool", ["name"] = StructuredOutputToolName,
+            };
+        }
 
         return body;
     }
+
+    /// <summary>
+    /// The synthetic tool that carries a response schema to Anthropic.
+    ///
+    /// ONE definition, read by both the writer and the reader. Two spellings of this name would not
+    /// fail loudly — the body would force a tool the reader does not recognise, and the reply would
+    /// come back as a tool call nobody unwraps, which reads downstream as an empty response.
+    /// </summary>
+    public const string StructuredOutputToolName = "respond_with_schema";
 
     /// <summary>Read an Anthropic reply: content is a list of typed blocks, not a string.</summary>
     public static ModelResponse ReadAnthropic(string json, string requestedModel)
@@ -234,6 +288,28 @@ public static class ProviderWireFormat
 
             var usage = root?["usage"]?.AsObject();
             var content = text.ToString();
+
+            /*
+             * Unwrap the structured-output tool back into content. v0.3.8.77.
+             *
+             * `AnthropicBody` sends a response schema as a forced tool call, because that is the
+             * only JSON mode Anthropic has. Without this, the reply comes back as a ToolCall and
+             * `Content` is empty — and an empty content string is read downstream as "the model
+             * said nothing", which is the failure this whole path exists to prevent. The schema
+             * would have been honoured perfectly and the answer thrown away.
+             *
+             * The synthetic call is REMOVED from `ToolCalls` rather than left beside the content: a
+             * caller that asked for a schema did not ask for a tool call, and leaving it would make
+             * `ToolCalls.Count > 0` true for every structured request, which is what a tool-calling
+             * loop branches on.
+             */
+            var structured = calls.FirstOrDefault(c => c.Name == StructuredOutputToolName);
+            if (structured is not null && content.Length == 0)
+            {
+                content = structured.ArgumentsJson;
+                calls.Remove(structured);
+            }
+
             return new ModelResponse
             {
                 Status = content.Length == 0 && calls.Count == 0 ? ModelCallOutcome.Empty : ModelCallOutcome.Ok,
