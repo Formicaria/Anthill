@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.75**.
+Shipping release: **v0.3.8.76**.
 
 ---
 
@@ -39,7 +39,8 @@ Done and load-bearing:
 | Deterministic qualification scenarios | **20 declared**, all citing proof. **18 closed by substance**; 5 and 17 are partial — see below |
 | Acceptance gates | **10 of 12**. Gates 1 and 2 (all roles Ready; every role with handler, contract, real trigger, typed output) close with items R3–R4 |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
-| Model-calling roles | **7 declared, 5 of which cannot call a model.** See R1 |
+| Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
+| Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
 
 **Two scenarios are weaker than the ledger says.** Scenario 17 is explicitly PARTIAL (restart during
 approval/apply/finalization). Scenario 5 says in its own note that "the composed UI-patch lifecycle
@@ -61,40 +62,39 @@ one-patch-version-per-discovered-defect rhythm holds.
 
 ---
 
-### R1 — Contract and adapter truth · *2–4 releases* · **next**
+### R1 — Contract and adapter truth · *1–3 releases* · **in progress**
 
 Nothing downstream can be attributed until the colony's declarations match its runtime. A live
 failure today cannot be pinned on the model, the adapter, or a contract that was never true.
 
-- **Five deterministic roles declare `AllowsModelCalls: true`.** `UiCartographerAnt`, `SoldierAnt`,
-  `ScribeAnt`, `MedicAnt` and `ArchivistAnt` take no `ModelRouter` in their constructors — they
-  cannot make a model call — while `AntExecution.cs` gives them structured-output and reasoning
-  requirements. This is why the colony warns that seven roles need a capable model when five never
-  ask for one. Fix the contracts; add a guard that a contract declaring model calls belongs to a role
-  that can make one.
-- **`ResponseSchemaJson` is declared and reaching nobody.** `ModelRequest` carries it,
-  `ProviderWireFormat` consumes it, `ModelCapabilities` gates it — and no producer sets it. The coder
-  asks for JSON in prose instead. Wire it at the coder and anywhere else structured output is
-  claimed.
-- **Verifier's structured-output requirement.** Its verdict now comes from deterministic evidence,
-  so the requirement may describe a use of the model that no longer exists. Check before changing.
-- **Ollama capability discovery.** Reads `/api/tags`, which `ApiHost.Providers.cs:112` documents as a
-  deliberate choice — Ollama publishes a per-model `capabilities` array there, and against three real
-  local models the hand-written table was wrong twice. `/api/show` may still be richer. **Treat as a
-  contested design decision to extend, not an oversight to fix.**
-- **Provider-adapter conformance suite**, per adapter: capability discovery, system-prompt transport,
-  schema round-trip, tool-call round-trip, cancellation and timeout, provider/model identity, token
-  and cost reporting, error classification. Only Claude Code has a verified system-prompt/stdin
-  channel today; the other four are declared as not.
-- **A guard for tick-versus-body disagreement.** §5's repair-order line for S7 sat unticked for ten
-  releases while its own S8 section recorded the fault-injection suites as landed in v0.3.8.65
-  (`ApplyTransactionTests`, `EvidenceFailsClosedTests`, `SubprocessHangTests`). It is ticked now, but
-  nothing would have caught it: `DocumentCurrencyTests` sees only version claims, and this line names
-  no version. A checklist item whose body says "closed" while its box is empty is the same defect
-  class as a stale ledger entry, and it cost a release plan that scheduled work already done.
+- ✅ **Five deterministic roles declared `AllowsModelCalls: true`** *(v0.3.8.76 — contracts state what
+  their ants can do; `ContractDeclarationTests` asserts a declaration belongs to a role that can act
+  on it, and that a contract agrees with itself about `model.invoke`)*.
+- ✅ **Three routes called models with no declaration at all** *(v0.3.8.76 — found while fixing the
+  above, and the more expensive half. `planner`, `strategist` and the answer-synthesis `scribe` route
+  were never graded, because the fitness report enumerated contracts and they have none.
+  `ModelRouteRequirements` now declares all eight routes that reach the router, in both directions)*.
+- ✅ **`ResponseSchemaJson` was declared and reaching nobody** *(v0.3.8.76 — `GenerateTyped` takes a
+  schema; `coder`, `planner` and `strategist` send one. Each schema written against the parser rather
+  than the prompt, which caught three disagreements that would each have been an outage)*.
+- ✅ **Verifier's structured-output requirement** *(v0.3.8.76 — checked, and it described a use of the
+  model that v3.8.22 ended. The verdict is deterministic and the model's reading never promotes;
+  removed, and the context requirement that is real kept)*.
+- ✅ **A guard for tick-versus-body disagreement** *(v0.3.8.76 — `ChecklistIntegrityTests`)*.
+- ◻ **Provider-adapter conformance suite**, per adapter: capability discovery, system-prompt
+  transport, schema round-trip, tool-call round-trip, cancellation and timeout, provider/model
+  identity, token and cost reporting, error classification. Only Claude Code has a verified
+  system-prompt/stdin channel today; the other four are declared as not. **This is what remains of
+  R1** — four adapters against eight capabilities, deterministic and offline where it can be, with
+  every unsupported cell named rather than absent.
+- ◻ **Ollama capability discovery.** Reads `/api/tags`, which `ApiHost.Providers.cs:112` documents as
+  a deliberate choice — Ollama publishes a per-model `capabilities` array there, and against three
+  real local models the hand-written table was wrong twice. `/api/show` may still be richer. **Treat
+  as a contested design decision to extend, not an oversight to fix.**
 
-> **Exit gate.** Every role's declared capabilities match what it can do, asserted by a test. Every
-> adapter passes the conformance suite or is explicitly marked unsupported for a named capability.
+> **Exit gate.** Every role's declared capabilities match what it can do, asserted by a test — ✅
+> **closed at v0.3.8.76**. Every adapter passes the conformance suite or is explicitly marked
+> unsupported for a named capability — open.
 
 ---
 

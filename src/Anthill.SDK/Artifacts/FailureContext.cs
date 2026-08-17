@@ -83,7 +83,11 @@ public sealed record FailureContext
         IEnumerable<string>? affectedPaths, string? artifactHash, string? provider, string? model,
         string? environmentFingerprint)
     {
-        var material = string.Join("",
+        // v0.3.8.76: the ESCAPE, not a raw 0x1F byte. Identical string, identical signature —
+        // but a raw control byte made this file BINARY to grep, ripgrep and git grep, so the
+        // typed failure signature at the centre of bounded repair answered "no match" to every
+        // search ever run over this repository. See SourceHygieneTests.
+        var material = string.Join("\u001f",
             failureClass ?? "",
             normalizedError ?? "",
             string.Join(",", (failingChecks ?? Array.Empty<string>()).OrderBy(x => x, StringComparer.Ordinal)),
