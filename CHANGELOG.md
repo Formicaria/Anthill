@@ -1,5 +1,80 @@
 # ANTHILL Changelog
 
+## v0.3.8.77 - the adapter conformance matrix, and the schema Anthropic was dropping
+
+**PLAN.md §2 R1 closes.** Four adapters, eight capabilities, thirty-two cells — each one either
+citing the test that proves it or naming what about the transport makes it impossible.
+
+### The defect the matrix found on its first pass
+
+`ModelCapabilityCatalog` declares `anthropic` as `Standard`, which includes
+`StructuredOutput = true`. So `ModelCapabilityCatalog.Negotiate` **kept** a response schema for
+Anthropic — correctly, by its own lights — and `AnthropicBody` never read the field. The schema was
+dropped on the floor in silence while the capability report told the operator structured output was
+supported.
+
+It could not have been found before v0.3.8.76. Until that release no producer ever set
+`ResponseSchemaJson`, so the field was unreachable and the gap was inert. Wiring the coder, planner
+and strategist made a declaration live for the first time since v3.4.0, and the first thing it
+reached was an adapter that ignored it. **This is the previous release's defect one layer down**, and
+finding it is the entire argument for a conformance suite.
+
+**The fix.** Anthropic has no `response_format`. Its documented JSON mode is a tool the model is
+forced to call, so the schema becomes the tool's `input_schema` and `tool_choice` names it.
+`ReadAnthropic` unwraps that reply back into `Content` and removes the synthetic call from
+`ToolCalls` — without the unwrap, a reply that honoured the schema perfectly would arrive as a tool
+call with empty text, and empty content reads downstream as "the model said nothing". The answer
+would have been discarded at the last step.
+
+Schema-plus-tools is not representable on that transport: forcing `tool_choice` at the synthetic
+tool would make the caller's real tools unreachable. The colony never sends both — `GenerateTyped`
+carries a schema and never tools, `ToolCallingLoop` carries tools and never a schema — and a test
+pins that it stays that way rather than leaving it for whoever writes the first request that does.
+
+### The matrix
+
+`AdapterConformanceTests` declares every cell for `ollama`, `openai_compatible`, `anthropic` and
+`agent_cli`. It is a matrix of **citations**, not a second copy of the suite: `ProviderWireFormat`
+keeps encoding out of the adapters precisely so it can be tested offline, and most cells were
+already proved by `ProviderWireFormatTests`, `OllamaOpenAiEndpointTests`, `AgentCliTests` and
+`AgentCliTransportTests`. Writing fresh tests over that ground would be two implementations of one
+rule. Only the genuinely uncovered cells got new tests.
+
+- **Every cell is decided exactly once**, and an absent cell fails — it would otherwise read as
+  passing, which is what "explicitly marked unsupported" exists to prevent.
+- **Every citation resolves.** A renamed test would otherwise leave a cell claiming a proof nobody
+  wrote — the same discipline `SecurityReviewQueueTests` applies to the security review's citations.
+- **Every unsupported cell states a reason about the transport**, at length. "Not supported" is a
+  restatement of the verdict; the value of the mark is that the next person does not re-derive why.
+- **Every reasoning provider in the module must be in the matrix.** A fifth adapter would otherwise
+  conform to nothing and stay green by being unknown to the thing that checks conformance — the same
+  shape as a role with no contract, which is what R1's other half was about.
+
+Three cells are honestly **unsupported**, all on `agent_cli`: schema round-trip (a process that takes
+prose on stdin has no channel that can bind a reply to a shape), tool-call round-trip (the agent runs
+its own tools in its own process — the colony sees the transcript afterwards, which is why an agent
+CLI is dispatched as a tool inside a mission rather than routed to as a model), and token reporting
+(the transport carries no usage block, so `ModelUsage.Unknown` is the honest value — and Unknown
+rather than zero, because zero reads as a free call and would flatten cost reporting for the most
+expensive calls the colony makes).
+
+### New coverage where the matrix found none
+
+- OpenAI-shaped `response_format` was proved absent and never proved present — a half-proof that
+  passes equally against a builder which can never emit the key, which is exactly what Anthropic's
+  was.
+- Anthropic's token usage, provider/model identity, and malformed-reply classification.
+- Every HTTP adapter links the ambient cancellation token **and** sets its own deadline. Structural,
+  because an adapter that forgets the token keeps running after a mission is cancelled, and one that
+  forgets `CancelAfter` inherits only `HttpClient.Timeout` — a socket timeout, not a call deadline.
+  Neither is visible in a passing happy-path test.
+
+### Carried forward
+
+**Ollama capability discovery** moves to R4. `ApiHost.Providers.cs:112` documents `/api/tags` as a
+deliberate choice and `/api/show` may be richer; it is a contested design decision that a live
+multi-provider run would settle, and it gates nothing before then.
+
 ## v0.3.8.76 - every declaration reaches the runtime, and every call has a declaration
 
 **PLAN.md §2 R1, the declaration half.** The colony's contracts and its runtime disagreed in both
