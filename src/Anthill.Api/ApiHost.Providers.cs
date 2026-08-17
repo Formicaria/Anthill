@@ -299,7 +299,7 @@ public static partial class ApiHost
                 // rather than a misconfiguration an operator could fix in thirty seconds.
                 ["model_fitness"] = Queen.Router is null
                     ? new List<Dictionary<string, object?>>()
-                    : AntModelFitness.CheckAll(Queen.Router, AntExecutionCatalog.Contracts)
+                    : AntModelFitness.CheckAll(Queen.Router)
                         .Select(f => new Dictionary<string, object?>
                         {
                             ["role"] = f.RoleId,
