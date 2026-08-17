@@ -779,7 +779,8 @@ public sealed class CoderAnt : BaseAnt
         }
 
         var call = _router.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, ""), mission.Id, task.Id, Name,
-            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules));
+            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules),
+            schema: PatchSetSchema);
         if (!call.Ok)
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
@@ -832,7 +833,11 @@ public sealed class CoderAnt : BaseAnt
                 // could disagree — an empty generation passed the first (so it was cached as the
                 // last good proposal) and passed the second (so it was handed on as a patch set).
                 var call = _router!.GenerateTyped("coder", BuildPrompt(task, mission, codeContext, feedback), mission.Id, task.Id, Name,
-                    system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules));
+                    system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, CoderRules),
+                    // The SAME schema as the one-shot path. A refinement turn that dropped it would
+                    // be the sandbox loop quietly running under weaker constraints than the call it
+                    // is refining, and the loop exists to fix malformed output.
+                    schema: PatchSetSchema);
                 if (call.Ok) lastProposalJson = call.Content;
                 return call.Ok
                     ? call.Content
@@ -860,6 +865,72 @@ public sealed class CoderAnt : BaseAnt
     /// files, you do not apply patches" is a statement about what the harness permits, and stated in
     /// the request it was indistinguishable from a requester claiming to permit something.
     /// </summary>
+    /// <summary>
+    /// The patch set's shape, on the wire, as a JSON Schema. v0.3.8.76 (PLAN.md §2 R1).
+    ///
+    /// WHY THIS IS NOT JUST THE PROMPT AGAIN. `BuildPrompt` describes this shape in English, and
+    /// that description stays — a small local model follows an example better than it follows a
+    /// schema, and the prompt's rules carry judgement ("return an empty list rather than guessing")
+    /// that no schema can express. What the prompt could never do is BIND the provider. Asking for
+    /// JSON in prose makes the format a request the model may decline; `response_format:
+    /// json_schema` makes it a constraint the provider enforces before a token reaches us.
+    ///
+    /// It is also the last place in the colony where a control channel was prose. Everything else —
+    /// verdicts, blocks, failure classes, handoffs — was moved to typed fields across v3.2.0 and
+    /// v3.8.22 precisely because prose parsed as structure fails to an EMPTY result, and an empty
+    /// result reads as "found nothing" rather than as "the model did not answer the question". A
+    /// coder returning zero proposals is exactly that failure, and it is a failure class this
+    /// colony has a name and a retry loop for.
+    ///
+    /// THE `required` LIST IS DERIVED FROM `PatchProposalParser`, NOT FROM THE PROMPT, and the two
+    /// disagree in three places that would each have been a regression:
+    ///
+    ///   * `new_content` is NOT required. The prompt asks for it on every proposal, but a `delete`
+    ///     has no new content, and a schema demanding one would have made deletions unrepresentable
+    ///     at the provider — a change_type the applier supports and the wire would forbid.
+    ///   * `old_content` is nullable, because `add` has no prior state. The parser reads it through
+    ///     `JsonStrOrNull` for exactly this reason.
+    ///   * `requires_approval` is asked for in the prompt and read by NOBODY — approval is decided
+    ///     by policy, never by the proposer. It stays in `properties` (with
+    ///     `additionalProperties: false`, omitting it would forbid a field the prompt requests) and
+    ///     out of `required` (demanding a field nothing reads is asking a model to spend tokens on
+    ///     a value that cannot affect anything).
+    ///
+    /// What IS required is what the applier cannot proceed without: a path, and what to do to it.
+    ///
+    /// Kept beside <see cref="CoderRules"/> and the prompt because
+    /// `StructuredOutputTests.TheCoderSchemaAndItsPrompt_DescribeTheSameShape` pins the two
+    /// together — two descriptions of one format that nothing compares is how they drift, and this
+    /// pair would drift toward the schema being right and the prompt being followed.
+    /// </summary>
+    internal const string PatchSetSchema = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary", "proposals"],
+          "properties": {
+            "summary": { "type": "string" },
+            "proposals": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["file_path", "change_type"],
+                "properties": {
+                  "file_path": { "type": "string" },
+                  "change_type": { "type": "string", "enum": ["add", "modify", "delete", "rename"] },
+                  "reason": { "type": "string" },
+                  "risk": { "type": "string" },
+                  "old_content": { "type": ["string", "null"] },
+                  "new_content": { "type": "string" },
+                  "requires_approval": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+        """;
+
     private const string CoderRules =
         "Your role:\n"
       + "Create structured patch proposals as JSON only.\n\n"

@@ -121,6 +121,13 @@ public class AntModelFitnessTests
     /// <summary>
     /// And a role that makes NO model calls must not declare model requirements — a requirement
     /// nothing will ever check is a claim that quietly stops being true.
+    ///
+    /// v0.3.8.76: this named `tester` and asserted the property of one example. Tester happened to
+    /// be the only role it held for, so it passed for six releases standing beside five roles in
+    /// exactly the state it describes. The property now runs over the catalog in
+    /// <c>ContractDeclarationTests.ARoleThatCallsNoModel_DeclaresNoModelNeeds</c>; what stays here
+    /// is the example, because tester is the role whose determinism is load-bearing — a tester that
+    /// asks a model whether the tests passed is not a tester.
     /// </summary>
     [Fact]
     public void ADeterministicRole_DeclaresNoModelNeeds()
@@ -133,34 +140,55 @@ public class AntModelFitnessTests
     }
 
     /// <summary>
-    /// The ui_cartographer is the sharpest case in the catalog: its entire purpose is walking a
-    /// repository with tools, so a route to a model that cannot call them produces a confidently
-    /// fabricated map. If any contract declares tool calling, it must.
+    /// A request carrying TOOLS is routed to a model that can use them, whatever the role.
+    ///
+    /// This was `TheRepositoryWalkingRole_RequiresToolCalling`, asserting that `ui_cartographer`'s
+    /// contract declares `ToolCalling: true`. The reasoning was right and the subject was wrong:
+    /// `UiCartographerAnt` takes a `ToolRegistry` and walks the tree itself, so the declaration
+    /// guarded a model call the role cannot make. The concern is real on the path where that role
+    /// name CAN reach a model — `/agent/run` hands any executable role to `ToolCallingLoop` — and
+    /// there the protection is `ModelRouter`'s tool-capable reroute, which reads the request rather
+    /// than any contract.
+    ///
+    /// Asserted on the source because the property is that the reroute EXISTS and is driven by the
+    /// request's tool list. A behavioural test would need a live provider; this needs to hold now.
     /// </summary>
     [Fact]
-    public void TheRepositoryWalkingRole_RequiresToolCalling()
+    public void ARequestCarryingTools_IsReroutedToAToolCapableModel()
     {
-        var cartographer = AntExecutionCatalog.ContractFor("ui_cartographer");
+        var router = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.Core", "Models", "ModelRouter.cs")));
 
-        Assert.NotNull(cartographer);
-        Assert.True(cartographer!.ModelNeeds.ToolCalling);
+        Assert.Contains("request.Tools.Count > 0", router);
+        Assert.Contains("FirstToolCapableModel", router);
     }
 
     /// <summary>
-    /// Roles whose result the colony BRANCHES on must require structured output. Prose parsed as a
+    /// Routes whose result the colony BRANCHES on must require structured output. Prose parsed as a
     /// schema yields an empty result, and an empty result is read as "found nothing" rather than as
     /// a failure — the prose-derived control flow v3.2.0 spent a whole phase removing.
+    ///
+    /// v0.3.8.76 — the SUBJECTS changed and the property did not. This named soldier, medic and
+    /// archivist: three roles whose results genuinely drive control flow and which reach no model,
+    /// so the requirement was unfalsifiable. The routes below are the ones that both branch and
+    /// call. `planner` is the addition that matters — it has parsed a model's JSON into the task
+    /// graph since long before this test existed, and was in neither the old list nor the report.
+    ///
+    /// `verifier` is deliberately NOT here, and it is the one removal that is a judgement rather
+    /// than a fact about a constructor. Its contract declared structured output; its verdict is
+    /// deterministic, its model output is an explanation, and `VerificationVerdict.Parse` reads that
+    /// as prose on purpose. The requirement described a use of the model that v3.8.22 ended.
     /// </summary>
     [Theory]
-    [InlineData("soldier")]
-    [InlineData("medic")]
-    [InlineData("archivist")]
-    public void RolesWhoseResultDrivesControlFlow_RequireStructuredOutput(string role)
+    [InlineData("planner")]
+    [InlineData("strategist")]
+    [InlineData("coder")]
+    public void RoutesWhoseResultDrivesControlFlow_RequireStructuredOutput(string route)
     {
-        var contract = AntExecutionCatalog.ContractFor(role);
+        var declared = ModelRouteRequirements.For(route);
 
-        Assert.NotNull(contract);
-        Assert.True(contract!.ModelNeeds.StructuredOutput, $"'{role}' result is parsed, not read");
+        Assert.NotNull(declared);
+        Assert.True(declared!.Needs.StructuredOutput, $"'{route}' result is parsed, not read");
     }
 
     /// <summary>
@@ -188,17 +216,42 @@ public class AntModelFitnessTests
     /// from a model that cannot actually reason. If either role loses its reasoning requirement, the
     /// reroute silently stops protecting it — so this test guards the invariant, not just the value.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.76 — `medic` leaves this list, and the removal is the finding rather than a tidy-up.
+    ///
+    /// The docstring above is exactly right about why the reroute must keep protecting the roles
+    /// that infer. It was half wrong about who they are: `MedicAnt` takes no `ModelRouter`, so
+    /// `RoleRequiresReasoning("medic")` returning true steered a reroute for a call that is never
+    /// made. The test asserted the medic was protected, and passed, for as long as the protection
+    /// did nothing — a guard answering a question adjacent to the one asked, found in the guard
+    /// written to stop that happening elsewhere.
+    ///
+    /// `coder` remains, and is now read from the route table, so the assertion is against the
+    /// declaration the router actually consults.
+    /// </summary>
     [Theory]
     [InlineData("coder")]
-    [InlineData("medic")]
-    public void TheInferenceRoles_RequireReasoning_AndAreUnfitOnACompletionOnlyModel(string role)
+    public void TheInferenceRoles_RequireReasoning_AndAreUnfitOnACompletionOnlyModel(string route)
     {
-        var contract = AntExecutionCatalog.ContractFor(role);
+        var declared = ModelRouteRequirements.For(route);
 
-        Assert.NotNull(contract);
-        Assert.True(contract!.ModelNeeds.Reasoning, $"'{role}' infers from evidence and needs reasoning");
+        Assert.NotNull(declared);
+        Assert.True(declared!.Needs.Reasoning, $"'{route}' infers from evidence and needs reasoning");
 
-        var unmet = AntModelFitness.Unmet(contract.ModelNeeds, ModelCapabilities.TextOnly);
+        var unmet = AntModelFitness.Unmet(declared.Needs, ModelCapabilities.TextOnly);
         Assert.Contains(unmet, u => u.Contains("reasoning"));
+    }
+
+    /// <summary>
+    /// The reasoning reroute reads the ROUTE table, not the contracts — the same swap-and-still-
+    /// compile hazard as the fitness report, one layer down.
+    /// </summary>
+    [Fact]
+    public void TheReasoningReroute_ReadsTheRouteRequirements()
+    {
+        var router = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.Core", "Models", "ModelRouter.cs")));
+
+        Assert.Contains("ModelRouteRequirements", router);
     }
 }

@@ -1,5 +1,113 @@
 # ANTHILL Changelog
 
+## v0.3.8.76 - every declaration reaches the runtime, and every call has a declaration
+
+**PLAN.md §2 R1, the declaration half.** The colony's contracts and its runtime disagreed in both
+directions at once, and the disagreement was invisible because each side was checked only against
+itself.
+
+### The defect: five roles declared model calls they cannot make
+
+`soldier`, `medic`, `archivist`, `ui_cartographer` and `scribe` declared `AllowsModelCalls: true`
+with `ModelRequirement`s. None of their ants takes a `ModelRouter`. They have never been able to
+make a model call.
+
+Nothing failed, because **a requirement is only falsified where the thing it constrains happens**.
+`AntModelFitness` graded these five against the routed model, reported them UNFIT, and sent
+operators to change models for roles that ask a model nothing. That is the origin of the "seven
+roles need a capable model" warning on a colony with five such roles — and the archivist's 32k
+context requirement, the largest number in the table, was describing a read of mission state that
+happens in process, over objects, with no window at all.
+
+The arguments in those contracts were good, which is why they survived three releases of review. The
+`ui_cartographer` entry called itself "the clearest case for the whole mechanism" — a role that walks
+a repository with tools, and a model that cannot call them maps the UI from priors. Every word true,
+and none of it about `UiCartographerAnt`, which holds a `ToolRegistry` and asks nothing.
+
+### The mirror image: three routes that call models and had no declaration at all
+
+`planner`, `strategist` and the answer-synthesis `scribe` call a model on every mission and every
+autonomy cycle. They are not mission roles, so they have no contract, so the fitness report — which
+enumerated contracts — **never graded them**.
+
+The planner is the one that cost something. Its shortfall is silent by construction: a model that
+cannot emit JSON does not error, `TasksFromJson` rejects, `Plan` returns `FallbackTasks`, and the
+mission runs a generic static plan. An operator sees a colony that ignored their goal, with a green
+run behind it, and the one report that could have named the cause was enumerating a different set.
+
+### What changed
+
+- **`ModelRouteRequirements`** — a new table declaring what each of the eight routes that actually
+  reach the router needs, who calls it, and **what silently happens when the requirement is unmet**.
+  `AntModelFitness.CheckAll` and the reasoning-aware reroute both read it. `ContractDeclarationTests`
+  pins it in both directions: every route string in `src/` is declared, every declaration is reached.
+- **The five contracts state what their ants can do** — `AllowsModelCalls: false`,
+  `ModelRequirement.None`, and `Capability.ModelInvoke` dropped where it was granting a call that
+  cannot happen.
+- **A contract now agrees with itself.** `soldier` and `ui_cartographer` declared model calls without
+  requiring `model.invoke`; `medic`, `archivist` and `scribe` required `model.invoke` for calls they
+  could not make. Two fields of one record, disagreeing, with nothing comparing them.
+- **The `verifier`'s structured-output requirement is removed**, which R1 asked to be *checked before
+  changing*. It was checked: the verdict is deterministic, the model's reading is recorded beside it
+  as `model_verdict_overridden` and never promotes, and `VerificationVerdict.Parse` reads prose by
+  design. The requirement described a use of the model that v3.8.22 ended.
+- **One existing invariant changed, and it was made stronger rather than weaker.**
+  `EverySpecialist_HasVersionedContract_WithTaskTypesAndHandoffs` asserted every specialist requires
+  at least one capability, and it held only because the archivist declared `model.invoke` for a call
+  it cannot make. With the lie gone the archivist requires nothing — the honest description of an ant
+  that reads in-process mission state — but "empty because nothing is needed" and "empty because
+  nobody filled it in" look identical. The rule is now: a role may require no capabilities **only if
+  it declares no tools, no model calls, no side effects and no patch proposals**. Empty has to be
+  consistent across four fields before it counts as a claim.
+
+### `ResponseSchemaJson` was declared, plumbed, gated — and set by nobody
+
+`ModelRequest` has carried it since v3.4.0. `ProviderWireFormat` turns it into an OpenAI
+`response_format: json_schema`. `ModelCapabilityCatalog.Negotiate` strips it for a model that cannot
+honour one. Three correct, tested layers, and **no producer ever set the field** — there was no
+parameter on `GenerateTyped` to set it with.
+
+So the colony asked in English instead, in the same user turn as the operator's untrusted goal. That
+makes the output format a request the model may decline, which is why the coder has a retry loop and
+why "malformed patch output" is a named failure class. It is also the last seam where prose was used
+as a control channel.
+
+`GenerateTyped` now takes a `schema`, and `coder`, `planner` and `strategist` send one.
+
+**Each schema was written against the PARSER, not the prompt, and the two disagreed three times —
+each of which would have turned this fix into an outage:**
+
+- `depends_on` is not an array of integers. The planner's resolver exists because models emit indices
+  *or* task titles, and both are normalised. Typing it as `integer` would have made the provider
+  reject the exact output the parser was written to tolerate.
+- `skill_id` is optional in the prompt, absent from its example, and read by `TasksFromJson`. With
+  `additionalProperties: false` it would have been forbidden on the wire — silently ending skill
+  attribution rather than breaking anything visible.
+- `new_content` is not required. A `delete` has none, and demanding it would have made deletions
+  unrepresentable at the provider.
+
+### Two guards for defects that had no detector
+
+- **`ChecklistIntegrityTests`** — a ticked box must agree with the prose under it. §5's repair line
+  for S7 sat unticked for ten releases while its own section recorded the suites as landed in
+  v0.3.8.65. `DocumentCurrencyTests` sees only version claims and this line names no version, so
+  finished work stayed on the forward plan and got scheduled again.
+- **`SourceHygieneTests`** — no source file may contain a raw control byte. Two did:
+  `AntModelFitness.cs` held a NUL and `FailureContext.cs` a 0x1F, both as separators inside string
+  literals, written as bytes rather than escapes. The compiler is happy and the runtime is correct;
+  what breaks is everything else. **`grep`, `ripgrep` and `git grep` classify such a file as binary
+  and skip it in silence** — so the model-fitness report and the typed failure signature at the
+  centre of bounded repair answered "no match" to every search ever run over this repository. Both
+  now use the escape, which produces the identical string and identical signatures.
+
+That second one was found by accident, and the guard is what replaces the luck.
+
+### Not in this release
+
+The **provider-adapter conformance suite** — the other half of R1's exit gate. Four adapters against
+eight capabilities is its own body of work, and crowding an unverified 32-cell matrix into a release
+this size would be the opposite of thorough. It is next.
+
 ## v0.3.8.75 - a documentation patch is verified as documentation
 
 **Qualification scenario 3 closes. It was the last of the twenty.**

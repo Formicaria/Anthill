@@ -343,13 +343,24 @@ public sealed class ModelRouter
     }
 
     /// <summary>
-    /// Does this role's declared contract require reasoning? Read from the ONE place role
-    /// requirements live (<see cref="Anthill.Core.Agents.AntExecutionCatalog"/>), so routing honours
-    /// the same requirement the boot-time fitness report grades — never a second, drifting copy.
+    /// Does this ROUTE require reasoning? Read from the ONE place route requirements live
+    /// (<see cref="ModelRouteRequirements"/>), so routing honours the same requirement the boot-time
+    /// fitness report grades — never a second, drifting copy.
+    ///
+    /// v0.3.8.76 — this read <c>AntExecutionCatalog.Contracts</c>, which was the one place role
+    /// requirements lived and the wrong set for a router. Contracts describe ANTS; this method is
+    /// handed a ROUTE name, and `planner`, `strategist` and the answer-synthesis `scribe` call are
+    /// routes with no ant, so no contract, so no reasoning declaration either way — they could not
+    /// be rerouted because the lookup could not see them. Meanwhile it returned true for `medic`,
+    /// whose ant holds no router, so that reroute has never fired on anything. The comment above was
+    /// right about the principle and named the wrong table.
+    ///
+    /// Whether `planner` SHOULD declare reasoning is a live question and deliberately not settled
+    /// here: this release makes the declarations true, and changing what the planner demands of a
+    /// model is a routing change that deserves its own evidence rather than riding along with one.
     /// </summary>
     private static bool RoleRequiresReasoning(string role) =>
-        Anthill.Core.Agents.AntExecutionCatalog.Contracts.TryGetValue(role, out var c)
-        && c.ModelNeeds.Reasoning;
+        ModelRouteRequirements.NeedsOf(role).Reasoning;
 
     public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
     {
@@ -401,9 +412,27 @@ public sealed class ModelRouter
     /// Null keeps the old single-message shape, so a caller that has not been converted behaves
     /// exactly as before rather than silently losing its instructions.
     /// </param>
+    /// <param name="schema">
+    /// v0.3.8.76 (PLAN.md §2 R1) — the response schema, on the channel the provider understands.
+    ///
+    /// `ModelRequest.ResponseSchemaJson` has existed since v3.4.0; `ProviderWireFormat` turns it
+    /// into an OpenAI `response_format: json_schema`; `ModelCapabilities.Negotiate` strips it for a
+    /// model that cannot honour one. Every part of that pipe was built, tested and correct, and NO
+    /// PRODUCER EVER SET THE FIELD — there was no parameter here to set it with. The coder asked for
+    /// JSON in English, in the middle of its prompt, alongside the operator's untrusted goal.
+    ///
+    /// The difference is not stylistic. Asking in prose makes the output format a request the model
+    /// may decline, which is why `CoderAnt` has a retry loop and why a malformed patch set is a
+    /// failure class the colony has a name for. A schema on the wire makes it a constraint the
+    /// provider enforces. Prose in, prose out is also precisely the "prose as a control channel"
+    /// defect this repository has removed from six other seams.
+    ///
+    /// Null leaves the request exactly as it was, so an unconverted caller behaves as before.
+    /// </param>
     public ModelCallResult GenerateTyped(string role, string prompt, string? missionId = null,
-        string? taskId = null, string? antName = null, int retries = 2, string? system = null) =>
-        GenerateCore(role, prompt, missionId, taskId, antName, retries, system);
+        string? taskId = null, string? antName = null, int retries = 2, string? system = null,
+        string? schema = null) =>
+        GenerateCore(role, prompt, missionId, taskId, antName, retries, system, schema);
 
     /// <summary>Content-only projection, for callers that have not yet moved to the typed result.</summary>
     public string Generate(string role, string prompt, string? missionId = null, string? taskId = null,
@@ -411,15 +440,16 @@ public sealed class ModelRouter
         GenerateCore(role, prompt, missionId, taskId, antName, retries).Content;
 
     private ModelCallResult GenerateCore(string role, string prompt, string? missionId, string? taskId,
-        string? antName, int retries, string? system = null) =>
-        SendCore(role, Compose(prompt, system), missionId, taskId, antName, retries).ToCallResult();
+        string? antName, int retries, string? system = null, string? schema = null) =>
+        SendCore(role, Compose(prompt, system, schema), missionId, taskId, antName, retries).ToCallResult();
 
     /// <summary>
     /// One user message, or a system message and a user message. Never a system message alone —
     /// every provider the colony speaks to treats that as a request with nothing to answer.
     /// </summary>
-    private static ModelRequest Compose(string prompt, string? system) =>
-        string.IsNullOrWhiteSpace(system)
+    private static ModelRequest Compose(string prompt, string? system, string? schema = null)
+    {
+        var request = string.IsNullOrWhiteSpace(system)
             ? ModelRequest.FromPrompt(prompt)
             : new ModelRequest
             {
@@ -429,6 +459,11 @@ public sealed class ModelRouter
                     new ModelMessage(ModelMessage.User, prompt ?? ""),
                 },
             };
+
+        // Set only when there is one, so `FromPrompt`'s shape is untouched for every existing caller
+        // and a null cannot be mistaken for "schema deliberately cleared" further down.
+        return string.IsNullOrWhiteSpace(schema) ? request : request with { ResponseSchemaJson = schema };
+    }
 
     /// <summary>
     /// v3.4.0 (ADR-006): route and send a TYPED request — the path a tool-calling agent loop needs,

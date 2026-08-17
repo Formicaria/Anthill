@@ -175,8 +175,7 @@ public class EffectiveRouteTests
     public void TheFitnessReport_GradesTheEffectiveModel_NotTheConfiguredOne() =>
         WithNoConfiguredModel(() =>
         {
-            var report = AntModelFitness.CheckAll(
-                Router(Installed("llama3.1:8b")), AntExecutionCatalog.Contracts);
+            var report = AntModelFitness.CheckAll(Router(Installed("llama3.1:8b")));
 
             Assert.NotEmpty(report);
             Assert.All(report, f =>
@@ -198,8 +197,7 @@ public class EffectiveRouteTests
     public void AnUnresolvableRoute_IsReportedAsUnresolved_NotAsMissingCapabilities() =>
         WithNoConfiguredModel(() =>
         {
-            var report = AntModelFitness.CheckAll(
-                Router(Installed("a:1", "b:2")), AntExecutionCatalog.Contracts);
+            var report = AntModelFitness.CheckAll(Router(Installed("a:1", "b:2")));
 
             Assert.NotEmpty(report);
             Assert.All(report, f =>

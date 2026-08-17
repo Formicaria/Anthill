@@ -58,11 +58,21 @@ public sealed class Strategist
 
         if (_router is null) return fallback;
 
+        // v0.3.8.76 (PLAN.md §2 R1): the shape asked for on the wire, not only in the prose.
+        //
+        // `follow_ups` is required-but-may-be-empty rather than optional, and that is deliberate
+        // against this route's own history: the prompt says follow-ups "should almost always be
+        // empty" and warns against inventing them to seem productive. A schema that made the key
+        // optional would let a model omit it, which the parser reads identically to an empty array —
+        // so the one field the prompt spends a paragraph restraining would have no representation
+        // for the restrained answer. Required-and-empty is the model saying it considered and
+        // declined; absent is the model not answering.
         ModelCallResult result;
         try
         {
             result = _router.GenerateTyped("strategist", BuildPrompt(objective), antName: "strategist",
-                system: AnthillRuntime.RoleSystemPrompt("strategist", rules: StrategistRules));
+                system: AnthillRuntime.RoleSystemPrompt("strategist", rules: StrategistRules),
+                schema: ObjectiveProposalSchema);
         }
         catch (Exception ex)
         {
@@ -195,6 +205,33 @@ public sealed class Strategist
     /// than any other role's: there is no operator watching the turn in which it might be talked out
     /// of its job.
     /// </summary>
+    /// <summary>
+    /// The objective proposal's shape, on the wire. v0.3.8.76 (PLAN.md §2 R1). Mirrors the
+    /// "Required JSON" block below and is pinned to it by `StructuredOutputTests`.
+    /// </summary>
+    internal const string ObjectiveProposalSchema = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["goal", "follow_ups"],
+          "properties": {
+            "goal": { "type": "string" },
+            "follow_ups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "charter"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "charter": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+        """;
+
     private const string StrategistRules =
         "You run unattended (24/7 autonomy). Your job is to turn one standing objective into the "
       + "single next concrete mission for the colony to run right now.";
