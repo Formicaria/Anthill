@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Anthill.Core.Agents;
 using Anthill.Core.Tools;
+using Anthill.Core.Workspaces;
 
 namespace Anthill.Core.Verification;
 
@@ -269,19 +270,57 @@ public sealed class BuildVerifier : IVerifier
     public bool Deterministic => true;
     public bool WorkspaceScoped => true;   // reads WorkspaceRoot and nothing else about the change
 
+    /// <summary>
+    /// v0.3.8.78 (PLAN.md §2 R2) — the build check comes from <see cref="CheckSource"/> instead of
+    /// the literal id `dotnet_build`.
+    ///
+    /// THE DEFECT. `RunAllowlistedCheckTool` has resolved ids through `CheckSource` since v0.3.8.73,
+    /// precisely so a Node or static-frontend workspace gets ITS checks. This caller still asked for
+    /// `dotnet_build`, which resolves perfectly well — to the .NET build definition — and then ran
+    /// `dotnet build` in a directory with no project. So a code patch in any non-.NET workspace was
+    /// unverifiable: `build:fail`, deterministically, forever. The runner was widened and its one
+    /// caller was not, which is this repository's "two implementations of one rule" seen from the
+    /// side where only one of them moved.
+    ///
+    /// WHAT IT DOES NOT DO, and this is the whole risk of the change: it does not weaken whether a
+    /// reproducible no is final. **Every** selected check must pass; the first failure fails the
+    /// verifier, the result stays `Deterministic: true`, and a failing build still produces a
+    /// `DeterministicBlock` that no model text can argue away. It widens WHERE the check comes
+    /// from — nothing else.
+    ///
+    /// AND AN EMPTY SELECTION FAILS CLOSED. A build gate that passes because it found nothing to run
+    /// is the shape of every fail-open defect this repository has recorded. `BuildSelection` cannot
+    /// return empty today; the arm is here because a future source that can must not silently mean
+    /// "verified".
+    /// </summary>
     public VerificationResult Verify(VerificationRequest r)
     {
+        var ids = CheckSource.BuildSelection(WorkspaceCapabilityManifest.ForCurrentMission());
         var tool = new RunAllowlistedCheckTool(r.WorkspaceRoot);
-        var res = tool.Run(new Dictionary<string, object?> { ["check_id"] = "dotnet_build" });
-        var exit = System.Text.RegularExpressions.Regex.Match(res.Output ?? "", @"exit_code=(-?\d+)").Groups[1].Value;
-        return new(Name, res.Success, true,
-            res.Success ? "build succeeded" : $"build failed ({res.Error})",
-            new List<VerificationEvidence>
-            {
-                new("command", "dotnet_build"),
-                new("exit_code", exit.Length > 0 ? exit : "n/a"),
-                new("output_digest", DiffVerifier.Sha(res.Output ?? "")),
-            });
+        var evidence = new List<VerificationEvidence>();
+        var failures = new List<string>();
+
+        if (ids.Count == 0)
+            return new(Name, false, true, "no build check is declared for this workspace",
+                new List<VerificationEvidence> { new("command", "(none)") });
+
+        foreach (var id in ids)
+        {
+            var res = tool.Run(new Dictionary<string, object?> { ["check_id"] = id });
+            var exit = System.Text.RegularExpressions.Regex.Match(res.Output ?? "", @"exit_code=(-?\d+)").Groups[1].Value;
+
+            evidence.Add(new("command", id));
+            evidence.Add(new("exit_code", exit.Length > 0 ? exit : "n/a"));
+            evidence.Add(new("output_digest", DiffVerifier.Sha(res.Output ?? "")));
+
+            if (!res.Success) failures.Add($"{id} ({res.Error})");
+        }
+
+        return new(Name, failures.Count == 0, true,
+            failures.Count == 0
+                ? $"build succeeded ({ids.Count} check(s): {string.Join(", ", ids)})"
+                : $"build failed: {string.Join("; ", failures)}",
+            evidence);
     }
 }
 
