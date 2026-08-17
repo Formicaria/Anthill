@@ -25,6 +25,16 @@
     <!-- The tool implementations moved out of the core in v3.8.16; their tests follow them. -->
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
     <!--
+      Scenario 17 needs a process it can really kill. Referenced (rather than located by path) so
+      `dotnet test` builds it and copies it beside the tests — a helper the suite cannot find is a
+      scenario that silently does not run, which is the state scenario 17 was already in.
+      The output IS copied (no ReferenceOutputAssembly="false"): with it suppressed the helper is
+      built and left in its own bin, and the test would have to guess a configuration-dependent path
+      to find it. Copied, it sits beside the tests with the runtimeconfig.json that
+      EnableDynamicLoading emits, and `dotnet exec` on it just works.
+    -->
+    <ProjectReference Include="..\..\tests\Anthill.CrashHelper\Anthill.CrashHelper.csproj" />
+    <!--
       Referenced so ModuleBoundaryTests can Assembly.Load it. Without this the module is simply
       absent from the test output directory and its boundary theory case cannot run — which is
       indistinguishable from passing.
