@@ -23,13 +23,14 @@ namespace Anthill.Tests;
 /// The composed Queen-driven runs this note used to say scenarios 3, 4, 7 and 15 "still need" now
 /// exist for 4 (`CodePatchLifecycleTests`, v0.3.8.54), 7 (`SoldierBlockLifecycleTests`, v0.3.8.71)
 /// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73), 3 (`AppliedDocsPatchLifecycleTests`,
-/// v0.3.8.75) and now 5 (`ComposedUiPatchLifecycleTests`, v0.3.8.78). This paragraph is updated
+/// v0.3.8.75), 5 (`ComposedUiPatchLifecycleTests`, v0.3.8.78) and now 17
+/// (`ProcessDeathMidApplyTests`, v0.3.8.79). This paragraph is updated
 /// rather than deleted each time, because the sentence it replaces was accurate when written and
 /// stopped being so without anything failing — the exact rot the ledger exists to prevent, appearing
 /// four times now in the ledger's own header. That is the argument for `DocumentCurrencyTests`,
 /// which makes the mechanically detectable half of it fail.
 ///
-/// NO SCENARIO IS OPEN as of v0.3.8.78; one (17) is PARTIAL and says why. Scenario 3 was written as
+/// ALL TWENTY ARE CLOSED BY SUBSTANCE as of v0.3.8.79; none is OPEN and none is PARTIAL. Scenario 3 was written as
 /// closed once during v0.3.8.74 and reverted the same release, because its test reached the last
 /// gate and stopped — the entry said what the gate was instead of citing a file that did not prove
 /// it. It closed a release later, on the fix that gate demanded. "Closed" is the claim most worth
@@ -176,10 +177,20 @@ public class QualificationMatrixTests
           + "a mid-set write failure rolls the batch back."),
 
         new(17, "restart during approval/apply/finalization",
-            new[] { "FinalizationOrderTests.cs", "ApprovalDedupeTests.cs", "PatchOperatorActionTests.cs" },
-            "Finalization replay is idempotent and the archivist claims a ledger entry, so a replayed "
-          + "finalization cannot archive twice. PARTIAL: restart mid-APPLY is covered by the rollback "
-          + "path rather than by a test that kills the process there."),
+            new[] { "FinalizationOrderTests.cs", "ApprovalDedupeTests.cs", "PatchOperatorActionTests.cs",
+                    "ProcessDeathMidApplyTests.cs" },
+            "CLOSED at v0.3.8.79 — the last of the twenty. Finalization replay is idempotent and the "
+          + "archivist claims a ledger entry, so a replayed finalization cannot archive twice; "
+          + "approval dedupe covers the second phase. The apply phase carried the partial label for "
+          + "eleven releases, and the label was honest: recovery was proved by ABANDONING a "
+          + "transaction "
+          + "object, which is still a healthy process with flushed buffers and run finally blocks. A "
+          + "killed one has neither.\n\n"
+          + "`ProcessDeathMidApplyTests` starts `Anthill.CrashHelper`, waits for it to signal that "
+          + "the journal and patched bytes are durable, kills it, and recovers in the parent — a "
+          + "real OS kill of a real process holding a real open transaction. The sentinel is what "
+          + "makes it deterministic: killing on start would sometimes find no journal, and "
+          + "\"recovered cleanly from nothing\" is a pass that means nothing happened."),
 
         new(18, "duplicate mission and external-action delivery",
             new[] { "DirectorTests.cs", "ApprovalDedupeTests.cs", "AutonomyTests.cs" },
@@ -287,12 +298,31 @@ public class QualificationMatrixTests
     /// is the most dangerous entry in a matrix like this — it is cited, it passes, and the gap is
     /// invisible unless the note admits it.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.79 — `Assert.NotEmpty(partial)` is REMOVED, and this is the second time this file has
+    /// had to make that correction rather than a loosening of the rule.
+    ///
+    /// The assertion encoded an assumption nobody stated: that something would always be partial. It
+    /// held for eleven releases and stopped holding when scenario 17 closed — at which point the
+    /// ledger's own guard would have failed for the single outcome the ledger exists to reach. That
+    /// is exactly what happened to `Assert.NotEmpty(open)` at v0.3.8.74, whose note above records
+    /// the reasoning in full: **a guard that cannot express success is not a guard, it is a
+    /// deadline.**
+    ///
+    /// It was left standing at v0.3.8.78, deliberately, with the consequence written into PLAN.md
+    /// for whoever closed 17 — because it was still true then, and pre-emptively weakening a guard
+    /// against a change that has not happened is how a guard stops meaning anything. This is that
+    /// release.
+    ///
+    /// The property that matters is unchanged and is what remains: a scenario that says PARTIAL
+    /// must cite something. Vacuously true of an empty set, and saying exactly what it should —
+    /// nothing is partial, so nothing is overstated.
+    /// </summary>
     [Fact]
     public void PartialCoverage_IsDeclaredRatherThanImplied()
     {
         var partial = Matrix.Where(s => s.Note.Contains("PARTIAL", StringComparison.Ordinal)).ToList();
 
-        Assert.NotEmpty(partial);
         foreach (var scenario in partial)
             Assert.True(scenario.Proofs.Length > 0,
                 $"scenario {scenario.Number} claims PARTIAL coverage and cites nothing, which is OPEN.");

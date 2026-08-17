@@ -1,5 +1,91 @@
 # ANTHILL Changelog
 
+## v0.3.8.79 - twenty of twenty, and two shells that stopped lying
+
+**PLAN.md §2 R2 closes.** Every deterministic qualification scenario is now closed by substance:
+none open, none partial, no note admitting an unproved claim. That is the first time this
+repository has been able to write that sentence.
+
+### Scenario 17: a process that actually dies
+
+`ApplyTransactionTests` has covered recovery since v0.3.8.62, and its crash case worked by
+**abandoning the transaction object** without committing. That proves recovery reads an incomplete
+journal and restores from it — genuinely most of the value, and the ledger said so for eleven
+releases. What it cannot prove is the thing the scenario names: a process that DIES. An abandoned
+object is still a healthy process, with flushed buffers, run finally blocks, and a filesystem that
+got everything it was told. A killed one has none of that.
+
+`Anthill.CrashHelper` is a real executable. `ProcessDeathMidApplyTests` starts it, waits for it to
+signal that the journal and the patched bytes are durable, `Kill()`s it, and runs recovery in the
+parent. Nothing is simulated: a real OS kill of a real process holding a real open transaction.
+
+**The sentinel is the design.** Killing on process start would race the writes — sometimes the
+journal would not exist yet, and *"recovered cleanly from nothing"* is a pass that means nothing
+happened. The helper writes its sentinel LAST, after the mutations, so the kill lands on a state that
+is durable rather than merely intended. The test asserts the patched bytes are on disk and the
+journal exists **before** it kills, so the later restoration cannot be an artefact of nothing having
+occurred.
+
+A second test covers scenario 17's own wording — "nothing applied, approved or finalized twice":
+recover, do real work in the restored tree, restart again, and prove the second recovery finds
+nothing to do rather than restoring stale content over newer work.
+
+### The shell stops mangling quotes
+
+Found at v0.3.8.78 and deliberately deferred to its own release. `AutoApplyRunner.RunShell` passed
+the whole command through `ProcessStartInfo.ArgumentList`, which .NET escapes by **C-runtime** rules
+— inner `"` becomes `\"`. `cmd.exe` does not follow those rules. So
+
+    findstr /C:"aria-label" static\app.js
+
+reached findstr as `/C:\"aria-label\"`, matched nothing, exited 1 — and auto-apply **rolled back a
+correctly applied patch** and reported "Verify FAILED" against a tree where the change was present
+and correct.
+
+That is the worst available shape for a bug: it does not look like a configuration error. The colony
+says verification refused the change, so an operator debugs their patch, their build, their tests —
+everything except the quoting of a command they wrote correctly. It survived because the only verify
+command any test used was scenario 3's `type docs\COLONY-NOTE.md`, which has no quotes. The second
+instance had no test at all: the auto-commit passes four quoted arguments
+(`user.name="ANTHILL Auto-Apply"`, `-m "{msg}"`) through the same path.
+
+### …and the sweep found another instance, on the operator's own keyboard
+
+This repository's habit after finding a defect class is to look for it everywhere else, and that is
+what turned up `OperatorShell.Execute` — the shell box in the dashboard — with the identical
+implementation. An admin typing
+
+    git commit -m "fix the thing"
+
+had it delivered as `-m \"fix` plus two stray arguments. Worse than the auto-apply instance in one
+respect: a human typed a correct command, watched it come back wrong, and nothing in the output
+explained why. Both sites were written the same way at different times by the same reasoning, which
+is what makes it a class rather than a bug.
+
+`ShellSpawnTests` now pins the rule repo-wide: **no launch site may hand cmd its `/c` switch through
+`ArgumentList`.** It also asserts the other direction — that sites invoking a REAL program (`git`,
+`docker`, an agent binary, a declared check) keep using `ArgumentList`, because over-applying the fix
+would break argument passing everywhere and is the same defect arrived at from the other side.
+
+**The arms are asymmetric on purpose.** Windows takes the raw string, so cmd applies its own rules to
+a command an operator wrote for cmd. Unix keeps `ArgumentList`: there is no command-line re-parsing
+there — the list becomes `argv` directly — so `sh -c` already received the command intact, and
+converting that arm to a string would introduce the very re-quoting this removes. A symmetric fix is
+the obvious instinct and would break the other side; `ShellQuotingTests` asserts the asymmetry on
+source so a later tidy-up fails loudly.
+
+### The guard that predicted its own expiry
+
+`PartialCoverage_IsDeclaredRatherThanImplied` asserted `NotEmpty(partial)` — so closing the last
+partial scenario would have failed the ledger's own guard for the single outcome the ledger exists to
+reach. v0.3.8.78 recorded that consequence in PLAN.md and left the assertion standing, because it was
+still true then; this release removes it, in the release that makes it false.
+
+Same correction v0.3.8.74 made to its sibling `NotEmpty(open)`, and the second time this file has
+needed it: **a guard that cannot express success is not a guard, it is a deadline.** The property
+that matters is unchanged — a scenario claiming partial coverage must cite something — and is
+vacuously true of an empty set, saying exactly what it should.
+
 ## v0.3.8.78 - the composed UI lifecycle, and a test log you can read
 
 **PLAN.md §2 R2, scenario 5.** Nineteen of the twenty deterministic scenarios are now closed by
