@@ -22,13 +22,14 @@ namespace Anthill.Tests;
 ///
 /// The composed Queen-driven runs this note used to say scenarios 3, 4, 7 and 15 "still need" now
 /// exist for 4 (`CodePatchLifecycleTests`, v0.3.8.54), 7 (`SoldierBlockLifecycleTests`, v0.3.8.71)
-/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73), and now 3 (`AppliedDocsPatchLifecycleTests`,
-/// v0.3.8.75). This paragraph is updated rather than deleted each time, because the sentence it
-/// replaces was accurate when written and stopped being so without anything failing — the exact rot
-/// the ledger exists to prevent, appearing three times now in the ledger's own header. That is the
-/// argument for `DocumentCurrencyTests`, which makes the mechanically detectable half of it fail.
+/// and 15 (`EarnedRepairLifecycleTests`, v0.3.8.73), 3 (`AppliedDocsPatchLifecycleTests`,
+/// v0.3.8.75) and now 5 (`ComposedUiPatchLifecycleTests`, v0.3.8.78). This paragraph is updated
+/// rather than deleted each time, because the sentence it replaces was accurate when written and
+/// stopped being so without anything failing — the exact rot the ledger exists to prevent, appearing
+/// four times now in the ledger's own header. That is the argument for `DocumentCurrencyTests`,
+/// which makes the mechanically detectable half of it fail.
 ///
-/// NO SCENARIO IS OPEN as of v0.3.8.75; one (17) is PARTIAL and says why. Scenario 3 was written as
+/// NO SCENARIO IS OPEN as of v0.3.8.78; one (17) is PARTIAL and says why. Scenario 3 was written as
 /// closed once during v0.3.8.74 and reverted the same release, because its test reached the last
 /// gate and stopped — the entry said what the gate was instead of citing a file that did not prove
 /// it. It closed a release later, on the fix that gate demanded. "Closed" is the claim most worth
@@ -81,9 +82,15 @@ public class QualificationMatrixTests
           + "the suite has, and it is what scenarios 3 and 7 should be modelled on."),
 
         new(5, "UI patch requiring UI Cartographer",
-            new[] { "UiChangeGateTests.cs", "UiCartographerAntTests.cs" },
-            "v0.3.8.57 makes the map STRUCTURALLY required at dispatch. The gate and the producer are "
-          + "each proved; the composed UI-patch lifecycle is not — see scenario 3's note."),
+            new[] { "UiChangeGateTests.cs", "UiCartographerAntTests.cs",
+                    "ComposedUiPatchLifecycleTests.cs" },
+            "v0.3.8.57 makes the map STRUCTURALLY required at dispatch; v0.3.8.78 closes the composed "
+          + "lifecycle. The gate and the producer were each proved and the JOIN was not — a map with "
+          + "the right shape and the wrong mission, or a gate reading a store the cartographer never "
+          + "wrote to, satisfies both ends and breaks the middle. The composed run drives goal → real "
+          + "cartographer reading real UI files → gate admits → coder → tester and soldier → "
+          + "verification → applied bytes, and the map is not scripted because the cartographer has "
+          + "no model to script."),
 
         new(6, "broken patch → Tester → FailureContext → Medic → Coder → fresh retest",
             new[] { "MedicAntTests.cs", "MissionRevisionTests.cs", "BoundedRepairTests.cs" },

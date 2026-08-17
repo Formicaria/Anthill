@@ -1,5 +1,142 @@
 # ANTHILL Changelog
 
+## v0.3.8.78 - the composed UI lifecycle, and a test log you can read
+
+**PLAN.md §2 R2, scenario 5.** Nineteen of the twenty deterministic scenarios are now closed by
+substance; 17 remains PARTIAL and says so.
+
+### Scenario 5: two proved ends and an unproved join
+
+The ledger cited `UiChangeGateTests` and `UiCartographerAntTests` with the note "the gate and the
+producer are each proved; the composed UI-patch lifecycle is not". That sentence was accurate, and
+the entry was **not labelled PARTIAL** — so `QualificationMatrixTests`, which has a guard for exactly
+this, could not see it. A scenario admitting in prose that it is incomplete, inside a ledger whose
+whole job is to say which scenarios are incomplete, is the same defect as a stale checkbox: the
+document knew and nothing mechanical did.
+
+What the two existing suites leave out is the JOIN. `UiChangeGateTests` proves the gate refuses
+without a conforming map, by handing it a map it built itself. `UiCartographerAntTests` proves the
+ant emits one, in isolation. Both can pass while the middle is broken — a map with the right shape
+and the wrong mission id, or a gate reading a store the cartographer never wrote to. **A join is not
+proved by proving its ends.**
+
+`ComposedUiPatchLifecycleTests` drives goal → cartographer → gate → coder → tester and soldier →
+verification → applied bytes, and asserts the map exists, conforms, and belongs to *that* mission.
+
+**The map is not scripted.** `UiCartographerAnt` takes a `ToolRegistry` and no router — it walks the
+tree with `list_directory` and `read_text_file` and builds the map from what it finds, so the
+scripted colony has no say in it. The fixture seeds real UI files; if the ant reads nothing, the gate
+refuses the coder and the test fails. That coupling is the scenario, and it is what could not
+previously be demonstrated.
+
+**A property of the cartographer this test had to learn, recorded because the next fixture will hit
+it: discovery does not recurse.** `DirectoryListTool` uses `GetFileSystemInfos()` — top level only,
+printing bare names — so a UI file one directory down never appears in the text the ant's extension
+regex reads. Everything below the root is found instead by a fixed list of thirteen conventional
+layout probes (`index.html`, `src/app.js`, `static/app.js`, `public/index.html`, …). A UI file in an
+unconventional subdirectory is therefore invisible to the cartographer: not an error, just absent
+from the map. The first draft of this fixture seeded `ui/app.js`, which is in neither set, and the
+run failed with "no UI files could be read from the workspace" — the gate refusing the coder for a
+reason with nothing to do with the join under test. The fixture now seeds `index.html` at the root
+(found by the listing) and `static/app.js` (found by probe), so both discovery mechanisms are
+exercised and a break in either names itself.
+
+**The map is what summons the coder.** `UiCartographerAnt` emits a handoff to `code_change` carrying
+its `ui_map`, so a coder task always arrives from the map — that IS the composed path, not an extra
+route to it. The first draft of the plan scheduled a coder task as well, and the mission produced two
+patch sets proposing the identical modify from the identical base. The apply then did exactly what it
+should: the first write landed, the second was refused because the file no longer hashed to the base
+it was built against, and the batch rolled back as a unit. Nothing was broken — the fixture asked for
+the change twice and patch integrity declined to apply a stale one. The test now asserts exactly one
+proposal for the target, so "requested twice" stays distinguishable from "the apply is broken".
+
+**A defect this found and deliberately did not fix.** `AutoApplyRunner.RunShell` passes the whole
+command through `ProcessStartInfo.ArgumentList.Add`, which escapes by C-runtime rules — an inner `"`
+becomes `\"` — and `cmd.exe` does not follow those rules. A verify command written as
+`findstr /C:"aria-label" file` reaches findstr as `/C:\"aria-label\"`, matches nothing, exits 1, and
+a correctly applied patch is rolled back with "Verify FAILED" against a tree where the change is
+present and correct. Scenario 3's verify has no quotes, which is why it was never seen; the same
+shape sits in the auto-commit `git -c user.name="ANTHILL Auto-Apply" …`, which no test exercises.
+Every quoted verify command already configured in the field is affected, so the fix needs its own
+release and a test per shell. Recorded in PLAN.md §2 R2; this test uses a quote-free command and says
+why at the call site.
+
+The operator check is about the CHANGE rather than the file. Scenario 3's patch created a file, so
+"the file exists" was a fair check. This one MODIFIES a file that is already there, where an
+existence check passes identically against the unpatched tree — a check answering a question
+adjacent to the one asked, which would have made the tester's PASS meaningless. It searches for the
+attribute instead: fails before the patch, passes after it.
+
+### The build verifier asks where the check comes from
+
+Closing scenario 5 surfaced the defect that was blocking it, and it is one PLAN.md already named.
+
+`RunAllowlistedCheckTool` has resolved check ids through `CheckSource` since v0.3.8.73 — operator
+configuration, then the detected manifest, then the compiled catalog — precisely so a Node or
+static-frontend workspace runs ITS checks. **`BuildVerifier` still asked for the literal id
+`dotnet_build`**, which resolves perfectly well to the .NET build definition and then runs
+`dotnet build` in a directory with no project. So a code patch in any non-.NET workspace could never
+be verified: `build:fail`, deterministically, forever.
+
+The runner was widened and its one caller was not — "two implementations of one rule" seen from the
+side where only one of them moved. It stayed invisible because every fixture exercising a code patch
+happened to run inside this .NET repository. It surfaced the moment a fixture patched a `.js` file.
+
+`CheckSource.BuildSelection` now answers which checks constitute the build, on the same precedence
+the rest of the class uses. **Where an operator has declared checks, those checks ARE the build for
+their workspace** — all of them, and any failure fails the verifier.
+
+**The line this does not cross:** it widens WHERE the check comes from and never whether a
+reproducible no is final. Every selected check must pass, the result stays `Deterministic: true`, a
+failing build still raises a `DeterministicBlock` no model text can argue away, and an empty
+selection fails closed. `BuildCheckSourceTests` asserts those four before it asserts anything about
+the new capability.
+
+**The no-declaration fallback is deliberately narrower than `DefaultSelection`.** That method returns
+`{dotnet_version, dotnet_build}`, which is the right answer to "what could an operator run here" and
+the wrong one for a build gate — adding a second command would change what verification means for
+every existing .NET workspace, in a release about making a non-.NET one work at all. With nothing
+declared, the build runs exactly what it ran before.
+
+### A test log a person can read
+
+A green run emitted roughly two hundred lines that READ as failures — `Adaptive stop: critical
+failure persists`, `Task failed_retryable: one or more checks failed`, `[verifier] could not read
+evidence: store is down`, `SQLite Error 19: FOREIGN KEY constraint failed`. Every one is a fixture
+deliberately driving a failure path; `EvidenceFailsClosedTests` injects a store that throws on every
+call precisely to prove evidence fails CLOSED.
+
+The cost is not noise. **A real failure arrives in the middle of two hundred lines of simulated
+failure**, and the reader has to already know which is which — this release line produced two
+failures that were slower to spot for that reason, and the operator reading a green run reasonably
+asked what all the errors were. It is this repository's own defect class pointed at its own output: a
+diagnostic that degrades the thing it describes.
+
+`TestConsole` swaps `Console.Out`/`Console.Error` at test-assembly load. **No production code is
+touched** — the colony's `Console.WriteLine` calls are its operator interface and are correct where
+they are, and the console is byte-identical outside a test run. `ANTHILL_TEST_CONSOLE=1` restores the
+narration, because the moment it is genuinely wanted is when a mission-shaped test fails and the
+transcript is the evidence; silence that cannot be lifted is how a diagnostic gets deleted rather
+than quieted. Assertion messages are unaffected — xUnit writes those, and they are what a run should
+be read for.
+
+Applied to all three test assemblies, because a module initializer is per assembly and a run whose
+noise depends on which project a test lives in is the confusing half of the problem rather than the
+fix.
+
+### What remains of R2
+
+**Scenario 17 — process death mid-apply**, and only that.
+`ApplyTransactionTests.ACrashMidBatch_IsRecoveredAtStartup_ByteIdentically` simulates the crash by
+abandoning the transaction object; nothing kills a real process. Closing it needs a small helper
+executable the test can start, drive to a durable mid-apply state, and `Kill()`.
+
+Recorded in the plan for whoever does: `PartialCoverage_IsDeclaredRatherThanImplied` asserts
+`Assert.NotEmpty(partial)` and 17 is the last PARTIAL entry, so closing it will fail that guard for
+the single outcome the ledger exists to reach — the same shape v0.3.8.74 already fixed one assertion
+over. It is left standing rather than pre-emptively weakened, because it is true today and the
+release that makes it false is the release that should change it.
+
 ## v0.3.8.77 - the adapter conformance matrix, and the schema Anthropic was dropping
 
 **PLAN.md §2 R1 closes.** Four adapters, eight capabilities, thirty-two cells — each one either
