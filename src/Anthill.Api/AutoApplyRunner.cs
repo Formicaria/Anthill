@@ -681,7 +681,35 @@ public static class AutoApplyRunner
             StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
             StandardErrorEncoding = Encoding.UTF8,
         };
-        if (isWindows) { psi.ArgumentList.Add("/c"); psi.ArgumentList.Add(command); }
+        /*
+         * WINDOWS TAKES THE RAW STRING; UNIX TAKES THE LIST. v0.3.8.79.
+         *
+         * THE DEFECT. Both arms used `ArgumentList`, which .NET escapes by C-RUNTIME rules: an
+         * argument containing a quote is emitted wrapped, with inner `"` written as `\"`. That is
+         * correct for a program using the C runtime to parse its command line. `cmd.exe` does not
+         * — it has its own quoting rules and treats `\"` as a literal backslash followed by a
+         * quote. So a verify command written as
+         *
+         *     findstr /C:"aria-label" static\app.js
+         *
+         * reached findstr as `/C:\"aria-label\"`, matched nothing, and exited 1. Auto-apply then
+         * rolled back a correctly applied patch and reported "Verify FAILED" — against a tree where
+         * the change was present and correct. Every quoted verify command in the field is affected,
+         * and the failure is the worst shape available: the colony reports that verification said
+         * no, so an operator debugs their change rather than their configuration.
+         *
+         * It survived because the only verify command any test used was scenario 3's
+         * `type docs\COLONY-NOTE.md`, which has no quotes. The second instance is the auto-commit
+         * below, which passes `user.name="ANTHILL Auto-Apply"` and `-m "{msg}"` and which no test
+         * exercised at all.
+         *
+         * `psi.Arguments` hands Windows the string verbatim, so cmd applies its OWN rules to a
+         * command an operator wrote for cmd. Unix keeps `ArgumentList`: there is no command-line
+         * re-parsing on that side — the list becomes `argv` directly — so `sh -c <command>` already
+         * received the command intact, and switching it to a string would introduce the very
+         * re-quoting this removes.
+         */
+        if (isWindows) psi.Arguments = "/c " + command;
         else { psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(command); }
 
         var sw = Stopwatch.StartNew();

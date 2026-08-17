@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A real process, so scenario 17 can really kill one. v0.3.8.79.
+
+    Qualification scenario 17 is "restart during approval/apply/finalization", and it has been
+    PARTIAL since it was written for one reason: `ApplyTransactionTests` simulates the crash by
+    abandoning the transaction object. That proves recovery reads an incomplete journal, which is
+    most of the value — and it cannot prove the part the scenario is actually about, because the
+    process never dies. A killed process is not a returned method: buffers are not flushed, finally
+    blocks do not run, and whatever the OS had not yet written to disk is simply gone. Only an OS
+    kill of a separate process tests that.
+
+    EnableDynamicLoading copies this project's runtimeconfig.json and deps.json into the referencing
+    project's output. Without it a ProjectReference copies the assembly alone, and `dotnet exec` on
+    it fails with "cannot find runtimeconfig" — the helper would be present and unrunnable, which is
+    the same as absent except harder to diagnose.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Anthill.CrashHelper</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
+</Project>

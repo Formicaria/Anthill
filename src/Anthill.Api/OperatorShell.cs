@@ -57,7 +57,27 @@ public static class OperatorShell
             StandardOutputEncoding = Encoding.UTF8,   // v0.3.8.55: children emit UTF-8, not the OS codepage
             StandardErrorEncoding = Encoding.UTF8,
         };
-        if (isWindows) { psi.ArgumentList.Add("/c"); psi.ArgumentList.Add(command); }
+        /*
+         * THE SAME FIX AS `AutoApplyRunner.RunShell`, and finding it here is why that one was swept
+         * for. v0.3.8.79.
+         *
+         * `ArgumentList` escapes by C-RUNTIME rules — an inner `"` is emitted as `\"` — which is
+         * correct for a normal program whose command line the C runtime parses, and wrong for
+         * `cmd.exe`, which re-parses the string by its own rules and treats `\"` literally. So an
+         * operator typing
+         *
+         *     git commit -m "fix the thing"
+         *
+         * into the dashboard shell had it delivered as `-m \"fix` and two stray arguments. This is
+         * the OPERATOR'S OWN SHELL: the failure lands on a human who typed a correct command and
+         * watched it come back wrong, with nothing in the output explaining why.
+         *
+         * The rule, stated once: `ArgumentList` is right when the child receives argv directly, and
+         * wrong when the child is a shell re-parsing one string. Every other launch site in this
+         * repository is the first kind — `git`, `docker`, an agent binary, a declared check — and
+         * those keep the list. `ShellSpawnTests` pins that a `/c` never goes through the list again.
+         */
+        if (isWindows) psi.Arguments = "/c " + command;
         else { psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(command); }
 
         var sw = Stopwatch.StartNew();
