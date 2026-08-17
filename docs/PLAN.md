@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.78**.
+Shipping release: **v0.3.8.79**.
 
 ---
 
@@ -36,17 +36,17 @@ Done and load-bearing:
 
 | | |
 |---|---|
-| Deterministic qualification scenarios | **20 declared**, all citing proof. **19 closed by substance**; 17 is PARTIAL and says so *(5 closed at v0.3.8.78)* |
+| Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **10 of 12**. Gates 1 and 2 (all roles Ready; every role with handler, contract, real trigger, typed output) close with items R3–R4 |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
 | Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
 
-**One scenario is weaker than the ledger says.** Scenario 17 is explicitly PARTIAL (restart during
-approval/apply/finalization) and is the last open item in R2. Scenario 5 used to be the other: its
-note admitted "the composed UI-patch lifecycle is not [proved]" while the entry was **not labelled
-PARTIAL**, so the guard that exists for exactly this could not see it — a document that knew, beside
-a check that did not. v0.3.8.78 closed the substance rather than adding the label.
+**No scenario is now weaker than the ledger says**, which is a sentence this document has not
+been able to write before. Scenario 5's note used to admit "the composed UI-patch lifecycle is not
+[proved]" while the entry was not labelled partial, so the guard built for exactly that could not see
+it; scenario 17 was labelled honestly and stayed labelled for eleven releases. Both closed on
+substance rather than on wording — 5 at v0.3.8.78, 17 at v0.3.8.79.
 
 ---
 
@@ -102,9 +102,9 @@ failure today cannot be pinned on the model, the adapter, or a contract that was
 
 ---
 
-### R2 — Finish deterministic qualification · *1–2 releases* · **in progress**
+### R2 — Finish deterministic qualification · ✅ **CLOSED at v0.3.8.79**
 
-The two scenarios the ledger overstates.
+The two scenarios the ledger overstated, and the two defects closing them uncovered.
 
 - ✅ **Scenario 5 — the composed UI-patch lifecycle** *(v0.3.8.78 — `ComposedUiPatchLifecycleTests`.
   The gate and the producer were each proved and the JOIN was not: a map with the right shape and the
@@ -119,15 +119,15 @@ The two scenarios the ledger overstates.
   `dotnet build` against a directory with no project and could never be verified. Where an operator
   declares checks, those checks are now the build — all of them, any failure fails, the result stays
   deterministic, an empty selection fails closed, and the no-declaration fallback is unchanged.)*
-- ◻ **Scenario 17 — process death mid-apply.** Kill the process during `ApplyTransaction`, restart,
-  and prove the incomplete transaction is detected, the tree restored or resumed, and nothing
-  applied, approved or finalized twice. The journal and `ApplyTransaction.Recover` exist, and
-  `ApplyTransactionTests.ACrashMidBatch_IsRecoveredAtStartup_ByteIdentically` simulates the crash by
-  abandoning the transaction object — **nothing kills a real process**. Closing it needs a small
-  helper executable the test can start, drive to a durable mid-apply state, and `Kill()`.
-  **This is all that remains of R2.**
+- ✅ **Scenario 17 — process death mid-apply** *(v0.3.8.79 — `ProcessDeathMidApplyTests` and the
+  `Anthill.CrashHelper` executable. Recovery was proved by ABANDONING a transaction object, which is
+  still a healthy process with flushed buffers and run finally blocks; a killed one has neither. The
+  test starts a real process, waits for it to signal that the journal and patched bytes are durable,
+  `Kill()`s it, and recovers in the parent. The sentinel is what makes it deterministic — killing on
+  start would sometimes find no journal, and "recovered cleanly from nothing" is a pass that means
+  nothing happened.)*
 
-- ◻ **`RunShell` mangles double quotes on Windows** *(found at v0.3.8.78, not fixed there.)*
+- ✅ **`RunShell` mangled double quotes on Windows** *(found at v0.3.8.78, fixed at v0.3.8.79.)*
   `AutoApplyRunner.RunShell` passes the whole command through `ProcessStartInfo.ArgumentList.Add`,
   which escapes by C-RUNTIME rules — an inner `"` becomes `\"` — and `cmd.exe` does not follow those
   rules. A verify command written as `findstr /C:"aria-label" file` reaches findstr as
@@ -135,19 +135,28 @@ The two scenarios the ledger overstates.
   "Verify FAILED" against a tree where the change is present. **Two instances:**
   `autonomy_autoapply_verify_cmd`, and the auto-commit
   `git -c user.name="ANTHILL Auto-Apply" … -m "{msg}"` at `AutoApplyRunner.cs:639`, which no test
-  exercises. Every quoted verify command configured in the field is affected, so the fix needs its
-  own release and a test per shell — it is not a qualification change and did not belong in one.
-  `ComposedUiPatchLifecycleTests` works around it with a quote-free command and says why.
+  exercised. Every quoted verify command configured in the field was affected.
+  **Fixed** by handing Windows the raw string (`psi.Arguments`) so cmd applies its OWN rules, while
+  Unix keeps `ArgumentList` — there is no command-line re-parsing on that side, so a string would
+  introduce the very re-quoting this removes. `ShellQuotingTests` proves a quoted phrase survives,
+  that an absent phrase still fails, and that `&&` still composes.
+  **The sweep for the same class found a THIRD instance**, and the worst-placed of the three:
+  `OperatorShell.Execute`, the dashboard's shell box, where an admin typing
+  `git commit -m "fix the thing"` had it delivered as `-m \"fix` plus two stray arguments — a human
+  typing a correct command and watching it come back wrong, with nothing in the output explaining
+  why. `ShellSpawnTests` now pins the rule repo-wide in both directions: no `/c` through
+  `ArgumentList`, and sites invoking a real program (`git`, `docker`, an agent binary, a declared
+  check) keep the list, because over-applying the fix is the same defect from the other side.
 
-> **Note for whoever closes 17.** `QualificationMatrixTests.PartialCoverage_IsDeclaredRatherThanImplied`
-> asserts `Assert.NotEmpty(partial)`, and 17 is the only PARTIAL entry left — so closing it will fail
-> that guard for the single outcome the ledger exists to reach. That is the same defect v0.3.8.74
-> already fixed one assertion over, when `Assert.NotEmpty(open)` had to go for exactly this reason:
-> *a guard that cannot express success is not a guard, it is a deadline.* It is left standing here
-> rather than pre-emptively weakened, because it is still true today and the release that makes it
-> false is the release that should change it.
+> **And the guard that predicted its own expiry.** `PartialCoverage_IsDeclaredRatherThanImplied`
+> asserted `NotEmpty(partial)`, which would have failed for the single outcome the ledger exists to
+> reach. v0.3.8.78 recorded that here and left it standing, because it was still true then; v0.3.8.79
+> removed the assertion in the release that made it false. Same correction v0.3.8.74 made to its
+> sibling — *a guard that cannot express success is not a guard, it is a deadline* — and the second
+> time this file has needed it.
 
-> **Exit gate.** 20 of 20 closed by substance, with no note admitting an unproved claim.
+> **Exit gate — ✅ CLOSED at v0.3.8.79.** 20 of 20 closed by substance, with no note admitting an
+> unproved claim.
 
 ---
 
