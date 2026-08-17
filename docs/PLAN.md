@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.76**.
+Shipping release: **v0.3.8.77**.
 
 ---
 
@@ -81,20 +81,23 @@ failure today cannot be pinned on the model, the adapter, or a contract that was
   model that v3.8.22 ended. The verdict is deterministic and the model's reading never promotes;
   removed, and the context requirement that is real kept)*.
 - ✅ **A guard for tick-versus-body disagreement** *(v0.3.8.76 — `ChecklistIntegrityTests`)*.
-- ◻ **Provider-adapter conformance suite**, per adapter: capability discovery, system-prompt
-  transport, schema round-trip, tool-call round-trip, cancellation and timeout, provider/model
-  identity, token and cost reporting, error classification. Only Claude Code has a verified
-  system-prompt/stdin channel today; the other four are declared as not. **This is what remains of
-  R1** — four adapters against eight capabilities, deterministic and offline where it can be, with
-  every unsupported cell named rather than absent.
+- ✅ **Provider-adapter conformance suite** *(v0.3.8.77 — `AdapterConformanceTests`: four adapters ×
+  eight capabilities, thirty-two cells, each either citing the test that proves it or naming why the
+  transport cannot. Citations are checked to resolve, and a fifth provider added to the module fails
+  the matrix rather than passing by being unknown to it.)*
+  **It found a live defect on its first pass:** `ModelCapabilityCatalog` declares `anthropic` as
+  `Standard` — structured output included — so `Negotiate` kept a response schema for it, and
+  `AnthropicBody` never read the field. Fixed by binding the schema the only way Anthropic serves
+  one, as a forced tool call, with `ReadAnthropic` unwrapping the reply back into content.
 - ◻ **Ollama capability discovery.** Reads `/api/tags`, which `ApiHost.Providers.cs:112` documents as
   a deliberate choice — Ollama publishes a per-model `capabilities` array there, and against three
   real local models the hand-written table was wrong twice. `/api/show` may still be richer. **Treat
-  as a contested design decision to extend, not an oversight to fix.**
+  as a contested design decision to extend, not an oversight to fix.** Carried to R4, where a live
+  multi-provider run is what would settle it; it is not a gate on anything before that.
 
-> **Exit gate.** Every role's declared capabilities match what it can do, asserted by a test — ✅
-> **closed at v0.3.8.76**. Every adapter passes the conformance suite or is explicitly marked
-> unsupported for a named capability — open.
+> **Exit gate — ✅ CLOSED at v0.3.8.77.** Every role's declared capabilities match what it can do,
+> asserted by a test *(v0.3.8.76)*. Every adapter passes the conformance suite or is explicitly
+> marked unsupported for a named capability *(v0.3.8.77)*.
 
 ---
 
