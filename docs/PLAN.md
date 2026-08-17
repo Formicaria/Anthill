@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.77**.
+Shipping release: **v0.3.8.78**.
 
 ---
 
@@ -36,16 +36,17 @@ Done and load-bearing:
 
 | | |
 |---|---|
-| Deterministic qualification scenarios | **20 declared**, all citing proof. **18 closed by substance**; 5 and 17 are partial — see below |
+| Deterministic qualification scenarios | **20 declared**, all citing proof. **19 closed by substance**; 17 is PARTIAL and says so *(5 closed at v0.3.8.78)* |
 | Acceptance gates | **10 of 12**. Gates 1 and 2 (all roles Ready; every role with handler, contract, real trigger, typed output) close with items R3–R4 |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
 | Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
 
-**Two scenarios are weaker than the ledger says.** Scenario 17 is explicitly PARTIAL (restart during
-approval/apply/finalization). Scenario 5 says in its own note that "the composed UI-patch lifecycle
-is not [proved]" and is **not labelled PARTIAL**, so the guard that exists for exactly this does not
-see it. R2 fixes the label and the substance together.
+**One scenario is weaker than the ledger says.** Scenario 17 is explicitly PARTIAL (restart during
+approval/apply/finalization) and is the last open item in R2. Scenario 5 used to be the other: its
+note admitted "the composed UI-patch lifecycle is not [proved]" while the entry was **not labelled
+PARTIAL**, so the guard that exists for exactly this could not see it — a document that knew, beside
+a check that did not. v0.3.8.78 closed the substance rather than adding the label.
 
 ---
 
@@ -101,17 +102,50 @@ failure today cannot be pinned on the model, the adapter, or a contract that was
 
 ---
 
-### R2 — Finish deterministic qualification · *2–3 releases*
+### R2 — Finish deterministic qualification · *1–2 releases* · **in progress**
 
 The two scenarios the ledger overstates.
 
-- **Scenario 17 — process death mid-apply.** Kill the process during `ApplyTransaction`, restart, and
-  prove the incomplete transaction is detected, the tree restored or resumed, and nothing applied,
-  approved or finalized twice. The journal and `ApplyTransaction.Recover` exist; nothing kills a real
-  process against them.
-- **Scenario 5 — the composed UI-patch lifecycle.** The gate and the producer are each proved; the
-  lifecycle is not. Label the entry PARTIAL now, close it with a composed run, then remove the label.
-  `EarnedRepairLifecycleTests` already patches a UI route and is the nearest starting point.
+- ✅ **Scenario 5 — the composed UI-patch lifecycle** *(v0.3.8.78 — `ComposedUiPatchLifecycleTests`.
+  The gate and the producer were each proved and the JOIN was not: a map with the right shape and the
+  wrong mission, or a gate reading a store the cartographer never wrote to, satisfies both ends while
+  the middle is broken. The composed run drives goal → cartographer reading REAL UI files → gate
+  admits → coder → tester and soldier → verification → applied bytes. The map is not scripted,
+  because `UiCartographerAnt` holds no router to script — if it reads nothing, the gate refuses and
+  the test fails, which is the coupling the scenario claims.)*
+- ✅ **The build verifier reads `CheckSource`** *(v0.3.8.78 — surfaced by the above and blocking it.
+  `RunAllowlistedCheckTool` has resolved ids through `CheckSource` since v0.3.8.73; `BuildVerifier`
+  still asked for the literal `dotnet_build`, so a code patch in any non-.NET workspace ran
+  `dotnet build` against a directory with no project and could never be verified. Where an operator
+  declares checks, those checks are now the build — all of them, any failure fails, the result stays
+  deterministic, an empty selection fails closed, and the no-declaration fallback is unchanged.)*
+- ◻ **Scenario 17 — process death mid-apply.** Kill the process during `ApplyTransaction`, restart,
+  and prove the incomplete transaction is detected, the tree restored or resumed, and nothing
+  applied, approved or finalized twice. The journal and `ApplyTransaction.Recover` exist, and
+  `ApplyTransactionTests.ACrashMidBatch_IsRecoveredAtStartup_ByteIdentically` simulates the crash by
+  abandoning the transaction object — **nothing kills a real process**. Closing it needs a small
+  helper executable the test can start, drive to a durable mid-apply state, and `Kill()`.
+  **This is all that remains of R2.**
+
+- ◻ **`RunShell` mangles double quotes on Windows** *(found at v0.3.8.78, not fixed there.)*
+  `AutoApplyRunner.RunShell` passes the whole command through `ProcessStartInfo.ArgumentList.Add`,
+  which escapes by C-RUNTIME rules — an inner `"` becomes `\"` — and `cmd.exe` does not follow those
+  rules. A verify command written as `findstr /C:"aria-label" file` reaches findstr as
+  `/C:\"aria-label\"`, matches nothing, exits 1, and a correctly applied patch is rolled back with
+  "Verify FAILED" against a tree where the change is present. **Two instances:**
+  `autonomy_autoapply_verify_cmd`, and the auto-commit
+  `git -c user.name="ANTHILL Auto-Apply" … -m "{msg}"` at `AutoApplyRunner.cs:639`, which no test
+  exercises. Every quoted verify command configured in the field is affected, so the fix needs its
+  own release and a test per shell — it is not a qualification change and did not belong in one.
+  `ComposedUiPatchLifecycleTests` works around it with a quote-free command and says why.
+
+> **Note for whoever closes 17.** `QualificationMatrixTests.PartialCoverage_IsDeclaredRatherThanImplied`
+> asserts `Assert.NotEmpty(partial)`, and 17 is the only PARTIAL entry left — so closing it will fail
+> that guard for the single outcome the ledger exists to reach. That is the same defect v0.3.8.74
+> already fixed one assertion over, when `Assert.NotEmpty(open)` had to go for exactly this reason:
+> *a guard that cannot express success is not a guard, it is a deadline.* It is left standing here
+> rather than pre-emptively weakened, because it is still true today and the release that makes it
+> false is the release that should change it.
 
 > **Exit gate.** 20 of 20 closed by substance, with no note admitting an unproved claim.
 
